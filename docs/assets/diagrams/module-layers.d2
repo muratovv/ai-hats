@@ -31,10 +31,31 @@ install: install (C14) — ИНТЕРПРЕТАТОР И ПОЧИНКА\nтри 
   style.stroke: "#b54818"
 }
 
-pipelines: pipeline_executor (C9)\n+ reflection
+project: Project (C1) — ЗНАЧЕНИЕ-СПИНА\nсобирается один раз на точке входа\nвсе ниже ПОЛУЧАЮТ его {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+channel: channel / update_policy (C11)\nсобственный узел — не reporting {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+
+identity: session identity (C6)\nчитают процессы БЕЗ runtime:\ngit-хук · rack transition · wt merge {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+
+locks: бюджеты и замки (C5 + C13)\nвладельца нет: 6 семейств замков,\n5 источников таймаута {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+
+pipelines: pipeline_executor (C9) — МЕХАНИЗМ\nreflection — доменный workflow, отдельно
 runtime: runtime — запуск сессий\nвладеет портом Provider («что звать и как»)
-observability: observability\nC6 identity · C12 session_log · C15 GC и TTL
-reporting: reporting + doctor\nC11 канал обновлений\nопущено из UI
+observability: observability (C12)\nsession_log · аудит · транскрипты
+reporting: reporting + doctor\nинтерфейс «как меня чинить»
 mat: материализация (C3)\n+ композиция (C4) · стрелочная нотация
 
 glue: КЛЕЙ К DEPS — ДОМА НЕТ, ~2000 строк\nrack_wiring · rack_consumers · wt_effects\nwt_lifecycle · wt_carry · tracker_wiring\nцель: растворить в портах A–D {
@@ -63,20 +84,28 @@ surfaces -> runtime: реализуют порт Provider
 runtime -> surfaces: находит реализации\nчерез реестр entry-points {style.stroke-dash: 4; style.stroke: "#e8632b"}
 
 ui -> init
-init -> install
-init -> core: имя и раскладка конфига\nниже всех — их читает даже bash {style.stroke: "#e8632b"}
+init -> project: пишет конфиг, из которого\nсобирается значение
 ui -> pipelines
 pipelines -> runtime: вправе использовать,\nне переписывать
 runtime -> observability
 runtime -> mat
 runtime -> glue: цель — обнулить {style.stroke: "#e8632b"}
 reporting -> core
-install -> core
+channel -> core
+identity -> core
+locks -> core
+project -> core
+install -> channel
+reporting -> channel
+runtime -> identity
+runtime -> locks
+mat -> locks
+install -> project
 observability -> core
 mat -> deps: ТОЛЬКО хуки из library,\nне весь rack и wt {style.stroke: "#e8632b"}
 glue -> deps
 mat -> core
 deps -> core: rack и library сегодня\nНЕ зависят от core {style.stroke: "#e8632b"}
 glue -> core
-ui -> core: настоящая зависимость,\nминующая слои — C1 нужен до всякого UI
+ui -> project: значение нужно до всякого UI
 ci -> deps: гоняет всё дерево {style.stroke-dash: 4}
