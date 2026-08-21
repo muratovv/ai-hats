@@ -48,7 +48,9 @@ class SidecarTracer:
             return
         if self._raw_fp is None:
             try:
-                self._raw_fp = open(self.session.pty_raw_path, "ab", buffering=0)
+                self._raw_fp = self.session.open_artifact_binary_append(
+                    self.session.pty_raw_path, buffering=0
+                )
             except OSError:
                 self._raw_fp = False  # sentinel — give up; don't retry
                 return

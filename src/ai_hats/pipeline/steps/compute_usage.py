@@ -28,6 +28,7 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
+from ai_hats_observe import Session
 from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, USAGE_JSON
 
 from ..step import Step, StepIO
@@ -114,7 +115,8 @@ class ComputeUsage(Step):
             if report.get("role") and static_cost_analyzer is not None:
                 self._enrich_static(report, static_cost_analyzer, report["role"])
 
-            usage_path.write_text(
+            Session(session_id=session_id, session_dir=session_dir).write_artifact_text(
+                usage_path,
                 json.dumps(report, ensure_ascii=False, indent=2, default=str),
             )
         except (Exception, KeyboardInterrupt):

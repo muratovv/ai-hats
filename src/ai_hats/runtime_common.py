@@ -20,8 +20,6 @@ from typing import TYPE_CHECKING
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
-from ai_hats_core import atomic_write_text
-
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from ai_hats_observe.artifacts import (
     FLAG_SENSOR_ERROR,
@@ -300,7 +298,7 @@ def _flag_sensor_error(session: Session) -> None:
         if FLAG_SENSOR_ERROR not in metrics["flags"]:
             metrics["flags"].append(FLAG_SENSOR_ERROR)
         metrics.setdefault("measured", False)
-        atomic_write_text(session.metrics_path, json.dumps(metrics, indent=2))
+        session.write_artifact_text(session.metrics_path, json.dumps(metrics, indent=2))
     except (OSError, ValueError):
         logger.error("could not flag sensor error on %s", session.metrics_path, exc_info=True)
 
@@ -364,9 +362,9 @@ def _finalize_sub_agent(
     try:
         with sigint_shield():
             if stdout:
-                (session.session_dir / TRANSCRIPT_TXT).write_text(stdout)
+                session.write_artifact_text(session.session_dir / TRANSCRIPT_TXT, stdout)
             if stderr:
-                (session.session_dir / REASONING_LOG).write_text(stderr)
+                session.write_artifact_text(session.session_dir / REASONING_LOG, stderr)
 
             metrics: dict = {
                 "exit_code": exit_code,

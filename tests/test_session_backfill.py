@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import stat
 from pathlib import Path
 
 import pytest
@@ -167,6 +168,7 @@ def test_identity_is_recovered_from_the_logged_launch_line(project, monkeypatch)
         f"12:00:00.100 [SYS] Launching: claude --settings x.json "
         f"--session-id {PROVIDER_SESSION_ID}\n"
     )
+    (session_dir / METRICS_JSON).chmod(0o644)
     monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
@@ -179,6 +181,7 @@ def test_identity_is_recovered_from_the_logged_launch_line(project, monkeypatch)
     assert m["claude_session_id"] == PROVIDER_SESSION_ID, (
         "recovered identity must be persisted — the next audit deletes the trace it came from"
     )
+    assert stat.S_IMODE((session_dir / METRICS_JSON).stat().st_mode) == 0o600
 
 
 def test_trace_without_a_session_id_flag_still_refuses(project, monkeypatch):
