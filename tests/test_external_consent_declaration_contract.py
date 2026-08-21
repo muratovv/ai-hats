@@ -107,7 +107,8 @@ def test_a_role_without_trait_agent_declares_no_wrapper_consent(role):
 def test_a_lifecycle_role_declares_only_external_wrapper_consent():
     assert _shipped_consent("maintainer") == {
         ("consent_gate", ("rack.transition",), "plan->execute"),
-        ("consent_gate", ("rack.transition",), "review->done"),
+        # HATS-1752: every road into `done`, not the review edge alone.
+        ("consent_gate", ("rack.transition",), "->done"),
         ("consent_gate", ("wt.merge",), "pre-merge"),
     }
 
@@ -123,3 +124,55 @@ def test_the_maintainer_gate_does_not_own_consent():
     assert gate["at"] == ["->done"]
     assert gate["on_error"] == "refuse"
     assert "consent" not in gate
+
+
+def test_the_shipped_question_rides_every_road_into_done():
+    """HATS-1752, translated into the wrapper's declaration (HATS-1736 review).
+
+    The card widened the question from `review->done` to `->done` because master
+    must be asked about from ANY road, the forced close included. The guard that
+    pinned it read `apps.rack.tasks` and went with those rows in ADR-0030; the
+    declaration now lives under `apps.consent_gate`, and without this the next
+    narrowing would pass every gate — the wrapper matches on the target alone, so
+    a narrow spelling breaks nothing today and everything the day a selector-aware
+    matcher arrives.
+    """
+    import yaml
+
+    trait = yaml.safe_load(
+        (_LIBRARY / "core/traits/trait-agent/config.yaml").read_text(encoding="utf-8")
+    )
+    declared = trait["composition"]["apps"]["consent_gate"]
+
+    (question,) = declared["rack.transition"]
+    assert question["at"] == ["plan->execute", "->done"], (
+        "the question must ride every road into `done`; `plan->execute` stays EXACT "
+        "because entering implementation is one edge, not a family"
+    )
+    assert question["consent"] is True
+
+    gate = yaml.safe_load(
+        (_LIBRARY / "usage/roles/maintainer/config.yaml").read_text(encoding="utf-8")
+    )
+    (gate_row,) = gate["composition"]["apps"]["rack"]["tasks"]
+    assert gate_row["at"] == ["->done"], "the gate and the question must cover one set"
+    assert gate_row["run"].endswith("done-gate.sh")
+
+
+def test_the_shipped_declaration_compiles_to_a_policy_that_protects_done():
+    """The other half: the YAML above must survive the wrapper's own compiler and
+    come out protecting `done`, not merely mentioning it."""
+    trait = _rows(
+        {
+            "consent_gate": {
+                "rack.transition": [{"at": ["plan->execute", "->done"], "consent": True}],
+                "wt.merge": [{"at": ["pre-merge"], "consent": True}],
+            }
+        }
+    )
+    sink: list = []
+
+    policy = policy_from(_resolved_consent(trait, sink))
+
+    assert "->done" in policy["rack.transition"]
+    assert policy["wt.merge"] == ("pre-merge",)

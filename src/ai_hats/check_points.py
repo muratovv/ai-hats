@@ -133,7 +133,6 @@ def _rack_gate_veto(selector: str) -> str | None:
     return gate_veto(selector)
 
 
-
 #: What an app refuses about a row of its own, in the order the questions are
 #: asked. The first entry of each pair is the row KEY that has to be present for
 #: the question to apply — ``None`` means "of every row".

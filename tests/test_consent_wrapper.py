@@ -300,3 +300,103 @@ def test_provider_without_command_interception_refuses_protected_role(tmp_path: 
             SimpleNamespace(name="agy", supports_session_command_wrappers=lambda: False),
             BuiltArtifacts(),
         )
+
+
+# --- HATS-1736 review: two pins the deleted in-tool tests used to carry --------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["transition", "T-1", "done", "--force"], id="positional"),
+        pytest.param(["transition", "T-1", "--state", "done", "--force"], id="state-flag"),
+        pytest.param(["transition", "T-1", "--state=done", "--force"], id="state-equals"),
+    ],
+)
+def test_force_does_not_switch_consent_off(tmp_path: Path, argv):
+    """The HATS-1682 incident, re-pinned outside the tools.
+
+    `--force` relaxes rack's FSM arrow; consent is a property of the OPERATION,
+    so nothing added to the command line removes it. `rack_wiring` used to hold
+    this pin and lost it with the in-lock subscriber (ADR-0030 D1) — the wrapper
+    is where it belongs now, and until here nothing asserted it at all.
+    """
+    spawned: list[list[str]] = []
+    config = WrapperConfig(
+        project_dir=tmp_path,
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("plan->execute", "->done")},
+    )
+
+    exit_code = run_wrapped(
+        "rack",
+        argv,
+        config,
+        environ={},
+        check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
+        peek_ticket=lambda task_id, argv_: False,
+        consume_ticket=lambda task_id, argv_: False,
+        spawn=lambda command, environ: spawned.append(command) or 0,
+    )
+
+    assert exit_code == 2, "a forced close walked past the question"
+    assert spawned == [], "the tool ran before consent was settled"
+
+
+@pytest.mark.parametrize("source", ["review", "plan", "document", "blocked", "failed"])
+def test_every_road_into_done_carries_the_question(tmp_path: Path, source: str):
+    """HATS-1752, translated. The card widened the declaration from `review->done`
+    to `->done` because entering master must be asked about from ANY road; the
+    guard that pinned it lived in the deleted contract test.
+
+    The wrapper matches on the target state alone, so the pin is that a declared
+    `->done` protects every source — and, by the parametrization above it, that a
+    narrow spelling would not have been enough had the matcher ever looked at the
+    source half.
+    """
+    del source  # the wrapper never sees it — that IS the property under test
+    spawned: list[list[str]] = []
+    config = WrapperConfig(
+        project_dir=tmp_path,
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("plan->execute", "->done")},
+    )
+
+    exit_code = run_wrapped(
+        "rack",
+        ["transition", "T-1", "done"],
+        config,
+        environ={},
+        check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
+        peek_ticket=lambda task_id, argv_: False,
+        consume_ticket=lambda task_id, argv_: False,
+        spawn=lambda command, environ: spawned.append(command) or 0,
+    )
+
+    assert exit_code == 2, "a road into `done` was not gated"
+    assert spawned == []
+
+
+def test_a_declaration_that_names_no_done_leaves_the_road_open():
+    """The discriminator for the pin above: without `->done` declared, the same
+    command is delegated untouched. A test that passed either way would prove
+    nothing about the widening."""
+    config = WrapperConfig(
+        project_dir=Path("/tmp"),
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("plan->execute",)},
+    )
+    spawned: list[list[str]] = []
+
+    exit_code = run_wrapped(
+        "rack",
+        ["transition", "T-1", "done"],
+        config,
+        environ={},
+        check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
+        peek_ticket=lambda task_id, argv_: False,
+        consume_ticket=lambda task_id, argv_: False,
+        spawn=lambda command, environ: spawned.append(command) or 0,
+    )
+
+    assert exit_code == 0 and spawned, "an undeclared target must pass through"
