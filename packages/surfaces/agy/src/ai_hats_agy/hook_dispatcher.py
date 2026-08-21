@@ -18,6 +18,13 @@ import sys
 import subprocess
 from pathlib import Path
 
+from .claude_hook_adapter import (
+    agy_tool_name,
+    from_claude_decision,
+    matches_claude_hook,
+    to_claude_payload,
+)
+
 #: Per-hook budget. A runtime gate answers in milliseconds; past this, "slow" is
 #: indistinguishable from "hung" and the tool call must not wait any longer.
 HOOK_TIMEOUT_S = 60.0
@@ -120,37 +127,77 @@ def _session_hooks_file() -> Path | None:
     return hooks_file
 
 
-def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) -> int:
-    """Read session hooks manifest and execute matching hooks for this event."""
+def _answered(said: str, payload: dict) -> str:
+    """A hook's verdict, in the dialect the surface speaks.
+
+    Only a verdict that REWRITES the tool input needs turning back, and only
+    that shape is touched: anything else — a plain decision, a non-JSON line a
+    hook printed — is forwarded byte for byte rather than reformatted.
+    """
+    stripped = said.strip()
+    if not stripped.startswith("{"):
+        return said
+    try:
+        decision = json.loads(stripped)
+    except ValueError:
+        return said
+    if not isinstance(decision, dict):
+        return said
+    answered = from_claude_decision(decision, payload)
+    return said if answered is decision else json.dumps(answered) + "\n"
+
+
+def dispatch_hook(
+    event_arg: str | None = None,
+    tool_name: str | None = None,
+    stdin_data: str | None = None,
+) -> int:
+    """Read session hooks manifest and execute matching hooks for this event.
+
+    ``stdin_data`` is the surface's payload. A parameter rather than a read
+    inside, so a caller can hand one over without a test having to patch the
+    process's own stdin — the mock this seam exists to avoid.
+    """
     identity = _session_identity()
     if not identity or not identity.get("id") or not identity.get("project_dir"):
         # Standalone agy run outside ai-hats session — no-op exit 0
         return 0
 
-    stdin_data = ""
-    try:
-        if not sys.stdin.isatty():
-            stdin_data = sys.stdin.read()
-    except (OSError, AttributeError):
+    if stdin_data is None:
         stdin_data = ""
+        try:
+            if not sys.stdin.isatty():
+                stdin_data = sys.stdin.read()
+        except (OSError, AttributeError):
+            stdin_data = ""
 
-    # Resolve event name from arg, stdin JSON payload, or fallback
-    event = event_arg
-    if not event:
-        if stdin_data:
-            try:
-                payload = json.loads(stdin_data)
-                if isinstance(payload, dict):
-                    event = (
-                        payload.get("hook_event_name")
-                        or payload.get("event_name")
-                        or payload.get("event")
-                        or payload.get("hook")
-                    )
-            except (OSError, ValueError):
-                pass
+    # The payload is the source of truth for what this call IS: the event, and
+    # the tool it is about. argv carries both only when the surface chose to
+    # pass them, and a silent argv used to switch the matcher filter off
+    # entirely — every hook then ran on every call (HATS-1776).
+    payload: dict = {}
+    if stdin_data:
+        try:
+            parsed = json.loads(stdin_data)
+        except (OSError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            payload = parsed
+
+    event = event_arg or (
+        payload.get("hook_event_name")
+        or payload.get("event_name")
+        or payload.get("event")
+        or payload.get("hook")
+    )
     if not event:
         event = "PreToolUse"
+
+    # Translated ONCE, here. Before this the scripts translated themselves —
+    # four of them hand-rolled, two not at all, and those two allowed whatever
+    # they could not read.
+    tool = agy_tool_name(payload) or (tool_name or "")
+    spoken = json.dumps(to_claude_payload(payload)) if payload else stdin_data
 
     hooks_file = _session_hooks_file()
 
@@ -199,7 +246,9 @@ def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) ->
             continue
 
         matcher = hook.get("matcher", "*")
-        if tool_name and matcher != "*" and tool_name not in matcher.split("|"):
+        # A row declares the tool it guards in Claude's words — that is what the
+        # library ships. Knowing this surface's own names is the surface's job.
+        if tool and not matches_claude_hook(str(matcher), tool):
             continue
 
         budget = _hook_timeout()
@@ -216,7 +265,7 @@ def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) ->
                 start_new_session=True,
             ) as running:
                 try:
-                    said, complained = running.communicate(input=stdin_data, timeout=budget)
+                    said, complained = running.communicate(input=spoken, timeout=budget)
                 except subprocess.TimeoutExpired:
                     _kill_group(running)
                     # BROKE, not refuse (ADR-0020 D2): a killed hook never
@@ -229,7 +278,7 @@ def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) ->
                 code = running.returncode
 
             if said:
-                sys.stdout.write(said)
+                sys.stdout.write(_answered(said, payload))
             if complained:
                 sys.stderr.write(complained)
 

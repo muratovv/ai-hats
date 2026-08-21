@@ -57,9 +57,18 @@ def test_entering_an_existing_worktree_is_denied_naming_the_path():
 
 
 def test_the_agy_payload_shape_is_denied_too():
-    """Non-Claude surfaces deliver the arguments under toolCall.args."""
-    out = _decide({"toolCall": {"name": "EnterWorktree", "args": {"path": "/tmp/wt-7"}}})
+    """Non-Claude surfaces deliver the arguments under toolCall.args — and the
+    SURFACE translates before the script is spawned (HATS-1776).
 
+    Driven through the bridge on purpose: the script's own dual reading is gone,
+    because two readings of one payload are two truths. What must still hold is
+    the chain — an agy-shaped call reaches the same verdict as a Claude one.
+    """
+    from ai_hats_agy.claude_hook_adapter import to_claude_payload
+
+    out = _decide(
+        to_claude_payload({"toolCall": {"name": "EnterWorktree", "args": {"path": "/tmp/wt-7"}}})
+    )
     assert out["permissionDecision"] == "deny"
     assert "cd /tmp/wt-7" in out["permissionDecisionReason"]
 

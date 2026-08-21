@@ -157,12 +157,10 @@ def _is_plan_document(rel: tuple[str, ...]) -> bool:
 
 
 def _target_path(payload: dict) -> str:
-    # Claude Code sends arguments in `tool_input`; Agy (Antigravity CLI) in
-    # `toolCall.args`. Both are checked so the hook binds on either surface.
-    tool_input = payload.get("tool_input")
-    if not tool_input:
-        tool_input = (payload.get("toolCall") or {}).get("args") or {}
-    for key in ("file_path", "path", "target_file", "TargetFile", "AbsolutePath"):
+    # One dialect: the surface's bridge translates before spawning this
+    # (`ai_hats_agy.claude_hook_adapter`, HATS-1776).
+    tool_input = payload.get("tool_input") or {}
+    for key in ("file_path", "path"):
         value = tool_input.get(key)
         if value:
             return str(value)
