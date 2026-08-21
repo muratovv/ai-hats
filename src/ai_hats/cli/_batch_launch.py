@@ -17,7 +17,15 @@ import click
 
 from ai_hats_observe.artifacts import METRICS_JSON
 from ai_hats_wt import IsolationMode
-from ..pipeline import PipelineId, PipelineOutcome, RoleSessionRequest, launch
+from ..pipeline import (
+    Automate,
+    PipelineResult,
+    RoleParams,
+    RunParams,
+    SessionParams,
+    run_pipeline,
+)
+from ..pipeline_catalog import EXECUTE
 from ._helpers import console
 
 
@@ -44,36 +52,39 @@ def run_batch(
 
     # HATS-1228: the seam's typed errors (unknown role / unknown provider / no
     # provider) render at the root group — cli/_helpers.dispatch_friendly_error.
-    with launch(PipelineId.EXECUTE, project_dir) as session:
-        outcome = session.run(
-            RoleSessionRequest(
-                role=role,
-                project_dir=project_dir,
-                interactive=False,
-                prompt_path=session.materialize_prompt(task),
-                model=model,
-                isolation=isolation,
-                ticket=ticket,
-                tags=tags,
+    result = run_pipeline(
+        EXECUTE,
+        RunParams(
+            role=RoleParams(
+                name=role,
                 composition=build_composition_payload(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
                     interactive=False,
                 ),
+            ),
+            session=SessionParams(
+                project_dir=project_dir,
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
-                session_mgr=make_session_manager(project_dir),
+                manager=make_session_manager(project_dir),
                 tracer_factory=SidecarTracer,
-            )
-        )
+                tags=tags,
+                ticket=ticket,
+                isolation=isolation,
+            ),
+            harness=Automate(prompt=task, model=model),
+        ),
+    )
 
-    _report(outcome, as_json=as_json)
+    _report(result, as_json=as_json)
 
 
-def _report(outcome: PipelineOutcome, *, as_json: bool) -> NoReturn:
+def _report(result: PipelineResult, *, as_json: bool) -> NoReturn:
     """Print the session summary (or its JSON) and exit with the agent's code."""
-    session_id, session_dir = outcome.require_session()
+    session = result.require_session()
+    session_id, session_dir = session.id, session.dir
     metrics_path = session_dir / METRICS_JSON
     metrics: dict = {}
     if metrics_path.exists():
@@ -93,4 +104,4 @@ def _report(outcome: PipelineOutcome, *, as_json: bool) -> NoReturn:
         console.print(f"[green]Sub-agent completed[/]: {session_id}")
         console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(outcome.exit_code_or(int(metrics.get("exit_code", 1))))
+    sys.exit(result.exit_code_or(int(metrics.get("exit_code", 1))))

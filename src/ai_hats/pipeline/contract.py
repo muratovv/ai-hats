@@ -1,117 +1,150 @@
-"""Public contract of the pipeline area: what a caller names, and what it reads back.
+"""Public contract of the pipeline area: run a materialized pipeline config.
 
-Import-light on purpose — an enum, two dataclasses and the funnel mapping. Naming a
-pipeline must not cost the YAML loader and the step registry: those live behind
-``launch`` (HATS-1783).
+The area knows how to run step1 -> ... -> stepN and nothing about who runs what:
+which pipelines exist is the application's catalog, not this module's enum
+(ADR-0026 D14). Import-light on purpose — dataclasses and the funnel mapping only;
+``run_pipeline`` pulls the harness inside its body (HATS-1783).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from . import keys as _keys
 
 
-class PipelineId(str, Enum):
-    """The core pipelines a caller may launch."""
+@dataclass(frozen=True)
+class PipelineConfig:
+    """Which pipeline to run — the materialized ``pipeline.yaml``."""
 
-    HUMAN = _keys.PIPELINE_HUMAN
-    EXECUTE = _keys.PIPELINE_EXECUTE
-    INIT = _keys.PIPELINE_INIT
-    FINALIZE_HITL = _keys.PIPELINE_FINALIZE_HITL
-    FINALIZE_SUBAGENT = _keys.PIPELINE_FINALIZE_SUBAGENT
-    REFLECT_SESSION = _keys.PIPELINE_REFLECT_SESSION
-    REFLECT_ALL = _keys.PIPELINE_REFLECT_ALL
-    REFLECT_HYPOTHESIS_PHASE1 = _keys.PIPELINE_REFLECT_HYPOTHESIS_PHASE1
-    REFLECT_HYPOTHESIS_PHASE2 = _keys.PIPELINE_REFLECT_HYPOTHESIS_PHASE2
-    REFLECT_ROLE = _keys.PIPELINE_REFLECT_ROLE
-    REFLECT_ISSUE = _keys.PIPELINE_REFLECT_ISSUE
+    name: str
 
 
 @dataclass(frozen=True)
-class RoleSessionRequest:
-    """Launch a composed role in a provider session.
+class RoleParams:
+    """The materialized role. ``composition`` is opaque here: the steps read it."""
 
-    ``composition`` / ``session_mgr`` / ``tracer_factory`` are typed ``object``: the
-    area carries them to the steps and never reads them.
+    name: str
+    composition: object
+
+
+@dataclass(frozen=True)
+class SessionParams:
+    """The session the run belongs to: where it happens and how it is recorded."""
+
+    project_dir: Path
+    manager: object
+    tracer_factory: object
+    tags: Mapping[str, str] | None = None
+    ticket: str = ""
+    isolation: str = ""
+
+
+@dataclass(frozen=True)
+class HarnessParams:
+    """How the harness is launched. The branch is the type, never a flag."""
+
+    prompt: str | None = None
+    model: str = ""
+
+
+@dataclass(frozen=True)
+class Hitl(HarnessParams):
+    """Human-in-the-loop: the provider CLI takes over the terminal.
+
+    ``extra_args`` lives here and only here — the Automate branch drops them
+    (``steps/launch.py``), so on that branch the field must not be expressible.
     """
 
-    role: str
-    project_dir: Path
-    composition: object
-    session_mgr: object
-    tracer_factory: object
-    interactive: bool = False
-    prompt_path: Path | None = None
-    model: str = ""
-    isolation: str = ""
-    ticket: str = ""
-    tags: Mapping[str, str] | None = None
-    extra_args: tuple[str, ...] | None = None
+    extra_args: tuple[str, ...] = ()
 
-    def to_state(self) -> dict[str, Any]:
+
+@dataclass(frozen=True)
+class Automate(HarnessParams):
+    """Non-interactive: a captured subprocess, reported when it exits."""
+
+
+@dataclass(frozen=True)
+class RunParams:
+    """Everything about this run, and nothing about which pipeline it is."""
+
+    role: RoleParams
+    session: SessionParams
+    harness: HarnessParams = field(default_factory=Automate)
+
+    def to_state(self, *, materialize_prompt: Callable[[str | None], Path | None]) -> dict[str, Any]:
+        harness = self.harness
         state: dict[str, Any] = {
-            _keys.KEY_ROLE: self.role,
-            _keys.KEY_INTERACTIVE: self.interactive,
-            _keys.KEY_PROJECT_DIR: self.project_dir,
-            _keys.KEY_PROMPT_PATH: self.prompt_path,
-            _keys.KEY_MODEL: self.model,
-            _keys.KEY_ISOLATION: self.isolation,
-            _keys.KEY_TICKET: self.ticket,
-            _keys.KEY_TAGS: dict(self.tags) if self.tags else None,
-            _keys.KEY_COMPOSITION: self.composition,
-            _keys.KEY_SESSION_MGR: self.session_mgr,
-            _keys.KEY_TRACER_FACTORY: self.tracer_factory,
+            _keys.KEY_ROLE: self.role.name,
+            _keys.KEY_COMPOSITION: self.role.composition,
+            _keys.KEY_PROJECT_DIR: self.session.project_dir,
+            _keys.KEY_SESSION_MGR: self.session.manager,
+            _keys.KEY_TRACER_FACTORY: self.session.tracer_factory,
+            _keys.KEY_TAGS: dict(self.session.tags) if self.session.tags else None,
+            _keys.KEY_TICKET: self.session.ticket,
+            _keys.KEY_ISOLATION: self.session.isolation,
+            _keys.KEY_INTERACTIVE: isinstance(harness, Hitl),
+            _keys.KEY_MODEL: harness.model,
+            _keys.KEY_PROMPT_PATH: materialize_prompt(harness.prompt),
         }
-        # None means "not seeded" (ADR-0005 §3): the Automate path never offered
-        # extra_args, and seeding an empty list there would invent a value.
-        if self.extra_args is not None:
-            state[_keys.KEY_EXTRA_ARGS] = list(self.extra_args)
+        if isinstance(harness, Hitl):
+            state[_keys.KEY_EXTRA_ARGS] = list(harness.extra_args)
         return state
 
 
 @dataclass(frozen=True)
-class PipelineOutcome:
-    """What a caller reads back; an absent value stays ``None``, per the funnel rule."""
+class SessionRef:
+    """The session a run produced: its identity and where its artefacts landed."""
+
+    id: str
+    dir: Path
+    provider_session_id: str | None = None
+
+
+@dataclass(frozen=True)
+class PipelineResult:
+    """What the run produced and what went wrong on the way."""
 
     exit_code: int | None = None
-    session_id: str | None = None
-    session_dir: Path | None = None
+    session: SessionRef | None = None
+    errors: tuple[str, ...] = ()
 
     @classmethod
-    def from_state(cls, state: Mapping[str, Any]) -> "PipelineOutcome":
+    def from_state(cls, state: Mapping[str, Any]) -> "PipelineResult":
         code = state.get(_keys.KEY_EXIT_CODE)
+        session_id = state.get(_keys.KEY_SESSION_ID)
+        session_dir = state.get(_keys.KEY_SESSION_DIR)
+        session = (
+            SessionRef(
+                id=session_id,
+                dir=session_dir,
+                provider_session_id=state.get(_keys.KEY_CLAUDE_SESSION_ID),
+            )
+            if session_id is not None and session_dir is not None
+            else None
+        )
         return cls(
             exit_code=None if code is None else int(code),
-            session_id=state.get(_keys.KEY_SESSION_ID),
-            session_dir=state.get(_keys.KEY_SESSION_DIR),
+            session=session,
+            errors=tuple(state.get(_keys.KEY_ERRORS) or ()),
         )
 
     def exit_code_or(self, default: int) -> int:
         return default if self.exit_code is None else self.exit_code
 
-    def require_session(self) -> tuple[str, Path]:
-        """Session identity, or the loud failure the report used to get from ``final[…]``."""
-        if self.session_id is None or self.session_dir is None:
+    def require_session(self) -> SessionRef:
+        """The session, or the loud failure ``final[KEY_SESSION_ID]`` used to raise."""
+        if self.session is None:
             raise KeyError("pipeline produced no session_id / session_dir")
-        return self.session_id, self.session_dir
+        return self.session
 
 
-class PipelineSession:
-    """One launched pipeline: its scratch space and its dispatch."""
+def run_pipeline(config: PipelineConfig, params: RunParams) -> PipelineResult:
+    """Run the configured pipeline: user steps, per-session namespace, GC, tracing."""
+    from .harness import PipelineHarness  # deferred: costs ~160 ms of import at startup
 
-    def __init__(self, harness: Any) -> None:
-        self._harness = harness
-
-    @property
-    def scratch_dir(self) -> Path:
-        return self._harness.namespace
-
-    def materialize_prompt(self, text: str | None) -> Path | None:
-        return self._harness.materialize_prompt(text)
-
-    def run(self, request: RoleSessionRequest) -> PipelineOutcome:
-        return PipelineOutcome.from_state(self._harness.run(request.to_state()))
+    with PipelineHarness(config.name, params.session.project_dir) as harness:
+        state = params.to_state(materialize_prompt=harness.materialize_prompt)
+        return PipelineResult.from_state(harness.run(state))

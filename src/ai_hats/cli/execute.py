@@ -25,7 +25,8 @@ import click
 from click.core import ParameterSource
 
 from ai_hats_wt import IsolationMode
-from ..pipeline import PipelineId, RoleSessionRequest, launch
+from ..pipeline import Hitl, RoleParams, RunParams, SessionParams, run_pipeline
+from ..pipeline_catalog import EXECUTE
 from ._helpers import _project_dir
 
 
@@ -207,32 +208,30 @@ def execute_cmd(
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
-    with launch(PipelineId.EXECUTE, project_dir) as session:
-        # Prompt is materialized to a file because the request takes a Path: the
-        # resolve_prompt step reads it, and launch_provider prepends the text to
-        # extra_args on the interactive branch.
-        outcome = session.run(
-            RoleSessionRequest(
-                role=role,
-                project_dir=project_dir,
-                interactive=True,
-                prompt_path=session.materialize_prompt(prompt_text),
-                model=model,
-                isolation=isolation,
-                ticket=ticket,
-                tags=tags,
-                extra_args=tuple(extra_args),
+    result = run_pipeline(
+        EXECUTE,
+        RunParams(
+            role=RoleParams(
+                name=role,
                 composition=build_composition_payload(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
                     interactive=True,
                 ),
+            ),
+            session=SessionParams(
+                project_dir=project_dir,
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
-                session_mgr=make_session_manager(project_dir),
+                manager=make_session_manager(project_dir),
                 tracer_factory=SidecarTracer,
-            )
-        )
+                tags=tags,
+                ticket=ticket,
+                isolation=isolation,
+            ),
+            harness=Hitl(prompt=prompt_text, extra_args=tuple(extra_args), model=model),
+        ),
+    )
 
-    sys.exit(outcome.exit_code_or(1))
+    sys.exit(result.exit_code_or(1))

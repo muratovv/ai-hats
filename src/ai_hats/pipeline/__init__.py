@@ -1,55 +1,47 @@
 """Typed dataflow pipeline runtime per ADR-0001; the area's only entrance (ADR-0026 D14).
 
-Two audiences: callers launch a pipeline (``launch``, ``PipelineId``, the request and
-outcome types), step authors compose one (``Step`` / ``StepIO`` / ``Pipeline`` /
+Two audiences: callers run a configured pipeline (``run_pipeline`` and the params /
+result types), step authors compose one (``Step`` / ``StepIO`` / ``Pipeline`` /
 ``build`` / ``run`` / ``CancelToken``). Everything else here is internal — the funnel
 vocabulary and the harness included.
 """
 
-from contextlib import contextmanager
-from pathlib import Path
-from typing import Iterator
-
 from .cancel import CancelReason, CancelToken
 from .contract import (
-    PipelineId,
-    PipelineOutcome,
-    PipelineSession,
-    RoleSessionRequest,
+    Automate,
+    HarnessParams,
+    Hitl,
+    PipelineConfig,
+    PipelineResult,
+    RoleParams,
+    RunParams,
+    SessionParams,
+    SessionRef,
+    run_pipeline,
 )
 from .pipeline import BuildError, Pipeline, PipelineCancelled, build, run
 from .step import FailurePolicy, Step, StepError, StepIO
 
-
-@contextmanager
-def launch(
-    pipeline_id: PipelineId,
-    project_dir: Path,
-    *,
-    session_id: str | None = None,
-) -> Iterator[PipelineSession]:
-    """Run one core pipeline: per-session namespace, GC, trace wiring, user steps."""
-    from .harness import PipelineHarness  # deferred: costs ~160 ms of import at startup
-
-    with PipelineHarness(pipeline_id.value, project_dir, session_id=session_id) as harness:
-        yield PipelineSession(harness)
-
-
 __all__ = [
+    "Automate",
     "BuildError",
     "CancelReason",
     "CancelToken",
     "FailurePolicy",
+    "HarnessParams",
+    "Hitl",
     "Pipeline",
     "PipelineCancelled",
-    "PipelineId",
-    "PipelineOutcome",
-    "PipelineSession",
-    "RoleSessionRequest",
+    "PipelineConfig",
+    "PipelineResult",
+    "RoleParams",
+    "RunParams",
+    "SessionParams",
+    "SessionRef",
     "Step",
     "StepError",
     "StepIO",
     "build",
-    "launch",
     "run",
+    "run_pipeline",
 ]
