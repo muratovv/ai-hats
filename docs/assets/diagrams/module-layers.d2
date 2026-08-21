@@ -2,110 +2,92 @@ vars: @./_palette
 
 direction: down
 
-# Целевая иерархия модулей, ред. 2 (2026-08-20) — после состязательной проверки
-# и правок супервизора #1..#8. Стрелка вниз читается как «зависит от».
-# Оранжевым — то, чего в исходной модели не было или что требует работы.
+# Целевая иерархия модулей, ред. 3 (2026-08-21) — приведена в соответствие
+# с обратной таблицей «модуль → способности» в ADR-0026 D3.
+# Один узел = один целевой модуль. Стрелка вниз = «зависит от».
+# Оранжевым — модуль, которого сегодня НЕ существует, или незакрытая развилка.
 
-legend: ЛЕГЕНДА\nсплошная X → Y: X зависит от Y (импорт или зависимость пакета)\nпунктир: поиск во время выполнения — зависимостью НЕ является\nоранжевое: узел или ребро, требующее работы {
+legend: ЛЕГЕНДА\nсплошная X → Y: X зависит от Y\nпунктир: поиск во время выполнения — зависимостью НЕ является\nоранжевое: модуля нет или развилка не закрыта {
   shape: page
   style.fill: "#ebeef4"
   style.stroke: "#a2acbf"
 }
 
-surfaces: Поверхности\nclaude · agy · cline · codex\nреализуют порт, объявляют зависимость на ai-hats {
+ui: UI — только вход\nC18 сток логирования у корня композиции: сегодня НЕ настроен
+init: init (C17) — конфигурация проекта\nвладеет ai-hats.yaml и его schema_version {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+install: install (C14) — интерпретатор и починка\n_bootstrap под линтом чистоты {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+channel: channel (C11) — канал обновлений {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+project: Project (C1) — СПИНА\nсобирается раз на точке входа, все ниже получают {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+pipeline: pipeline (C9) — механизм\nreflection живёт ПОВЕРХ как прикладной workflow
+runtime: runtime (C19) — исполнение сессии\nзапуск HITL и non-HITL · PTY · сигналы · порт Workspace
+observe: observe (C12) — наблюдаемость\nсвёрнут внутрь ai-hats
+surfaces: поверхности (C8) — ВНУТРИ ai-hats\nclaude · agy · cline · codex\nчужие остаются снаружи через entry points {
   style.fill: "#f5e8d0"
   style.stroke: "#c9bba0"
 }
-
-ui: UI — только вход\nдальше просто использует зависимости
-
-init: init (C17) — КОНФИГУРАЦИЯ ПРОЕКТА\nвладеет тем, КУДА пишутся конфиги ai-hats\nи кто их пишет: ai-hats.yaml, .agent/\nсегодня запись из 3 мест, чтение из 6 {
+composition: composition (C4) — производит ЗНАЧЕНИЕ\nстрелочная нотация
+mat: materialization (C3) — контракт записи и УЧЁТА\nне файловый шлюз: пишет владелец поддерева
+hooks: hooks (C2) — вердикт из каждого канала {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+reclaim: reclaim (C15) — механизм сверки\nполитика истечения у владельца артефакта {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+reporting: reporting (C20) — «как меня чинить»\nконтракт уже в core/recovery.py
+locks: locks (C5 + C13) — РАЗВИЛКА НЕ ЗАКРЫТА\nздесь или в core {
   style.fill: "#e8632b"
   style.font-color: "#faf2e6"
   style.stroke: "#b54818"
 }
 
-install: install (C14) — ИНТЕРПРЕТАТОР И ПОЧИНКА\nтри бутстрапа, не могущие разделить код:\nai-hats-launcher · _bootstrap.py · dispatcher.sh {
+deps: deps — дистрибуции\nrack (C7) · wt · library (C10)
+core: ai-hats-core — ФУНДАМЕНТ\nC6 словарь идентичности — НЕ ХВАТАЕТ\nC13 deadline · C16 механизм обратимости {
   style.fill: "#e8632b"
   style.font-color: "#faf2e6"
   style.stroke: "#b54818"
 }
-
-project: Project (C1) — ЗНАЧЕНИЕ-СПИНА\nсобирается один раз на точке входа\nвсе ниже ПОЛУЧАЮТ его {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-  style.stroke: "#b54818"
-}
-
-channel: channel / update_policy (C11)\nсобственный узел — не reporting {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-}
-
-identity: session identity (C6)\nчитают процессы БЕЗ runtime:\ngit-хук · rack transition · wt merge {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-}
-
-locks: бюджеты и замки (C5 + C13)\nвладельца нет: 6 семейств замков,\n5 источников таймаута {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-}
-
-pipelines: pipeline_executor (C9) — МЕХАНИЗМ\nreflection — доменный workflow, отдельно
-runtime: runtime — запуск сессий\nвладеет портом Provider («что звать и как»)
-observability: observability (C12)\nsession_log · аудит · транскрипты
-reporting: reporting + doctor\nинтерфейс «как меня чинить»
-mat: материализация (C3)\n+ композиция (C4) · стрелочная нотация
-
-glue: КЛЕЙ К DEPS — ДОМА НЕТ, ~2000 строк\nrack_wiring · rack_consumers · wt_effects\nwt_lifecycle · wt_carry · tracker_wiring\nцель: растворить в портах A–D {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-  style.stroke: "#b54818"
-}
-
-deps: deps\nrack · wt · library (внутри неё движок consent)\nне импортируют ai_hats {
-  style.fill: "#bac4d8"
-}
-
-core: ai-hats-core — ФУНДАМЕНТ\nядро ~370 строк: atomic_io · locks · deadline\ngit_env · migrations · yaml_model · recovery\nНЕ хватает: словарь идентичности сессии {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-  style.stroke: "#b54818"
-}
-
-ci: общий CI\nодин гейт на все дистрибуции {
-  shape: page
-  style.fill: "#f5e8d0"
-  style.stroke: "#c9bba0"
-}
-
-surfaces -> runtime: реализуют порт Provider
-runtime -> surfaces: находит реализации\nчерез реестр entry-points {style.stroke-dash: 4; style.stroke: "#e8632b"}
 
 ui -> init
-init -> project: пишет конфиг, из которого\nсобирается значение
-ui -> pipelines
-pipelines -> runtime: вправе использовать,\nне переписывать
-runtime -> observability
-runtime -> mat
-runtime -> glue: цель — обнулить {style.stroke: "#e8632b"}
-reporting -> core
-channel -> core
-identity -> core
-locks -> core
-project -> core
+ui -> pipeline
+init -> project
+install -> project
 install -> channel
 reporting -> channel
-runtime -> identity
+pipeline -> runtime: вправе использовать,\nне переписывать
+runtime -> surfaces: узкие порты
+surfaces -> runtime: чужие — снаружи {style.stroke-dash: 4; style.stroke: "#e8632b"}
+runtime -> mat
+runtime -> hooks
+runtime -> observe
 runtime -> locks
+mat -> composition
 mat -> locks
-install -> project
-observability -> core
 mat -> deps: ТОЛЬКО хуки из library,\nне весь rack и wt {style.stroke: "#e8632b"}
-glue -> deps
+reclaim -> observe
+composition -> deps
+project -> core
+composition -> core
 mat -> core
+hooks -> core
+observe -> core
+reclaim -> core
+reporting -> core
+locks -> core
 deps -> core: rack и library сегодня\nНЕ зависят от core {style.stroke: "#e8632b"}
-glue -> core
-ui -> project: значение нужно до всякого UI
-ci -> deps: гоняет всё дерево {style.stroke-dash: 4}
+ui -> project
