@@ -35,9 +35,7 @@ def _snapshot_non_agent_files(project: Path) -> dict[str, str]:
     return snapshot
 
 
-def test_cline_hitl_runs_composed_pretooluse_chain(
-    tmp_path: Path, shared_launcher
-) -> None:
+def test_cline_hitl_runs_composed_pretooluse_chain(tmp_path: Path, shared_launcher) -> None:
     launcher, base_env, _venv = shared_launcher
     project = tmp_path / "project"
     project.mkdir()
@@ -48,9 +46,7 @@ def test_cline_hitl_runs_composed_pretooluse_chain(
     env["HOME"] = str(tmp_path / "home")
     env["AI_HATS_CACHE_HOME"] = str(tmp_path / "cache")
     env["AI_HATS_NO_UPDATE_CHECK"] = "1"
-    surface_venv = install_cline_surface_venv(
-        build_src(REPO_ROOT), tmp_path / "cline-venv", env
-    )
+    surface_venv = install_cline_surface_venv(build_src(REPO_ROOT), tmp_path / "cline-venv", env)
     env["AI_HATS_VENV"] = str(surface_venv)
 
     initialized = subprocess.run(  # noqa: S603 - fixture provides the installed launcher

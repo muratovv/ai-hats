@@ -50,7 +50,9 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
             f"session identity mismatch: env={session_id!r}, manifest={identity.get('id')!r}"
         )
     manifest_hats_dir = identity.get("ai_hats_dir")
-    if not isinstance(manifest_hats_dir, str) or _resolved(manifest_hats_dir) != _resolved(hats_dir):
+    if not isinstance(manifest_hats_dir, str) or _resolved(manifest_hats_dir) != _resolved(
+        hats_dir
+    ):
         raise _ManifestError("manifest AI_HATS_DIR does not match the launcher")
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
@@ -163,8 +165,7 @@ def dispatch_hook(event: str, *, stdin=None) -> int:
             command = entry.get("command")
             if not isinstance(command, str) or not command:
                 sys.stderr.write(
-                    "ai-hats-cline-hook: malformed hook entry: "
-                    f"{entry.get('tag', '<untagged>')}\n"
+                    f"ai-hats-cline-hook: malformed hook entry: {entry.get('tag', '<untagged>')}\n"
                 )
                 continue
             raw = _run(command, adapted)
@@ -184,8 +185,7 @@ def dispatch_hook(event: str, *, stdin=None) -> int:
                 _emit(
                     {
                         "cancel": True,
-                        "errorMessage": reason
-                        or f"blocked by {entry.get('tag', command)}",
+                        "errorMessage": reason or f"blocked by {entry.get('tag', command)}",
                     }
                 )
                 return 0

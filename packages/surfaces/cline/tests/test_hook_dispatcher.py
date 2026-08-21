@@ -88,9 +88,9 @@ def test_pretooluse_deny_cancels_cline_tool_call(tmp_path: Path, monkeypatch, ca
     hook = _script(
         tmp_path / "deny.sh",
         "printf '%s\\n' "
-        "'{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\","
-        "\"permissionDecision\":\"deny\","
-        "\"permissionDecisionReason\":\"blocked by policy\"}}'\n",
+        '\'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"permissionDecision":"deny",'
+        '"permissionDecisionReason":"blocked by policy"}}\'\n',
     )
     cache = tmp_path / "cache"
     _manifest(cache, hook)
@@ -120,10 +120,10 @@ def test_pretooluse_ask_cancels_without_applying_updated_input(
     hook = _script(
         tmp_path / "ask.sh",
         "printf '%s\\n' "
-        "'{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\","
-        "\"permissionDecision\":\"ask\","
-        "\"permissionDecisionReason\":\"consent required\","
-        "\"updatedInput\":{\"command\":\"AI_HATS_CONSENT_ACK=1 dangerous\"}}}'\n",
+        '\'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"permissionDecision":"ask",'
+        '"permissionDecisionReason":"consent required",'
+        '"updatedInput":{"command":"AI_HATS_CONSENT_ACK=1 dangerous"}}}\'\n',
     )
     cache = tmp_path / "cache"
     _manifest(cache, hook)
@@ -156,8 +156,8 @@ def test_additional_context_becomes_cline_context_modification(
     hook = _script(
         tmp_path / "context.sh",
         "printf '%s\\n' "
-        "'{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\","
-        "\"additionalContext\":\"remember this\"}}'\n",
+        '\'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"additionalContext":"remember this"}}\'\n',
     )
     cache = tmp_path / "cache"
     _manifest(cache, hook)
@@ -335,9 +335,7 @@ def test_hook_timeout_is_reported_and_fails_open(tmp_path: Path, monkeypatch, ca
     assert "hook timed out" in captured.err
 
 
-def test_unstartable_hook_is_reported_and_fails_open(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_unstartable_hook_is_reported_and_fails_open(tmp_path: Path, monkeypatch, capsys) -> None:
     hook = _script(tmp_path / "hook.sh", "exit 0\n")
     cache = tmp_path / "cache"
     _manifest(cache, hook)
