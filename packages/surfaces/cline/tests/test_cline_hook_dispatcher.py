@@ -49,6 +49,22 @@ def _set_session_env(monkeypatch, cache: Path) -> None:
     monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(cache))
 
 
+def _append_manifest_hook(cache: Path, script: Path, *, skill_name: str) -> None:
+    mirrored = cache / "skills" / skill_name / "hooks" / script.name
+    mirrored.parent.mkdir(parents=True)
+    shutil.copy2(script, mirrored)
+    manifest_path = cache / "hooks.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["hooks"]["PreToolUse"].append(
+        {
+            "matcher": "Bash",
+            "command": str(mirrored),
+            "tag": f"ai-hats:{skill_name}:PreToolUse:test",
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest))
+
+
 def test_run_commands_payload_reaches_bash_hook_and_allows(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -110,6 +126,39 @@ def test_pretooluse_deny_cancels_cline_tool_call(tmp_path: Path, monkeypatch, ca
     assert json.loads(captured.out) == {
         "cancel": True,
         "errorMessage": "blocked by policy",
+    }
+
+
+def test_later_allow_cannot_override_earlier_deny(tmp_path: Path, monkeypatch, capsys) -> None:
+    deny = _script(
+        tmp_path / "deny.sh",
+        "printf '%s\\n' "
+        '\'{"hookSpecificOutput":{"permissionDecision":"deny",'
+        '"permissionDecisionReason":"first refusal"}}\'\n',
+    )
+    allow = _script(
+        tmp_path / "allow.sh",
+        'printf \'%s\\n\' \'{"hookSpecificOutput":{"permissionDecision":"allow"}}\'\n',
+    )
+    cache = tmp_path / "cache"
+    _manifest(cache, deny)
+    _append_manifest_hook(cache, allow, skill_name="later-allow")
+    _set_session_env(monkeypatch, cache)
+    payload = {
+        "preToolUse": {
+            "toolName": "run_commands",
+            "parameters": {"commands": ["dangerous"]},
+        },
+        "workspaceRoots": [str(tmp_path)],
+    }
+
+    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)))
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    assert json.loads(captured.out) == {
+        "cancel": True,
+        "errorMessage": "first refusal",
     }
 
 

@@ -220,6 +220,20 @@ def test_build_session_prompt_delivers_composed_runtime_hooks(tmp_path, monkeypa
     assert not (tmp_path / ".cline").exists()
 
 
+def test_automate_materialization_delivers_composed_runtime_hooks(tmp_path) -> None:
+    skill = _make_runtime_hook_skill(tmp_path)
+
+    args = ClineProvider().materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill]), "sid-automate-hooks"
+    )
+
+    cache = session_cache_dir(tmp_path, "sid-automate-hooks")
+    assert args == ["--config", str(cache), "--hooks-dir", str(cache / "hooks")]
+    assert (cache / "hooks.json").is_file()
+    assert (cache / "hooks" / "PreToolUse").is_file()
+    assert not (tmp_path / ".cline").exists()
+
+
 def test_build_session_prompt_config_is_session_scoped(tmp_path) -> None:
     args_a, _, _ = ClineProvider().build_session_prompt(tmp_path, _fake_result(), "sid-a")
     args_b, _, _ = ClineProvider().build_session_prompt(tmp_path, _fake_result(), "sid-b")

@@ -75,5 +75,17 @@ def test_cline_hitl_runs_composed_pretooluse_chain(tmp_path: Path, shared_launch
     assert any("safety-guard" in tag for tag in capture["pretooluse_tags"])
     assert capture["hook_output"]["cancel"] is True
     assert "cannot ask for permission" in capture["hook_output"]["errorMessage"]
+
+    safe_launched, safe_capture = run_cline_hook_session(
+        launcher,
+        project,
+        env,
+        tmp_path / "safe-driver",
+        command="echo safe",
+    )
+
+    assert safe_launched.returncode == 0, safe_launched.stdout + safe_launched.stderr
+    assert safe_capture["hook_returncode"] == 0, safe_capture["hook_stderr"]
+    assert safe_capture["hook_output"] == {"cancel": False}
     assert _snapshot_non_agent_files(project) == before
     assert not (project / ".cline").exists()
