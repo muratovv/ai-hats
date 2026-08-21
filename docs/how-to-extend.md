@@ -226,6 +226,21 @@ ai_hats:
 ---
 ```
 
+**Name the tool in Claude's vocabulary, always.** `matcher: Bash`,
+`matcher: Edit|Write|MultiEdit` — even for a project that runs on another
+surface. Each surface knows its own names and translates at spawn: agy calls the
+terminal tool `run_command` and spells its argument `CommandLine`, Codex calls
+the editor `apply_patch`, and `<surface>/claude_hook_adapter.py` maps both the
+name and the payload before your script ever runs. Enumerating other surfaces'
+names in your `matcher` is not needed and does not help — a row that says
+`Bash|run_command` guards exactly what `Bash` already guarded (HATS-1776).
+
+Your script therefore reads ONE dialect: `tool_input.command`,
+`tool_input.file_path`, `tool_name`. Do not add a second reading for
+`toolCall.args` or `CommandLine` — four shipped hooks used to carry one each,
+no two spelled alike, and two other hooks carried none and silently allowed
+whatever they could not parse.
+
 The `ai_hats:` key is framework wiring only — never prose — and sits at the
 frontmatter top level, not under the Agent-Skills `metadata:` field (a flat
 string map that rejects nested values). A leftover `metadata.yaml` carrying

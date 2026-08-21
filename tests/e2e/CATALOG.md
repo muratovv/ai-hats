@@ -116,6 +116,20 @@ as a claim to check, not as evidence.
 - **expect** — runtime hooks defined in settings.json execute during headless tool invocation
 - **why** — without headless hook execution, safety and quality gates fail to run in non-HITL batch runs
 
+## `test_agy_hook_chain.py`
+
+*pins HATS-1776*
+
+- **flow** — an agent on the agy surface running a shell command past the composed guards
+- **cmds**
+
+  ```console
+  python -m ai_hats_agy.hook_dispatcher PreToolUse   # what agy's global hook runs
+  ```
+
+- **expect** — the whole composed PreToolUse chain fires on agy's own tool and argument names, and refuses what it refuses on Claude
+- **why** — the chain was only ever driven on the Claude road, so two shipped guards — the shared-state backstop among them — were installed on agy and never invoked once, and nothing went red
+
 ## `test_agy_hook_manifest_vanished.py`
 
 *pins HATS-1339*
