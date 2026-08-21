@@ -19,10 +19,10 @@ from ai_hats_observe.artifacts import METRICS_JSON
 from ai_hats_wt import IsolationMode
 from ..pipeline import (
     Automate,
+    MaterializedRole,
     PipelineResult,
-    RoleParams,
     RunParams,
-    SessionParams,
+    SessionRecording,
     run_pipeline,
 )
 from ..pipeline_catalog import EXECUTE
@@ -55,7 +55,8 @@ def run_batch(
     result = run_pipeline(
         EXECUTE,
         RunParams(
-            role=RoleParams(
+            project_dir=project_dir,
+            role=MaterializedRole(
                 name=role,
                 composition=build_composition_payload(
                     project_dir,
@@ -64,17 +65,14 @@ def run_batch(
                     interactive=False,
                 ),
             ),
-            session=SessionParams(
-                project_dir=project_dir,
-                # HATS-867: the CLI (integrator) injects the observe writer
-                # handles — runners no longer construct them.
+            # HATS-867: the CLI (integrator) injects the observe writer handles —
+            # runners no longer construct them.
+            recording=SessionRecording(
                 manager=make_session_manager(project_dir),
                 tracer_factory=SidecarTracer,
                 tags=tags,
-                ticket=ticket,
-                isolation=isolation,
             ),
-            harness=Automate(prompt=task, model=model),
+            harness=Automate(prompt=task, model=model, isolation=isolation, ticket=ticket),
         ),
     )
 

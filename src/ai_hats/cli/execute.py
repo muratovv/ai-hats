@@ -25,7 +25,7 @@ import click
 from click.core import ParameterSource
 
 from ai_hats_wt import IsolationMode
-from ..pipeline import Hitl, RoleParams, RunParams, SessionParams, run_pipeline
+from ..pipeline import Hitl, MaterializedRole, RunParams, SessionRecording, run_pipeline
 from ..pipeline_catalog import EXECUTE
 from ._helpers import _project_dir
 
@@ -211,7 +211,8 @@ def execute_cmd(
     result = run_pipeline(
         EXECUTE,
         RunParams(
-            role=RoleParams(
+            project_dir=project_dir,
+            role=MaterializedRole(
                 name=role,
                 composition=build_composition_payload(
                     project_dir,
@@ -220,17 +221,16 @@ def execute_cmd(
                     interactive=True,
                 ),
             ),
-            session=SessionParams(
-                project_dir=project_dir,
-                # HATS-867: the CLI (integrator) injects the observe writer
-                # handles — runners no longer construct them.
+            # HATS-867: the CLI (integrator) injects the observe writer handles —
+            # runners no longer construct them.
+            recording=SessionRecording(
                 manager=make_session_manager(project_dir),
                 tracer_factory=SidecarTracer,
                 tags=tags,
-                ticket=ticket,
-                isolation=isolation,
             ),
-            harness=Hitl(prompt=prompt_text, extra_args=tuple(extra_args), model=model),
+            # model / isolation / ticket are batch-only and already refused here
+            # by _reject_inert_flags, so the HITL branch cannot carry them.
+            harness=Hitl(prompt=prompt_text, extra_args=tuple(extra_args)),
         ),
     )
 
