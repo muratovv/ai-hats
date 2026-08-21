@@ -186,23 +186,11 @@ def main() -> int:
         journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook="wt_gate.py")
         return 0
 
-    # Dual-payload parsing:
-    # Claude Code sends arguments in `tool_input`.
-    # Agy (Antigravity CLI) sends arguments in `toolCall.args`.
-    # We check both to ensure the hook works across both surfaces.
-    tool_input = payload.get("tool_input")
-    if not tool_input:
-        tool_call = payload.get("toolCall") or {}
-        tool_input = tool_call.get("args") or {}
+    # One dialect: the surface's bridge translates before spawning this
+    # (`ai_hats_agy.claude_hook_adapter`, HATS-1776).
+    tool_input = payload.get("tool_input") or {}
 
-    file_path = (
-        tool_input.get("file_path")
-        or tool_input.get("path")
-        or tool_input.get("target_file")
-        or tool_input.get("TargetFile")
-        or tool_input.get("AbsolutePath")
-        or ""
-    )
+    file_path = tool_input.get("file_path") or tool_input.get("path") or ""
     if not file_path:
         return 0
 

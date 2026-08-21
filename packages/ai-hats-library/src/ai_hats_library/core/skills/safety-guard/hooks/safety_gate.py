@@ -818,7 +818,7 @@ def _wrapper_bypass_verdict(cmd: str) -> dict:
     return {}
 
 
-def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
+def consent_ask(cmd: str, tool_input: dict) -> dict:
     """The verdict for a call touching a point the ROLE declared consent on.
 
     Where to ask is not a judgement this hook makes — it reads the role's
@@ -860,7 +860,6 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
         return _ask_for(
             cmd,
             tool_input,
-            cmd_key,
             args,
             anchor,
             ordinal,
@@ -884,7 +883,6 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
         return _ask_for(
             cmd,
             tool_input,
-            cmd_key,
             call,
             anchor,
             ordinal,
@@ -903,7 +901,7 @@ _TICKET_TERMS = (
 )
 
 
-def _ask_for(cmd, tool_input, cmd_key, args, anchor, ordinal, total, label, headline) -> dict:
+def _ask_for(cmd, tool_input, args, anchor, ordinal, total, label, headline) -> dict:
     """Mint the ticket and put it on the call — or refuse, naming the obstacle.
 
     Never ``{}``: the caller only gets here on a point the ROLE declared, and
@@ -918,9 +916,11 @@ def _ask_for(cmd, tool_input, cmd_key, args, anchor, ordinal, total, label, head
         return {
             "permissionDecision": "ask",
             "permissionDecisionReason": f"{headline} {_TICKET_TERMS}",
-            # Answer in the key the surface spoke in: agy says `CommandLine`, and
+            # One key, because one dialect reaches this script: the surface's
+            # own bridge renames it on the way in and on the way back out
+            # (`ai_hats_agy.claude_hook_adapter`, HATS-1776).
             # a rewrite filed under `command` would be dropped in silence.
-            "updatedInput": {**tool_input, cmd_key: rewritten},
+            "updatedInput": {**tool_input, "command": rewritten},
         }
     obstacle, note = _no_question(where, anchor, minted=bool(nonce))
     # The question vanished, and that still has to leave a trace (HATS-1373/1407)
@@ -1059,15 +1059,10 @@ def main() -> int:
         journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook="safety_gate.py")
         return 0
 
-    tool_input = payload.get("tool_input")
-    if not tool_input:
-        tool_call = payload.get("toolCall") or {}
-        tool_input = tool_call.get("args") or {}
-
+    tool_input = payload.get("tool_input") or {}
     # Remember WHICH key carried the command: a rewrite has to answer in the same
     # one, and agy spells it `CommandLine` (HATS-1642 review).
-    cmd_key = "command" if tool_input.get("command") else "CommandLine"
-    cmd = (tool_input.get(cmd_key) or "").strip()
+    cmd = (tool_input.get("command") or "").strip()
     if not cmd:
         return 0
 
@@ -1084,7 +1079,7 @@ def main() -> int:
         return 0
 
     try:
-        decision = consent_ask(cmd, tool_input, cmd_key) or allow_verdict(cmd)
+        decision = consent_ask(cmd, tool_input) or allow_verdict(cmd)
     except Exception as exc:
         # A consent path that touches the filesystem must never take the rest of
         # the gate down with it — `rm`, `mkfs`, `dd` are judged above (HATS-1647).

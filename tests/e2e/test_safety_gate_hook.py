@@ -414,11 +414,19 @@ def test_every_shape_the_agent_types_raises_the_question(command, expected, repo
 
 def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
     """agy spells the Bash argument `CommandLine`. Writing `command` back at it
-    drops the ticket while the prompt claims the command carries one."""
-    payload = {
-        "tool_name": "run_command",
-        "tool_input": {"CommandLine": "rack transition X execute"},
+    drops the ticket while the prompt claims the command carries one.
+
+    Driven through the surface's bridge in both directions (HATS-1776): the gate
+    itself now speaks one dialect, and renaming is the bridge's job. The claim
+    under test is unchanged and is the one HATS-1642 shipped broken — what a
+    ticket looks like by the time it reaches agy.
+    """
+    from ai_hats_agy.claude_hook_adapter import from_claude_decision, to_claude_payload
+
+    spoken = {
+        "toolCall": {"name": "run_command", "args": {"CommandLine": "rack transition X execute"}}
     }
+    payload = to_claude_payload(spoken)
     res = subprocess.run(  # noqa: S603
         [sys.executable, str(HOOK)],
         input=json.dumps(payload),
@@ -433,7 +441,7 @@ def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
             ),
         },
     )
-    out = json.loads(res.stdout)["hookSpecificOutput"]
+    out = from_claude_decision(json.loads(res.stdout), spoken)["hookSpecificOutput"]
 
     assert out["permissionDecision"] == "ask", out
     assert "CommandLine" in out["updatedInput"], out["updatedInput"]

@@ -155,3 +155,108 @@ def test_positive_budget_override_is_honoured(monkeypatch) -> None:
     monkeypatch.setenv("AI_HATS_AGY_HOOK_TIMEOUT_S", "2.5")
 
     assert _hook_timeout() == 2.5
+
+
+# --- the claude bridge, driven through the dispatcher (HATS-1776) -----------
+
+
+def _agy_payload(tool: str = "run_command", command: str = "git push --force") -> str:
+    return json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "toolCall": {"name": tool, "args": {"CommandLine": command}},
+        }
+    )
+
+
+def _recording_hook(tmp_path: Path, *, answers: str = "") -> tuple[Path, Path]:
+    """A hook that writes down the payload it was handed, and optionally answers."""
+    seen = tmp_path / "seen.json"
+    script = tmp_path / "record_hook.sh"
+    body = f"#!/bin/sh\ncat > '{seen}'\n"
+    if answers:
+        body += f"cat <<'HOOK_ANSWER'\n{answers}\nHOOK_ANSWER\n"
+    script.write_text(body)
+    script.chmod(0o755)
+    return seen, script
+
+
+def _manifest(cache_dir: Path, script: Path, matcher: str) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "hooks.json").write_text(
+        json.dumps({"PreToolUse": [{"matcher": matcher, "command": str(script), "tag": "t"}]})
+    )
+
+
+def _session(tmp_path: Path, monkeypatch, sid: str) -> Path:
+    project = tmp_path / "project"
+    project.mkdir(exist_ok=True)
+    cache_dir = tmp_path / "cache" / sid
+    _in_session(monkeypatch, sid, project)
+    monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(cache_dir))
+    monkeypatch.delenv("AGY_TOOL_NAME", raising=False)
+    return cache_dir
+
+
+def test_a_bash_row_fires_on_agys_terminal_tool(tmp_path: Path, monkeypatch) -> None:
+    """The measured hole: every shipped `Bash` row was compared literally against
+    `run_command`, so the shared-state guard never ran on this surface once."""
+    cache_dir = _session(tmp_path, monkeypatch, "sid-bash")
+    seen, script = _recording_hook(tmp_path)
+    _manifest(cache_dir, script, "Bash")
+    payload = _agy_payload()
+
+    # Named the way the surface names it — the comparison that used to be literal.
+    assert dispatch_hook("PreToolUse", tool_name="run_command", stdin_data=payload) == 0
+    assert seen.is_file(), "the guard was installed and never invoked"
+
+
+def test_the_hook_is_handed_the_claude_dialect(tmp_path: Path, monkeypatch) -> None:
+    """Translated once, here — not by four hand-rolled fallbacks and two scripts
+    that never learned to."""
+    cache_dir = _session(tmp_path, monkeypatch, "sid-dialect")
+    seen, script = _recording_hook(tmp_path)
+    _manifest(cache_dir, script, "Bash")
+    dispatch_hook("PreToolUse", stdin_data=_agy_payload(command="rm -rf /"))
+
+    handed = json.loads(seen.read_text())
+    assert handed["tool_input"]["command"] == "rm -rf /"
+    assert handed["tool_name"] == "Bash"
+
+
+def test_the_tool_name_is_taken_from_the_payload_when_argv_is_silent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A row for another class must NOT fire. Before this the filter read the
+    name from argv alone, and a silent argv switched matching off entirely —
+    every hook then ran on every call, edit gates on shell commands included."""
+    cache_dir = _session(tmp_path, monkeypatch, "sid-argv")
+    seen, script = _recording_hook(tmp_path)
+    _manifest(cache_dir, script, "Edit|Write|MultiEdit")
+    dispatch_hook("PreToolUse", stdin_data=_agy_payload())
+
+    assert not seen.exists(), "an edit-tool row fired on a terminal call"
+
+
+def test_a_rewritten_input_leaves_in_the_key_agy_speaks(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The consent ticket (HATS-1642). Answered under `command`, agy finds no
+    rewrite and runs the original line — a gate that asks and is then ignored."""
+    cache_dir = _session(tmp_path, monkeypatch, "sid-ticket")
+    ticket = "AI_HATS_CONSENT" + "_TICKET=t git push --force"
+    answer = json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "ask",
+                "updatedInput": {"command": ticket},
+            }
+        }
+    )
+    _seen, script = _recording_hook(tmp_path, answers=answer)
+    _manifest(cache_dir, script, "Bash")
+    dispatch_hook("PreToolUse", stdin_data=_agy_payload())
+
+    said = json.loads(capsys.readouterr().out)
+    assert said["hookSpecificOutput"]["updatedInput"] == {"CommandLine": ticket}
