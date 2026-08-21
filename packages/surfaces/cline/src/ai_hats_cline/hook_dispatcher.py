@@ -81,9 +81,15 @@ def _kill_group(running: subprocess.Popen) -> None:
         running.kill()
 
 
-def _run(command: str, payload: dict) -> dict | None:
+def _run(
+    command: str,
+    payload: dict,
+    *,
+    timeout_s: float,
+    popen_factory,
+) -> dict | None:
     try:
-        with subprocess.Popen(  # noqa: S603 - manifest pins an executable in skills_root
+        with popen_factory(  # noqa: S603 - manifest pins an executable in skills_root
             [command],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -93,9 +99,7 @@ def _run(command: str, payload: dict) -> dict | None:
             start_new_session=True,
         ) as running:
             try:
-                stdout, stderr = running.communicate(
-                    input=json.dumps(payload), timeout=HOOK_TIMEOUT_S
-                )
+                stdout, stderr = running.communicate(input=json.dumps(payload), timeout=timeout_s)
             except subprocess.TimeoutExpired:
                 _kill_group(running)
                 sys.stderr.write(f"ai-hats-cline-hook: hook timed out: {command}\n")
@@ -128,7 +132,13 @@ def _emit(output: dict) -> None:
     sys.stdout.write(json.dumps(output) + "\n")
 
 
-def dispatch_hook(event: str, *, stdin=None) -> int:
+def dispatch_hook(
+    event: str,
+    *,
+    stdin=None,
+    timeout_s: float = HOOK_TIMEOUT_S,
+    popen_factory=subprocess.Popen,
+) -> int:
     """Run the composed chain for one Cline event and emit Cline-native JSON."""
     source = stdin if stdin is not None else sys.stdin
     try:
@@ -168,7 +178,12 @@ def dispatch_hook(event: str, *, stdin=None) -> int:
                     f"ai-hats-cline-hook: malformed hook entry: {entry.get('tag', '<untagged>')}\n"
                 )
                 continue
-            raw = _run(command, adapted)
+            raw = _run(
+                command,
+                adapted,
+                timeout_s=timeout_s,
+                popen_factory=popen_factory,
+            )
             if raw is None:
                 continue
             hook_output = raw.get("hookSpecificOutput")

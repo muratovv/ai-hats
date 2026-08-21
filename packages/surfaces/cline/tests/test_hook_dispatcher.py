@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-import ai_hats_cline.hook_dispatcher as hook_dispatcher
 from ai_hats_cline.claude_hook_adapter import to_claude_hook_payloads
 from ai_hats_cline.hook_dispatcher import dispatch_hook
 
@@ -319,7 +318,6 @@ def test_hook_timeout_is_reported_and_fails_open(tmp_path: Path, monkeypatch, ca
     cache = tmp_path / "cache"
     _manifest(cache, hook)
     _set_session_env(monkeypatch, cache)
-    monkeypatch.setattr(hook_dispatcher, "HOOK_TIMEOUT_S", 0.05)
     payload = {
         "preToolUse": {
             "toolName": "run_commands",
@@ -327,7 +325,7 @@ def test_hook_timeout_is_reported_and_fails_open(tmp_path: Path, monkeypatch, ca
         }
     }
 
-    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)))
+    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)), timeout_s=0.05)
     captured = capsys.readouterr()
 
     assert code == 0
@@ -344,7 +342,6 @@ def test_unstartable_hook_is_reported_and_fails_open(tmp_path: Path, monkeypatch
     def refuse_start(*args, **kwargs):
         raise OSError("cannot spawn")
 
-    monkeypatch.setattr(hook_dispatcher.subprocess, "Popen", refuse_start)
     payload = {
         "preToolUse": {
             "toolName": "run_commands",
@@ -352,7 +349,11 @@ def test_unstartable_hook_is_reported_and_fails_open(tmp_path: Path, monkeypatch
         }
     }
 
-    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)))
+    code = dispatch_hook(
+        "PreToolUse",
+        stdin=io.StringIO(json.dumps(payload)),
+        popen_factory=refuse_start,
+    )
     captured = capsys.readouterr()
 
     assert code == 0
