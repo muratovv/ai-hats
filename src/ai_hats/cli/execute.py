@@ -13,7 +13,7 @@ The ``--prompt`` flag resolves either to a file under
 resolved content becomes the first user-visible message.
 
 All entry-points (bare ``ai-hats``, ``ai-hats agent``, ``ai-hats reflect *``)
-go through ``PipelineHarness`` over a built-in YAML pipeline (HATS-269).
+go through ``pipeline.launch`` over a built-in YAML pipeline (HATS-269).
 """
 
 from __future__ import annotations
@@ -25,22 +25,7 @@ import click
 from click.core import ParameterSource
 
 from ai_hats_wt import IsolationMode
-from ..pipeline.keys import (
-    KEY_COMPOSITION,
-    KEY_EXIT_CODE,
-    KEY_EXTRA_ARGS,
-    KEY_INTERACTIVE,
-    KEY_ISOLATION,
-    KEY_MODEL,
-    KEY_PROMPT_PATH,
-    KEY_PROJECT_DIR,
-    KEY_ROLE,
-    KEY_SESSION_MGR,
-    KEY_TAGS,
-    KEY_TICKET,
-    KEY_TRACER_FACTORY,
-    PIPELINE_EXECUTE,
-)
+from ..pipeline import PipelineId, RoleSessionRequest, launch
 from ._helpers import _project_dir
 
 
@@ -185,7 +170,6 @@ def execute_cmd(
     """Launch a provider session with a composed role + optional initial prompt."""
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
-    from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
 
@@ -223,24 +207,22 @@ def execute_cmd(
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
-    with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
-        # Interactive mode: provider CLI receives prompt as the first
-        # positional arg in extra_args. The pipeline's resolve_prompt
-        # step reads prompt_path → prompt_text and launch_provider then
-        # prepends prompt_text to extra_args. We materialize the prompt
-        # here so the harness contract (Path-only inputs) is preserved.
-        final = h.run(
-            {
-                KEY_ROLE: role,
-                KEY_INTERACTIVE: True,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
-                KEY_MODEL: model,
-                KEY_ISOLATION: isolation,
-                KEY_TICKET: ticket,
-                KEY_TAGS: tags or None,
-                KEY_EXTRA_ARGS: list(extra_args),
-                KEY_COMPOSITION: build_composition_payload(
+    with launch(PipelineId.EXECUTE, project_dir) as session:
+        # Prompt is materialized to a file because the request takes a Path: the
+        # resolve_prompt step reads it, and launch_provider prepends the text to
+        # extra_args on the interactive branch.
+        outcome = session.run(
+            RoleSessionRequest(
+                role=role,
+                project_dir=project_dir,
+                interactive=True,
+                prompt_path=session.materialize_prompt(prompt_text),
+                model=model,
+                isolation=isolation,
+                ticket=ticket,
+                tags=tags,
+                extra_args=tuple(extra_args),
+                composition=build_composition_payload(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
@@ -248,9 +230,9 @@ def execute_cmd(
                 ),
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
+                session_mgr=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            )
         )
 
-    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
+    sys.exit(outcome.exit_code_or(1))
