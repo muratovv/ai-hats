@@ -71,7 +71,7 @@ def issue(
     Path(store_root).mkdir(parents=True, exist_ok=True, mode=0o700)
     directory = Path(store_root) / GRANTS_DIRNAME
     directory.mkdir(exist_ok=True, mode=0o700)
-    loose = mode_refusal(directory)
+    loose = mode_refusal(Path(store_root)) or mode_refusal(directory)
     if loose:
         raise IssueError(
             f"the grant store is not private ({loose}) — refusing to write a grant into it"

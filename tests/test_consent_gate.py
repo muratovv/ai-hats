@@ -21,6 +21,7 @@ from ai_hats_library.hooks.consent_gate import (
     Operation,
     Outcome,
     Radius,
+    Verdict,
     check,
     grants_dir,
     issue,
@@ -434,3 +435,68 @@ def test_a_journal_that_cannot_be_written_says_so_rather_than_going_quiet(store,
 
     assert record(granted, MOVE, store_root=store, now=NOW) is False
     assert "NOT RECORDED" in capsys.readouterr().err
+
+
+# --- HATS-1736 review round: hardenings that arrived without their own tests ---
+
+
+def test_a_store_root_others_can_reach_disarms_the_grants_inside_it(store, project):
+    """One level up from `grants/`: whoever can write the root can replace the
+    whole directory, so checking only the child stops one level short."""
+    _issue(store, project)
+    store.chmod(0o755)
+    try:
+        verdict = _check(store, project)
+    finally:
+        store.chmod(0o700)
+
+    assert verdict.outcome is Outcome.DENIED, f"a loose store root was honoured: {verdict}"
+    assert "permission" in verdict.reason.lower(), verdict.reason
+
+
+def test_issuing_into_a_store_root_others_can_reach_is_refused(store, project):
+    _issue(store, project)
+    store.chmod(0o755)
+    try:
+        with pytest.raises(IssueError) as exc:
+            _issue(store, project)
+    finally:
+        store.chmod(0o700)
+
+    assert "permission" in str(exc.value).lower(), str(exc.value)
+
+
+def test_a_corrupt_grant_says_so_rather_than_reading_as_no_grant(store, project):
+    """ "Your grant file is corrupt" must not reach the reader as "you have no
+    grant" — they would go looking in entirely the wrong place."""
+    grant = _issue(store, project)
+    grant.path.write_text("{ truncated", encoding="utf-8")
+
+    verdict = _check(store, project)
+
+    assert verdict.outcome is Outcome.DENIED
+    assert "unreadable" in verdict.reason, verdict.reason
+    assert grant.id[:8] in verdict.reason, verdict.reason
+
+
+def test_a_store_that_will_not_open_is_not_the_same_as_no_store(store, project):
+    """`chmod 000` used to collapse into "no live grant covers this operation"."""
+    _issue(store, project)
+    directory = grants_dir(store)
+    directory.chmod(0o000)
+    try:
+        verdict = _check(store, project)
+    finally:
+        directory.chmod(0o700)
+
+    assert verdict.outcome is Outcome.DENIED
+    assert "could not be read" in verdict.reason, verdict.reason
+
+
+def test_a_verdict_stays_hashable(store, project):
+    """A frozen dataclass holding the raw grant dict was frozen only until
+    somebody hashed it."""
+    _issue(store, project)
+
+    assert hash(_check(store, project)) is not None
+    assert hash(Verdict(Outcome.DENIED, "nothing")) is not None

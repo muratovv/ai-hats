@@ -70,9 +70,12 @@ class Verdict:
     outcome: Outcome
     reason: str = ""
     grant_id: str = ""
-    #: The grant that answered, verbatim off disk — what the record needs to say
-    #: WHAT was allowed. Absent on every outcome but ``GRANTED``.
-    grant: "Mapping[str, object] | None" = None
+    #: What the grant that answered allowed, for the record to name. Scalars, not
+    #: the raw dict: a dict here would alias the loaded grant and make a frozen
+    #: value unhashable — frozen that holds only when nobody looks (HATS-1736).
+    radius: tuple[str, ...] = ()
+    issued_at: float = 0.0
+    expires_at: float = 0.0
 
     def __bool__(self) -> bool:
         """Refuse truth-testing: `if verdict:` is the collapse D6 forbids."""
@@ -125,13 +128,24 @@ def mode_refusal(path: Path) -> str:
     return ""
 
 
-def _load(path: Path) -> dict | None:
+def _load(path: Path, on_reject: Callable[[str], None] | None = None) -> dict | None:
     """One grant file, or ``None`` when it is not one we can trust."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None  # unreadable/corrupt == no grant on this file; the caller counts it
+    except (OSError, ValueError) as exc:
+        # Said out loud: "your grant file is corrupt" must not read as "you have
+        # no grant" — the reader would go looking in the wrong place (HATS-1736).
+        _report(on_reject, f"grant {path.stem[:8]} is unreadable ({exc})")
+        return None
     return data if isinstance(data, dict) and data.get("v") == GRANT_VERSION else None
+
+
+def _as_float(value: object) -> float:
+    """A timestamp off disk, or 0.0 — a corrupt one must not raise mid-scan."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def live_grants(
@@ -152,9 +166,16 @@ def live_grants(
     directory = grants_dir(store_root)
     try:
         entries = sorted(directory.iterdir())
-    except OSError:
+    except FileNotFoundError:
         return []  # no store == no grant; never an error (P5)
-    loose = mode_refusal(directory)
+    except OSError as exc:
+        # Not "there is no store" — "the store is there and would not open".
+        # Collapsing the two hid a chmod 000 behind "no live grant covers this".
+        _report(on_reject, f"the grant store could not be read ({exc})")
+        return []
+    # The root as well as `grants/` — anyone who can write the root can replace
+    # `grants/` wholesale, so checking only the child stops one level short.
+    loose = mode_refusal(Path(store_root)) or mode_refusal(directory)
     if loose:
         # One loose directory disarms everything under it: anyone who can write
         # there can plant a grant, so the files inside prove nothing.
@@ -167,7 +188,7 @@ def live_grants(
         if loose:
             _report(on_reject, f"grant {entry.stem[:8]} is ignored ({loose})")
             continue
-        data = _load(entry)
+        data = _load(entry, on_reject)
         if data is None:
             continue
         if data.get("session_id") != session_id or data.get("project_dir") != anchor:
@@ -219,7 +240,14 @@ def check(
     )
     for grant in live:
         if _covers(grant.get("radius") or {}, op):
-            return Verdict(Outcome.GRANTED, "", str(grant.get("id", "")), grant)
+            return Verdict(
+                Outcome.GRANTED,
+                "",
+                str(grant.get("id", "")),
+                tuple(str(item) for item in ((grant.get("radius") or {}).get("types") or ())),
+                _as_float(grant.get("issued_at")),
+                _as_float(grant.get("expires_at")),
+            )
     if live:
         radii = "; ".join(
             ", ".join(str(t) for t in (g.get("radius") or {}).get("types") or ()) for g in live
@@ -257,10 +285,7 @@ JOURNAL_FILENAME = "journal.jsonl"
 
 def journal_entry(verdict: Verdict, op: Operation, *, now: float) -> dict:
     """The record itself: which grant, which operation, and how wide it reached."""
-    grant = verdict.grant or {}
-    radius = [str(t) for t in ((grant.get("radius") or {}).get("types") or ())]
-    expires_at = float(grant.get("expires_at") or 0.0)
-    issued_at = float(grant.get("issued_at") or 0.0)
+    expires_at, issued_at = verdict.expires_at, verdict.issued_at
     return {
         "ts": now,
         "event": "consent.spend",
@@ -269,7 +294,7 @@ def journal_entry(verdict: Verdict, op: Operation, *, now: float) -> dict:
         "op": op.type,
         "subject": op.subject,
         "label": op.label,
-        "radius": radius,
+        "radius": list(verdict.radius),
         "window_s": max(0, int(expires_at - issued_at)),
         "left_s": max(0, int(expires_at - now)),
     }
