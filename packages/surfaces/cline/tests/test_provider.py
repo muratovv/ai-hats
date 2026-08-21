@@ -43,6 +43,31 @@ def _make_skill(tmp_path: Path, name: str, body: str = "instructions") -> Path:
     return d
 
 
+def _make_runtime_hook_skill(tmp_path: Path) -> Path:
+    d = tmp_path / "sources" / "guard"
+    hooks = d / "hooks"
+    hooks.mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\n"
+        "name: guard\n"
+        "description: test guard\n"
+        "ai_hats:\n"
+        "  runtime_hooks:\n"
+        "    PreToolUse:\n"
+        "      - matcher: Bash\n"
+        "        script: hooks/guard.sh\n"
+        "    PostToolUse:\n"
+        "      - matcher: Edit|Write\n"
+        "        script: hooks/guard.sh\n"
+        "---\n"
+        "guard\n"
+    )
+    script = hooks / "guard.sh"
+    script.write_text("#!/usr/bin/env bash\nexit 0\n")
+    script.chmod(0o755)
+    return d
+
+
 def test_name_is_cline() -> None:
     assert ClineProvider().name == "cline"
 
@@ -170,8 +195,29 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     assert "--config" in args
     cache_arg = args[args.index("--config") + 1]
     assert cache_arg == str(session_cache_dir(tmp_path, "sid-1"))
-    # the dead plugin is gone — no --hooks-dir
+    # A hookless role keeps the pre-HATS-1775 launch shape.
     assert "--hooks-dir" not in args
+
+
+def test_build_session_prompt_delivers_composed_runtime_hooks(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    skill = _make_runtime_hook_skill(tmp_path)
+
+    args, env, _ = ClineProvider().build_session_prompt(
+        tmp_path, _fake_result(skills=[skill]), "sid-hooks"
+    )
+
+    cache = session_cache_dir(tmp_path, "sid-hooks")
+    hooks_dir = cache / "hooks"
+    assert args[args.index("--hooks-dir") + 1] == str(hooks_dir)
+    assert (cache / "hooks.json").is_file()
+    assert (hooks_dir / "PreToolUse").is_file()
+    assert (hooks_dir / "PostToolUse").is_file()
+    assert (hooks_dir / "PreToolUse").stat().st_mode & 0o111
+    assert (hooks_dir / "PostToolUse").stat().st_mode & 0o111
+    assert env["AI_HATS_SESSION_CACHE_DIR"] == str(cache)
+    assert env["AI_HATS_PYTHON"]
+    assert not (tmp_path / ".cline").exists()
 
 
 def test_build_session_prompt_config_is_session_scoped(tmp_path) -> None:
@@ -214,8 +260,7 @@ def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
     assert "--config" in artifacts.cli_args
 
 
-def test_hooks_and_settings_categories_are_noop(tmp_path) -> None:
-    # HATS-1171: plugin dropped → HOOKS/SETTINGS write nothing, add no args.
+def test_hookless_role_and_settings_category_add_no_launch_args(tmp_path) -> None:
     artifacts = ClineProvider().build_session_artifacts(
         tmp_path,
         _fake_result(),
@@ -286,50 +331,6 @@ def test_materialize_expands_the_fsm_edges_token(tmp_path) -> None:
     ).read_text()
     assert "{{backlog_fsm_edges}}" not in delivered
     assert "brainstorm" in delivered  # a real FSM state reached the file
-
-
-# ---- guard script sanity (SurfaceGuard's bash guard, HATS-1105) -------------
-
-
-def test_guard_script_blocks_irreversible() -> None:
-    """The shared-state guard script blocks force-push (exit 2)."""
-    import json
-    import subprocess
-
-    repo_root = Path(__file__).resolve().parents[4]
-    guard = repo_root / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
-    if not guard.exists():
-        return  # running outside monorepo
-    stdin = json.dumps({"tool_input": {"command": "git push --force origin main"}})
-    res = subprocess.run(
-        ["bash", str(guard)],
-        input=stdin,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert res.returncode == 2
-    assert "BLOCKED" in res.stderr
-
-
-def test_guard_script_allows_safe() -> None:
-    """Safe commands pass through the guard (exit 0)."""
-    import json
-    import subprocess
-
-    repo_root = Path(__file__).resolve().parents[4]
-    guard = repo_root / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
-    if not guard.exists():
-        return
-    stdin = json.dumps({"tool_input": {"command": "echo hello"}})
-    res = subprocess.run(
-        ["bash", str(guard)],
-        input=stdin,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert res.returncode == 0
 
 
 # -- resolve_transcript (HATS-1087) ------------------------------------------

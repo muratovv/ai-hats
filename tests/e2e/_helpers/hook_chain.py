@@ -399,3 +399,81 @@ def run_agy_dispatch(
         text=True,
         timeout=timeout,
     )
+
+
+_FAKE_CLINE = r"""#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+if sys.argv[1:] == ["--version"]:
+    print("3.0.3")
+    raise SystemExit(0)
+
+args = sys.argv[1:]
+hooks_dir = Path(args[args.index("--hooks-dir") + 1])
+manifest = json.loads((hooks_dir.parent / "hooks.json").read_text())
+payload = {
+    "hookName": "PreToolUse",
+    "preToolUse": {
+        "toolName": "run_commands",
+        "parameters": {"commands": [os.environ["AI_HATS_CLINE_TEST_COMMAND"]]},
+    },
+    "workspaceRoots": [os.getcwd()],
+}
+hook = subprocess.run(
+    [str(hooks_dir / "PreToolUse")],
+    input=json.dumps(payload),
+    env=os.environ.copy(),
+    capture_output=True,
+    text=True,
+    timeout=30,
+)
+capture = {
+    "argv": args,
+    "session_id": os.environ["AI_HATS_SESSION_ID"],
+    "manifest_session_id": manifest["session"]["id"],
+    "pretooluse_tags": [
+        entry.get("tag", "") for entry in manifest["hooks"].get("PreToolUse", [])
+    ],
+    "hook_returncode": hook.returncode,
+    "hook_output": json.loads(hook.stdout),
+    "hook_stderr": hook.stderr,
+}
+Path(os.environ["AI_HATS_CLINE_CAPTURE"]).write_text(json.dumps(capture))
+"""
+
+
+def run_cline_hook_session(
+    launcher: Path,
+    project: Path,
+    env: dict[str, str],
+    driver_dir: Path,
+    *,
+    command: str,
+    timeout: int = 90,
+) -> tuple[subprocess.CompletedProcess[str], dict]:
+    """Launch Cline HITL and drive its materialized composed PreToolUse chain."""
+    fake_bin = driver_dir / "bin"
+    fake_bin.mkdir(parents=True)
+    fake_cline = fake_bin / "cline"
+    fake_cline.write_text(_FAKE_CLINE)
+    fake_cline.chmod(0o755)
+    capture_path = driver_dir / "capture.json"
+    launch_env = dict(env)
+    launch_env["PATH"] = os.pathsep.join([str(fake_bin), launch_env.get("PATH", "")])
+    launch_env["AI_HATS_CLINE_CAPTURE"] = str(capture_path)
+    launch_env["AI_HATS_CLINE_TEST_COMMAND"] = command
+
+    launched = subprocess.run(  # noqa: S603 - launcher is the installed test fixture
+        [str(launcher), "-p", "cline", "-r", "maintainer"],
+        cwd=project,
+        env=launch_env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    capture = json.loads(capture_path.read_text()) if capture_path.is_file() else {}
+    return launched, capture

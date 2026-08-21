@@ -87,9 +87,7 @@ class ClineProvider(Provider):
 
     # ----- HATS-1171: unified artifact-builder (ADR-0018) -----
 
-    # HOOKS/SETTINGS deliver nothing in either mode, hence no handler for them:
-    # the TS hook plugin is dropped (jiti-less cline never loaded it — HATS-1083)
-    # and guarding is SurfaceGuard's job.
+    # SETTINGS has no Cline-native artifact. HOOKS use --hooks-dir below.
 
     def get_cli_launch_args(
         self, base_cmd: list[str], session_id: str, is_resume: bool
@@ -159,6 +157,27 @@ class ClineProvider(Provider):
 
     def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_skills(project_dir, result, session_id, artifacts)
+
+    # -- hooks -----------------------------------------------------------------
+
+    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
+        from ai_hats_cline.runtime_hooks import materialize_runtime_hooks
+
+        hooks_dir = materialize_runtime_hooks(
+            project_dir,
+            result,
+            session_id,
+            artifacts,
+            skills_dir=self.session_skills_root(project_dir, session_id),
+        )
+        if hooks_dir is not None:
+            artifacts.cli_args.extend(["--hooks-dir", str(hooks_dir)])
+
+    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
+
+    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
 
     def build_session_prompt(
         self,
