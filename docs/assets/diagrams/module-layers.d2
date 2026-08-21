@@ -1,0 +1,101 @@
+vars: @./_palette
+
+direction: down
+
+# Целевая иерархия модулей, ред. 4 (2026-08-21).
+# ЭТО ПРОЕКЦИЯ канонической adjacency-таблицы ADR-0026 D3; при расхождении
+# права таблица, а не рисунок.
+# Один узел = один целевой модуль. Стрелка вниз = «зависит от».
+# Оранжевым — модуль, которого сегодня НЕ существует, или незакрытая развилка.
+
+legend: ЛЕГЕНДА\nсплошная X → Y: X зависит от Y\nпунктир: поиск во время выполнения — зависимостью НЕ является\nоранжевое: модуля нет или развилка не закрыта {
+  shape: page
+  style.fill: "#ebeef4"
+  style.stroke: "#a2acbf"
+}
+
+ui: UI — только вход\nC18 сток логирования у корня композиции: сегодня НЕ настроен
+init: init (C17) — конфигурация проекта\nвладеет ai-hats.yaml и его schema_version {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+install: install (C14) — интерпретатор и починка\n_bootstrap под линтом чистоты {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+channel: channel (C11) — канал обновлений {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+project: Project (C1) — СПИНА\nсобирается раз на точке входа, все ниже получают {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+pipeline: pipeline (C9) — механизм\nreflection живёт ПОВЕРХ как прикладной workflow
+runtime: runtime (C19) — исполнение сессии\nзапуск HITL и non-HITL · PTY · сигналы · порт Workspace
+observe: observe (C12) — наблюдаемость\nсвёрнут внутрь ai-hats
+surfaces: поверхности (C8) — ВНУТРИ ai-hats\nclaude · agy · cline · codex\nчужие остаются снаружи через entry points {
+  style.fill: "#f5e8d0"
+  style.stroke: "#c9bba0"
+}
+composition: composition (C4) — производит ЗНАЧЕНИЕ\nстрелочная нотация
+mat: materialization (C3) — контракт записи и УЧЁТА\nне файловый шлюз: пишет владелец поддерева
+hooks: hooks (C2) — вердикт из каждого канала {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+reclaim: reclaim (C15) — механизм сверки\nполитика истечения у владельца артефакта {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+reporting: reporting (C20) — «как меня чинить»\nконтракт уже в core/recovery.py
+locks: locks (C5 + C13) — РАЗВИЛКА НЕ ЗАКРЫТА\nздесь или в core {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+deps: deps — дистрибуции\nrack (C7) · library (C10)
+wt: ai-hats-wt — движок worktree\nспособности в C1–C20 нет; потребитель — runtime через порт Workspace {
+  style.fill: "#bac4d8"
+}
+core: ai-hats-core — ФУНДАМЕНТ\nC6 словарь идентичности — НЕ ХВАТАЕТ\nC13 deadline · C16 механизм обратимости {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+ui -> init
+ui -> pipeline
+init -> project
+install -> project
+install -> channel
+reporting -> channel
+pipeline -> runtime: вправе использовать,\nне переписывать
+runtime -> surfaces: узкие порты
+surfaces -> runtime: чужие — снаружи {style.stroke-dash: 4; style.stroke: "#e8632b"}
+runtime -> mat
+runtime -> hooks
+runtime -> observe
+runtime -> locks
+runtime -> wt: через порт Workspace
+wt -> core
+mat -> composition
+mat -> locks
+mat -> deps: ТОЛЬКО хуки из library,\nне весь rack и wt {style.stroke: "#e8632b"}
+observe -> reclaim: ОТДАЁТ политику хранения,
+не наоборот {style.stroke-dash: 4}
+composition -> deps
+project -> core
+composition -> core
+mat -> core
+hooks -> core
+observe -> core
+reclaim -> core
+reporting -> core
+reporting -> channel
+locks -> core
+deps -> core: rack и library сегодня\nНЕ зависят от core {style.stroke: "#e8632b"}
+ui -> project
