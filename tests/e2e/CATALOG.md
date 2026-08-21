@@ -509,6 +509,20 @@ as a claim to check, not as evidence.
 - **expect** — cline provider is discovered via python entry points and displayed in provider listing
 - **why** — without entry-point discovery, third-party provider packages like cline are invisible to the CLI
 
+## `test_cline_runtime_hook_chain.py`
+
+*pins HATS-1775*
+
+- **flow** — a real Cline HITL launch invokes its materialized PreToolUse chain
+- **cmds**
+
+  ```console
+  git push --force origin master
+  ```
+
+- **expect** — the composed safety chain cancels the unapproved tool call through Cline's native hook protocol and leaves the project root clean
+- **why** — role composition is not protection unless the Cline process actually runs it before each tool call
+
 ## `test_cline_session_recorded.py`
 
 *pins HATS-1087*
