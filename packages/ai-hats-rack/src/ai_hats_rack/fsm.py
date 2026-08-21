@@ -124,7 +124,7 @@ def _validate(raw: object, source: str) -> Topology:
         # Beside the duplicate-name check because it is the same kind of check:
         # a name that cannot mean what it says. The selector grammar compares
         # these two words by equality, so a state actually called `ANY` turns
-        # every EXACT subscription into a wildcard — gates, ownership and consent
+        # every EXACT subscription into a wildcard — gates and ownership
         # firing on edges nobody declared them for, in silence (HATS-1719).
         raise TopologyError(
             f"{source}: state name(s) {taken} are reserved by the selector grammar "

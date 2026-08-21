@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""HATS-1642 — one-shot supervisor-consent tickets for ``plan → execute``.
+"""One-shot supervisor-consent tickets consumed by session command middleware.
 
-Two readers, ONE file: ``safety_gate.py`` imports it as a hook sibling (so it
-stays stdlib-only), the integrator as ``ai_hats_library.hooks.consent_ticket``,
-to wire :func:`consume` into the rack's plan-consent gate. A second copy would
-be a mirror of the nonce, the directory and the clock — one that drifts.
+Two readers, one file: ``safety_gate.py`` mints and peeks; the external wrapper
+consumes. A second copy would duplicate the nonce, directory and clock.
 
 Trust model, stated not implied: an agent that reads the disk reads these files
 too. The ticket removes the corner-cut, not a determined agent (HATS-1613).
@@ -21,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-#: The env name the ticket rides on into the ``rack`` process. Not a hatch the
+#: The env name the ticket rides on into the session wrapper. Not a hatch the
 #: agent may set: ``safety_gate.SELF_GRANT_FORBIDDEN`` refuses the inline form,
 #: so the only writer is the hook that asked the supervisor.
 TICKET_ENV = "AI_HATS_CONSENT_TICKET"
@@ -139,8 +137,8 @@ def mint(
 ) -> str | None:
     """Issue a ticket for ``task_id`` and ``argv``; the nonce, or ``None``.
 
-    ``None`` is not a failure to gate — the rack's own consent gate still runs
-    and still refuses; it only means this transition has no question to ask.
+    ``None`` means the guard could not provide question-backed authorization;
+    the external wrapper still refuses the protected command.
     """
     directory = tickets_dir(start)
     if directory is None:
@@ -179,9 +177,8 @@ def peek(
 ) -> bool:
     """Is consent for ``task_id`` on hand? Asking does not use it up.
 
-    The gate runs early so its refusal is early, but the transition it guards
-    can still be rolled back by a later subscriber — spending there would burn
-    the supervisor's click on a move that never happened (HATS-1642).
+    The runtime guard peeks while deciding whether to ask; only the external
+    wrapper spends immediately before it starts the original command.
     """
     return _valid_ticket(task_id, start=start, nonce=nonce, argv=argv) is not None
 

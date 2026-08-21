@@ -60,12 +60,16 @@ def test_the_declaration_reaches_the_guard_with_its_ends_parsed(arrow_project):
     from ai_hats.session_report import consent_entry
 
     consent = Assembler(project).composer.compose("assistant").consent
-    rack_rows = [consent_entry(c) for c in consent if c.app == "rack"]
+    rack_rows = [
+        consent_entry(c)
+        for c in consent
+        if c.app == "consent_gate" and c.path == ("rack.transition",)
+    ]
 
     assert rack_rows, "the assistant role declares no rack consent — the probe is blind"
     for row in rack_rows:
         assert "->" in row["selector"], f"declaration is not in the arrow spelling: {row}"
-        assert row["to"], f"the envelope carries no parsed target, so the guard is blind: {row}"
+        assert row["selector"].split("->", 1)[1]
         assert "point" not in row, f"the retired key is still written: {row}"
 
 
@@ -103,3 +107,22 @@ def test_an_undeclared_road_is_still_not_gated(in_session):
     verdict = run_chain(project, "rack transition HATS-1 blocked", settings=settings, env=env)
 
     assert not verdict.gated, f"an undeclared road was gated — the probe proves nothing: {verdict}"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/usr/local/bin/rack transition HATS-1 done",
+        "python -m ai_hats_rack transition HATS-1 done",
+        "command -p rack transition HATS-1 done",
+        "/usr/local/bin/ai-hats wt merge task/hats-1",
+        "python -m ai_hats wt merge task/hats-1",
+    ],
+)
+def test_protected_operations_cannot_bypass_the_session_wrapper(in_session, command):
+    project, env, settings = in_session
+
+    verdict = run_chain(project, command, settings=settings, env=env)
+
+    assert verdict.denied, f"wrapper bypass was not denied: {verdict}"
+    assert "session wrapper" in verdict.reason

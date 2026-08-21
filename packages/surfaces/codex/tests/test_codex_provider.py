@@ -65,6 +65,7 @@ def test_provider_identity_and_inline_only_contract(tmp_path: Path) -> None:
     provider = CodexProvider()
     assert provider.name == "codex"
     assert provider.detected_home_dirs() == [".codex"]
+    assert provider.supports_session_command_wrappers() is True
     assert provider.system_prompt_path(tmp_path) is None
     assert provider.rules_dir(tmp_path / "session") == tmp_path / "session" / "rules"
 

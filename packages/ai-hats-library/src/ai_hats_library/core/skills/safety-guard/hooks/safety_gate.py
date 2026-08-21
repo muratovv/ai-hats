@@ -414,11 +414,17 @@ def _declared_points() -> list:
 
 def _grant_policy() -> tuple:
     """Operation types the role declared under ``apps.consent_gate`` (HATS-1735)."""
-    return tuple(
-        str(entry.get("selector", ""))
-        for entry in _declared_points()
-        if entry.get("app") == "consent_gate" and entry.get("selector")
-    )
+    declared = []
+    for entry in _declared_points():
+        if not isinstance(entry, dict):
+            continue
+        path = entry.get("path")
+        if entry.get("app") != "consent_gate" or not isinstance(path, list) or not path:
+            continue
+        operation = str(path[0])
+        if operation and operation not in declared:
+            declared.append(operation)
+    return tuple(declared)
 
 
 def grant_covers(op_type: str, subject: str, cmd: str) -> bool:
@@ -451,12 +457,9 @@ def grant_covers(op_type: str, subject: str, cmd: str) -> bool:
     verdict = _grant_check(op_type, subject, identity, anchor)
     if verdict is None or verdict.outcome is not _GrantOutcome.GRANTED:
         return False
-    journal_bypass(
-        "hatch",
-        f"consent grant {verdict.grant_id[:8]} ({op_type})",
-        hook="safety_gate.py",
-        cmd=cmd,
-    )
+    # No journal line here: this is a PEEK. The engine records the USE moments
+    # later on every road that reaches it, and a line from both halves made one
+    # operation look like two (ADR-0029 D11 / P6, HATS-1736).
     return True
 
 
@@ -486,9 +489,17 @@ def _grant_check(op_type: str, subject: str, identity: dict, anchor):
     )
 
 
-def consent_declared_at(app: str, selector: str) -> bool:
-    """Did the role declare consent on one named point of ``app``?"""
-    return any(e.get("app") == app and e.get("selector") == selector for e in _declared_points())
+def _operation_points(operation: str) -> tuple[str, ...]:
+    """Protected points carried by one external operation adapter."""
+    return tuple(
+        str(entry.get("selector", ""))
+        for entry in _declared_points()
+        if isinstance(entry, dict)
+        and entry.get("app") == "consent_gate"
+        and entry.get("path")
+        and entry["path"][0] == operation
+        and entry.get("selector")
+    )
 
 
 def declared_consent_targets() -> frozenset:
@@ -502,16 +513,12 @@ def declared_consent_targets() -> frozenset:
     was started with, not by whatever the library says a moment later.
     """
     targets = set()
-    for entry in _declared_points():
-        if entry.get("app") != "rack":
+    for selector in _operation_points("rack.transition"):
+        if "->" not in selector:
             continue
-        # The ends arrive parsed (HATS-1719). This hook is stdlib-only and cannot
-        # import the rack's parser, and a hook that cuts the name itself is a
-        # fifth copy of the grammar — one that went silent the moment the
-        # spelling changed, disarming both roads into master (HATS-1682 A5).
-        target = entry.get("to")
+        target = selector.split("->", 1)[1]
         if target:
-            targets.add(str(target))
+            targets.add(target)
     return frozenset(targets)
 
 
@@ -738,6 +745,108 @@ def target_cwd(cmd: str):
     return where
 
 
+def _python_module_calls(cmd: str, module: str) -> list:
+    calls = []
+    for tokens in parse_commands(cmd):
+        for args in command_slices(tokens):
+            binary = get_bin(args)
+            if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", binary) is None:
+                continue
+            for index, argument in enumerate(args[:-1]):
+                if argument == "-m" and args[index + 1] == module:
+                    calls.append(args[index + 2 :])
+                    break
+    return calls
+
+
+def _wrapper_bypass(operation: str) -> dict:
+    return {
+        "permissionDecision": "deny",
+        "permissionDecisionReason": (
+            f"Stopped: {operation} is protected by this role. Use the canonical "
+            "session wrapper command; alternate executable lookup bypasses it."
+        ),
+    }
+
+
+def _changes_command_lookup(cmd: str, name: str) -> bool:
+    for tokens in parse_commands(cmd):
+        call = slice_for(tokens, name)
+        if not call:
+            continue
+        prefix = tokens[: len(tokens) - len(call)]
+        if any(
+            partitioned[0] == "PATH" for token in prefix if (partitioned := token.partition("="))[1]
+        ):
+            return True
+        wrapper_index = next(
+            (index for index, token in enumerate(prefix) if "=" not in token), None
+        )
+        if wrapper_index is None:
+            continue
+        wrapper = os.path.basename(prefix[wrapper_index])
+        wrapper_args = prefix[wrapper_index + 1 :]
+        if wrapper in {"command", "sudo", "doas"}:
+            return True
+        if wrapper != "env":
+            continue
+        for index, argument in enumerate(wrapper_args):
+            if argument in {"-", "-i", "--ignore-environment"}:
+                return True
+            if argument in {"-u", "--unset"} and wrapper_args[index + 1 : index + 2] == ["PATH"]:
+                return True
+            if argument in {"-uPATH", "--unset=PATH"}:
+                return True
+    return False
+
+
+def _wrapper_bypass_verdict(cmd: str) -> dict:
+    declared_targets = None
+    rack_lookup_bypass = _changes_command_lookup(cmd, "rack")
+    for anchor, _ordinal, _total, args in anchored_calls(cmd, "rack"):
+        _task_id, target = transition_target(args)
+        if not target:
+            continue
+        if declared_targets is None:
+            declared_targets = declared_consent_targets()
+        bypasses_path = (
+            args[0] != "rack" or os.path.basename(anchor) == "command" or rack_lookup_bypass
+        )
+        if target in declared_targets and bypasses_path:
+            return _wrapper_bypass("rack transition")
+    for call in _python_module_calls(cmd, "ai_hats_rack"):
+        _task_id, target = transition_target(["rack", *call])
+        if not target:
+            continue
+        if declared_targets is None:
+            declared_targets = declared_consent_targets()
+        if target in declared_targets:
+            return _wrapper_bypass("rack transition")
+
+    merge_declared = None
+    wt_lookup_bypass = _changes_command_lookup(cmd, "ai-hats")
+    for anchor, _ordinal, _total, call in anchored_calls(cmd, "ai-hats"):
+        branch = merge_branch(call)
+        if not branch:
+            continue
+        if merge_declared is None:
+            merge_declared = "pre-merge" in _operation_points("wt.merge")
+        bypasses_path = (
+            call[0] != "ai-hats" or os.path.basename(anchor) == "command" or wt_lookup_bypass
+        )
+        if merge_declared and bypasses_path:
+            return _wrapper_bypass("ai-hats wt merge")
+    for call in _python_module_calls(cmd, "ai_hats"):
+        branch = merge_branch(["ai-hats", *call])
+        if not branch:
+            continue
+        if merge_declared is None:
+            merge_declared = "pre-merge" in _operation_points("wt.merge")
+        if merge_declared:
+            return _wrapper_bypass("ai-hats wt merge")
+    return {}
+
+
 def consent_ask(cmd: str, tool_input: dict) -> dict:
     """The verdict for a call touching a point the ROLE declared consent on.
 
@@ -753,6 +862,10 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
     allow, which is how three everyday spellings merged into master unasked
     (HATS-1682 A4, measured).
     """  # comment-length: allow — the {} / ask / deny contract is the whole fix
+    bypass = _wrapper_bypass_verdict(cmd)
+    if bypass:
+        return bypass
+
     declared = None
     for anchor, ordinal, total, args in anchored_calls(cmd, "rack"):
         task_id, target = transition_target(args)
@@ -788,7 +901,7 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
     # different engine, which is why one declaration has to cover both.
     for anchor, ordinal, total, call in anchored_calls(cmd, "ai-hats"):
         branch = merge_branch(call)
-        if not branch or not consent_declared_at("wt", "pre-merge"):
+        if not branch or "pre-merge" not in _operation_points("wt.merge"):
             continue
         if grant_covers("wt.merge", branch, cmd):
             return {}

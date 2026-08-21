@@ -13,7 +13,7 @@ import contextlib
 import hashlib
 import json
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 
@@ -25,6 +25,7 @@ LOCK_TIMEOUT = 30.0
 
 class WriteKind(str, Enum):
     WRITE_TEXT = "write_text"
+    WRITE_EXECUTABLE = "write_executable"
     COPY_TREE = "copy_tree"
     SYMLINK = "symlink"
     MERGE_JSON = "merge_json"
@@ -45,6 +46,7 @@ class MaterializationEntry:
 
 _CREATING = (
     WriteKind.WRITE_TEXT,
+    WriteKind.WRITE_EXECUTABLE,
     WriteKind.COPY_TREE,
     WriteKind.SYMLINK,
     WriteKind.MERGE_JSON,
@@ -79,6 +81,10 @@ def describe_write_text(path: Path, content: str) -> MaterializationEntry:
         size=len(content_bytes),
         digest=hashlib.sha256(content_bytes).hexdigest(),
     )
+
+
+def describe_write_executable(path: Path, content: str) -> MaterializationEntry:
+    return replace(describe_write_text(path, content), kind=WriteKind.WRITE_EXECUTABLE)
 
 
 def describe_copy_tree(src: Path, dest: Path) -> MaterializationEntry:
@@ -164,6 +170,9 @@ class Materializer(abc.ABC):
     def write_text(self, path: Path, content: str) -> None: ...
 
     @abc.abstractmethod
+    def write_executable(self, path: Path, content: str) -> None: ...
+
+    @abc.abstractmethod
     def mkdir(self, path: Path) -> None:
         """Only a real creation is recorded — every category handler mkdirs the cache."""
 
@@ -201,6 +210,12 @@ class ApplyMaterializer(Materializer):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         self._record(describe_write_text(path, content))
+
+    def write_executable(self, path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        path.chmod(0o700)
+        self._record(describe_write_executable(path, content))
 
     def mkdir(self, path: Path) -> None:
         if path.is_dir():
@@ -283,6 +298,10 @@ class PlanMaterializer(Materializer):
     def write_text(self, path: Path, content: str) -> None:
         self._mark_created(path.parent)  # apply creates parents without recording
         self._record(describe_write_text(path, content))
+
+    def write_executable(self, path: Path, content: str) -> None:
+        self._mark_created(path.parent)
+        self._record(describe_write_executable(path, content))
 
     def mkdir(self, path: Path) -> None:
         if self._would_exist(path):

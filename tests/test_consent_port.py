@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.consent_port import APP, Operation, Outcome, declared_types, note, verdict
+from ai_hats.consent_port import APP, Operation, Outcome, declared_types, record_use, verdict
 from ai_hats.session_identity import SessionIdentity
 from ai_hats_library.hooks.consent_gate import Radius, issue, store_root_from
 
@@ -26,8 +26,8 @@ def _materialization(session_dir: Path, rows: list[dict]) -> None:
     )
 
 
-def _row(app: str, selector: str) -> dict:
-    return {"app": app, "path": [], "selector": selector, "declared_by": "trait-agent"}
+def _row(app: str, selector: str, *, path: tuple[str, ...] = ()) -> dict:
+    return {"app": app, "path": list(path), "selector": selector, "declared_by": "trait-agent"}
 
 
 @pytest.fixture
@@ -37,7 +37,10 @@ def session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     project.mkdir()
     session_dir = tmp_path / "runs" / "session_sid-1"
     cache_dir = tmp_path / "cache" / "sid-1"
-    _materialization(session_dir, [_row(APP, "rack.transition"), _row("rack", "review->done")])
+    _materialization(
+        session_dir,
+        [_row(APP, "review->done", path=("rack.transition",))],
+    )
     identity = SessionIdentity(
         id="sid-1",
         role="maintainer",
@@ -51,10 +54,15 @@ def session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return project, cache_dir
 
 
-def test_only_the_consent_gate_rows_become_policy(tmp_path: Path):
-    """The rack's rows say WHERE to ask; they are not operation types."""
+def test_only_the_consent_gate_operation_paths_become_policy(tmp_path: Path):
     session_dir = tmp_path / "s"
-    _materialization(session_dir, [_row(APP, "wt.merge"), _row("rack", "plan->execute")])
+    _materialization(
+        session_dir,
+        [
+            _row(APP, "pre-merge", path=("wt.merge",)),
+            _row("rack", "plan->execute"),
+        ],
+    )
 
     assert declared_types(session_dir) == ("wt.merge",)
 
@@ -111,9 +119,7 @@ def test_an_undeclared_type_is_not_covered_however_wide_the_grant(session):
     assert verdict(merge, target_dir=project).outcome is Outcome.DENIED
 
 
-def test_the_work_log_line_names_the_grant_that_paid(session):
-    """The journal half of D11 needs a real git dir, so it is asserted in the
-    e2e (``test_consent_grant_chain``) rather than faked here."""
+def test_record_use_is_anchored_to_the_explicit_project(session, capsys):
     project, cache_dir = session
     grant = issue(
         Radius(types=("rack.transition",)),
@@ -123,6 +129,41 @@ def test_the_work_log_line_names_the_grant_that_paid(session):
     )
     answer = verdict(MOVE, target_dir=project)
 
-    line = note(answer, MOVE, hook="test")
-    assert "→ execute" in line
-    assert grant.id[:8] in line
+    record_use(answer, MOVE, hook="test", project_dir=project)
+
+    said = capsys.readouterr().err
+    assert grant.id[:8] in said
+    assert "no git dir" in said
+
+
+def test_the_record_the_engine_hands_us_names_radius_window_and_outcome():
+    from ai_hats.consent_port import journal_reason
+
+    line = journal_reason(
+        {
+            "grant_id": "6a3b0f21deadbeef",
+            "op": "rack.transition",
+            "radius": ["rack.transition", "wt.merge"],
+            "window_s": 1800,
+            "left_s": 1200,
+            "outcome": "granted",
+        }
+    )
+
+    assert line.startswith("consent grant 6a3b0f21 (rack.transition)"), line
+    assert "radius=[rack.transition,wt.merge]" in line, line
+    assert "window=20m/30m" in line, line
+    assert "outcome=granted" in line, line
+
+
+def test_an_unreadable_envelope_is_no_agent_not_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The D6 collapse this whole engine exists to forbid, on the seam's own
+    error path: a malformed envelope means "I could not look", never "refused"."""
+    monkeypatch.setenv("AI_HATS_SESSION_IDENTITY", "{not json at all")
+
+    answer = verdict(MOVE, target_dir=tmp_path)
+
+    assert answer.outcome is Outcome.NO_AGENT, answer
+    assert "envelope" in answer.reason, answer.reason

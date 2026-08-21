@@ -7,12 +7,17 @@
 
 from .check import (
     GRANT_VERSION,
+    JOURNAL_FILENAME,
     Operation,
     Outcome,
     Verdict,
     check,
+    file_journal,
     grants_dir,
+    journal_entry,
     live_grants,
+    mode_refusal,
+    record,
     store_root_from,
 )
 from .issue import DEFAULT_WINDOW_MINUTES, Grant, IssueError, Radius, issue
@@ -20,6 +25,7 @@ from .issue import DEFAULT_WINDOW_MINUTES, Grant, IssueError, Radius, issue
 __all__ = [
     "DEFAULT_WINDOW_MINUTES",
     "GRANT_VERSION",
+    "JOURNAL_FILENAME",
     "Grant",
     "IssueError",
     "Operation",
@@ -27,8 +33,12 @@ __all__ = [
     "Radius",
     "Verdict",
     "check",
+    "file_journal",
     "grants_dir",
     "issue",
+    "journal_entry",
     "live_grants",
+    "mode_refusal",
+    "record",
     "store_root_from",
 ]

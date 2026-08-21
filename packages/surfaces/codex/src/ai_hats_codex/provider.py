@@ -144,6 +144,9 @@ class CodexProvider(Provider):
     def detected_home_dirs(self) -> list[str]:
         return [".codex"]
 
+    def supports_session_command_wrappers(self) -> bool:
+        return True
+
     def provider_hints(self) -> list["ProviderHint"]:
         from ai_hats.providers import ProviderHint
 

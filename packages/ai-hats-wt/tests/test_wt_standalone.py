@@ -123,22 +123,20 @@ def test_create_then_merge_standalone(bare_repo: Path) -> None:
     assert _git(bare_repo, "branch", "--list", "standalone/feature").stdout.strip() == ""
 
 
-def test_merge_requires_consent_standalone(
+def test_merge_is_authorization_unaware_standalone(
     bare_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """HATS-1019: merge is default-deny without AI_HATS_MERGE_ACK=1."""
+    """The standalone engine merges without session-level authorization state."""
     monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
     mgr = WorktreeManager(bare_repo, branch_name="standalone/gated", lifecycle=NOOP_LIFECYCLE)
     wt_path = mgr.create()
     mgr.save_state()
     _commit_in_worktree(wt_path, "gated.txt", "needs review")
 
-    with pytest.raises(wt.WorktreeMergeConsentError):
-        mgr.merge()
+    mgr.merge()
 
-    assert wt_path.exists(), "consent refusal must preserve the worktree"
-    assert not (bare_repo / "gated.txt").exists()
-    mgr.discard()
+    assert not wt_path.exists()
+    assert (bare_repo / "gated.txt").read_text() == "needs review"
 
 
 def test_create_then_discard_standalone(bare_repo: Path) -> None:
@@ -251,7 +249,6 @@ def test_merge_refuses_stale_expected_tip(bare_repo: Path, monkeypatch: pytest.M
 
     Worktree directory and branch MUST survive untouched.
     """
-    monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
     mgr = WorktreeManager(bare_repo, branch_name="task/stale-test", lifecycle=NOOP_LIFECYCLE)
     wt_path = mgr.create()
     mgr.save_state()
@@ -281,7 +278,6 @@ def test_merge_refuses_unmerged_tip_teardown(
 
     Worktree directory and branch MUST survive untouched.
     """
-    monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
     mgr = WorktreeManager(bare_repo, branch_name="task/unmerged-test", lifecycle=NOOP_LIFECYCLE)
     wt_path = mgr.create()
     mgr.save_state()

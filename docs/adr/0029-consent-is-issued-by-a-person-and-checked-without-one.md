@@ -1,5 +1,10 @@
 # ADR-0029: Согласие выдаёт человек отдельным глаголом, а проверяют его без человека
 
+> **ЗАМЕНЁН ADR-0030** (HATS-1755, 2026-08-20) [10]. Разделение выдачи и
+> проверки, грант с радиусом и сроком и запрет на self-grant остаются в силе.
+> Отменена in-process половина механизма: `rack` и `wt` больше не проверяют
+> согласие сами; проверка становится внешней middleware команд сессии.
+
 ## Статус
 
 Принят (HATS-1734, 2026-08-18). **Не реализован**: механизм строится стримами
@@ -319,3 +324,4 @@ PreToolUse на каждый Bash сделает журнал нечитаемы
 7. https://www.upguard.com/blog/yolo-mode-hidden-risks-in-claude-code-permissions
 8. `.agent/ai-hats/tracker/backlog/tasks/HATS-1734/prior-art-issue-check.md` — восемь систем, разделивших выдачу и проверку
 9. https://www.sudo.ws/security/advisories/epoch_ticket/
+10. `docs/adr/0030-consent-is-session-command-middleware.md` — заменяющий документ: внешний wrapper и ассимиляция инструментов

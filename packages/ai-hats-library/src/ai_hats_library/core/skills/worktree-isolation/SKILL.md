@@ -63,25 +63,19 @@ Isolated development using git worktrees. Each task gets its own working copy �
 2. **Work** — commit freely in the worktree. Main tree is untouched.
 
 3. **Finish** → hand off for review; the merge is review-gated (HATS-1019).
-   `wt merge` — and the merge inside `transition done` — is refused without
-   `AI_HATS_MERGE_ACK=1`. The flag attests that review PASSED: set it on your
-   own merge only when the conversation shows the supervisor saw this diff
-   AND review passed (notes drained, no blocking findings, explicit go).
-   Setting it without that evidence is self-grant — an auditable violation,
-   same discipline as `AI_HATS_SHARED_STATE_ACK`. The canonical close:
+   In an interactive session, the external consent wrapper turns the canonical
+   `rack transition … done` or direct `ai-hats wt merge` command into a
+   supervisor question. The agent never exports an acknowledgement flag and
+   never grants itself consent. The canonical close:
    ```
    cd <project-dir>
    rack transition <id> review    # then STOP — supervisor reviews the diff
-   # after review passed (diff seen + notes drained + explicit go).
-   # `export`, never an inline prefix: the guard refuses an inline ack on the
-   # agent's own command as a self-grant (HATS-1639). On ONE line: a lone
-   # export dies with the shell that ran it (HATS-1654).
-   export AI_HATS_MERGE_ACK=1 && ai-hats wt merge <task-branch>
-   rack transition <id> done      # already merged (HATS-596)
+   # after review passed, the reviewer drives the consent-gated edge;
+   # its one authorization also covers the nested worktree merge.
+   rack transition <id> done
    ```
-   The supervisor may equally run the merge himself. Yolo-mode is inherited,
-   not requested: a supervisor-exported `AI_HATS_MERGE_ACK=1` flows into
-   subagents via plain env inheritance.
+   The supervisor may instead run a direct merge; it is a separate top-level
+   consent operation and therefore gets its own question.
    If `wt merge` refuses with `Refused (drift)`, the base holds commits
    your branch never took in (another agent's worktree merged, or
    `origin/<base>` received commits). Re-verify your changes against the
@@ -91,7 +85,7 @@ Isolated development using git worktrees. Each task gets its own working copy �
    `--accept-drift` is for the other case: merging a stale baseline you
    accept knowingly. **Do not** pass `--force` for drift — `--force` only
    bypasses uncommitted changes; drift has its own override (HATS-457).
-   Neither `--force` nor `--accept-drift` bypasses the consent gate.
+   Neither `--force` nor `--accept-drift` bypasses the session wrapper.
 
 4. **Abandon** → discard:
    ```

@@ -390,6 +390,10 @@ class Provider(abc.ABC):
         """Whether this provider provides a native SDK SubagentEngine."""
         return False
 
+    def supports_session_command_wrappers(self) -> bool:
+        """Whether HITL children inherit an authoritative session PATH."""
+        return False
+
     def engine(self) -> SubagentEngine | None:
         """Get the native SDK SubagentEngine for this provider."""
         return None

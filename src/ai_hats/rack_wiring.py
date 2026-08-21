@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -38,20 +37,16 @@ from ai_hats_rack.dispatch import (
     Subscription,
 )
 from ai_hats_rack.events import EdgeEvent, EpicifyEvent, PreDestroyEvent
-from ai_hats_rack.extensions.epic import AUTOMATION_ACTOR
 from ai_hats_rack.extensions import (
     DerivedViewsExtension,
     EpicAutomationExtension,
-    PlanConsentExtension,
     Section,
 )
-from ai_hats_rack.selectors import ANY, EVERYWHERE, Edge, Selector, parse_selector
+from ai_hats_rack.selectors import ANY, EVERYWHERE, Selector
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
-from ai_hats_library.hooks import consent_ticket
 
-from . import consent_port, ownership
-from .check_resolve import resolve_consent_points
+from . import ownership
 from .constants import ENV_ROOT_PID
 from .paths import worktrees_dir
 from .session_identity import SessionIdentity, SessionIdentityError
@@ -410,201 +405,6 @@ class WorktreeExtension:
         return out.returncode == 0 and bool(out.stdout.strip())
 
 
-class ConsentTickets:
-    """The rack's consent-ticket seam, bound to the shipped store (HATS-1642).
-
-    ``peek`` and ``spend`` stay apart on purpose: the gate must refuse early but
-    settle late, or a rolled-back transaction eats the supervisor's click.
-    """
-
-    def peek(self, task_id: str) -> bool:
-        return consent_ticket.peek(task_id, argv=sys.argv[1:])
-
-    def spend(self, task_id: str) -> bool:
-        return consent_ticket.consume(task_id, argv=sys.argv[1:])
-
-
-#: Point-agnostic pre-approval for a declared consent point. Where no question
-#: can be asked — headless, cron, a surface without runtime hooks — this is the
-#: channel, and it is the supervisor's to export, never the agent's.
-CONSENT_ACK = "AI_HATS_CONSENT_ACK"
-
-#: The one flag kept per state, because it already MEANT this edge's consent.
-#: `AI_HATS_MERGE_ACK` is deliberately NOT here: it approves `ai-hats wt merge`,
-#: and reading it as consent for `review → done` is how a pre-approval given for
-#: one thing opened another — the silent merge this card was filed for.
-LEGACY_ACK_BY_STATE = {"execute": "AI_HATS_PLAN_ACK"}
-
-
-def env_consent_note(flag: str, subject: str, *, hook: str) -> str:
-    """Record a consent that arrived on the env channel, and name it out loud.
-
-    The channel is legitimate where no question can be asked — headless, cron,
-    a surface with no runtime hooks — but on exactly those surfaces the journal
-    is the ONLY trace, and it used to write none: afterwards a consented
-    `→ done` was indistinguishable from an unconsented one (HATS-1682 B2).
-    Same `journal_bypass("hatch", flag, …)` shape the PreToolUse guard writes,
-    so the two records of one hatch agree. Returns the work-log line.
-    """  # comment-length: allow — why the env path is loud, not silent
-    from ai_hats_library.hooks.bypass_journal import journal_bypass
-
-    journal_bypass("hatch", flag, hook=hook, cmd=" ".join(sys.argv))
-    return f"{subject}: consent from {flag}=1 (env channel — no question was asked)"
-
-
-class ConsentExtension:
-    """Refuse an edge the ROLE declared consent on, until the answer arrives.
-
-    In-lock and in-process, which is what lets it see the two shapes nobody can
-    be asked about — an epic, and the epic automation — and the invocation the
-    ticket is bound to (HATS-1682). Subscribed to every edge and filtered on
-    dispatch: resolving the declaration needs a composition, and a kernel is
-    built for `rack ls` as readily as for a transition.
-    """
-
-    name = "consent"
-    PHASE = Phase.IN_LOCK
-
-    def __init__(
-        self,
-        backlog_owner: Path | None,
-        backlog: tuple[str, ...],
-        *,
-        project_dir: Path | None = None,
-        priority=11,
-    ):
-        #: The backlog's OWN project, or ``None`` where nobody owns it. Not the
-        #: cwd's project as a fallback: a role composed here declares consent for
-        #: the backlog it owns, and reading it onto a foreign one is the leak
-        #: HATS-1538 turned master red with — the same one `AiHatsCheckPort`
-        #: closes on the gate half of the very same row (HATS-1682).
-        self._backlog_owner = backlog_owner
-        #: The anchor a grant is matched against, already resolved by
-        #: ``resolve_root``. Never re-derived from ``ctx.caller_cwd``: ai-hats's
-        #: own resolver answers the HOME dir for a cache-hosted worktree (HATS-1735).
-        self._project_dir = project_dir
-        self._backlog = backlog
-        self._priority = priority
-        self._declared: frozenset[Selector] | None = None
-
-    def subscriptions(self) -> Sequence[Subscription]:
-        return [Subscription(EVERYWHERE, Phase.IN_LOCK, self._priority)]
-
-    def _selectors(self) -> frozenset[Selector]:
-        """The role's declared consent selectors, parsed once.
-
-        Parsed, not compared as text: since HATS-1719 a declaration may denote a
-        SET of edges, and a string comparison would silently gate only the one
-        edge whose spelling happened to match.
-        """
-        if self._declared is None:
-            declared: set[str] = set()
-            try:
-                if self._backlog_owner is not None:
-                    for path in self._backlog:
-                        declared |= resolve_consent_points(
-                            self._backlog_owner, "rack", path=(path,)
-                        )
-            except AbortOperation:
-                raise
-            except Exception as exc:
-                # This subscriber runs at 11, BEFORE checks at 15 whose own
-                # resolution already does this — so a role the composer refuses
-                # surfaced here as an untyped traceback twelve frames deep, and
-                # `--json` printed nothing at all. A refusal out of an in-lock
-                # subscriber is a message, not a defect (HATS-1719 review).
-                raise AbortOperation(f"consent: {exc}") from exc
-            parsed = {parse_selector(name) for name in declared}
-            self._declared = frozenset(s for s in parsed if s is not None)
-        return self._declared
-
-    def on_event(self, ctx: DispatchContext) -> Delta | None:
-        if not isinstance(ctx.event, EdgeEvent):
-            return None
-        # Epics and the epic automation stay exempt, and `ctx.force` does NOT:
-        # the first two are properties of the CARD and of the ACTOR, and there
-        # is nobody to ask; `--force` is an addition to the command, and consent
-        # is not a property of the command — `consent | op --force` (HATS-1682).
-        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic:
-            return None
-        edge = Edge(ctx.event.from_state, ctx.event.to_state)
-        if not any(selector.matches(edge) for selector in self._selectors()):
-            return None
-        to_state = ctx.event.to_state
-        # The grant answers FIRST and the ticket is the fallback (HATS-1735).
-        # Reversed, the post-lock spender would burn a ticket on a move the
-        # grant already paid for, and the supervisor's click would vanish.
-        op = consent_port.Operation(
-            consent_port.RACK_TRANSITION,
-            subject=ctx.task.id,
-            params={"to": to_state},
-            label=f"→ {to_state}",
-        )
-        answer = consent_port.verdict(op, target_dir=self._project_dir)
-        if answer.outcome is consent_port.Outcome.GRANTED:
-            return Delta(work_log=(consent_port.note(answer, op, hook="rack_wiring.py"),))
-        for flag in (CONSENT_ACK, LEGACY_ACK_BY_STATE.get(to_state, "")):
-            if flag and os.environ.get(flag) == "1":
-                note = env_consent_note(flag, f"→ {to_state}", hook="rack_wiring.py")
-                return Delta(work_log=(note,))
-        if consent_ticket.peek(ctx.task.id, argv=sys.argv[1:]):
-            return Delta(work_log=(f"→ {to_state}: supervisor consent ticket accepted",))
-        raise AbortOperation(_consent_refusal(ctx.task.id, ctx.event.from_state, to_state, answer))
-
-
-def _consent_refusal(task_id: str, from_state: str, to_state: str, answer) -> str:
-    """Why the move stopped, and what the reader can actually do about it.
-
-    Every step is addressed to the SUPERVISOR, not to the agent reading it: the
-    agent's own copy of any of these is a self-grant. "Re-run this exact command"
-    is gone with HATS-1735 — it described the fused hook, and on a surface with
-    no hooks a re-run only buys a second refusal. So is "the question does not
-    expire": a grant has a deadline by construction.
-    """  # comment-length: allow — who each step addresses IS the contract
-    return (
-        f"Transition '{from_state} -> {to_state}' for '{task_id}' requires supervisor "
-        f"approval, and none has arrived ({answer.reason}).\n"
-        "1. Present what you are asking approval for in chat and STOP.\n"
-        "2. The supervisor opens a window by typing the verb himself — in chat on a\n"
-        "   surface with a shell escape, otherwise in a terminal of this session:\n"
-        f"     consent {consent_port.RACK_TRANSITION} 30\n"
-        "   The window covers every move of that type until it runs out. Typing it\n"
-        "   yourself is a self-grant: the guard turns your attempt into a question.\n"
-        "3. Where there is nobody to ask — headless, cron, a surface with no hooks —\n"
-        f"   {CONSENT_ACK} stands in, and only the environment that LAUNCHES the\n"
-        "   session may set it (one line, since a lone export dies with its shell):\n"
-        f"     export {CONSENT_ACK}=1 && ai-hats -r <role>\n"
-        "   Setting it from inside this session is a self-grant and is refused. If\n"
-        "   that is what the move needs, say so in chat and stop."
-    )
-
-
-class ConsentSpend:
-    """Spend the consent ticket once the move it paid for has happened.
-
-    Post-lock, so a transition a later subscriber rolls back gives the click
-    back (HATS-1642). Subscribed to EVERY edge rather than to the ones the role
-    declared: the ticket is bound to this process's argv, so a call it did not
-    consent to cannot match it — and a spender that had to re-derive the
-    declaration is one more copy of it to drift (HATS-1682).
-    """
-
-    name = "consent-spend"
-
-    def __init__(self, *, priority: int = 15) -> None:
-        self._priority = priority
-
-    def subscriptions(self) -> Sequence[Subscription]:
-        return [Subscription(EVERYWHERE, Phase.POST_LOCK, self._priority)]
-
-    def on_event(self, ctx: DispatchContext) -> Delta | None:
-        if not isinstance(ctx.event, EdgeEvent):
-            return None
-        if not consent_ticket.consume(ctx.task.id, argv=sys.argv[1:]):
-            return None
-        return Delta(work_log=(f"{ctx.event.to_state}: supervisor consent ticket spent",))
-
-
 def build_rack_kernel(
     project_dir: Path,
     *,
@@ -647,11 +447,6 @@ def build_rack_kernel(
     # plan-gate/stamp/clear (declaration-bound) come from the definition slots.
     # derived-views stays code-channel — it needs the STATE.md path (ADR-0017 §4).
     factories = stock_factories(sections)
-    # HATS-1642: the consent ticket is written by a shipped hook, which the rack
-    # may not import (import-hygiene pin) — so the STORE is bound here, the same
-    # one-directional channel ownership already rides.
-    consent = PlanConsentExtension(tickets=ConsentTickets())
-    factories["plan-consent"] = lambda defn, catalog, cfg: consent
     declared = (
         build_extensions(defn, tasks_dir, factories)
         + build_bound_subscribers(defn, tasks_dir, factories)
@@ -670,18 +465,6 @@ def build_rack_kernel(
         DerivedViewsExtension(tasks_dir, state_md_path, topology=topology),
         *extra_subscribers,  # consumer add-ons (pre-destroy guards, K4 hook-runner)
     ]
-    # HATS-1682: where consent is required is the ROLE's declaration, not this
-    # backlog's topology — so the pair is registered unconditionally and the
-    # declaration decides on dispatch. Spending is post-lock, so the click is
-    # spent only on a transition that actually happened.
-    subscribers.append(
-        ConsentExtension(
-            backlog_owner,
-            tuple(dict.fromkeys((defn.name, defn.cli_alias or defn.name))),
-            project_dir=project_dir,
-        )
-    )
-    subscribers.append(ConsentSpend())
     # Fail-closed at composition: a subscriber's declared state vocabulary must
     # fit the topology (the HATS-692 stranding class, HATS-1043 R8).
     validate_requires_states(subscribers, topology, source=str(tasks_dir))

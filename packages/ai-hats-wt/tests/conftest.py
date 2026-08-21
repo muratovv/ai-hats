@@ -6,8 +6,7 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _grant_merge_consent(monkeypatch: pytest.MonkeyPatch):
-    """AI_HATS_MERGE_ACK=1 for every test (HATS-1019) — this suite tests
-    lifecycle semantics; the consent contract has its own explicit test."""
-    monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
-    monkeypatch.setenv("AI_HATS_PLAN_ACK", "1")
+def _legacy_ack_flags_are_absent(monkeypatch: pytest.MonkeyPatch):
+    """The standalone engine must not need session authorization flags."""
+    monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)

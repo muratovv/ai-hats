@@ -14,11 +14,12 @@ the app is a key of the declaration rather than a prefix of a point name, so
 ai-hats no longer needs to know any application's namespaces to route a row.
 
 One clause came back in HATS-1682: a point's *spelling* is refused here for a
-foreign app too, because consent rides the same row and a misspelt consent point
-is a disarmed gate nothing else would ever have read. HATS-1720 added the second
-half — whether a row that RUNS or ASKS may stand on a legal selector at all. Both
-live in ``_APP_RULES``, and both predicates are imported from the app that owns
-the grammar.
+foreign app too, because a misspelt point is a disarmed binding nothing else
+would ever have read. HATS-1720 added the second half — whether a row that RUNS
+a script may stand on a legal selector at all. Both live in ``_APP_RULES``, and
+both predicates are imported from the app that owns the grammar. Consent is no
+longer among them: its policy has its own compiler in ``consent_wrapper`` and
+never reaches this resolver (ADR-0030 D1/D3).
 """  # comment-length: allow — what left the catalog, and why, is the decision
 
 from __future__ import annotations
@@ -48,9 +49,9 @@ AI_HATS_APP = "ai-hats"
 #: The one point of that app: fired once per session, before the launch.
 STARTUP_POINT = "startup"
 
-#: The consent-gate application key (HATS-1735). ai-hats does NOT fire it: its
-#: rows name the OPERATION TYPES a grant may cover, and both readers of the
-#: grant resolve that list rather than knowing what a rack is (ADR-0029 D8).
+#: The consent-gate application key. ai-hats does NOT fire it: its rows name the
+#: OPERATION TYPES and selectors the external command middleware protects, and
+#: rack reads none of it (ADR-0030 D3).
 CONSENT_GATE_APP = "consent_gate"
 
 #: The roster, not the authority: used ONLY to name a block nobody collects
@@ -132,13 +133,6 @@ def _rack_gate_veto(selector: str) -> str | None:
     return gate_veto(selector)
 
 
-def _rack_consent_veto(selector: str) -> str | None:
-    """The rack's own predicate, asked whether consent may be declared here."""
-    from ai_hats_rack.selectors import consent_veto
-
-    return consent_veto(selector)
-
-
 #: What an app refuses about a row of its own, in the order the questions are
 #: asked. The first entry of each pair is the row KEY that has to be present for
 #: the question to apply — ``None`` means "of every row".
@@ -157,9 +151,6 @@ _APP_RULES: dict[str, tuple[tuple[str | None, Callable[[str], str | None]], ...]
         # May a row that RUNS a script stand on it? A wide output takes a legal
         # name and turns a gate into a lock-in (HATS-1720).
         ("run", _rack_gate_veto),
-        # May a row that speaks about CONSENT stand on it? `false` speaks too:
-        # a spelling nothing can switch on has nothing to switch off.
-        ("consent", _rack_consent_veto),
     ),
 }
 

@@ -10,7 +10,6 @@ without a handler is a pure FSM (no worktree).
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,56 +17,6 @@ if TYPE_CHECKING:
     from ai_hats_core.deadline import Deadline
 
 logger = logging.getLogger(__name__)
-
-
-#: Point-agnostic pre-approval for a declared consent point (HATS-1682). The
-#: literal is re-spelled here rather than imported from ``rack_wiring``, which
-#: imports THIS module — the constant may not travel back up that edge.
-CONSENT_ACK = "AI_HATS_CONSENT_ACK"
-
-#: The channel name for a merge a live grant covered (HATS-1735).
-GRANT_CHANNEL = "consent grant"
-
-
-def _merge_consent(task_id: str, *, target_dir=None) -> tuple[str, object]:
-    """Which channel carries the supervisor's consent for THIS merge, or ``""``.
-
-    Two channels, because the move has two surfaces. A one-use ticket is the
-    answer to a question actually asked — the merge inside `→ done` is part of
-    the move the supervisor approved, so the click has to reach it. Where no
-    question CAN be asked (headless, cron, a hookless surface) ``CONSENT_ACK``
-    stands in; without that half the headless road needed both it and
-    ``AI_HATS_MERGE_ACK``, and no text said so (HATS-1682 B1).
-
-    Peek, never spend: the post-lock spender owns that, so a rolled-back move
-    gives the click back. Returns ``(channel, verdict)`` — the verdict is only
-    filled on the grant road, and only so the caller can name the grant in the
-    record it writes AFTER the merge actually happened.
-    """  # comment-length: allow — the three channels and why none is enough alone
-    import sys
-
-    from ai_hats_library.hooks import consent_ticket
-
-    from . import consent_port
-
-    # The grant answers first (HATS-1735) — before the ticket, whose spender
-    # runs post-lock and would burn a click the grant had already paid for.
-    answer = consent_port.verdict(
-        consent_port.Operation(consent_port.WT_MERGE, subject=task_id, label="worktree merge"),
-        target_dir=target_dir,
-    )
-    if answer.outcome is consent_port.Outcome.GRANTED:
-        return GRANT_CHANNEL, answer
-    try:
-        if consent_ticket.peek(task_id, argv=sys.argv[1:]):
-            return "consent ticket", None
-    except Exception:
-        # Unreadable store -> no consent established on THIS channel; the env
-        # one below still stands, as does the wt engine's own ack behind it.
-        logger.warning("consent-ticket peek before merge failed", exc_info=True)
-    if os.environ.get(CONSENT_ACK) == "1":
-        return CONSENT_ACK, None
-    return "", None
 
 
 def collect_carry_for_project(
@@ -202,9 +151,8 @@ class WtWorktreeEffects:
     ) -> str | None:
         """Merge (``merge=True``) or discard the task's worktree.
 
-        Returns "merged" / "discarded" for the card's work_log (HATS-866/AC5) —
-        "merged" carrying the env channel's name when consent came from there
-        (HATS-1682) — or None when no worktree action happened. Merge failures
+        Returns "merged" / "discarded" for the card's work_log (HATS-866/AC5),
+        or None when no worktree action happened. Merge failures
         re-raise so the transition aborts fail-loud (HATS-481); ``force``
         bypasses only the clean-tree merge gate (HATS-596); discard failures
         on an admin close are swallowed. ``outer_deadline`` is the caller's
@@ -256,34 +204,10 @@ class WtWorktreeEffects:
             if merge:
                 # HATS-596: force reaches merge guards. HATS-1603: so does the
                 # caller's ceiling, or wt:pre-merge outlives the rack lock.
-                channel, granted = _merge_consent(task_id, target_dir=self.project_dir)
                 active.merge(
                     force=force,
                     outer_deadline=outer_deadline,
-                    consent=bool(channel),
                 )
-                if granted is not None:
-                    # Recorded only now: a merge that raised consumed nothing,
-                    # the same order the env channel below is written in.
-                    from . import consent_port
-
-                    return "merged — " + consent_port.note(
-                        granted,
-                        consent_port.Operation(
-                            consent_port.WT_MERGE, subject=task_id, label="worktree merge"
-                        ),
-                        hook="wt_effects.py",
-                    )
-                if channel == CONSENT_ACK:
-                    # The env channel is allowed, but never silent (HATS-1682 B2).
-                    # Imported at call time, not at module import: `rack_wiring`
-                    # imports THIS module, and one wording for both records beats
-                    # two copies that can drift.
-                    from .rack_wiring import env_consent_note
-
-                    return "merged — " + env_consent_note(
-                        channel, "worktree merge", hook="wt_effects.py"
-                    )
                 return "merged"
             # failed → intentional discard; same ceiling as merge (HATS-1603)
             active.discard(force=True, outer_deadline=outer_deadline)

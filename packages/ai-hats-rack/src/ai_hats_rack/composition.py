@@ -385,7 +385,6 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         HypVerdictsExtension,
         MirrorLinkHandler,
         ParentContextExtension,
-        PlanConsentExtension,
         PlanGateExtension,
         PlanScaffoldExtension,
         PropVotesExtension,
@@ -404,7 +403,6 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
 
     return {
         "frozen-integrity": lambda defn, catalog, cfg: FrozenIntegrityExtension(catalog),
-        "plan-consent": lambda defn, catalog, cfg: PlanConsentExtension(),
         "plan-gate": lambda defn, catalog, cfg: PlanGateExtension(catalog, catalog_sections),
         "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(
             catalog, catalog_sections

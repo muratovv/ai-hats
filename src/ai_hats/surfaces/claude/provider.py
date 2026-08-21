@@ -116,6 +116,9 @@ class ClaudeProvider(Provider):
     def name(self) -> str:
         return PROVIDER_CLAUDE
 
+    def supports_session_command_wrappers(self) -> bool:
+        return True
+
     def provider_hints(self) -> list["ProviderHint"]:
         from ai_hats.providers import ProviderHint
 

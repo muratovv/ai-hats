@@ -144,7 +144,6 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
         WorktreeBaseBranchMismatchError,
         WorktreeDriftError,
         WorktreeMergeAborted,
-        WorktreeMergeConsentError,
         WorktreeStateLostError,
     )
 
@@ -155,20 +154,6 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
         # to a symptom that pointed at plan-gate, so `checks` says so here and
         # the check's own words carry the recipe.
         return ("checks_refused", f"Refused (checks) — cannot merge for {tid}.", [str(exc)])
-    if isinstance(exc, WorktreeMergeConsentError):
-        return (
-            "worktree_merge_consent",
-            f"Refused (review consent required) — cannot merge for {tid}. {exc}",
-            [
-                "The task is ready for review — STOP and hand it off to the supervisor.",
-                "Consent is the supervisor's to give, from the environment that launched",
-                "this session — an inline prefix on the agent's own command is refused as",
-                "a self-grant (HATS-1639). Once review passes (diff seen, notes resolved,",
-                "explicit go) — one line, a lone export dies with its shell (HATS-1654):",
-                f"  export AI_HATS_MERGE_ACK=1 && ai-hats wt merge {branch}",
-                f"  rack transition {tid} --state done",
-            ],
-        )
     if isinstance(exc, WorktreeStateLostError):
         return (
             "worktree_state_lost",

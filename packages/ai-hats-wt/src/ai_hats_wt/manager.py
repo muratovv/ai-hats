@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shutil
 import subprocess
 import tempfile
@@ -226,25 +225,6 @@ class WorktreeDriftError(Exception):
         self.base_branch = base_branch
         self.worktree_path = worktree_path
         super().__init__(message)
-
-
-class WorktreeMergeConsentError(Exception):
-    """Merge to the base branch attempted without review consent.
-
-    HATS-1019: publishing a task branch to the base is a review-gated
-    act — review must actually happen first. Facts only in the message
-    (HATS-509 body contract); the review-handoff recipe is owned by the
-    CLI handlers. Cleanup of already-merged work (HATS-596 short-circuit)
-    publishes nothing and stays consent-free.
-    """
-
-    def __init__(self, branch_name: str, base_branch: str) -> None:
-        self.branch_name = branch_name
-        self.base_branch = base_branch
-        super().__init__(
-            f"Merging '{branch_name}' into '{base_branch}' requires supervisor "
-            f"consent: AI_HATS_MERGE_ACK=1 is not set."
-        )
 
 
 class WorktreeStaleRefError(Exception):
@@ -635,7 +615,7 @@ class WorktreeMergeAborted(Exception):
 class Blocker:
     """One reason :meth:`WorktreeManager.merge` would refuse right now (HATS-1654).
 
-    ``kind`` names the guard (``consent``, ``drift``, …) so a caller can drop the
+    ``kind`` names the guard (``drift``, ``dirty``, …) so a caller can drop the
     one that already raised; ``message`` is the refusal's own words.
     """
 
@@ -995,18 +975,14 @@ class WorktreeManager:
         )
         return self.worktree_path
 
-    def probe_blockers(
-        self, *, force: bool = False, accept_drift: bool = False, consent: bool = False
-    ) -> list[Blocker]:
+    def probe_blockers(self, *, force: bool = False, accept_drift: bool = False) -> list[Blocker]:
         """Every refusal :meth:`merge` would raise right now, in its own order.
 
         HATS-1654: the guards fire one per run, so a merge can cost three runs to
         learn three facts. This asks all of them at once — read-only, no lock, no
         mutation; the one cost is the drift check's bounded ``git fetch``. The
         ``wt:pre-merge`` point is NOT probed: a check is an arbitrary command with
-        no "would you refuse?" mode (that predicate is HATS-1615's). ``consent``
-        is :meth:`merge`'s, and a caller that answers it there must pass it here
-        too, or a ticket-bearing merge is told its consent is missing.
+        no "would you refuse?" mode (that predicate is HATS-1615's).
         """
         if not self._is_git or self.worktree_path is None or not self.worktree_path.exists():
             return []
@@ -1027,9 +1003,6 @@ class WorktreeManager:
             if not self._is_patch_integrated(self.branch_name, base):
                 return None
             return str(WorktreeRebasedBranchError(self.branch_name, base))
-
-        def consent_blocker() -> str | None:
-            return str(WorktreeMergeConsentError(self.branch_name, base))
 
         def base_mismatch() -> str | None:
             head = self._get_current_branch()
@@ -1055,9 +1028,6 @@ class WorktreeManager:
         # bypass the guard itself honours, so a bypassed guard is never probed.
         probes: tuple[tuple[str, bool, Callable[[], str | None]], ...] = (
             ("rebased", accept_drift or force, rebased),
-            # Both halves of merge()'s own condition ride in the flag column, so
-            # the probe has nothing left to re-decide (HATS-1682 B7).
-            ("consent", consent or os.environ.get("AI_HATS_MERGE_ACK") == "1", consent_blocker),
             ("base-mismatch", not base_exists, base_mismatch),
             ("dirty", force, dirty),
             ("drift", accept_drift, drift),
@@ -1085,12 +1055,8 @@ class WorktreeManager:
         skip_hooks: bool = False,
         expected_tip: str | None = None,
         outer_deadline: Deadline | None = None,
-        consent: bool = False,
     ) -> None:
         """Merge worktree changes back into the original branch and clean up.
-
-        ``consent`` stands in for the env ack when the caller has already
-        established the supervisor's approval of THIS merge (HATS-1682).
 
         HATS-1603: ``outer_deadline`` is the enclosing caller's ceiling (the rack
         task lock, when the FSM automerges) — every budget drawn inside is
@@ -1219,12 +1185,6 @@ class WorktreeManager:
                         self._original_branch,
                     )
                     return
-
-            # HATS-1019: consent gate AFTER the HATS-596 short-circuit —
-            # already-merged cleanup publishes nothing and must stay ack-free
-            # (supervisor merges, then the agent's `transition done` tears down).
-            if not consent and os.environ.get("AI_HATS_MERGE_ACK") != "1":
-                raise WorktreeMergeConsentError(self.branch_name, self._original_branch)
 
             # HATS-533: refuse if main-repo HEAD has wandered off the merge
             # target captured at create time (manual checkout, peer agent in
@@ -2651,7 +2611,7 @@ class WorktreeManager:
             tail = stderr.splitlines()[-1] if stderr else "<no stderr>"
             if not force_rmtree:
                 raise WorktreeRemoveError(self.worktree_path, tail) from exc
-            # Opt-in path: --force-remove explicit consent.
+            # Opt-in path: --force-remove was requested explicitly.
             logger.warning(
                 "force-removing worktree dir after git failure: %s (git: %s)",
                 self.worktree_path,
@@ -2689,7 +2649,7 @@ class WorktreeManager:
         nothing here, so the HATS-488/B-03 raise would defend nothing; but a
         shell that still holds files may hold work git can no longer see, so
         it is removed only when empty (the tmp-reaper shape) or on explicit
-        ``--force-remove`` consent. Never raises: the caller's teardown has
+        explicit ``--force-remove``. Never raises: the caller's teardown has
         already succeeded.
         """
         holds_files = any(p.is_file() or p.is_symlink() for p in path.rglob("*"))

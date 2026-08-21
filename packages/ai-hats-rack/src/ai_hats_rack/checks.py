@@ -41,13 +41,10 @@ if EDGE_CHECK_TIMEOUT_S >= LOCK_TIMEOUT:  # pragma: no cover — explicit raise 
     )
 
 
-#: What a carried row IS (HATS-1682). A ``CHECK_ROW`` spawns a script when its
-#: point fires; a ``CONSENT_ROW`` spawns nothing and only declares that the
-#: supervisor is asked there. Both are addressed and judged against the topology
-#: alike — the second kind is carried for exactly that, and never run.
-# comment-length: allow — which kind runs is the contract
+#: What a carried row IS. Only one kind survives ADR-0030: a row that spawns a
+#: script when its point fires. The metadata-only kind left rack entirely — the
+#: external command middleware owns it now (ADR-0030 D1/D3).
 CHECK_ROW = "check"
-CONSENT_ROW = "consent"
 
 
 @dataclass(frozen=True)
@@ -68,7 +65,6 @@ class CheckDeclaration:
     on_error: str
     label: str
     handle: Any
-    kind: str = CHECK_ROW
 
     def points(self) -> tuple[str, ...]:
         """The point names this row binds. The carrier guarantees it is non-empty
@@ -127,7 +123,7 @@ class CheckPort(Protocol):
 #: whether a row that can REFUSE may stand there is a question about the row, and
 #: it is refused where rows are composed — ai-hats does it in
 #: ``check_points._APP_RULES``, using this package's own
-#: :func:`~.selectors.gate_veto` / :func:`~.selectors.consent_veto`. A second
+#: :func:`~.selectors.gate_veto`. A second
 #: carrier that skips them installs a gate that locks a card in one state on every
 #: way out, and nothing here will stop it: refusing in-lock is the same lock-in one
 #: layer down, so the refusal has to happen at composition, which is the carrier's
@@ -267,12 +263,11 @@ def dead_selector_reason(
     spelling whose grammar does match, and each is a working address, so naming
     them all is the recipe rather than noise.
     """  # comment-length: allow — the recipe is the whole value of the finding
-    what = "the gate" if row.kind == CHECK_ROW else "the consent question"
     address = f"apps.rack.{'.'.join(row.path)}"
     head = f"checks: {row.label} binds {point!r} under {address}, but no edge of "
     if elsewhere:
         return (
-            f"{head}{row.path[0]!r} matches it — {what} can never fire there. The arrow is "
+            f"{head}{row.path[0]!r} matches it — the gate can never fire there. The arrow is "
             f"the grammar of {', '.join(elsewhere)}: move the row under "
             f"{' or '.join('apps.rack.' + s for s in elsewhere)} to arm it, or re-aim it at "
             f"an edge {row.path[0]!r} has. A hit in a sibling's topology is not this row's, "
@@ -280,7 +275,7 @@ def dead_selector_reason(
         )
     return (
         f"{head}any topology mounted in this project matches it (backlogs: "
-        f"{', '.join(mounted)}) — {what} can never fire, on that edge or any other. A rack "
+        f"{', '.join(mounted)}) — the gate can never fire, on that edge or any other. A rack "
         f"selector is an arrow between the state names of the backlog it gates: "
         f"`review->done` for exactly that edge, `->done` for every road into the state."
     )
@@ -376,11 +371,6 @@ class CheckSubscriber:
             if not self._fires_on(row, edge, edges):
                 continue
             if not self._addresses_me(row):
-                continue
-            if row.kind != CHECK_ROW:
-                # A consent row spawns nothing. It is carried this far so the
-                # addressing check above sees it — that is the whole reason the
-                # kind exists (HATS-1682) — and it stops here, before run_check.
                 continue
             bound.append(row)
         return tuple(bound)
@@ -487,7 +477,6 @@ __all__ = [
     "ARMED",
     "CHECK_PRIORITY",
     "CHECK_ROW",
-    "CONSENT_ROW",
     "EDGE_CHECK_TIMEOUT_S",
     "CheckDeclaration",
     "CheckOutcome",

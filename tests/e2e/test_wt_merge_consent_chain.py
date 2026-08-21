@@ -53,7 +53,7 @@ def env(project: Path, tmp_path: Path, ai_hats_shim: Path) -> dict:
     nothing about consent (HATS-1682 T4).
     """
     from _helpers.env import checkout_pythonpath
-    from _helpers.sessions import stand_in_session
+    from _helpers.sessions import stand_in_wrapped_session
 
     e = os.environ.copy()
     for name in [k for k in e if k.startswith("AI_HATS_") and k.endswith("ACK")]:
@@ -65,7 +65,7 @@ def env(project: Path, tmp_path: Path, ai_hats_shim: Path) -> dict:
     # The approved command line says `ai-hats`, so a real one has to be on PATH:
     # the console script is no longer built (HATS-790), the shim is it.
     e["PATH"] = os.pathsep.join([str(ai_hats_shim.parent), e.get("PATH", "")])
-    return stand_in_session(e, project, "e2e-wt-merge-consent")
+    return stand_in_wrapped_session(e, project, "e2e-wt-merge-consent")
 
 
 @pytest.fixture
@@ -174,7 +174,7 @@ def test_the_spent_ticket_does_not_open_a_second_merge(project, settings, env, b
     replayed = run_approved(project, verdict, env=env)
 
     assert replayed.returncode != 0, f"a spent ticket merged again:\n{replayed}"
-    assert "AI_HATS_MERGE_ACK" in replayed.output, f"the refusal named no way out:\n{replayed}"
+    assert "ticket already spent or never issued" in replayed.output
     assert "wt-work-again" not in log_subjects(project), "the second merge landed anyway"
 
 

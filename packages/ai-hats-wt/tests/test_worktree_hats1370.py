@@ -65,11 +65,7 @@ def test_rebased_branch_refuses_merge_without_accept_drift(bare_repo: Path, tmp_
     assert "integrated into base 'master' under different SHAs" in str(exc_info.value)
 
     # Now verify that passing accept_drift=True allows teardown without duplicate merge
-    os.environ["AI_HATS_MERGE_ACK"] = "1"
-    try:
-        mgr.merge(accept_drift=True)
-    finally:
-        os.environ.pop("AI_HATS_MERGE_ACK", None)
+    mgr.merge(accept_drift=True)
 
     assert not wt_path.exists()
     assert WorktreeManager.branch_exists(bare_repo, "task/hats-1370-test") is False

@@ -41,6 +41,7 @@ def test_build_full_content_clean_wrapping(tmp_path: Path):
 def test_engine_returns_claude_engine():
     provider = ClaudeProvider()
     assert provider.supports_sdk_engine() is True
+    assert provider.supports_session_command_wrappers() is True
     assert provider.engine() is not None
 
 
