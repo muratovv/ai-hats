@@ -26,7 +26,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
   Consent deliberately did **not** widen: it migrates one-to-one and stays on the edges the trait already named. A wide question without a batch is click-spam (HATS-1728). That split the `maintainer` role's single row in two — the "run + consent on one row" form ties the gate's reach to the question's, and here they differ.
 
-  Not yet legal, each refused by name of the card that opens it: `<from>->` and `ANY->ANY` (HATS-1720), `NONE->` / `->NONE` (HATS-1703).
+  Not yet legal, each refused by name of the card that opens it: `NONE->` / `->NONE` (HATS-1703). `<from>->` and `ANY->ANY` arrived in HATS-1720, below.
+
+- **A rack selector may now leave the TARGET open — `<from>->` and `ANY->ANY`** (HATS-1720). Every road OUT of a state, and every move of a backlog, said in one arrow. This is what the code channel had been writing by hand: three helpers in the integrator and four subscribers inside the package each rebuilt the topology's state product to say what one selector says, which is why `FrozenIntegrityExtension` had to be handed a topology at all.
+
+  **A declared row may not stand on a wide output, and each refusal names the card that lifts it.** A `run:` row is in-lock and can refuse, and one refusal on every way out locks the card in that state — measured, `on_error: warn` softens a check that BROKE and never one that refused, and `--force` relaxes the FSM arrow while the check still runs; a notify-only row becomes legal there with HATS-1723. `consent:` is refused for an unrelated reason: the guard matches on the target state and never learns which state the card is leaving, so the question would go unasked in silence (HATS-1706 opens it, after HATS-1712).
+
+  Also in this slice:
+  - **A subscriber runs at most once per event and phase.** Wide selectors let a subscriber's own bindings overlap — `ownership-release` holds `execute->` and `->done`, and `execute->done` matches both — and measured, the dispatcher used to hand it the event twice.
+  - **`FrozenIntegrityExtension(tasks_dir, topology=…)` no longer takes `topology`** — it says `ANY->ANY` and no longer needs one. Same for the integrator's ownership/worktree/consent adapters.
+  - **`ANY` on ONE side is refused** as a second spelling of the empty side: write `->done`, `execute->`, or `ANY->ANY` for everywhere.
+  - **A card sitting in a state the topology no longer has now reaches the subscribers.** A wide selector matches a PAIR; the enumeration it replaced was drawn from `topology.states`, and the kernel validates only a transition's target. So after a state is renamed or dropped in `backlog.yaml`, `rack transition <id> --state done --force` on a card left behind used to write the state and run nothing at all — no gate, no consent, no worktree teardown, no ownership release. Now it runs them, like every other road into `done`.
 
 ### Added
 

@@ -13,20 +13,26 @@ is checked by the application that owns it, when it next runs. Since HATS-1545
 the app is a key of the declaration rather than a prefix of a point name, so
 ai-hats no longer needs to know any application's namespaces to route a row.
 
-Selector spelling for a foreign check app is validated through the owner's
-predicate. Consent policy has its own compiler in ``consent_wrapper`` and does
-not use this executable-check resolver (ADR-0030).
+One clause came back in HATS-1682: a point's *spelling* is refused here for a
+foreign app too, because a misspelt point is a disarmed binding nothing else
+would ever have read. HATS-1720 added the second half — whether a row that RUNS
+a script may stand on a legal selector at all. Both live in ``_APP_RULES``, and
+both predicates are imported from the app that owns the grammar. Consent is no
+longer among them: its policy has its own compiler in ``consent_wrapper`` and
+never reaches this resolver (ADR-0030 D1/D3).
 """  # comment-length: allow — what left the catalog, and why, is the decision
 
 from __future__ import annotations
 
+import difflib
 import json
 import string
-import sys
 from hashlib import sha1
 from collections.abc import Callable, Iterable, Sequence, Set as AbstractSet
 from dataclasses import replace
 from pathlib import Path
+
+from .diagnostics import Diagnostic, Level, emit_to_stderr
 from typing import Any
 
 from ai_hats_core import ResolvedCheck, ResolvedComponent
@@ -43,7 +49,9 @@ AI_HATS_APP = "ai-hats"
 #: The one point of that app: fired once per session, before the launch.
 STARTUP_POINT = "startup"
 
-#: External command middleware owns this application (ADR-0030).
+#: The consent-gate application key. ai-hats does NOT fire it: its rows name the
+#: OPERATION TYPES and selectors the external command middleware protects, and
+#: rack reads none of it (ADR-0030 D3).
 CONSENT_GATE_APP = "consent_gate"
 
 #: The roster, not the authority: used ONLY to name a block nobody collects
@@ -118,27 +126,66 @@ def selector_ends(app: str, selector: str) -> tuple[str | None, str | None]:
     )
 
 
-#: Apps whose selector GRAMMAR is refused here though ai-hats does not FIRE them.
-#: Not ``_OWNED_POINTS`` (that means running the rows). The predicate is
-#: imported FROM the owner, so ai-hats still never spells the grammar (D11).
-_SELECTOR_FORM: dict[str, Callable[[str], str | None]] = {"rack": _rack_selector_form}
+def _rack_gate_veto(selector: str) -> str | None:
+    """The rack's own predicate, asked whether a row that can REFUSE may sit here."""
+    from ai_hats_rack.selectors import gate_veto
+
+    return gate_veto(selector)
 
 
-def _validate_selector_form(row: AppBinding) -> None:
-    """Refuse a check point name outside its app's grammar at composition.
+
+#: What an app refuses about a row of its own, in the order the questions are
+#: asked. The first entry of each pair is the row KEY that has to be present for
+#: the question to apply — ``None`` means "of every row".
+#:
+#: ai-hats does not FIRE these apps (that is ``_OWNED_POINTS``); it only refuses
+#: what their owner says is unusable, and every predicate is imported FROM the
+#: owner, so ai-hats still never spells a grammar (D11). One list rather than a
+#: dict per question on purpose: two registries keyed by app were coupled by
+#: control flow — the loop returned on a missing FORM before it looked a veto up —
+#: which is a silent hole in the one function whose whole job is to fail closed.
+_APP_RULES: dict[str, tuple[tuple[str | None, Callable[[str], str | None]], ...]] = {
+    "rack": (
+        # Is the name in the grammar at all? Asked of EVERY row, because a
+        # consent-only row is refused nowhere else (HATS-1682 A5).
+        (None, _rack_selector_form),
+        # May a row that RUNS a script stand on it? A wide output takes a legal
+        # name and turns a gate into a lock-in (HATS-1720).
+        ("run", _rack_gate_veto),
+    ),
+}
+
+
+def _carried_keys(row: AppBinding) -> frozenset[str]:
+    """The keys ai-hats owns that this row actually carries."""
+    return frozenset(
+        key for key, held in (("run", bool(row.run)), ("consent", row.consent is not None)) if held
+    )
+
+
+def _validate_selector(row: AppBinding) -> None:
+    """Refuse a row its app will not stand, at composition (HATS-1682, HATS-1720).
+
+    Two questions, answered by the owner both times. First the NAME: is it in the
+    grammar at all. Then the ROW: may something that runs a script, or asks the
+    supervisor, sit on that selector.
 
     Weaker than :func:`_validate_owned_points` on purpose: ai-hats does not hold
     the rack's topology, so whether ``review->dnoe`` names a REAL edge stays
     the rack's question, answered where the topology is (``dead_selector_reason``).
-    What can be answered here is whether the name is in the grammar at all.
+    What can be answered here is whether the name is in the grammar at all — and
+    it must be, because the declaration is now a security boundary: a
+    consent-only ``plan-execute`` (no arrow) disarmed both roads into master and no
+    channel said a word (A5).
     """  # comment-length: allow — which half of the check lives where is the fix
-    form = _SELECTOR_FORM.get(row.app)
-    if form is None:
-        return
+    carried = _carried_keys(row)
     for name in row.at:
-        reason = form(name)
-        if reason is not None:
-            raise CheckBindingError(f"{_label(row)} at {name!r} — {reason}")
+        for key, asks in _APP_RULES.get(row.app, ()):
+            if key is not None and key not in carried:
+                continue
+            reason = asks(name)
+            if reason is not None:
+                raise CheckBindingError(f"{_label(row)} at {name!r} — {reason}")
 
 
 def resolve_checks(
@@ -146,18 +193,29 @@ def resolve_checks(
     skills: Iterable[ResolvedComponent],
     *,
     removed_skills: AbstractSet[str] = frozenset(),
+    diagnostics: list[Diagnostic] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
-    """Resolve every declared row to an absolute script, deduped by identity."""
+    """Resolve every declared row to an absolute script, deduped by identity.
+
+    ``diagnostics`` is the collector for what this resolution wants to say.
+    Absent, the findings go to stderr as before — which is the right channel
+    for a plain CLI run and the wrong one under a wrapped session, where the
+    alternate screen buffer eats them (HATS-1753).
+    """
     if not declared:
         return ()
+    found = [] if diagnostics is None else diagnostics
     by_name = {resolve_namespace(skill.name): skill for skill in skills}
     removed = {resolve_namespace(name) for name in removed_skills}
     resolved: dict[tuple[str, tuple[str, ...], str, str], ResolvedCheck] = {}
     for row in declared:
-        # Form first so a malformed check cannot compose as a silent no-op.
-        _validate_selector_form(row)
+        # Form first, and for EVERY row: a consent-only row is refused nowhere
+        # else, and a typo in one disarms a gate in silence (HATS-1682 A5).
+        _validate_selector(row)
         if not row.run:
-            # Metadata-only rows run no script; their owning integration consumes them.
+            # A consent-only row runs nothing (HATS-1682): no script to find, and
+            # no root to judge it from — resolving it would make a declaration
+            # that spawns nothing refuse from a linked worktree.
             if owns_app(row.app):
                 _validate_owned_points(row)
             continue
@@ -170,7 +228,7 @@ def resolve_checks(
             )
         skill = by_name.get(resolve_namespace(row.skill))
         if skill is None:
-            _report_missing_skill(row, removed)
+            _report_missing_skill(row, removed, found)
             continue
         script_path = _resolve_script(row, skill)
         if owns_app(row.app):
@@ -184,13 +242,20 @@ def resolve_checks(
             on_error=row.on_error,
             script_path=script_path,
             declared_by=row.declared_by,
+            declared_in=row.declared_in,
         )
-        resolved[row.identity()] = _stricter(resolved.get(row.identity()), check)
-    _warn_unclaimed_apps(declared)
+        resolved[row.identity()] = _stricter(resolved.get(row.identity()), check, found)
+    _warn_unclaimed_apps(declared, found)
+    if diagnostics is None:
+        emit_to_stderr(found)
     return tuple(resolved.values())
 
 
-def _stricter(existing: ResolvedCheck | None, incoming: ResolvedCheck) -> ResolvedCheck:
+def _stricter(
+    existing: ResolvedCheck | None,
+    incoming: ResolvedCheck,
+    found: list[Diagnostic],
+) -> ResolvedCheck:
     """Dedup by identity: the strictest ``on_error`` wins, so a later relaxation
     cannot disarm an earlier gate. The first declaration site keeps the slot —
     position and ``declared_by`` follow composition order. Declaring the same row
@@ -198,26 +263,40 @@ def _stricter(existing: ResolvedCheck | None, incoming: ResolvedCheck) -> Resolv
     a shipped role to add a second declarer."""  # comment-length: allow — R5 is a reversal of the earlier ruling
     if existing is None:
         return incoming
-    print(
-        f"WARN: {_label(existing)} is declared again by {incoming.declared_by!r} — "
-        f"the gate installs ONCE, with on_error: "
-        f"{'refuse' if 'refuse' in (existing.on_error, incoming.on_error) else existing.on_error}",
-        file=sys.stderr,
+    found.append(
+        Diagnostic(
+            Level.WARN,
+            f"{_label(existing)} is declared again by {incoming.declared_by!r} — "
+            f"the gate installs ONCE, with on_error: "
+            f"{'refuse' if 'refuse' in (existing.on_error, incoming.on_error) else existing.on_error}",
+            where=incoming.declared_in,
+            remedy=(
+                f"drop the row from {existing.declared_by!r} or from "
+                f"{incoming.declared_by!r} — one of the two"
+            ),
+        )
     )
     if existing.on_error == "refuse" or incoming.on_error != "refuse":
         return existing
     return replace(existing, on_error="refuse")
 
 
-def _warn_unclaimed_apps(declared: Sequence[AppBinding]) -> None:
+def _warn_unclaimed_apps(declared: Sequence[AppBinding], found: list[Diagnostic]) -> None:
     """A block no integration collects is a gate that can never fire (R9)."""
     for app in sorted({row.app for row in declared} - KNOWN_APPS):
         declarers = sorted({row.declared_by for row in declared if row.app == app})
-        print(
-            f"WARN: composition.apps.{app} is declared by {', '.join(repr(d) for d in declarers)}, "
-            f"but no integration in this build collects {app!r} (known: "
-            f"{', '.join(sorted(KNOWN_APPS))}) — those rows will never fire",
-            file=sys.stderr,
+        close = difflib.get_close_matches(app, sorted(KNOWN_APPS), n=1)
+        found.append(
+            Diagnostic(
+                Level.WARN,
+                f"composition.apps.{app} is declared by {', '.join(repr(d) for d in declarers)}, "
+                f"but no integration in this build collects {app!r} (known: "
+                f"{', '.join(sorted(KNOWN_APPS))}) — those rows will never fire",
+                where=next((r.declared_in for r in declared if r.app == app), None),
+                # A guess that is wrong costs more than no guess, so only a
+                # close match speaks — same bar as models.py and the seam.
+                remedy=f"did you mean {close[0]!r}?" if close else "",
+            )
         )
 
 
@@ -227,7 +306,9 @@ _FROM_ENV: Any = object()
 
 
 def _label(check: ResolvedCheck | AppBinding) -> str:
-    """What a message calls this row, including metadata-only declarations."""
+    """What a message calls this row. A consent-only row names no script, and
+    "binds  under apps.wt" printed the hole where the ``run`` would be instead
+    of saying what the row IS (HATS-1682)."""
     if not check.run:
         return f"checks: {check.declared_by!r} declares consent under apps.{check.app}"
     return f"checks: {check.declared_by!r} binds {check.run} under apps.{check.app}"
@@ -396,7 +477,9 @@ def _resolve_script(row: AppBinding, skill: ResolvedComponent) -> Path:
     return script_path
 
 
-def _report_missing_skill(row: AppBinding, removed: AbstractSet[str]) -> None:
+def _report_missing_skill(
+    row: AppBinding, removed: AbstractSet[str], found: list[Diagnostic]
+) -> None:
     """A recorded removal is a warn; anything else is a typo and is loud."""
     label = _label(row)
     if resolve_namespace(row.skill) not in removed:
@@ -404,10 +487,14 @@ def _report_missing_skill(row: AppBinding, removed: AbstractSet[str]) -> None:
             f"{label}, but the composition composes no skill {row.skill!r} — "
             f"a row never pulls the skill in (ADR-0019 D2); compose it or fix the name"
         )
-    print(
-        f"WARN: {label}, but an overlay removed that skill — dropping the "
-        f"row and continuing; the gate will NOT fire",
-        file=sys.stderr,
+    found.append(
+        Diagnostic(
+            Level.WARN,
+            f"{label}, but an overlay removed that skill — dropping the "
+            f"row and continuing; the gate will NOT fire",
+            where=row.declared_in,
+            remedy=(f"re-add skill {row.skill!r} to the composition, or drop this row"),
+        )
     )
 
 

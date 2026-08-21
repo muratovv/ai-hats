@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Sequence
 
 from ..dispatch import Delta, DispatchContext, Phase, Subscription
-from ..fsm import Topology, all_edges, load_topology
+from ..fsm import Topology, load_topology
 from ..models import TaskCard, atomic_write_text
-from ..selectors import Selector
+from ..selectors import EVERYWHERE
 
 
 class DerivedViewsExtension:
@@ -35,10 +35,7 @@ class DerivedViewsExtension:
         self._priority = priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        subs = [
-            Subscription(Selector(e.from_state, e.to_state), Phase.POST_LOCK, self._priority)
-            for e in all_edges(self._topology)
-        ]
+        subs = [Subscription(EVERYWHERE, Phase.POST_LOCK, self._priority)]
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._priority))
         return subs
 

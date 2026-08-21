@@ -141,7 +141,8 @@ rack transition HATS-NNN done        # the reviewer drives this one
 
 Two of those edges are **consent-gated**, so an agent can neither walk its own
 plan into implementation nor land its own branch on master without your
-approval: `plan → execute` and `review → done`. A direct `ai-hats wt merge` —
+approval: `plan → execute` and **every road into** `done` (HATS-1752 — the
+forced close included). A direct `ai-hats wt merge` —
 the other road into master — is gated the same way.
 
 Which edges those are is not fixed by the backlog: it is the ROLE's
@@ -154,7 +155,7 @@ composition:
   apps:
     consent_gate:
       rack.transition:
-        - at: [plan->execute, review->done]
+        - at: [plan->execute, ->done]
           consent: true
       wt.merge:
         - at: [pre-merge]

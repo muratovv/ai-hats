@@ -42,8 +42,7 @@ from ai_hats_rack.extensions import (
     EpicAutomationExtension,
     Section,
 )
-from ai_hats_rack.fsm import Topology, all_edges
-from ai_hats_rack.selectors import Edge, Selector
+from ai_hats_rack.selectors import ANY, EVERYWHERE, Selector
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
 
@@ -73,23 +72,22 @@ def _rack_lock_deadline(ctx: DispatchContext) -> Deadline | None:
     return Deadline(ctx.lock_expires_at, "rack task lock")
 
 
-def _exact(edges: Sequence[Edge]) -> list[Selector]:
-    """One selector per pair. Wide forms are HATS-1720: until the veto rule that
-    comes with them exists, the integrator enumerates, so this slice changes the
-    SPELLING of these subscriptions and not their reach."""
-    return [Selector(e.from_state, e.to_state) for e in edges]
+# The three hand-rolled products these replaced (`_exact`, `_edges_into`,
+# `_edges_leaving_execute_or_terminal`) each rebuilt the topology's state product
+# to say what one selector says — which is why every subscriber below had to be
+# handed a topology it never read for any other purpose (HATS-1720).
 
 
-def _edges_into(topology: Topology, *targets: str) -> list[Edge]:
-    return [e for e in all_edges(topology) if e.to_state in targets]
+def _into(state: str) -> Selector:
+    """Every road INTO ``state`` — the reclaim self-loop included."""
+    return Selector(ANY, state)
 
 
-def _edges_leaving_execute_or_terminal(topology: Topology) -> list[Edge]:
-    return [
-        e
-        for e in all_edges(topology)
-        if (e.from_state == "execute" and e.to_state != "execute") or e.to_state in TERMINAL_STATES
-    ]
+def _out_of(state: str) -> Selector:
+    """Every road OUT of ``state``. Wider than the product it replaced by exactly
+    the self-loop, which the old helper subtracted by hand; the answer to that is
+    §3.6 of the design — bind wide, filter inside (see ``OwnershipRelease``)."""
+    return Selector(state, ANY)
 
 
 def _session_id() -> str:
@@ -121,16 +119,12 @@ class OwnershipSingleSlot:
 
     name = "ownership-single-slot"
 
-    def __init__(self, registry_path: Path, *, topology: Topology, priority: int = 5) -> None:
+    def __init__(self, registry_path: Path, *, priority: int = 5) -> None:
         self.registry_path = registry_path
-        self._topology = topology
         self._priority = priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [
-            Subscription(s, Phase.IN_LOCK, self._priority)
-            for s in _exact(all_edges(self._topology))
-        ]
+        return [Subscription(EVERYWHERE, Phase.IN_LOCK, self._priority)]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         session_id = _session_id()
@@ -154,16 +148,12 @@ class OwnershipClaim:
 
     name = "ownership"
 
-    def __init__(self, registry_path: Path, *, topology: Topology, priority: int = 20) -> None:
+    def __init__(self, registry_path: Path, *, priority: int = 20) -> None:
         self.registry_path = registry_path
-        self._topology = topology
         self._priority = priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [
-            Subscription(s, Phase.IN_LOCK, self._priority)
-            for s in _exact(_edges_into(self._topology, "execute"))
-        ]
+        return [Subscription(_into("execute"), Phase.IN_LOCK, self._priority)]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         session_id = _session_id()
@@ -192,20 +182,18 @@ class OwnershipRelease:
         self,
         registry_path: Path,
         *,
-        topology: Topology,
         priority: int = 40,
         epicify_priority: int = 10,
     ) -> None:
         self.registry_path = registry_path
-        self._topology = topology
         self._priority = priority
         self._epicify_priority = epicify_priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        subs = [
-            Subscription(s, Phase.IN_LOCK, self._priority)
-            for s in _exact(_edges_leaving_execute_or_terminal(self._topology))
-        ]
+        subs = [Subscription(_out_of("execute"), Phase.IN_LOCK, self._priority)]
+        subs.extend(
+            Subscription(_into(state), Phase.IN_LOCK, self._priority) for state in TERMINAL_STATES
+        )
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._epicify_priority))
         return subs
 
@@ -213,6 +201,20 @@ class OwnershipRelease:
         if isinstance(ctx.event, EpicifyEvent):
             # HATS-977: a task that gained a child is a tracker now — drop its hold.
             ownership.finish(self.registry_path, ctx.event.epic_id)
+            return None
+        if (
+            isinstance(ctx.event, EdgeEvent)
+            and ctx.event.from_state == ctx.event.to_state == "execute"
+        ):
+            # `execute->` is every road OUT, and the reclaim self-loop is not one:
+            # the claim at 20 takes the hold and this at 40 would drop it again,
+            # leaving the card owned by nobody (HATS-1720, design.md §6.4). A
+            # selector has no subtraction operator, so the accepted answer is to
+            # bind wide and filter here — for exactly the pair the old product
+            # subtracted, and no other. A DECLARED terminal self-loop still
+            # releases: it arrives through `->done` and it always did, and skipping
+            # it strands the session, since the teardown next door has no self-loop
+            # guard and destroys the worktree while the hold survives.
             return None
         if _session_id():
             ownership.finish(self.registry_path, ctx.task.id)
@@ -236,7 +238,6 @@ class WorktreeExtension:
         project_dir: Path,
         *,
         effects: WtWorktreeEffects | None = None,
-        topology: Topology,
         setup_priority: int = 30,
         teardown_priority: int = 30,
         epicify_priority: int = 20,
@@ -247,7 +248,6 @@ class WorktreeExtension:
         self._effects = (
             effects if effects is not None else WtWorktreeEffects(project_dir, git_timeout=budget)
         )
-        self._topology = topology
         self._setup_priority = setup_priority
         self._teardown_priority = teardown_priority
         self._epicify_priority = epicify_priority
@@ -258,13 +258,10 @@ class WorktreeExtension:
         self._kernel = kernel
 
     def subscriptions(self) -> Sequence[Subscription]:
-        subs = [
-            Subscription(s, Phase.IN_LOCK, self._setup_priority)
-            for s in _exact(_edges_into(self._topology, "execute"))
-        ]
+        subs = [Subscription(_into("execute"), Phase.IN_LOCK, self._setup_priority)]
         subs.extend(
-            Subscription(s, Phase.IN_LOCK, self._teardown_priority)
-            for s in _exact(_edges_into(self._topology, *TERMINAL_STATES))
+            Subscription(_into(state), Phase.IN_LOCK, self._teardown_priority)
+            for state in TERMINAL_STATES
         )
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._epicify_priority))
         return subs
@@ -444,7 +441,7 @@ def build_rack_kernel(
     if links_registry is None:
         links_registry = defn.links_registry
     registry = tasks_dir.parent / "ownership.json"
-    worktree = WorktreeExtension(project_dir, effects=worktree_effects, topology=topology)
+    worktree = WorktreeExtension(project_dir, effects=worktree_effects)
     automation = EpicAutomationExtension(topology=topology, registry=links_registry)
     # Declaration channel (HATS-1043): frozen-integrity (ambient) + scaffold/
     # plan-gate/stamp/clear (declaration-bound) come from the definition slots.
@@ -460,10 +457,10 @@ def build_rack_kernel(
     # scaffold/worktree(30) < release(40); the list order only breaks ties.
     subscribers = [
         *declared,
-        OwnershipSingleSlot(registry, topology=topology),
-        OwnershipClaim(registry, topology=topology),
+        OwnershipSingleSlot(registry),
+        OwnershipClaim(registry),
         worktree,
-        OwnershipRelease(registry, topology=topology),
+        OwnershipRelease(registry),
         automation,
         DerivedViewsExtension(tasks_dir, state_md_path, topology=topology),
         *extra_subscribers,  # consumer add-ons (pre-destroy guards, K4 hook-runner)

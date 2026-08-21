@@ -1,6 +1,6 @@
 ---
 name: safety-guard
-description: PreToolUse hooks enforcing global_rule_destructive_actions, rule_pause_before_shared_state_write and rule_backlog_discipline. Prevents destructive commands like in-place sed edits, deletion of protected data, and disk-formatting binaries, holds the pause before an irreversible shared-state write, and keeps the tracker backlog writable only through `rack`.
+description: PreToolUse hooks enforcing global_rule_destructive_actions, rule_pause_before_shared_state_write, rule_backlog_discipline and the consent gate. Prevents destructive commands like in-place sed edits, deletion of protected data, and disk-formatting binaries, holds the pause before an irreversible shared-state write, keeps the tracker backlog writable only through `rack`, and turns a move the role declared consent on into a question for the supervisor — the ticket, the grant and the `consent` verb ship from here.
 ai_hats:
   runtime_hooks:
     PreToolUse:
@@ -46,10 +46,13 @@ yours to know here. Three things you can do, and nothing else:
 - **Present what you are asking approval for, and stop.** While a question is
   waiting, do not nudge or re-ask: it does not expire, and the supervisor may
   take as long as reading needs.
-- **If the engine refused for want of an answer, re-run that exact command
-  unchanged.** Each run raises a fresh question, so this is the one thing that
-  helps. Mutating the command does not: the answer binds to the exact call the
-  supervisor was shown, and a consent flag you add yourself is a self-grant.
+- **If the engine refused for want of an answer, say so and stop.** A re-run
+  helps only where a question can be raised at all; on a surface with no hooks
+  it buys a second refusal. What opens the move is the supervisor typing the
+  verb himself (`consent <type> <minutes>`), and his window then covers the
+  series without asking again. Mutating the command never helps: the answer
+  binds to the exact call he was shown, and a consent flag you add yourself is
+  a self-grant.
 
 ## The tracker backlog is `rack`-only
 

@@ -402,9 +402,7 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         return int(cfg.get("min_independent_sessions", DEFAULT_QUORUM_K))
 
     return {
-        "frozen-integrity": lambda defn, catalog, cfg: FrozenIntegrityExtension(
-            catalog, topology=defn.topology
-        ),
+        "frozen-integrity": lambda defn, catalog, cfg: FrozenIntegrityExtension(catalog),
         "plan-gate": lambda defn, catalog, cfg: PlanGateExtension(catalog, catalog_sections),
         "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(
             catalog, catalog_sections

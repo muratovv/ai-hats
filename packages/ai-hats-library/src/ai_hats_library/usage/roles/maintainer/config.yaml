@@ -63,8 +63,11 @@ composition:
   apps:
     rack:
       tasks:
-        # The gate covers every road into `done` (HATS-1719). Consent is separate
-        # session middleware declared by trait-agent under apps.consent_gate.
+        # The gate covers every road into `done` (HATS-1719), and since HATS-1752
+        # so does the question — which is why the narrow `review->done` consent row
+        # this role used to carry is gone rather than merely moved. Consent itself is
+        # session middleware now, declared by trait-agent under `apps.consent_gate`
+        # and read by nothing in rack (ADR-0030 D1/D3).
         - run: maintainer-quality-gate/hooks/done-gate.sh
           at: ['->done']
           on_error: refuse

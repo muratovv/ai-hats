@@ -89,13 +89,39 @@ def test_none_is_reserved_and_names_the_card_that_opens_it(text):
 
 
 @pytest.mark.parametrize("text", ["execute->", "ANY->ANY"])
-def test_wide_output_is_refused_by_name_of_the_card_that_opens_it(text):
-    """This slice enables the exact form and the wide INPUT; the wide output
-    arrives with its veto rule, and until then the form must not half-work."""
-    from ai_hats_rack.selectors import selector_form
+def test_the_wide_output_is_grammar_now_and_the_veto_is_what_holds_it(text):
+    """The form opens WITH its safety catch, never before it (HATS-1720).
 
-    reason = selector_form(text)
-    assert reason is not None and "HATS-1720" in reason
+    Both halves asserted together on purpose: the grammar accepting the arrow is
+    what lets code subscribe to every way out of a state, and the veto is the only
+    thing standing between that form and a declared gate that locks the card in
+    the state for good. Split across two tests, one could pass while the other
+    rotted — which is exactly how a form arrives without its rule.
+    """
+    from ai_hats_rack.selectors import consent_veto, gate_veto, is_wide_output, selector_form
+
+    assert selector_form(text) is None, "the wide output is legal grammar since HATS-1720"
+    assert is_wide_output(text)
+    assert "HATS-1723" in (gate_veto(text) or ""), "a row that can refuse must be vetoed"
+    assert "HATS-1706" in (consent_veto(text) or ""), "consent must be vetoed"
+
+
+@pytest.mark.parametrize("text", ["review->done", "->done"])
+def test_a_narrow_target_carries_no_veto(text):
+    """The discriminator. A veto that answered on every selector would pass the
+    test above while disarming the shipped done-gate, which lives on ``->done``."""
+    from ai_hats_rack.selectors import consent_veto, gate_veto, is_wide_output
+
+    assert not is_wide_output(text)
+    assert gate_veto(text) is None and consent_veto(text) is None
+
+
+def test_the_gate_veto_names_the_state_the_card_would_be_locked_in():
+    """A refusal that cannot be acted on is a refusal nobody reads."""
+    from ai_hats_rack.selectors import gate_veto
+
+    assert "'execute'" in gate_veto("execute->")
+    assert "any state" in gate_veto("ANY->ANY")
 
 
 @pytest.mark.parametrize(
@@ -105,7 +131,11 @@ def test_wide_output_is_refused_by_name_of_the_card_that_opens_it(text):
         # merely a second spelling of the empty side — and two spellings of one
         # selector are two rows to the dedup key (``AppBinding.identity``).
         ("ANY->done", "'->done'"),
-        ("review->ANY", "HATS-1720"),
+        ("review->ANY", "'review->'"),
+        # Both halves saying "any" in two tokens is still a second spelling — of
+        # the ONE spelling "everywhere" has.
+        ("ANY->", "'ANY->ANY'"),
+        ("->ANY", "'ANY->ANY'"),
     ],
 )
 def test_any_on_one_side_only_is_refused(text, must_say):
@@ -125,9 +155,10 @@ def test_any_on_one_side_only_is_refused(text, must_say):
         ("execute->", Selector("execute", "ANY")),
         ("->done", Selector("ANY", "done")),
         ("ANY->ANY", Selector("ANY", "ANY")),
+        ("NONE->", Selector("NONE", "ANY")),
     ],
 )
-def test_the_parser_derives_forms_the_grammar_does_not_yet_allow(text, expected):
+def test_the_parser_derives_every_arrow_including_the_illegal_ones(text, expected):
     """Pinned at the PARSE level on purpose (HATS-1719 review).
 
     ``checks.py`` calls ``parse_selector`` directly and never ``selector_form``:
@@ -140,9 +171,14 @@ def test_the_parser_derives_forms_the_grammar_does_not_yet_allow(text, expected)
     assert parse_selector(text) == expected
 
 
-def test_a_derived_form_this_slice_does_not_allow_is_still_refused_by_the_judge():
-    """The other half of the same fact, so the pair cannot drift apart."""
+def test_a_derived_form_the_grammar_does_not_allow_is_still_refused_by_the_judge():
+    """The other half of the same fact, so the pair cannot drift apart.
+
+    ``NONE->`` carries the gap since HATS-1720: the wide output closed it by
+    becoming legal, and a reserved word that parses but must not compose is what
+    keeps the two layers honest about which one owes the refusal.
+    """
     from ai_hats_rack.selectors import selector_form
 
-    assert selector_form("execute->") is not None
-    assert parse_selector("execute->") is not None
+    assert selector_form("NONE->") is not None
+    assert parse_selector("NONE->") is not None

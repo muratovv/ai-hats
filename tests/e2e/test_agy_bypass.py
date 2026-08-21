@@ -46,7 +46,12 @@ def _write_dist_info(root: Path, ep_body: str) -> Path:
     return root
 
 
-def test_agy_bypasses_root_gemini_md(shared_launcher, repo_root: Path, tmp_path: Path):
+def test_agy_bypasses_root_gemini_md(
+    shared_launcher,
+    requires_agy_auth,
+    repo_root: Path,
+    tmp_path: Path,
+):
     launcher, base_env, _venv = shared_launcher
 
     ep_body = _entry_point_body(repo_root)

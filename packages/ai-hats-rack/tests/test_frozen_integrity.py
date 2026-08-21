@@ -13,7 +13,7 @@ from ai_hats_rack.cli import main
 from ai_hats_rack.dispatch import Phase
 from ai_hats_rack.docstore import compute_digest
 from ai_hats_rack.extensions import FrozenIntegrityExtension, standalone_extensions
-from ai_hats_rack.fsm import load_topology
+from ai_hats_rack.fsm import all_edges, load_topology
 from ai_hats_rack.kernel import Kernel
 from ai_hats_rack.selectors import Edge
 
@@ -163,15 +163,23 @@ def test_one_composite_refreeze_and_state_passes_the_guard(runner, tmp_path):
 # ----- wiring: subscriptions + the standalone kit ---------------------------------
 
 
-def test_guard_subscribes_to_the_full_edge_product(tmp_path):
+def test_guard_covers_the_full_edge_product(tmp_path):
+    """Evidence integrity answers on EVERY move, the reclaim self-loop included.
+
+    One selector says it since HATS-1720, so the product is what the subscription
+    is checked AGAINST rather than what it spells — and the extension no longer
+    has to be handed a topology to say "everywhere". Asserted per pair, because a
+    count would pass on a subscription that reached a different set of the same
+    size.
+    """
     ext = FrozenIntegrityExtension(tmp_path / "tasks")
     subs = ext.subscriptions()
-    keys = {str(s.selector) for s in subs}
-    states = load_topology().states
-    # every ordered pair of distinct states + the execute reclaim self-loop
-    assert len(keys) == len(states) * (len(states) - 1) + 1
-    assert "execute->execute" in keys
+
+    assert [str(s.selector) for s in subs] == ["ANY->ANY"]
     assert all(s.phase is Phase.IN_LOCK for s in subs)
+    unreached = [e for e in all_edges(load_topology()) if not subs[0].selector.matches(e)]
+    assert not unreached, f"these moves stopped reaching the guard: {unreached}"
+    assert subs[0].selector.matches(Edge("execute", "execute")), "reclaim must be covered"
 
 
 def test_standalone_kit_runs_guard_before_plan_gate(tmp_path):

@@ -59,6 +59,33 @@ def _where(check: dict) -> str:
     return f"{check['app']}:{at}"
 
 
+def _consent_where(consent: dict) -> str:
+    """The address a consent row sits at. An empty path drops the column rather
+    than rendering a bare separator (the ``rack doctor`` precedent)."""
+    return ".".join([consent["app"], *consent["path"]])
+
+
+def _consent_key(consent: dict) -> str:
+    """What the guard reading this row keys on — never assumed to be the selector.
+
+    Three grammars ride one list and each is found by a different field: rack
+    rows match on the parsed ``to`` ALONE, so printing the selector for all
+    three would read as a promise the rack half does not keep (HATS-1726).
+    """
+    from .check_points import CONSENT_GATE_APP, WT_APP
+
+    # A parsed `to` is by construction a rack row: `selector_ends` answers
+    # (None, None) for every other app, so this asks the data rather than
+    # holding a second copy of the app name.
+    if consent.get("to"):
+        return f"entering {consent['to']!r}"
+    if consent["app"] == CONSENT_GATE_APP:
+        return "operation type"
+    if consent["app"] == WT_APP:
+        return "wt point"
+    return "-"  # declared under an app no guard of this build reads
+
+
 @dataclass(frozen=True)
 class SessionReport:
     role: str
@@ -190,6 +217,17 @@ class SessionReport:
                 lines.append("    ! UNRESOLVED — this gate has no bytes to run (see notes)")
             elif not c["planned"]:
                 lines.append(f"    ! {c['runs_from']} is NOT written by this launch")
+
+        lines += ["", "consent"]
+        # Printed even when empty: "this role asks about nothing" and "the
+        # section did not render" are different facts, and only one is fine.
+        if not d["consent"]:
+            lines.append("  (none declared)")
+        for c in d["consent"]:
+            lines.append(
+                f"  {_consent_where(c):<14} {c['selector']!r:<20}"
+                f" -> {_consent_key(c):<22} by {c['declared_by']}"
+            )
 
         if d["notes"]:
             lines.append("")

@@ -218,7 +218,7 @@ ai-hats -p agy -r "maintainer + worker"
 ai-hats -r "maintainer + leader" --model opus
 ```
 
-**No ack is exported there, on purpose.** The leader window is the one with a human in it, so every operation the role declares under `apps.consent_gate` — `plan → execute`, `review → done`, and a direct `ai-hats wt merge` — is raised in that window as a question in chat. A session-local wrapper checks the answer before launching the original command; the click on `review → done` also covers its nested merge. Details in [how-to-hatrack.md](how-to-hatrack.md#a-create-a-task-and-walk-it-to-done).
+**No ack is exported there, on purpose.** The leader window is the one with a human in it, so every operation the role declares under `apps.consent_gate` — `plan → execute`, every road into `done`, and a direct `ai-hats wt merge` — is raised in that window as a question in chat. A session-local wrapper checks the answer before launching the original command; the click on `review → done` also covers its nested merge. Details in [how-to-hatrack.md](how-to-hatrack.md#a-create-a-task-and-walk-it-to-done).
 
 The leader owns the plan and the review and writes no code; the worker owns every mechanical step and hands work back with the artifacts that settle each claim (commit SHAs, the runner's own exit code, a separate one for the linter). The human enters twice: approving the plan, and the final review. Both traits are `usage/`-level and carry no composition of their own — they mix onto whatever base role already has the working gear.
 

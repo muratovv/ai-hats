@@ -359,21 +359,55 @@ not read this repo's ADRs, in `packages/ai-hats-rack/README.md` [17]:
                        none of this package's business
   ```
 
-  | written           | means                                | status                      |
-  | ----------------- | ------------------------------------ | --------------------------- |
-  | `review->done`    | exactly that edge                    | ✔                           |
-  | `->done`          | every road INTO `done` (8 of them)   | ✔                           |
-  | `execute->`       | every road OUT of `execute`          | ✘ — HATS-1720               |
-  | `ANY->ANY`        | every move of this backlog           | ✘ — HATS-1720               |
-  | `NONE->`, `->NONE` | card creation / destruction         | ✘ — reserved, HATS-1703     |
-  | `->`              | —                                    | ✘ — a typo, not "everywhere" |
-  | `a->b->c`         | —                                    | ✘ — one arrow per selector  |
-  | `a -> b`          | —                                    | ✘ — no whitespace: the dedup key holds `at` verbatim, so a second spelling is a second row |
+  | written            | means                              | grammar | may a ROW stand on it                        |
+  | ------------------ | ---------------------------------- | ------- | -------------------------------------------- |
+  | `review->done`     | exactly that edge                  | ✔       | yes                                          |
+  | `->done`           | every road INTO `done` (8 of them) | ✔       | yes                                          |
+  | `execute->`        | every road OUT of `execute`        | ✔       | **no** — the veto below (HATS-1720)          |
+  | `ANY->ANY`         | every move of this backlog         | ✔       | **no** — the veto below (HATS-1720)          |
+  | `NONE->`, `->NONE` | card creation / destruction        | ✘       | reserved, HATS-1703                          |
+  | `->`               | —                                  | ✘       | a typo, not "everywhere"                     |
+  | `ANY->done`        | —                                  | ✘       | a second spelling of `->done`; `ANY` means "everywhere" and only on BOTH sides |
+  | `a->b->c`          | —                                  | ✘       | one arrow per selector                       |
+  | `a -> b`           | —                                  | ✘       | no whitespace: the dedup key holds `at` verbatim, so a second spelling is a second row |
 
   Matching is a predicate over the pair `(from, to)`, never a string comparison,
   and **every** matched row fires — order is the ladder's business, not the
-  matcher's. `ANY` and `NONE` are upper-case because state names in every shipped
-  topology are lower-case, which makes the word not a name.
+  matcher's. A subscriber whose own selectors overlap on one event nevertheless
+  runs **once**: measured, `ownership-release` holding `execute->` and `->done`
+  was handed the `execute->done` event twice and applied its effect twice, and
+  `on_event` receives no subscription handle with which to tell the calls apart —
+  so overlapping selectors mean the union, never the repetition (HATS-1720). `ANY`
+  and `NONE` are upper-case because state names in every shipped topology are
+  lower-case, which makes the word not a name.
+
+  A wide selector matches a **pair**, not a member of the state product, and the
+  difference is reachable in one direction: the kernel validates only a
+  transition's *target*, and a card's state is a plain string never re-checked on
+  load, so a card left behind by a renamed state still moves under `--force`. Such
+  a move used to match no subscription at all — it wrote the state and ran nothing.
+  It now runs the same subscribers as any other road (HATS-1720). The other
+  difference, an undeclared self-loop, is unreachable: `from == to` is refused even
+  under `--force`.
+
+  **The wide-output veto — cut by what the row DOES, not by the arrow.** A wide
+  output (`<from>->`, `ANY->ANY`) is legal grammar and is how *code* subscribes to
+  every way out of a state; a **declared row** may not stand on one, for two
+  independent reasons, and each refusal names the card that lifts it:
+
+  - a row that can **refuse** (every `run:` row today is in-lock) would run on
+    every way out — `document`, `blocked`, `failed`, `cancelled`, the reclaim
+    self-loop — and one refusal locks the card in that state for good. Measured,
+    neither escape is one: `on_error: warn` softens a check that BROKE and never
+    one that refused (`HookRun.downgradable`), and `--force` relaxes the FSM arrow
+    while the check still runs. A row that only **notifies** is post-lock and
+    cannot refuse; that is HATS-1723;
+  - `consent:` on a wide output cannot work at all: the guard that raises the
+    question matches on the target state and never learns which state the card is
+    leaving, so the row would reach it with no target and the question would go
+    unasked, in silence — the HATS-1682 A5 class. Refused whichever way the row
+    speaks, `true` or `false`, since a spelling nothing can switch on has nothing
+    to switch off. HATS-1706 opens it, after HATS-1712.
 
   A selector naming an edge this topology
   lacks is skipped rather than refused: from the carrier's side a typo and a point
