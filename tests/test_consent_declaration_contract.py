@@ -320,11 +320,12 @@ def test_a_consent_point_aimed_at_a_sibling_backlog_is_not_an_error(tmp_path):
     assert status.status == "armed" and status.backlog == "hyp"
 
 
-def test_a_point_belonging_to_a_sibling_topology_is_foreign_not_dead(tmp_path):
-    """The distinction the whole classifier exists to draw: a point some OTHER
-    mounted topology has is `foreign` (a legal skip), and only a point no
-    topology anywhere has is `dead` (the finding). A consent row must not turn
-    a sibling backlog's vocabulary into an error."""
+def test_a_consent_point_in_a_siblings_vocabulary_is_dead_not_a_legal_skip(tmp_path):
+    """HATS-1774 re-cuts what this test used to assert. The legal skip is the row
+    ABOVE — addressed to `hyp`, armed there. This one is addressed to `tasks` and
+    written in the sibling's vocabulary, so no road of `tasks` ever stops to ask
+    the supervisor: a consent question that fires nowhere, reported as clean.
+    """
     sibling = Topology(
         initial="new", states=("new", "active", "confirmed"), edges={"active": ("confirmed",)}
     )
@@ -332,8 +333,9 @@ def test_a_point_belonging_to_a_sibling_topology_is_foreign_not_dead(tmp_path):
 
     (status,) = classify_bindings(port.check_declarations(), {"tasks": _TOPOLOGY, "hyp": sibling})
 
-    assert status.status == "foreign", "a sibling topology's point must not read as a typo"
-    assert status.detail == "", "a legal skip carries no complaint"
+    assert status.status == "dead", "a point no road of the addressed backlog has is dead"
+    assert "the consent question can never fire" in status.detail
+    assert "apps.rack.hyp" in status.detail, "the fix for a borrowed arrow is to move the row"
 
 
 def test_a_consent_point_on_a_backlog_nothing_answers_to_refuses_in_the_lock(tmp_path):

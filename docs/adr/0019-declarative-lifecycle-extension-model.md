@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted (HATS-1139, 2026-07-24; last revised at rev 10 — HATS-1545, 2026-08-10;
-the text was brought in line with rev 10 by HATS-1571, 2026-08-11).
+Accepted (HATS-1139, 2026-07-24; last revised at rev 11 — HATS-1774, 2026-08-20;
+rev 10 was HATS-1545, 2026-08-10, and its prose was brought in line by HATS-1571,
+2026-08-11).
 Governs epic **HATS-1138** — the declarative mechanism (HATS-1152 → 1140 → 1241
 → 1141 → 1142 → 1143), its consumers (HATS-1137 merge-correctness gate,
 HATS-1144 hunk-review) and the re-bindings (HATS-1145, HATS-1146). The substrate
@@ -64,8 +65,10 @@ and `at:` in place of `on:` (YAML 1.1 reads a bare `on` as `True`). A config sti
 carrying `checks:` now gets a typed refusal. **HATS-1571 (2026-08-11) carried no
 decision**: it corrected the prose rev 10 left behind — the D3 table, D6, the
 dedup key, *Consequences*, and the claim that ai-hats validates point names for
-two namespaces. Where this document describes a behaviour a currently open card
-will change, that card is named at the paragraph.
+two namespaces. **Rev 11 (HATS-1774, 2026-08-20) re-cuts what the doctor calls a
+miss** — see D11 clause 2, second bullet: the status `foreign` is gone, because
+the question the report asks is not the question the subscriber asks. Where this document describes a behaviour a
+currently open card will change, that card is named at the paragraph.
 
 ## Context
 
@@ -729,10 +732,26 @@ shipped row an hour after HATS-1137 landed it.
      the third silence, and telling the two apart is what the only holder of all
      the topologies can do — which since HATS-1584 **is done, in `rack doctor`**:
      `checks.classify_bindings` judges every carried row's points against every
-     mounted topology and calls the miss `foreign` or `dead`, and `dead` is a
-     finding. What is still quiet is the *transition*: the subscriber holds one
-     topology and goes on skipping. Refusing there is **HATS-1578**, and it now
-     has the distinction it was blocked on.
+     mounted topology and calls the miss `dead`, which is a finding. What is still
+     quiet is the *transition*: the subscriber holds one topology and goes on
+     skipping. Refusing there is **HATS-1578**, and it now has the distinction it
+     was blocked on.
+
+     **The two sides ask different questions (rev 11, HATS-1774).** The subscriber
+     asks *is this point mine?*, and a point belonging to some other backlog is
+     not its business — which is why skipping is the right answer inside the lock.
+     The doctor asks *does this row fire anywhere it claims to?*, and a row claims
+     exactly one backlog: its points are that backlog's grammar, so a selector no
+     edge of the ADDRESSED backlog matches is a dead gate however well it fits a
+     sibling's topology. Rev 9 wrote the two as one sentence and HATS-1584 built
+     the classifier on it, giving the sibling hit a third status, `foreign` —
+     which read as the legal cross-backlog skip and returned a clean report, exit
+     0, on a gate that fired nowhere. It never was that skip: a row addressed to a
+     mounted backlog is judged against that backlog alone, and a row addressed to
+     one this project does not mount is `unaddressed` before any point is looked
+     at. The sibling hit now chooses only the WORDING of the `dead` finding, since
+     a borrowed arrow is repaired by moving the row and a typo by correcting the
+     arrow (`checks.dead_selector_reason`).
 
    Two gaps stood behind this clause and are **both closed**: a row addressed to
    a **sibling** backlog reached no subscriber on either road until HATS-1575

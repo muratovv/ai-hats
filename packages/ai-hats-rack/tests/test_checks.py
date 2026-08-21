@@ -418,10 +418,10 @@ def _mounted() -> dict[str, Topology]:
     return {"tasks": _topology(), "hyp": _hyp_topology()}
 
 
-def test_a_point_is_armed_foreign_or_dead_against_every_mounted_topology():
-    """The distinction the subscriber cannot make (ADR-0019 D11 clause 2): it
-    holds ONE topology, so a sibling's edge and a typo are the same miss to it.
-    Given every mounted topology, they are three different facts."""
+def test_a_point_is_judged_against_the_backlog_the_row_addresses():
+    """HATS-1774: the question is whether the selector hits the edges of the
+    backlog the row NAMES — a hit somewhere else does not make it a gate. Both
+    misses below are a gate that fires nowhere, so both are dead."""
     rows = classify_bindings(
         [
             _row("review->done"),
@@ -433,9 +433,23 @@ def test_a_point_is_armed_foreign_or_dead_against_every_mounted_topology():
 
     assert [(r.status, r.selector) for r in rows] == [
         ("armed", "review->done"),
-        ("foreign", "active->confirmed"),
+        ("dead", "active->confirmed"),
         ("dead", "reviw->done"),
     ]
+
+
+def test_a_dead_point_is_told_apart_by_the_fix_each_miss_needs():
+    """Both misses are dead; the sentence must not be. A typo is repaired at the
+    arrow, a sibling's grammar by moving the row — so the roster of topologies
+    still earns its keep after the ruling, in the detail rather than the status.
+    """
+    (borrowed,) = classify_bindings([_row("active->confirmed")], _mounted())
+    (typo,) = classify_bindings([_row("reviw->done")], _mounted())
+
+    assert "apps.rack.hyp" in borrowed.detail
+    assert "grammar of hyp" in borrowed.detail
+    assert "apps.rack." not in typo.detail.split("binds")[1].split("under")[0]
+    assert "backlogs: hyp, tasks" in typo.detail
 
 
 def test_a_row_naming_no_mounted_backlog_is_unaddressed_in_the_subscribers_words():

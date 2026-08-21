@@ -8,6 +8,7 @@
   "packages/ai-hats-rack/tests/conftest.py": 1,
   "packages/ai-hats-rack/tests/test_cli.py": 1,
   "packages/ai-hats-rack/tests/test_cli_doc.py": 1,
+  "packages/ai-hats-rack/tests/test_cli_doctor.py": 1,
   "packages/ai-hats-rack/tests/test_cli_groups.py": 2,
   "packages/ai-hats-rack/tests/test_cli_ls_projects.py": 9,
   "packages/ai-hats-rack/tests/test_cli_wiring.py": 2,

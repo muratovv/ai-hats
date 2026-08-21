@@ -136,9 +136,9 @@ CheckPortFactory = Callable[[Path], CheckPort]
 
 
 #: What a report says about one point of one carried row (HATS-1584). ``dead``
-#: is the miss no topology of this project answers — the one HATS-1578 refuses.
+#: is the miss the backlog the row ADDRESSES cannot answer (HATS-1774) — whether
+#: some sibling could is a fact about the wording of the fix, never about arming.
 ARMED = "armed"
-FOREIGN = "foreign"
 DEAD = "dead"
 UNADDRESSED = "unaddressed"
 
@@ -178,12 +178,13 @@ def classify_bindings(
     declarations: Sequence[CheckDeclaration],
     topologies: Mapping[str, Topology],
 ) -> tuple[BindingStatus, ...]:
-    """Every carried row's points, judged against EVERY mounted topology.
+    """Every carried row's points, judged against the backlog the row ADDRESSES.
 
-    A subscriber holds one topology, so from where it stands a sibling backlog's
-    edge and a typo are the same fact — a name it does not have (ADR-0019 D11
-    clause 2). Given all of them the two separate: ``foreign`` is the skip
-    HATS-1545 R10 made legal, ``dead`` is a gate that fires nowhere, ever.
+    A hit somewhere else is not arming (HATS-1774): a row names one backlog, its
+    points are that backlog's grammar, and a selector that no edge of it matches
+    is a gate that fires nowhere. Holding every topology still pays — it tells a
+    typo from an arrow written in a sibling's grammar, which is two different
+    fixes and so two different sentences (:func:`dead_selector_reason`).
 
     ``topologies`` is keyed by every selector a backlog answers to — its name
     AND its ``cli_alias``, since either addresses it (ADR-0017 §3); keying on
@@ -209,15 +210,12 @@ def classify_bindings(
         here = edges_of[row.path[0]]
         for point in row.points():
             selector = parse_selector(point)
-            status = (
-                ARMED
-                if _hits(selector, here)
-                else FOREIGN
-                if any(_hits(selector, edges) for edges in edges_of.values())
-                else DEAD
-            )
-            detail = dead_selector_reason(row, point, mounted) if status == DEAD else ""
-            rows.append(BindingStatus(status, address, point, row.label, row.on_error, detail))
+            if _hits(selector, here):
+                rows.append(BindingStatus(ARMED, address, point, row.label, row.on_error))
+                continue
+            elsewhere = tuple(n for n in mounted if _hits(selector, edges_of[n]))
+            detail = dead_selector_reason(row, point, mounted, elsewhere)
+            rows.append(BindingStatus(DEAD, address, point, row.label, row.on_error, detail))
     return tuple(rows)
 
 
@@ -255,17 +253,36 @@ def unaddressed_reason(row: CheckDeclaration, mounted: Sequence[str]) -> str:
     )
 
 
-def dead_selector_reason(row: CheckDeclaration, point: str, mounted: Sequence[str]) -> str:
-    """Why a point fires nowhere. Said with the mounted roster, because that is
-    what makes it a typo rather than a row aimed at a backlog of some other
-    project — the distinction only a holder of every topology can draw."""
+def dead_selector_reason(
+    row: CheckDeclaration,
+    point: str,
+    mounted: Sequence[str],
+    elsewhere: Sequence[str] = (),
+) -> str:
+    """Why a point fires nowhere, in the words of the fix it needs.
+
+    Both misses are dead (HATS-1774), and they are repaired differently: an
+    arrow no mounted topology has is a typo, while one a SIBLING has is a row
+    standing under the wrong backlog — moving it arms it. ``elsewhere`` is every
+    spelling whose grammar does match, and each is a working address, so naming
+    them all is the recipe rather than noise.
+    """  # comment-length: allow — the recipe is the whole value of the finding
     what = "the gate" if row.kind == CHECK_ROW else "the consent question"
+    address = f"apps.rack.{'.'.join(row.path)}"
+    head = f"checks: {row.label} binds {point!r} under {address}, but no edge of "
+    if elsewhere:
+        return (
+            f"{head}{row.path[0]!r} matches it — {what} can never fire there. The arrow is "
+            f"the grammar of {', '.join(elsewhere)}: move the row under "
+            f"{' or '.join('apps.rack.' + s for s in elsewhere)} to arm it, or re-aim it at "
+            f"an edge {row.path[0]!r} has. A hit in a sibling's topology is not this row's, "
+            f"and a row that fires in no backlog it names is a gate in name only."
+        )
     return (
-        f"checks: {row.label} binds {point!r} under apps.rack.{'.'.join(row.path)}, but no "
-        f"topology mounted in this project matches it (backlogs: {', '.join(mounted)}) — "
-        f"{what} can never fire, on that edge or any other. A rack selector is an "
-        f"arrow between the state names of the backlog it gates: `review->done` for "
-        f"exactly that edge, `->done` for every road into the state."
+        f"{head}any topology mounted in this project matches it (backlogs: "
+        f"{', '.join(mounted)}) — {what} can never fire, on that edge or any other. A rack "
+        f"selector is an arrow between the state names of the backlog it gates: "
+        f"`review->done` for exactly that edge, `->done` for every road into the state."
     )
 
 
@@ -479,7 +496,6 @@ __all__ = [
     "CheckRequest",
     "CheckSubscriber",
     "DEAD",
-    "FOREIGN",
     "UNADDRESSED",
     "BindingStatus",
     "check_subscriber",

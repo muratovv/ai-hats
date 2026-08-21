@@ -295,8 +295,9 @@ def diagnose_workspace(workspace) -> list[Finding]:
 
 # ----- the check channel (HATS-1584) -----------------------------------------
 
-#: Which classified status is a finding. ``foreign`` is not: a row aimed at a
-#: sibling backlog is the skip HATS-1545 R10 made legal.
+#: Which classified status is a finding. Every miss against the backlog the row
+#: ADDRESSES is one (HATS-1774) — the skip HATS-1545 R10 made legal is a row that
+#: arms under its OWN backlog, never an arrow borrowed from a sibling's grammar.
 _BINDING_FINDINGS = {DEAD: "dead-check-point", UNADDRESSED: "unaddressable-check-row"}
 
 
