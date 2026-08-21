@@ -1394,3 +1394,16 @@ def test_a_row_silent_about_consent_switches_nothing_off():
     )
 
     assert [c.selector for c in _resolved_consent([*trait, *gate])] == ["review->done"]
+
+
+def test_a_row_remembers_which_file_declared_it(tmp_path):
+    """HATS-1753: `declared_by` names the component; only a path says what to open."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  apps:\n    wt:\n      - run: s/h.sh\n        at: [pre-merge]\n"
+    )
+
+    config = ComponentConfig.from_yaml(config_file)
+    (row,) = parse_app_bindings(config.composition.apps, declared_by="r", source=config_file)
+
+    assert row.declared_in == config_file

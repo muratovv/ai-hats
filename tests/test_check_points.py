@@ -370,3 +370,88 @@ def test_the_app_roster_matches_the_integrations_that_claim_the_keys():
         "the roster must list exactly the apps some integration claims — an extra "
         "entry silences the warning for an app nobody collects"
     )
+
+
+def test_resolution_carries_the_declaring_file_onto_the_resolved_row(skill, tmp_path):
+    """HATS-1753: a resolved row keeps its address, so a duplicate warning can
+    name the file to edit and not just the component that declared it."""
+    source = tmp_path / "trait-x" / "config.yaml"
+
+    (resolved,) = resolve_checks([_row(declared_in=source)], [skill])
+
+    assert resolved.declared_in == source
+
+
+def test_a_sink_takes_the_diagnostic_instead_of_stderr(skill, capsys, tmp_path):
+    """HATS-1753: when a caller collects, nothing is printed — and the collected
+    value carries the level and the file, which a bare stderr line could not."""
+    from ai_hats.diagnostics import Level
+
+    source = tmp_path / "trait-x" / "config.yaml"
+    sink: list = []
+
+    resolve_checks([_row(app="rak", declared_in=source)], [skill], diagnostics=sink)
+
+    assert capsys.readouterr().err == "", "a collected diagnostic must not also print"
+    (diag,) = sink
+    assert diag.level is Level.WARN
+    assert diag.where == source
+    assert "apps.rak" in diag.text
+
+
+def test_a_misspelt_app_name_gets_a_did_you_mean(skill, tmp_path):
+    """HATS-1753: 'rak' is one keystroke from 'rack', and difflib already serves
+    that hint twice in this codebase (models.py, composition_seam.py). The whole
+    defect here IS a typo, so the remedy is computable rather than advice."""
+    sink: list = []
+
+    resolve_checks([_row(app="rak", declared_in=tmp_path / "r.yaml")], [skill], diagnostics=sink)
+
+    (diag,) = sink
+    assert diag.remedy == "did you mean 'rack'?"
+    assert diag.render().endswith("\n    did you mean 'rack'?")
+
+
+def test_an_app_name_close_to_nothing_gets_no_guess(skill, tmp_path):
+    """A remedy that guesses wrong is worse than none — only a close match speaks."""
+    sink: list = []
+
+    resolve_checks(
+        [_row(app="zzzzzzzz", declared_in=tmp_path / "r.yaml")], [skill], diagnostics=sink
+    )
+
+    (diag,) = sink
+    assert diag.remedy == ""
+
+
+def test_a_row_whose_skill_an_overlay_removed_says_what_to_do(skill, tmp_path):
+    """HATS-1753: the human has two legitimate exits — put the skill back, or
+    drop the row that needs it. The message names both rather than neither."""
+    sink: list = []
+
+    resolve_checks(
+        [_row(run="removed-skill/hooks/gate.sh", declared_in=tmp_path / "r.yaml")],
+        [skill],
+        removed_skills={"removed-skill"},
+        diagnostics=sink,
+    )
+
+    (diag,) = sink
+    assert diag.remedy == ("re-add skill 'removed-skill' to the composition, or drop this row")
+
+
+def test_a_gate_declared_twice_says_which_two_to_choose_between(skill, tmp_path):
+    """The fix is deleting one of two lines, so the remedy names both owners."""
+    sink: list = []
+
+    resolve_checks(
+        [
+            _row(declared_by="trait-x", declared_in=tmp_path / "trait.yaml"),
+            _row(declared_by="role-y", declared_in=tmp_path / "role.yaml"),
+        ],
+        [skill],
+        diagnostics=sink,
+    )
+
+    (diag,) = sink
+    assert diag.remedy == "drop the row from 'trait-x' or from 'role-y' — one of the two"

@@ -24,6 +24,12 @@ exist on a TTY, `0` otherwise (headless runs are never delayed). The countdown
 is Enter-skippable (HATS-847) and Ctrl-C aborts the launch. `AI_HATS_STARTUP_HOLD`
 overrides the delay for every case (`0` disables).
 
+**The hold is the wait, not the render.** A zero delay skips the wait and shows
+the notices anyway, so a headless, CI or `AI_HATS_NON_INTERACTIVE` launch still
+says what it found. Until HATS-1753 it did not: the zero-delay branch returned
+before printing, and those runs recorded every notice in `diagnostics.json`
+while showing none of them.
+
 ## Producers
 
 All run in `WrapRunner.run()` between session creation and the PTY spawn,
@@ -35,6 +41,7 @@ each fail-open — a broken check must never block session start:
 | `_check_skill_collisions`        | NOTE on mirror heal; WARN on a home-scope skill collision (HATS-901/907)     |
 | `_check_skill_script_collisions` | WARN per skill-script filename collision (HATS-1114)                         |
 | `_payload_startup_notices`       | WARN per hooks warning carried from the first-run compose seam (HATS-970)    |
+| `_payload_startup_notices`       | one notice per composition `Diagnostic`, at the level its producer set (HATS-1753, below) |
 | finalize-hitl preload            | WARN when the finalize pipeline fails to eager-load (HATS-566)               |
 | `_lint_provider_settings`        | WARN per provider-reported settings pitfall (HATS-1006, below)               |
 | `_lint_env_drift`                | WARN when the editable dev env is stale — needs `uv sync` (HATS-1013, below) |
@@ -136,3 +143,47 @@ Reports only, never deletes: the sweep stays install-time (HATS-905). The same
 scan is a hard refusal at the end of every install-time path
 (`assert_runtime_hooks_resolve`) — but over the Claude pair only, so agy
 residue warns without ever failing a bump.
+
+## Composition diagnostics (HATS-1753)
+
+Composition itself finds problems — a consent point disarmed by a later writer, a
+`composition.apps` block no integration collects, a gate declared twice, a row
+whose skill an overlay removed. All four used to reach the human by
+`print(..., file=sys.stderr)` straight from the composer, which under a wrapped
+session is the one channel the alternate screen buffer eats. A warning nobody
+sees is not a warning, and three of those four have nothing to do with consent.
+
+They now speak in `Diagnostic` (`src/ai_hats/diagnostics.py`) — a frozen
+`(level, text, where, remedy)`, where `where` is the component YAML to open:
+
+```
+⚠ 1 startup warning(s):
+  • /lib/roles/warn-role/config.yaml: composition.apps.rak is declared by
+    'warn-role', but no integration in this build collects 'rak'
+    (known: …) — those rows will never fire
+    did you mean 'rack'?
+```
+
+`remedy` is the last line, indented under the bullet. The banner indents no
+continuation of its own, so `Diagnostic.render` does it — the same way
+`wrap_runner._broken_hook_refs_text` already does.
+
+Three of the four composition sites carry one: a misspelt app key gets a
+computed `difflib` guess (and stays silent when nothing is close, since a wrong
+guess costs more than none), a row orphaned by an overlay names both exits, and
+a gate declared twice names the two declarations to choose between. The fourth —
+a consent point switched off by a later writer — deliberately carries **no**
+remedy: last-writer-wins is the declared rule, so the flip is reported but never
+dressed as a defect.
+
+Transport is the sink convention already used for hooks warnings, with a typed
+payload instead of `list[str]`: `compose_for_role(..., diagnostics=<list>)`
+collects, and with no collector the findings go to stderr through
+`emit_to_stderr` — one spelling, for the plain-CLI paths that have no banner.
+`build_composition_payload` passes the seam's list, so the findings ride
+`CompositionPayload.diagnostics` into the hold.
+
+The level travels with the finding rather than being applied at the render
+boundary. That is the difference from the neighbouring producers above, which
+build `StartupNotice("warn", text)` from bare strings and so cannot express a
+note — worth remembering when migrating one of them onto this channel.

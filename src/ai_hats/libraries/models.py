@@ -76,6 +76,9 @@ class AppBinding:
     on_error: str
     cargo: Mapping[str, Any]
     consent: bool | None = None
+    #: The component file this row was read from — what a diagnostic tells
+    #: the human to open. ``declared_by`` names the component, not its path.
+    declared_in: Path | None = None
 
     @property
     def skill(self) -> str:
@@ -127,7 +130,15 @@ def parse_app_bindings(
         )
     rows: list[AppBinding] = []
     for app, block in apps.items():
-        _walk_app_block(block, app=app, path=(), declared_by=declared_by, where=where, rows=rows)
+        _walk_app_block(
+            block,
+            app=app,
+            path=(),
+            declared_by=declared_by,
+            where=where,
+            source=source,
+            rows=rows,
+        )
     return tuple(rows)
 
 
@@ -138,6 +149,7 @@ def _walk_app_block(
     path: tuple[str, ...],
     declared_by: str,
     where: str,
+    source: Path | None,
     rows: list[AppBinding],
 ) -> None:
     label = f"{where}composition.apps.{'.'.join((app, *path))}"
@@ -148,11 +160,29 @@ def _walk_app_block(
                     f"{label}[{index}]: a row must be a mapping carrying 'run:' "
                     f"or 'consent:', got {type(item).__name__}"
                 )
-            rows.append(_app_row(item, app=app, path=path, declared_by=declared_by, label=label))
+            rows.append(
+                _app_row(
+                    item,
+                    app=app,
+                    path=path,
+                    declared_by=declared_by,
+                    label=label,
+                    source=source,
+                )
+            )
         return
     if isinstance(node, dict):
         if "run" in node or "consent" in node:
-            rows.append(_app_row(node, app=app, path=path, declared_by=declared_by, label=label))
+            rows.append(
+                _app_row(
+                    node,
+                    app=app,
+                    path=path,
+                    declared_by=declared_by,
+                    label=label,
+                    source=source,
+                )
+            )
             return
         for key, child in node.items():
             _walk_app_block(
@@ -161,6 +191,7 @@ def _walk_app_block(
                 path=(*path, str(key)),
                 declared_by=declared_by,
                 where=where,
+                source=source,
                 rows=rows,
             )
         return
@@ -171,7 +202,13 @@ def _walk_app_block(
 
 
 def _app_row(
-    row: Mapping[str, Any], *, app: str, path: tuple[str, ...], declared_by: str, label: str
+    row: Mapping[str, Any],
+    *,
+    app: str,
+    path: tuple[str, ...],
+    declared_by: str,
+    label: str,
+    source: Path | None = None,
 ) -> AppBinding:
     consent = row.get("consent")
     if consent is not None and not isinstance(consent, bool):
@@ -222,6 +259,7 @@ def _app_row(
         on_error=on_error,
         cargo=cargo,
         consent=consent,
+        declared_in=source,
     )
 
 

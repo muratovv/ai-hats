@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
+from .diagnostics import Diagnostic
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -172,6 +173,7 @@ def _compose_validated(
     explicit_role: str | None,
     spec: RoleSpec | None = None,
     label: str,
+    diagnostics: list[Diagnostic] | None = None,
 ):
     """Compose via the facade; an explicitly requested role validates existence
     before (``RoleNotFoundError``) and errors after (``RuntimeError``) — the
@@ -187,9 +189,11 @@ def _compose_validated(
             raise RoleNotFoundError(base_role, available)
 
     if runtime_overlay is not None:
-        result = compose_for_role(asm, effective_role, runtime_overlay=runtime_overlay)
+        result = compose_for_role(
+            asm, effective_role, runtime_overlay=runtime_overlay, diagnostics=diagnostics
+        )
     else:
-        result = compose_for_role(asm, effective_role)
+        result = compose_for_role(asm, effective_role, diagnostics=diagnostics)
 
     if explicit_role and result.errors:
         raise RuntimeError(f"{label}: failed to resolve role {explicit_role!r}: {result.errors}")
@@ -242,6 +246,9 @@ def build_composition_payload(
     from .providers import get_provider
 
     asm, cfg, effective_role, runtime_overlay, spec = _project_context(project_dir, role_override)
+    # HATS-1753: allocated BEFORE the compose it collects from — the hooks
+    # sink below is filled later, by a different producer.
+    diagnostics: list[Diagnostic] = []
     result = _compose_validated(
         asm,
         effective_role,
@@ -249,6 +256,7 @@ def build_composition_payload(
         explicit_role=role_override if strict else None,
         spec=spec,
         label="compose_role",
+        diagnostics=diagnostics,
     )
 
     # HATS-1218: the batch arm used to hard-read cfg and drop the override here.
@@ -285,6 +293,7 @@ def build_composition_payload(
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
         startup_warnings=tuple(startup_warnings),
+        diagnostics=tuple(diagnostics),
         # HATS-867: observe factories threaded runner→finalize pipelines.
         # HATS-948: the audit writer carries the provider's transcript parser.
         session_factory=Session,

@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult
 
+from .diagnostics import Diagnostic
 from .paths import user_rules_dir
 
 if TYPE_CHECKING:
@@ -53,6 +54,7 @@ def compose_for_role(
     role: str,
     *,
     runtime_overlay: OverlayConfig | None = None,
+    diagnostics: list[Diagnostic] | None = None,
 ) -> CompositionResult:
     """Compose ``role`` using the assembler's standard overlay layering.
 
@@ -76,6 +78,7 @@ def compose_for_role(
     result = assembler.composer.compose(
         role,
         overlays=layers,
+        diagnostics=diagnostics,
     )
     # HATS-1203: the composer sees library_paths only, so user-rules attach
     # here — the one funnel — and reach every consumer. Discovery is delegated
