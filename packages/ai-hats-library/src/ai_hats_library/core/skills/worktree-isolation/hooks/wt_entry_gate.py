@@ -67,10 +67,10 @@ def main() -> int:
         journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook="wt_entry_gate.py")
         return 0
 
+    # One dialect reaches this script: the surface's own bridge translates
+    # before spawning it (`ai_hats_agy.claude_hook_adapter`, HATS-1776). A
+    # second reading here would be a second truth about the same payload.
     tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        tool_call = payload.get("toolCall") or {}
-        tool_input = tool_call.get("args") or {}
     if not isinstance(tool_input, dict):
         tool_input = {}
 
