@@ -62,9 +62,7 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
 
     from ai_hats_agy.claude_hook_adapter import matches_claude_hook
 
-    matcher = next(
-        h["matcher"] for h in pre_tool_hooks if "wt_gate.py" in h.get("command", "")
-    )
+    matcher = next(h["matcher"] for h in pre_tool_hooks if "wt_gate.py" in h.get("command", ""))
     assert matches_claude_hook(matcher, "Create"), "the row must answer agy's own tool name"
 
     hook_script = (
