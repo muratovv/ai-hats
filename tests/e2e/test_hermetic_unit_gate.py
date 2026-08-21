@@ -184,3 +184,27 @@ def test_unit_stage_ignores_caller_provider_set_and_preserves_it(
     assert HOST_ENTRY_POINT not in json.loads(seen_second.read_text(encoding="utf-8"))
     assert _provider_names(python) == before
     assert not (REPO_ROOT / "uv.lock").exists()
+
+
+def test_unit_stage_attributes_provider_mutation_to_test_nodeid(
+    caller_environment: tuple[Path, Path],
+    mutating_test_file: Path,
+) -> None:
+    python, root = caller_environment
+    mutation_package = _write_provider_package(
+        root, "hats1700-attribution-provider", TEST_ENTRY_POINT
+    )
+    result = _run_unit(
+        python,
+        mutating_test_file,
+        mutation_package,
+        root / "seen-attribution.json",
+    )
+    output = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    nodeid = (
+        f"{mutating_test_file.relative_to(REPO_ROOT).as_posix()}::test_installs_synthetic_provider"
+    )
+
+    assert result.returncode != 0, output
+    assert f"[provider-entry-point-integrity] {nodeid}" in output, output
+    assert "[dev-env-integrity]" not in output, output
