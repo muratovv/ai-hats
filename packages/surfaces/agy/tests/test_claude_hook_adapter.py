@@ -72,6 +72,20 @@ class TestRequestDirection:
     def test_a_claude_payload_passes_through_unharmed(self):
         assert to_claude_payload(CLAUDE_BASH)["tool_input"] == {"command": "git push --force"}
 
+    def test_the_path_spellings_collapse_onto_the_claude_one(self):
+        """`backlog_write_gate` and `wt_gate` each fan out over five spellings of
+        one path today. One name reaches them now."""
+        for spoken in ("TargetFile", "AbsolutePath", "target_file"):
+            adapted = to_claude_payload({"toolCall": {"name": "Create", "args": {spoken: "/x.py"}}})
+            assert adapted["tool_input"]["file_path"] == "/x.py", spoken
+
+    def test_a_claude_key_already_present_is_never_overwritten(self):
+        adapted = to_claude_payload(
+            {"toolCall": {"name": "Create", "args": {"file_path": "/keep", "TargetFile": "/drop"}}}
+        )
+
+        assert adapted["tool_input"]["file_path"] == "/keep"
+
     def test_the_other_args_ride_along(self):
         """A guard may read more than the command — `cwd`, a path, a flag."""
         adapted = to_claude_payload(

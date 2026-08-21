@@ -31,8 +31,15 @@ _CLAUDE_TERMINAL = ("Bash",)
 _FILE_MUTATION = ("Create", "write_to_file", "replace_file_content", "multi_replace_file_content")
 _CLAUDE_FILE_MUTATION = ("Edit", "Write", "MultiEdit")
 
-#: agy spells the terminal argument `CommandLine`; Claude spells it `command`.
-_COMMAND_KEYS = {"CommandLine": "command"}
+#: agy's argument names ↔ Claude's. Measured from what the hooks defend against
+#: today: `backlog_write_gate` and `wt_gate` each fan out over five spellings of
+#: the same path, and `safety_gate` over two spellings of the same command.
+_ARG_KEYS = {
+    "CommandLine": "command",
+    "TargetFile": "file_path",
+    "AbsolutePath": "file_path",
+    "target_file": "file_path",
+}
 
 
 def agy_tool_name(payload: dict) -> str:
@@ -130,7 +137,12 @@ def _claude_tool(agy_tool: str) -> str:
 
 
 def _claude_args(args: dict) -> dict:
-    return {_COMMAND_KEYS.get(key, key): value for key, value in args.items()}
+    """Rename what has a Claude name; never overwrite a Claude key already there."""
+    renamed = dict(args)
+    for spoken, canonical in _ARG_KEYS.items():
+        if spoken in renamed and canonical not in renamed:
+            renamed[canonical] = renamed.pop(spoken)
+    return renamed
 
 
 def _spoken_keys(payload: dict) -> dict:
@@ -143,7 +155,7 @@ def _spoken_keys(payload: dict) -> dict:
         args = call.get("args") if isinstance(call, dict) else None
     if not isinstance(args, dict):
         return {}
-    return {_COMMAND_KEYS[key]: key for key in args if key in _COMMAND_KEYS}
+    return {_ARG_KEYS[key]: key for key in args if key in _ARG_KEYS}
 
 
 __all__ = ["agy_tool_name", "from_claude_decision", "matches_claude_hook", "to_claude_payload"]
