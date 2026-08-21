@@ -3,7 +3,8 @@
 HATS-1171: cline runs through the unified artifact-builder (ADR-0018) on the
 clean-root invariant — skills materialize into the per-session cache and reach
 cline via ``--config`` (spike HATS-1191); nothing lands in the project root.
-The dead TS hook plugin is dropped (guarding → SurfaceGuard). See task plan.
+HATS-1775: native ``--hooks-dir`` entrypoints deliver the composed per-tool
+runtime-hook chain from the same session cache.
 """
 
 from __future__ import annotations
@@ -26,6 +27,9 @@ class ClineProvider(Provider):
     @property
     def name(self) -> str:
         return "cline"
+
+    def supports_session_command_wrappers(self) -> bool:
+        return True
 
     def provider_hints(self) -> list["ProviderHint"]:
         from ai_hats.providers import ProviderHint
@@ -87,9 +91,7 @@ class ClineProvider(Provider):
 
     # ----- HATS-1171: unified artifact-builder (ADR-0018) -----
 
-    # HOOKS/SETTINGS deliver nothing in either mode, hence no handler for them:
-    # the TS hook plugin is dropped (jiti-less cline never loaded it — HATS-1083)
-    # and guarding is SurfaceGuard's job.
+    # SETTINGS has no Cline-native artifact. HOOKS use --hooks-dir below.
 
     def get_cli_launch_args(
         self, base_cmd: list[str], session_id: str, is_resume: bool
@@ -159,6 +161,27 @@ class ClineProvider(Provider):
 
     def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_skills(project_dir, result, session_id, artifacts)
+
+    # -- hooks -----------------------------------------------------------------
+
+    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
+        from ai_hats_cline.runtime_hooks import materialize_runtime_hooks
+
+        hooks_dir = materialize_runtime_hooks(
+            project_dir,
+            result,
+            session_id,
+            artifacts,
+            skills_dir=self.session_skills_root(project_dir, session_id),
+        )
+        if hooks_dir is not None:
+            artifacts.cli_args.extend(["--hooks-dir", str(hooks_dir)])
+
+    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
+
+    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
 
     def build_session_prompt(
         self,

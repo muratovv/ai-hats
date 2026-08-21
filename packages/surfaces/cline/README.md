@@ -38,6 +38,15 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
     `--config <cache>` (cline scans `<base>/skills`) — nothing lands in the
     project root (clean-root invariant, HATS-1171). `CLINE_DATA_DIR` is pinned
     to the real cline home so `--config` keeps the machine's auth.
+  - composed `PreToolUse` and `PostToolUse` hooks are materialized beside the
+    skills and delivered through Cline's native `--hooks-dir` flag. A
+    surface-local adapter translates Cline command and file tools into the
+    Claude-style payloads consumed by existing ai-hats guards (HATS-1775).
+    Explicit `deny` and `ask` decisions cancel a `PreToolUse` call. Cline's
+    hook response has no permission-prompt or input-rewrite channel, so an
+    `ask` reports how to retry after external consent and never applies the
+    hook's `updatedInput` itself. Missing or malformed session hook state is
+    reported on stderr and fails open.
 - **`ClineParser` + `resolve_transcript`** — cline's
   `~/.cline/data/sessions/<id>/<id>.messages.json` is discovered by the
   provider and parsed into a real `audit.md` (👤/👾 turn markers) and
@@ -52,7 +61,4 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
 
 ## Not yet here
 
-- Runtime bash-tool hooks: cline's TS plugin sandbox needs `jiti` (unbundled),
-  so ai-hats ships no plugin — guarding falls to `SurfaceGuard`. A native
-  `hooks.json` guard (no jiti) is tracked in HATS-1083.
 - cline `teams`/`spawn`, and PyPI publish.

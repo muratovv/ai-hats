@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**258 of 258 files catalogued — 267 flows.**
+**259 of 259 files catalogued — 268 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -508,6 +508,20 @@ as a claim to check, not as evidence.
 
 - **expect** — cline provider is discovered via python entry points and displayed in provider listing
 - **why** — without entry-point discovery, third-party provider packages like cline are invisible to the CLI
+
+## `test_cline_runtime_hook_chain.py`
+
+*pins HATS-1775*
+
+- **flow** — a real Cline HITL launch invokes its materialized PreToolUse chain
+- **cmds**
+
+  ```console
+  git push --force origin master
+  ```
+
+- **expect** — the composed safety chain cancels the unapproved tool call through Cline's native hook protocol and leaves the project root clean
+- **why** — role composition is not protection unless the Cline process actually runs it before each tool call
 
 ## `test_cline_session_recorded.py`
 
