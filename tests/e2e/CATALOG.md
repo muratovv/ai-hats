@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**254 of 254 files catalogued — 263 flows.**
+**255 of 255 files catalogued — 264 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -586,6 +586,20 @@ as a claim to check, not as evidence.
 
 - **expect** — PostToolUse hook emits additionalContext warning on stdout without blocking file edits
 - **why** — without non-blocking comment length linting, bloated comments degrade context budget without warning
+
+## `test_composition_warning_reaches_banner.py`
+
+*pins HATS-1753*
+
+- **flow** — a developer launching a session whose role declares an app nothing collects
+- **cmds**
+
+  ```console
+  ai-hats execute -r warn-role
+  ```
+
+- **expect** — session start prints the composition's warning, naming the YAML that declared it, before the wrapped CLI tears the terminal into alt-screen
+- **why** — composition warnings used to go straight to stderr, which the alternate screen buffer eats — a gate that never fires, announced to nobody
 
 ## `test_config_fail_loud_on_newer_schema.py`
 
