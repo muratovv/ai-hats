@@ -216,24 +216,3 @@ def gate_veto(text: str) -> str | None:
         f"arrow, not the check). Bind it to the roads IN ('{ARROW}<state>') or to an exact "
         f"arrow; a row that only NOTIFIES becomes legal here with HATS-1723"
     )
-
-
-def consent_veto(text: str) -> str | None:
-    """Why consent may not be spoken about on ``text``, or ``None`` when it may.
-
-    The guard that raises the question matches on the TARGET state alone and never
-    learns which state the card is leaving (design.md §4.2), so a wide output
-    reaches it carrying no target — and the question then goes unasked in silence,
-    which is the HATS-1682 A5 class this channel exists to remove. Hence a refusal
-    rather than a warning, and hence it covers ``consent: false`` too: a spelling
-    that cannot be switched on has nothing to switch off.
-    """
-    if not is_wide_output(text):
-        return None
-    return (
-        f"consent cannot be declared on a wide OUTPUT ({text!r}): the guard that asks the "
-        f"supervisor matches on the target state and never knows which state the card is "
-        f"leaving, so this row would reach it with no target and the question would never "
-        f"be asked — in silence. Name the target ('{ARROW}<state>' or an exact arrow); the "
-        f"wide form opens with HATS-1706"
-    )

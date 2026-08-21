@@ -98,22 +98,21 @@ def test_the_wide_output_is_grammar_now_and_the_veto_is_what_holds_it(text):
     the state for good. Split across two tests, one could pass while the other
     rotted — which is exactly how a form arrives without its rule.
     """
-    from ai_hats_rack.selectors import consent_veto, gate_veto, is_wide_output, selector_form
+    from ai_hats_rack.selectors import gate_veto, is_wide_output, selector_form
 
     assert selector_form(text) is None, "the wide output is legal grammar since HATS-1720"
     assert is_wide_output(text)
     assert "HATS-1723" in (gate_veto(text) or ""), "a row that can refuse must be vetoed"
-    assert "HATS-1706" in (consent_veto(text) or ""), "consent must be vetoed"
 
 
 @pytest.mark.parametrize("text", ["review->done", "->done"])
 def test_a_narrow_target_carries_no_veto(text):
     """The discriminator. A veto that answered on every selector would pass the
     test above while disarming the shipped done-gate, which lives on ``->done``."""
-    from ai_hats_rack.selectors import consent_veto, gate_veto, is_wide_output
+    from ai_hats_rack.selectors import gate_veto, is_wide_output
 
     assert not is_wide_output(text)
-    assert gate_veto(text) is None and consent_veto(text) is None
+    assert gate_veto(text) is None
 
 
 def test_the_gate_veto_names_the_state_the_card_would_be_locked_in():

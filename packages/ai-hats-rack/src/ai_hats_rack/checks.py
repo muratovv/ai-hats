@@ -42,8 +42,8 @@ if EDGE_CHECK_TIMEOUT_S >= LOCK_TIMEOUT:  # pragma: no cover — explicit raise 
 
 
 #: What a carried row IS. Only one kind survives ADR-0030: a row that spawns a
-#: script when its point fires. Consent rows left rack entirely — the external
-#: command middleware owns them now (D1/D3).
+#: script when its point fires. The metadata-only kind left rack entirely — the
+#: external command middleware owns it now (ADR-0030 D1/D3).
 CHECK_ROW = "check"
 
 
