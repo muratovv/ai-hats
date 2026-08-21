@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -444,6 +445,49 @@ capture = {
 }
 Path(os.environ["AI_HATS_CLINE_CAPTURE"]).write_text(json.dumps(capture))
 """
+
+
+def install_cline_surface_venv(
+    repo_src: Path,
+    target: Path,
+    env: dict[str, str],
+    *,
+    timeout: int = 300,
+) -> Path:
+    """Install the committed root and Cline surface into a private e2e venv."""
+    uv = shutil.which("uv")
+    if uv is None:
+        raise AssertionError("uv is required for the Cline surface e2e")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    created = subprocess.run(  # noqa: S603 - resolved uv executable
+        [uv, "venv", "--python", sys.executable, str(target)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if created.returncode != 0:
+        raise AssertionError(f"Cline e2e venv failed:\n{created.stdout}\n{created.stderr}")
+    installed = subprocess.run(  # noqa: S603 - resolved uv executable and local package paths
+        [
+            uv,
+            "pip",
+            "install",
+            "--python",
+            str(target / "bin" / "python"),
+            str(repo_src),
+            str(repo_src / "packages" / "surfaces" / "cline"),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if installed.returncode != 0:
+        raise AssertionError(
+            f"Cline e2e package install failed:\n{installed.stdout}\n{installed.stderr}"
+        )
+    return target
 
 
 def run_cline_hook_session(

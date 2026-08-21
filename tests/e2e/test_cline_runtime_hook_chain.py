@@ -17,9 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.hook_chain import run_cline_hook_session
+from _helpers.hook_chain import install_cline_surface_venv, run_cline_hook_session
+from _helpers.repo_src import build_src
 
 pytestmark = pytest.mark.integration
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _snapshot_non_agent_files(project: Path) -> dict[str, str]:
@@ -45,6 +48,10 @@ def test_cline_hitl_runs_composed_pretooluse_chain(
     env["HOME"] = str(tmp_path / "home")
     env["AI_HATS_CACHE_HOME"] = str(tmp_path / "cache")
     env["AI_HATS_NO_UPDATE_CHECK"] = "1"
+    surface_venv = install_cline_surface_venv(
+        build_src(REPO_ROOT), tmp_path / "cline-venv", env
+    )
+    env["AI_HATS_VENV"] = str(surface_venv)
 
     initialized = subprocess.run(  # noqa: S603 - fixture provides the installed launcher
         [str(launcher), "self", "init", "-p", "cline", "-r", "maintainer", "--no-wizard"],
