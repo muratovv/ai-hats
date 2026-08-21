@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Composed `PreToolUse` and `PostToolUse` chains now reach Cline HITL and
+  Automate sessions through native `--hooks-dir` entrypoints materialized in
+  the per-session cache. The surface-local adapter covers legacy and current
+  Cline command/file tool names, including one file-hook payload per
+  `apply_patch` target (HATS-1775).
+
+### Security
+
+- Explicit `deny` and `ask` decisions cancel Cline `PreToolUse` calls. Because
+  Cline cannot open a permission prompt or apply a hook input rewrite from its
+  hook response, `ask` remains blocked with retry guidance and never
+  self-applies `updatedInput`. Missing or malformed session state and hook
+  process failures emit diagnostics and fail open (HATS-1775).
+
 ## [0.4.0]
 
 ### Added
@@ -43,10 +59,9 @@ to [Semantic Versioning](https://semver.org/).
 - The TS hook plugin (`ai-hats-hooks.ts`), `ensure_runtime_hooks`,
   `CLINE_HOOKS_DIR`, and the `.cline/plugins` / `.cline/skills` materialization
   (plus the `.gitignore` mutation). The plugin never loaded — cline's plugin
-  sandbox requires `jiti`, which the CLI does not bundle (see HATS-1083);
-  bash-tool guarding is carried by `SurfaceGuard` (ADR-0018 §4). Restoring a
-  working guard via cline's native `hooks.json` is tracked in HATS-1083
-  (HATS-1171).
+  sandbox requires `jiti`, which the CLI does not bundle (see HATS-1083). This
+  release therefore left Cline without per-tool runtime gating; HATS-1775 later
+  restored it through native `--hooks-dir` entrypoints (HATS-1171).
 
 ## [0.3.0]
 

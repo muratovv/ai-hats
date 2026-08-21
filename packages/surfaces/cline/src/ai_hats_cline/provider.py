@@ -3,7 +3,8 @@
 HATS-1171: cline runs through the unified artifact-builder (ADR-0018) on the
 clean-root invariant — skills materialize into the per-session cache and reach
 cline via ``--config`` (spike HATS-1191); nothing lands in the project root.
-The dead TS hook plugin is dropped (guarding → SurfaceGuard). See task plan.
+HATS-1775: native ``--hooks-dir`` entrypoints deliver the composed per-tool
+runtime-hook chain from the same session cache.
 """
 
 from __future__ import annotations
