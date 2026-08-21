@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**256 of 256 files catalogued — 265 flows.**
+**257 of 257 files catalogued — 266 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2075,6 +2075,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the pre-commit hook verifies that all referenced rules exist and blocks the commit with an error if a rule reference is missing
 - **why** — trait configurations must not reference non-existent rules to prevent broken rule pointers in role injections
+
+## `test_runner_spelling_consent_chain.py`
+
+*pins HATS-1754*
+
+- **flow** — an agent typing a gated move through a language runner — `uv run`, `uvx`, or `python -m <module>` — instead of the console script
+- **cmds**
+
+  ```console
+  uv run rack transition HATS-1 execute
+  python3 -m ai_hats_rack transition HATS-1 execute
+  uv run ai-hats wt merge task/x
+  ```
+
+- **expect** — the composed chain raises the supervisor's question on every spelling, exactly as it does for the bare one
+- **why** — measured 2026-08-20 — the chain returned NOTHING for these. `WRAPPERS` knew `sudo`/`env`/`timeout` but no language runner, so `slice_for` read the head binary as `uv` or `python3` and never found the guarded call. Both roads into master and the `plan -> execute` arrow were reachable by re-spelling the command, in silence. Revert the runner half and the parametrized assertions below go quiet rather than red elsewhere.
 
 ## `test_runs_retention.py`
 
