@@ -63,8 +63,13 @@ def test_the_lint_is_carried_by_the_hook_not_by_a_bound_check():
     )
 
 
-def _settings(rules) -> str:
-    return json.dumps({"permissions": {"allow": rules}}, indent=2)
+def _settings(rules, *, ask=None, deny=None) -> str:
+    permissions = {"allow": rules}
+    if ask is not None:
+        permissions["ask"] = ask
+    if deny is not None:
+        permissions["deny"] = deny
+    return json.dumps({"permissions": permissions}, indent=2)
 
 
 @pytest.mark.parametrize(
@@ -82,9 +87,12 @@ def _settings(rules) -> str:
     ],
 )
 def test_a_rule_that_disarms_the_consent_gate_is_reported(lint, rule):
+    """One line per PAUSE removed (HATS-1754): `Bash(*)` takes away three
+    different questions, and reporting them as one hides two of them."""
     found = lint.findings_in(_settings([rule]))
-    assert len(found) == 1, f"{rule!r} was not reported: {found}"
-    assert found[0].rule == rule
+
+    assert found, f"{rule!r} was not reported"
+    assert {f.rule for f in found} == {rule}, found
 
 
 @pytest.mark.parametrize(
@@ -140,9 +148,186 @@ def test_a_clean_project_says_nothing(lint, tmp_path):
     assert lint.warning_for(roots=[tmp_path]) == ""
 
 
-def test_a_session_is_told_once(lint, tmp_path):
+def test_a_session_is_told_once_and_a_changed_config_is_told_again(lint, tmp_path):
     marker = tmp_path / "consent-lint.json"
 
-    assert lint.already_warned(marker, "sid-1") is False
-    assert lint.already_warned(marker, "sid-1") is True
-    assert lint.already_warned(marker, "sid-2") is False, "a new session hears it again"
+    first = lint.to_say(marker, "sid-1", "digest-a")
+    assert first == (True, True)
+
+    assert lint.to_say(marker, "sid-1", "digest-a") == (False, False), "same session, same config"
+
+    later = lint.to_say(marker, "sid-2", "digest-a")
+    assert later.findings is True, "a new session hears the closable findings again"
+    assert later.notes is False, "a standing property is not repeated at every session"
+
+    changed = lint.to_say(marker, "sid-2", "digest-b")
+    assert changed == (True, True), "an edited config is judged afresh, notes included"
+
+
+def test_the_digest_follows_the_settings_it_reads(lint, tmp_path):
+    (tmp_path / ".claude").mkdir()
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.write_text(_settings(["Bash(rack context *)"]), encoding="utf-8")
+
+    before = lint.digest_of(roots=[tmp_path])
+    settings.write_text(_settings(["Bash(rack transition *)"]), encoding="utf-8")
+
+    assert lint.digest_of(roots=[tmp_path]) != before, "an edited allow-list must be judged again"
+
+
+# --- HATS-1754: the verdict is the WHOLE permission block, not one array of it ---
+#
+# The harness resolves `deny -> ask -> allow` and does not weigh specificity: "a
+# matching ask rule prompts even when a more specific allow rule also matches the
+# same call". So an allow-rule whose question some ask-rule restores silences
+# nothing — and saying it does, on every Bash call, is the guard-that-cries-wolf
+# of the HATS-1252 retro. The project's other settings lint already walks all
+# three arrays (`src/ai_hats/surfaces/claude/provider.py`).
+
+
+def test_an_ask_rule_restores_the_question_the_allow_rule_removed(lint):
+    text = _settings(["Bash(ai-hats:*)"], ask=["Bash(ai-hats wt merge:*)"])
+
+    assert lint.findings_in(text) == [], (
+        "the pause is restored by the ask-rule, so the allow-rule silences nothing"
+    )
+
+
+def test_a_deny_rule_beats_the_allow_rule_too(lint):
+    text = _settings(["Bash(ai-hats:*)"], deny=["Bash(ai-hats wt merge:*)"])
+
+    assert lint.findings_in(text) == [], "deny wins over allow — there is nothing to report"
+
+
+def test_an_ask_rule_about_another_verb_excuses_nothing(lint):
+    """The control: a lint that swallows a finding whenever ANY ask-rule exists
+    would pass the two above while reporting nothing ever again."""
+    text = _settings(["Bash(ai-hats:*)"], ask=["Bash(ai-hats self update:*)"])
+
+    found = lint.findings_in(text)
+
+    assert len(found) == 1, f"the merge pause is still gone and was not reported: {found}"
+    assert "merge into master" in found[0].why, found[0].why
+
+
+# --- HATS-1754: the unit of judgment is the SPELLING, not the rule ---
+#
+# `GUARDED_COMMANDS` held one spelling per verb, so a rule opening the same call
+# through a runner was never tried. Measured on a live config: five such holes,
+# none reported. The probe now walks every spelling the guard itself can see —
+# one table, shared with `safety_gate` (`consent_spellings.py`).
+
+
+def test_a_module_spelling_of_a_guarded_call_is_reported(lint):
+    found = lint.findings_in(_settings(["Bash(python3 -m ai_hats:*)"]))
+
+    assert len(found) == 1, f"the module spelling was not tried: {found}"
+    assert "python3 -m ai_hats wt merge" in found[0].why, found[0].why
+
+
+def test_a_broad_runner_rule_is_reported_for_every_pause_it_opens(lint):
+    found = lint.findings_in(_settings(["Bash(uv run:*)"]))
+    whys = " | ".join(f.why for f in found)
+
+    assert "merge into master" in whys, whys
+    assert "consent question" in whys, whys
+    assert all("uv run " in f.why for f in found), whys
+
+
+def test_an_assignment_prefixed_rule_is_judged_carrying_its_own_prefix(lint):
+    """`Bash(python:*)` does NOT cover a command starting with `PYTHONPATH=` —
+    measured — so this rule is the only opener of that spelling, and a probe
+    that drops the assignment misses one of the five holes of the card."""
+    found = lint.findings_in(_settings(["Bash(PYTHONPATH=src python -m ai_hats:*)"]))
+
+    assert len(found) == 1, f"the assignment-prefixed spelling was not tried: {found}"
+    assert "PYTHONPATH=src python -m ai_hats wt merge" in found[0].why, found[0].why
+
+
+def test_an_ask_rule_closes_the_one_runner_spelling_it_names(lint):
+    """The shape the live config uses: the allow-rule stays broad on purpose and
+    the ask-rule, narrower, still wins."""
+    text = _settings(["Bash(python3 -m ai_hats:*)"], ask=["Bash(python3 -m ai_hats wt merge:*)"])
+
+    assert lint.findings_in(text) == [], "the ask-rule names the only spelling this rule opens"
+
+
+def test_an_ask_rule_as_wide_as_the_allow_rule_closes_all_of_it(lint):
+    text = _settings(["Bash(uv run:*)"], ask=["Bash(uv run:*)"])
+
+    assert lint.findings_in(text) == [], "ask wins over allow at equal width"
+
+
+# --- HATS-1754 defect 3: a rule that hands out an interpreter ---
+#
+# `Bash(python:*)` covers no probe — its prefix is not the prefix of any guarded
+# call — yet it lifts every gate at once, because `python -c "…"` is a different
+# STRING that does the guarded thing. Prefix matching cannot reach that; it is
+# reachability analysis over arbitrary code. So the rule is judged by CATEGORY,
+# and the message INFORMS: the supervisor keeps these broad on purpose
+# (ruling 2026-08-20), and demanding they be narrowed would be the eternal
+# warning this very card is fixing.
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "Bash(python:*)",
+        "Bash(python3:*)",
+        "Bash(.venv/bin/python:*)",
+        "Bash(zsh *)",
+        "Bash(source:*)",
+    ],
+)
+def test_a_rule_handing_out_an_interpreter_is_named(lint, rule):
+    notes = lint.interpreter_notes_in(_settings([rule]))
+
+    assert len(notes) == 1, f"{rule!r} lifts every gate and was not named: {notes}"
+    assert notes[0].rule == rule
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "Bash(rm:*)",  # a dangerous BINARY, not arbitrary execution — deny-side, not here
+        "Bash(python -m ai_hats:*)",  # bounded to a module: the probes judge this one
+        "Bash(python3 -m pytest:*)",
+        "Bash(git status:*)",
+    ],
+)
+def test_a_bounded_rule_is_not_an_interpreter_handout(lint, rule):
+    assert lint.interpreter_notes_in(_settings([rule])) == []
+
+
+def test_the_interpreter_note_informs_and_does_not_demand(lint, tmp_path):
+    """The supervisor keeps these rules broad deliberately; a message telling him
+    to narrow them every session is the defect, not the fix."""
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(_settings(["Bash(python3:*)"]), "utf-8")
+
+    said = lint.warning_for(roots=[tmp_path], findings=False)
+
+    assert "python3" in said, said
+    assert "narrow" not in said.lower() and "drop" not in said.lower(), said
+
+
+def test_both_verdicts_are_said_apart_when_both_apply(lint, tmp_path):
+    """`Bash(python3:*)` is both: it opens a module spelling somebody can close,
+    AND it hands out an interpreter nobody can bound. Two facts, two blocks."""
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(_settings(["Bash(python3:*)"]), "utf-8")
+
+    said = lint.warning_for(roots=[tmp_path])
+
+    assert "silences a guard" in said, said
+    assert "hands out an interpreter" in said, said
+
+
+def test_a_rule_spelled_with_quotes_still_names_its_line(lint):
+    """Found live: a `-c '` rule appears JSON-escaped in the file, so the raw
+    string matched no line and the finding pointed at line 0."""
+    rule = 'Bash(python3 -c " *)'
+    notes = lint.interpreter_notes_in(_settings([rule]))
+
+    assert len(notes) == 1, notes
+    assert notes[0].line > 0, "a finding nobody can open is half a finding"

@@ -67,6 +67,24 @@ except ImportError:  # engine not beside us -> no grant road, only the old one
     _grant_engine = None
     _GrantOutcome = None
 
+# HATS-1754 — the spellings a guarded binary arrives under, shared with the
+# permission lint so the two cannot drift. A missing sibling costs the guard its
+# sight of every runner spelling, so it is recorded rather than assumed.
+_spellings_off_journaled = False
+try:
+    from consent_spellings import RUNNERS as _RUNNERS
+    from consent_spellings import module_binary as _module_binary
+except ImportError:  # sibling absent -> only the bare spelling is seen; recorded on first use
+    _RUNNERS = ()
+
+    def _module_binary(_tokens):
+        global _spellings_off_journaled
+        if not _spellings_off_journaled:
+            _spellings_off_journaled = True
+            journal_bypass("fail-open", "consent_spellings.py missing", hook="safety_gate.py")
+        return []
+
+
 # HATS-1647 — the tracker predicate shares its resolver and its wording with the
 # Edit/Write half of the gate: two texts for one rule is how the coarser one wins.
 try:
@@ -101,6 +119,7 @@ OPERATORS = (";", "&&", "||", "|", "&")
 WRAPPERS = (
     "sudo", "doas", "env", "nohup", "xargs", "time", "timeout",
     "nice", "ionice", "stdbuf", "setsid", "chrt", "taskset", "command",
+    *_RUNNERS,
 )  # fmt: skip
 
 #: Every shape bash writes a file with. `shlex(punctuation_chars=True)` hands the
@@ -160,6 +179,12 @@ def command_slices(tokens):
     `rm -rf /` was denied (HATS-1682, measured). So when a wrapper leads, every
     later slice is offered to the checks and a dangerous binary cannot hide
     behind an operand nobody counted.
+
+    A slice is offered twice when it spells `<interpreter> -m <module>`: once as
+    typed, once as the binary that module runs (HATS-1754). The `-c` payload is
+    ONE token and never becomes a slice — an interpreter's argument is not a
+    command, and reading it as one is how a quoted string synthesised a call
+    that was never issued (HATS-1253 R5).
     """
 
     def _command_at(index: int) -> int:
@@ -171,16 +196,15 @@ def command_slices(tokens):
     if start >= len(tokens):
         return []
     slices = [tokens[start:]]
-    if os.path.basename(tokens[start]) not in WRAPPERS:
-        return slices
-    seen = {start}
-    for i in range(start + 1, len(tokens)):
-        j = _command_at(i)
-        if j >= len(tokens) or j in seen or _is_operand(tokens[j]):
-            continue
-        seen.add(j)
-        slices.append(tokens[j:])
-    return slices
+    if os.path.basename(tokens[start]) in WRAPPERS:
+        seen = {start}
+        for i in range(start + 1, len(tokens)):
+            j = _command_at(i)
+            if j >= len(tokens) or j in seen or _is_operand(tokens[j]):
+                continue
+            seen.add(j)
+            slices.append(tokens[j:])
+    return slices + [call for call in map(_module_binary, slices) if call]
 
 
 def slice_for(tokens, name: str):
@@ -619,24 +643,29 @@ def allow_verdict(cmd: str) -> dict:
 
 
 def permission_warning(cmd: str) -> str:
-    """Once per session: say if an allow-rule is silencing a guard (HATS-1642).
+    """Say what this session has not been told about the allow-list (HATS-1642).
 
     A nudge, never a verdict — it rides ``additionalContext`` so a noisy config
     cannot cost anyone a tool call. Any failure here is journaled and dropped:
     the gates above have already decided, and a lint may not undo them.
+
+    The marker is consulted BEFORE the scan, not after (HATS-1754): every Bash
+    call reaches this, and an unchanged config now costs one digest instead of
+    walking every rule against every spelling.
     """
     if _permission_lint is None:
         return ""
     try:
-        said = _permission_lint.warning_for()
-        if not said:
-            return ""
         store = _tickets_dir(Path.cwd())
         if store is None:
-            return said  # nowhere to remember; better repeated than lost
+            # Nowhere to remember: better repeated than lost.
+            return _permission_lint.warning_for()
         marker = store.parent / "consent-lint.json"
         session = os.environ.get("AI_HATS_SESSION_ID", "")
-        return "" if _permission_lint.already_warned(marker, session) else said
+        said = _permission_lint.to_say(marker, session, _permission_lint.digest_of())
+        if not (said.findings or said.notes):
+            return ""
+        return _permission_lint.warning_for(findings=said.findings, notes=said.notes)
     except Exception as exc:
         journal_bypass("fail-open", f"permission lint failed: {exc!r}", hook="safety_gate.py")
         return ""
