@@ -32,6 +32,9 @@ KNOWN_SURFACES: dict[str, SurfaceInfo] = {
     "codex": SurfaceInfo(
         ep_name="codex", package_name="ai-hats-codex", default_home_dirs=(".codex",)
     ),
+    "opencode": SurfaceInfo(
+        ep_name="opencode", package_name="ai-hats-opencode", default_home_dirs=(".opencode",)
+    ),
 }
 
 
