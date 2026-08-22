@@ -1,21 +1,19 @@
 """Public contract of the pipeline area: run a materialized pipeline config.
 
-The area knows how to run step1 -> ... -> stepN and nothing about who runs what:
-which pipelines exist is the application's catalog, not this module's enum
-(ADR-0026 D14). Import-light on purpose — dataclasses and the funnel mapping only;
-``run_pipeline`` pulls the harness inside its body (HATS-1783).
+The area chains sessions and threads state between the steps that run them. Two kinds
+of session exist for it — one that takes over the terminal and one captured as a
+subprocess — and that distinction is the primitive's own, because a chain mixes them.
 
-Every field below is here because a step reads it; the comment on each says which
-one, so a field nobody reads is visible as such.
+What a session is *for* is not: its role, its model, the context it is handed and the
+sinks it records into are the application's policy. They arrive inside a params object
+the area never reads and hands to the steps as-is (ADR-0026 D14).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping
-
-from ai_hats_wt import IsolationMode
+from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 from . import keys as _keys
 
@@ -23,14 +21,6 @@ from . import keys as _keys
 # the steps take a file rather than a string. Supplied by the harness, so a caller
 # hands over text and never learns where it landed.
 PromptWriter = Callable[[str | None], Path | None]
-
-# Values the area carries to the steps and never looks inside. Aliased rather than
-# spelled ``object`` so every undecided type is one grep, not a scatter.
-# TODO(HATS-1785): real types once composition has a public contract — annotating
-# them today would add pipeline -> composition / observe edges the ADR forbids.
-CompositionPayload = object
-SessionManager = object
-TracerFactory = object
 
 
 @dataclass(frozen=True)
@@ -42,109 +32,24 @@ class PipelineConfig:
     name: str
 
 
-@dataclass(frozen=True)
-class MaterializedRole:
-    """The composed role this run acts as."""
+@runtime_checkable
+class RunParams(Protocol):
+    """What every pipeline family answers: where the run happens, and its state.
 
-    # Names the role for the steps that label the session and pick its prompt.
-    name: str
-    # The composition payload the launch step hands to the runner.
-    composition: CompositionPayload
-
-
-@dataclass(frozen=True)
-class SessionRecording:
-    """The sinks a session is written into."""
-
-    # Creates the session directory and its metrics file.
-    manager: SessionManager
-    # Builds the sidecar tracer that captures the transcript.
-    tracer_factory: TracerFactory
-
-
-@dataclass(frozen=True)
-class HarnessParams:
-    """How the harness is launched. The branch is the type, never a flag."""
-
-    # First user-visible message. HITL prepends it to the provider's argv; Automate
-    # passes it as the sub-agent's task.
-    prompt: str | None = None
-
-
-@dataclass(frozen=True)
-class Hitl(HarnessParams):
-    """Human-in-the-loop: the provider CLI takes over the terminal."""
-
-    # Forwarded to the provider's argv. HITL-only: the Automate branch of
-    # ``steps/launch.py`` drops them, so the field must not be expressible there.
-    extra_args: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class Automate(HarnessParams):
-    """Non-interactive: a captured subprocess, reported when it exits.
-
-    The three fields below are read by the Automate branch of ``steps/launch.py``
-    and by nothing else — which is why they sit here rather than on the session:
-    ``WrapRunner.run`` takes none of them, and the CLI already refuses all three
-    interactively (``_BATCH_ONLY_FLAGS``).
+    Implemented outside the area, next to the steps that read the state: the funnel
+    keys are each step's own declaration, and repeating them here would make the area
+    the owner of a vocabulary it does not use.
     """
 
-    # Model override for the sub-agent process.
-    model: str = ""
-    # How the sub-agent's checkout is disposed of when it finishes.
-    isolation: IsolationMode = IsolationMode.DISCARD
-    # Backlog card whose sections are rendered into the sub-agent's first message
-    # (``assemble_first_user_message`` -> ``ticket_sections``). Not the parent
-    # session: that is a separate runner argument, and nothing seeds it today.
-    ticket_id: str = ""
+    @property
+    def project_dir(self) -> Path: ...
 
-
-@dataclass(frozen=True)
-class RunParams:
-    """Everything about this run, and nothing about which pipeline it is."""
-
-    # The project this run belongs to: every path a step touches hangs off it, and it
-    # is resolved once at the entry point so nothing below rediscovers it (ADR-0026 D2).
-    project_dir: Path
-    role: MaterializedRole
-    recording: SessionRecording
-    harness: HarnessParams = field(default_factory=Automate)
-    # Open k=v map stamped onto the session record. Deliberately not a fixed field
-    # list: the CLI puts user ``--tag``s here and the retry path adds its own
-    # attempt counter, so writers extend it without the contract changing.
-    annotations: Mapping[str, str] | None = None
-
-
-def _state_of(params: RunParams, materialize_prompt: PromptWriter) -> dict[str, Any]:
-    """Funnel state for ``params`` — the seam between the typed contract and the steps.
-
-    Internal on purpose: callers describe a run, and the vocabulary each step declares
-    is not part of what they describe.
-    """
-    harness = params.harness
-    state: dict[str, Any] = {
-        _keys.KEY_ROLE: params.role.name,
-        _keys.KEY_COMPOSITION: params.role.composition,
-        _keys.KEY_PROJECT_DIR: params.project_dir,
-        _keys.KEY_SESSION_MGR: params.recording.manager,
-        _keys.KEY_TRACER_FACTORY: params.recording.tracer_factory,
-        _keys.KEY_TAGS: dict(params.annotations) if params.annotations else None,
-        _keys.KEY_INTERACTIVE: isinstance(harness, Hitl),
-        _keys.KEY_PROMPT_PATH: materialize_prompt(harness.prompt),
-    }
-    if isinstance(harness, Hitl):
-        state[_keys.KEY_EXTRA_ARGS] = list(harness.extra_args)
-    if isinstance(harness, Automate):
-        state[_keys.KEY_MODEL] = harness.model
-        state[_keys.KEY_ISOLATION] = harness.isolation.value
-        state[_keys.KEY_TICKET] = harness.ticket_id
-    return state
+    def to_state(self, *, materialize_prompt: PromptWriter) -> Mapping[str, Any]: ...
 
 
 @dataclass(frozen=True)
 class SessionRef:
-    """The session a run produced: its identity and where its artefacts landed."""
+    """A session the run produced — the handle a later link of the chain refers to."""
 
     id: str
     dir: Path
@@ -155,9 +60,9 @@ class SessionRef:
 class PipelineResult:
     """What the run produced and what went wrong on the way."""
 
-    # None when no step reported one: a pipeline that launches nothing (init,
-    # reflect-session), or a launch step that failed under ``failure_policy=continue``
-    # and left the run going. Callers name their own default via ``exit_code_or``.
+    # None when no step reported one — the run launched no session, or the step that
+    # launches it failed under ``failure_policy=continue`` and the run went on.
+    # Callers name their own default through ``exit_code_or``.
     exit_code: int | None = None
     session: SessionRef | None = None
     # Step name -> the exception a ``failure_policy=continue`` step swallowed,
@@ -199,5 +104,5 @@ def run_pipeline(config: PipelineConfig, params: RunParams) -> PipelineResult:
     from .harness import PipelineHarness  # deferred: costs ~160 ms of import at startup
 
     with PipelineHarness(config.name, params.project_dir) as harness:
-        state = _state_of(params, harness.materialize_prompt)
+        state = params.to_state(materialize_prompt=harness.materialize_prompt)
         return PipelineResult.from_state(harness.run(state))

@@ -25,7 +25,14 @@ import click
 from click.core import ParameterSource
 
 from ai_hats_wt import IsolationMode
-from ..pipeline import Hitl, MaterializedRole, RunParams, SessionRecording, run_pipeline
+from ..pipeline import run_pipeline
+from ..session_policy import (
+    Hitl,
+    MaterializedRole,
+    SessionOutcome,
+    SessionRecording,
+    SessionRunParams,
+)
 from ..pipeline_catalog import EXECUTE
 from ._helpers import _project_dir
 
@@ -210,7 +217,7 @@ def execute_cmd(
     # cli/_helpers.dispatch_friendly_error.
     result = run_pipeline(
         EXECUTE,
-        RunParams(
+        SessionRunParams(
             project_dir=project_dir,
             role=MaterializedRole(
                 name=role,
@@ -234,4 +241,4 @@ def execute_cmd(
         ),
     )
 
-    sys.exit(result.exit_code_or(1))
+    sys.exit(SessionOutcome.of(result).exit_code_or(1))

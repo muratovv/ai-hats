@@ -17,13 +17,13 @@ import click
 
 from ai_hats_observe.artifacts import METRICS_JSON
 from ai_hats_wt import IsolationMode
-from ..pipeline import (
+from ..pipeline import run_pipeline
+from ..session_policy import (
     Automate,
     MaterializedRole,
-    PipelineResult,
-    RunParams,
+    SessionOutcome,
     SessionRecording,
-    run_pipeline,
+    SessionRunParams,
 )
 from ..pipeline_catalog import EXECUTE
 from ._helpers import console
@@ -54,7 +54,7 @@ def run_batch(
     # provider) render at the root group — cli/_helpers.dispatch_friendly_error.
     result = run_pipeline(
         EXECUTE,
-        RunParams(
+        SessionRunParams(
             project_dir=project_dir,
             role=MaterializedRole(
                 name=role,
@@ -81,13 +81,12 @@ def run_batch(
         ),
     )
 
-    _report(result, as_json=as_json)
+    _report(SessionOutcome.of(result), as_json=as_json)
 
 
-def _report(result: PipelineResult, *, as_json: bool) -> NoReturn:
+def _report(result: SessionOutcome, *, as_json: bool) -> NoReturn:
     """Print the session summary (or its JSON) and exit with the agent's code."""
-    session = result.require_session()
-    session_id, session_dir = session.id, session.dir
+    session_id, session_dir = result.require_session()
     metrics_path = session_dir / METRICS_JSON
     metrics: dict = {}
     if metrics_path.exists():
