@@ -105,15 +105,36 @@ def _rack_selector_form(selector: str) -> str | None:
     return selector_form(selector)
 
 
-def selector_ends(app: str, selector: str) -> tuple[str | None, str | None]:
+def point_owner(app: str, path: Sequence[str] = ()) -> str:
+    """Which application owns the point a consent row names.
+
+    Normally ``app`` itself. Under ``apps.consent_gate`` the row names an
+    OPERATION — ``rack.transition``, ``wt.merge`` — as the first segment of its
+    path, and the half before the dot is the application that owns it. Read off
+    the type's own spelling rather than a registry, so a new operation type stays
+    data (ADR-0030).
+    """
+    if app != CONSENT_GATE_APP or not path:
+        return app
+    return str(path[0]).split(".", 1)[0]
+
+
+def selector_ends(
+    app: str, selector: str, path: Sequence[str] = ()
+) -> tuple[str | None, str | None]:
     """The parsed ends of a rack selector — ``(None, None)`` for anything else.
 
     The guard is stdlib-only and cannot import the parser, so the envelope it
     reads carries the ends ALREADY parsed rather than the grammar (HATS-1719,
     design.md §4.3). ai-hats still never spells that grammar: it asks the owner
     and copies the answer.
+
+    ``path`` is what names that owner once consent moved under the gate: keyed on
+    ``app`` alone this answered ``(None, None)`` for EVERY row the composition
+    produces, and two readers that trusted the field went quiet with it
+    (HATS-1790).
     """
-    if app != "rack":
+    if point_owner(app, path) != "rack":
         return None, None
     from ai_hats_rack.selectors import ANY, parse_selector
 
@@ -597,6 +618,7 @@ __all__ = [
     "KNOWN_APPS",
     "STARTUP_POINT",
     "check_log_name",
+    "point_owner",
     "selector_ends",
     "WT_APP",
     "CheckBindingError",

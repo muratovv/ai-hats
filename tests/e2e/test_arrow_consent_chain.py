@@ -69,7 +69,10 @@ def test_the_declaration_reaches_the_guard_with_its_ends_parsed(arrow_project):
     assert rack_rows, "the assistant role declares no rack consent — the probe is blind"
     for row in rack_rows:
         assert "->" in row["selector"], f"declaration is not in the arrow spelling: {row}"
-        assert row["selector"].split("->", 1)[1]
+        # The FIELD, never a cut of the name here: re-implementing the grammar in
+        # the probe is what let it stay green while the parser it guards answered
+        # (None, None) for every row the composition produces (HATS-1790).
+        assert row["to"], f"the envelope carries no parsed target, so the guard is blind: {row}"
         assert "point" not in row, f"the retired key is still written: {row}"
 
 

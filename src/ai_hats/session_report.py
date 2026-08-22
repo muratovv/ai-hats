@@ -42,7 +42,7 @@ def consent_entry(consent) -> dict:
     """
     from .check_points import selector_ends
 
-    source, target = selector_ends(consent.app, consent.selector)
+    source, target = selector_ends(consent.app, consent.selector, consent.path)
     return {
         "app": consent.app,
         "path": list(consent.path),
@@ -72,17 +72,20 @@ def _consent_key(consent: dict) -> str:
     rows match on the parsed ``to`` ALONE, so printing the selector for all
     three would read as a promise the rack half does not keep (HATS-1726).
     """
-    from .check_points import CONSENT_GATE_APP, WT_APP
+    from .check_points import CONSENT_GATE_APP, WT_APP, point_owner
 
     # A parsed `to` is by construction a rack row: `selector_ends` answers
     # (None, None) for every other app, so this asks the data rather than
     # holding a second copy of the app name.
     if consent.get("to"):
         return f"entering {consent['to']!r}"
+    # The owner, not the key the row stands under: since HATS-1755 every row
+    # stands under the gate, so asking `app` alone answered "operation type" for
+    # the wt point too (HATS-1790).
+    if point_owner(consent["app"], consent["path"]) == WT_APP:
+        return "wt point"
     if consent["app"] == CONSENT_GATE_APP:
         return "operation type"
-    if consent["app"] == WT_APP:
-        return "wt point"
     return "-"  # declared under an app no guard of this build reads
 
 

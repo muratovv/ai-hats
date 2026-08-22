@@ -489,16 +489,22 @@ def _grant_check(op_type: str, subject: str, identity: dict, anchor):
     )
 
 
-def _operation_points(operation: str) -> tuple[str, ...]:
-    """Protected points carried by one external operation adapter."""
+def _operation_rows(operation: str) -> tuple[dict, ...]:
+    """Declared rows carried by one external operation adapter."""
     return tuple(
-        str(entry.get("selector", ""))
+        entry
         for entry in _declared_points()
         if isinstance(entry, dict)
         and entry.get("app") == "consent_gate"
         and entry.get("path")
         and entry["path"][0] == operation
-        and entry.get("selector")
+    )
+
+
+def _operation_points(operation: str) -> tuple[str, ...]:
+    """Protected points carried by one external operation adapter."""
+    return tuple(
+        str(entry["selector"]) for entry in _operation_rows(operation) if entry.get("selector")
     )
 
 
@@ -511,14 +517,18 @@ def declared_consent_targets() -> frozenset:
     dir and `role_materialization.json` there carries the composed declaration.
     Launch-frozen on purpose — the surface asks by the declaration the session
     was started with, not by whatever the library says a moment later.
+
+    The field was empty on every row between HATS-1755 and HATS-1790 — the parser
+    keyed on the app the row stood under, and consent had moved out of it — so
+    this cut the name instead and the sentence above stopped being true. Cutting
+    is what HATS-1719 removed: the copy of a grammar goes quiet, not red, when
+    the grammar moves.
     """
     targets = set()
-    for selector in _operation_points("rack.transition"):
-        if "->" not in selector:
-            continue
-        target = selector.split("->", 1)[1]
+    for entry in _operation_rows("rack.transition"):
+        target = entry.get("to")
         if target:
-            targets.add(target)
+            targets.add(str(target))
     return frozenset(targets)
 
 
