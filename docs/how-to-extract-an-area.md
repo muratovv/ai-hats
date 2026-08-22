@@ -80,21 +80,81 @@ in `session_policy.py` next to the steps that read it.
 
 ## 4. Gates that hold the boundary
 
-`tests/test_area_boundary.py` — three negative universals, each verified to go red
-under its own violation before being committed:
+`tests/test_area_boundary.py` — three gates, each verified to go red under its own
+violation before being committed:
 
-| Gate                | Asserts                                            | Shape               |
-| ------------------- | -------------------------------------------------- | ------------------- |
-| deep entries        | no name enters the area past its `__init__`        | ratchet, falls only |
-| foreign dispatchers | nothing outside the area dispatches a pipeline     | ratchet, falls only |
-| catalog             | shipped YAML == the application's declared catalog | equality            |
+| Gate                        | Asserts                                            | Shape                    |
+| --------------------------- | -------------------------------------------------- | ------------------------ |
+| deep entries                | no name enters the area past its `__init__`        | pinned set, shrinks only |
+| pipelines assembled in code | no pipeline is built from anything but its YAML    | pinned set, shrinks only |
+| catalog                     | shipped YAML == the application's declared catalog | set equality             |
 
-A ratchet **fails when the count drops** as well as when it rises: converting a
-consumer means lowering the baseline in the same commit, so the ground won is kept.
+A pinned set **fails when an entry leaves** as well as when one arrives: converting a
+consumer means re-pinning in the same commit, so the ground won is kept, and a swap —
+one converted, one added — is red even though the count did not move. On failure the
+gate prints the diff and a paste-ready literal, because a pin nobody can regenerate
+becomes a pin someone edits by hand.
+
 Edge counting includes deferred and `TYPE_CHECKING` imports (ADR-0026 D5, F4 ruling of
 2026-08-21) — a boundary blind to them is blind to 45% of this graph.
 
-## 5. What review keeps catching
+## 5. How a gate goes green without the property
+
+Every entry below was found on **this epic's own gates**, by review, after the gate was
+written and believed. Read it before calling a gate done, and add the row your own
+incident produces — a taxonomy grows by incident, not by imagination.
+
+1. **Cardinality instead of the set.** The assert compares a count, so converting one
+   offender while adding another leaves it green — and the offender list, which only
+   prints on failure, never prints.
+   *Fix:* pin the set; print the diff plus a paste-ready literal.
+   *Incident:* `BASELINE_DEEP_ENTRIES` compared `len(entries)`; a swap was invisible.
+
+2. **A proxy instead of the subject.** The gate asserts something correlated with the
+   property — who imported which module — while the row's subject is the property
+   itself: a pipeline assembled from something other than its YAML.
+   *Fix:* write the assert about the subject, in whatever spelling reaches it.
+   *Incident:* the dispatcher gate listed three modules, so `from ai_hats.pipeline
+   import build` was a second path it could not see.
+
+3. **A word in the gate's own name that excises half its subject.** "Foreign
+   dispatchers" scanned only modules *outside* the area — and `presets.py`, inside it,
+   is the headline C9 defect ADR-0026 names. Two of the three known sites could never
+   have been counted.
+   *Fix:* ask what the qualifier excludes, and whether the property holds there too.
+
+4. **Reading a different tree than the one under test.** The catalog gate resolved the
+   shipped pipelines through `AI_HATS_PROJECT_DIR`, which in a worktree points at the
+   main checkout: it compared one tree's YAML against another tree's catalog. A
+   worktree that added a pipeline went green.
+   *Fix:* resolve what is under test from the test's own location.
+
+5. **A gate that can skip itself.** `pytest.skip` when the library root did not
+   resolve. In a suite summary, silence and success are the same colour.
+   *Fix:* an unresolvable precondition is a failure that names what it could not
+   resolve.
+
+6. **An exemption wider than the sanctioned case.** `loader.py` is exempt as a *module*,
+   so a second, non-YAML assembly added inside it stays invisible.
+   *Fix:* exempt the call, not the file.
+
+7. **A bypass around the measured act.** A prebuilt object handed out — `from .presets
+   import execute_pipeline` — never calls the constructor the gate counts. Closed today
+   only because the producer is pinned, and it reopens the moment a pinned assembly is
+   converted without its importers.
+   *Fix:* count the artefact where it is produced, and pin the producers.
+
+8. **A gate closable without touching the second implementation.** The precedent is in
+   ADR-0026 itself: C5's import-time budget assert was replaced by a test, the gate went
+   green, and the budgets stayed ownerless in four places.
+   *Fix:* if it can go green while the second path lives, it is measuring something
+   else — see 2.
+
+Standing rule behind all eight (ADR-0026 D3): a gate closes a row only by asserting the
+**absence of a second path**. A test that asserts a property of behaviour stays true
+with several owners, so it cannot close anything.
+
+## 6. What review keeps catching
 
 Kept as a checklist because each line cost a round:
 
