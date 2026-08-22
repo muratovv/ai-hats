@@ -25,11 +25,11 @@ AREA = "ai_hats.pipeline"
 
 # Deep entries (an import naming anything under the area other than the area
 # itself) still to convert. HATS-1783 lowers this to 0; it must never rise.
-BASELINE_DEEP_ENTRIES = 76
+BASELINE_DEEP_ENTRIES = 20
 
 # Modules outside the area that still dispatch a pipeline themselves instead of
 # calling ``run_pipeline``. HATS-1783 lowers this to 0.
-BASELINE_FOREIGN_DISPATCHERS = 6
+BASELINE_FOREIGN_DISPATCHERS = 2
 
 _DISPATCH_ENTRY_POINTS = frozenset(
     {

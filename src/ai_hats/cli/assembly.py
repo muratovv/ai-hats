@@ -21,6 +21,7 @@ from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
 from ..paths import PROJECT_CONFIG
+from ..session_policy import InitRunParams
 from ._helpers import _assembler, _project_dir, console
 
 
@@ -166,7 +167,7 @@ def _launch_wizard_session(cmd: list[str]) -> None:
     os.execvp(cmd[0], cmd)
 
 
-def _build_init_pipeline_state(
+def _build_init_pipeline_params(
     project_dir: Path,
     provider: str | None,
     role: str | None,
@@ -177,33 +178,22 @@ def _build_init_pipeline_state(
     no_wizard: bool,
     channel: str | None,
     harness_path: str | None,
-) -> dict[str, Any]:
-    """Map CLI options into initial state dict for PIPELINE_INIT."""
-    from ..pipeline.keys import (
-        KEY_AI_HATS_DIR,
-        KEY_CHANNEL,
-        KEY_HARNESS_PATH,
-        KEY_NO_MANAGE_GITIGNORE,
-        KEY_NO_WIZARD,
-        KEY_PROJECT_DIR,
-        KEY_PROVIDER,
-        KEY_ROLE,
-        KEY_TASK_PREFIX,
-        KEY_VENV_PATH,
-    )
+) -> InitRunParams:
+    """Map CLI options into the init pipeline's params."""
+    from ..config import Channel
 
-    return {
-        KEY_PROJECT_DIR: project_dir,
-        KEY_PROVIDER: provider,
-        KEY_ROLE: role,
-        KEY_TASK_PREFIX: task_prefix,
-        KEY_AI_HATS_DIR: ai_hats_dir,
-        KEY_VENV_PATH: venv_path,
-        KEY_NO_MANAGE_GITIGNORE: no_manage_gitignore,
-        KEY_NO_WIZARD: no_wizard,
-        KEY_CHANNEL: channel,
-        KEY_HARNESS_PATH: harness_path,
-    }
+    return InitRunParams(
+        project_dir=project_dir,
+        provider=provider,
+        role=role,
+        task_prefix=task_prefix,
+        ai_hats_dir=ai_hats_dir,
+        venv_path=venv_path,
+        no_manage_gitignore=no_manage_gitignore,
+        no_wizard=no_wizard,
+        channel=None if channel is None else Channel(channel),
+        harness_path=harness_path,
+    )
 
 
 @click.command()
@@ -307,10 +297,11 @@ def init(
         raise SystemExit(2)
 
     # HATS-1215: wizard choice moved into the pipeline — no local branch here.
-    from ..pipeline.harness import PipelineHarness
-    from ..pipeline.keys import KEY_EXECUTE_CMD, PIPELINE_INIT
+    from ..pipeline import run_pipeline
+    from ..pipeline_catalog import INIT
+    from ..session_policy import InitOutcome
 
-    init_state = _build_init_pipeline_state(
+    init_params = _build_init_pipeline_params(
         project_dir=project_dir,
         provider=provider,
         role=role,
@@ -328,8 +319,7 @@ def init(
     agent_existed_before = agent_dir.exists()
 
     try:
-        with PipelineHarness(PIPELINE_INIT, project_dir) as h:
-            final = h.run(init_state)
+        result = run_pipeline(INIT, init_params)
     except BaseException:
         if (
             not already
@@ -340,7 +330,7 @@ def init(
             shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
         raise
 
-    cmd = final.get(KEY_EXECUTE_CMD)
+    cmd = InitOutcome.of(result).execute_cmd
     if cmd:
         _launch_wizard_session(cmd)
 

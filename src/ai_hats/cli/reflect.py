@@ -41,28 +41,26 @@ from ..rack_workspace import (
     rack_workspace,
     set_proposal_status,
 )
-from ..pipeline.keys import (
-    KEY_COMPOSITION,
-    KEY_EXIT_CODE,
-    KEY_EXTRA_ARGS,
-    KEY_INTAKE_RESULT,
-    KEY_INTERACTIVE,
-    KEY_MAX_RETRIES,
-    KEY_MODEL,
-    KEY_PROJECT_DIR,
-    KEY_PROMPT_PATH,
-    KEY_REVIEW_PATH,
-    KEY_ROLE,
-    KEY_SAVED_PATH,
-    KEY_SESSION_ID,
-    KEY_SESSION_MGR,
-    KEY_TRACER_FACTORY,
-    PIPELINE_REFLECT_ALL,
-    PIPELINE_REFLECT_HYPOTHESIS_PHASE1,
-    PIPELINE_REFLECT_HYPOTHESIS_PHASE2,
-    PIPELINE_REFLECT_ISSUE,
-    PIPELINE_REFLECT_ROLE,
-    PIPELINE_REFLECT_SESSION,
+from ..pipeline import PipelineResult, run_pipeline
+from ..pipeline_catalog import (
+    REFLECT_ALL,
+    REFLECT_HYPOTHESIS_PHASE1,
+    REFLECT_HYPOTHESIS_PHASE2,
+    REFLECT_ISSUE,
+    REFLECT_ROLE,
+    REFLECT_SESSION,
+)
+from ..session_policy import (
+    Automate,
+    Hitl,
+    IntakeOutcome,
+    MaterializedRole,
+    ReflectSessionRunParams,
+    ReportOutcome,
+    RoleAudit,
+    SessionRecording,
+    SessionReviewOutcome,
+    SessionRunParams,
 )
 from ..retro.session_review_runner import SessionReviewError
 from ._helpers import _project_dir, console
@@ -105,18 +103,16 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         _spawn_detached(session_id, max_retries)
         return
 
-    from ..pipeline.harness import PipelineHarness
-
     project_dir = _project_dir()
     try:
-        with PipelineHarness(PIPELINE_REFLECT_SESSION, project_dir) as h:
-            final = h.run(
-                {
-                    KEY_SESSION_ID: session_id,
-                    KEY_PROJECT_DIR: project_dir,
-                    KEY_MAX_RETRIES: max_retries,
-                }
-            )
+        result = run_pipeline(
+            REFLECT_SESSION,
+            ReflectSessionRunParams(
+                project_dir=project_dir,
+                session_id=session_id,
+                max_retries=max_retries,
+            ),
+        )
     except SessionReviewError as exc:
         console.print(
             f"[yellow]session-reviewer failed for {session_id}:[/yellow] {exc}\n"
@@ -125,7 +121,8 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         )
         sys.exit(2)
     else:
-        console.print(f"[green]✓[/green] session review saved to {final[KEY_REVIEW_PATH]}")
+        review = SessionReviewOutcome.of(result).require_review_path()
+        console.print(f"[green]✓[/green] session review saved to {review}")
 
 
 def _spawn_detached(session_id: str, max_retries: int) -> None:
@@ -166,10 +163,8 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
 def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage via the `judge` role."""
     from ..assembler import Assembler
-    from ..composition_seam import build_composition_payload
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import make_session_manager
-    from ..pipeline.harness import PipelineHarness
+    from ..composition_seam import build_composition_payload, make_session_manager
 
     project_dir = _project_dir()
     handoff_path = _build_handoff(project_dir)
@@ -190,24 +185,26 @@ def reflect_all_cmd(dry_run: bool):
     combined = f"{preamble}\n\n---\n\n{handoff_text}"
 
     console.print(f"[cyan]→ Launching judge for reflect-all triage: {handoff_path}[/]")
-    with PipelineHarness(PIPELINE_REFLECT_ALL, project_dir) as h:
-        final = h.run(
-            {
-                KEY_ROLE: "judge",
-                KEY_INTERACTIVE: True,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(combined),
-                KEY_EXTRA_ARGS: [],
-                KEY_COMPOSITION: build_composition_payload(
+    result = run_pipeline(
+        REFLECT_ALL,
+        SessionRunParams(
+            project_dir=project_dir,
+            role=MaterializedRole(
+                name="judge",
+                composition=build_composition_payload(
                     project_dir,
                     role_override="judge",
                     interactive=True,
                 ),
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
-        )
-    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
+            ),
+            recording=SessionRecording(
+                manager=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            ),
+            harness=Hitl(prompt=combined),
+        ),
+    )
+    sys.exit(result.exit_code_or(1))
 
 
 # ---- reflect hypothesis (HATS-513: 2-phase judge split) ----
@@ -237,10 +234,8 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     state-mutating CLI calls possible by L0 contract).
     """
     from ..assembler import Assembler
-    from ..composition_seam import build_composition_payload
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import make_session_manager
-    from ..pipeline.harness import PipelineHarness
+    from ..composition_seam import build_composition_payload, make_session_manager
 
     project_dir = _project_dir()
     handoff_path = _build_handoff(project_dir)
@@ -262,22 +257,24 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     combined1 = f"{preamble1}\n\n---\n\n{handoff_text}"
 
     console.print("[cyan]→ Phase 1 — judge-auditor (headless audit)[/]")
-    with PipelineHarness(PIPELINE_REFLECT_HYPOTHESIS_PHASE1, project_dir) as h1:
-        r1 = h1.run(
-            {
-                KEY_ROLE: "judge-auditor",
-                KEY_INTERACTIVE: False,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h1.materialize_prompt(combined1),
-                KEY_EXTRA_ARGS: [],
-                KEY_COMPOSITION: build_composition_payload(
+    r1 = run_pipeline(
+        REFLECT_HYPOTHESIS_PHASE1,
+        SessionRunParams(
+            project_dir=project_dir,
+            role=MaterializedRole(
+                name="judge-auditor",
+                composition=build_composition_payload(
                     project_dir,
                     role_override="judge-auditor",
                 ),
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
-        )
+            ),
+            recording=SessionRecording(
+                manager=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            ),
+            harness=Automate(prompt=combined1),
+        ),
+    )
 
     # Fail closed: Phase 1 errored OR did not produce a usable draft.
     # `save_artifact` always emits `saved_path` (even on empty content),
@@ -285,11 +282,12 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     # silently returns "" when BEGIN_JUDGE_DRAFT/END_JUDGE_DRAFT are missing
     # from the transcript, which would leave a zero-byte draft on disk and
     # mislead a Phase 2 session into discussing nothing.
-    if int(r1.get(KEY_EXIT_CODE, 1)) != 0 or KEY_SAVED_PATH not in r1:
+    draft = ReportOutcome.of(r1).saved_path
+    if r1.exit_code_or(1) != 0 or draft is None:
         console.print("[red]✗[/] Phase 1 (judge-auditor) failed — Phase 2 aborted.")
-        sys.exit(int(r1.get(KEY_EXIT_CODE, 1)) or 1)
+        sys.exit(r1.exit_code_or(1) or 1)
 
-    draft_path = Path(r1[KEY_SAVED_PATH])
+    draft_path = Path(draft)
     if not draft_path.exists() or draft_path.stat().st_size == 0:
         console.print(
             "[red]✗[/] Phase 1 produced an empty draft "
@@ -313,24 +311,26 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     combined2 = preamble2.replace("{draft_body}", draft_path.read_text())
 
     console.print("[cyan]→ Phase 2 — judge (HITL session with draft inlined)[/]")
-    with PipelineHarness(PIPELINE_REFLECT_HYPOTHESIS_PHASE2, project_dir) as h2:
-        r2 = h2.run(
-            {
-                KEY_ROLE: "judge",
-                KEY_INTERACTIVE: True,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h2.materialize_prompt(combined2),
-                KEY_EXTRA_ARGS: [],
-                KEY_COMPOSITION: build_composition_payload(
+    r2 = run_pipeline(
+        REFLECT_HYPOTHESIS_PHASE2,
+        SessionRunParams(
+            project_dir=project_dir,
+            role=MaterializedRole(
+                name="judge",
+                composition=build_composition_payload(
                     project_dir,
                     role_override="judge",
                     interactive=True,
                 ),
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
-        )
-    sys.exit(int(r2.get(KEY_EXIT_CODE, 1)))
+            ),
+            recording=SessionRecording(
+                manager=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            ),
+            harness=Hitl(prompt=combined2),
+        ),
+    )
+    sys.exit(r2.exit_code_or(1))
 
 
 # ---- reflect role / reflect roles ----
@@ -341,8 +341,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
 def reflect_role_cmd(name: str):
     """Audit a single role against the project context for coherence."""
     project_dir = _project_dir()
-    final = _run_role_audit(project_dir, name)
-    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
+    sys.exit(_run_role_audit(project_dir, name).exit_code_or(1))
 
 
 @reflect.command("roles")
@@ -362,14 +361,13 @@ def reflect_roles_cmd():
     worst_exit = 0
     for n in names:
         console.print(f"\n[bold cyan]── reflect role {n} ──[/]")
-        final = _run_role_audit(project_dir, n)
-        ec = int(final.get(KEY_EXIT_CODE, 1))
+        ec = _run_role_audit(project_dir, n).exit_code_or(1)
         if ec != 0 and worst_exit == 0:
             worst_exit = ec
     sys.exit(worst_exit)
 
 
-def _run_role_audit(project_dir: Path, target_role: str) -> dict:
+def _run_role_audit(project_dir: Path, target_role: str) -> PipelineResult:
     """Materialize the target role's layered breakdown and run reflect-role.
 
     The reviewer reads the composed files (and ./CLAUDE.md, user-rules)
@@ -377,10 +375,8 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     receiving everything inlined in the prompt.
     """
     from ..assembler import Assembler
-    from ..composition_seam import build_composition_payload
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import make_session_manager
-    from ..pipeline.harness import PipelineHarness
+    from ..composition_seam import build_composition_payload, make_session_manager
 
     assembler = Assembler(project_dir)
     composer = assembler.composer
@@ -409,38 +405,40 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     preamble_template = preamble_path.read_text()
 
     console.print(f"[cyan]→ Launching role-judge to audit: {target_role}[/]")
-    with PipelineHarness(PIPELINE_REFLECT_ROLE, project_dir) as h:
-        composed_dir = _materialize_target_composition(
-            h.namespace / "composed",
-            composition,
-            target_role,
-        )
-        preamble = preamble_template.format(
-            target_role=target_role,
-            composed_dir=composed_dir,
+    result = run_pipeline(
+        REFLECT_ROLE,
+        SessionRunParams(
             project_dir=project_dir,
-        )
-        final = h.run(
-            {
-                KEY_ROLE: "role-judge",
-                "target_role": target_role,
-                KEY_INTERACTIVE: True,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(preamble),
-                KEY_EXTRA_ARGS: [],
-                KEY_COMPOSITION: build_composition_payload(
+            role=MaterializedRole(
+                name="role-judge",
+                composition=build_composition_payload(
                     project_dir,
                     role_override="role-judge",
                     interactive=True,
                 ),
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
-        )
-    saved = final.get(KEY_SAVED_PATH)
+            ),
+            recording=SessionRecording(
+                manager=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            ),
+            # No prompt on the harness: ``audit`` builds the first message, which
+            # can only be written once the run's scratch dir exists.
+            harness=Hitl(),
+            audit=RoleAudit(
+                target=target_role,
+                materialize=lambda scratch: _materialize_target_composition(
+                    scratch / "composed",
+                    composition,
+                    target_role,
+                ),
+                message_template=preamble_template,
+            ),
+        ),
+    )
+    saved = ReportOutcome.of(result).saved_path
     if saved:
         console.print(f"[green]✓[/green] reflect saved to {saved}")
-    return final
+    return result
 
 
 def _materialize_target_composition(
@@ -563,31 +561,28 @@ def _run_intake_pipeline(
     Empty ``intake_result_text`` means the marker block was missing in the
     transcript. Caller treats that as a pipeline failure.
     """
-    from ..composition_seam import build_composition_payload
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import make_session_manager
-    from ..pipeline.harness import PipelineHarness
+    from ..composition_seam import build_composition_payload, make_session_manager
 
-    with PipelineHarness(PIPELINE_REFLECT_ISSUE, project_dir) as h:
-        final = h.run(
-            {
-                KEY_ROLE: "hypothesis-intake",
-                KEY_INTERACTIVE: False,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
-                KEY_MODEL: INTAKE_MODEL,
-                KEY_COMPOSITION: build_composition_payload(
+    result = run_pipeline(
+        REFLECT_ISSUE,
+        SessionRunParams(
+            project_dir=project_dir,
+            role=MaterializedRole(
+                name="hypothesis-intake",
+                composition=build_composition_payload(
                     project_dir,
                     role_override="hypothesis-intake",
                 ),
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
-        )
-    return (
-        final.get(KEY_INTAKE_RESULT, "") or "",
-        int(final.get(KEY_EXIT_CODE, 1)),
+            ),
+            recording=SessionRecording(
+                manager=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            ),
+            harness=Automate(prompt=prompt_text, model=INTAKE_MODEL),
+        ),
     )
+    return IntakeOutcome.of(result).text, result.exit_code_or(1)
 
 
 def _minimal_create_action(text: str):
@@ -697,7 +692,7 @@ def _spawn_intake_detached(
     from ..paths import runs_dir
 
     project_dir = _project_dir()
-    log_dir = runs_dir(project_dir) / PIPELINE_REFLECT_ISSUE
+    log_dir = runs_dir(project_dir) / REFLECT_ISSUE.name
     log_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = log_dir / f"{ts}-bg.log"
@@ -894,7 +889,7 @@ def reflect_commit_cmd(accept, reject, defer, duplicate):
 def _handoff_dir(project_dir: Path) -> Path:
     from ..paths import retros_dir
 
-    return retros_dir(project_dir) / PIPELINE_REFLECT_ALL
+    return retros_dir(project_dir) / REFLECT_ALL.name
 
 
 def _build_handoff(project_dir: Path) -> Path:

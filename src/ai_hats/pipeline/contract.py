@@ -39,12 +39,21 @@ class RunParams(Protocol):
     Implemented outside the area, next to the steps that read the state: the funnel
     keys are each step's own declaration, and repeating them here would make the area
     the owner of a vocabulary it does not use.
+
+    ``scratch_dir`` is the run's own directory, disposed of with it: a first message
+    may name a path that has to exist before the run starts — the role audit in
+    ``cli/reflect.py`` writes the audited composition there and points at it.
     """
 
     @property
     def project_dir(self) -> Path: ...
 
-    def to_state(self, *, materialize_prompt: PromptWriter) -> Mapping[str, Any]: ...
+    def to_state(
+        self,
+        *,
+        materialize_prompt: PromptWriter,
+        scratch_dir: Path,
+    ) -> Mapping[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -68,6 +77,10 @@ class PipelineResult:
     # Step name -> the exception a ``failure_policy=continue`` step swallowed,
     # as the runner records it (``pipeline.py``).
     errors: Mapping[str, BaseException] = field(default_factory=dict)
+    # What the run left in the funnel, by the name the step that wrote it declared —
+    # the area carries the map and reads none of it. The typed readers live in
+    # ``session_policy.py``, for the launches whose value is neither code nor session.
+    produced: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_state(cls, state: Mapping[str, Any]) -> PipelineResult:
@@ -87,6 +100,7 @@ class PipelineResult:
             exit_code=None if code is None else int(code),
             session=session,
             errors=dict(state.get(_keys.KEY_ERRORS) or {}),
+            produced=dict(state),
         )
 
     def exit_code_or(self, default: int) -> int:
@@ -104,5 +118,8 @@ def run_pipeline(config: PipelineConfig, params: RunParams) -> PipelineResult:
     from .harness import PipelineHarness  # deferred: costs ~160 ms of import at startup
 
     with PipelineHarness(config.name, params.project_dir) as harness:
-        state = params.to_state(materialize_prompt=harness.materialize_prompt)
+        state = params.to_state(
+            materialize_prompt=harness.materialize_prompt,
+            scratch_dir=harness.namespace,
+        )
         return PipelineResult.from_state(harness.run(state))

@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from ai_hats_wt import IsolationMode
 
+from .config import Channel
 from .debt import CompositionPayload, SessionManager, TracerFactory
 from .pipeline import PipelineResult, PromptWriter
 
@@ -77,6 +78,36 @@ class Automate(HarnessParams):
 
 
 @dataclass(frozen=True)
+class RoleAudit:
+    """The role a ``reflect-role`` session inspects, and where it reads it from.
+
+    role-judge reads the audited composition off disk with its own tools instead of
+    through the funnel, so the breakdown is written into the run's scratch space and
+    the first message is built from where it landed — which is why this launch alone
+    needs the run to exist before its prompt does.
+    """
+
+    # The audited role's name. ``save_artifact`` (steps/save.py) projects any state
+    # key its ``out_path_template`` names and documents ``{target_role}`` as the case;
+    # reflect-role.yaml ships no save step today, so there it is carried and unread.
+    target: str
+    # Writes the breakdown under the scratch dir it is handed, and answers with the
+    # directory the message points role-judge at.
+    materialize: Callable[[Path], Path]
+    # The first message, still holding its placeholders; the file it is written into
+    # is what ``resolve_prompt`` (steps/prompt.py) reads.
+    message_template: str
+
+    def first_message(self, scratch_dir: Path, project_dir: Path) -> str:
+        """Stage the breakdown, then fill the template with where it landed."""
+        return self.message_template.format(
+            target_role=self.target,
+            composed_dir=self.materialize(scratch_dir),
+            project_dir=project_dir,
+        )
+
+
+@dataclass(frozen=True)
 class SessionRunParams:
     """Launch a composed role in a provider session."""
 
@@ -90,9 +121,18 @@ class SessionRunParams:
     # list: the CLI puts user ``--tag``s here and the retry path adds its own attempt
     # counter, so writers extend it without this contract changing.
     annotations: Mapping[str, str] | None = None
+    # Set on ``reflect-role`` only, where it supplies the first message in place of
+    # ``harness.prompt``: that message can only be written once the run's scratch
+    # directory exists.
+    audit: RoleAudit | None = None
 
-    def to_state(self, *, materialize_prompt: PromptWriter) -> dict[str, Any]:
+    def to_state(self, *, materialize_prompt: PromptWriter, scratch_dir: Path) -> dict[str, Any]:
         harness = self.harness
+        prompt = (
+            harness.prompt
+            if self.audit is None
+            else self.audit.first_message(scratch_dir, self.project_dir)
+        )
         state: dict[str, Any] = {
             "role": self.role.name,
             "composition": self.role.composition,
@@ -101,8 +141,10 @@ class SessionRunParams:
             "tracer_factory": self.recording.tracer_factory,
             "tags": dict(self.annotations) if self.annotations else None,
             "interactive": isinstance(harness, Hitl),
-            "prompt_path": materialize_prompt(harness.prompt),
+            "prompt_path": materialize_prompt(prompt),
         }
+        if self.audit is not None:
+            state["target_role"] = self.audit.target
         if isinstance(harness, Hitl):
             state["extra_args"] = list(harness.extra_args)
         if isinstance(harness, Automate):
@@ -137,3 +179,145 @@ class SessionOutcome:
         if self.session_id is None or self.session_dir is None:
             raise KeyError("pipeline produced no session_id / session_dir")
         return self.session_id, self.session_dir
+
+
+@dataclass(frozen=True)
+class ReflectSessionRunParams:
+    """Review one past session — the launch that composes no role of its own.
+
+    ``run_session_review`` owns the session it starts, down to which role reviews and
+    how it records, so nothing about launching one reaches the funnel here: this
+    family names the session under review and stops.
+    """
+
+    # The project this run belongs to: every path a step touches hangs off it, and it
+    # is resolved once at the entry point so nothing below rediscovers it (ADR-0026 D2).
+    project_dir: Path
+    # The past session to review, handed to SessionReviewRunner by
+    # ``run_session_review`` (steps/session_review.py).
+    session_id: str
+    # How many times ``run_session_review`` re-runs a reviewer that came back
+    # unusable. Its YAML already carries 1; the CLI flag overrides that per run.
+    max_retries: int = 1
+
+    def to_state(self, *, materialize_prompt: PromptWriter, scratch_dir: Path) -> dict[str, Any]:
+        del materialize_prompt, scratch_dir  # no first message, nothing staged on disk
+        return {
+            "session_id": self.session_id,
+            "project_dir": self.project_dir,
+            "max_retries": self.max_retries,
+        }
+
+
+@dataclass(frozen=True)
+class InitRunParams:
+    """Bootstrap a project — the launch with no session in it.
+
+    ``ai-hats self init`` writes the config and the scaffolding, then hands the
+    process over to a wizard session it does not run itself. Every field is a CLI
+    flag one of the three init steps (steps/init_steps.py) reads.
+    """
+
+    # The project being initialized: the three steps resolve every path they write
+    # from it, and it is resolved once at the entry point (ADR-0026 D2).
+    project_dir: Path
+    # Which provider the project is configured for. ``select_provider`` treats None
+    # as "ask, or fall back"; the other two steps then require what it decided.
+    provider: str | None = None
+    # Default role written into ai-hats.yaml by ``bootstrap_project``. Paired with a
+    # provider it also tells ``select_provider`` and ``prepare_execute_session`` that
+    # no wizard is wanted.
+    role: str | None = None
+    # Task-id prefix for the tracker: written by ``bootstrap_project``, echoed back
+    # to the user by ``prepare_execute_session``.
+    task_prefix: str | None = None
+    # Where the framework directory lives; same two readers as ``task_prefix``.
+    ai_hats_dir: str | None = None
+    # An existing venv to adopt instead of the managed one; same two readers.
+    venv_path: str | None = None
+    # Leaves .gitignore alone: ``bootstrap_project`` acts on it, and
+    # ``prepare_execute_session`` says so in the summary.
+    no_manage_gitignore: bool = False
+    # Refuses the wizard: ``select_provider`` falls back instead of prompting, and
+    # ``prepare_execute_session`` prepares no handoff.
+    no_wizard: bool = False
+    # Where the harness itself is installed from. ``select_provider`` prompts for it
+    # when absent and ``bootstrap_project`` writes it; the funnel carries the value,
+    # which is what ``Assembler.init`` takes.
+    channel: Channel | None = None
+    # The editable checkout ``channel=local`` installs from — ``bootstrap_project``.
+    harness_path: str | None = None
+
+    def to_state(self, *, materialize_prompt: PromptWriter, scratch_dir: Path) -> dict[str, Any]:
+        del materialize_prompt, scratch_dir  # no first message, nothing staged on disk
+        return {
+            "project_dir": self.project_dir,
+            "provider": self.provider,
+            "role": self.role,
+            "task_prefix": self.task_prefix,
+            "ai_hats_dir": self.ai_hats_dir,
+            "venv_path": self.venv_path,
+            "no_manage_gitignore": self.no_manage_gitignore,
+            "no_wizard": self.no_wizard,
+            "channel": None if self.channel is None else self.channel.value,
+            "harness_path": self.harness_path,
+        }
+
+
+@dataclass(frozen=True)
+class SessionReviewOutcome:
+    """Where a ``reflect-session`` run left the review it wrote."""
+
+    # Written by ``run_session_review`` (steps/session_review.py).
+    review_path: Path | None = None
+
+    @classmethod
+    def of(cls, result: PipelineResult) -> SessionReviewOutcome:
+        return cls(review_path=result.produced.get("review_path"))
+
+    def require_review_path(self) -> Path:
+        """The review, or the loud failure ``final[…]`` used to raise."""
+        if self.review_path is None:
+            raise KeyError("pipeline produced no review_path")
+        return self.review_path
+
+
+@dataclass(frozen=True)
+class ReportOutcome:
+    """Where a run that saves its report left it."""
+
+    # Written by ``save_artifact`` (steps/save.py). None when the run got that far
+    # without producing one — which is how the judge phases tell a usable draft from
+    # a run that only looked successful.
+    saved_path: Path | None = None
+
+    @classmethod
+    def of(cls, result: PipelineResult) -> ReportOutcome:
+        return cls(saved_path=result.produced.get("saved_path"))
+
+
+@dataclass(frozen=True)
+class IntakeOutcome:
+    """The intake decision a ``reflect-issue`` run pulled out of the transcript."""
+
+    # Written by ``extract_marker`` (steps/extract.py) under the ``out_key`` the
+    # pipeline names. Empty when the markers were missing — the caller reads that as
+    # a failed run, not as an empty decision.
+    text: str = ""
+
+    @classmethod
+    def of(cls, result: PipelineResult) -> IntakeOutcome:
+        return cls(text=result.produced.get("intake_result") or "")
+
+
+@dataclass(frozen=True)
+class InitOutcome:
+    """The handoff an ``init`` run prepared for its caller to exec."""
+
+    # Built by ``prepare_execute_session`` (steps/init_steps.py). None when the run
+    # decided against handing over — flags-only path, or no ai-hats on PATH.
+    execute_cmd: list[str] | None = None
+
+    @classmethod
+    def of(cls, result: PipelineResult) -> InitOutcome:
+        return cls(execute_cmd=result.produced.get("execute_cmd"))
