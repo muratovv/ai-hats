@@ -15,9 +15,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from ai_hats_wt import IsolationMode
+
 from . import keys as _keys
 
+# Writes prompt text into the run's scratch space and answers with its path, because
+# the steps take a file rather than a string. Supplied by the harness, so a caller
+# hands over text and never learns where it landed.
 PromptWriter = Callable[[str | None], Path | None]
+
+# Values the area carries to the steps and never looks inside. Aliased rather than
+# spelled ``object`` so every undecided type is one grep, not a scatter.
+# TODO(HATS-1785): real types once composition has a public contract — annotating
+# them today would add pipeline -> composition / observe edges the ADR forbids.
+CompositionPayload = object
+SessionManager = object
+TracerFactory = object
 
 
 @dataclass(frozen=True)
@@ -35,20 +48,18 @@ class MaterializedRole:
 
     # Names the role for the steps that label the session and pick its prompt.
     name: str
-    # The composition payload, opaque here: the launch step hands it to the runner.
-    composition: object
+    # The composition payload the launch step hands to the runner.
+    composition: CompositionPayload
 
 
 @dataclass(frozen=True)
 class SessionRecording:
-    """Where the session's own artefacts are written, and under what labels."""
+    """The sinks a session is written into."""
 
     # Creates the session directory and its metrics file.
-    manager: object
+    manager: SessionManager
     # Builds the sidecar tracer that captures the transcript.
-    tracer_factory: object
-    # k=v labels stamped into the session record; both harness branches forward them.
-    tags: Mapping[str, str] | None = None
+    tracer_factory: TracerFactory
 
 
 @dataclass(frozen=True)
@@ -81,21 +92,28 @@ class Automate(HarnessParams):
 
     # Model override for the sub-agent process.
     model: str = ""
-    # Worktree isolation mode for the sub-agent's checkout.
-    isolation: str = ""
-    # Ticket the sub-agent session is bound to (branch name, context).
-    ticket: str = ""
+    # How the sub-agent's checkout is disposed of when it finishes.
+    isolation: IsolationMode = IsolationMode.DISCARD
+    # Backlog card whose sections are rendered into the sub-agent's first message
+    # (``assemble_first_user_message`` -> ``ticket_sections``). Not the parent
+    # session: that is a separate runner argument, and nothing seeds it today.
+    ticket_id: str = ""
 
 
 @dataclass(frozen=True)
 class RunParams:
     """Everything about this run, and nothing about which pipeline it is."""
 
-    # Where the run happens: resolved once by the entry point and passed down.
+    # The project this run belongs to: every path a step touches hangs off it, and it
+    # is resolved once at the entry point so nothing below rediscovers it (ADR-0026 D2).
     project_dir: Path
     role: MaterializedRole
     recording: SessionRecording
     harness: HarnessParams = field(default_factory=Automate)
+    # Open k=v map stamped onto the session record. Deliberately not a fixed field
+    # list: the CLI puts user ``--tag``s here and the retry path adds its own
+    # attempt counter, so writers extend it without the contract changing.
+    annotations: Mapping[str, str] | None = None
 
 
 def _state_of(params: RunParams, materialize_prompt: PromptWriter) -> dict[str, Any]:
@@ -111,7 +129,7 @@ def _state_of(params: RunParams, materialize_prompt: PromptWriter) -> dict[str, 
         _keys.KEY_PROJECT_DIR: params.project_dir,
         _keys.KEY_SESSION_MGR: params.recording.manager,
         _keys.KEY_TRACER_FACTORY: params.recording.tracer_factory,
-        _keys.KEY_TAGS: dict(params.recording.tags) if params.recording.tags else None,
+        _keys.KEY_TAGS: dict(params.annotations) if params.annotations else None,
         _keys.KEY_INTERACTIVE: isinstance(harness, Hitl),
         _keys.KEY_PROMPT_PATH: materialize_prompt(harness.prompt),
     }
@@ -119,8 +137,8 @@ def _state_of(params: RunParams, materialize_prompt: PromptWriter) -> dict[str, 
         state[_keys.KEY_EXTRA_ARGS] = list(harness.extra_args)
     if isinstance(harness, Automate):
         state[_keys.KEY_MODEL] = harness.model
-        state[_keys.KEY_ISOLATION] = harness.isolation
-        state[_keys.KEY_TICKET] = harness.ticket
+        state[_keys.KEY_ISOLATION] = harness.isolation.value
+        state[_keys.KEY_TICKET] = harness.ticket_id
     return state
 
 
@@ -137,6 +155,9 @@ class SessionRef:
 class PipelineResult:
     """What the run produced and what went wrong on the way."""
 
+    # None when no step reported one: a pipeline that launches nothing (init,
+    # reflect-session), or a launch step that failed under ``failure_policy=continue``
+    # and left the run going. Callers name their own default via ``exit_code_or``.
     exit_code: int | None = None
     session: SessionRef | None = None
     # Step name -> the exception a ``failure_policy=continue`` step swallowed,

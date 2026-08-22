@@ -11,6 +11,7 @@ from .contract import (
     Automate,
     HarnessParams,
     Hitl,
+    CompositionPayload,
     MaterializedRole,
     PipelineConfig,
     PipelineResult,
@@ -25,6 +26,7 @@ from .step import FailurePolicy, Step, StepError, StepIO
 __all__ = [
     "Automate",
     "BuildError",
+    "CompositionPayload",
     "CancelReason",
     "CancelToken",
     "FailurePolicy",

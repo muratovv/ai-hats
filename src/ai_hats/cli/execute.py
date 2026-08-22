@@ -226,8 +226,8 @@ def execute_cmd(
             recording=SessionRecording(
                 manager=make_session_manager(project_dir),
                 tracer_factory=SidecarTracer,
-                tags=tags,
             ),
+            annotations=tags,
             # model / isolation / ticket are batch-only and already refused here
             # by _reject_inert_flags, so the HITL branch cannot carry them.
             harness=Hitl(prompt=prompt_text, extra_args=tuple(extra_args)),

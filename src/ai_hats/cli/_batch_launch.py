@@ -70,9 +70,14 @@ def run_batch(
             recording=SessionRecording(
                 manager=make_session_manager(project_dir),
                 tracer_factory=SidecarTracer,
-                tags=tags,
             ),
-            harness=Automate(prompt=task, model=model, isolation=isolation, ticket=ticket),
+            annotations=tags,
+            harness=Automate(
+                prompt=task,
+                model=model,
+                isolation=IsolationMode(isolation),
+                ticket_id=ticket,
+            ),
         ),
     )
 
