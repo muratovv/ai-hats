@@ -72,10 +72,16 @@ except ImportError:  # engine not beside us -> no grant road, only the old one
 # sight of every runner spelling, so it is recorded rather than assumed.
 _spellings_off_journaled = False
 try:
+    from consent_spellings import MODULE_BINARIES as _MODULE_BINARIES
     from consent_spellings import RUNNERS as _RUNNERS
+    from consent_spellings import is_interpreter as _is_interpreter
     from consent_spellings import module_binary as _module_binary
 except ImportError:  # sibling absent -> only the bare spelling is seen; recorded on first use
     _RUNNERS = ()
+    _MODULE_BINARIES = {}
+
+    def _is_interpreter(_token: str) -> bool:
+        return False
 
     def _module_binary(_tokens):
         global _spellings_off_journaled
@@ -755,18 +761,37 @@ def target_cwd(cmd: str):
     return where
 
 
-def _python_module_calls(cmd: str, module: str) -> list:
+def _python_module_calls(cmd: str, binary: str) -> list:
+    """Every ``<interpreter> -m <module>`` call in ``cmd`` that launches ``binary``.
+
+    The modules come from the SHARED table and the interpreter from its predicate
+    — neither from a literal here. Measured (HATS-1781): matching the module name
+    against one hard-coded string saw `-m ai_hats_rack` and missed
+    `-m ai_hats_rack.cli`, which the table knows and the allow-rule lint probes,
+    so the lint called that spelling guarded while this boundary waved it through.
+    """
+    modules = {name for name, launched in _MODULE_BINARIES.items() if launched == binary}
+    if not modules:
+        _no_spellings_table()
+        return []
     calls = []
     for tokens in parse_commands(cmd):
         for args in command_slices(tokens):
-            binary = get_bin(args)
-            if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", binary) is None:
+            if not _is_interpreter(get_bin(args)):
                 continue
             for index, argument in enumerate(args[:-1]):
-                if argument == "-m" and args[index + 1] == module:
+                if argument == "-m" and args[index + 1] in modules:
                     calls.append(args[index + 2 :])
                     break
     return calls
+
+
+def _no_spellings_table() -> None:
+    """An empty table means the sibling is gone; blindness is recorded, not assumed."""
+    global _spellings_off_journaled
+    if not _spellings_off_journaled:
+        _spellings_off_journaled = True
+        journal_bypass("fail-open", "consent_spellings.py missing", hook="safety_gate.py")
 
 
 def _wrapper_bypass(operation: str) -> dict:
@@ -796,7 +821,7 @@ def _changes_command_lookup(cmd: str, name: str) -> bool:
             continue
         wrapper = os.path.basename(prefix[wrapper_index])
         wrapper_args = prefix[wrapper_index + 1 :]
-        if wrapper in {"command", "sudo", "doas"}:
+        if wrapper in {"command", "sudo", "doas", *_RUNNERS}:
             return True
         if wrapper != "env":
             continue
@@ -810,7 +835,16 @@ def _changes_command_lookup(cmd: str, name: str) -> bool:
     return False
 
 
-def _wrapper_bypass_verdict(cmd: str) -> dict:
+def _wrapper_bypass_verdict(cmd: str, *, targets=None, points=None) -> dict:
+    """Refuse a protected operation arriving under a spelling that skips the wrapper.
+
+    The two declaration readers are TAKEN, not fetched: resolving them three frames
+    in is what forced a caller to patch this module to test it, and a boundary that
+    can only be tested by rewriting it is one nobody rewrites carefully (HATS-1781).
+    Still resolved lazily — the declaration is only read once a candidate is found.
+    """
+    targets = targets if targets is not None else declared_consent_targets
+    points = points if points is not None else _operation_points
     declared_targets = None
     rack_lookup_bypass = _changes_command_lookup(cmd, "rack")
     for anchor, _ordinal, _total, args in anchored_calls(cmd, "rack"):
@@ -818,18 +852,18 @@ def _wrapper_bypass_verdict(cmd: str) -> dict:
         if not target:
             continue
         if declared_targets is None:
-            declared_targets = declared_consent_targets()
+            declared_targets = targets()
         bypasses_path = (
             args[0] != "rack" or os.path.basename(anchor) == "command" or rack_lookup_bypass
         )
         if target in declared_targets and bypasses_path:
             return _wrapper_bypass("rack transition")
-    for call in _python_module_calls(cmd, "ai_hats_rack"):
+    for call in _python_module_calls(cmd, "rack"):
         _task_id, target = transition_target(["rack", *call])
         if not target:
             continue
         if declared_targets is None:
-            declared_targets = declared_consent_targets()
+            declared_targets = targets()
         if target in declared_targets:
             return _wrapper_bypass("rack transition")
 
@@ -840,18 +874,18 @@ def _wrapper_bypass_verdict(cmd: str) -> dict:
         if not branch:
             continue
         if merge_declared is None:
-            merge_declared = "pre-merge" in _operation_points("wt.merge")
+            merge_declared = "pre-merge" in points("wt.merge")
         bypasses_path = (
             call[0] != "ai-hats" or os.path.basename(anchor) == "command" or wt_lookup_bypass
         )
         if merge_declared and bypasses_path:
             return _wrapper_bypass("ai-hats wt merge")
-    for call in _python_module_calls(cmd, "ai_hats"):
+    for call in _python_module_calls(cmd, "ai-hats"):
         branch = merge_branch(["ai-hats", *call])
         if not branch:
             continue
         if merge_declared is None:
-            merge_declared = "pre-merge" in _operation_points("wt.merge")
+            merge_declared = "pre-merge" in points("wt.merge")
         if merge_declared:
             return _wrapper_bypass("ai-hats wt merge")
     return {}

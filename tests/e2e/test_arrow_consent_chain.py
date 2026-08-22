@@ -117,6 +117,12 @@ def test_an_undeclared_road_is_still_not_gated(in_session):
     [
         "/usr/local/bin/rack transition HATS-1 done",
         "python -m ai_hats_rack transition HATS-1 done",
+        # HATS-1781: the table maps BOTH module spellings to `rack`, and the
+        # boundary used to match the literal — so this one walked through while
+        # the allow-rule lint called it guarded.
+        "python -m ai_hats_rack.cli transition HATS-1 done",
+        # A runner resolves the packaged binary, not the session-local wrapper.
+        "uvx rack transition HATS-1 done",
         "command -p rack transition HATS-1 done",
         "/usr/local/bin/ai-hats wt merge task/hats-1",
         "python -m ai_hats wt merge task/hats-1",
