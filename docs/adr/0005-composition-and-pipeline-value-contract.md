@@ -58,8 +58,8 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 - `library/core/rules/rule_composition_value_contract/` — agent-facing reminder; attached to `trait-agent` so the rule body materializes in every agent session prompt (~600-char budget).
 - `tests/test_composer_immutable.py` — D1 invariants.
 - `tests/test_wraprunner_signature.py` — D2 invariants.
-- `tests/pipeline/test_funnel_value_contract.py` — D3 invariant.
-- `tests/pipeline/test_session_prompt_contains_role_injection.py` — the HATS-452 regression itself; turns red on a revert of any of the above mechanical changes. (Filed under `tests/e2e/`; moved to the pipeline tier by HATS-1493, `4e6f4e51`.)
+- `src/ai_hats/pipeline/tests/test_funnel_value_contract.py` — D3 invariant. (Filed under `tests/pipeline/`; moved inside the area by HATS-1783, ADR-0026 D5.)
+- `tests/sessions/test_session_prompt_contains_role_injection.py` — the HATS-452 regression itself; turns red on a revert of any of the above mechanical changes. (Filed under `tests/e2e/`; moved to the session-integration tier by HATS-1493, `4e6f4e51`, which HATS-1783 renamed from `tests/pipeline/`.)
 
 **What does NOT change**
 

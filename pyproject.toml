@@ -112,6 +112,11 @@ version-file = "src/ai_hats/_version.py"
 # no longer grafted here — T18/HATS-876 extracted it to the standalone
 # ai-hats-library data package (pinned above; resolved via importlib.resources).
 packages = ["src/ai_hats"]
+# ADR-0026 D11: an area keeps its tests inside its own folder (D5), and this
+# target ships the package directory whole — so without the exclude they would
+# be installed on every user's machine. Held by
+# tests/e2e/test_wheel_excludes_area_tests.py, against a real built wheel.
+exclude = ["src/ai_hats/**/tests"]
 
 [tool.uv.workspace]
 # HATS-956: surface plugins (out-of-tree providers) live under packages/surfaces/.
@@ -143,8 +148,11 @@ select = ["E", "F", "S110", "S112"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
+# ADR-0026 D11: one line per area — a glob here is unreliable, so a new area's
+# tests are only run once its path is listed.
 testpaths = [
     "tests",
+    "src/ai_hats/pipeline/tests",
     "packages/ai-hats-core/tests",
     "packages/ai-hats-wt/tests",
     "packages/ai-hats-rack/tests",

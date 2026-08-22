@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**259 of 259 files catalogued — 268 flows.**
+**260 of 260 files catalogued — 269 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3216,6 +3216,20 @@ as a claim to check, not as evidence.
 
 - **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
 - **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
+
+## `test_wheel_excludes_area_tests.py`
+
+*pins HATS-1783*
+
+- **flow** — a user installs the released ai-hats wheel and gets every module of the `pipeline` area — but none of the area's own test suite
+- **cmds**
+
+  ```console
+  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
+  ```
+
+- **expect** — `ai_hats/pipeline/loader.py` and every other module of the area are in the wheel; nothing under `ai_hats/pipeline/tests/` is, and no `tests/` tree ships anywhere inside the package
+- **why** — ADR-0026 D5 keeps an area's tests inside the area folder, and `[tool.hatch.build.targets.wheel] packages = ["src/ai_hats"]` ships that folder whole — the D11 exclude is the only thing between a test suite and every user's site-packages. Deleting that one line is invisible to the rest of the suite, so the built artefact is what gets asserted here, not the config that produced it
 
 ## `test_worktree_library_edit_visible.py`
 

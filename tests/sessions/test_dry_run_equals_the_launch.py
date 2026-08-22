@@ -1,6 +1,6 @@
 """``--dry-run`` reports the session the launch would deliver — asserted, not claimed.
 
-``tests/pipeline/test_dry_run_matches_session.py`` promises this in its filename
+``tests/sessions/test_dry_run_matches_session.py`` promises this in its filename
 and proves something narrower: that a dry-run writes nothing. Nothing anywhere
 compared a dry-run payload against a real session's, even though both sides
 build the same :class:`SessionReport` and the launch already persists its own to
