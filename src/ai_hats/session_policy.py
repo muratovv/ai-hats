@@ -156,8 +156,11 @@ class SessionRunParams:
 
 @dataclass(frozen=True)
 class SessionOutcome:
-    """What a session run gives its caller back."""
+    """What a session run gives its caller back — and the only reader of the code."""
 
+    # Written by the launch step (steps/launch.py) under ``exit_code``; None when no
+    # step reported one — the run started no session, or the step that starts it failed
+    # under ``failure_policy=continue``. Callers name their own default below.
     exit_code: int | None = None
     session_id: str | None = None
     session_dir: Path | None = None
@@ -165,8 +168,9 @@ class SessionOutcome:
     @classmethod
     def of(cls, result: PipelineResult) -> SessionOutcome:
         session = result.session
+        code = result.produced.get("exit_code")
         return cls(
-            exit_code=result.exit_code,
+            exit_code=None if code is None else int(code),
             session_id=None if session is None else session.id,
             session_dir=None if session is None else session.dir,
         )

@@ -65,26 +65,42 @@ class SessionRef:
     provider_session_id: str | None = None
 
 
+# The funnel keys this contract answers for. They are lifted out of ``produced``
+# rather than copied beside it, so each of them has exactly one spelling on the
+# result — see the class docstring.
+_TYPED_HERE = (
+    _keys.KEY_SESSION_ID,
+    _keys.KEY_SESSION_DIR,
+    _keys.KEY_CLAUDE_SESSION_ID,
+    _keys.KEY_ERRORS,
+)
+
+
 @dataclass(frozen=True)
 class PipelineResult:
-    """What the run produced and what went wrong on the way."""
+    """What the run produced and what went wrong on the way.
 
-    # None when no step reported one — the run launched no session, or the step that
-    # launches it failed under ``failure_policy=continue`` and the run went on.
-    # Callers name their own default through ``exit_code_or``.
-    exit_code: int | None = None
+    Every value here is readable one way. The area answers for two of them and
+    types them; the rest stay in ``produced`` under the name the step that wrote
+    them declared, and the application reads those through the typed readers in
+    ``session_policy.py``. ``produced`` is the funnel **minus** the two below, so
+    a value with a field here has no second spelling to drift from.
+    """
+
+    # The session the run started, which is what a later link of a chain refers to:
+    # the area chains sessions, so this is its own currency and not policy. None when
+    # the run started none.
     session: SessionRef | None = None
     # Step name -> the exception a ``failure_policy=continue`` step swallowed,
     # as the runner records it (``pipeline.py``).
     errors: Mapping[str, BaseException] = field(default_factory=dict)
-    # What the run left in the funnel, by the name the step that wrote it declared —
-    # the area carries the map and reads none of it. The typed readers live in
-    # ``session_policy.py``, for the launches whose value is neither code nor session.
+    # The funnel minus the two above, by the name each step declared — the area
+    # carries the map and reads none of it. Its typed readers are in
+    # ``session_policy.py``, the exit code among them: what a code means is policy.
     produced: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_state(cls, state: Mapping[str, Any]) -> PipelineResult:
-        code = state.get(_keys.KEY_EXIT_CODE)
         session_id = state.get(_keys.KEY_SESSION_ID)
         session_dir = state.get(_keys.KEY_SESSION_DIR)
         session = (
@@ -97,20 +113,10 @@ class PipelineResult:
             else None
         )
         return cls(
-            exit_code=None if code is None else int(code),
             session=session,
             errors=dict(state.get(_keys.KEY_ERRORS) or {}),
-            produced=dict(state),
+            produced={key: value for key, value in state.items() if key not in _TYPED_HERE},
         )
-
-    def exit_code_or(self, default: int) -> int:
-        return default if self.exit_code is None else self.exit_code
-
-    def require_session(self) -> SessionRef:
-        """The session, or the loud failure ``final[KEY_SESSION_ID]`` used to raise."""
-        if self.session is None:
-            raise KeyError("pipeline produced no session_id / session_dir")
-        return self.session
 
 
 def run_pipeline(config: PipelineConfig, params: RunParams) -> PipelineResult:

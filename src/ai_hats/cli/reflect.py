@@ -41,7 +41,7 @@ from ..rack_workspace import (
     rack_workspace,
     set_proposal_status,
 )
-from ..pipeline import PipelineResult, run_pipeline
+from ..pipeline import run_pipeline
 from ..pipeline_catalog import (
     REFLECT_ALL,
     REFLECT_HYPOTHESIS_PHASE1,
@@ -58,6 +58,7 @@ from ..session_policy import (
     ReflectSessionRunParams,
     ReportOutcome,
     RoleAudit,
+    SessionOutcome,
     SessionRecording,
     SessionReviewOutcome,
     SessionRunParams,
@@ -204,7 +205,7 @@ def reflect_all_cmd(dry_run: bool):
             harness=Hitl(prompt=combined),
         ),
     )
-    sys.exit(result.exit_code_or(1))
+    sys.exit(SessionOutcome.of(result).exit_code_or(1))
 
 
 # ---- reflect hypothesis (HATS-513: 2-phase judge split) ----
@@ -283,9 +284,10 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     # from the transcript, which would leave a zero-byte draft on disk and
     # mislead a Phase 2 session into discussing nothing.
     draft = ReportOutcome.of(r1).saved_path
-    if r1.exit_code_or(1) != 0 or draft is None:
+    phase1_code = SessionOutcome.of(r1).exit_code_or(1)
+    if phase1_code != 0 or draft is None:
         console.print("[red]✗[/] Phase 1 (judge-auditor) failed — Phase 2 aborted.")
-        sys.exit(r1.exit_code_or(1) or 1)
+        sys.exit(phase1_code or 1)
 
     draft_path = Path(draft)
     if not draft_path.exists() or draft_path.stat().st_size == 0:
@@ -330,7 +332,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             harness=Hitl(prompt=combined2),
         ),
     )
-    sys.exit(r2.exit_code_or(1))
+    sys.exit(SessionOutcome.of(r2).exit_code_or(1))
 
 
 # ---- reflect role / reflect roles ----
@@ -367,7 +369,7 @@ def reflect_roles_cmd():
     sys.exit(worst_exit)
 
 
-def _run_role_audit(project_dir: Path, target_role: str) -> PipelineResult:
+def _run_role_audit(project_dir: Path, target_role: str) -> SessionOutcome:
     """Materialize the target role's layered breakdown and run reflect-role.
 
     The reviewer reads the composed files (and ./CLAUDE.md, user-rules)
@@ -438,7 +440,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> PipelineResult:
     saved = ReportOutcome.of(result).saved_path
     if saved:
         console.print(f"[green]✓[/green] reflect saved to {saved}")
-    return result
+    return SessionOutcome.of(result)
 
 
 def _materialize_target_composition(
@@ -582,7 +584,7 @@ def _run_intake_pipeline(
             harness=Automate(prompt=prompt_text, model=INTAKE_MODEL),
         ),
     )
-    return IntakeOutcome.of(result).text, result.exit_code_or(1)
+    return IntakeOutcome.of(result).text, SessionOutcome.of(result).exit_code_or(1)
 
 
 def _minimal_create_action(text: str):

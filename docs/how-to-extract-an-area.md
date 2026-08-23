@@ -62,6 +62,18 @@ same file:
   see the debt file above.
 - **A value the area only carries is typed as such and said so.** Carrying is not
   knowing: write that the steps read it and the area does not.
+- **An interface offers exactly one way to perform one action.** Two spellings of the
+  same read are a defect even when both work, because the second one is what the next
+  migration standardises on by accident — nobody chooses it, it is simply the one that
+  was in front of the agent doing the conversion. `PipelineResult` typed `exit_code`
+  and `session` *and* handed the same entries out in `produced`, the raw final funnel;
+  the fix was not to document which to prefer but to delete the choice. `from_state`
+  now **lifts** the keys the contract answers for out of the funnel instead of copying
+  them beside it, so a typed field has no raw twin, and everything else — the exit code
+  included — is read once, through the typed readers in `session_policy.py`. The rule
+  is testable in that form and only in that form: the area pins its typed field list
+  (`pipeline/tests/test_pipeline_result_contract.py`), and a field added without
+  lifting its key is red.
 
 ## 3. Where a thing lives
 
@@ -109,10 +121,10 @@ Edge counting includes deferred and `TYPE_CHECKING` imports (ADR-0026 D5, F4 rul
 
 ## 5. How a gate goes green without the property
 
-Every entry below was found on **this epic's own gates** — all but the last by
-review, after the gate was written and believed. Read it before calling a gate done,
-and add the row your own incident produces — a taxonomy grows by incident, not by
-imagination.
+Every entry below was found on **this epic's own gates**: the first eight by review,
+after the gate was written and believed, the ninth at design time, and the tenth by a
+red check that read green. Read it before calling a gate done, and add the row your own
+incident produces — a taxonomy grows by incident, not by imagination.
 
 1. **Cardinality instead of the set.** The assert compares a count, so converting one
    offender while adding another leaves it green — and the offender list, which only
@@ -172,7 +184,21 @@ imagination.
    fallback. A gate you cannot break by deleting the mechanism is measuring
    something else — see 2 and 8.
 
-Standing rule behind all nine (ADR-0026 D3): a gate closes a row only by asserting the
+10. **The violation was never constructed.** Not a way the gate is wrong — a way the
+    *proof* is. A red check edits the tree, reads red, and is believed; when the edit
+    did not land, it reads green and is believed just the same, and what has been
+    certified is a gate that never bites. Two forms, both on this epic: the injected
+    line was anchored on text that was not in the file, so nothing changed at all; and
+    the injected line landed but was semantically inert — putting `from . import steps`
+    back into `loader.py` left the cycle gate green, because `steps/__init__.py` no
+    longer imports anything, so the edit restored the spelling of the old edge and none
+    of its effect.
+    *Fix:* a red check proves its violation landed before it reads the result — grep
+    the marker it injected, and where the violation is semantic rather than textual,
+    assert the property is actually broken first (here: the registry is non-empty after
+    the import) and only then run the gate.
+
+Standing rule behind all ten (ADR-0026 D3): a gate closes a row only by asserting the
 **absence of a second path**. A test that asserts a property of behaviour stays true
 with several owners, so it cannot close anything.
 

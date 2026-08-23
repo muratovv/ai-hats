@@ -268,6 +268,7 @@ def _launch_session(
     from ..session_policy import (
         Hitl,
         MaterializedRole,
+        SessionOutcome,
         SessionRecording,
         SessionRunParams,
     )
@@ -303,7 +304,7 @@ def _launch_session(
             harness=Hitl(extra_args=tuple(extra_args or ())),
         ),
     )
-    sys.exit(result.exit_code_or(1))
+    sys.exit(SessionOutcome.of(result).exit_code_or(1))
 
 
 # ----- Command registration -----
