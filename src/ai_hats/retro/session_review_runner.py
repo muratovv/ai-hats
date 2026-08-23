@@ -42,7 +42,7 @@ from .window import session_cut
 from .writer import dump
 
 if TYPE_CHECKING:
-    from ..pipeline.harness_policy import HarnessPolicy
+    from ..pipeline import HarnessPolicy
     from ..runtime import SubAgentRunner
 
 logger = logging.getLogger(__name__)

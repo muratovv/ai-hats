@@ -43,7 +43,7 @@ from .runtime_common import (
 
 if TYPE_CHECKING:
     from ai_hats_observe import Session, SessionManager
-    from .pipeline.harness_policy import HarnessPolicy
+    from .pipeline import HarnessPolicy
 
 logger = logging.getLogger(__name__)
 

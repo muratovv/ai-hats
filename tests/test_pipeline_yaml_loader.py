@@ -8,12 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.pipeline import warm
 from ai_hats.pipeline.loader import (
     PipelineYamlError,
     clear_core_pipeline_cache,
     load_core_pipeline,
     load_pipeline,
 )
+from ai_hats.pipeline_catalog import FINALIZE_HITL
 
 
 _BUILTIN_DIR = (
@@ -161,13 +163,16 @@ def test_core_pipeline_cache_absorbs_on_disk_drift(tmp_path: Path, monkeypatch: 
     """Faithful reproduction of HATS-566: an editable-install YAML rewrite
     mid-session must NOT crash the finalize pipeline.
 
-    Scenario: a long-running ``WrapRunner`` session preloads
-    ``finalize-hitl`` (eager preload in ``runtime.py`` before ``_pty_spawn``),
-    then a ``git pull`` / merge lands a new step into the on-disk YAML
-    against the registry already loaded at process start. The memoized
-    cache must serve the preloaded Pipeline so ``_run_finalize_hitl``
-    (``run_session_end`` + auto-retro spawn) survives the drift instead of
-    dying on ``StepRegistryError``.
+    Scenario: a long-running ``WrapRunner`` session warms ``finalize-hitl``
+    before ``_pty_spawn``, then a ``git pull`` / merge lands a new step into the
+    on-disk YAML against the registry already loaded at process start. What
+    ``warm`` cached must serve ``_run_finalize_hitl`` (``run_session_end`` +
+    auto-retro spawn) so it survives the drift instead of dying on
+    ``StepRegistryError``.
+
+    Driven through ``warm`` rather than through ``load_core_pipeline``, because
+    ``warm`` is what production calls: a ``warm`` that stopped caching would leave
+    a test of the loader green and the session dying (HATS-1783).
 
     Unlike the identity tests above, this one actually rewrites the YAML on
     disk between calls — proving the cache *absorbs* drift, not merely that
@@ -190,15 +195,16 @@ def test_core_pipeline_cache_absorbs_on_disk_drift(tmp_path: Path, monkeypatch: 
 
     clear_core_pipeline_cache()
     try:
-        # 1. Eager preload — mirrors WrapRunner.run() before _pty_spawn.
-        preloaded = load_core_pipeline("finalize-hitl")
+        # 1. The capability WrapRunner.run calls before _pty_spawn.
+        warm(FINALIZE_HITL)
 
         # 2. Mid-session working-tree update introduces a step the
         #    in-memory registry has never heard of.
         yaml_file.write_text("name: finalize-hitl\nsteps:\n  - id: nonexistent_step\n")
 
-        # 3. Cache absorbs the drift — same object, NO exception.
-        assert load_core_pipeline("finalize-hitl") is preloaded
+        # 3. What warm() left behind absorbs the drift — the pre-pull steps, NO
+        #    exception. Without the cache this line raises PipelineYamlError.
+        assert [s.io.name for s in load_core_pipeline("finalize-hitl").steps] == ["pre_log"]
 
         # 4. Sanity: the drift is real. Bypassing the cache reads the
         #    rewritten YAML and would have crashed _run_finalize_hitl.

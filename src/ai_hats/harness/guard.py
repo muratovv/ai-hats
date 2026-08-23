@@ -20,7 +20,7 @@ from .errors import HarnessZeroOutputError
 
 if TYPE_CHECKING:
     from ai_hats_observe import Session
-    from ..pipeline.harness_policy import HarnessPolicy
+    from ..pipeline import HarnessPolicy
 
 
 def apply_post_run_guard(

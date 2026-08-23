@@ -26,3 +26,20 @@ SessionManager = object
 # Builds the sidecar tracer that captures a session's transcript.
 # TODO(HATS-1785)
 TracerFactory = object
+
+# Reopens a finished session by id and directory, for the audit step to read.
+# TODO(HATS-1785)
+SessionFactory = object
+
+# Builds the writer that rewrites a finished session's ``audit.md``.
+# TODO(HATS-1785)
+AuditWriterFactory = object
+
+# Answers where a provider left a session's transcript, so the area never
+# learns a provider's on-disk layout (HATS-1087).
+# TODO(HATS-1785)
+TranscriptResolver = object
+
+# Recomputes a session's cost from its transcript when the provider reports none.
+# TODO(HATS-1785)
+StaticCostAnalyzer = object

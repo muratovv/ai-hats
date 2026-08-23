@@ -71,29 +71,19 @@ AREA = "ai_hats.pipeline"
 # one tree's YAML against another tree's catalog, and a worktree adding a pipeline stayed green.
 LIBRARY_ROOT = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 
-# Every import that names a part of the area instead of the area itself. Each entry
-# is a live breach of the facade (ADR-0026 D14); HATS-1783 drives this to ().
+# comment-length: allow — what is left has to say why it is left, or the pin reads as done
+# Every import that names a part of the area instead of the area itself. Each entry is a
+# live breach of the facade (ADR-0026 D14). HATS-1783 took the other 17: the finalize
+# sub-pipelines run through ``run_subpipeline`` and the preload through ``warm``, so
+# runtime_common and wrap_runner name no area module at all, and the three consumers that
+# only spelled ``HarnessPolicy`` under TYPE_CHECKING read it off the facade. The three
+# left are one defect, not three — ``cli.assembly`` builds the ``preview`` pipeline in
+# Python, so it needs ``build`` and the two steps it assembles; it is the same second path
+# PINNED_PYTHON_ASSEMBLED holds, and it closes with that one (HATS-1784).
 PINNED_DEEP_ENTRIES: tuple[str, ...] = (
     "ai_hats.cli.assembly -> ai_hats.pipeline.pipeline",
     "ai_hats.cli.assembly -> ai_hats.pipeline.steps.emit",
     "ai_hats.cli.assembly -> ai_hats.pipeline.steps.materialize",
-    "ai_hats.harness.guard -> ai_hats.pipeline.harness_policy",
-    "ai_hats.retro.session_review_runner -> ai_hats.pipeline.harness_policy",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.keys",
-    "ai_hats.runtime_common -> ai_hats.pipeline.loader",
-    "ai_hats.runtime_common -> ai_hats.pipeline.loader",
-    "ai_hats.runtime_common -> ai_hats.pipeline.pipeline",
-    "ai_hats.runtime_common -> ai_hats.pipeline.pipeline",
-    "ai_hats.subagent_runner -> ai_hats.pipeline.harness_policy",
-    "ai_hats.wrap_runner -> ai_hats.pipeline.keys",
-    "ai_hats.wrap_runner -> ai_hats.pipeline.loader",
 )
 
 # Every pipeline assembled by calling ``build`` instead of loading its YAML. Each is

@@ -16,8 +16,16 @@ from typing import Any, Callable, Mapping
 from ai_hats_wt import IsolationMode
 
 from .config import Channel
-from .debt import CompositionPayload, SessionManager, TracerFactory
-from .pipeline import PipelineResult, PromptWriter
+from .debt import (
+    AuditWriterFactory,
+    CompositionPayload,
+    SessionFactory,
+    SessionManager,
+    StaticCostAnalyzer,
+    TracerFactory,
+    TranscriptResolver,
+)
+from .pipeline import PipelineResult, PromptWriter, SessionRef
 
 
 @dataclass(frozen=True)
@@ -151,6 +159,60 @@ class SessionRunParams:
             state["model"] = harness.model
             state["isolation"] = harness.isolation.value
             state["ticket"] = harness.ticket_id
+        return state
+
+
+@dataclass(frozen=True)
+class FinalizeRunParams:
+    """Finish a session that already ran — the ``finalize-*`` sub-pipelines.
+
+    Implements ``pipeline.SubpipelineParams``: no first message and nothing staged on
+    disk, because the session whose directory these steps write into is over by the
+    time this runs. The four handles below are the same explicit-dependency seam
+    ``CompositionPayload`` carries for a launch (ADR-0026 D14) — the steps get given
+    what they need, so no step imports observe.
+    """
+
+    # The finished session: ``make_audit`` reopens it by id and directory, and reads
+    # the provider's transcript by the provider-side id.
+    session: SessionRef
+    # Where the session ran. ``make_audit`` hands it to ``transcript_resolver``, which
+    # is how a provider finds its own transcripts (ADR-0026 D2).
+    project_dir: Path
+    # What the provider exited with. ``run_session_end`` reports it; ``make_audit``
+    # takes it as a required key and reads metrics.json instead.
+    exit_code: int
+    # Reopens the session for ``make_audit``.
+    session_factory: SessionFactory | None = None
+    # Builds the writer ``make_audit`` rewrites ``audit.md`` through.
+    audit_writer_factory: AuditWriterFactory | None = None
+    # Locates the provider's transcript for ``make_audit``; absent, it degrades to
+    # the trace log (HATS-1087).
+    transcript_resolver: TranscriptResolver | None = None
+    # Lets ``compute_usage`` cross-check cost when the provider reports none.
+    static_cost_analyzer: StaticCostAnalyzer | None = None
+
+    def to_state(self) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "session_id": self.session.id,
+            "session_dir": self.session.dir,
+            # ``make_audit`` requires the key and the funnel drops ``None``, so an
+            # absent provider session id is the empty string — which is what both
+            # callers already spelled before this contract existed.
+            "claude_session_id": self.session.provider_session_id or "",
+            "project_dir": self.project_dir,
+            "exit_code": self.exit_code,
+        }
+        # None-filtered on the way in as well, so a handle nobody supplied never
+        # reaches a step's ``optional`` as a present-but-empty value.
+        for key, value in (
+            ("session_factory", self.session_factory),
+            ("audit_writer_factory", self.audit_writer_factory),
+            ("transcript_resolver", self.transcript_resolver),
+            ("static_cost_analyzer", self.static_cost_analyzer),
+        ):
+            if value is not None:
+                state[key] = value
         return state
 
 

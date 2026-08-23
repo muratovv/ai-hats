@@ -56,6 +56,20 @@ class RunParams(Protocol):
     ) -> Mapping[str, Any]: ...
 
 
+@runtime_checkable
+class SubpipelineParams(Protocol):
+    """The whole initial state of a run that happens inside an existing session.
+
+    No ``materialize_prompt`` and no ``scratch_dir``, which is what separates it from
+    ``RunParams``: a sub-pipeline is finalizing a session that already ran, so there is
+    no first message to stage and no fresh directory to stage it in. Implemented
+    outside the area for the same reason ``RunParams`` is — the keys are the steps' own
+    declarations.
+    """
+
+    def to_state(self) -> Mapping[str, Any]: ...
+
+
 @dataclass(frozen=True)
 class SessionRef:
     """A session the run produced — the handle a later link of the chain refers to."""
@@ -129,3 +143,36 @@ def run_pipeline(config: PipelineConfig, params: RunParams) -> PipelineResult:
             scratch_dir=harness.namespace,
         )
         return PipelineResult.from_state(harness.run(state))
+
+
+def run_subpipeline(config: PipelineConfig, params: SubpipelineParams) -> PipelineResult:
+    """Run a pipeline inside a session that already exists, without the harness.
+
+    The harness opens a per-session namespace and sweeps it when the run ends. A
+    finalize pipeline runs *within* a session whose directory is already there and
+    stages nothing, so the harness would create a directory nothing writes to and
+    then delete it. Declared here so "run one without the harness" is a capability
+    with a name, rather than something a caller gets by importing ``loader`` and
+    ``pipeline`` directly (ADR-0026 D3).
+    """
+    from .loader import load_core_pipeline
+    from .pipeline import run as run_steps
+
+    final = run_steps(load_core_pipeline(config.name), dict(params.to_state()))
+    return PipelineResult.from_state(final)
+
+
+def warm(config: PipelineConfig) -> None:
+    """Parse and build ``config`` now, so running it later touches no disk.
+
+    For a caller that will run a pipeline at the end of a session it is about to
+    start (HATS-566): on an editable install the YAML on disk can be replaced
+    mid-session by a ``git pull``, and it would then be read against the step
+    modules this process already holds. Doing it up front freezes both together —
+    since HATS-1783 the step modules are imported by the same act, so this pins the
+    ids as well as the file. Failure is the caller's to report: the sub-pipeline is
+    best-effort and warming it is not the moment to end a session.
+    """
+    from .loader import load_core_pipeline
+
+    load_core_pipeline(config.name)
