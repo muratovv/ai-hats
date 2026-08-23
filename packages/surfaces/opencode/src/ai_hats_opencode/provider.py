@@ -4,12 +4,15 @@ Role context, skills and runtime hooks are materialized into the ai-hats
 session cache and delivered through OpenCode's per-session ``OPENCODE_CONFIG``
 config file: a composed primary agent carries the role prompt, and the
 runtime-hook dispatcher registers through the config's ``plugin`` array as a
-``file://`` entry. The project root is never written: no ``AGENTS.md``, no
-``.opencode/``.
+``file://`` entry. Skills are mirrored under a session-scoped
+``XDG_CONFIG_HOME`` so OpenCode's native skill discovery sees them without
+touching user-owned directories. The project root is never written: no
+``AGENTS.md``, no ``.opencode/``.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +25,12 @@ if TYPE_CHECKING:
     from ai_hats.providers import CompositionResult
 
 ENV_OPENCODE_CONFIG = "OPENCODE_CONFIG"
+ENV_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
+
+#: Where the user's real opencode config home lives. Points at the BASE
+#: (``~/.config``), not at the ``opencode/`` dir inside it — same shape as
+#: ``XDG_CONFIG_HOME`` itself.
+_ENV_OPENCODE_CONFIG_HOME = "AI_HATS_OPENCODE_CONFIG_HOME"
 
 #: The single session agent opencode is launched with (`--agent`). One stable
 #: name keeps launch argv free of role-derived values that change per project.
@@ -78,10 +87,66 @@ class OpenCodeProvider(Provider):
 
         return session_cache_dir(project_dir, session_id) / "opencode" / "opencode.json"
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+    def session_xdg_config_home(self, project_dir: Path, session_id: str) -> Path:
+        """The ``XDG_CONFIG_HOME`` value pinned for this session's child process.
+
+        OpenCode resolves its global config dir as ``<XDG_CONFIG_HOME>/opencode``
+        (probed on 1.18.21 via ``debug paths``), so pointing it into the session
+        cache makes the native skill discovery read the ai-hats mirror while
+        user-owned entries stay reachable through base-home projection.
+        """
         from ai_hats.paths import session_cache_dir
 
-        return session_cache_dir(project_dir, session_id) / "opencode-home" / "skills"
+        return session_cache_dir(project_dir, session_id) / "opencode-xdg"
+
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+        # Inside the redirected config dir: <XDG>/opencode/skills is a native
+        # discovery path (HATS-1791), so the mirror doubles as real skills.
+        return self.session_xdg_config_home(project_dir, session_id) / "opencode" / "skills"
+
+    def _base_config_home(self) -> Path:
+        """Resolve the user's real config home (the base, not ``opencode/``)."""
+        configured = os.environ.get(_ENV_OPENCODE_CONFIG_HOME) or os.environ.get(
+            ENV_XDG_CONFIG_HOME
+        )
+        candidate = Path(configured).expanduser() if configured else Path.home() / ".config"
+        if not candidate.is_absolute():
+            raise RuntimeError("OpenCode config home must be an absolute directory")
+        return candidate
+
+    def _project_base_home(self, session_config_dir: Path, artifacts) -> None:
+        """Symlink user-owned config entries next to the session-owned ones."""
+        base_config_dir = self._base_config_home() / "opencode"
+        if not base_config_dir.is_dir():
+            return
+        resolved_base = base_config_dir.resolve()
+        resolved_session = session_config_dir.resolve(strict=False)
+        if (
+            resolved_base == resolved_session
+            or resolved_base in resolved_session.parents
+            or resolved_session in resolved_base.parents
+        ):
+            raise RuntimeError("OpenCode base config home must be outside the session XDG root")
+        try:
+            for source in sorted(base_config_dir.iterdir(), key=lambda path: path.name):
+                if source.name == "skills":
+                    continue  # owned by the session mirror (HATS-1791)
+                artifacts.port.symlink(source, session_config_dir / source.name)
+        except OSError:
+            raise RuntimeError("OpenCode base config projection failed") from None
+
+    def _project_base_skills(self, skills_root: Path, role_names: set[str], artifacts) -> None:
+        """Expose the user's own global skills that this composition doesn't shadow."""
+        base_skills = self._base_config_home() / "opencode" / "skills"
+        if not base_skills.is_dir():
+            return
+        try:
+            for source in sorted(base_skills.iterdir(), key=lambda path: path.name):
+                if source.name in role_names:
+                    continue
+                artifacts.port.symlink(source, skills_root / source.name)
+        except OSError:
+            raise RuntimeError("OpenCode base skill projection failed") from None
 
     def _agent_description(self, result: "CompositionResult") -> str:
         return f"ai-hats composed role session ({result.name})"
@@ -172,6 +237,18 @@ class OpenCodeProvider(Provider):
             "mode": "primary",
             "prompt": prompt,
         }
+        # HATS-1792: ai-hats artifacts live outside the project cwd, and the
+        # OpenCode default asks on every external_directory access — a second,
+        # noisy gate beside the ai-hats consent one. Allow exactly our cache
+        # subtree; everything else keeps the platform default ("ask").
+        from ai_hats.paths import cache_root
+
+        doc["permission"] = {
+            "external_directory": {
+                "*": "ask",
+                f"{cache_root(project_dir)}/**": "allow",
+            }
+        }
         artifacts.cli_args.extend(["--agent", AGENT_NAME])
         artifacts.extra_env[ENV_OPENCODE_CONFIG] = str(
             self.session_config_path(project_dir, session_id)
@@ -187,9 +264,17 @@ class OpenCodeProvider(Provider):
 
         if not result.skills:
             return
+        xdg_root = self.session_xdg_config_home(project_dir, session_id)
+        session_config_dir = xdg_root / "opencode"
         skills_root = self.session_skills_root(project_dir, session_id)
+        # Wipe-and-copy first: the mirror is the native discovery dir, and base
+        # entries are projected into it afterwards (HATS-1791).
         materialize_skills_dir(skills_root, result.skills, project_dir, artifacts.port)
+        artifacts.port.mkdir(session_config_dir)
+        self._project_base_home(session_config_dir, artifacts)
+        self._project_base_skills(skills_root, {skill.name for skill in result.skills}, artifacts)
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_root)
+        artifacts.extra_env[ENV_XDG_CONFIG_HOME] = str(xdg_root)
         artifacts.materialized.append(skills_root)
 
     def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:

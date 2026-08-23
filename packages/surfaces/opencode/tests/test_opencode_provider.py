@@ -107,6 +107,27 @@ def test_context_hitl_materializes_session_agent(tmp_path: Path) -> None:
     assert artifacts.full_content == agent["prompt"]
 
 
+def test_context_materializes_external_directory_allow_for_cache(tmp_path: Path) -> None:
+    """HATS-1792: no native ask prompts beside the ai-hats consent gate."""
+    from ai_hats.paths import cache_root
+
+    provider = OpenCodeProvider()
+    project = _project(tmp_path)
+
+    provider.build_session_artifacts(
+        project,
+        _fake_result(skills=[_make_skill(tmp_path, "hatrack")]),
+        _session_id(),
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+
+    config = json.loads(provider.session_config_path(project, _session_id()).read_text())
+    external = config["permission"]["external_directory"]
+    assert external["*"] == "ask", "platform default stays for non-ai-hats paths"
+    assert external[f"{cache_root(project)}/**"] == "allow"
+
+
 def test_hitl_build_writes_nothing_into_project_root(tmp_path: Path) -> None:
     provider = OpenCodeProvider()
     project = _project(tmp_path)
@@ -146,6 +167,104 @@ def test_skills_mirror_lands_in_session_cache_with_path_env(tmp_path: Path) -> N
     assert parts.index(mirrored_scripts) < parts.index(str(skill_source / "scripts")), (
         "mirror must precede source: PATH resolution follows composition order"
     )
+
+
+def test_skills_mirror_is_natively_discoverable_via_xdg(tmp_path: Path) -> None:
+    """HATS-1791: the mirror lives under the redirected config dir."""
+    provider = OpenCodeProvider()
+    project = _project(tmp_path)
+    result = _fake_result(skills=[_make_skill(tmp_path, "hatrack")])
+    artifacts = BuiltArtifacts()
+
+    provider.build_session_artifacts(
+        project, result, _session_id(), run_mode=RunMode.HITL, artifacts=artifacts
+    )
+
+    xdg_root = provider.session_xdg_config_home(project, _session_id())
+    assert (xdg_root / "opencode" / "skills" / "hatrack" / "SKILL.md").is_file(), (
+        "mirror must sit on a native discovery path"
+    )
+    assert artifacts.extra_env["XDG_CONFIG_HOME"] == str(xdg_root)
+
+
+def test_base_config_home_is_projected_not_mutated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-1791: user-owned entries stay reachable via symlinks, never written."""
+    base = tmp_path / "base-config"
+    base_opencode = base / "opencode"
+    (base_opencode / "skills" / "user-own-skill").mkdir(parents=True)
+    (base_opencode / "skills" / "user-own-skill" / "SKILL.md").write_text(
+        "---\nname: user-own-skill\ndescription: x\n---\nbody\n"
+    )
+    (base_opencode / "opencode.jsonc").write_text('{"$schema": "https://opencode.ai/config.json"}')
+    (base_opencode / "plugins").mkdir()
+    monkeypatch.setenv("AI_HATS_OPENCODE_CONFIG_HOME", str(base))
+
+    provider = OpenCodeProvider()
+    project = _project(tmp_path)
+    composed = _make_skill(tmp_path, "hatrack")
+
+    provider.build_session_artifacts(
+        project,
+        _fake_result(skills=[composed]),
+        _session_id(),
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+
+    session_dir = provider.session_xdg_config_home(project, _session_id()) / "opencode"
+    assert (session_dir / "opencode.jsonc").is_symlink()
+    assert (session_dir / "plugins").is_symlink()
+    assert not (session_dir / "skills").is_symlink(), "skills dir is session-owned"
+
+    skills_dir = provider.session_skills_root(project, _session_id())
+    assert (skills_dir / "hatrack" / "SKILL.md").is_file(), "composed mirror is real files"
+    assert (skills_dir / "user-own-skill").is_symlink(), "non-shadowed user skills projected"
+    assert (base_opencode / "opencode.jsonc").read_text().startswith("{"), "base untouched"
+
+
+def test_composed_skill_shadows_same_named_user_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "base-config"
+    base_skill = base / "opencode" / "skills" / "hatrack"
+    base_skill.mkdir(parents=True)
+    (base_skill / "SKILL.md").write_text("---\nname: hatrack\ndescription: user\n---\nuser\n")
+    monkeypatch.setenv("AI_HATS_OPENCODE_CONFIG_HOME", str(base))
+
+    provider = OpenCodeProvider()
+    project = _project(tmp_path)
+    composed = _make_skill(tmp_path, "hatrack", "composed wins")
+
+    provider.build_session_artifacts(
+        project,
+        _fake_result(skills=[composed]),
+        _session_id(),
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+
+    skills_dir = provider.session_skills_root(project, _session_id())
+    assert not (skills_dir / "hatrack").is_symlink()
+    body = (skills_dir / "hatrack" / "SKILL.md").read_text()
+    assert "composed wins" in body
+
+
+def test_skillsless_role_pins_no_xdg(tmp_path: Path) -> None:
+    provider = OpenCodeProvider()
+    project = _project(tmp_path)
+    artifacts = BuiltArtifacts()
+
+    provider.build_session_artifacts(
+        project,
+        _fake_result(skills=[]),
+        _session_id(),
+        run_mode=RunMode.HITL,
+        artifacts=artifacts,
+    )
+
+    assert "XDG_CONFIG_HOME" not in artifacts.extra_env
 
 
 def test_get_env_pins_framework_identity(tmp_path: Path) -> None:
