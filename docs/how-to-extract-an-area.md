@@ -8,8 +8,9 @@ This file is written **as the pilot runs**, not after it. A rule lands here when
 review produced it, with the incident that produced it named — a convention nobody can
 trace back to a defect is a preference, and preferences do not survive review.
 
-Status: pilot in progress (`pipeline`, HATS-1783). The measured recipe — what moves,
-which `pyproject.toml` lines change, what a slice costs — lands at pilot acceptance.
+Status: pilot complete (`pipeline`, HATS-1783). §7 carries the measured recipe ADR-0026
+D12 asks for — the numbers, the sequence, and what a slice cost. The second area
+(`consent`) is scoped by comparing its own numbers against §7 **before** work starts.
 
 ## 1. Before you touch code
 
@@ -117,7 +118,11 @@ gate prints the diff and a paste-ready literal, because a pin nobody can regener
 becomes a pin someone edits by hand.
 
 Edge counting includes deferred and `TYPE_CHECKING` imports (ADR-0026 D5, F4 ruling of
-2026-08-21) — a boundary blind to them is blind to 45% of this graph.
+2026-08-21) — a boundary blind to them is blind to two edges in five. Re-measured at
+pilot acceptance with the definition stated: 39% of the name-edges entering the area
+before the epic were deferred or `TYPE_CHECKING`, 38% now, and 32% of every import in
+the shipped tree is. An earlier draft of this line said 45% and named no definition;
+the number is replaced rather than defended, and §7 carries the measurement.
 
 ## 5. How a gate goes green without the property
 
@@ -217,11 +222,132 @@ Kept as a checklist because each line cost a round:
 - "we will type it when the consumer migrates" is how a wrong type ships — describe the
   shape from its writer, not from the caller you imagine.
 
+## 7. The measured recipe
+
+ADR-0026 D12 makes this section the pilot's deliverable: not "it moved", but numbers a
+next area is estimated against before anyone starts. Everything below was measured with
+one instrument — the helpers in `tests/test_area_boundary.py`, run against a clean
+checkout of the pre-epic tree and against this one, so "an import" means the same thing
+on both sides.
+
+### The numbers
+
+| Measure                                      | Before the epic (`a5b62f7d`) | Now              | Gate          |
+| -------------------------------------------- | ---------------------------- | ---------------- | ------------- |
+| Deep entries (imports past `__init__`)       | 107                          | 3                | D12: 0        |
+| Area modules in a non-trivial SCC            | 8                            | 0                | D12: 0        |
+| Pipelines assembled in Python, not from YAML | 3                            | 3                | HATS-1784     |
+| External modules importing the area (fan-in) | 11                           | 13               | measured only |
+| Incoming name-edges                          | 107                          | 21               | measured only |
+| … of them deferred or `TYPE_CHECKING`        | 42 (39%)                     | 8 (38%)          | D8 precond. 2 |
+| Tests inside the area                        | 0                            | 74, in 7 files   | D7            |
+| Tests crossing into it                       | 38 files                     | 301, in 32 files | D7            |
+| Area suite wall time vs the full suite       | —                            | 0.34 s vs 148 s  | D12           |
+| `python -m ai_hats --help` (min of 5)        | 0.17 s                       | 0.17 s           | D12: ≤ 0.25 s |
+| `import ai_hats.pipeline.loader`             | 135.7 ms                     | 29.8 ms          | measured only |
+| Area tests in the built wheel                | none                         | none             | D11: none     |
+
+Four of these say something the counts alone do not:
+
+- **Fan-in went up, not down.** 11 modules imported the area before, 13 do now, because
+  two of the new importers are the modules the epic created to hold what left it
+  (`pipeline_catalog`, `session_policy`). Fan-in is the wrong headline: the edges are
+  what moved — 107 name-edges to 21, and *every one* of the 107 was a deep entry, which
+  is what "the facade exists and is bypassed" looked like as a number.
+- **The deferred share did not move** (39% → 38%). It is a property of how this codebase
+  imports, not of the extraction, so D8's precondition 2 is not something an extraction
+  earns — measure it, do not expect to change it. A boundary lint blind to deferred and
+  `TYPE_CHECKING` imports would still miss two edges in five.
+- **`--help` never moved** because it never reached the loader. The 106 ms the loader
+  shed is real and is paid by anything that runs a pipeline; it is invisible to the
+  gate D12 chose. Keep the gate — it is a ratchet against a regression — but do not
+  read it as the pilot's benefit.
+- **The area suite is 0.23% of the full run.** That is the number T2 was missing: a
+  selector that ran only the area's own tests would save 148 s and answer for 74 of
+  4 447 tests. The 301 crossing tests take 4.4 s and are the ones an area change
+  actually risks — so the honest T2 unit here is "area + crossing" (4.7 s), not "area".
+
+### The sequence a next area follows
+
+Ten steps, in the order the pilot had to do them; each one is one commit.
+
+1. **Read the debt file and the open TODOs** (§1). Free, and it is what stops the next
+   agent inventing a second name for a value that already has one.
+2. **Type the entry points.** Give the area a `Config` value and a `RunParams`-shaped
+   protocol its callers implement, and convert one caller. ~200 lines, one commit.
+3. **Write the boundary gates before converting anything else**, pinned at whatever the
+   tree says today (§4). Every pin regenerated from a failing run, never edited by hand.
+   The pin is the work list; a slice that does not lower it did nothing.
+4. **Move policy out.** Everything about what the area's mechanism is *for* leaves for a
+   `<area>_policy.py` and a `<area>_catalog.py` beside the application (§3). This is the
+   biggest slice — 405 lines across 7 files on the pilot — and it is what makes the
+   remaining deep entries visible as a short list rather than a hundred.
+5. **Convert the callers**, re-pinning in the same commit so a swap cannot hide (§4).
+6. **Cut the cycles.** On the pilot every one of the 8 ran through a single import whose
+   only job was a registration side effect. Look for that shape first: an import kept
+   for what it *does*, not for what it *names*.
+7. **Give each remaining reach-in a name.** A caller importing three of your modules is
+   usually one capability you never declared — `run_subpipeline` and `warm` were 14 of
+   the pilot's last 17 deep entries. Re-export a type rather than move it when the area
+   is the value's *writer*; moving it inverts the edge you just cleaned.
+8. **Move the area's own tests inside it** (D7): the ones that need the public surface
+   plus stdlib and nothing else. On the pilot 64 of 74 moved on this criterion, and a
+   34-file `tests/<area>/` turned out to be the session tier wearing the area's name.
+9. **Prove every gate red under its own violation**, and prove the violation landed
+   (§5 row 10).
+10. **Take the numbers** (this section) and hand them to the next area.
+
+### The `pyproject.toml` lines
+
+Four places, and no others:
+
+```toml
+[tool.hatch.build.targets.wheel]
+exclude = ["src/ai_hats/**/tests"]        # 1. D11 — one glob covers every area
+
+[tool.pytest.ini_options]
+testpaths = [..., "src/ai_hats/<area>/tests"]   # 2. one line per area; a glob is unreliable
+
+[project.entry-points."ai_hats.<things>"]  # 3. only if the area resolves plugins by id
+<id> = "<module>:<Class>"
+
+[project.optional-dependencies]            # 4. only if the area ships its own deps
+```
+
+Line 1 is written once and covers every area after the first. Line 2 is one line per
+area, forever. Line 3 is the expensive one: it is a **non-import edge** (ADR-0026 D15),
+so it is outside test selection by design and changing it runs the full suite — and it
+is unobservable from the source tree, so it needs the e2e that installs a built wheel
+(`tests/e2e/test_step_entry_point_resolution.py`, ~1.2 s).
+
+### The gates that get re-pinned
+
+`PINNED_DEEP_ENTRIES` on every conversion commit; `PINNED_PYTHON_ASSEMBLED` when a
+Python-built pipeline becomes a YAML one; `PINNED_AREA_MODULES_IN_A_CYCLE` once, to
+empty, and then never again — it is an absolute. `scripts/test_isolation_baseline.json`
+whenever the area's tests move or grow. Regenerate all of them from the failing run's
+paste-ready literal.
+
+### What a slice costs
+
+The pilot: **16 commits, 77 files, +2 630 / −623 lines**, split 1 147 production /
+1 127 test / 230 doc — so **roughly half the lines are gates and prose**, and the
+production half is itself mostly contract comment, because the contract is a reviewed
+artefact (D14). Budget accordingly: the code move is the small part. Median slice ≈ 190
+lines across 5 files; the two outliers were the policy move (405) and the entry-point
+cut (616, of which 190 is one e2e).
+
+The next area is cheaper on three counts and dearer on one. Cheaper: the wheel exclude
+exists, the gate file exists and takes a second area as new constants rather than new
+code, and §5 is already written. Dearer: `consent` crosses a distribution boundary and
+is reached by console script and subprocess (ADR-0026 D10, D15), so its equivalent of
+the entry-point e2e has to be built, not copied.
+
 ## References
 
 - [1] `docs/adr/0026-capability-ownership-and-the-project-value.md` — D5 (what an area
   is), D7 (area test vs crossing test), D12 (pilot gates and measurements), D14 (the
   public contract as a reviewed artefact).
 - [2] `src/ai_hats/debt.py` — the undecided types, with the card that retires each.
-- [3] `tests/test_area_boundary.py` — the three gates.
+- [3] `tests/test_area_boundary.py` — the five gates.
 - [4] `scripts/todo_context.sh` — TODOs by card, for the agent's context.
