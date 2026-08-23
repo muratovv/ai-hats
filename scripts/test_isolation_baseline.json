@@ -15,6 +15,7 @@
   "packages/ai-hats-rack/tests/test_kernel.py": 1,
   "packages/ai-hats-wt/tests/test_wt_standalone.py": 1,
   "packages/surfaces/cline/tests/test_provider.py": 5,
+  "src/ai_hats/pipeline/tests/test_pipeline_registry.py": 3,
   "src/ai_hats/pipeline/tests/test_pipeline_trace.py": 1,
   "tests/conftest.py": 1,
   "tests/e2e/conftest.py": 2,

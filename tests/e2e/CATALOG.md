@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**260 of 260 files catalogued — 269 flows.**
+**261 of 261 files catalogued — 270 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2764,6 +2764,22 @@ as a claim to check, not as evidence.
 
 - **expect** — self update resolves latest tagged stable release and installs versioned release venv
 - **why** — without stable channel support, production users cannot pin update checks to verified releases
+
+## `test_step_entry_point_resolution.py`
+
+*pins HATS-1783*
+
+- **flow** — a user installs the released ai-hats wheel and runs a pipeline; every built-in step it names has to resolve, and it resolves only through the installed distribution's entry-point metadata
+- **cmds**
+
+  ```console
+  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
+  uv venv <tmp>/venv && uv pip install --no-deps <wheel> pyyaml
+  <tmp>/venv/bin/python -c "load_pipeline(<one-step yaml>)"
+  ```
+
+- **expect** — the installed dist advertises all 23 built-in step ids under `ai_hats.steps`; loading a YAML that names `pre_log` builds the step, imports `ai_hats.pipeline.steps.log` and NO other step module, and an unknown id fails loudly naming what is known
+- **why** — the step ids left the source tree for `[project.entry-points]` in pyproject.toml, and nothing in the source tree can tell whether that block reached the built distribution's `entry_points.txt`. A unit test of the registry passes against the developer's editable install no matter what the wheel carries; drop the block and every pipeline stops resolving, in an artefact no in-tree test opens. This runs the resolver against a real install, from a venv the checkout is not on the path of
 
 ## `test_stray_shadow_detector.py`
 

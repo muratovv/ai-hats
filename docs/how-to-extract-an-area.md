@@ -80,14 +80,23 @@ in `session_policy.py` next to the steps that read it.
 
 ## 4. Gates that hold the boundary
 
-`tests/test_area_boundary.py` — three gates, each verified to go red under its own
+`tests/test_area_boundary.py` — five gates, each verified to go red under its own
 violation before being committed:
 
 | Gate                        | Asserts                                            | Shape                    |
 | --------------------------- | -------------------------------------------------- | ------------------------ |
 | deep entries                | no name enters the area past its `__init__`        | pinned set, shrinks only |
 | pipelines assembled in code | no pipeline is built from anything but its YAML    | pinned set, shrinks only |
+| modules in a cycle          | no area module sits in a non-trivial import SCC    | empty set                |
 | catalog                     | shipped YAML == the application's declared catalog | set equality             |
+| registration by import      | importing the shipped tree registers no step       | empty set                |
+
+Three of the five are absolutes rather than ratchets. The cycle gate reached its D12
+target of 0 when the step registry stopped resolving by import (HATS-1783), and the
+registration gate holds the mechanism that got it there — it imports the same tree in
+a fresh process and asserts the step registry came out empty, because an AST gate
+watching calls to `register` would miss `_REGISTRY[name] = cls` and every other
+spelling of the same side effect.
 
 A pinned set **fails when an entry leaves** as well as when one arrives: converting a
 consumer means re-pinning in the same commit, so the ground won is kept, and a swap —
@@ -100,9 +109,10 @@ Edge counting includes deferred and `TYPE_CHECKING` imports (ADR-0026 D5, F4 rul
 
 ## 5. How a gate goes green without the property
 
-Every entry below was found on **this epic's own gates**, by review, after the gate was
-written and believed. Read it before calling a gate done, and add the row your own
-incident produces — a taxonomy grows by incident, not by imagination.
+Every entry below was found on **this epic's own gates** — all but the last by
+review, after the gate was written and believed. Read it before calling a gate done,
+and add the row your own incident produces — a taxonomy grows by incident, not by
+imagination.
 
 1. **Cardinality instead of the set.** The assert compares a count, so converting one
    offender while adding another leaves it green — and the offender list, which only
@@ -150,7 +160,19 @@ incident produces — a taxonomy grows by incident, not by imagination.
    *Fix:* if it can go green while the second path lives, it is measuring something
    else — see 2.
 
-Standing rule behind all eight (ADR-0026 D3): a gate closes a row only by asserting the
+9. **A fallback in the production code that makes the gate's subject unobservable.**
+   Caught at design time on this epic's own e2e, not after: the built-in step ids
+   moved to `[project.entry-points]`, and the tempting safety net was a module-path
+   table in `registry.py` for the uninstalled case. With it, deleting the whole
+   entry-point block leaves every pipeline running — so the e2e whose subject is
+   "the declarations reached the built distribution" passes on a distribution that
+   carries none. The second path here is in the *code*, not the gate, and it makes
+   the property unobservable rather than unasserted.
+   *Fix:* refuse loudly instead, and say at the refusal site why there is no
+   fallback. A gate you cannot break by deleting the mechanism is measuring
+   something else — see 2 and 8.
+
+Standing rule behind all nine (ADR-0026 D3): a gate closes a row only by asserting the
 **absence of a second path**. A test that asserts a property of behaviour stays true
 with several owners, so it cannot close anything.
 

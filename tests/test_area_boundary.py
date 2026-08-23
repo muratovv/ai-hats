@@ -1,12 +1,14 @@
 """HATS-1783 — what the ``pipeline`` area's boundary asserts today, stated exactly.
 
-Four gates, and only the last is the negative universal ADR-0026 D3 asks for. The
-other three pin the breach set this epic is shrinking, so a green run here means "the
-ways in did not change", never "there is no way in".
+Five gates. Three are the negative universals ADR-0026 D3 asks for — the cycle set
+(empty since the step registry stopped resolving by import), the registration gate, and
+the catalog. The other two pin the breach set this epic is still shrinking, so a green
+run there means "the ways in did not change", never "there is no way in".
 
 The three import gates read one tree — the modules the wheel ships (see
 ``_source_modules``) — through one walk, so "an import" means the same thing in all of
-them rather than one thing per gate. The fourth reads the shipped YAML.
+them rather than one thing per gate. The fourth reads the shipped YAML; the fifth
+imports that same tree in a subprocess and reads what it did to the registry.
 
 1. **Deep entries.** Asserts that the imports naming something *under* the area
    rather than the area itself equal ``PINNED_DEEP_ENTRIES`` as a multiset. Does not
@@ -24,14 +26,22 @@ them rather than one thing per gate. The fourth reads the shipped YAML.
    arrive unnoticed.
 3. **Modules in a cycle.** Asserts that the area's modules sitting in a non-trivial
    strongly connected component of the import graph equal
-   ``PINNED_AREA_MODULES_IN_A_CYCLE``. ADR-0026 D12 makes this pilot gate 0, and the
-   pin is not 0 — read its comment: it records a regression that shipped precisely
-   because this gate lived in a throwaway script instead of here.
+   ``PINNED_AREA_MODULES_IN_A_CYCLE``. ADR-0026 D12 makes this pilot gate 0 and the
+   pin is now 0, which turns it from a ratchet into an absolute: any area module in
+   any cycle is red, and the re-pin literal below it exists only to name the offender.
 4. **Catalog.** Set equality between the shipped pipeline YAML and the catalog the
    application declares. This one is a true negative universal: it cannot go green
    while a shipped pipeline is undeclared. It fails, and never skips, when the
    library root does not resolve — a gate that can excuse itself is the failure this
    epic exists to remove.
+5. **Registration by import.** Imports every module of gate 1-3's tree in a fresh
+   process and asserts the step registry came out empty. The subject is the mechanism
+   gate 3 depends on: built-in steps are *declared* (the ``ai_hats.steps`` entry-point
+   group) and imported per id, never registered as a side effect of importing them.
+   Behavioural on purpose — an AST gate would watch calls to ``register`` and miss
+   ``_REGISTRY[name] = cls``, an ``importlib`` call, or any other spelling of the same
+   side effect. ``register`` itself stays legal: user steps and out-of-tree packages
+   call it, and neither ships in this tree.
 
 Re-pinning is mechanical by design. A pin that stops matching prints the
 added/removed diff and then the exact literal to paste back, sorted and one entry per
@@ -46,6 +56,9 @@ from __future__ import annotations
 
 import ast
 import json
+import os
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -91,27 +104,16 @@ PINNED_PYTHON_ASSEMBLED: tuple[str, ...] = (
     "ai_hats.pipeline.presets -> build(name=PIPELINE_INIT)",
 )
 
-# comment-length: allow — a pin recording a regression has to say so, or it reads as the target
-# Every module of the area sitting in a non-trivial SCC. ADR-0026 D12 sets this gate at 0;
-# the pin is 10 and that is a **regression**, not a resting place: 8 were measured before
-# the facade migration, by a throwaway script that was never committed, and migrating
-# consumers onto the facade pulled in ai_hats.pipeline itself and .contract with nothing
-# going red. ai_hats.pipeline_catalog joined the same SCC and is absent here on purpose —
-# it is application code, and "ai_hats.pipeline" is its prefix only as a string. The cycle
-# runs loader -> steps -> steps.handoff -> cli.reflect -> the facade; the cut is loader ->
-# steps (ADR-0026 D12), and re-pinning is not the cut.
-PINNED_AREA_MODULES_IN_A_CYCLE: tuple[str, ...] = (
-    "ai_hats.pipeline",
-    "ai_hats.pipeline.contract",
-    "ai_hats.pipeline.harness",
-    "ai_hats.pipeline.loader",
-    "ai_hats.pipeline.steps",
-    "ai_hats.pipeline.steps.handoff",
-    "ai_hats.pipeline.steps.init_steps",
-    "ai_hats.pipeline.steps.launch",
-    "ai_hats.pipeline.steps.maybe_spawn_session_reviewer",
-    "ai_hats.pipeline.steps.session_review",
-)
+# comment-length: allow — an empty pin has to say what emptied it, or nobody can defend it
+# Every module of the area sitting in a non-trivial SCC. ADR-0026 D12 sets this gate at 0,
+# and HATS-1783 cut it there: the cycle ran loader -> steps -> steps.handoff -> cli.reflect
+# -> the facade, held together by one import whose only job was the side effect of
+# registering the built-in steps. Built-ins are now declared under the `ai_hats.steps`
+# entry-point group and imported per id, so the loader names no step at all. Empty, this
+# pin is the negative universal D3 asks for — one area module back in any cycle is red.
+# ai_hats.pipeline_catalog sits in the surviving 26-module SCC and is absent here on
+# purpose: it is application code, and "ai_hats.pipeline" is its prefix only as a string.
+PINNED_AREA_MODULES_IN_A_CYCLE: tuple[str, ...] = ()
 
 # Both spellings bind the same constructor: ``__init__`` re-exports ``build`` from
 # ``pipeline.pipeline``, so a gate that watches only one of them watches neither.
@@ -382,6 +384,49 @@ def test_no_area_module_sits_in_an_import_cycle() -> None:
         "modules of ai_hats.pipeline inside a non-trivial import SCC (ADR-0026 D12, target 0)",
         PINNED_AREA_MODULES_IN_A_CYCLE,
         in_a_cycle,
+    )
+
+
+# Imported, then asked what it registered — run in a child so the answer is about
+# these imports and not about whatever the pytest process already loaded.
+_REGISTRY_PROBE = """
+import importlib, json, sys
+for name in json.loads(sys.argv[1]):
+    importlib.import_module(name)
+from ai_hats.pipeline import registry
+print(json.dumps(sorted(registry._REGISTRY)))
+"""
+
+
+def test_no_shipped_module_registers_a_step_by_being_imported() -> None:
+    """Importing the whole shipped tree must leave the step registry empty.
+
+    The mechanism gate 3 rests on: a built-in step is declared under the
+    ``ai_hats.steps`` entry-point group and imported when its id is resolved, so no
+    import populates the registry. When one does, the loader is back to depending on
+    every step module, and the cycle comes with it (HATS-1783).
+    """
+    modules = [module for module, _path, _tree in _source_modules() if module.startswith("ai_hats")]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(path for path in sys.path if path)
+    probe = subprocess.run(
+        [sys.executable, "-c", _REGISTRY_PROBE, json.dumps(modules)],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert probe.returncode == 0, (
+        "the probe could not import the shipped tree, so this gate checked nothing:\n"
+        f"{probe.stdout}\n{probe.stderr}"
+    )
+    registered = json.loads(probe.stdout)
+    assert registered == [], (
+        f"importing the shipped tree registered {registered} — a built-in step is being "
+        "registered as an import side effect again. Declare it under the "
+        "`ai_hats.steps` entry-point group in pyproject.toml instead; `register()` is "
+        "for user steps and out-of-tree packages, neither of which ships here."
     )
 
 
