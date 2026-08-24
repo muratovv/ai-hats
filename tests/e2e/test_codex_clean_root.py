@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -22,7 +23,7 @@ import pytest
 from _helpers.env import checkout_pythonpath, clean_env
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.paths import PROJECT_CONFIG, project_key
 
 pytestmark = pytest.mark.integration
 
@@ -121,7 +122,8 @@ def _make_base_codex_home(tmp_path: Path) -> Path:
     personal_skill.mkdir(parents=True)
     (base_home / "auth.json").write_text("shared auth")
     (base_home / "config.toml").write_text("shared config")
-    (base_home / "state_5.sqlite").write_text("shared sqlite state")
+    with sqlite3.connect(base_home / "state_5.sqlite") as connection:
+        connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)")
     (system_skill / "SKILL.md").write_text("system skill")
     (personal_skill / "SKILL.md").write_text("personal skill")
     return base_home
@@ -164,11 +166,13 @@ def test_codex_exit_cleans_session_home_and_preserves_shared_state(
     env.update(
         {
             "AI_HATS_CACHE_HOME": str(tmp_path / "cache"),
+            "AI_HATS_CODEX_BASE_HOME": str(base_home),
             "AI_HATS_CODEX_CAPTURE": str(capture_path),
             "AI_HATS_CODEX_EXIT_MODE": exit_mode,
             "AI_HATS_NO_UPDATE_CHECK": "1",
             "AI_HATS_USER_HOME": str(tmp_path / "user-home"),
             "CODEX_HOME": str(base_home),
+            "CODEX_SQLITE_HOME": str(base_home),
             "PATH": os.pathsep.join([str(fake_bin), env.get("PATH", "")]),
             "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
         }
@@ -193,7 +197,9 @@ def test_codex_exit_cleans_session_home_and_preserves_shared_state(
     assert capture["auth_is_symlink"] is True
     assert capture["config_is_symlink"] is True
     assert capture["personal_skill_is_symlink"] is True
-    assert capture["codex_home"] == str(Path(capture["cache_dir"]) / "codex-home")
+    assert capture["codex_home"] == str(
+        base_home / ".ai-hats" / "session-homes" / project_key(project) / capture["session_id"]
+    )
     assert capture["sqlite_home"] == str(base_home)
     assert capture["auth_is_symlink"]
     assert not capture["sqlite_entry_exists"]
@@ -248,10 +254,12 @@ def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
         {
             "AI_HATS_CACHE_HOME": str(tmp_path / "cache"),
             "AI_HATS_CODEX_BARRIER_DIR": str(barrier),
+            "AI_HATS_CODEX_BASE_HOME": str(base_home),
             "AI_HATS_LIBRARY_ROOT": str(LIBRARY_DIR),
             "AI_HATS_NO_UPDATE_CHECK": "1",
             "AI_HATS_USER_HOME": str(tmp_path / "user-home"),
             "CODEX_HOME": str(base_home),
+            "CODEX_SQLITE_HOME": str(base_home),
             "PATH": os.pathsep.join([str(fake_bin), base_env.get("PATH", "")]),
             "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
         }
@@ -285,7 +293,9 @@ def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
         assert not Path(payload["codex_home"]).exists()
         assert payload["base_codex_home"] == str(base_home)
         assert payload["auth_is_symlink"] is True
-        assert payload["codex_home"] == str(Path(payload["cache_dir"]) / "codex-home")
+        assert payload["codex_home"] == str(
+            base_home / ".ai-hats" / "session-homes" / project_key(project) / payload["session_id"]
+        )
         assert payload["role_skill_exists"]
         assert payload["system_skill_is_symlink"]
         assert (

@@ -73,6 +73,7 @@ def _manifest(
         "session": {
             "id": session_id,
             "ai_hats_dir": str(ai_hats_dir(project_dir)),
+            "skills_root": str(skills_dir),
         },
         "hooks": hooks,
     }

@@ -74,7 +74,13 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
         raise _ManifestError(f"hook manifest at {path} carries no hooks mapping")
-    skills_root = (_resolved(cache_dir) / "codex-home" / "skills").resolve()
+    declared_skills_root = identity.get("skills_root")
+    if declared_skills_root is None:
+        skills_root = (_resolved(cache_dir) / "codex-home" / "skills").resolve()
+    elif not isinstance(declared_skills_root, str) or not Path(declared_skills_root).is_absolute():
+        raise _ManifestError(f"hook manifest at {path} carries an invalid skills root")
+    else:
+        skills_root = _resolved(declared_skills_root)
     for entries in hooks.values():
         if not isinstance(entries, list):
             continue

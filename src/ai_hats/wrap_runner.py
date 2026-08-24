@@ -37,6 +37,7 @@ from .session_artifacts import (
     consumed_session_id,
 )
 from .session_report import SessionReport
+from .session_run import SessionRun
 from .startup_checks import run_startup_checks
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
@@ -456,6 +457,22 @@ class WrapRunner:
         (``composition_seam.build_composition_payload``) — this runner only
         delivers ``self.payload``.
         """
+        with SessionRun.create(self.session_mgr) as run:
+            return self._run_session(
+                run,
+                extra_args=extra_args,
+                tags=tags,
+                pty_tap_factory=pty_tap_factory,
+            )
+
+    def _run_session(
+        self,
+        run: SessionRun,
+        *,
+        extra_args: list[str] | None,
+        tags: dict[str, str] | None,
+        pty_tap_factory: PtyTapFactory | None,
+    ) -> tuple[int, Session]:
         payload = self.payload
         provider = payload.provider
         provider_name = provider.name
@@ -468,12 +485,16 @@ class WrapRunner:
         # WrapRunner-only inline sweeps are gone from here. Create the session
         # before build_session_prompt so we can key the per-session cache dir on
         # session.session_id (HATS-294).
-        session = self.session_mgr.create_session()
+        session = run.session
+        run.defer(
+            "session cache",
+            lambda: _cleanup_session_cache(self.project_dir, session.session_id),
+        )
 
         # HATS-452 (D2): no override channel on WrapRunner — the payload's
         # composition flows straight into the builder.
         builder_notices: list[StartupNotice] = []
-        artifacts = BuiltArtifacts()
+        artifacts = BuiltArtifacts(resources=run)
         with provider.execution_context(self.project_dir):
             result = payload.result
             if provider.handles_artifact_categories():
@@ -509,6 +530,7 @@ class WrapRunner:
                 self.project_dir, result, session.session_id, provider, artifacts
             )
             session_env = artifacts.extra_env
+        builder_notices.extend(StartupNotice("warn", text) for text in artifacts.notices)
         _claim_session_cache(self.project_dir, session.session_id)
         session.init_audit(
             role=active_role,
@@ -754,12 +776,6 @@ class WrapRunner:
                                 pass
             except FinalizeAborted:
                 exit_code = 130
-
-            # HATS-294: drop the per-session cache dir (prompt + plugin/). A
-            # SIGKILL leaves it to the next run's sweep, which since HATS-1339
-            # reclaims on proof this pid is gone rather than after a TTL — safe
-            # only because _pty_spawn's hangup outlives no surface.
-            _cleanup_session_cache(self.project_dir, session.session_id)
 
         return exit_code, session
 

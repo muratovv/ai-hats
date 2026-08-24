@@ -30,6 +30,7 @@ from ai_hats_wt import IsolationMode, WorktreeManager
 from .check_snapshot import describe_checks
 from .session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from .session_report import SessionReport
+from .session_run import SessionRun
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
     SUBAGENT_EXIT_TIMEOUT,
@@ -215,7 +216,45 @@ class SubAgentRunner:
         (``timed_out``, ``error``, ``exit_code``) so the outer retry loop
         can inspect them without exception plumbing.
         """
-        session = self.session_mgr.create_session(parent_session=parent_session)
+        with SessionRun.create(
+            self.session_mgr,
+            parent_session=parent_session,
+        ) as run:
+            session, work_dir = self._run_session_attempt(
+                run,
+                task=task,
+                ticket_id=ticket_id,
+                model=model,
+                isolation_mode=isolation_mode,
+                tags=tags,
+                system_prompt_override=system_prompt_override,
+                timeout_s=timeout_s,
+            )
+
+        SurfaceGuard.post_flight_guard(
+            session,
+            work_dir,
+            self.payload.provider.name,
+        ).unwrap()
+        return session
+
+    def _run_session_attempt(
+        self,
+        run: SessionRun,
+        *,
+        task: str,
+        ticket_id: str,
+        model: str,
+        isolation_mode: str,
+        tags: dict[str, str],
+        system_prompt_override: str | None,
+        timeout_s: int,
+    ) -> tuple[Session, Path]:
+        session = run.session
+        run.defer(
+            "session cache",
+            lambda: _cleanup_session_cache(self.project_dir, session.session_id),
+        )
 
         # HATS-865: the ONE composition arrived in the payload (compose seam).
         role_name = self.payload.effective_role
@@ -243,8 +282,10 @@ class SubAgentRunner:
             session.session_id,
             run_mode=RunMode.AUTOMATE,
             policy=self.payload.policy,
-            artifacts=BuiltArtifacts(),
+            artifacts=BuiltArtifacts(resources=run),
         )
+        for warning in artifacts.notices:
+            session.log_sys(warning)
         _claim_session_cache(self.project_dir, session.session_id)
 
         # The gates this sub-agent runs under. Every AUTOMATE record ever written
@@ -486,10 +527,8 @@ class SubAgentRunner:
                 # task. Fail-open, so the sweep below always runs.
                 self._release_ownership_on_finish(session)
                 _ctx.__exit__(None, None, None)
-                _cleanup_session_cache(self.project_dir, session.session_id)
 
-        SurfaceGuard.post_flight_guard(session, work_dir, provider_name).unwrap()
-        return session
+        return session, work_dir
 
     def _release_ownership_on_finish(self, session: "Session") -> None:
         """Drop this finished session's ownership holds (HATS-1045).

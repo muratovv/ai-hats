@@ -14,6 +14,7 @@ will keep using.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -136,6 +137,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     asm.set_role("guest", provider_name="claude")
 
     captured: dict = {}
+    lifecycle: list[str] = []
 
     def _fake_sdk(options, initial_message, timeout_s=None, **kwargs):
         # Record the options' plugin entry plus snapshot the on-disk
@@ -162,7 +164,11 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
             error=None,
         )
 
-    monkeypatch.setattr(runtime_mod, "_cleanup_session_cache", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        runtime_mod,
+        "_cleanup_session_cache",
+        lambda *a, **kw: lifecycle.append("cache"),
+    )
     monkeypatch.setattr(
         "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking",
         _fake_sdk,
@@ -172,7 +178,25 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     from ai_hats_observe import SessionManager
     from ai_hats.paths import runs_dir
 
-    payload = build_composition_payload(project, role_override="guest")
+    class LifecycleProvider(ClaudeProvider):
+        def build_session_artifacts(self, project_dir, result, session_id, **kwargs):
+            artifacts = kwargs["artifacts"]
+            assert artifacts.resources is not None
+            artifacts.resources.defer(
+                "provider artifacts",
+                lambda: lifecycle.append("provider"),
+            )
+            return super().build_session_artifacts(
+                project_dir,
+                result,
+                session_id,
+                **kwargs,
+            )
+
+    payload = replace(
+        build_composition_payload(project, role_override="guest"),
+        provider=LifecycleProvider(),
+    )
     runner = runtime_mod.SubAgentRunner(
         project,
         payload,
@@ -185,5 +209,6 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     assert plugin["type"] == "local"
     assert Path(plugin["path"]) == captured["plugin_dir"]
     assert captured["plugin_skills"] == ["guest-only-skill"]
+    assert lifecycle == ["provider", "cache"]
     # The initial user message reached the SDK with the task text in it.
     assert "hi" in captured["initial_message"]

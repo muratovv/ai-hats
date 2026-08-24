@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 import tomllib
 from subprocess import CompletedProcess
 from pathlib import Path
@@ -9,8 +11,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from ai_hats.paths import session_cache_dir
+from ai_hats.paths import project_key, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.session_run import SessionRun
 from ai_hats_codex import CodexProvider
 from ai_hats_codex.provider import _readiness_warnings
 
@@ -289,16 +292,213 @@ def test_role_skills_activate_native_codex_home_with_shared_user_state(
         artifacts=BuiltArtifacts(),
     )
 
-    session_home = session_cache_dir(project, "sid-native") / "codex-home"
+    session_home = base_home / ".ai-hats" / "session-homes" / project_key(project) / "sid-native"
     assert artifacts.extra_env["CODEX_HOME"] == str(session_home)
     assert artifacts.extra_env["CODEX_SQLITE_HOME"] == str(base_home)
     assert artifacts.extra_env["AI_HATS_CODEX_BASE_HOME"] == str(base_home)
+    assert json.loads((session_home / ".ai-hats-session.json").read_text()) == {
+        "base_home": str(base_home),
+        "project_key": project_key(project),
+        "session_id": "sid-native",
+        "sqlite_home": str(base_home),
+        "version": 1,
+    }
     assert (session_home / "skills" / "release" / "SKILL.md").is_file()
+    assert (session_home / "sessions").is_symlink()
+    assert (session_home / "sessions").resolve() == base_home / "sessions"
     assert (session_home / "auth.json").is_symlink()
     assert (session_home / "auth.json").resolve() == base_home / "auth.json"
     assert (session_home / "config.toml").is_symlink()
     assert not any((session_home / path.name).exists() for path in sqlite_artifacts)
+    assert session_cache_dir(project, "sid-native") not in session_home.parents
     assert list(project.iterdir()) == []
+
+
+def test_session_run_normalizes_rollout_and_removes_home(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    rollout = base_home / "sessions/2026/08/24/rollout.jsonl"
+    rollout.parent.mkdir(parents=True)
+    rollout.write_text("thread")
+    database = base_home / "state_5.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)")
+    provider = CodexProvider()
+    run = SessionRun(SimpleNamespace(session_id="sid-cleanup", log_sys=lambda _message: None))
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "sid-cleanup",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+        session_home = provider.session_codex_home(project, "sid-cleanup")
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "INSERT INTO threads VALUES (?, ?)",
+                (
+                    "thread",
+                    str(session_home / "sessions" / rollout.relative_to(base_home / "sessions")),
+                ),
+            )
+
+    assert not session_home.exists()
+    with sqlite3.connect(database) as connection:
+        [(stored_path,)] = connection.execute("SELECT rollout_path FROM threads")
+    assert stored_path == str(rollout)
+
+
+def test_session_run_retains_home_when_rollout_target_is_missing(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    database = base_home / "state_5.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)")
+    provider = CodexProvider()
+    notices: list[str] = []
+    run = SessionRun(SimpleNamespace(session_id="sid-retained", log_sys=notices.append))
+
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "sid-retained",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+        session_home = provider.session_codex_home(project, "sid-retained")
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "INSERT INTO threads VALUES (?, ?)",
+                ("thread", str(session_home / "sessions/missing-rollout.jsonl")),
+            )
+
+    assert session_home.is_dir()
+    assert len(notices) == 1
+    assert "retained: 1 rollout reference(s) remain" in notices[0]
+
+
+def test_session_run_build_reconciles_crash_home_without_cache(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    rollout = base_home / "sessions/2026/08/24/rollout.jsonl"
+    rollout.parent.mkdir(parents=True)
+    rollout.write_text("thread")
+    database = base_home / "state_5.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)")
+    provider = CodexProvider()
+    provider.build_session_artifacts(
+        project,
+        _fake_result(skills=[_make_skill(tmp_path, "release")]),
+        "sid-crashed",
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+    session_home = provider.session_codex_home(project, "sid-crashed")
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO threads VALUES (?, ?)",
+            (
+                "thread",
+                str(session_home / "sessions" / rollout.relative_to(base_home / "sessions")),
+            ),
+        )
+    session_cache_dir(project, "sid-crashed").rmdir()
+
+    run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(),
+            "sid-current",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+
+    assert not session_home.exists()
+    with sqlite3.connect(database) as connection:
+        [(stored_path,)] = connection.execute("SELECT rollout_path FROM threads")
+    assert stored_path == str(rollout)
+
+
+def test_session_run_build_skips_home_with_live_session_cache(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    rollout = base_home / "sessions/2026/08/24/rollout.jsonl"
+    rollout.parent.mkdir(parents=True)
+    rollout.write_text("thread")
+    database = base_home / "state_5.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE threads (id TEXT, rollout_path TEXT)")
+
+    provider = CodexProvider()
+    provider.build_session_artifacts(
+        project,
+        _fake_result(skills=[_make_skill(tmp_path, "release")]),
+        "sid-running",
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+    session_home = provider.session_codex_home(project, "sid-running")
+    stored_path = str(session_home / "sessions" / rollout.relative_to(base_home / "sessions"))
+    with sqlite3.connect(database) as connection:
+        connection.execute("INSERT INTO threads VALUES (?, ?)", ("thread", stored_path))
+
+    run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
+    with run:
+        artifacts = provider.build_session_artifacts(
+            project,
+            _fake_result(),
+            "sid-current",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+
+    assert artifacts.notices == []
+    assert session_home.is_dir()
+    with sqlite3.connect(database) as connection:
+        [(remaining_path,)] = connection.execute("SELECT rollout_path FROM threads")
+    assert remaining_path == stored_path
+
+
+def test_session_run_build_surfaces_recovery_failure(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+
+    class RecoveryFailureProvider(CodexProvider):
+        def _recover_session_homes(
+            self,
+            _project_dir: Path,
+            _session_id: str,
+        ) -> list[str]:
+            raise OSError("managed root unavailable")
+
+    provider = RecoveryFailureProvider()
+    run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
+    with run:
+        artifacts = provider.build_session_artifacts(
+            project,
+            _fake_result(),
+            "sid-current",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+
+    assert artifacts.notices == [
+        "Codex session-home recovery failed: OSError: managed root unavailable"
+    ]
 
 
 def test_role_skills_override_collisions_and_preserve_other_base_skills(tmp_path: Path) -> None:
@@ -370,7 +570,7 @@ def test_nested_launch_keeps_original_base_home_and_explicit_sqlite_home(
     assert (session_home / "config.toml").resolve() != outer_overlay / "config.toml"
 
 
-def test_recursive_base_home_is_rejected_before_session_writes(
+def test_cache_backed_base_home_is_rejected_before_session_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = tmp_path / "project"
@@ -381,7 +581,7 @@ def test_recursive_base_home_is_rejected_before_session_writes(
     provider = CodexProvider()
 
     with pytest.raises(
-        RuntimeError, match="Codex base home must be outside the ai-hats session home"
+        RuntimeError, match="Codex base home must be disjoint from the ai-hats cache home"
     ) as raised:
         provider.build_session_prompt(
             project,
@@ -390,7 +590,52 @@ def test_recursive_base_home_is_rejected_before_session_writes(
         )
 
     assert str(cache_home) not in str(raised.value)
-    assert not provider.session_codex_home(project, "sid-recursive").exists()
+    assert not (cache_home / ".ai-hats").exists()
+
+
+def test_cache_backed_sqlite_home_is_rejected_before_session_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    cache_home = tmp_path / "cache-home"
+    monkeypatch.setenv("CODEX_SQLITE_HOME", str(cache_home / "sqlite"))
+    provider = CodexProvider()
+    session_home = provider.session_codex_home(project, "sid-cache-sqlite")
+
+    with pytest.raises(
+        RuntimeError, match="Codex SQLite home must be outside the ai-hats cache home"
+    ):
+        provider.build_session_prompt(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "sid-cache-sqlite",
+        )
+
+    assert not session_home.exists()
+
+
+def test_managed_session_sqlite_home_is_rejected_before_session_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    sqlite_home = base_home / ".ai-hats" / "session-homes" / "sqlite"
+    monkeypatch.setenv("CODEX_SQLITE_HOME", str(sqlite_home))
+    provider = CodexProvider()
+    session_home = provider.session_codex_home(project, "sid-managed-sqlite")
+
+    with pytest.raises(
+        RuntimeError, match="Codex SQLite home must be outside managed session homes"
+    ):
+        provider.build_session_prompt(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "sid-managed-sqlite",
+        )
+
+    assert not session_home.exists()
 
 
 def test_parallel_sessions_have_disjoint_skill_trees(tmp_path: Path) -> None:

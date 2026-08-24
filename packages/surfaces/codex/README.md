@@ -13,17 +13,18 @@ $ ai-hats -p codex
 - The composed role and always-on rules are passed per run through Codex's
   `developer_instructions` configuration override. No `AGENTS.md` or project
   `.codex` file is created or changed.
-- Skills are copied to `codex-home/skills` inside ai-hats' external per-session
-  cache. For a role with skills, that directory is registered through a
-  session-scoped `CODEX_HOME`, so Codex exposes the selected skills through its
-  `$` picker and native `skills/list` registry. The compact name, description,
-  and exact `SKILL.md` path index remains as a fallback. Each session gets its
-  own real skills tree, so parallel roles do not overwrite one another.
-- Composed runtime guards are copied into that same session cache. Stable
-  per-run Codex hook definitions dispatch `PreToolUse`, `PermissionRequest`,
-  and `PostToolUse` to the current session's manifest; the command contains no
-  project path or session ID, so concurrent sessions stay isolated and a
-  reviewed hook hash remains stable.
+- Skills are copied to a durable session home at
+  `<base CODEX_HOME>/.ai-hats/session-homes/<project-key>/<session-id>/skills`.
+  That directory is registered through a session-scoped `CODEX_HOME`, so Codex
+  exposes the selected skills through its `$` picker and native `skills/list`
+  registry. The compact name, description, and exact `SKILL.md` path index
+  remains as a fallback. Each session gets its own real skills tree, so
+  parallel roles do not overwrite one another.
+- Composed runtime guard manifests remain in ai-hats' external per-session
+  cache. Stable per-run Codex hook definitions dispatch `PreToolUse`,
+  `PermissionRequest`, and `PostToolUse` to the current session's manifest; the
+  command contains no project path or session ID, so concurrent sessions stay
+  isolated and a reviewed hook hash remains stable.
 - Interactive sessions use `workspace-write` with `on-request` approvals.
   Automated sessions use `codex ... exec --json --ephemeral` with
   `workspace-write` and `never`, because they cannot answer approval prompts.
@@ -43,13 +44,24 @@ An agent cannot grant itself either form of consent from inside its tool command
 Codex's existing user authentication, configuration, and resume state remain
 shared. When the role has skills, the plugin redirects `CODEX_HOME` to a real
 session directory and projects the base Codex home's non-skill, non-SQLite
-entries through symlinks; it neither reads nor copies their contents. The
-session's real `skills/` directory contains copied role skills plus symlinks to
-non-conflicting base skills, with the role copy winning a same-name collision.
-`CODEX_SQLITE_HOME` defaults SQLite-backed state to the base home, while a user
-`sqlite_home` setting keeps Codex's documented precedence. Session cleanup
-removes the overlay and its links, not their targets. A role with no composed
-skills keeps the incoming Codex environment unchanged.
+entries through symlinks; it neither reads nor copies their contents. The base
+`sessions/` directory is also projected into the durable home, while
+`CODEX_SQLITE_HOME` keeps SQLite-backed state in its configured shared home.
+SQLite homes inside the ai-hats cache or managed session-home tree are rejected
+before launch because either location can be removed during lifecycle cleanup.
+The session's real `skills/` directory contains copied role skills plus
+symlinks to non-conflicting base skills, with the role copy winning a same-name
+collision.
+
+On graceful exit, ai-hats rewrites only rollout paths that start with that
+session home's exact path and point to an existing file under the base
+`sessions/` directory. It removes the durable home only after SQLite has no
+references to it. If the process or host crashes before cleanup, the durable
+home remains, so the stored lexical rollout path still resolves and native
+Codex resume continues to work. A later launch may canonicalize and remove that
+home after its ai-hats session cache is gone. An invalid manifest, unknown
+SQLite schema, or missing rollout target retains the home and emits a warning.
+A role with no composed skills keeps the incoming Codex environment unchanged.
 
 Codex requires explicit review of non-managed hook definitions. On the first
 hook-enabled launch, inspect the stable ai-hats dispatcher with `/hooks` and
