@@ -127,9 +127,10 @@ the number is replaced rather than defended, and §7 carries the measurement.
 ## 5. How a gate goes green without the property
 
 Every entry below was found on **this epic's own gates**: the first eight by review,
-after the gate was written and believed, the ninth at design time, and the tenth by a
-red check that read green. Read it before calling a gate done, and add the row your own
-incident produces — a taxonomy grows by incident, not by imagination.
+after the gate was written and believed, the ninth at design time, the tenth by a red
+check that read green, and the eleventh by a status file that read green two days after
+it was written. Read it before calling a gate done, and add the row your own incident
+produces — a taxonomy grows by incident, not by imagination.
 
 1. **Cardinality instead of the set.** The assert compares a count, so converting one
    offender while adding another leaves it green — and the offender list, which only
@@ -207,7 +208,20 @@ incident produces — a taxonomy grows by incident, not by imagination.
     assert the property is actually broken first (here: the registry is non-empty after
     the import) and only then run the gate.
 
-Standing rule behind all ten (ADR-0026 D3): a gate closes a row only by asserting the
+11. **The verdict was never produced by this run.** Row 10's sibling one step later:
+    there the violation never lands, here the *result* never came from the run it is
+    read against. `/tmp/f_suite.rc` was read for a suite verdict and answered green —
+    the file was two days old, left by an earlier session, and the suite it was
+    supposed to describe was still running. It was caught only by the file's mtime and
+    a `pgrep`; no wrong conclusion was drawn, but what a green like that certifies is
+    what row 10 certifies, a gate that never bit. Nothing in the shape is `/tmp`'s: a
+    stale wheel, a cached import and a baseline JSON from another branch all read as
+    evidence of a run that did not produce them.
+    *Fix:* an artefact read as evidence is proven to belong to this run before any
+    conclusion rests on it — a fresh path per run, or its mtime checked against the
+    run's start.
+
+Standing rule behind all eleven (ADR-0026 D3): a gate closes a row only by asserting the
 **absence of a second path**. A test that asserts a property of behaviour stays true
 with several owners, so it cannot close anything.
 

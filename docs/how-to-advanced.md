@@ -82,7 +82,7 @@ That's it — `id: echo` matches the string you passed to `register()`.
 
 ### 1.3 Run it
 
-User-facing CLI for `pipeline run` is on the roadmap (HATS-268). Until it lands, drive the harness from Python directly via `run_yaml`:
+User-facing CLI for `pipeline run` is on the roadmap (HATS-1797). Until it lands, drive the harness from Python directly via `run_yaml`:
 
 ```python
 from pathlib import Path
