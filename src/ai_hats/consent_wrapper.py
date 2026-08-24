@@ -155,10 +155,19 @@ def _spawn(command: list[str], environ: Mapping[str, str]) -> int:
     return subprocess.run(command, env=dict(environ), check=False).returncode  # noqa: S603
 
 
+# One spelling of the wrapper's layout. The predicate below recognises what
+# `materialize_consent_wrappers` writes, so the two must never drift: a rename
+# on one side alone silently disarms BOTH recursion barriers (HATS-1809).
+_WRAPPER_DIR_NAME = "consent-wrapper"
+_WRAPPER_BIN_NAME = "bin"
+
+
 def _is_consent_wrapper_path(path: str | Path) -> bool:
     resolved = Path(path).resolve()
-    return (resolved.name == "bin" and resolved.parent.name == "consent-wrapper") or (
-        resolved.parent.name == "bin" and resolved.parent.parent.name == "consent-wrapper"
+    # the bin dir itself, or an executable sitting in it
+    return any(
+        candidate.name == _WRAPPER_BIN_NAME and candidate.parent.name == _WRAPPER_DIR_NAME
+        for candidate in (resolved, resolved.parent)
     )
 
 
@@ -286,7 +295,7 @@ def materialize_consent_wrappers(
             )
         originals[surface] = original
 
-    root = session_cache_dir(project_dir, session_id) / "consent-wrapper"
+    root = session_cache_dir(project_dir, session_id) / _WRAPPER_DIR_NAME
     config_path = root / "config.json"
     artifacts.port.write_text(
         config_path,
@@ -300,7 +309,7 @@ def materialize_consent_wrappers(
         )
         + "\n",
     )
-    bin_dir = root / "bin"
+    bin_dir = root / _WRAPPER_BIN_NAME
     for surface in surfaces:
         wrapper = bin_dir / surface
         artifacts.port.write_executable(wrapper, _wrapper_script(surface))
