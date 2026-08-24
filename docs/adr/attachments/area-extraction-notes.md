@@ -1,4 +1,4 @@
-# How to extract an area
+# Extracting an area
 
 Working notes for the HATS-1586 epic: the conventions an agent follows when it turns a
 folder under `src/ai_hats/` into an **area** — a declared surface with its own tests and

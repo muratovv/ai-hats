@@ -8,7 +8,7 @@ contract declaration (open-registry convention).
 
 Pipeline names are not here. Which pipelines exist is knowledge about how
 this product uses the area, so it lives in ``ai_hats/pipeline_catalog.py``
-outside it (ADR-0026 D14, and §6 of docs/how-to-extract-an-area.md).
+outside it (ADR-0026 D14, and §6 of docs/adr/attachments/area-extraction-notes.md).
 """  # comment-length: allow — the admission criterion is what keeps this file from regrowing
 
 # Seeded by CLI / runners into the initial state.

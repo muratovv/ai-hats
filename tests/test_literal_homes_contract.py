@@ -124,7 +124,7 @@ def test_the_pipeline_names_are_not_the_area_s_to_declare():
 
     The eleven ``PIPELINE_*`` constants this test used to pin were an enumeration of
     the *application's* pipelines living inside the area — §6 of
-    docs/how-to-extract-an-area.md — duplicating ``ai_hats/pipeline_catalog.py``. The
+    docs/adr/attachments/area-extraction-notes.md — duplicating ``ai_hats/pipeline_catalog.py``. The
     names are held against the shipped YAML by
     ``tests/test_area_boundary.py::test_every_shipped_pipeline_is_declared_in_the_catalog``,
     which is a stronger guard than a literal pin: it cannot go green on a pipeline
@@ -139,7 +139,7 @@ def _declared_steps() -> dict[str, str]:
     Read from the file, not from ``importlib.metadata``: the installed metadata is a
     *build* of this block, so a venv that has not been re-synced since the block was
     edited answers for the previous edit — this gate would then pass on a pyproject
-    nobody checked (docs/how-to-extract-an-area.md §5, row 4). Whether the block
+    nobody checked (docs/adr/attachments/area-extraction-notes.md §5, row 4). Whether the block
     reached a built distribution is a different subject, and it has its own tier
     (``tests/e2e/test_step_entry_point_resolution.py``).
     """  # comment-length: allow — which tree this reads is the point of the helper

@@ -40,7 +40,7 @@ def test_the_typed_fields_are_the_pinned_ones() -> None:
         f"{sorted(PINNED_TYPED_FIELDS)}. A new one needs its funnel key added to "
         "``contract._TYPED_HERE`` so ``from_state`` lifts it out of ``produced`` — "
         "otherwise the same value is readable as a field and as a raw entry, and "
-        "the next caller picks one at random (docs/how-to-extract-an-area.md §2)."
+        "the next caller picks one at random (docs/adr/attachments/area-extraction-notes.md §2)."
     )
 
 

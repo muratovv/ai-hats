@@ -125,8 +125,9 @@ _ASSEMBLY_CONSTRUCTORS = frozenset({"build", "Pipeline"})
 
 # comment-length: allow — an exemption has to say what it still lets past, or it is a hole
 # The sanctioned assemblies, named as ``(module, function)`` — the call, not the file
-# (§5 row 6 of docs/how-to-extract-an-area.md). ``loader.load_pipeline`` *is* the YAML
-# path rather than a mirror of it, and ``pipeline.build`` is the constructor's own body.
+# (§5 row 6 of docs/adr/attachments/area-extraction-notes.md). ``loader.load_pipeline``
+# *is* the YAML path rather than a mirror of it, and ``pipeline.build`` is the
+# constructor's own body.
 # Exempting their **modules** is what this gate did before, and it made a second, non-YAML
 # assembly written anywhere inside ``loader.py`` invisible. What the narrowing still lets
 # past, so it can be argued with: a second assembly written into the body of one of these
