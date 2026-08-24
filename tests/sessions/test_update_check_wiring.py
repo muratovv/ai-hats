@@ -8,7 +8,6 @@ import pytest
 
 from ai_hats.pipeline import registry
 from ai_hats.pipeline.loader import load_pipeline
-from ai_hats.pipeline.presets import execute_pipeline
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -55,12 +54,6 @@ def test_human_yaml_ends_with_render_update_banner():
     pipeline = load_pipeline(PIPELINES_DIR / "human.yaml")
     step_names = [s.io.name for s in pipeline.steps]
     assert step_names[-1] == "render_update_banner", step_names
-
-
-def test_presets_execute_pipeline_has_both_steps():
-    step_names = [s.io.name for s in execute_pipeline.steps]
-    assert step_names[0] == "check_update_async"
-    assert step_names[-1] == "render_update_banner"
 
 
 @pytest.mark.parametrize(

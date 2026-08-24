@@ -4,7 +4,7 @@
 pre-865: facade routing (HATS-456/501), explicit-role existence validation
 (``RoleNotFoundError``, HATS-507), and the compose-errors raise. Structural
 tests — Assembler/facade are mocked; the layered-composition behaviour is
-pinned in ``tests/pipeline/test_compose_overlay_propagation.py``.
+pinned in ``tests/sessions/test_compose_overlay_propagation.py``.
 """
 
 from __future__ import annotations

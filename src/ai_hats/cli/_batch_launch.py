@@ -17,23 +17,15 @@ import click
 
 from ai_hats_observe.artifacts import METRICS_JSON
 from ai_hats_wt import IsolationMode
-from ..pipeline.keys import (
-    KEY_COMPOSITION,
-    KEY_EXIT_CODE,
-    KEY_INTERACTIVE,
-    KEY_ISOLATION,
-    KEY_MODEL,
-    KEY_PROMPT_PATH,
-    KEY_PROJECT_DIR,
-    KEY_ROLE,
-    KEY_SESSION_DIR,
-    KEY_SESSION_ID,
-    KEY_SESSION_MGR,
-    KEY_TAGS,
-    KEY_TICKET,
-    KEY_TRACER_FACTORY,
-    PIPELINE_EXECUTE,
+from ..pipeline import run_pipeline
+from ..session_policy import (
+    Automate,
+    MaterializedRole,
+    SessionOutcome,
+    SessionRecording,
+    SessionRunParams,
 )
+from ..pipeline_catalog import EXECUTE
 from ._helpers import console
 
 
@@ -57,41 +49,44 @@ def run_batch(
     """
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
-    from ..pipeline.harness import PipelineHarness
 
     # HATS-1228: the seam's typed errors (unknown role / unknown provider / no
     # provider) render at the root group — cli/_helpers.dispatch_friendly_error.
-    with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
-        final = h.run(
-            {
-                KEY_ROLE: role,
-                KEY_INTERACTIVE: False,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(task),
-                KEY_MODEL: model,
-                KEY_ISOLATION: isolation,
-                KEY_TICKET: ticket,
-                KEY_TAGS: tags or None,
-                KEY_COMPOSITION: build_composition_payload(
+    result = run_pipeline(
+        EXECUTE,
+        SessionRunParams(
+            project_dir=project_dir,
+            role=MaterializedRole(
+                name=role,
+                composition=build_composition_payload(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
                     interactive=False,
                 ),
-                # HATS-867: the CLI (integrator) injects the observe writer
-                # handles — runners no longer construct them.
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
-        )
+            ),
+            # HATS-867: the CLI (integrator) injects the observe writer handles —
+            # runners no longer construct them.
+            recording=SessionRecording(
+                manager=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            ),
+            annotations=tags,
+            harness=Automate(
+                prompt=task,
+                model=model,
+                isolation=IsolationMode(isolation),
+                ticket_id=ticket,
+            ),
+        ),
+    )
 
-    _report(final, as_json=as_json)
+    _report(SessionOutcome.of(result), as_json=as_json)
 
 
-def _report(final: dict, *, as_json: bool) -> NoReturn:
+def _report(result: SessionOutcome, *, as_json: bool) -> NoReturn:
     """Print the session summary (or its JSON) and exit with the agent's code."""
-    session_id = final[KEY_SESSION_ID]
-    session_dir = final[KEY_SESSION_DIR]
+    session_id, session_dir = result.require_session()
     metrics_path = session_dir / METRICS_JSON
     metrics: dict = {}
     if metrics_path.exists():
@@ -111,4 +106,4 @@ def _report(final: dict, *, as_json: bool) -> NoReturn:
         console.print(f"[green]Sub-agent completed[/]: {session_id}")
         console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(int(final.get(KEY_EXIT_CODE, metrics.get("exit_code", 1))))
+    sys.exit(result.exit_code_or(int(metrics.get("exit_code", 1))))

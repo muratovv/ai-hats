@@ -82,7 +82,7 @@ That's it — `id: echo` matches the string you passed to `register()`.
 
 ### 1.3 Run it
 
-User-facing CLI for `pipeline run` is on the roadmap (HATS-268). Until it lands, drive the harness from Python directly via `run_yaml`:
+User-facing CLI for `pipeline run` is on the roadmap (HATS-1797). Until it lands, drive the harness from Python directly via `run_yaml`:
 
 ```python
 from pathlib import Path
@@ -132,10 +132,14 @@ For full value reprs (truncated at 120 chars), add `AI_HATS_PIPELINE_TRACE_VALUE
 If your `register("compose_role", ...)` collides with a built-in name, harness entry raises `StepRegistryError`:
 
 ```
-ai_hats.pipeline.registry.StepRegistryError: 'step already registered: compose_role'
+ai_hats.pipeline.registry.StepRegistryError: "step already registered: 'compose_role' is a built-in,
+advertised under 'ai_hats.steps' as ['ai_hats.pipeline.steps.compose:ComposeRole'].
+Overriding a built-in is not supported — pick a different id."
 ```
 
 **Pick a different name** — overriding built-ins is intentionally not supported (silent overrides are bad debugging surface).
+
+The refusal does not depend on whether anything has used that built-in yet. Built-in ids are *declared* under the `ai_hats.steps` entry-point group and imported only when a pipeline names one, so `register` refuses against the declared ids, not just the imported ones (HATS-1799).
 
 To see all registered step ids:
 

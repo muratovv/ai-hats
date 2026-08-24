@@ -185,7 +185,7 @@ def test_phase1_failure_aborts_phase2(project_dir: Path, mock_runners, monkeypat
     # Re-bind SubAgentRunner to a failing stub for this test. The default
     # `mock_runners` stub returns exit_code=0; we need exit_code=1 to
     # exercise the fail-closed branch.
-    from tests.pipeline.conftest import _StubSession
+    from tests.sessions.conftest import _StubSession
     import ai_hats.runtime as rt
 
     class _FailingSubAgentRunner:

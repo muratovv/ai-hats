@@ -531,11 +531,10 @@ PipelineHarness("smoke", project_dir).run({"composition": payload})
 
 > **Limitation today**: there is no public CLI flag to invoke an arbitrary
 > custom pipeline by name. Custom pipelines can only be launched from Python
-> via `PipelineHarness` as above. A public
-> `ai-hats pipeline run <name>` command is planned under HATS-268
-> (epic HATS-095: developer experience & tooling). Until that lands,
-> custom pipelines are useful mainly as scaffolding for future engine work,
-> not as a day-to-day extension point.
+> via `PipelineHarness` as above. A public `ai-hats pipeline run <name>`
+> command is planned under HATS-1797. Until that lands, custom pipelines are
+> useful mainly as scaffolding for future engine work, not as a day-to-day
+> extension point.
 
 For the step contract (inputs, outputs, failure policy) see [3].
 
@@ -548,7 +547,7 @@ pipeline YAML, a custom step, or any change to ai-hats. Ship a **role** and an
 a shell function.
 
 This is the recommended path for plugin-style verbs while the
-[generic `ai-hats run <pipeline>` command](#custom-pipelines-advanced) (HATS-268)
+[generic `ai-hats run <pipeline>` command](#custom-pipelines-advanced) (HATS-1797)
 is in flight.
 
 ### Worked example: `rebalance long` for a finance plugin

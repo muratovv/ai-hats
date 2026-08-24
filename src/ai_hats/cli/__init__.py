@@ -263,18 +263,14 @@ def _launch_session(
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
-    from ..pipeline.harness import PipelineHarness
-    from ..pipeline.keys import (
-        KEY_COMPOSITION,
-        KEY_EXIT_CODE,
-        KEY_EXTRA_ARGS,
-        KEY_INTERACTIVE,
-        KEY_PROJECT_DIR,
-        KEY_ROLE,
-        KEY_SESSION_MGR,
-        KEY_TAGS,
-        KEY_TRACER_FACTORY,
-        PIPELINE_HUMAN,
+    from ..pipeline import run_pipeline
+    from ..pipeline_catalog import HUMAN
+    from ..session_policy import (
+        Hitl,
+        MaterializedRole,
+        SessionOutcome,
+        SessionRecording,
+        SessionRunParams,
     )
     from ._helpers import _project_dir
 
@@ -282,30 +278,33 @@ def _launch_session(
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
-    with PipelineHarness(PIPELINE_HUMAN, project_dir) as h:
-        # HATS-865: compose ONCE here (effective-role resolution + the
-        # first-run set_role side effect live in the seam) and seed the
-        # payload into the funnel; the launch step hands it to WrapRunner.
-        final = h.run(
-            {
-                KEY_ROLE: role,
-                KEY_INTERACTIVE: True,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_EXTRA_ARGS: list(extra_args or []),
-                KEY_TAGS: tags,
-                KEY_COMPOSITION: build_composition_payload(
+    result = run_pipeline(
+        HUMAN,
+        SessionRunParams(
+            project_dir=project_dir,
+            # HATS-865: compose ONCE here (effective-role resolution + the
+            # first-run set_role side effect live in the seam) and seed the
+            # payload into the funnel; the launch step hands it to WrapRunner.
+            role=MaterializedRole(
+                name=role,
+                composition=build_composition_payload(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
                     interactive=True,
                 ),
-                # HATS-867: the CLI (integrator) injects the observe writer
-                # handles — runners no longer construct them.
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            }
-        )
-    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
+            ),
+            # HATS-867: the CLI (integrator) injects the observe writer
+            # handles — runners no longer construct them.
+            recording=SessionRecording(
+                manager=make_session_manager(project_dir),
+                tracer_factory=SidecarTracer,
+            ),
+            annotations=tags,
+            harness=Hitl(extra_args=tuple(extra_args or ())),
+        ),
+    )
+    sys.exit(SessionOutcome.of(result).exit_code_or(1))
 
 
 # ----- Command registration -----

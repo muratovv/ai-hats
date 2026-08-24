@@ -26,16 +26,9 @@ from ai_hats_observe.artifacts import (
     REASONING_LOG,
     TRANSCRIPT_TXT,
 )
-from .pipeline.keys import (
-    KEY_CLAUDE_SESSION_ID,
-    KEY_ERRORS,
-    KEY_EXIT_CODE,
-    KEY_PROJECT_DIR,
-    KEY_SESSION_DIR,
-    KEY_SESSION_ID,
-    PIPELINE_FINALIZE_HITL,
-    PIPELINE_FINALIZE_SUBAGENT,
-)
+from .pipeline import PipelineConfig, PipelineResult, SessionRef, run_subpipeline
+from .pipeline_catalog import FINALIZE_HITL, FINALIZE_SUBAGENT
+from .session_policy import FinalizeRunParams
 
 # HATS-970: the pre-launch startup-notice surface moved to its own module;
 # re-exported here so existing ``from .runtime_common import …`` sites keep working.
@@ -650,7 +643,7 @@ def _finalize_session_basic(
     return trace_stats
 
 
-def _log_pipeline_errors(pipeline_name: str, final_state: dict) -> None:
+def _log_pipeline_errors(config: PipelineConfig, result: PipelineResult) -> None:
     """Surface per-step errors swallowed by ``failure_policy=continue``.
 
     Pipeline runner records continue-policy failures in
@@ -661,15 +654,41 @@ def _log_pipeline_errors(pipeline_name: str, final_state: dict) -> None:
     silently no-opping due to a fresh bug) we'd see nothing — hence the
     explicit drain.
     """
-    errors = final_state.get(KEY_ERRORS) or {}
-    for step_name, exc in errors.items():
+    for step_name, exc in result.errors.items():
         logger.warning(
             "%s step %s failed: %s: %s",
-            pipeline_name,
+            config.name,
             step_name,
             type(exc).__name__,
             exc,
         )
+
+
+def _finalize_params(
+    session: "Session",
+    *,
+    claude_session_id: str,
+    project_dir: Path,
+    exit_code: int,
+    static_cost_analyzer=None,
+    session_factory=None,
+    audit_writer_factory=None,
+    transcript_resolver=None,
+) -> FinalizeRunParams:
+    """The two finalize pipelines take the same state; only the YAML differs."""
+    return FinalizeRunParams(
+        session=SessionRef(
+            id=session.session_id,
+            dir=session.session_dir,
+            provider_session_id=claude_session_id,
+        ),
+        project_dir=project_dir,
+        exit_code=exit_code,
+        static_cost_analyzer=static_cost_analyzer,
+        session_factory=session_factory,
+        audit_writer_factory=audit_writer_factory,
+        transcript_resolver=transcript_resolver,
+    )
 
 
 def _run_finalize_hitl(
@@ -691,28 +710,22 @@ def _run_finalize_hitl(
     ``static_cost_analyzer`` (HATS-865): runner-threaded carve-out so
     ``compute_usage`` can cross-check always-on cost without composing.
     """
-    from .pipeline.loader import load_core_pipeline
-    from .pipeline.pipeline import run as run_pipeline
-
-    initial: dict = {
-        KEY_SESSION_ID: session.session_id,
-        KEY_SESSION_DIR: session.session_dir,
-        KEY_CLAUDE_SESSION_ID: claude_session_id,
-        KEY_PROJECT_DIR: project_dir,
-        KEY_EXIT_CODE: exit_code,
-    }
-    if static_cost_analyzer is not None:
-        initial["static_cost_analyzer"] = static_cost_analyzer
-    # HATS-867: observe factories for make_audit — None-filtered (funnel v-contract).
-    if session_factory is not None:
-        initial["session_factory"] = session_factory
-    if audit_writer_factory is not None:
-        initial["audit_writer_factory"] = audit_writer_factory
-    if transcript_resolver is not None:
-        initial["transcript_resolver"] = transcript_resolver
-    pipeline = load_core_pipeline(PIPELINE_FINALIZE_HITL)
-    final_state = run_pipeline(pipeline, initial=initial)
-    _log_pipeline_errors(PIPELINE_FINALIZE_HITL, final_state)
+    _log_pipeline_errors(
+        FINALIZE_HITL,
+        run_subpipeline(
+            FINALIZE_HITL,
+            _finalize_params(
+                session,
+                claude_session_id=claude_session_id,
+                project_dir=project_dir,
+                exit_code=exit_code,
+                static_cost_analyzer=static_cost_analyzer,
+                session_factory=session_factory,
+                audit_writer_factory=audit_writer_factory,
+                transcript_resolver=transcript_resolver,
+            ),
+        ),
+    )
 
 
 def _run_finalize_subagent(
@@ -732,25 +745,19 @@ def _run_finalize_subagent(
     omits ``run_session_end`` to preserve pre-HATS-535 behaviour
     (no SESSION_END hooks, no auto-retro for sub-agents).
     """
-    from .pipeline.loader import load_core_pipeline
-    from .pipeline.pipeline import run as run_pipeline
-
-    initial: dict = {
-        KEY_SESSION_ID: session.session_id,
-        KEY_SESSION_DIR: session.session_dir,
-        KEY_CLAUDE_SESSION_ID: claude_session_id,
-        KEY_PROJECT_DIR: project_dir,
-        KEY_EXIT_CODE: exit_code,
-    }
-    if static_cost_analyzer is not None:
-        initial["static_cost_analyzer"] = static_cost_analyzer
-    # HATS-867: observe factories for make_audit — None-filtered (funnel v-contract).
-    if session_factory is not None:
-        initial["session_factory"] = session_factory
-    if audit_writer_factory is not None:
-        initial["audit_writer_factory"] = audit_writer_factory
-    if transcript_resolver is not None:
-        initial["transcript_resolver"] = transcript_resolver
-    pipeline = load_core_pipeline(PIPELINE_FINALIZE_SUBAGENT)
-    final_state = run_pipeline(pipeline, initial=initial)
-    _log_pipeline_errors(PIPELINE_FINALIZE_SUBAGENT, final_state)
+    _log_pipeline_errors(
+        FINALIZE_SUBAGENT,
+        run_subpipeline(
+            FINALIZE_SUBAGENT,
+            _finalize_params(
+                session,
+                claude_session_id=claude_session_id,
+                project_dir=project_dir,
+                exit_code=exit_code,
+                static_cost_analyzer=static_cost_analyzer,
+                session_factory=session_factory,
+                audit_writer_factory=audit_writer_factory,
+                transcript_resolver=transcript_resolver,
+            ),
+        ),
+    )

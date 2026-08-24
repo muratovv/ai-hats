@@ -23,7 +23,8 @@ from .consent_wrapper import materialize_consent_wrappers
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .pipeline.keys import PIPELINE_FINALIZE_HITL
+from .pipeline import warm
+from .pipeline_catalog import FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
 from .check_snapshot import describe_checks, legacy_launch_notices, surface_skew_notice
@@ -620,22 +621,18 @@ class WrapRunner:
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 
-        # HATS-566: eager-load finalize pipeline NOW so its YAML is
-        # parsed against the step registry that's currently in memory.
-        # If we deferred this to the `finally` block (where
-        # ``_run_finalize_hitl`` lives), a long-running session that
-        # straddles a working-tree update (editable install + ``git
-        # pull`` mid-session) would read the *new* YAML against the
-        # *old* registry — see the StepRegistryError observed in
-        # session 20260527-085647-1 after the HATS-530 merge landed
-        # while the wrap was still alive. The cache in
-        # ``loader._CORE_PIPELINE_CACHE`` makes the later
-        # ``load_core_pipeline`` call inside ``_run_finalize_hitl`` a
-        # no-op lookup.
+        # HATS-566: build the finalize pipeline NOW, against the YAML and the step
+        # modules this process holds today. Left to the `finally` block (where
+        # ``_run_finalize_hitl`` runs), a session that straddles a working-tree
+        # update — editable install plus a mid-session ``git pull`` — reads the
+        # *new* YAML against the *old* registry; see the StepRegistryError in
+        # session 20260527-085647-1, after the HATS-530 merge landed while the wrap
+        # was still alive. HATS-1783 widened what this pins: resolving an id now
+        # imports its step module too, so warming freezes the modules as well as
+        # the file. Fail-open — a session does not end because its epilogue could
+        # not be prepared, and the notice says so.
         try:
-            from .pipeline.loader import load_core_pipeline
-
-            load_core_pipeline(PIPELINE_FINALIZE_HITL)
+            warm(FINALIZE_HITL)
         except Exception as exc:
             logger.warning("finalize-hitl preload failed", exc_info=True)
             summary = f"finalize-hitl preload failed: {type(exc).__name__}: {exc}"

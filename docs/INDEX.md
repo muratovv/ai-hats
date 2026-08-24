@@ -55,6 +55,9 @@ tool when a question goes beyond built-in instructions.
 ## Other docs
 
 - [`adr/`](adr/) — architecture decision records (one file per decision).
+- [`adr/attachments/`](adr/attachments/) — material an ADR leans on that is neither the
+  decision nor user documentation: working context, measured baselines, corpora
+  ([README](adr/attachments/README.md)).
 - [`integrations/`](integrations/) — provider-specific notes (e.g. Google Workspace CLI setup).
 - [`assets/`](assets/) — diagrams, logo, demo gif (referenced from README and ARCHITECTURE).
 

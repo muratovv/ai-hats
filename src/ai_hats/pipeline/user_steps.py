@@ -20,7 +20,9 @@ Conventions:
 
 Errors propagate: a broken module surfaces ``ImportError`` /
 ``StepRegistryError`` / whatever it raised — failing fast at harness
-startup, not deep inside ``pipeline.run``.
+startup, not deep inside ``pipeline.run``. A step claiming a built-in id
+is one such error: ``register`` refuses it whether or not that built-in
+has been resolved yet, so the refusal is the same in every process.
 
 Security: code in this directory is executed by ai-hats, same threat
 model as ``.agent/hooks/`` shell scripts. Do not put untrusted code

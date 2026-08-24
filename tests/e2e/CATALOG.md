@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**261 of 261 files catalogued — 270 flows.**
+**263 of 263 files catalogued — 272 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2794,6 +2794,22 @@ as a claim to check, not as evidence.
 - **expect** — self update resolves latest tagged stable release and installs versioned release venv
 - **why** — without stable channel support, production users cannot pin update checks to verified releases
 
+## `test_step_entry_point_resolution.py`
+
+*pins HATS-1783*
+
+- **flow** — a user installs the released ai-hats wheel and runs a pipeline; every built-in step it names has to resolve, and it resolves only through the installed distribution's entry-point metadata
+- **cmds**
+
+  ```console
+  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
+  uv venv <tmp>/venv && uv pip install --no-deps <wheel> pyyaml
+  <tmp>/venv/bin/python -c "load_pipeline(<one-step yaml>)"
+  ```
+
+- **expect** — the installed dist advertises all 23 built-in step ids under `ai_hats.steps`; loading a YAML that names `pre_log` builds the step, imports `ai_hats.pipeline.steps.log` and NO other step module, and an unknown id fails loudly naming what is known
+- **why** — the step ids left the source tree for `[project.entry-points]` in pyproject.toml, and nothing in the source tree can tell whether that block reached the built distribution's `entry_points.txt`. A unit test of the registry passes against the developer's editable install no matter what the wheel carries; drop the block and every pipeline stops resolving, in an artefact no in-tree test opens. This runs the resolver against a real install, from a venv the checkout is not on the path of
+
 ## `test_stray_shadow_detector.py`
 
 *pins HATS-791*
@@ -3245,6 +3261,20 @@ as a claim to check, not as evidence.
 
 - **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
 - **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
+
+## `test_wheel_excludes_area_tests.py`
+
+*pins HATS-1783*
+
+- **flow** — a user installs the released ai-hats wheel and gets every module of the `pipeline` area — but none of the area's own test suite
+- **cmds**
+
+  ```console
+  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
+  ```
+
+- **expect** — `ai_hats/pipeline/loader.py` and every other module of the area are in the wheel; nothing under `ai_hats/pipeline/tests/` is, and no `tests/` tree ships anywhere inside the package
+- **why** — ADR-0026 D5 keeps an area's tests inside the area folder, and `[tool.hatch.build.targets.wheel] packages = ["src/ai_hats"]` ships that folder whole — the D11 exclude is the only thing between a test suite and every user's site-packages. Deleting that one line is invisible to the rest of the suite, so the built artefact is what gets asserted here, not the config that produced it
 
 ## `test_worktree_library_edit_visible.py`
 

@@ -20,14 +20,9 @@ from pathlib import Path
 import yaml
 
 from ..harness.errors import HarnessReliabilityError
-from ..pipeline.harness import PipelineHarness
-from ..pipeline.keys import (
-    KEY_MAX_RETRIES,
-    KEY_PROJECT_DIR,
-    KEY_REVIEW_PATH,
-    KEY_SESSION_ID,
-    PIPELINE_REFLECT_SESSION,
-)
+from ..pipeline import run_pipeline
+from ..pipeline_catalog import REFLECT_SESSION
+from ..session_policy import ReflectSessionRunParams, SessionReviewOutcome
 from ..retro.session_review_runner import SessionReviewError
 
 logger = logging.getLogger(__name__)
@@ -67,15 +62,15 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
     harness_error: HarnessReliabilityError | None = None
     saved_path: Path | None = None
     try:
-        with PipelineHarness(PIPELINE_REFLECT_SESSION, project_dir) as h:
-            final = h.run(
-                {
-                    KEY_SESSION_ID: session_id,
-                    KEY_PROJECT_DIR: project_dir,
-                    KEY_MAX_RETRIES: max_retries,
-                }
-            )
-            saved_path = final.get(KEY_REVIEW_PATH)
+        result = run_pipeline(
+            REFLECT_SESSION,
+            ReflectSessionRunParams(
+                project_dir=project_dir,
+                session_id=session_id,
+                max_retries=max_retries,
+            ),
+        )
+        saved_path = SessionReviewOutcome.of(result).review_path
     except HarnessReliabilityError as exc:
         # HATS-378: harness-layer failure (timeout, zero-output guard) →
         # file under target=harness-incident, NOT session-reviewer.

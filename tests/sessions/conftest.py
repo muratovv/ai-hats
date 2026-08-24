@@ -1,12 +1,18 @@
-"""Shared pipeline-integration helpers for HATS-269 regression suite.
+"""Shared session-integration helpers for the HATS-269 regression suite.
 
-Layer: pipeline-integration (not e2e). Pipeline core / harness / steps
-run for real and observe end-to-end side-effects. The runner boundary —
-WrapRunner / SubAgentRunner / SessionReviewRunner — and subprocess.Popen
-are stubbed so that no real Claude / shell subprocess is spawned. True
-CLI e2e tests (real bash + real pip + real ai-hats binary) live under
-``tests/e2e/``.
-"""
+Layer: session-integration (not e2e). A CLI command builds and runs its own
+pipeline for real and the test observes the end-to-end side-effects. The runner
+boundary — WrapRunner / SubAgentRunner / SessionReviewRunner — and
+subprocess.Popen are stubbed so that no real Claude / shell subprocess is
+spawned. True CLI e2e tests (real bash + real pip + real ai-hats binary) live
+under ``tests/e2e/``.
+
+Named ``tests/pipeline/`` until HATS-1783, which pointed the name at the area
+whose own tests now live in ``src/ai_hats/pipeline/tests/`` (ADR-0026 D5). The
+tier is not the area: what this file stubs is ``runtime``, ``retro`` and
+``_bootstrap``, and the four files here that do import a pipeline module import
+it because a *session* runs one, not to test the area (D7).
+"""  # comment-length: allow — the rename is the layer's definition
 
 from __future__ import annotations
 

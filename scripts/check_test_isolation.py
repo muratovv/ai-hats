@@ -28,8 +28,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # place: needing it means the code resolved a location it should have been told.
 PATCH_METHODS = frozenset({"setattr", "delattr", "setitem", "delitem", "chdir"})
 
-# Every test tree in the workspace; `surfaces/*` nest one level deeper.
-TEST_GLOBS = ("tests/**/*.py", "packages/*/tests/**/*.py", "packages/*/*/tests/**/*.py")
+# Every test tree in the workspace; `surfaces/*` nest one level deeper, and an
+# area keeps its own tests inside the package (ADR-0026 D5) — without that last
+# glob, moving a test into its area would be a way out of this ratchet.
+TEST_GLOBS = (
+    "tests/**/*.py",
+    "src/ai_hats/*/tests/**/*.py",
+    "packages/*/tests/**/*.py",
+    "packages/*/*/tests/**/*.py",
+)
 
 # The gate fires exactly where the decision is made, so the decision travels
 # with it — printed once per run, not once per offending file.

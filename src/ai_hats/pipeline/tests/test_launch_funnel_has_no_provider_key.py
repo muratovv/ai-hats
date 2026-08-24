@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-from ai_hats.pipeline.keys import KEY_PROVIDER, PIPELINE_EXECUTE, PIPELINE_HUMAN
+from ai_hats.pipeline.keys import KEY_PROVIDER
 from ai_hats.pipeline.loader import load_core_pipeline
 
 
-@pytest.mark.parametrize("pipeline_name", [PIPELINE_HUMAN, PIPELINE_EXECUTE])
+@pytest.mark.parametrize("pipeline_name", ["human", "execute"])
 def test_no_launch_step_declares_the_provider_key(pipeline_name: str):
     pipeline = load_core_pipeline(pipeline_name)
     readers = [

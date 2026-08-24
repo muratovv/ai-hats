@@ -97,6 +97,41 @@ claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"
 [project.entry-points."ai_hats_rack.kernel_factory"]
 wired = "ai_hats.rack_cli_provider:cli_factory"
 
+# HATS-1783: the step IoC seam, same shape as the provider group above. A step id
+# in a pipeline YAML is resolved here, and the module named on the right is imported
+# only when that id is used — which is what took `pipeline.loader` out of the
+# `cli -> pipeline -> contract -> harness -> loader -> steps -> steps.handoff ->
+# cli.reflect` cycle, and what makes a pipeline import only the steps its YAML names.
+# The key must equal the step's own `io.name` (HATS-917 — the id is spelled in the
+# step, not here); tests/test_literal_homes_contract.py holds the two to each other.
+# ADR-0026 D15: this is a NON-IMPORT edge. No AST walk can see it, so a change to
+# this block is outside test selection by design and runs the full suite.
+[project.entry-points."ai_hats.steps"]
+bootstrap_project = "ai_hats.pipeline.steps.init_steps:BootstrapProjectStep"
+build_handoff = "ai_hats.pipeline.steps.handoff:BuildHandoff"
+check_update_async = "ai_hats.pipeline.steps.check_update:CheckUpdateAsync"
+compose_role = "ai_hats.pipeline.steps.compose:ComposeRole"
+compute_usage = "ai_hats.pipeline.steps.compute_usage:ComputeUsage"
+emit_stdout = "ai_hats.pipeline.steps.emit:EmitStdout"
+extract_marker = "ai_hats.pipeline.steps.extract:ExtractMarker"
+# HATS-535: pre-split YAML still names `launch_provider`; both ids are the one class.
+launch_provider = "ai_hats.pipeline.steps.launch:Provider"
+make_audit = "ai_hats.pipeline.steps.make_audit:MakeAudit"
+materialize_system_prompt = "ai_hats.pipeline.steps.materialize:MaterializeSystemPrompt"
+maybe_spawn_session_reviewer = "ai_hats.pipeline.steps.maybe_spawn_session_reviewer:MaybeSpawnSessionReviewer"
+post_log = "ai_hats.pipeline.steps.log:PostLog"
+pre_log = "ai_hats.pipeline.steps.log:PreLog"
+prepare_execute_session = "ai_hats.pipeline.steps.init_steps:PrepareExecuteSessionStep"
+provider = "ai_hats.pipeline.steps.launch:Provider"
+quorum_autoclose = "ai_hats.pipeline.steps.quorum_autoclose:QuorumAutoclose"
+render_update_banner = "ai_hats.pipeline.steps.update_banner:RenderUpdateBanner"
+resolve_prompt = "ai_hats.pipeline.steps.prompt:ResolvePrompt"
+run_session_end = "ai_hats.pipeline.steps.run_session_end:RunSessionEnd"
+run_session_review = "ai_hats.pipeline.steps.session_review:RunSessionReview"
+save_artifact = "ai_hats.pipeline.steps.save:SaveArtifact"
+select_provider = "ai_hats.pipeline.steps.init_steps:SelectProviderStep"
+spawn_session_review = "ai_hats.pipeline.steps.spawn_review:SpawnSessionReview"
+
 # HATS-861: integrator built with hatchling + hatch-vcs (workspace-uniform with
 # the packages/* members). hatch-vcs wraps setuptools-scm → identical version
 # string (X.Y.Z.devN+g<sha>), so the HATS-764 downgrade guard + _version.py
@@ -112,6 +147,11 @@ version-file = "src/ai_hats/_version.py"
 # no longer grafted here — T18/HATS-876 extracted it to the standalone
 # ai-hats-library data package (pinned above; resolved via importlib.resources).
 packages = ["src/ai_hats"]
+# ADR-0026 D11: an area keeps its tests inside its own folder (D5), and this
+# target ships the package directory whole — so without the exclude they would
+# be installed on every user's machine. Held by
+# tests/e2e/test_wheel_excludes_area_tests.py, against a real built wheel.
+exclude = ["src/ai_hats/**/tests"]
 
 [tool.uv.workspace]
 # HATS-956: surface plugins (out-of-tree providers) live under packages/surfaces/.
@@ -143,8 +183,11 @@ select = ["E", "F", "S110", "S112"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
+# ADR-0026 D5/D7: one line per area — a glob here is unreliable, so a new area's
+# tests are only run once its path is listed. (D11 is the wheel exclude, above.)
 testpaths = [
     "tests",
+    "src/ai_hats/pipeline/tests",
     "packages/ai-hats-core/tests",
     "packages/ai-hats-wt/tests",
     "packages/ai-hats-rack/tests",
