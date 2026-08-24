@@ -7,7 +7,7 @@ Single-session judge run produces:
                    with format or hit a meta-issue
 
 Frontmatter + body file format. Stored under
-`.agent/retrospectives/reflect-session/<session_id>.md`.
+`<ai_hats_dir>/sessions/retros/sessions/<session_id>.md`.
 """
 
 from __future__ import annotations
