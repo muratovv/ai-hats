@@ -150,6 +150,9 @@ def test_noncovered_command_forms_get_no_nudge(command):
         "ci-local.sh | tail",
         "npm test | head",
         'python -m pytest tests/ > /tmp/gate.log 2>&1; echo "EXIT=$?"',
+        # bash-only spelling with no bash in sight: in the tool's zsh this is
+        # `exit ""` -> 0 for every run, so it masks rather than preserves.
+        "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
     ],
 )
 def test_exit_code_masking_nudges(command):
@@ -167,13 +170,12 @@ def test_exit_code_masking_nudges(command):
     [
         "pytest tests/ && true",
         "set -o pipefail; pytest tests/ | tail",
-        # NOTE (HATS-1798): pinned because it is what the guard DOES, not
-        # because it is sound. The Bash tool runs zsh, where ${PIPESTATUS[0]}
-        # does not exist: this line evaluates to `exit ""` -> 0, so the guard is
-        # silent on a form that reads a red run as green. Its mirror image — the
-        # zsh-correct ${pipestatus[1]} — trips pipe_rx and gets nudged. Making
-        # the guard shell-aware is HATS-1815.
-        "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
+        # The zsh spelling — the one that preserves the status in the shell the
+        # Bash tool runs (HATS-1798). Its bash-only twin is nudged instead; see
+        # test_exit_code_masking_nudges and the chain test.
+        "pytest tests/ | tail; exit ${pipestatus[1]}",
+        # ...unless an explicit bash runs it, where PIPESTATUS is the right name.
+        "bash -c 'pytest tests/ | tail; exit ${PIPESTATUS[0]}'",
         "pytest tests/",
         "python -m pytest tests/",
         # The rule's default shape: redirect only. The harness reports the
