@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**264 of 264 files catalogued — 273 flows.**
+**265 of 265 files catalogued — 274 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -409,6 +409,22 @@ as a claim to check, not as evidence.
 
 - **expect** — session initialization sweeps orphan cache keys older than TTL while preserving active keys
 - **why** — without cache key garbage collection, accumulated session directories consume unbounded disk space
+
+## `test_card_gate_parallel_xdist.py`
+
+*pins HATS-1812*
+
+- **flow** — an agent runs either card quality gate through the materialized Bash hook chain
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r maintainer --no-wizard
+  make done-gate
+  make merge-gate
+  ```
+
+- **expect** — the whole PreToolUse chain allows the command and the real gate entry point sends adaptive xdist flags to every stage through PYTEST_ADDOPTS
+- **why** — HATS-1812 found that gate stage names were shared while execution flags depended on the entry point, making the same unit stage take 104s from a card and 27s pre-push
 
 ## `test_check_mirror_dry_run.py`
 

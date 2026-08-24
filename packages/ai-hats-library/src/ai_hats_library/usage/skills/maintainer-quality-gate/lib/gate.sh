@@ -19,6 +19,7 @@
 #   gate_tree     <in_dir> <rev>                -> prints the tree of <rev>
 #   gate_stages   <dispatcher> <gate>           -> prints the gate's composition
 #   gate_run      <dispatcher> <gate> [log]     -> runs it; rc is the first red
+#   gate_export_pytest_addopts <label> <pytest command...> -> adaptive gate flags
 #   gate_stamp    <gate> <repo_root> <tree> <stages> [line...] -> marks a clean tree
 #   gate_refusal  <gate> <tree> <label> <cmd> <stages>  -> prints the refusal
 #   gate_exit     <channel> pass|refuse         -> exits with that channel's code
@@ -71,6 +72,30 @@ gate_run() {
         fi
     done
     return 0
+}
+
+# Gate-scoped policy keeps direct dispatcher and CI stage invocations serial.
+gate_export_pytest_addopts() {
+    local label="$1"
+    shift
+    local addopts='--tb=line --no-header -p no:cacheprovider'
+    if "$@" -VV 2>/dev/null | grep -qi xdist; then
+        local cores ceiling n
+        cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
+                 || nproc 2>/dev/null \
+                 || sysctl -n hw.logicalcpu 2>/dev/null \
+                 || echo 4)"
+        [[ "$cores" =~ ^[0-9]+$ ]] || cores=4
+        ceiling=8
+        n=$(( cores < ceiling ? cores : ceiling ))
+        (( n < 1 )) && n=1
+        printf '[%s] pytest-xdist detected — running -n%s --dist=loadgroup (cores=%s, cap=%s)\n' \
+               "$label" "$n" "$cores" "$ceiling" >&2
+        addopts="$addopts -n$n --dist=loadgroup"
+    else
+        printf '[%s] pytest-xdist absent — running serial\n' "$label" >&2
+    fi
+    export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+$PYTEST_ADDOPTS }$addopts"
 }
 
 # Mark a green run — but only when the tree is clean. A marker describes
@@ -262,6 +287,7 @@ gate_run_and_stamp_here() {
     fi
 
     printf '[%s] running %s in %s: %s\n' "$gate" "$gate" "$repo_root" "$stages" >&2
+    gate_export_pytest_addopts "$gate" "${PYTHON:-python}" -m pytest
     gate_run "$dispatcher" "$gate" || exit 1
 
     local tree
