@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**261 of 261 files catalogued — 270 flows.**
+**262 of 262 files catalogued — 271 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1525,6 +1525,20 @@ as a claim to check, not as evidence.
 
 - **expect** — CLI exits cleanly with code 2 displaying friendly remediation instructions without traceback
 - **why** — without friendly provider error handling, uninstalled provider packages throw raw ImportErrors
+
+## `test_nested_consent_wrapper.py`
+
+*pins HATS-1806*
+
+- **flow** — a nested HITL session materializes consent wrappers over an outer session
+- **cmds**
+
+  ```console
+  rack --help
+  ```
+
+- **expect** — the inner wrapper resolves the canonical executable and invokes it once
+- **why** — recording the outer wrapper as the original recursively spawns wrappers
 
 ## `test_no_console_script_shadow.py`
 

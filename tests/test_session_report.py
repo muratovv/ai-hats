@@ -191,6 +191,37 @@ def test_consent_section_names_the_field_each_reader_keys_on(tmp_path: Path):
     assert text.count("by trait-agent") == 5
 
 
+def test_the_shipped_declaration_renders_each_grammar_by_its_own_field():
+    """HATS-1790: the same column, asked of the LIBRARY instead of a fixture.
+
+    The sibling above proves it on hand-written rows in a spelling composition
+    stopped producing at HATS-1755 — `apps.rack` / `apps.wt` consent rows do not
+    occur any more. So it stayed green while every shipped row rendered the same
+    label, which is the one thing HATS-1726 built this column to prevent: three
+    grammars ride one list and each is found by a DIFFERENT field.
+    """
+    from ai_hats.assembler import Assembler
+    from ai_hats.session_report import _consent_key, consent_entry
+
+    repo = Path(__file__).resolve().parent.parent
+    library = repo / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    result = Assembler(repo, library_paths=[library / "core", library / "usage"]).composer.compose(
+        "maintainer"
+    )
+    assert result.errors == [], result.errors
+
+    rendered = {}
+    for point in result.consent:
+        entry = consent_entry(point)
+        rendered[entry["selector"]] = _consent_key(entry)
+
+    assert rendered == {
+        "plan->execute": "entering 'execute'",
+        "->done": "entering 'done'",
+        "pre-merge": "wt point",
+    }
+
+
 def test_a_role_declaring_no_consent_says_so_instead_of_dropping_the_section(tmp_path: Path):
     """A role asking about nothing, and a section that did not render, differ.
 

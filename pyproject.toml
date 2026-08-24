@@ -196,6 +196,7 @@ testpaths = [
     "packages/surfaces/cline/tests",
     "packages/surfaces/agy/tests",
     "packages/surfaces/codex/tests",
+    "packages/surfaces/opencode/tests",
 ]
 # HATS-1624: a passing e2e test's tmp_path holds a real venv, and one measured
 # run held 1172 of them (27.8 GB). Reaped per test, so a green run leaves
@@ -218,6 +219,7 @@ pythonpath = [
     "packages/surfaces/cline/src",
     "packages/surfaces/agy/src",
     "packages/surfaces/codex/src",
+    "packages/surfaces/opencode/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.

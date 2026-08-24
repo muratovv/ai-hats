@@ -155,6 +155,19 @@ def _spawn(command: list[str], environ: Mapping[str, str]) -> int:
     return subprocess.run(command, env=dict(environ), check=False).returncode  # noqa: S603
 
 
+def _is_consent_wrapper_path(path: str | Path) -> bool:
+    resolved = Path(path).resolve()
+    return (resolved.name == "bin" and resolved.parent.name == "consent-wrapper") or (
+        resolved.parent.name == "bin" and resolved.parent.parent.name == "consent-wrapper"
+    )
+
+
+def _original_lookup_path(search_path: str) -> str:
+    return os.pathsep.join(
+        entry for entry in search_path.split(os.pathsep) if not _is_consent_wrapper_path(entry)
+    )
+
+
 def _record_grant(answer: Verdict, operation: Operation, project_dir: Path) -> bool:
     from .consent_port import record_use
 
@@ -188,6 +201,12 @@ def run_wrapped(
 ) -> int:
     env = dict(os.environ if environ is None else environ)
     original = config.originals[surface]
+    if _is_consent_wrapper_path(original):
+        print(
+            f"consent: refusing recursive wrapper target for {surface!r}: {original}",
+            file=sys.stderr,
+        )
+        return REFUSED
     matched = match_operation(surface, argv, config.policy)
     if matched is None:
         return spawn([original, *argv], env)
@@ -254,12 +273,17 @@ def materialize_consent_wrappers(
 
     env = os.environ if environ is None else environ
     effective_path = artifacts.extra_env.get("PATH", env.get("PATH", ""))
+    lookup_path = _original_lookup_path(effective_path)
     surfaces = sorted({_SURFACES[operation] for operation in policy})
     originals: dict[str, str] = {}
     for surface in surfaces:
-        original = which(surface, path=effective_path)
+        original = which(surface, path=lookup_path)
         if not original:
             raise RuntimeError(f"cannot wrap {surface!r}: executable not found on PATH")
+        if _is_consent_wrapper_path(original):
+            raise RuntimeError(
+                f"cannot wrap {surface!r}: resolved executable is a consent wrapper: {original}"
+            )
         originals[surface] = original
 
     root = session_cache_dir(project_dir, session_id) / "consent-wrapper"

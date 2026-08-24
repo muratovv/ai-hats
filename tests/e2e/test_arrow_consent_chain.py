@@ -69,7 +69,10 @@ def test_the_declaration_reaches_the_guard_with_its_ends_parsed(arrow_project):
     assert rack_rows, "the assistant role declares no rack consent — the probe is blind"
     for row in rack_rows:
         assert "->" in row["selector"], f"declaration is not in the arrow spelling: {row}"
-        assert row["selector"].split("->", 1)[1]
+        # The FIELD, never a cut of the name here: re-implementing the grammar in
+        # the probe is what let it stay green while the parser it guards answered
+        # (None, None) for every row the composition produces (HATS-1790).
+        assert row["to"], f"the envelope carries no parsed target, so the guard is blind: {row}"
         assert "point" not in row, f"the retired key is still written: {row}"
 
 
@@ -114,6 +117,12 @@ def test_an_undeclared_road_is_still_not_gated(in_session):
     [
         "/usr/local/bin/rack transition HATS-1 done",
         "python -m ai_hats_rack transition HATS-1 done",
+        # HATS-1781: the table maps BOTH module spellings to `rack`, and the
+        # boundary used to match the literal — so this one walked through while
+        # the allow-rule lint called it guarded.
+        "python -m ai_hats_rack.cli transition HATS-1 done",
+        # A runner resolves the packaged binary, not the session-local wrapper.
+        "uvx rack transition HATS-1 done",
         "command -p rack transition HATS-1 done",
         "/usr/local/bin/ai-hats wt merge task/hats-1",
         "python -m ai_hats wt merge task/hats-1",
