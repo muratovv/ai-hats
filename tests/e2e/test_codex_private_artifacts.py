@@ -216,14 +216,19 @@ def test_codex_hitl_and_automate_artifacts_are_private(tmp_path: Path, ai_hats_s
     fake_codex.chmod(0o755)
     capture_dir = tmp_path / "captures"
     capture_dir.mkdir()
+    base_home = tmp_path / "base-codex-home"
+    base_home.mkdir()
     env = clean_env()
     env.update(
         {
             "AI_HATS_CACHE_HOME": str(tmp_path / "cache"),
+            "AI_HATS_CODEX_BASE_HOME": str(base_home),
             "AI_HATS_LIBRARY_ROOT": str(LIBRARY_DIR),
             "AI_HATS_NO_UPDATE_CHECK": "1",
             "AI_HATS_TEST_CAPTURE_DIR": str(capture_dir),
             "AI_HATS_USER_HOME": str(tmp_path / "user-home"),
+            "CODEX_HOME": str(base_home),
+            "CODEX_SQLITE_HOME": str(base_home),
             "PATH": os.pathsep.join([str(fake_bin), env.get("PATH", "")]),
             "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
         }

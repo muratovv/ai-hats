@@ -234,6 +234,16 @@ class SubAgentRunner:
             result = result.with_injection_override(system_prompt_override)
         provider = self.payload.provider
         provider_name = provider.name
+        try:
+            recovery_warnings = provider.recover_session_artifacts(
+                self.project_dir,
+                session.session_id,
+            )
+        except Exception as exc:
+            logger.warning("provider artifact recovery failed", exc_info=True)
+            recovery_warnings = [f"Provider artifact recovery failed: {type(exc).__name__}: {exc}"]
+        for warning in recovery_warnings:
+            session.log_sys(warning)
         _ctx = provider.execution_context(self.project_dir)
         _ctx.__enter__()
 
@@ -486,7 +496,19 @@ class SubAgentRunner:
                 # task. Fail-open, so the sweep below always runs.
                 self._release_ownership_on_finish(session)
                 _ctx.__exit__(None, None, None)
-                _cleanup_session_cache(self.project_dir, session.session_id)
+                try:
+                    provider.finalize_session_artifacts(
+                        self.project_dir,
+                        session.session_id,
+                        artifacts,
+                    )
+                except Exception as exc:
+                    logger.warning("provider artifact finalization failed", exc_info=True)
+                    session.log_sys(
+                        f"Provider artifact finalization FAILED — {type(exc).__name__}: {exc}"
+                    )
+                finally:
+                    _cleanup_session_cache(self.project_dir, session.session_id)
 
         SurfaceGuard.post_flight_guard(session, work_dir, provider_name).unwrap()
         return session

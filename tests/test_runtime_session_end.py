@@ -18,12 +18,13 @@ import json
 import os
 import signal
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from ai_hats_observe import Session
-from ai_hats.paths import discover_recent_by_mtime, runs_dir
+from ai_hats.paths import discover_recent_by_mtime, runs_dir, session_cache_dir
 from ai_hats.paths import claude_transcripts_dir
 from ai_hats.runtime import (
     _finalize_session_basic,
@@ -434,6 +435,31 @@ def test_wrap_runner_finally_prints_summary_on_happy_path(
     assert exit_code == 0
     out = capsys.readouterr().out
     assert f"✨ Session {session.session_id} complete!" in out
+
+
+def test_wrap_runner_finalizes_provider_artifacts_before_session_cache(
+    wrap_runner_factory,
+):
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
+
+    runner, _project = wrap_runner_factory(pty_exit_code=0)
+    events: list[str] = []
+
+    class LifecycleProvider(ClaudeProvider):
+        def recover_session_artifacts(self, project_dir, session_id):
+            events.append("recover")
+            return []
+
+        def finalize_session_artifacts(self, project_dir, session_id, artifacts):
+            assert session_cache_dir(project_dir, session_id).is_dir()
+            events.append("provider")
+
+    runner.payload = replace(runner.payload, provider=LifecycleProvider())
+
+    _exit_code, session = runner.run()
+
+    assert events == ["recover", "provider"]
+    assert not session_cache_dir(runner.project_dir, session.session_id).exists()
 
 
 def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(

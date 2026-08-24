@@ -169,6 +169,7 @@ def test_materializes_composed_manifest_only_in_the_session_cache(
     assert data["session"] == {
         "id": "sid-manifest",
         "ai_hats_dir": str(project / ".agent" / "ai-hats"),
+        "skills_root": str(skills_dir),
     }
     assert data["hooks"]["PreToolUse"][0]["command"] == str(mirrored)
     assert artifacts.extra_env["AI_HATS_SESSION_CACHE_DIR"] == str(path.parent)
@@ -184,6 +185,11 @@ def test_provider_artifact_pipeline_delivers_manifest_and_static_hook_config(
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("AI_HATS_CODEX_BASE_HOME", str(codex_home))
+    monkeypatch.setenv("CODEX_SQLITE_HOME", str(codex_home))
     skill = _skill(tmp_path)
     result = SimpleNamespace(
         skills=[skill],

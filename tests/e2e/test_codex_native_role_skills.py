@@ -213,7 +213,9 @@ def test_real_codex_lists_selected_skill_from_session_home(
     assert result["errors"] == []
     skills = {skill["name"]: skill for skill in result["skills"]}
     assert skills["hatrack"]["enabled"] is True
-    assert skills["hatrack"]["path"].endswith("/codex-home/skills/hatrack/SKILL.md")
+    session_skill_path = Path(skills["hatrack"]["path"])
+    assert session_skill_path.is_relative_to(base_home / ".ai-hats" / "session-homes")
+    assert session_skill_path.parts[-3:] == ("skills", "hatrack", "SKILL.md")
     assert session_skill_body is not None and _ROLE_MARKER in session_skill_body
     assert "foreign-only" not in skills
     assert not (project / ".agents").exists()

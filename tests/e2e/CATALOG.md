@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**263 of 263 files catalogued — 272 flows.**
+**264 of 264 files catalogued — 273 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -629,6 +629,20 @@ as a claim to check, not as evidence.
 
 - **expect** — codex is discovered through the real package entry point alongside claude
 - **why** — registry metadata alone cannot launch a surface; the distribution entry point must be visible to the shipped binary (HATS-1531)
+
+## `test_codex_resume.py`
+
+*pins HATS-1801*
+
+- **flow** — real Codex persists a thread under ai-hats, then the process group gets SIGINT or SIGKILL
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r resume-role app-server
+  ```
+
+- **expect** — graceful exit canonicalizes the rollout; crash retention survives cache loss; resume and native role skills work
+- **why** — cleanup-only tests cannot prove the HATS-1801 resume invariant across process termination
 
 ## `test_comment_length_lint_hook.py`
 

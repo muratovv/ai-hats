@@ -473,6 +473,15 @@ class WrapRunner:
         # HATS-452 (D2): no override channel on WrapRunner — the payload's
         # composition flows straight into the builder.
         builder_notices: list[StartupNotice] = []
+        try:
+            recovery_warnings = provider.recover_session_artifacts(
+                self.project_dir,
+                session.session_id,
+            )
+        except Exception as exc:
+            logger.warning("provider artifact recovery failed", exc_info=True)
+            recovery_warnings = [f"Provider artifact recovery failed: {type(exc).__name__}: {exc}"]
+        builder_notices.extend(StartupNotice("warn", text) for text in recovery_warnings)
         artifacts = BuiltArtifacts()
         with provider.execution_context(self.project_dir):
             result = payload.result
@@ -759,7 +768,19 @@ class WrapRunner:
             # SIGKILL leaves it to the next run's sweep, which since HATS-1339
             # reclaims on proof this pid is gone rather than after a TTL — safe
             # only because _pty_spawn's hangup outlives no surface.
-            _cleanup_session_cache(self.project_dir, session.session_id)
+            try:
+                provider.finalize_session_artifacts(
+                    self.project_dir,
+                    session.session_id,
+                    artifacts,
+                )
+            except Exception as exc:
+                logger.warning("provider artifact finalization failed", exc_info=True)
+                session.log_sys(
+                    f"Provider artifact finalization FAILED — {type(exc).__name__}: {exc}"
+                )
+            finally:
+                _cleanup_session_cache(self.project_dir, session.session_id)
 
         return exit_code, session
 

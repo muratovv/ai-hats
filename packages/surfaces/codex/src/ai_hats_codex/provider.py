@@ -10,6 +10,7 @@ fallback.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -19,6 +20,14 @@ from typing import TYPE_CHECKING
 
 from ai_hats.providers import Provider
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
+
+from .session_home import (
+    SESSION_HOME_MANIFEST,
+    SessionHomeMetadata,
+    normalize_session_rollout_paths,
+    read_session_home_metadata,
+    render_session_home_metadata,
+)
 
 if TYPE_CHECKING:
     from ai_hats.providers import CompositionResult, ProviderHint
@@ -39,7 +48,11 @@ _HOOK_POLICY_KEYS = {
 }
 _HOOK_FEATURE_NAMES = {"codex_hooks", "hooks"}
 _ENV_CODEX_BASE_HOME = "AI_HATS_CODEX_BASE_HOME"
+_AI_HATS_HOME_DIR = ".ai-hats"
+_SESSION_HOMES_DIR = "session-homes"
 _SQLITE_ARTIFACT_SUFFIXES = (".sqlite", ".sqlite-shm", ".sqlite-wal", ".sqlite-journal")
+
+logger = logging.getLogger(__name__)
 
 
 def _config_overrides(command: list[str]):
@@ -185,31 +198,70 @@ class CodexProvider(Provider):
         return self.session_codex_home(project_dir, session_id) / "skills"
 
     def session_codex_home(self, project_dir: Path, session_id: str) -> Path:
-        from ai_hats.paths import session_cache_dir
+        from ai_hats.paths import project_key
 
-        return session_cache_dir(project_dir, session_id) / "codex-home"
+        base_home = self._configured_base_home()
+        return (
+            base_home
+            / _AI_HATS_HOME_DIR
+            / _SESSION_HOMES_DIR
+            / project_key(project_dir)
+            / session_id
+        )
 
-    def _base_codex_home(self, session_home: Path) -> Path:
+    @staticmethod
+    def _configured_base_home() -> Path:
+        from ai_hats.paths import cache_home
+
         configured = os.environ.get(_ENV_CODEX_BASE_HOME) or os.environ.get("CODEX_HOME")
         candidate = Path(configured).expanduser() if configured else Path.home() / ".codex"
         if not candidate.is_absolute() or not candidate.is_dir():
             raise RuntimeError("Codex base home must be an existing absolute directory")
-
         base_home = candidate.resolve()
-        resolved_session_home = session_home.resolve(strict=False)
+        resolved_cache_home = cache_home().resolve()
         if (
-            base_home == resolved_session_home
-            or base_home in resolved_session_home.parents
-            or resolved_session_home in base_home.parents
+            base_home == resolved_cache_home
+            or base_home in resolved_cache_home.parents
+            or resolved_cache_home in base_home.parents
         ):
-            raise RuntimeError("Codex base home must be outside the ai-hats session home")
+            raise RuntimeError("Codex base home must be disjoint from the ai-hats cache home")
         return base_home
+
+    def _base_codex_home(self, session_home: Path) -> Path:
+        base_home = self._configured_base_home()
+        resolved_session_home = session_home.resolve(strict=False)
+        managed_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR
+        if managed_root not in resolved_session_home.parents:
+            raise RuntimeError("Codex session home must be inside the managed durable root")
+        return base_home
+
+    @staticmethod
+    def _validate_sqlite_home(sqlite_home: Path, base_home: Path) -> Path:
+        from ai_hats.paths import cache_home
+
+        resolved_cache_home = cache_home().resolve()
+        if sqlite_home == resolved_cache_home or resolved_cache_home in sqlite_home.parents:
+            raise RuntimeError("Codex SQLite home must be outside the ai-hats cache home")
+        managed_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR
+        if sqlite_home == managed_root or managed_root in sqlite_home.parents:
+            raise RuntimeError("Codex SQLite home must be outside managed session homes")
+        return sqlite_home
+
+    @classmethod
+    def _configured_sqlite_home(cls, base_home: Path) -> Path:
+        configured = os.environ.get("CODEX_SQLITE_HOME")
+        sqlite_home = Path(configured).expanduser() if configured else base_home
+        if not sqlite_home.is_absolute():
+            raise RuntimeError("Codex SQLite home must be an absolute directory")
+        return cls._validate_sqlite_home(sqlite_home.resolve(strict=False), base_home)
 
     @staticmethod
     def _project_base_home(base_home: Path, session_home: Path, artifacts) -> None:
         try:
             for source in sorted(base_home.iterdir(), key=lambda path: path.name):
-                if source.name != "skills" and not source.name.endswith(_SQLITE_ARTIFACT_SUFFIXES):
+                if source.name not in {"skills", _AI_HATS_HOME_DIR} and not source.name.endswith(
+                    _SQLITE_ARTIFACT_SUFFIXES
+                ):
                     artifacts.port.symlink(source, session_home / source.name)
         except OSError:
             raise RuntimeError("Codex session home projection failed") from None
@@ -287,10 +339,23 @@ class CodexProvider(Provider):
         cache_dir = session_cache_dir(project_dir, session_id)
         session_home = self.session_codex_home(project_dir, session_id)
         base_home = self._base_codex_home(session_home)
+        sqlite_home = self._configured_sqlite_home(base_home)
         artifacts.port.mkdir(cache_dir)
         artifacts.port.mkdir(session_home)
+        artifacts.port.write_text(
+            session_home / SESSION_HOME_MANIFEST,
+            render_session_home_metadata(
+                SessionHomeMetadata(
+                    base_home=base_home,
+                    sqlite_home=sqlite_home,
+                    project_key=session_home.parent.name,
+                    session_id=session_id,
+                )
+            ),
+        )
         skills_root = self.session_skills_root(project_dir, session_id)
         materialize_skills_dir(skills_root, result.skills, project_dir, artifacts.port)
+        artifacts.port.mkdir(base_home / "sessions")
         self._project_base_home(base_home, session_home, artifacts)
         self._project_base_skills(
             base_home,
@@ -302,11 +367,122 @@ class CodexProvider(Provider):
         artifacts.extra_env.update(
             {
                 "CODEX_HOME": str(session_home),
-                "CODEX_SQLITE_HOME": os.environ.get("CODEX_SQLITE_HOME", str(base_home)),
+                "CODEX_SQLITE_HOME": str(sqlite_home),
                 _ENV_CODEX_BASE_HOME: str(base_home),
             }
         )
         artifacts.materialized.append(skills_root)
+
+    def _finalize_session_home(
+        self,
+        session_home: Path,
+        base_home: Path,
+        sqlite_home: Path,
+    ) -> str | None:
+        if session_home.is_symlink():
+            raise RuntimeError("Refusing to finalize a symlinked Codex session home")
+        self._base_codex_home(session_home)
+        result = normalize_session_rollout_paths(sqlite_home, session_home, base_home)
+        if not result.removable:
+            return (
+                f"Codex session home {session_home} retained: "
+                f"{result.remaining} rollout reference(s) remain"
+            )
+        if session_home.is_dir():
+            shutil.rmtree(session_home)
+        return None
+
+    def _validated_session_metadata(
+        self,
+        session_home: Path,
+        *,
+        base_home: Path,
+        project_key_value: str,
+        session_id: str,
+    ) -> SessionHomeMetadata:
+        metadata = read_session_home_metadata(session_home)
+        if (
+            metadata.base_home.resolve(strict=False) != base_home
+            or metadata.project_key != project_key_value
+            or metadata.session_id != session_id
+        ):
+            raise RuntimeError("Codex session-home manifest does not match its path")
+        return SessionHomeMetadata(
+            base_home=metadata.base_home,
+            sqlite_home=self._validate_sqlite_home(
+                metadata.sqlite_home.resolve(strict=False), base_home
+            ),
+            project_key=metadata.project_key,
+            session_id=metadata.session_id,
+        )
+
+    def recover_session_artifacts(self, project_dir: Path, session_id: str) -> list[str]:
+        from ai_hats.paths import project_key, session_cache_dir
+
+        base_home = self._configured_base_home()
+        project_key_value = project_key(project_dir)
+        project_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR / project_key_value
+        if not project_root.is_dir():
+            return []
+
+        warnings: list[str] = []
+        for session_home in sorted(project_root.iterdir(), key=lambda path: path.name):
+            stale_session_id = session_home.name
+            if (
+                stale_session_id == session_id
+                or session_cache_dir(project_dir, stale_session_id).exists()
+            ):
+                continue
+            try:
+                if not session_home.is_dir() or session_home.is_symlink():
+                    raise RuntimeError("managed Codex session-home entry is not a directory")
+                metadata = self._validated_session_metadata(
+                    session_home,
+                    base_home=base_home,
+                    project_key_value=project_key_value,
+                    session_id=stale_session_id,
+                )
+                warning = self._finalize_session_home(
+                    session_home,
+                    base_home,
+                    metadata.sqlite_home,
+                )
+                if warning:
+                    warnings.append(warning)
+            except Exception as exc:
+                warning = (
+                    f"Codex session home {session_home} retained after recovery failure: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                logger.warning(warning, exc_info=True)
+                warnings.append(warning)
+        return warnings
+
+    def finalize_session_artifacts(
+        self,
+        project_dir: Path,
+        session_id: str,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        """Canonicalize Codex rollout references before removing the session home."""
+        configured_home = artifacts.extra_env.get("CODEX_HOME")
+        if configured_home is None:
+            return
+
+        session_home = Path(configured_home)
+        expected_home = self.session_codex_home(project_dir, session_id)
+        if session_home != expected_home or session_home.is_symlink():
+            raise RuntimeError("Refusing to finalize an unexpected Codex session home")
+
+        base_home = self._base_codex_home(session_home)
+        configured_base = artifacts.extra_env.get(_ENV_CODEX_BASE_HOME)
+        if configured_base is None or Path(configured_base).resolve() != base_home:
+            raise RuntimeError("Codex session base home changed before finalization")
+
+        sqlite_home = Path(artifacts.extra_env.get("CODEX_SQLITE_HOME", str(base_home)))
+        warning = self._finalize_session_home(session_home, base_home, sqlite_home)
+        if warning:
+            logger.warning(warning)
 
     def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_skills(project_dir, result, session_id, artifacts)
