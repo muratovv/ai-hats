@@ -96,7 +96,7 @@
   "tests/test_models.py": 3,
   "tests/test_observe.py": 1,
   "tests/test_paths.py": 1,
-  "tests/test_pipeline_execute_preset.py": 10,
+  "tests/test_pipeline_execute_yaml.py": 2,
   "tests/test_pipeline_harness.py": 2,
   "tests/test_pipeline_human_yaml.py": 4,
   "tests/test_pipeline_steps.py": 3,
