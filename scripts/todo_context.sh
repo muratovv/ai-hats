@@ -29,21 +29,27 @@ grep_todo() {
 
 all="$(grep_todo)"
 
+# An id is ``<prefix>-<digit>`` and then the author's own tail — ai-hats-rack routes
+# ``HATS-120b`` like ``HATS-1249`` (ai_hats_rack/ids.py) — and one marker may name
+# several cards, in which case it is every one of their work.
+card_re='HATS-[0-9][A-Za-z0-9-]*'
+in_todo='TODO\([^)]*'         # anywhere inside the marker's parens
+ends='([^A-Za-z0-9-]|$)'      # HATS-120 does not match inside HATS-120b
+
 if [ -n "$card" ]; then
-	printf '%s\n' "$all" | grep -F "TODO($card)" || echo "no TODO carries $card"
+	printf '%s\n' "$all" | grep -E "$in_todo$card$ends" || echo "no TODO carries $card"
 	exit 0
 fi
 
 echo "== TODOs with a card =="
-carded="$(printf '%s\n' "$all" | grep -E 'TODO\(HATS-[0-9]+\)' || true)"
+carded="$(printf '%s\n' "$all" | grep -E "$in_todo$card_re" || true)"
 if [ -z "$carded" ]; then
 	echo "  none"
 else
-	printf '%s\n' "$carded" | grep -oE 'TODO\(HATS-[0-9]+\)' | sort -u | while read -r tag; do
-		id="${tag#TODO(}"
-		id="${id%)}"
+	printf '%s\n' "$carded" | grep -oE "$in_todo" | grep -oE "$card_re" |
+		sort -u | while read -r id; do
 		echo "-- $id"
-		printf '%s\n' "$carded" | grep -F "$tag" | sed 's/^/   /'
+		printf '%s\n' "$carded" | grep -E "$in_todo$id$ends" | sed 's/^/   /'
 	done
 fi
 
@@ -51,5 +57,5 @@ echo
 echo "== TODOs with no card (work, not notes) =="
 # Code only: an unowned TODO in source is a defect, while a docs "section not written
 # yet" is a different animal. ``.TODO(`` is Go's context idiom, not a marker.
-printf '%s\n' "$all" | grep -E '\.(py|sh):' | grep -vE 'TODO\(HATS-[0-9]+\)' |
+printf '%s\n' "$all" | grep -E '\.(py|sh):' | grep -vE "$in_todo$card_re" |
 	grep -vE '\.TODO\(|todo_context\.sh' | sed 's/^/   /' || echo "   none"

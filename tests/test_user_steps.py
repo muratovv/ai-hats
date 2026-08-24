@@ -273,7 +273,7 @@ def test_step_runs_in_pipeline_e2e(tmp_path, monkeypatch):
 
     # 2. The user-authored YAML pipeline that references the new step.
     #    Harness loads built-in pipelines via importlib.resources, so
-    #    we patch the loader path for this one. (HATS-268 will surface
+    #    we patch the loader path for this one. (HATS-1797 will surface
     #    project-local pipelines through the same lookup.)
     yaml_path = tmp_path / "echo-pipeline.yaml"
     yaml_path.write_text(
@@ -285,7 +285,7 @@ def test_step_runs_in_pipeline_e2e(tmp_path, monkeypatch):
     )
 
     # 3. Harness loads user steps on entry, then runs the project-local
-    #    YAML via run_yaml (minimum-friction proxy for HATS-268's
+    #    YAML via run_yaml (minimum-friction proxy for HATS-1797's
     #    `ai-hats pipeline run`, which arrives later).
     with PipelineHarness("echo-pipeline", tmp_path) as h:
         final = h.run_yaml(yaml_path, {"text": "hello user"})
