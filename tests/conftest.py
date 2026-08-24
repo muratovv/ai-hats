@@ -12,10 +12,14 @@ reach ``packages/*/tests``.
 
 from __future__ import annotations
 
+import importlib.metadata
 import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -28,6 +32,64 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 # pin alone would promote a scoped override into a global one.
 for _pinned in ("AI_HATS_PROJECT_DIR", "AI_HATS_DIR"):
     os.environ.pop(_pinned, None)
+
+
+_EntryPointFingerprint = tuple[tuple[str, int, int], ...]
+
+
+@dataclass
+class _ProviderIntegrityState:
+    fingerprint: _EntryPointFingerprint
+    provider_names: tuple[str, ...]
+    attributed_added: set[str] = field(default_factory=set)
+    attributed_removed: set[str] = field(default_factory=set)
+
+
+def _provider_names() -> tuple[str, ...]:
+    return tuple(
+        sorted(ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers"))
+    )
+
+
+def _entry_point_files_fingerprint() -> _EntryPointFingerprint:
+    entries: set[tuple[str, int, int]] = set()
+    for raw_root in sys.path:
+        root = Path(raw_root or ".")
+        if not root.is_dir():
+            continue
+        for entry_points in root.glob("*.dist-info/entry_points.txt"):
+            stat = entry_points.stat()
+            entries.add((str(entry_points.resolve()), stat.st_mtime_ns, stat.st_size))
+    return tuple(sorted(entries))
+
+
+@pytest.fixture(scope="session")
+def _provider_integrity_state() -> _ProviderIntegrityState:
+    return _ProviderIntegrityState(
+        fingerprint=_entry_point_files_fingerprint(),
+        provider_names=_provider_names(),
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _workspace_surface_providers() -> Iterator[None]:
+    """Register workspace provider classes without installing their distributions."""
+    from ai_hats import providers
+    from ai_hats_agy import AgyProvider
+    from ai_hats_cline import ClineProvider
+    from ai_hats_codex import CodexProvider
+
+    saved = dict(providers._PROVIDER_REGISTRY)
+    for name, provider in (
+        ("agy", AgyProvider),
+        ("cline", ClineProvider),
+        ("codex", CodexProvider),
+    ):
+        if name not in providers._PROVIDER_REGISTRY:
+            providers.register_provider(name, provider)
+    yield
+    providers._PROVIDER_REGISTRY.clear()
+    providers._PROVIDER_REGISTRY.update(saved)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -115,7 +177,9 @@ def _real_repo_integrity_tripwire():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _dev_environment_integrity_tripwire():
+def _dev_environment_integrity_tripwire(
+    _provider_integrity_state: _ProviderIntegrityState,
+):
     """Fail the session loud if any test mutated the developer's python environment (HATS-1164).
 
     Snapshots ai_hats.__file__, __version__, provider entry points, and src/ pyc count at session start,
@@ -125,7 +189,6 @@ def _dev_environment_integrity_tripwire():
     import os
 
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-    import importlib.metadata
     from pathlib import Path
 
     import ai_hats
@@ -134,24 +197,14 @@ def _dev_environment_integrity_tripwire():
 
     before_file = getattr(ai_hats, "__file__", None)
     before_ver = getattr(ai_hats, "__version__", None)
-    try:
-        before_eps = sorted(
-            [ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")]
-        )
-    except Exception:
-        before_eps = []
+    before_eps = _provider_integrity_state.provider_names
     before_pyc = len(list(src_root.glob("**/*.pyc")))
 
     yield
 
     after_file = getattr(ai_hats, "__file__", None)
     after_ver = getattr(ai_hats, "__version__", None)
-    try:
-        after_eps = sorted(
-            [ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")]
-        )
-    except Exception:
-        after_eps = []
+    after_eps = _provider_names()
     after_pyc = len(list(src_root.glob("**/*.pyc")))
 
     deltas = []
@@ -159,8 +212,16 @@ def _dev_environment_integrity_tripwire():
         deltas.append(f"ai_hats.__file__: {before_file} -> {after_file}")
     if before_ver != after_ver:
         deltas.append(f"version: {before_ver} -> {after_ver}")
-    if before_eps != after_eps:
-        deltas.append(f"providers entry-points: {before_eps} -> {after_eps}")
+    unattributed_added = sorted(
+        set(after_eps) - set(before_eps) - _provider_integrity_state.attributed_added
+    )
+    unattributed_removed = sorted(
+        set(before_eps) - set(after_eps) - _provider_integrity_state.attributed_removed
+    )
+    if unattributed_added or unattributed_removed:
+        deltas.append(
+            f"providers entry-points: added {unattributed_added}; removed {unattributed_removed}"
+        )
     if after_pyc > before_pyc and not os.environ.get("PYTEST_XDIST_WORKER"):
         deltas.append(f"*.pyc count under src/: {before_pyc} -> {after_pyc}")
 
@@ -170,6 +231,42 @@ def _dev_environment_integrity_tripwire():
             + "\n  ".join(deltas),
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def _provider_entry_point_integrity(
+    request: pytest.FixtureRequest,
+    _provider_integrity_state: _ProviderIntegrityState,
+) -> Iterator[None]:
+    """Attribute provider entry-point mutations to their function test."""
+    before_fingerprint = _entry_point_files_fingerprint()
+    if before_fingerprint == _provider_integrity_state.fingerprint:
+        before_names = _provider_integrity_state.provider_names
+    else:
+        before_names = _provider_names()
+
+    yield
+
+    after_fingerprint = _entry_point_files_fingerprint()
+    _provider_integrity_state.fingerprint = after_fingerprint
+    if before_fingerprint == after_fingerprint:
+        _provider_integrity_state.provider_names = before_names
+        return
+
+    after_names = _provider_names()
+    _provider_integrity_state.provider_names = after_names
+    added = set(after_names) - set(before_names)
+    removed = set(before_names) - set(after_names)
+    if not added and not removed:
+        return
+
+    _provider_integrity_state.attributed_added.update(added)
+    _provider_integrity_state.attributed_removed.update(removed)
+    pytest.fail(
+        f"[provider-entry-point-integrity] {request.node.nodeid} mutated "
+        f"ai_hats.providers entry points: {list(before_names)} -> {list(after_names)}",
+        pytrace=False,
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)

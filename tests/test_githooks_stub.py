@@ -10,8 +10,9 @@ the package where they can change freely.
 from __future__ import annotations
 
 import os
-import shutil
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 STUB = Path(__file__).parent.parent / "src" / "ai_hats" / "templates" / "githooks" / "dispatcher.sh"
@@ -96,20 +97,10 @@ def test_an_ai_hats_without_the_entry_point_fails_open(tmp_path: Path):
     The stub imports and catches instead.
     """
     project = _project(tmp_path)
-    venv_dir = os.environ.get("VIRTUAL_ENV", "")
-    clean_path = (
-        os.pathsep.join(
-            p
-            for p in os.environ.get("PATH", "").split(os.pathsep)
-            if not (venv_dir and p.startswith(venv_dir)) and "venv" not in p and ".venv" not in p
-        )
-        or os.defpath
-    )
-    system_python = shutil.which("python3", path=clean_path)
-    assert system_python, "need a system python3 to play the older install"
+    python_without_site_packages = shlex.quote(sys.executable)
     _stub_interpreter(
         project,
-        f'#!/usr/bin/env bash\nexec env -u PYTHONPATH {system_python} "$@"\n',
+        f'#!/usr/bin/env bash\nexec env -u PYTHONPATH {python_without_site_packages} -S "$@"\n',
     )
 
     result = _run(project)

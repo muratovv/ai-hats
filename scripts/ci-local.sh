@@ -7,7 +7,7 @@
 # root cause of "green locally, red in CI" (the coverage-job command was never
 # run locally).
 #
-# Tools are invoked as `python -m <tool>` so the same line works in CI (deps
+# Non-unit tools are invoked as `python -m <tool>` so the same line works in CI (deps
 # pip-installed into `python`) and locally (venv python on PATH). Override the
 # interpreter with PYTHON=/path/to/python.
 #
@@ -68,7 +68,14 @@ ci_lint() {
 
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
-    "$PY" -B -m pytest -m "not integration" -q ${@+"$@"}
+    env \
+        -u VIRTUAL_ENV \
+        -u VIRTUAL_ENV_PROMPT \
+        -u PYTHONPATH \
+        -u PYTHONHOME \
+        -u PYTHONUSERBASE \
+        uv run --isolated --no-project --python "$PY" --with-editable ".[dev]" \
+        python -B -m pytest -m "not integration" -q ${@+"$@"}
 }
 
 # HATS-1137: the integration tier OUTSIDE tests/e2e — the half `unit` excludes
