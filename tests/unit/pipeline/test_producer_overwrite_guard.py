@@ -139,9 +139,8 @@ def test_a_key_from_initial_state_is_not_a_producer() -> None:
 # ---------- every shipped pipeline stays legal ----------
 
 
-def test_shipped_pipelines_and_presets_are_all_accepted() -> None:
+def test_every_shipped_pipeline_is_accepted() -> None:
     from ai_hats.paths import core_pipeline_path
-    from ai_hats.pipeline import presets
     from ai_hats.pipeline.loader import load_pipeline
 
     # Glob the directory rather than a hardcoded list, so a pipeline added
@@ -153,6 +152,3 @@ def test_shipped_pipelines_and_presets_are_all_accepted() -> None:
 
     for path in yamls:
         _check_overwrites(load_pipeline(path).steps)
-
-    _check_overwrites(presets.execute_pipeline.steps)
-    _check_overwrites(presets.init_pipeline.steps)

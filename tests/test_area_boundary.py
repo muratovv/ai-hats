@@ -92,13 +92,10 @@ PINNED_DEEP_ENTRIES: tuple[str, ...] = (
     "ai_hats.cli.assembly -> ai_hats.pipeline.steps.materialize",
 )
 
-# Every pipeline assembled by calling ``build`` instead of loading its YAML. Each is
-# a second path past the loader (ADR-0026 C9); HATS-1783 drives this to ().
-PINNED_PYTHON_ASSEMBLED: tuple[str, ...] = (
-    "ai_hats.cli.assembly -> build(name='preview')",
-    "ai_hats.pipeline.presets -> build(name=PIPELINE_EXECUTE)",
-    "ai_hats.pipeline.presets -> build(name=PIPELINE_INIT)",
-)
+# Every pipeline assembled in code instead of loaded from its YAML. Each is a second
+# path past the loader (ADR-0026 C9). Two of the three went with ``pipeline.presets``,
+# which had no production reader (HATS-1783); the last one is ``preview`` (HATS-1784).
+PINNED_PYTHON_ASSEMBLED: tuple[str, ...] = ("ai_hats.cli.assembly -> build(name='preview')",)
 
 # comment-length: allow — an empty pin has to say what emptied it, or nobody can defend it
 # Every module of the area sitting in a non-trivial SCC. ADR-0026 D12 sets this gate at 0,
