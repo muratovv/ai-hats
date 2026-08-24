@@ -10,7 +10,7 @@ step's own ``StepIO`` (HATS-917); the entry-point key must equal it, and
 Registering built-ins at this package's import was the edge that made the YAML
 loader depend on all twenty step modules — and through ``handoff`` on ``cli`` —
 which is the cycle ADR-0026 D12 requires cut. Re-adding it is caught by
-``tests/test_area_boundary.py::test_no_shipped_module_registers_a_step``.
+``tests/test_area_boundary.py::test_no_shipped_module_registers_a_step_by_being_imported``.
 """  # comment-length: allow — the package's whole content is now this explanation
 
 from __future__ import annotations

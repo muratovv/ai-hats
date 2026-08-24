@@ -27,8 +27,8 @@ PromptWriter = Callable[[str | None], Path | None]
 class PipelineConfig:
     """Which pipeline to run — the materialized ``pipeline.yaml``."""
 
-    # TODO(HATS-1783): grows a ``path`` when the run_yaml consumers migrate —
-    # project-local pipelines are loaded by path, not by library name.
+    # TODO(HATS-268): grows a ``path`` when `pipeline run` lands — a project-local
+    # pipeline is named by path, and only ``harness.run_yaml`` can take one today.
     name: str
 
 

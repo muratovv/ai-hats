@@ -55,7 +55,11 @@ line. Regenerate a pin from its failing run; a hand-edited pin is how a breach g
 absorbed instead of noticed.
 
 Entry counting covers deferred and ``TYPE_CHECKING`` imports (ADR-0026 D5 and the
-2026-08-21 ruling on F4) — a boundary blind to them is blind to 45% of this graph.
+2026-08-21 ruling on F4), and the share is worth stating with its definition rather
+than as a slogan: of the 1 877 import statements in the 185 modules ``_source_modules``
+walks, 607 — 32% — are written inside a function body or under ``if TYPE_CHECKING``.
+That is what a boundary lint reading only module-level imports does not see. An earlier
+draft of this line said 45% and named no definition; re-measure with the walk below.
 """  # comment-length: allow — a gate is only as honest as its statement of what it misses
 
 from __future__ import annotations

@@ -146,8 +146,9 @@ incident produces — a taxonomy grows by incident, not by imagination.
 
 3. **A word in the gate's own name that excises half its subject.** "Foreign
    dispatchers" scanned only modules *outside* the area — and `presets.py`, inside it,
-   is the headline C9 defect ADR-0026 names. Two of the three known sites could never
-   have been counted.
+   was the headline C9 defect ADR-0026 names. Two of the three known sites could never
+   have been counted; both were `presets.py`, which is deleted, so the count the
+   qualifier hid was two thirds of the breach.
    *Fix:* ask what the qualifier excludes, and whether the property holds there too.
 
 4. **Reading a different tree than the one under test.** The catalog gate resolved the
@@ -161,14 +162,17 @@ incident produces — a taxonomy grows by incident, not by imagination.
    *Fix:* an unresolvable precondition is a failure that names what it could not
    resolve.
 
-6. **An exemption wider than the sanctioned case.** `loader.py` is exempt as a *module*,
-   so a second, non-YAML assembly added inside it stays invisible.
-   *Fix:* exempt the call, not the file.
+6. **An exemption wider than the sanctioned case.** `loader.py` was exempt as a
+   *module*, so a second, non-YAML assembly added inside it stayed invisible — proven
+   with a `build(name="probe_bypass")` appended to the file, which read green.
+   *Fix:* exempt the call, not the file. The exemption is now `(module, function)`
+   pairs, and it still lets past an assembly written inside `load_pipeline` itself —
+   an exemption says what it covers or it is a hole.
 
 7. **A bypass around the measured act.** A prebuilt object handed out — `from .presets
-   import execute_pipeline` — never calls the constructor the gate counts. Closed today
-   only because the producer is pinned, and it reopens the moment a pinned assembly is
-   converted without its importers.
+   import execute_pipeline` — never calls the constructor the gate counts. It was closed
+   only because the producer was pinned; deleting `presets.py` removed the producer, and
+   the shape reopens the moment a pinned assembly is converted without its importers.
    *Fix:* count the artefact where it is produced, and pin the producers.
 
 8. **A gate closable without touching the second implementation.** The precedent is in

@@ -183,8 +183,8 @@ select = ["E", "F", "S110", "S112"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
-# ADR-0026 D11: one line per area — a glob here is unreliable, so a new area's
-# tests are only run once its path is listed.
+# ADR-0026 D5/D7: one line per area — a glob here is unreliable, so a new area's
+# tests are only run once its path is listed. (D11 is the wheel exclude, above.)
 testpaths = [
     "tests",
     "src/ai_hats/pipeline/tests",

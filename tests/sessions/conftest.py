@@ -7,10 +7,11 @@ subprocess.Popen are stubbed so that no real Claude / shell subprocess is
 spawned. True CLI e2e tests (real bash + real pip + real ai-hats binary) live
 under ``tests/e2e/``.
 
-Named ``tests/pipeline/`` until HATS-1783: nothing here imports a pipeline
-module — this file patches ``runtime``, ``retro`` and ``_bootstrap`` — so the
-name pointed at the area whose own tests now live in
-``src/ai_hats/pipeline/tests/`` (ADR-0026 D5).
+Named ``tests/pipeline/`` until HATS-1783, which pointed the name at the area
+whose own tests now live in ``src/ai_hats/pipeline/tests/`` (ADR-0026 D5). The
+tier is not the area: what this file stubs is ``runtime``, ``retro`` and
+``_bootstrap``, and the four files here that do import a pipeline module import
+it because a *session* runs one, not to test the area (D7).
 """  # comment-length: allow — the rename is the layer's definition
 
 from __future__ import annotations
