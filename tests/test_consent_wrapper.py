@@ -13,11 +13,72 @@ from ai_hats.consent_wrapper import (
     ConsentPolicyError,
     _is_consent_wrapper_path,
     WrapperConfig,
+    match_operation,
     materialize_consent_wrappers,
     policy_from,
     run_wrapped,
 )
 from ai_hats.session_artifacts import BuiltArtifacts
+
+
+def test_exact_transition_selector_uses_source_state():
+    policy = {"rack.transition": ("plan->execute",)}
+    argv = ["transition", "HATS-1813", "execute"]
+
+    assert match_operation("rack", argv, policy, source_state="review") is None
+    assert match_operation("rack", argv, policy, source_state="plan") is not None
+
+
+def test_rework_transition_delegates_after_source_resolution(tmp_path: Path):
+    spawned: list[list[str]] = []
+    config = WrapperConfig(
+        project_dir=tmp_path,
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("plan->execute",)},
+    )
+
+    exit_code = run_wrapped(
+        "rack",
+        ["transition", "HATS-1813", "execute"],
+        config,
+        environ={},
+        check_grant=lambda operation, target_dir: pytest.fail("rework asked for consent"),
+        peek_ticket=lambda task_id, argv: False,
+        consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "review",
+        spawn=lambda command, environ: spawned.append(command) or 0,
+    )
+
+    assert exit_code == 0
+    assert spawned == [["/original/rack", "transition", "HATS-1813", "execute"]]
+
+
+def test_source_resolution_failure_refuses_before_spawn(tmp_path: Path, capsys):
+    spawned: list[list[str]] = []
+    config = WrapperConfig(
+        project_dir=tmp_path,
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("plan->execute",)},
+    )
+
+    def fail_resolution(*args):
+        raise ConsentPolicyError("cannot resolve HATS-1813 source state")
+
+    exit_code = run_wrapped(
+        "rack",
+        ["transition", "HATS-1813", "execute"],
+        config,
+        environ={},
+        check_grant=lambda operation, target_dir: pytest.fail("grant check ran"),
+        peek_ticket=lambda task_id, argv: False,
+        consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=fail_resolution,
+        spawn=lambda command, environ: spawned.append(command) or 0,
+    )
+
+    assert exit_code == 2
+    assert spawned == []
+    assert "cannot resolve HATS-1813 source state" in capsys.readouterr().err
 
 
 def test_declared_rack_transition_refuses_before_spawn(tmp_path: Path):
@@ -36,6 +97,7 @@ def test_declared_rack_transition_refuses_before_spawn(tmp_path: Path):
         check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
         peek_ticket=lambda task_id, argv: False,
         consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "plan",
         spawn=lambda command, environ: spawned.append(command) or 0,
     )
 
@@ -58,6 +120,7 @@ def test_refusal_names_executable_consent_operation(tmp_path: Path, capsys):
         check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
         peek_ticket=lambda task_id, argv: False,
         consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "plan",
     )
 
     assert exit_code == 2
@@ -109,6 +172,7 @@ def test_grant_starts_original_once_and_stays_outside_tool(tmp_path: Path):
         check_grant=lambda operation, target_dir: granted,
         peek_ticket=lambda task_id, argv: False,
         consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "review",
         record_grant=lambda answer, operation, project_dir: (
             recorded.append((answer, operation)) or True
         ),
@@ -140,6 +204,7 @@ def test_grant_journal_failure_refuses_before_original_starts(tmp_path: Path):
         check_grant=lambda operation, target_dir: Verdict(Outcome.GRANTED, grant_id="grant-a"),
         peek_ticket=lambda task_id, argv: False,
         consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "review",
         record_grant=lambda answer, operation, project_dir: False,
         spawn=lambda command, environ: spawned.append(command) or 0,
     )
@@ -165,6 +230,7 @@ def test_legacy_launch_ack_is_recorded_and_removed_before_spawn(tmp_path: Path):
         check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
         peek_ticket=lambda task_id, argv: False,
         consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "plan",
         record_legacy=lambda flag, operation, project_dir: (
             recorded.append((flag, operation.type)) or True
         ),
@@ -192,6 +258,7 @@ def test_ticket_must_be_consumed_before_original_starts(tmp_path: Path):
         check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
         peek_ticket=lambda task_id, argv: True,
         consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "review",
         spawn=lambda command, environ: spawned.append(command) or 0,
     )
 

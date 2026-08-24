@@ -23,6 +23,7 @@ CONFIG_ENV = "AI_HATS_CONSENT_WRAPPER_CONFIG"
 _SURFACES = {"rack.transition": "rack", "wt.merge": "ai-hats"}
 _ARROW = "->"
 _STATE_CHARS = frozenset(string.ascii_letters + string.digits + "_.-")
+_SOURCE_QUERY_TIMEOUT_S = 30
 
 
 class ConsentPolicyError(ValueError):
@@ -116,19 +117,78 @@ def _transition_target(argv: Sequence[str]) -> tuple[str, str] | None:
     return None if state.startswith("-") else (task_id, state)
 
 
-def _protected_targets(selectors: Sequence[str]) -> set[str]:
-    return {selector.split("->", 1)[1] for selector in selectors if "->" in selector}
+def _source_required(selectors: Sequence[str], target: str) -> bool:
+    matching_sources = [
+        selector.partition(_ARROW)[0]
+        for selector in selectors
+        if selector.partition(_ARROW)[2] == target
+    ]
+    return bool(matching_sources) and "" not in matching_sources
+
+
+def _tasks_dir_args(argv: Sequence[str]) -> list[str]:
+    for index, argument in enumerate(argv):
+        if argument == "--tasks-dir" and index + 1 < len(argv):
+            return [argument, argv[index + 1]]
+        if argument.startswith("--tasks-dir="):
+            return [argument]
+    return []
+
+
+def _resolve_transition_source(
+    original: str,
+    task_id: str,
+    argv: Sequence[str],
+    environ: Mapping[str, str],
+) -> str:
+    command = [original, "context", task_id, *_tasks_dir_args(argv), "--json"]
+    try:
+        result = subprocess.run(  # noqa: S603
+            command,
+            env=dict(environ),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_SOURCE_QUERY_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ConsentPolicyError(f"cannot resolve {task_id} source state: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise ConsentPolicyError(f"cannot resolve {task_id} source state: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+        state = payload["task"]["state"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ConsentPolicyError(
+            f"cannot resolve {task_id} source state: invalid context JSON"
+        ) from exc
+    if not isinstance(state, str) or not state:
+        raise ConsentPolicyError(f"cannot resolve {task_id} source state: invalid state")
+    return state
+
+
+def _selector_matches(selector: str, source_state: str | None, target: str) -> bool:
+    source, _, selected_target = selector.partition(_ARROW)
+    return selected_target == target and (not source or source == source_state)
 
 
 def match_operation(
-    surface: str, argv: Sequence[str], policy: Mapping[str, tuple[str, ...]]
+    surface: str,
+    argv: Sequence[str],
+    policy: Mapping[str, tuple[str, ...]],
+    *,
+    source_state: str | None = None,
 ) -> MatchedOperation | None:
     if surface == "rack" and "rack.transition" in policy:
         transition = _transition_target(argv)
         if transition is None:
             return None
         task_id, target = transition
-        if target not in _protected_targets(policy["rack.transition"]):
+        if not any(
+            _selector_matches(selector, source_state, target)
+            for selector in policy["rack.transition"]
+        ):
             return None
         flags = (_GLOBAL_ACK, "AI_HATS_PLAN_ACK") if target == "execute" else (_GLOBAL_ACK,)
         return MatchedOperation(
@@ -207,6 +267,9 @@ def run_wrapped(
     consume_ticket: Callable[[str | None, Sequence[str]], bool],
     record_grant: Callable[[Verdict, Operation, Path], bool] = _record_grant,
     record_legacy: Callable[[str, Operation, Path], bool] = _record_legacy,
+    resolve_transition_source: Callable[
+        [str, str, Sequence[str], Mapping[str, str]], str
+    ] = _resolve_transition_source,
     spawn: Callable[[list[str], Mapping[str, str]], int] = _spawn,
 ) -> int:
     env = dict(os.environ if environ is None else environ)
@@ -217,7 +280,18 @@ def run_wrapped(
             file=sys.stderr,
         )
         return REFUSED
-    matched = match_operation(surface, argv, config.policy)
+    source_state = None
+    if surface == "rack" and "rack.transition" in config.policy:
+        transition = _transition_target(argv)
+        if transition is not None:
+            task_id, target = transition
+            if _source_required(config.policy["rack.transition"], target):
+                try:
+                    source_state = resolve_transition_source(original, task_id, argv, env)
+                except ConsentPolicyError as exc:
+                    print(f"consent: {exc}", file=sys.stderr)
+                    return REFUSED
+    matched = match_operation(surface, argv, config.policy, source_state=source_state)
     if matched is None:
         return spawn([original, *argv], env)
 
