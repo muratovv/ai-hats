@@ -141,7 +141,7 @@ ci_adr_integrity() {
     "$PY" scripts/check_adr_integrity.py
 }
 
-# The full maintainer tier (~25 min). Excluded from `all`; this is the selection
+# The full maintainer tier (the slow one). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
 ci_e2e() {

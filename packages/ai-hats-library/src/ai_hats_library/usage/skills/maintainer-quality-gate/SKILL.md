@@ -7,7 +7,7 @@ ai_hats:
   # `.githooks/`, and the script below is resolved from this skill directory and
   # run in place at push time. Default (git pre-push): INSTANT pass-marker check
   # keyed to the tree of the pushed master commit. `--run` (run-e2e-gate.sh):
-  # runs the ~27-min suite out of band, marker on pass + clean tree.
+  # runs the full suite out of band, marker on pass + clean tree.
   # Hard gate: no env-var bypass; `git push --no-verify` is the only escape.
   git_hooks:
     pre-push:
@@ -69,7 +69,7 @@ library file that restated project content drifted from it within days
 In this repo `done-gate` is `<lint tier> unit integration merge-smoke`: the
 `integration` stage is `pytest --ignore=tests/e2e`, and the only thing reaching
 `tests/e2e/` is `merge-smoke`, the curated `-m smoke` subset. The full tier
-(`(integration or smoke)` across `tests/e2e/` + `tests/smoke/`, ~27 min) belongs
+(`(integration or smoke)` across `tests/e2e/` + `tests/smoke/`) belongs
 to the **push** gate alone. So "`make done-gate` is green" answers a narrower
 question than "the e2e tier is green" — a card whose change touches that tier
 runs `pytest -m integration tests/e2e/` on its own and says so. Ask
@@ -327,7 +327,7 @@ What that means at run time:
 
 ## The master pre-push gate — why two modes (HATS-686)
 
-The gate suite takes ~27 min. Running it **inside** the pre-push hook is
+The gate suite takes minutes. Running it **inside** the pre-push hook is
 incompatible with pushing to GitHub over SSH: git opens the SSH connection
 for ref-advertisement *before* running the hook, then runs the hook, then
 sends the pack. GitHub closes the idle connection after ~30s, so any hook
@@ -348,7 +348,7 @@ content, preserving the HATS-550 "no-broken-master, no-bypass" contract.
 Run this **before** pushing master. From the repo root the hook requires
 `pytest` on PATH (absent → ABORT, no marker) and a dispatcher that names a
 `push-gate` composition (absent → ABORT, no marker). The cheap stages come
-first in that composition and a red one aborts before the ~25-min tier starts
+first in that composition and a red one aborts before the slow tier starts
 (HATS-726 — the marker has to mean "everything CI checks is green"). Then it
 sweeps the dev checkout's `build/` directory (HATS-568 —
 stale wheel-build artefacts cause "File exists: build/bdist...dist-info"
@@ -406,7 +406,7 @@ pays a re-run and earns it back. The sweep can revoke a pass, never grant one.
 
 ## Typical flow
 
-    scripts/run-e2e-gate.sh        # ~27 min, out of band; writes the marker on green
+    scripts/run-e2e-gate.sh        # out of band; writes the marker on green
     git push origin master         # pre-push check passes instantly
 
 ## How to bypass

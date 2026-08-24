@@ -124,7 +124,7 @@ check_mode() {
     fi
 
     # The suite runs OUT OF BAND (HATS-686): GitHub closes the push SSH
-    # connection ~30s in, so a ~27-min suite cannot run inside pre-push.
+    # connection ~30s in, so a suite taking minutes cannot run inside pre-push.
     echo "[e2e-gate] push to master BLOCKED." >&2
     gate_refusal "$GATE_NAME" "$unmarked" "the master commit you are pushing" \
                  "$RUN_CMD" "$stages" >&2
