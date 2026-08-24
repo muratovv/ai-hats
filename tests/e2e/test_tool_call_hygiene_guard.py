@@ -167,12 +167,25 @@ def test_exit_code_masking_nudges(command):
     [
         "pytest tests/ && true",
         "set -o pipefail; pytest tests/ | tail",
+        # NOTE (HATS-1798): pinned because it is what the guard DOES, not
+        # because it is sound. The Bash tool runs zsh, where ${PIPESTATUS[0]}
+        # does not exist: this line evaluates to `exit ""` -> 0, so the guard is
+        # silent on a form that reads a red run as green. Its mirror image — the
+        # zsh-correct ${pipestatus[1]} — trips pipe_rx and gets nudged. Making
+        # the guard shell-aware is HATS-1815.
         "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
         "pytest tests/",
         "python -m pytest tests/",
-        # The rule's own "✅ intra-command" form: the status is CAPTURED to a
-        # file the agent then reads, so nothing is masked — nudging here taught
-        # the agent to distrust the one shape the rule prescribes.
+        # The rule's default shape: redirect only. The harness reports the
+        # runner's own exit code, so no status file is involved (HATS-1798).
+        "pytest tests/ > /tmp/gate.log 2>&1",
+        # The rule's reserved shape, for a verdict that must outlive the call:
+        # the leading rm -f is what proves the file belongs to THIS run.
+        "rm -f /tmp/gate.rc; pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
+        # Capturing the status to a file does not MASK it, at any path — so the
+        # guard stays silent here even without the rm -f. Freshness is the
+        # rule's business, not this hook's; nudging these taught the agent to
+        # distrust capture itself.
         "pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
         "python -m pytest tests/ -q > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
         "ruff check src/ > /tmp/lint.log 2>&1; echo $?>/tmp/lint.rc",
