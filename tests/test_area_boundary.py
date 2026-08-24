@@ -16,14 +16,20 @@ imports that same tree in a subprocess and reads what it did to the registry.
    is a live breach of the facade. The entries are pinned rather than counted on
    purpose — a count stays equal when one entry is converted and another added, and
    that swap is exactly the regression this gate exists to catch.
-2. **Python-assembled pipelines.** Asserts that the pipelines built by calling the
-   area's ``build`` constructor, rather than loaded from their YAML, equal
-   ``PINNED_PYTHON_ASSEMBLED``. The subject is ADR-0026 C9 — "one dispatcher, no
-   second path" — so the gate follows the constructor, not a list of module names:
-   the facade re-exports ``build``, which makes ``from ai_hats.pipeline import build``
-   a full second path that no list of internal modules can see. Does not assert that
-   YAML is the only way a pipeline is assembled; it asserts that a fourth way cannot
-   arrive unnoticed.
+2. **Python-assembled pipelines.** Asserts that the pipelines assembled in code,
+   rather than loaded from their YAML, equal ``PINNED_PYTHON_ASSEMBLED``. The subject
+   is ADR-0026 C9 — "one dispatcher, no second path" — so the gate follows the
+   property in every spelling that reaches it, not a list of module names and not one
+   constructor: the facade re-exports ``build`` *and* ``Pipeline``, and
+   ``pipeline.py`` supports calling the class directly, so both are full second paths
+   and a gate watching one of them reads green on the other. Exempt are two named
+   calls, not two files (§5 row 6): ``loader.load_pipeline``, which is the YAML path
+   itself, and the body of ``build``, which is the constructor. The structural fix is
+   to stop exporting ``build``, ``Pipeline`` and ``run`` from the area's ``__init__``
+   and leave the loader as the only way in; it waits on ``cli.assembly``, which still
+   builds its ``preview`` pipeline in Python and is carded as HATS-1784. Until then
+   this gate does not assert that YAML is the only way a pipeline is assembled; it
+   asserts that a fourth way cannot arrive unnoticed.
 3. **Modules in a cycle.** Asserts that the area's modules sitting in a non-trivial
    strongly connected component of the import graph equal
    ``PINNED_AREA_MODULES_IN_A_CYCLE``. ADR-0026 D12 makes this pilot gate 0 and the
@@ -105,13 +111,29 @@ PINNED_PYTHON_ASSEMBLED: tuple[str, ...] = (
 # purpose: it is application code, and "ai_hats.pipeline" is its prefix only as a string.
 PINNED_AREA_MODULES_IN_A_CYCLE: tuple[str, ...] = ()
 
-# Both spellings bind the same constructor: ``__init__`` re-exports ``build`` from
+# Both modules bind the same constructors: ``__init__`` re-exports them from
 # ``pipeline.pipeline``, so a gate that watches only one of them watches neither.
-_BUILD_SOURCES = frozenset({AREA, f"{AREA}.pipeline"})
+_ASSEMBLY_SOURCES = frozenset({AREA, f"{AREA}.pipeline"})
 
-# The one sanctioned caller: ``loader.load_pipeline`` *is* the YAML path, not a
-# mirror of it, so its own ``build`` call is the assembly every other one bypasses.
-_YAML_ASSEMBLER = f"{AREA}.loader"
+# comment-length: allow — the second constructor is the incident this line exists for
+# Every name that returns an assembled pipeline. ``Pipeline`` is here because it is a
+# second public constructor: ``from ai_hats.pipeline import Pipeline as _P; _P(steps=(),
+# name="x")`` assembles a pipeline in code, passed every gate, and was not even a deep
+# entry — the name sits on the facade. See gate 2 above for the structural fix.
+_ASSEMBLY_CONSTRUCTORS = frozenset({"build", "Pipeline"})
+
+# comment-length: allow — an exemption has to say what it still lets past, or it is a hole
+# The sanctioned assemblies, named as ``(module, function)`` — the call, not the file
+# (§5 row 6 of docs/how-to-extract-an-area.md). ``loader.load_pipeline`` *is* the YAML
+# path rather than a mirror of it, and ``pipeline.build`` is the constructor's own body.
+# Exempting their **modules** is what this gate did before, and it made a second, non-YAML
+# assembly written anywhere inside ``loader.py`` invisible. What the narrowing still lets
+# past, so it can be argued with: a second assembly written into the body of one of these
+# two functions.
+_SANCTIONED_ASSEMBLY_SITES: tuple[tuple[str, str], ...] = (
+    (f"{AREA}.loader", "load_pipeline"),
+    (f"{AREA}.pipeline", "build"),
+)
 
 
 def _module_name(path: Path) -> str:
@@ -206,32 +228,61 @@ def _deep_entries() -> tuple[str, ...]:
     return tuple(sorted(entries))
 
 
-def _assembler_spellings(tree: ast.AST, module: str, is_package: bool) -> set[str]:
-    """How this module would spell a call to the area's ``build`` constructor.
+def _assembler_spellings(tree: ast.AST, module: str, is_package: bool) -> dict[str, str]:
+    """How this module spells each of the area's pipeline constructors: spelling -> name.
 
-    Both the imported name (``build``, ``build as build_pipeline``) and the qualified
-    form (``pipeline.build`` after ``from ai_hats import pipeline``), because the
-    second path this gate watches for is free to arrive as either.
+    The imported name (``build``, ``build as build_pipeline``, ``Pipeline as _P``), the
+    qualified form (``pipeline.build`` after ``from ai_hats import pipeline``), and — in
+    the module that *defines* them — the bare name, because the second path this gate
+    watches for is free to arrive as any of them. Each maps back to the constructor it
+    binds, so the pin below names the constructor and not somebody's local alias.
     """
     base = _base_package(module, is_package)
-    spellings = {f"{source}.build" for source in _BUILD_SOURCES}
+    spellings = {
+        f"{source}.{constructor}": constructor
+        for source in _ASSEMBLY_SOURCES
+        for constructor in _ASSEMBLY_CONSTRUCTORS
+    }
+    if module in _ASSEMBLY_SOURCES:
+        spellings.update({constructor: constructor for constructor in _ASSEMBLY_CONSTRUCTORS})
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             target = _from_target(node, base)
             for alias in node.names:
-                if target in _BUILD_SOURCES and alias.name == "build":
-                    spellings.add(alias.asname or alias.name)
-                elif f"{target}.{alias.name}" in _BUILD_SOURCES:
-                    spellings.add(f"{alias.asname or alias.name}.build")
+                if target in _ASSEMBLY_SOURCES and alias.name in _ASSEMBLY_CONSTRUCTORS:
+                    spellings[alias.asname or alias.name] = alias.name
+                elif f"{target}.{alias.name}" in _ASSEMBLY_SOURCES:
+                    qualifier = alias.asname or alias.name
+                    spellings.update({f"{qualifier}.{c}": c for c in _ASSEMBLY_CONSTRUCTORS})
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name in _BUILD_SOURCES and alias.asname:
-                    spellings.add(f"{alias.asname}.build")
+                if alias.name in _ASSEMBLY_SOURCES and alias.asname:
+                    spellings.update({f"{alias.asname}.{c}": c for c in _ASSEMBLY_CONSTRUCTORS})
     return spellings
 
 
+def _sanctioned_calls(module: str, tree: ast.AST) -> set[ast.Call]:
+    """The calls this module makes from inside a sanctioned assembly site.
+
+    Identity, not position: the exemption is the body of one named function, so a call
+    written anywhere else in the same file is not covered by it.
+    """
+    exempt: set[ast.Call] = set()
+    for site_module, site_function in _SANCTIONED_ASSEMBLY_SITES:
+        if module != site_module:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == site_function:
+                exempt |= {call for call in ast.walk(node) if isinstance(call, ast.Call)}
+    return exempt
+
+
 def _assembled_name(node: ast.Call) -> str:
-    """The pipeline the call names, as written — the YAML this assembly mirrors."""
+    """The pipeline the call names, as written — the YAML this assembly mirrors.
+
+    ``<unnamed>`` when the call passes no ``name=``: the entry is still red, it just
+    cannot say which pipeline it built.
+    """
     for keyword in node.keywords:
         if keyword.arg == "name":
             return ast.unparse(keyword.value)
@@ -242,12 +293,14 @@ def _python_assembled_pipelines() -> tuple[str, ...]:
     """Every pipeline assembled from something other than its YAML."""
     found = []
     for module, path, tree in _source_modules():
-        if module == _YAML_ASSEMBLER:
-            continue
+        sanctioned = _sanctioned_calls(module, tree)
         spellings = _assembler_spellings(tree, module, path.name == "__init__.py")
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and ast.unparse(node.func) in spellings:
-                found.append(f"{module} -> build(name={_assembled_name(node)})")
+            if not isinstance(node, ast.Call) or node in sanctioned:
+                continue
+            constructor = spellings.get(ast.unparse(node.func))
+            if constructor is not None:
+                found.append(f"{module} -> {constructor}(name={_assembled_name(node)})")
     return tuple(sorted(found))
 
 
