@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_library.hooks.consent_gate import Operation, Outcome, Verdict
+from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
 
 
 REFUSED = 2
@@ -228,7 +229,11 @@ def run_wrapped(
             ticket = peek_ticket(matched.ticket_subject, argv)
             if not ticket:
                 detail = answer.reason or "no live authorization covers this operation"
-                print(f"consent: requires supervisor approval; {detail}", file=sys.stderr)
+                print(
+                    f"consent: requires supervisor approval; {detail}. Human: run "
+                    f"`consent {matched.operation.type} {DEFAULT_WINDOW_MINUTES}` in this session",
+                    file=sys.stderr,
+                )
                 return REFUSED
 
     child_env = dict(env)
@@ -253,6 +258,14 @@ def _wrapper_script(surface: str) -> str:
         f"#!{sys.executable}\n"
         "from ai_hats.consent_wrapper import main\n"
         f"raise SystemExit(main({surface!r}))\n"
+    )
+
+
+def _consent_script() -> str:
+    return (
+        f"#!{sys.executable}\n"
+        "from ai_hats_library.hooks.consent_gate.cli import main\n"
+        "raise SystemExit(main())\n"
     )
 
 
@@ -310,6 +323,9 @@ def materialize_consent_wrappers(
         + "\n",
     )
     bin_dir = root / _WRAPPER_BIN_NAME
+    consent = bin_dir / "consent"
+    artifacts.port.write_executable(consent, _consent_script())
+    artifacts.materialized.append(consent)
     for surface in surfaces:
         wrapper = bin_dir / surface
         artifacts.port.write_executable(wrapper, _wrapper_script(surface))

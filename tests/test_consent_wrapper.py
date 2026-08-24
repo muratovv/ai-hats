@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from ai_hats_core import ConsentPoint
 from ai_hats_library.hooks.consent_gate import Outcome, Verdict
+from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
 
 from ai_hats.consent_wrapper import (
     ConsentPolicyError,
@@ -40,6 +41,29 @@ def test_declared_rack_transition_refuses_before_spawn(tmp_path: Path):
 
     assert exit_code == 2
     assert spawned == []
+
+
+def test_refusal_names_executable_consent_operation(tmp_path: Path, capsys):
+    config = WrapperConfig(
+        project_dir=tmp_path,
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("plan->execute",)},
+    )
+
+    exit_code = run_wrapped(
+        "rack",
+        ["transition", "HATS-1803", "execute"],
+        config,
+        environ={},
+        check_grant=lambda operation, target_dir: Verdict(Outcome.DENIED, "no grant"),
+        peek_ticket=lambda task_id, argv: False,
+        consume_ticket=lambda task_id, argv: False,
+    )
+
+    assert exit_code == 2
+    stderr = capsys.readouterr().err
+    assert f"consent rack.transition {DEFAULT_WINDOW_MINUTES}" in stderr
+    assert "consent execute" not in stderr
 
 
 def test_bad_config_refuses_recursive_wrapper_before_spawn(tmp_path: Path, capsys):
@@ -294,6 +318,9 @@ def test_materialization_wraps_declared_surfaces_in_session_path(tmp_path: Path)
     )
 
     wrapper_bin = Path(artifacts.extra_env["PATH"].split(":", 1)[0])
+    consent = wrapper_bin / "consent"
+    assert consent.stat().st_mode & 0o111
+    assert consent in artifacts.materialized
     assert (wrapper_bin / "rack").stat().st_mode & 0o111
     assert (wrapper_bin / "ai-hats").stat().st_mode & 0o111
     assert artifacts.extra_env["AI_HATS_CONSENT_WRAPPER_CONFIG"].endswith("config.json")
