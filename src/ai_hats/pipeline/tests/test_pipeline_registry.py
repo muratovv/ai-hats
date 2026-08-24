@@ -22,7 +22,11 @@ class _Dummy(Step):
 
 @pytest.fixture(autouse=True)
 def _isolate_registry():
-    """Each test gets a clean registry — built-ins also re-register."""
+    """Each test starts from an empty ``_REGISTRY`` and an unread metadata scan.
+
+    Empty is not stepless: the built-ins are advertised, so they still resolve —
+    the reset only decides that nothing here inherits a neighbour's imports.
+    """
     saved = dict(reg._REGISTRY)
     reg._reset_for_tests()
     yield
@@ -77,15 +81,30 @@ def test_get_resolves_a_built_in_through_its_entry_point():
     assert factory.__module__ == "ai_hats.pipeline.steps.launch"
 
 
-def test_register_wins_over_the_declaration():
-    """A step already registered — a user step, or one resolved earlier — is not
-    re-resolved: ``get`` never reaches metadata for a name it already holds."""
+def test_a_resolved_step_is_never_re_resolved(monkeypatch):
+    """``get`` never reaches metadata for a name it already holds — proven by
+    making metadata explode after the first resolution."""
+    factory = reg.get("provider")
 
-    def factory(_: Mapping[str, Any]) -> Step:
-        return _Dummy()
+    def _explode(**_):
+        raise AssertionError("metadata read for an id the registry already holds")
 
-    reg.register("provider", factory)
+    monkeypatch.setattr(importlib.metadata, "entry_points", _explode)
+    reg._ADVERTISED = None  # drop the memo, so any read would fire _explode
     assert reg.get("provider") is factory
+
+
+def test_register_refuses_a_built_in_nothing_has_resolved_yet():
+    """The one-id-one-owner contract does not depend on run order (HATS-1799).
+
+    Built-ins are advertised, not registered, so a ``_REGISTRY``-only check let a
+    project step take ``provider`` in any process that had not resolved it — the
+    refusal fired or not depending on what had been imported first.
+    """
+    assert "provider" not in reg._REGISTRY  # nothing resolved it in this process
+    with pytest.raises(reg.StepRegistryError, match="already registered"):
+        reg.register("provider", lambda _: _Dummy())
+    assert "provider" not in reg._REGISTRY  # refused, not overwritten
 
 
 def test_no_advertised_steps_names_the_uninstalled_tree(monkeypatch):

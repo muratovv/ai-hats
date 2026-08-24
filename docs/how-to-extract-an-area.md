@@ -128,8 +128,9 @@ the number is replaced rather than defended, and §7 carries the measurement.
 
 Every entry below was found on **this epic's own gates**: the first eight by review,
 after the gate was written and believed, the ninth at design time, the tenth by a red
-check that read green, and the eleventh by a status file that read green two days after
-it was written. Read it before calling a gate done, and add the row your own incident
+check that read green, the eleventh by a status file that read green two days after
+it was written, and the twelfth by running one test file on its own. Read it before
+calling a gate done, and add the row your own incident
 produces — a taxonomy grows by incident, not by imagination.
 
 1. **Cardinality instead of the set.** The assert compares a count, so converting one
@@ -221,7 +222,24 @@ produces — a taxonomy grows by incident, not by imagination.
     conclusion rests on it — a fresh path per run, or its mtime checked against the
     run's start.
 
-Standing rule behind all eleven (ADR-0026 D3): a gate closes a row only by asserting the
+12. **The precondition was inherited, not established.** The gate is written about the
+    right subject and it does bite — but only from a state a neighbour left. Moving the
+    built-in steps to entry points made them resolve lazily, so `_REGISTRY` starts a
+    process empty and a project step registering `compose_role` hit no collision at all.
+    Both tests that assert the refusal (`test_conflict_with_builtin_raises`,
+    `test_harness_user_step_collision_aborts_before_namespace_setup`) kept passing in
+    the suite, because an earlier module had resolved the built-in and filled the
+    registry; run alone, each read `DID NOT RAISE`. CI never ran them alone, so a real
+    regression in the shipped contract — a user step silently shadowing a built-in —
+    read green for eleven commits.
+    *Fix:* a test states the state it starts from instead of inheriting it, and the
+    verdict is taken **twice** — alone and in the suite — with the two required to
+    agree. Where the state is process-global (a registry, a memo, a module cache), a
+    reset in the fixture is the statement; where the production code made the state
+    lazy, check what asserted the property *eagerly* before the change and is now
+    reading an empty container.
+
+Standing rule behind all twelve (ADR-0026 D3): a gate closes a row only by asserting the
 **absence of a second path**. A test that asserts a property of behaviour stays true
 with several owners, so it cannot close anything.
 

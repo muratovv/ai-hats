@@ -22,11 +22,18 @@ from ai_hats.paths import ENV_AI_HATS_DIR
 
 @pytest.fixture(autouse=True)
 def _reset_state():
-    """Each test gets a clean loader-cache + a snapshot/restore of registry."""
+    """Each test starts from a registry state this file states, not inherits.
+
+    Without the reset, what ``_REGISTRY`` holds here is whatever a neighbour
+    test module imported first, and a test about a collision then passes or
+    fails on run order (HATS-1799). After it, the only ids that resolve are the
+    ones installed metadata advertises — the same set alone and in the suite.
+    """
     _reset_loader_cache()
     snapshot = dict(registry._REGISTRY)
+    registry._reset_for_tests()
     yield
-    registry._REGISTRY.clear()
+    registry._reset_for_tests()
     registry._REGISTRY.update(snapshot)
 
 

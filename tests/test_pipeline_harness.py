@@ -212,11 +212,17 @@ def test_harness_writes_trace_file_on_run(tmp_path: Path, monkeypatch):
 
 @pytest.fixture
 def _restore_registry():
-    """Snapshot/restore registry around tests that mutate it."""
+    """Start from a stated registry state, restore the inherited one after.
+
+    The reset is what keeps the collision test below deciding the same thing
+    alone and in the suite: without it the built-in it collides with is only
+    present when a neighbour imported it first (HATS-1799).
+    """
     _reset_loader_cache()
     snapshot = dict(registry._REGISTRY)
+    registry._reset_for_tests()
     yield
-    registry._REGISTRY.clear()
+    registry._reset_for_tests()
     registry._REGISTRY.update(snapshot)
 
 

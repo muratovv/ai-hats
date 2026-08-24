@@ -7,6 +7,10 @@ resolvable (HATS-1783) — that side effect is what put the loader in an import
 cycle with ``cli``. Third parties keep both doors: advertise the same group, or
 call :func:`register` at their own import time, as ``user_steps`` does.
 
+One id, one owner, through either door: :func:`register` refuses a name that is
+already registered **or** advertised, so a project step cannot take a built-in's
+id — whether or not anything has resolved that built-in yet (HATS-1799).
+
 ADR-0026 D15: an entry point is a **non-import** edge no AST walk can see, so
 this seam is outside import-based test selection by design — a change to the
 group runs the full suite, never a selected subset.
@@ -38,8 +42,22 @@ class StepRegistryError(KeyError):
 
 
 def register(name: str, factory: StepFactory) -> None:
+    """Claim ``name``. A taken id is refused — never silently overridden.
+
+    Taken means either half of what :func:`names` reports: already registered,
+    or advertised and not yet resolved. Checking only ``_REGISTRY`` would make
+    the refusal depend on whether something had happened to resolve the built-in
+    first, so in a fresh process a project step would shadow it (HATS-1799).
+    """
     if name in _REGISTRY:
         raise StepRegistryError(f"step already registered: {name!r}")
+    claims = _advertised().get(name)
+    if claims:
+        raise StepRegistryError(
+            f"step already registered: {name!r} is a built-in, advertised under "
+            f"{STEP_ENTRY_POINT_GROUP!r} as {sorted(ep.value for ep in claims)}. "
+            "Overriding a built-in is not supported — pick a different id."
+        )
     _REGISTRY[name] = factory
 
 
@@ -113,7 +131,9 @@ def get(name: str) -> StepFactory:
             f"step {name!r} is advertised as {entry_point.value!r} under "
             f"{STEP_ENTRY_POINT_GROUP!r} but will not load: {exc.__class__.__name__}: {exc}"
         ) from exc
-    register(name, factory)
+    # Not register(): resolving a declaration is not claiming the name, and the
+    # id is advertised by definition here — which is what register() refuses.
+    _REGISTRY[name] = factory
     return factory
 
 
@@ -128,7 +148,14 @@ def names() -> list[str]:
 
 
 def _reset_for_tests() -> None:
-    """Clear the registry. Tests use this between runs to isolate state."""
+    """Forget what this process resolved, and the memoized metadata scan.
+
+    Not "empty": built-ins are declarations, not registrations, so they come
+    back from metadata the moment anything asks — :func:`names` and
+    :func:`register`'s refusal read the same either side of a reset. What a
+    reset does drop is every resolved factory and every ``register`` call, plus
+    the memoized scan, so a monkeypatched ``entry_points`` takes effect after it.
+    """
     global _ADVERTISED
     _REGISTRY.clear()
     _ADVERTISED = None
