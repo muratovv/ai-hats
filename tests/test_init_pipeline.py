@@ -1,4 +1,4 @@
-"""Tests for PIPELINE_INIT and init steps (HATS-1184)."""
+"""Tests for the ``init`` pipeline and its steps (HATS-1184)."""
 
 from __future__ import annotations
 
@@ -9,12 +9,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.pipeline.harness import PipelineHarness
-from ai_hats.pipeline.keys import (
-    KEY_EXECUTE_CMD,
-    KEY_PROJECT_DIR,
-    KEY_PROVIDER,
-    PIPELINE_INIT,
-)
+from ai_hats.pipeline.keys import KEY_EXECUTE_CMD, KEY_PROJECT_DIR, KEY_PROVIDER
+from ai_hats.pipeline_catalog import INIT
 from ai_hats.pipeline.steps.init_steps import InitProviderRequiredError, SelectProviderStep
 
 
@@ -45,7 +41,7 @@ def test_init_pipeline_full_harness_run(tmp_path, monkeypatch):
         patch("ai_hats.cli.assembly._wizard_provider_prompt", return_value="gemini"),
         patch("shutil.which", return_value="/usr/local/bin/ai-hats"),
     ):
-        with PipelineHarness(PIPELINE_INIT, tmp_path) as h:
+        with PipelineHarness(INIT.name, tmp_path) as h:
             res = h.run({KEY_PROJECT_DIR: tmp_path})
 
         assert res[KEY_PROVIDER] == "gemini"

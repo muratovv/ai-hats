@@ -105,45 +105,32 @@ def test_provider_names():
 def test_funnel_keys():
     """Pipeline boundary-crossing key names (explicit, no computed names).
 
-    These are the 22 keys seeded by CLI/runners or read from final state.
-    Explicit assertions prevent typos in constant definitions from hiding.
-    """
+    Explicit assertions prevent typos in constant definitions from hiding. Only the
+    keys with a reader are declared and pinned: HATS-1783 dropped 15 that nothing but
+    this test named, so the list here is the whole of ``keys.py`` minus the init
+    funnel, which ``init_steps.py`` declares and reads in one file.
+    """  # comment-length: allow — why a key is absent is the part that is not obvious
     assert keys.KEY_ROLE == "role"
-    assert keys.KEY_INTERACTIVE == "interactive"
     assert keys.KEY_PROJECT_DIR == "project_dir"
-    assert keys.KEY_PROMPT_PATH == "prompt_path"
     assert keys.KEY_PROVIDER == "provider"
-    assert keys.KEY_MODEL == "model"
-    assert keys.KEY_ISOLATION == "isolation"
-    assert keys.KEY_TICKET == "ticket"
-    assert keys.KEY_TAGS == "tags"
-    assert keys.KEY_EXTRA_ARGS == "extra_args"
-    assert keys.KEY_COMPOSITION == "composition"
-    assert keys.KEY_SESSION_MGR == "session_mgr"
-    assert keys.KEY_TRACER_FACTORY == "tracer_factory"
-    assert keys.KEY_MAX_RETRIES == "max_retries"
     assert keys.KEY_SESSION_ID == "session_id"
     assert keys.KEY_SESSION_DIR == "session_dir"
     assert keys.KEY_CLAUDE_SESSION_ID == "claude_session_id"
-    assert keys.KEY_EXIT_CODE == "exit_code"
     assert keys.KEY_ERRORS == "errors"
-    assert keys.KEY_REVIEW_PATH == "review_path"
-    assert keys.KEY_SAVED_PATH == "saved_path"
-    assert keys.KEY_INTAKE_RESULT == "intake_result"
 
 
-def test_pipeline_names():
-    """Core pipeline names (Python-side spellings)."""
-    assert keys.PIPELINE_HUMAN == "human"
-    assert keys.PIPELINE_EXECUTE == "execute"
-    assert keys.PIPELINE_FINALIZE_HITL == "finalize-hitl"
-    assert keys.PIPELINE_FINALIZE_SUBAGENT == "finalize-subagent"
-    assert keys.PIPELINE_REFLECT_SESSION == "reflect-session"
-    assert keys.PIPELINE_REFLECT_ALL == "reflect-all"
-    assert keys.PIPELINE_REFLECT_HYPOTHESIS_PHASE1 == "reflect-hypothesis-phase1"
-    assert keys.PIPELINE_REFLECT_HYPOTHESIS_PHASE2 == "reflect-hypothesis-phase2"
-    assert keys.PIPELINE_REFLECT_ROLE == "reflect-role"
-    assert keys.PIPELINE_REFLECT_ISSUE == "reflect-issue"
+def test_the_pipeline_names_are_not_the_area_s_to_declare():
+    """The catalog is the application's; ``keys.py`` must not grow a copy (HATS-1783).
+
+    The eleven ``PIPELINE_*`` constants this test used to pin were an enumeration of
+    the *application's* pipelines living inside the area — §6 of
+    docs/how-to-extract-an-area.md — duplicating ``ai_hats/pipeline_catalog.py``. The
+    names are held against the shipped YAML by
+    ``tests/test_area_boundary.py::test_every_shipped_pipeline_is_declared_in_the_catalog``,
+    which is a stronger guard than a literal pin: it cannot go green on a pipeline
+    nobody declared.
+    """  # comment-length: allow — a deleted pin has to say what replaced it
+    assert not [name for name in dir(keys) if name.startswith("PIPELINE_")]
 
 
 def _declared_steps() -> dict[str, str]:
