@@ -1359,13 +1359,24 @@ def test_update_stable_fetch_unreachable_exits_2(tmp_path, monkeypatch):
     assert "could not resolve latest stable version from PyPI" in output
 
 
-def test_update_local_editable_in_place(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("verify_returncode", "expected_exit"),
+    [(0, 0), (1, 1)],
+    ids=["verified", "verify-failed"],
+)
+def test_update_local_editable_in_place(tmp_path, monkeypatch, verify_returncode, expected_exit):
     """channel: local → `uv pip install -e <path>` in place, no versioned dir."""
     project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
     captured: list[list[str]] = []
 
     def fake_run(args, **kwargs):
         captured.append(list(args))
+        if list(args)[1:4] == ["-m", "ai_hats._bootstrap", "verify"]:
+            return _make_completed(
+                list(args),
+                returncode=verify_returncode,
+                stderr="ai_hats.steps entry point is broken",
+            )
         return _make_completed(list(args), returncode=0)
 
     monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")  # _require_uv passes
@@ -1374,33 +1385,16 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch):
         patch("subprocess.run", side_effect=fake_run),
     ):
         result = CliRunner().invoke(update, [])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == expected_exit, result.output
+    if verify_returncode:
+        assert "Post-install verify failed" in result.output
+        assert "ai_hats.steps entry point is broken" in result.output
+        return
     editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2:] == ["-e", "."]]
     assert len(editable) == 1, f"expected one editable install, got {captured}"
     assert editable[0][-1] == "."
     # No versioned dir is created for a local editable install.
     assert not (project / ".agent" / "ai-hats" / "versions").exists()
-
-
-def test_update_local_editable_fails_when_post_install_verify_fails(tmp_path, monkeypatch):
-    project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
-    monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
-    with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
-        patch(
-            "subprocess.run",
-            return_value=_make_completed([], returncode=0),
-        ),
-        patch(
-            "ai_hats.cli.maintenance._run_post_install_verify",
-            return_value=(False, "ai_hats.steps entry point is broken"),
-        ),
-    ):
-        result = CliRunner().invoke(update, [])
-
-    assert result.exit_code == 1, result.output
-    assert "Post-install verify failed" in result.output
-    assert "ai_hats.steps entry point is broken" in result.output
 
 
 def test_update_invalidates_update_cache(tmp_path, monkeypatch):

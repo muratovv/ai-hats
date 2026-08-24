@@ -775,9 +775,70 @@ def test_t18b_refresh_survives_an_unusable_site_dir(monkeypatch):
 # ---------- T19: editable step metadata drift (HATS-1810) ----------
 
 
-def test_t19_editable_step_metadata_drift_detects_added_declaration(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("live", "installed"),
+    [
+        (
+            [
+                ("check_update_async", "ai_hats.pipeline.steps.check_update:CheckUpdateAsync"),
+                ("pre_log", "ai_hats.pipeline.steps.log:PreLog"),
+            ],
+            [("pre_log", "ai_hats.pipeline.steps.log:PreLog")],
+        ),
+        (
+            [("check_update_async", "ai_hats.pipeline.steps.check_update:CheckUpdateAsync")],
+            [("check_update_async", "ai_hats.pipeline.steps.log:PreLog")],
+        ),
+        (
+            [],
+            [("check_update_async", "ai_hats.pipeline.steps.check_update:CheckUpdateAsync")],
+        ),
+    ],
+    ids=["added", "retargeted", "removed"],
+)
+def test_t19_editable_step_metadata_drift_detects_exact_mapping(
+    monkeypatch, tmp_path, live, installed
+):
+    declarations = "".join(f'{name} = "{target}"\n' for name, target in live)
+    _editable_checkout(
+        monkeypatch,
+        tmp_path,
+        [],
+        body=(
+            '[project]\nname = "ai-hats"\ndependencies = []\n'
+            '[project.entry-points."ai_hats.steps"]\n'
+            f"{declarations}"
+        ),
+    )
+
+    class _Dist:
+        entry_points = [
+            type(
+                "_EP",
+                (),
+                {
+                    "group": "ai_hats.steps",
+                    "name": name,
+                    "value": target,
+                },
+            )()
+            for name, target in installed
+        ]
+
+    monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
+
+    failures = _bootstrap.find_editable_step_metadata_drift()
+
+    assert len(failures) == 1
+    assert repr(sorted(live)) in failures[0]
+    assert repr(sorted(installed)) in failures[0]
+
+
+@pytest.mark.parametrize("repair_effective", [True, False], ids=["repaired", "noop"])
+def test_t20_bootstrap_repairs_editable_step_metadata_or_fails_loudly(
+    monkeypatch, tmp_path, capsys, repair_effective
+):
     live_target = "ai_hats.pipeline.steps.check_update:CheckUpdateAsync"
-    installed_target = "ai_hats.pipeline.steps.log:PreLog"
     _editable_checkout(
         monkeypatch,
         tmp_path,
@@ -786,149 +847,44 @@ def test_t19_editable_step_metadata_drift_detects_added_declaration(monkeypatch,
             '[project]\nname = "ai-hats"\ndependencies = []\n'
             '[project.entry-points."ai_hats.steps"]\n'
             f'check_update_async = "{live_target}"\n'
-            f'pre_log = "{installed_target}"\n'
         ),
     )
+    state: dict[str, list[tuple[str, str]]] = {"installed": []}
 
     class _Dist:
-        entry_points = [
-            type(
-                "_EP",
-                (),
-                {
-                    "group": "ai_hats.steps",
-                    "name": "pre_log",
-                    "value": installed_target,
-                },
-            )()
-        ]
+        @property
+        def entry_points(self):
+            return [
+                type(
+                    "_EP",
+                    (),
+                    {"group": "ai_hats.steps", "name": name, "value": target},
+                )()
+                for name, target in state["installed"]
+            ]
 
     monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
-
-    failures = _bootstrap.find_editable_step_metadata_drift()
-
-    assert len(failures) == 1
-    assert "check_update_async" in failures[0]
-
-
-def test_t19b_editable_step_metadata_drift_detects_retargeted_declaration(monkeypatch, tmp_path):
-    live_target = "ai_hats.pipeline.steps.check_update:CheckUpdateAsync"
-    installed_target = "ai_hats.pipeline.steps.log:PreLog"
-    _editable_checkout(
-        monkeypatch,
-        tmp_path,
-        [],
-        body=(
-            '[project]\nname = "ai-hats"\ndependencies = []\n'
-            '[project.entry-points."ai_hats.steps"]\n'
-            f'check_update_async = "{live_target}"\n'
-        ),
-    )
-
-    class _Dist:
-        entry_points = [
-            type(
-                "_EP",
-                (),
-                {
-                    "group": "ai_hats.steps",
-                    "name": "check_update_async",
-                    "value": installed_target,
-                },
-            )()
-        ]
-
-    monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
-
-    failures = _bootstrap.find_editable_step_metadata_drift()
-
-    assert len(failures) == 1
-    assert live_target in failures[0]
-    assert installed_target in failures[0]
-
-
-def test_t19c_editable_step_metadata_drift_detects_removed_declaration(monkeypatch, tmp_path):
-    removed_target = "ai_hats.pipeline.steps.check_update:CheckUpdateAsync"
-    _editable_checkout(
-        monkeypatch,
-        tmp_path,
-        [],
-        body=(
-            '[project]\nname = "ai-hats"\ndependencies = []\n'
-            '[project.entry-points."ai_hats.steps"]\n'
-        ),
-    )
-
-    class _Dist:
-        entry_points = [
-            type(
-                "_EP",
-                (),
-                {
-                    "group": "ai_hats.steps",
-                    "name": "check_update_async",
-                    "value": removed_target,
-                },
-            )()
-        ]
-
-    monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
-
-    failures = _bootstrap.find_editable_step_metadata_drift()
-
-    assert len(failures) == 1
-    assert "check_update_async" in failures[0]
-
-
-def test_t20_bootstrap_repairs_editable_step_metadata_and_reexecs(monkeypatch):
-    state = {"healed": False}
-    monkeypatch.setattr(_bootstrap, "find_missing_runtime_deps", lambda: [])
-    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: "/src/ai-hats")
-    monkeypatch.setattr(
-        _bootstrap,
-        "find_editable_step_metadata_drift",
-        lambda: [] if state["healed"] else ["ai_hats.steps metadata is stale"],
-    )
 
     pip_calls: list[list[str]] = []
 
     def fake_run(cmd, **kw):
         pip_calls.append(list(cmd))
-        state["healed"] = True
+        if repair_effective:
+            state["installed"] = [("check_update_async", live_target)]
         return type("R", (), {"returncode": 0})()
 
     execv_calls: list[tuple[str, list[str]]] = []
     monkeypatch.setattr(_bootstrap.subprocess, "run", fake_run)
     monkeypatch.setattr(_bootstrap.os, "execv", lambda path, argv: execv_calls.append((path, argv)))
-    monkeypatch.setattr(sys, "argv", ["ai-hats", "--help"])
 
-    _bootstrap.bootstrap_or_die()
-
-    assert pip_calls == [["uv", "pip", "install", "--python", sys.executable, "-e", "/src/ai-hats"]]
-    assert execv_calls == [(sys.executable, [sys.executable, "-m", "ai_hats", "--help"])]
-
-
-def test_t20b_bootstrap_refuses_noop_step_metadata_repair(monkeypatch, capsys):
-    monkeypatch.setattr(_bootstrap, "find_missing_runtime_deps", lambda: [])
-    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: "/src/ai-hats")
-    monkeypatch.setattr(
-        _bootstrap,
-        "find_editable_step_metadata_drift",
-        lambda: ["ai_hats.steps metadata is stale"],
-    )
-    monkeypatch.setattr(
-        _bootstrap.subprocess,
-        "run",
-        lambda *args, **kwargs: type("R", (), {"returncode": 0})(),
-    )
-
-    def boom_execv(*args, **kwargs):
-        raise AssertionError("execv must not run while step metadata is still stale")
-
-    monkeypatch.setattr(_bootstrap.os, "execv", boom_execv)
-
-    with pytest.raises(SystemExit) as exc:
+    if repair_effective:
         _bootstrap.bootstrap_or_die()
+    else:
+        with pytest.raises(SystemExit) as exc:
+            _bootstrap.bootstrap_or_die()
+        assert exc.value.code == 1
+        assert "uv reported success" in capsys.readouterr().err
 
-    assert exc.value.code == 1
-    assert "uv reported success" in capsys.readouterr().err
+    assert pip_calls == [["uv", "pip", "install", "--python", sys.executable, "-e", str(tmp_path)]]
+    expected_execs = [(sys.executable, [sys.executable, "-m", "ai_hats", *sys.argv[1:]])]
+    assert execv_calls == (expected_execs if repair_effective else [])
