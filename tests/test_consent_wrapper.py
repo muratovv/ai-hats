@@ -10,6 +10,7 @@ from ai_hats_library.hooks.consent_gate import Outcome, Verdict
 
 from ai_hats.consent_wrapper import (
     ConsentPolicyError,
+    _is_consent_wrapper_path,
     WrapperConfig,
     materialize_consent_wrappers,
     policy_from,
@@ -533,3 +534,44 @@ def test_a_declaration_that_names_no_done_leaves_the_road_open():
     )
 
     assert exit_code == 0 and spawned, "an undeclared target must pass through"
+
+
+def test_the_guard_recognises_the_wrapper_the_materializer_wrote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """HATS-1809: `_is_consent_wrapper_path` is the sole predicate under both
+    recursion barriers, and it identifies a wrapper by the path shape that
+    `materialize_consent_wrappers` spells independently. Both ends are derived
+    from one real materialization here — a test that built the path itself would
+    only restate the literal it is supposed to guard, which is why the five
+    HATS-1806 tests stay green when the producer is renamed."""
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    canonical_bin = tmp_path / "canonical-bin"
+    canonical_bin.mkdir()
+    canonical = canonical_bin / "rack"
+    canonical.write_text("original")
+    artifacts = BuiltArtifacts()
+
+    materialize_consent_wrappers(
+        tmp_path,
+        SimpleNamespace(
+            consent=(
+                ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),
+            )
+        ),
+        "sid-1809",
+        SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
+        artifacts,
+        environ={"PATH": str(canonical_bin)},
+        which=lambda name, path=None: str(canonical),
+    )
+
+    wrapper = next(path for path in artifacts.materialized if path.name == "rack")
+    bin_dir = Path(artifacts.extra_env["PATH"].split(os.pathsep)[0])
+
+    assert _is_consent_wrapper_path(wrapper), (
+        f"the guard does not recognise the wrapper the materializer wrote: {wrapper}"
+    )
+    assert _is_consent_wrapper_path(bin_dir), (
+        f"the guard does not recognise the bin dir it put on PATH: {bin_dir}"
+    )
