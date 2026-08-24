@@ -574,7 +574,7 @@ as a claim to check, not as evidence.
 
 ## `test_codex_consent_grant.py`
 
-*pins HATS-1755*
+*pins HATS-1755, HATS-1803*
 
 - **flow** — a human grants rack.transition inside Codex; review-to-done then merges
 - **cmds**

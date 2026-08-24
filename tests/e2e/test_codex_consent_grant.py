@@ -1,4 +1,4 @@
-"""e2e (HATS-1755)
+"""e2e (HATS-1755, HATS-1803)
 
 flow: a human grants rack.transition inside Codex; review-to-done then merges
 cmds:
@@ -42,6 +42,7 @@ _FAKE_CODEX = r"""#!/usr/bin/env python3
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -61,14 +62,25 @@ if mode == "stale-envelope":
     stale_identity = dict(identity)
     stale_identity.pop("session_cache_dir", None)
     issue_env["AI_HATS_SESSION_IDENTITY"] = json.dumps(stale_identity)
-issued = subprocess.run(
-    [os.environ["AI_HATS_CONSENT_BIN"], "rack.transition", "30"],
-    cwd=os.getcwd(),
-    env=issue_env,
-    capture_output=True,
-    text=True,
-    timeout=30,
-)
+consent_path = shutil.which("consent") or ""
+consent_is_file = Path(consent_path).is_file() if consent_path else False
+consent_is_executable = os.access(consent_path, os.X_OK) if consent_path else False
+if consent_path:
+    issued = subprocess.run(
+        ["consent", "rack.transition", "30"],
+        cwd=os.getcwd(),
+        env=issue_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+else:
+    issued = subprocess.CompletedProcess(
+        args=["consent", "rack.transition", "30"],
+        returncode=127,
+        stdout="",
+        stderr="consent: command not found",
+    )
 if mode == "stale-envelope":
     store = Path(identity["session_cache_dir"]) / "consent" / "grants"
     capture = {
@@ -79,6 +91,9 @@ if mode == "stale-envelope":
             for key in ("AI_HATS_CONSENT_ACK", "AI_HATS_MERGE_ACK")
             if key in issue_env
         ),
+        "consent_path": consent_path,
+        "consent_is_file": consent_is_file,
+        "consent_is_executable": consent_is_executable,
         "issued": {
             "returncode": issued.returncode,
             "stdout": issued.stdout,
@@ -131,6 +146,9 @@ capture = {
         for key in ("AI_HATS_CONSENT_ACK", "AI_HATS_MERGE_ACK")
         if key in os.environ
     ),
+    "consent_path": consent_path,
+    "consent_is_file": consent_is_file,
+    "consent_is_executable": consent_is_executable,
     "issued": {
         "returncode": issued.returncode,
         "stdout": issued.stdout,
@@ -190,6 +208,26 @@ def _project(tmp_path: Path, library_dir: Path) -> Path:
     return project
 
 
+def _command_bin(tmp_path: Path) -> Path:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    commands = {
+        "codex": _FAKE_CODEX,
+        "rack": (
+            f"#!{sys.executable}\nimport runpy\n"
+            "runpy.run_module('ai_hats_rack', run_name='__main__')\n"
+        ),
+        "ai-hats": (
+            f"#!{sys.executable}\nimport runpy\nrunpy.run_module('ai_hats', run_name='__main__')\n"
+        ),
+    }
+    for name, body in commands.items():
+        executable = fake_bin / name
+        executable.write_text(body)
+        executable.chmod(0o755)
+    return fake_bin
+
+
 def _reviewable(project: Path, env: dict[str, str]) -> None:
     created = _rack(
         project,
@@ -240,6 +278,7 @@ def _launch_env(
         "AI_HATS_CONSENT_ACK",
         "AI_HATS_CONSENT_TICKET",
         "AI_HATS_CODEX_BASE_HOME",
+        "AI_HATS_CONSENT_BIN",
         "AI_HATS_PYTHON",
         "AI_HATS_MERGE_ACK",
         "AI_HATS_PLAN_ACK",
@@ -250,8 +289,6 @@ def _launch_env(
         "CODEX_SQLITE_HOME",
     ):
         env.pop(stale, None)
-    consent_bin = Path(sys.executable).with_name("consent")
-    assert consent_bin.is_file(), f"the worktree venv has no consent script: {consent_bin}"
     base_home = tmp_path / "base-codex-home"
     base_home.mkdir()
     env.update(
@@ -260,14 +297,11 @@ def _launch_env(
             "AI_HATS_CODEX_CAPTURE": str(capture),
             "AI_HATS_CODEX_CONSENT_MODE": mode,
             "AI_HATS_CODEX_TASK_ID": TASK_ID,
-            "AI_HATS_CONSENT_BIN": str(consent_bin),
             "AI_HATS_LIBRARY_ROOT": str(library_dir),
             "AI_HATS_NO_UPDATE_CHECK": "1",
             "AI_HATS_USER_HOME": str(tmp_path / "user-home"),
             "CODEX_HOME": str(base_home),
-            "PATH": os.pathsep.join(
-                [str(fake_bin), str(Path(sys.executable).parent), env.get("PATH", "")]
-            ),
+            "PATH": os.pathsep.join([str(fake_bin), os.defpath]),
             "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
         }
     )
@@ -275,14 +309,11 @@ def _launch_env(
 
 
 def test_codex_session_issues_and_consumes_rack_grant(tmp_path: Path, ai_hats_shim: Path) -> None:
+    """HATS-1803: the bare grant verb belongs to the launched session."""
     library_dir = tmp_path / "library"
     shutil.copytree(LIBRARY_DIR, library_dir)
     project = _project(tmp_path, library_dir)
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_codex = fake_bin / "codex"
-    fake_codex.write_text(_FAKE_CODEX)
-    fake_codex.chmod(0o755)
+    fake_bin = _command_bin(tmp_path)
     capture_path = tmp_path / "capture.json"
     env = _launch_env(tmp_path, fake_bin, capture_path, library_dir)
     _reviewable(project, env)
@@ -303,6 +334,14 @@ def test_codex_session_issues_and_consumes_rack_grant(tmp_path: Path, ai_hats_sh
     assert identity["project_dir"] == str(project)
     assert identity["session_dir"]
     assert identity["session_cache_dir"]
+    assert capture["consent_path"], capture["issued"]
+    consent_path = Path(capture["consent_path"])
+    assert consent_path == Path(identity["session_cache_dir"]) / "consent-wrapper/bin/consent"
+    assert capture["consent_is_file"]
+    assert capture["consent_is_executable"]
+    assert not consent_path.exists()
+    assert not (fake_bin / "consent").exists()
+    assert not (tmp_path / "user-home" / "consent").exists()
     assert capture["ack_keys"] == []
     assert capture["issued"]["returncode"] == 0, capture["issued"]
     assert "rack.transition" in capture["issued"]["stdout"]
@@ -325,11 +364,7 @@ def test_codex_stale_envelope_refuses_grant_with_restart_recovery(
     library_dir = tmp_path / "library"
     shutil.copytree(LIBRARY_DIR, library_dir)
     project = _project(tmp_path, library_dir)
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_codex = fake_bin / "codex"
-    fake_codex.write_text(_FAKE_CODEX)
-    fake_codex.chmod(0o755)
+    fake_bin = _command_bin(tmp_path)
     capture_path = tmp_path / "capture.json"
     env = _launch_env(
         tmp_path,
