@@ -233,20 +233,6 @@ class Provider(abc.ABC):
                 )
         return artifacts
 
-    def finalize_session_artifacts(
-        self,
-        project_dir: Path,
-        session_id: str,
-        artifacts: BuiltArtifacts,
-    ) -> None:
-        """Finalize provider-owned artifacts after the surface exits."""
-        del project_dir, session_id, artifacts
-
-    def recover_session_artifacts(self, project_dir: Path, session_id: str) -> list[str]:
-        """Recover provider-owned artifacts left by interrupted sessions."""
-        del project_dir, session_id
-        return []
-
     def transcript_parser(self) -> TranscriptParser:
         """The parser ``AuditWriter`` uses for this surface's session record.
 

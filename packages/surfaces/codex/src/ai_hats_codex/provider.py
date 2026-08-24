@@ -19,7 +19,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ai_hats.providers import Provider
-from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
+from ai_hats.session_artifacts import (
+    AutomateLaunch,
+    BuiltArtifacts,
+    RunMode,
+    SessionPolicy,
+)
 
 from .session_home import (
     SESSION_HOME_MANIFEST,
@@ -340,6 +345,15 @@ class CodexProvider(Provider):
         session_home = self.session_codex_home(project_dir, session_id)
         base_home = self._base_codex_home(session_home)
         sqlite_home = self._configured_sqlite_home(base_home)
+        resources = artifacts.resources
+        if resources is not None:
+
+            def finalize_session_home() -> None:
+                warning = self._finalize_session_home(session_home, base_home, sqlite_home)
+                if warning:
+                    resources.warn(warning)
+
+            resources.defer("Codex session home", finalize_session_home)
         artifacts.port.mkdir(cache_dir)
         artifacts.port.mkdir(session_home)
         artifacts.port.write_text(
@@ -416,7 +430,7 @@ class CodexProvider(Provider):
             session_id=metadata.session_id,
         )
 
-    def recover_session_artifacts(self, project_dir: Path, session_id: str) -> list[str]:
+    def _recover_session_homes(self, project_dir: Path, session_id: str) -> list[str]:
         from ai_hats.paths import project_key, session_cache_dir
 
         base_home = self._configured_base_home()
@@ -458,31 +472,32 @@ class CodexProvider(Provider):
                 warnings.append(warning)
         return warnings
 
-    def finalize_session_artifacts(
+    def build_session_artifacts(
         self,
         project_dir: Path,
+        result: "CompositionResult",
         session_id: str,
+        *,
+        run_mode: RunMode | str = RunMode.HITL,
+        policy: SessionPolicy | None = None,
         artifacts: BuiltArtifacts,
-    ) -> None:
-        """Canonicalize Codex rollout references before removing the session home."""
-        configured_home = artifacts.extra_env.get("CODEX_HOME")
-        if configured_home is None:
-            return
-
-        session_home = Path(configured_home)
-        expected_home = self.session_codex_home(project_dir, session_id)
-        if session_home != expected_home or session_home.is_symlink():
-            raise RuntimeError("Refusing to finalize an unexpected Codex session home")
-
-        base_home = self._base_codex_home(session_home)
-        configured_base = artifacts.extra_env.get(_ENV_CODEX_BASE_HOME)
-        if configured_base is None or Path(configured_base).resolve() != base_home:
-            raise RuntimeError("Codex session base home changed before finalization")
-
-        sqlite_home = Path(artifacts.extra_env.get("CODEX_SQLITE_HOME", str(base_home)))
-        warning = self._finalize_session_home(session_home, base_home, sqlite_home)
-        if warning:
-            logger.warning(warning)
+    ) -> BuiltArtifacts:
+        if artifacts.resources is not None:
+            try:
+                artifacts.notices.extend(self._recover_session_homes(project_dir, session_id))
+            except Exception as exc:
+                logger.warning("Codex session-home recovery failed", exc_info=True)
+                artifacts.notices.append(
+                    f"Codex session-home recovery failed: {type(exc).__name__}: {exc}"
+                )
+        return super().build_session_artifacts(
+            project_dir,
+            result,
+            session_id,
+            run_mode=run_mode,
+            policy=policy,
+            artifacts=artifacts,
+        )
 
     def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_skills(project_dir, result, session_id, artifacts)

@@ -437,7 +437,7 @@ def test_wrap_runner_finally_prints_summary_on_happy_path(
     assert f"✨ Session {session.session_id} complete!" in out
 
 
-def test_wrap_runner_finalizes_provider_artifacts_before_session_cache(
+def test_wrap_runner_closes_session_resources_before_session_cache(
     wrap_runner_factory,
 ):
     from ai_hats.surfaces.claude.provider import ClaudeProvider
@@ -446,19 +446,27 @@ def test_wrap_runner_finalizes_provider_artifacts_before_session_cache(
     events: list[str] = []
 
     class LifecycleProvider(ClaudeProvider):
-        def recover_session_artifacts(self, project_dir, session_id):
-            events.append("recover")
-            return []
+        def build_session_artifacts(self, project_dir, result, session_id, **kwargs):
+            artifacts = kwargs["artifacts"]
+            assert artifacts.resources is not None
 
-        def finalize_session_artifacts(self, project_dir, session_id, artifacts):
-            assert session_cache_dir(project_dir, session_id).is_dir()
-            events.append("provider")
+            def finalize() -> None:
+                assert session_cache_dir(project_dir, session_id).is_dir()
+                events.append("provider")
+
+            artifacts.resources.defer("provider artifacts", finalize)
+            return super().build_session_artifacts(
+                project_dir,
+                result,
+                session_id,
+                **kwargs,
+            )
 
     runner.payload = replace(runner.payload, provider=LifecycleProvider())
 
     _exit_code, session = runner.run()
 
-    assert events == ["recover", "provider"]
+    assert events == ["provider"]
     assert not session_cache_dir(runner.project_dir, session.session_id).exists()
 
 

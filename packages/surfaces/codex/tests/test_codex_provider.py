@@ -13,6 +13,7 @@ import pytest
 
 from ai_hats.paths import project_key, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.session_run import SessionRun
 from ai_hats_codex import CodexProvider
 from ai_hats_codex.provider import _readiness_warnings
 
@@ -313,7 +314,7 @@ def test_role_skills_activate_native_codex_home_with_shared_user_state(
     assert list(project.iterdir()) == []
 
 
-def test_finalize_session_artifacts_normalizes_rollout_and_removes_home(
+def test_session_run_normalizes_rollout_and_removes_home(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -326,24 +327,24 @@ def test_finalize_session_artifacts_normalizes_rollout_and_removes_home(
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)")
     provider = CodexProvider()
-    artifacts = provider.build_session_artifacts(
-        project,
-        _fake_result(skills=[_make_skill(tmp_path, "release")]),
-        "sid-cleanup",
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
-    session_home = provider.session_codex_home(project, "sid-cleanup")
-    with sqlite3.connect(database) as connection:
-        connection.execute(
-            "INSERT INTO threads VALUES (?, ?)",
-            (
-                "thread",
-                str(session_home / "sessions" / rollout.relative_to(base_home / "sessions")),
-            ),
+    run = SessionRun(SimpleNamespace(session_id="sid-cleanup", log_sys=lambda _message: None))
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "sid-cleanup",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
         )
-
-    provider.finalize_session_artifacts(project, "sid-cleanup", artifacts)
+        session_home = provider.session_codex_home(project, "sid-cleanup")
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "INSERT INTO threads VALUES (?, ?)",
+                (
+                    "thread",
+                    str(session_home / "sessions" / rollout.relative_to(base_home / "sessions")),
+                ),
+            )
 
     assert not session_home.exists()
     with sqlite3.connect(database) as connection:
@@ -351,7 +352,38 @@ def test_finalize_session_artifacts_normalizes_rollout_and_removes_home(
     assert stored_path == str(rollout)
 
 
-def test_recover_session_artifacts_reconciles_crash_home_without_cache(
+def test_session_run_retains_home_when_rollout_target_is_missing(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    database = base_home / "state_5.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)")
+    provider = CodexProvider()
+    notices: list[str] = []
+    run = SessionRun(SimpleNamespace(session_id="sid-retained", log_sys=notices.append))
+
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "sid-retained",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+        session_home = provider.session_codex_home(project, "sid-retained")
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "INSERT INTO threads VALUES (?, ?)",
+                ("thread", str(session_home / "sessions/missing-rollout.jsonl")),
+            )
+
+    assert session_home.is_dir()
+    assert len(notices) == 1
+    assert "retained: 1 rollout reference(s) remain" in notices[0]
+
+
+def test_session_run_build_reconciles_crash_home_without_cache(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -382,16 +414,23 @@ def test_recover_session_artifacts_reconciles_crash_home_without_cache(
         )
     session_cache_dir(project, "sid-crashed").rmdir()
 
-    warnings = provider.recover_session_artifacts(project, "sid-current")
+    run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(),
+            "sid-current",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
 
-    assert warnings == []
     assert not session_home.exists()
     with sqlite3.connect(database) as connection:
         [(stored_path,)] = connection.execute("SELECT rollout_path FROM threads")
     assert stored_path == str(rollout)
 
 
-def test_recover_session_artifacts_skips_home_with_live_session_cache(
+def test_session_run_build_skips_home_with_live_session_cache(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -417,13 +456,49 @@ def test_recover_session_artifacts_skips_home_with_live_session_cache(
     with sqlite3.connect(database) as connection:
         connection.execute("INSERT INTO threads VALUES (?, ?)", ("thread", stored_path))
 
-    warnings = provider.recover_session_artifacts(project, "sid-current")
+    run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
+    with run:
+        artifacts = provider.build_session_artifacts(
+            project,
+            _fake_result(),
+            "sid-current",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
 
-    assert warnings == []
+    assert artifacts.notices == []
     assert session_home.is_dir()
     with sqlite3.connect(database) as connection:
         [(remaining_path,)] = connection.execute("SELECT rollout_path FROM threads")
     assert remaining_path == stored_path
+
+
+def test_session_run_build_surfaces_recovery_failure(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+
+    class RecoveryFailureProvider(CodexProvider):
+        def _recover_session_homes(
+            self,
+            _project_dir: Path,
+            _session_id: str,
+        ) -> list[str]:
+            raise OSError("managed root unavailable")
+
+    provider = RecoveryFailureProvider()
+    run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
+    with run:
+        artifacts = provider.build_session_artifacts(
+            project,
+            _fake_result(),
+            "sid-current",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+
+    assert artifacts.notices == [
+        "Codex session-home recovery failed: OSError: managed root unavailable"
+    ]
 
 
 def test_role_skills_override_collisions_and_preserve_other_base_skills(tmp_path: Path) -> None:

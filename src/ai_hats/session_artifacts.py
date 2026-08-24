@@ -6,8 +6,12 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .materialization import ApplyMaterializer, Materializer
+
+if TYPE_CHECKING:
+    from .session_run import SessionRun
 
 #: Stands in for a value only the launch can produce (pid, uuid, trace path, a
 #: bound port). Lives here so a provider can spell it without importing dry_run.
@@ -233,3 +237,5 @@ class BuiltArtifacts:
     # HATS-1207: policy rides here so per-category handlers read it without a
     # published signature change (ADR-0018 §1). Same rule — append last.
     policy: SessionPolicy = field(default_factory=SessionPolicy)
+    resources: SessionRun | None = None
+    notices: list[str] = field(default_factory=list)

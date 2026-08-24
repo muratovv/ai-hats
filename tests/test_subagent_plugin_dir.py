@@ -179,12 +179,19 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     from ai_hats.paths import runs_dir
 
     class LifecycleProvider(ClaudeProvider):
-        def recover_session_artifacts(self, project_dir, session_id):
-            lifecycle.append("recover")
-            return []
-
-        def finalize_session_artifacts(self, project_dir, session_id, artifacts):
-            lifecycle.append("provider")
+        def build_session_artifacts(self, project_dir, result, session_id, **kwargs):
+            artifacts = kwargs["artifacts"]
+            assert artifacts.resources is not None
+            artifacts.resources.defer(
+                "provider artifacts",
+                lambda: lifecycle.append("provider"),
+            )
+            return super().build_session_artifacts(
+                project_dir,
+                result,
+                session_id,
+                **kwargs,
+            )
 
     payload = replace(
         build_composition_payload(project, role_override="guest"),
@@ -202,6 +209,6 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     assert plugin["type"] == "local"
     assert Path(plugin["path"]) == captured["plugin_dir"]
     assert captured["plugin_skills"] == ["guest-only-skill"]
-    assert lifecycle == ["recover", "provider", "cache"]
+    assert lifecycle == ["provider", "cache"]
     # The initial user message reached the SDK with the task text in it.
     assert "hi" in captured["initial_message"]
