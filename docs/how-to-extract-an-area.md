@@ -240,13 +240,13 @@ on both sides.
 | -------------------------------------------- | ---------------------------- | ---------------- | ------------- |
 | Deep entries (imports past `__init__`)       | 107                          | 3                | D12: 0        |
 | Area modules in a non-trivial SCC            | 8                            | 0                | D12: 0        |
-| Pipelines assembled in Python, not from YAML | 3                            | 3                | HATS-1784     |
+| Pipelines assembled in Python, not from YAML | 3                            | 1                | HATS-1784     |
 | External modules importing the area (fan-in) | 11                           | 13               | measured only |
 | Incoming name-edges                          | 107                          | 21               | measured only |
 | … of them deferred or `TYPE_CHECKING`        | 42 (39%)                     | 8 (38%)          | D8 precond. 2 |
 | Tests inside the area                        | 0                            | 74, in 7 files   | D7            |
-| Tests crossing into it                       | 38 files                     | 301, in 32 files | D7            |
-| Area suite wall time vs the full suite       | —                            | 0.34 s vs 148 s  | D12           |
+| Tests crossing into it                       | 38 files                     | 297, in 32 files | D7            |
+| Area suite wall time vs the full suite       | —                            | 0.19 s vs 155 s  | D12           |
 | `python -m ai_hats --help` (min of 5)        | 0.17 s                       | 0.17 s           | D12: ≤ 0.25 s |
 | `import ai_hats.pipeline.loader`             | 135.7 ms                     | 29.8 ms          | measured only |
 | Area tests in the built wheel                | none                         | none             | D11: none     |
@@ -266,10 +266,10 @@ Four of these say something the counts alone do not:
   shed is real and is paid by anything that runs a pipeline; it is invisible to the
   gate D12 chose. Keep the gate — it is a ratchet against a regression — but do not
   read it as the pilot's benefit.
-- **The area suite is 0.23% of the full run.** That is the number T2 was missing: a
-  selector that ran only the area's own tests would save 148 s and answer for 74 of
-  4 447 tests. The 301 crossing tests take 4.4 s and are the ones an area change
-  actually risks — so the honest T2 unit here is "area + crossing" (4.7 s), not "area".
+- **The area suite is 0.12% of the full run.** That is the number T2 was missing: a
+  selector that ran only the area's own tests would save 155 s and answer for 74 of
+  4 443 tests. The 297 crossing tests take 4.3 s and are the ones an area change
+  actually risks — so the honest T2 unit here is "area + crossing" (4.5 s), not "area".
 
 ### The sequence a next area follows
 
@@ -334,12 +334,19 @@ paste-ready literal.
 
 ### What a slice costs
 
-The pilot: **16 commits, 77 files, +2 630 / −623 lines**, split 1 147 production /
-1 127 test / 230 doc — so **roughly half the lines are gates and prose**, and the
-production half is itself mostly contract comment, because the contract is a reviewed
-artefact (D14). Budget accordingly: the code move is the small part. Median slice ≈ 190
-lines across 5 files; the two outliers were the policy move (405) and the entry-point
-cut (616, of which 190 is one e2e).
+Given with the command that re-takes them: the previous version of this paragraph was
+exact at one commit and stale at the next, which is the same defect as a pin nobody can
+regenerate. Measured at `96befa45` — the pilot minus the commit carrying this line —
+with `git diff --shortstat master...` and `git diff --numstat master...`, splitting the
+changed lines by path: **test** is `tests/**` plus `src/**/tests/**`, **doc** is `*.md`,
+**production** is everything else, `pyproject.toml` and `scripts/` included.
+
+**22 commits, 83 files, +2 934 / −974 lines**, so 3 908 changed lines split 1 907
+production / 1 639 test / 362 doc — **roughly half the lines are gates and prose**, and
+the production half is itself mostly contract comment, because the contract is a
+reviewed artefact (D14). Budget accordingly: the code move is the small part. Median
+slice ≈ 180 changed lines across 4–5 files; the outliers were the entry-point cut (771,
+of which 190 is one e2e), the CLI conversion (631) and the gate file's rewrite (419).
 
 The next area is cheaper on three counts and dearer on one. Cheaper: the wheel exclude
 exists, the gate file exists and takes a second area as new constants rather than new
