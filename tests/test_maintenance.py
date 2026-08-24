@@ -1382,6 +1382,27 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch):
     assert not (project / ".agent" / "ai-hats" / "versions").exists()
 
 
+def test_update_local_editable_fails_when_post_install_verify_fails(tmp_path, monkeypatch):
+    project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
+    monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
+    with (
+        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch(
+            "subprocess.run",
+            return_value=_make_completed([], returncode=0),
+        ),
+        patch(
+            "ai_hats.cli.maintenance._run_post_install_verify",
+            return_value=(False, "ai_hats.steps entry point is broken"),
+        ),
+    ):
+        result = CliRunner().invoke(update, [])
+
+    assert result.exit_code == 1, result.output
+    assert "Post-install verify failed" in result.output
+    assert "ai_hats.steps entry point is broken" in result.output
+
+
 def test_update_invalidates_update_cache(tmp_path, monkeypatch):
     """HATS-781: a successful `self update` drops the stale update-check cache
     so the banner stops nagging with the pre-update delta."""

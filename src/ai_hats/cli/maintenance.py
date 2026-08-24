@@ -1295,6 +1295,10 @@ def _run_editable_update(
     if result.returncode != 0:
         console.print(f"[red]Update failed[/]: {result.stderr}")
         sys.exit(1)  # HATS-718: failed install must be machine-detectable
+    ok, detail = _run_post_install_verify(sys.executable)
+    if not ok:
+        console.print(f"[red]Post-install verify failed[/]: {detail}")
+        sys.exit(1)
     console.print(f"[green]Editable reinstall[/]: uv pip install -e {path}")
     if active_role or config_unreadable:
         role_label = active_role or "(config unreadable — healing)"
