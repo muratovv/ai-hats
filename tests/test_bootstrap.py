@@ -411,9 +411,9 @@ def test_t10b_stale_first_party_step_entry_point_fails_verify(monkeypatch):
         ],
     )
 
-    failures = _bootstrap.find_integrity_failures()
+    health_failures = _bootstrap.find_integrity_failures()
 
-    assert any("check_update_async" in failure for failure in failures), failures
+    assert not any("check_update_async" in failure for failure in health_failures), health_failures
     assert _bootstrap.verify_after_install() == 1
 
 

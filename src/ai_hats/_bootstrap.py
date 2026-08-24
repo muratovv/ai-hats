@@ -452,7 +452,6 @@ def find_integrity_failures() -> list[str]:
         except Exception as exc:  # noqa: BLE001 - report the reason, don't raise
             failures.append(f"import {mod}: {exc.__class__.__name__}: {exc}")
     failures.extend(_first_party_entry_point_failures("ai_hats.providers"))
-    failures.extend(_first_party_entry_point_failures(_STEP_ENTRY_POINT_GROUP))
     failures.extend(_check_pycache_coherence())
     return failures
 
@@ -481,6 +480,7 @@ def verify_after_install() -> int:
             return 1
 
     failures = find_integrity_failures()
+    failures.extend(_first_party_entry_point_failures(_STEP_ENTRY_POINT_GROUP))
     if failures:
         sys.stderr.write("ai-hats: post-install verify found a broken install:\n")
         for line in failures:
