@@ -61,17 +61,20 @@ rest of the file does not. A card whose change touches that tier runs
 review with a red e2e test behind a green marker for exactly this reason
 (HATS-1682).
 
-## What will surprise you
+## Status is not documented here — it is printed
 
-- **A dirty tree runs everything and writes no marker** — exit 0, loudly. The
-  suite judged your working tree, not the branch tip. Commit, re-run.
-- **Run it in the task worktree.** The marker keys on that branch's tree, which
-  is the content the check looks up.
-- **The composition is project-side** (`scripts/ci-local.sh` → `gate_composition`),
-  never in this skill. Ask `--stages <gate>`; a library file that restated
-  project content drifted from it within days (ADR-0023 D7).
-- **A refusal leaves a transcript** beside the card — glob it, never hand-build
-  the name: `<tasks_dir>/<ID>/.checks/*done-gate*.log`.
+**Do not come back to this file to find out what happened. Read what the gate
+said.** Every branch narrates itself with a reason and a remedy — the refusals,
+the green, and every quiet pass-through alike (`lib/gate.sh`). Enumerating them
+here would only be a second copy, free to disagree with the one that runs.
+
+Two things it does **not** print:
+
+- **The transcript.** Every run leaves one beside the card. Glob it, never
+  hand-build the name: `<tasks_dir>/<ID>/.checks/*done-gate*.log`.
+- **Where the composition lives** — `scripts/ci-local.sh` → `gate_composition`,
+  project-side, never in this skill (ADR-0023 D7). A library file that restated
+  project content drifted from it within days.
 
 ## Why the push gate runs out of band
 
