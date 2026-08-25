@@ -94,13 +94,24 @@ def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> Non
     assert pre[0]["command"].endswith("safety-guard/hooks/guard.sh")
     assert pre[0]["tag"].startswith("ai-hats:safety-guard:PreToolUse:")
 
+    from ai_hats.paths import cache_root
+
+    assert manifest["permissions"] == [
+        {
+            "permission": "external_directory",
+            "prefix": f"{cache_root(project)}/",
+            "action": "allow",
+        }
+    ]
+
     config = _config(project, provider)
     assert f"file://{plugin_path}" in config["plugin"]
 
     assert artifacts.extra_env["AI_HATS_SESSION_CACHE_DIR"] == str(cache_dir)
 
 
-def test_hookless_composition_registers_nothing(tmp_path: Path) -> None:
+def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> None:
+    """HATS-1792: the manifest carries role permission policy even without hooks."""
     provider = OpenCodeProvider()
     plain = tmp_path / "skill-sources" / "hatrack"
     plain.mkdir(parents=True)
@@ -116,9 +127,19 @@ def test_hookless_composition_registers_nothing(tmp_path: Path) -> None:
     )
 
     cache_dir = session_cache_dir(project, SESSION_ID)
-    assert not (cache_dir / "opencode" / "hooks.json").exists()
+    manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
+    assert manifest["hooks"] == {}
+    from ai_hats.paths import cache_root
+
+    assert manifest["permissions"] == [
+        {
+            "permission": "external_directory",
+            "prefix": f"{cache_root(project)}/",
+            "action": "allow",
+        }
+    ]
     config = _config(project, provider)
-    assert "plugin" not in config
+    assert config.get("plugin"), "permission dispatcher must stay registered"
 
 
 def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
@@ -149,3 +170,13 @@ def test_plugin_asset_is_fail_open_on_missing_pin_and_maps_tools() -> None:
     assert "process.env.AI_HATS_SESSION_CACHE_DIR" in source
     assert "hookless composition" in source, "missing pin must be an inert no-op, not an error"
     assert "version !== MANIFEST_VERSION" in source
+
+
+def test_plugin_asset_answers_permission_asks_through_server_api() -> None:
+    """HATS-1792: decisions ride the bus event + server reply, rules may defer."""
+    source = plugin_source()
+
+    assert '"permission.asked"' in source
+    assert "postSessionIdPermissionsPermissionId" in source
+    assert 'action === "allow" ? "once" : "reject"' in source
+    assert "if (!rule) return;" in source, "unruled asks defer to the platform channel"

@@ -1,18 +1,28 @@
-// ai-hats runtime-hook dispatcher for OpenCode (HATS-1788).
+// ai-hats session dispatcher plugin for OpenCode (HATS-1788, HATS-1792).
 //
 // Materialized into the ai-hats session cache and registered through the
 // session-scoped OPENCODE_CONFIG `plugin` array as a file:// URL. The composed
-// hook list lives in <AI_HATS_SESSION_CACHE_DIR>/opencode/hooks.json using the
-// same manifest schema (version 1) as the cline and codex surfaces.
+// hook list and the role's permission rules live in
+// <AI_HATS_SESSION_CACHE_DIR>/opencode/hooks.json using the same manifest
+// schema (version 1) as the cline and codex surfaces.
 //
-// Semantics mirror ai_hats_codex.hook_dispatcher:
-//   - no AI_HATS_SESSION_CACHE_DIR pin  -> inert (hookless role, by design)
+// Tool-hook semantics mirror ai_hats_codex.hook_dispatcher:
+//   - no AI_HATS_SESSION_CACHE_DIR pin  -> inert (by design)
 //   - manifest missing                  -> warn once, inert (nothing to run)
 //   - manifest unreadable/malformed     -> fail closed (every mapped tool blocked)
 //   - session identity mismatch         -> fail closed (stale cache protection)
 //   - hook exit 2                       -> deny: the tool call is thrown away
 //   - hook stdout {"decision":"block"}  -> deny with reason
 //   - any other hook failure            -> fail open with a warning line
+//
+// Permission semantics (HATS-1792):
+//   - native asks surface on the bus as permission.asked events; the typed
+//     `permission.ask` plugin hook is not wired in opencode 1.18.x
+//   - first manifest `permissions` rule matching the request decides;
+//     decisions are answered through the server API (once / reject)
+//   - no matching rule defers: HITL keeps the native TUI prompt, headless
+//     `opencode run` auto-rejects on its own
+//   - a failed reply fails open the same way (the platform channel stays in charge)
 
 const MANIFEST_VERSION = 1;
 
@@ -59,7 +69,11 @@ async function loadManifest(cacheDir, sessionId) {
   if (session.id !== sessionId) {
     return { state: "foreign", path: manifestPath };
   }
-  return { state: "ready", hooks: manifest.hooks || {} };
+  return {
+    state: "ready",
+    hooks: manifest.hooks || {},
+    permissions: Array.isArray(manifest.permissions) ? manifest.permissions : [],
+  };
 }
 
 function runHook(command, payload) {
@@ -77,7 +91,41 @@ function runHook(command, payload) {
   }
 }
 
-export const AiHatsHooksPlugin = async () => {
+// A prefix rule matches when every path the request touches sits under the
+// rule's directory. Candidates mix opencode patterns and raw paths; a glob
+// inside the subtree still carries the prefix, so the check stays glob-free.
+function ruleMatches(rule, asked) {
+  if (!rule || typeof rule !== "object") return false;
+  if (rule.permission !== "*" && rule.permission !== asked.permission) return false;
+  if (!rule.prefix) return true;
+  const meta = asked.metadata || {};
+  const candidates = [meta.filepath, meta.parentDir, ...(asked.patterns || [])].filter(
+    (value) => typeof value === "string" && value.length > 0,
+  );
+  if (candidates.length === 0) return false;
+  return candidates.every((value) => value.startsWith(rule.prefix));
+}
+
+function decide(rules, asked) {
+  for (const rule of rules) {
+    if (ruleMatches(rule, asked)) return rule;
+  }
+  return null;
+}
+
+async function replyPermission(client, sessionID, permissionID, action) {
+  const response = action === "allow" ? "once" : "reject";
+  try {
+    await client.postSessionIdPermissionsPermissionId({
+      path: { id: sessionID, permissionID },
+      body: { response },
+    });
+  } catch (error) {
+    console.warn(`[ai-hats] permission reply failed (${response}): ${String(error)}`);
+  }
+}
+
+export const AiHatsHooksPlugin = async ({ client }) => {
   const cacheDir = process.env.AI_HATS_SESSION_CACHE_DIR;
   const sessionId = process.env.AI_HATS_SESSION_ID;
   if (!cacheDir) {
@@ -104,6 +152,7 @@ export const AiHatsHooksPlugin = async () => {
   }
 
   const entriesFor = (event) => manifest.hooks[event] || [];
+  const permissionRules = manifest.state === "ready" ? manifest.permissions : [];
 
   const dispatch = async (event, nativeTool, args, canDeny) => {
     const toolName = claudeToolName(nativeTool);
@@ -155,6 +204,15 @@ export const AiHatsHooksPlugin = async () => {
   };
 
   return {
+    event: async ({ event }) => {
+      if (String(event?.type || "") !== "permission.asked") return;
+      const asked = event.properties || {};
+      const rule = decide(permissionRules, asked);
+      // No rule -> defer to the platform channel (TUI prompt or headless
+      // auto-reject); the role decided it has no opinion on this request.
+      if (!rule) return;
+      await replyPermission(client, asked.sessionID, asked.id, rule.action);
+    },
     "tool.execute.before": async (input, output) => {
       await dispatch("PreToolUse", input.tool, output.args, true);
     },

@@ -107,10 +107,8 @@ def test_context_hitl_materializes_session_agent(tmp_path: Path) -> None:
     assert artifacts.full_content == agent["prompt"]
 
 
-def test_context_materializes_external_directory_allow_for_cache(tmp_path: Path) -> None:
-    """HATS-1792: no native ask prompts beside the ai-hats consent gate."""
-    from ai_hats.paths import cache_root
-
+def test_context_config_carries_no_permission_keys(tmp_path: Path) -> None:
+    """HATS-1792: work policy lives in the role's manifest, not the config."""
     provider = OpenCodeProvider()
     project = _project(tmp_path)
 
@@ -123,9 +121,8 @@ def test_context_materializes_external_directory_allow_for_cache(tmp_path: Path)
     )
 
     config = json.loads(provider.session_config_path(project, _session_id()).read_text())
-    external = config["permission"]["external_directory"]
-    assert external["*"] == "ask", "platform default stays for non-ai-hats paths"
-    assert external[f"{cache_root(project)}/**"] == "allow"
+    assert "permission" not in config, "generated config must stay free of policy keys"
+    assert set(config) == {"$schema", "agent", "plugin"}
 
 
 def test_hitl_build_writes_nothing_into_project_root(tmp_path: Path) -> None:
