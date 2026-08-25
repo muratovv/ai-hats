@@ -237,18 +237,8 @@ class OpenCodeProvider(Provider):
             "mode": "primary",
             "prompt": prompt,
         }
-        # HATS-1792: ai-hats artifacts live outside the project cwd, and the
-        # OpenCode default asks on every external_directory access — a second,
-        # noisy gate beside the ai-hats consent one. Allow exactly our cache
-        # subtree; everything else keeps the platform default ("ask").
-        from ai_hats.paths import cache_root
-
-        doc["permission"] = {
-            "external_directory": {
-                "*": "ask",
-                f"{cache_root(project_dir)}/**": "allow",
-            }
-        }
+        # HATS-1792: no permission keys here — work policy belongs to the role's
+        # manifest-driven plugin, not to the generated config.
         artifacts.cli_args.extend(["--agent", AGENT_NAME])
         artifacts.extra_env[ENV_OPENCODE_CONFIG] = str(
             self.session_config_path(project_dir, session_id)
@@ -285,18 +275,36 @@ class OpenCodeProvider(Provider):
 
     # --- hooks -----------------------------------------------------------------------
 
-    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
-        from ai_hats.hook_collection import collect_runtime_hooks
+    def _permission_rules(self, project_dir: Path) -> list[dict[str, str]]:
+        """Role-owned permission policy shipped in the hook manifest (HATS-1792).
 
-        # Hookless roles must not register an inert dispatcher plugin.
-        if not collect_runtime_hooks(result):
-            return
+        The generated opencode.json carries no permission keys (Q2: decisions
+        live in the role, not in a global-looking config). The single rule
+        declares ai-hats' own cache subtree session-owned; every other native
+        ask defers — to the TUI prompt in HITL, to opencode's headless
+        auto-reject otherwise.
+        """
+        from ai_hats.paths import cache_root
+
+        return [
+            {
+                "permission": "external_directory",
+                "prefix": f"{cache_root(project_dir)}/",
+                "action": "allow",
+            },
+        ]
+
+    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
+        # HATS-1792: the manifest also carries the role's permission rules, so
+        # it materializes for every composition — hookless roles still touch
+        # session-cache paths that external_directory gating would ask about.
         manifest_path, plugin_path = materialize_hook_manifest(
             project_dir,
             result,
             session_id,
             artifacts,
             skills_dir=self.session_skills_root(project_dir, session_id),
+            permission_rules=self._permission_rules(project_dir),
         )
         del manifest_path
         doc = self._config_doc(artifacts)

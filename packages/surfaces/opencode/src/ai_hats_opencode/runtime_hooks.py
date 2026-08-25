@@ -39,6 +39,7 @@ def _manifest(
     session_id: str,
     *,
     skills_dir: Path,
+    permission_rules: list[dict[str, str]],
 ) -> dict:
     hooks: dict[str, list[dict[str, str]]] = {}
     for event, entries in collect_runtime_hooks(result).items():
@@ -60,6 +61,7 @@ def _manifest(
             "ai_hats_dir": str(ai_hats_dir(project_dir)),
         },
         "hooks": hooks,
+        "permissions": permission_rules,
     }
 
 
@@ -70,6 +72,7 @@ def materialize_hook_manifest(
     artifacts: BuiltArtifacts,
     *,
     skills_dir: Path,
+    permission_rules: list[dict[str, str]],
 ) -> tuple[Path, Path]:
     """Write this composition's hook manifest and dispatcher plugin.
 
@@ -84,7 +87,13 @@ def materialize_hook_manifest(
     artifacts.port.mkdir(cache_dir)
     manifest_path = session_dir / "hooks.json"
     content = json.dumps(
-        _manifest(project_dir, result, session_id, skills_dir=skills_dir),
+        _manifest(
+            project_dir,
+            result,
+            session_id,
+            skills_dir=skills_dir,
+            permission_rules=permission_rules,
+        ),
         indent=2,
         sort_keys=True,
     )
