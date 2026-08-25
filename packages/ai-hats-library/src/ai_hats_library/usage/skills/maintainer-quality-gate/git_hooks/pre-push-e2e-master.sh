@@ -194,27 +194,7 @@ EOF
         fi
     fi
 
-    # HATS-589/592: opt into pytest-xdist when present, adaptive worker count
-    # `min(logical_cpus, ceiling)`. These are the GATE's flags over the project's
-    # selection — PYTEST_ADDOPTS carries them without forking the selection, which
-    # lived in two copies until HATS-1604.
-    local addopts='--tb=line --no-header -p no:cacheprovider'
-    if pytest -VV 2>/dev/null | grep -qi xdist; then
-        local cores ceiling n
-        cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
-                 || nproc 2>/dev/null \
-                 || sysctl -n hw.logicalcpu 2>/dev/null \
-                 || echo 4)"
-        [[ "$cores" =~ ^[0-9]+$ ]] || cores=4
-        ceiling=8
-        n=$(( cores < ceiling ? cores : ceiling ))
-        (( n < 1 )) && n=1
-        echo "[e2e-gate] pytest-xdist detected — running -n$n --dist=loadgroup (cores=$cores, cap=$ceiling)" >&2
-        addopts="$addopts -n$n --dist=loadgroup"
-    else
-        echo "[e2e-gate] pytest-xdist absent — running serial" >&2
-    fi
-    export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+$PYTEST_ADDOPTS }$addopts"
+    gate_export_pytest_addopts "$GATE_NAME" pytest
 
     # HATS-645: arm the tier-2 venv fixture's fail-closed mode.
     export AI_HATS_E2E_REQUIRE_VENV=1
