@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_agy.hook_dispatcher import HOOK_TIMEOUT_S, _hook_timeout, dispatch_hook
+from ai_hats.surfaces.agy.hook_dispatcher import HOOK_TIMEOUT_S, _hook_timeout, dispatch_hook
 
 
 def _in_session(monkeypatch, session_id: str, project: Path) -> None:

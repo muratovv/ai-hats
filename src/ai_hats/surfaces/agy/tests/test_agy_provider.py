@@ -11,7 +11,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG, gemini_md, session_cache_dir
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 
 
 @pytest.fixture
@@ -264,7 +264,7 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
 ) -> None:
     """HATS-1223: AUTOMATE mode writes hooks.json and global dispatcher fires session hook."""
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats_agy.hook_dispatcher import dispatch_hook
+    from ai_hats.surfaces.agy.hook_dispatcher import dispatch_hook
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()

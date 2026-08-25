@@ -64,7 +64,7 @@ def test_the_agy_payload_shape_is_denied_too():
     because two readings of one payload are two truths. What must still hold is
     the chain — an agy-shaped call reaches the same verdict as a Claude one.
     """
-    from ai_hats_agy.claude_hook_adapter import to_claude_payload
+    from ai_hats.surfaces.agy.claude_hook_adapter import to_claude_payload
 
     out = _decide(
         to_claude_payload({"toolCall": {"name": "EnterWorktree", "args": {"path": "/tmp/wt-7"}}})

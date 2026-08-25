@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 MANAGED_DISPATCHER_TAG = "ai-hats:global-dispatcher"
 DISPATCHER_COMMAND = (
     'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] && [ -x "$AI_HATS_PYTHON" ]; '
-    'then "$AI_HATS_PYTHON" -m ai_hats_agy.hook_dispatcher "$@"; fi\' sh'
+    'then "$AI_HATS_PYTHON" -m ai_hats.surfaces.agy.hook_dispatcher "$@"; fi\' sh'
 )
 
 

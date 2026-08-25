@@ -175,6 +175,7 @@ def test_pyproject_declares_provider_entry_point_group():
     data = tomllib.loads((root / "pyproject.toml").read_text())
     group = data["project"]["entry-points"][PROVIDER_ENTRY_POINT_GROUP]
     assert group == {
+        "agy": "ai_hats.surfaces.agy.provider:AgyProvider",
         # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
         "claude": "ai_hats.surfaces.claude.provider:ClaudeProvider",
         # HATS-1826 folds the out-of-tree surface distributions into the area, so

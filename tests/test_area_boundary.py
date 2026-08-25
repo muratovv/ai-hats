@@ -76,10 +76,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC = REPO_ROOT / "src"
 AREA = "ai_hats.pipeline"
 
-# comment-length: allow — a small pin that will grow has to say so, or it reads as done
-# The second area (HATS-1826). One of its five implementations still ships as a separate
-# distribution under packages/surfaces/, so today this name covers everything but `agy`:
-# the pin below GROWS as each surface moves in, and is driven back down from there.
+# The second area (HATS-1826). All five implementations now live under this name —
+# packages/surfaces/ is gone — so the pin below covers the whole area.
 SURFACES = "ai_hats.surfaces"
 
 # From the test's own location, not via ``builtin_library_root()``: that resolver honours
@@ -112,11 +110,11 @@ PINNED_DEEP_ENTRIES: tuple[str, ...] = (
 # the pilot cut for steps (HATS-1783). Empty, this pin is a negative universal: one
 # import naming a surface module from outside is red.
 #
-# The other zero, measured beside it: `src/ai_hats/**` imports `ai_hats_agy`,
-# `ai_hats_cline`, `ai_hats_codex` and `ai_hats_opencode` exactly **0** times — the
-# shipped integrator never reaches into a surface package, it resolves them through the
-# `ai_hats.providers` group. So folding them in rewrites no shipped import; the churn
-# lives in tests/, and this pin is what keeps it from moving into src/.
+# Still empty after the fold, which is what the measurement beside it predicted: the
+# shipped integrator imported `ai_hats_agy`, `ai_hats_cline`, `ai_hats_codex` and
+# `ai_hats_opencode` exactly **0** times, resolving them through the `ai_hats.providers`
+# group instead. So moving all four in rewrote no shipped import; the churn was in
+# tests/, and this pin is what keeps it from moving into src/.
 PINNED_SURFACES_DEEP_ENTRIES: tuple[str, ...] = ()
 
 # Every pipeline assembled in code instead of loaded from its YAML. Each is a second

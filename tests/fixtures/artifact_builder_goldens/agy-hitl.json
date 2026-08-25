@@ -68,10 +68,10 @@
     },
     {
       "detail": "+hooks",
-      "digest": "af69846f179415da4ce23d94456fc44bf984f738fdd2a4e94bde18d5ae5a8b68",
+      "digest": "306d078e2c5cb267cd437515c853d71bbd9e695f59492e00a0450d2b50914c68",
       "file_count": 1,
       "kind": "merge_json",
-      "size": 1461,
+      "size": 1506,
       "source": null,
       "target": "<home>/.gemini/antigravity-cli/settings.json"
     },

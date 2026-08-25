@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

@@ -32,7 +32,7 @@ def _has_agy_plugin() -> bool:
     import importlib
 
     try:
-        importlib.import_module("ai_hats_agy")
+        importlib.import_module("ai_hats.surfaces.agy")
         return True
     except ImportError:
         return False
@@ -47,7 +47,7 @@ def test_agy_session_transcript_resolution_and_audit(
     Simulates an agy session producing transcript.jsonl in brain dir, verifying that
     AuditWriter produces an audit.md with 👤 turn markers and 🔧 tool calls.
     """
-    from ai_hats_agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgyProvider
     from ai_hats_observe.audit import AuditWriter
     from ai_hats_observe.session import Session
 

@@ -7,7 +7,7 @@ answer has to leave in the key the surface spoke in.
 
 from __future__ import annotations
 
-from ai_hats_agy.claude_hook_adapter import (
+from ai_hats.surfaces.agy.claude_hook_adapter import (
     agy_tool_name,
     from_claude_decision,
     matches_claude_hook,

@@ -89,6 +89,7 @@ aggregation = [
 # Provider under this group is discovered + registered without ai-hats importing
 # it (built-ins are listed too — they self-register first, discovery no-ops them).
 [project.entry-points."ai_hats.providers"]
+agy = "ai_hats.surfaces.agy.provider:AgyProvider"
 claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"
 cline = "ai_hats.surfaces.cline.provider:ClineProvider"
 codex = "ai_hats.surfaces.codex.provider:CodexProvider"
@@ -157,10 +158,9 @@ packages = ["src/ai_hats"]
 exclude = ["src/ai_hats/**/tests"]
 
 [tool.uv.workspace]
-# HATS-956: surface plugins (out-of-tree providers) live under packages/surfaces/.
-# Exclude the category dir itself — it carries no pyproject, only member subdirs.
-members = ["packages/*", "packages/surfaces/*"]
-exclude = ["packages/surfaces"]
+# HATS-1826 folded the five surfaces into the ai_hats.surfaces area, so every
+# member is again one directory deep and carries its own pyproject.
+members = ["packages/*"]
 
 [tool.uv.sources]
 ai-hats-core = { workspace = true }
@@ -196,7 +196,7 @@ testpaths = [
     "packages/ai-hats-rack/tests",
     "packages/ai-hats-observe/tests",
     "packages/ai-hats-library/tests",
-    "packages/surfaces/agy/tests",
+    "src/ai_hats/surfaces/agy/tests",
     "src/ai_hats/surfaces/cline/tests",
     "src/ai_hats/surfaces/codex/tests",
     "src/ai_hats/surfaces/opencode/tests",
@@ -219,7 +219,6 @@ pythonpath = [
     "packages/ai-hats-rack/src",
     "packages/ai-hats-observe/src",
     "packages/ai-hats-library/src",
-    "packages/surfaces/agy/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.

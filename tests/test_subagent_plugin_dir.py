@@ -22,7 +22,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 from ai_hats.paths import PROJECT_CONFIG
 
 

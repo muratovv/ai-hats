@@ -2,7 +2,7 @@
 
 flow:   an agent on the agy surface running a shell command past the composed guards
 cmds:
-    python -m ai_hats_agy.hook_dispatcher PreToolUse   # what agy's global hook runs
+    python -m ai_hats.surfaces.agy.hook_dispatcher PreToolUse   # what agy's global hook runs
 expect: the whole composed PreToolUse chain fires on agy's own tool and argument
         names, and refuses what it refuses on Claude
 why: the chain was only ever driven on the Claude road, so two shipped guards —
@@ -54,7 +54,7 @@ def _session(project: Path, home: Path) -> Path:
     from ai_hats.assembler import Assembler
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats_agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgyProvider
 
     result = Assembler(REPO_ROOT).composer.compose("maintainer")
     before = os.environ.get("HOME")
@@ -103,7 +103,7 @@ def _dispatch(project: Path, cache: Path, payload: str) -> subprocess.CompletedP
         }
     )
     return subprocess.run(  # noqa: S603 - our own dispatcher, the way agy runs it
-        [sys.executable, "-m", "ai_hats_agy.hook_dispatcher", "PreToolUse"],
+        [sys.executable, "-m", "ai_hats.surfaces.agy.hook_dispatcher", "PreToolUse"],
         input=payload,
         cwd=str(project),
         env=env,

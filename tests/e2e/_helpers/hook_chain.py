@@ -386,7 +386,7 @@ def run_agy_dispatch(
     means running that one production string through a real shell — the exit
     code returned is the chain's verdict, not any single hook's.
     """
-    from ai_hats_agy.global_hook import DISPATCHER_COMMAND
+    from ai_hats.surfaces.agy.global_hook import DISPATCHER_COMMAND
 
     payload = json.dumps(
         {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input or {}}

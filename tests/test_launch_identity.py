@@ -17,7 +17,7 @@ import pytest
 
 from ai_hats.session_artifacts import assemble_launch_command, consumed_session_id
 from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 from ai_hats.surfaces.cline.provider import ClineProvider
 from ai_hats_observe.session import Session
 

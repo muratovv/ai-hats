@@ -26,8 +26,8 @@ from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from ai_hats_agy.global_hook import DISPATCHER_COMMAND
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.global_hook import DISPATCHER_COMMAND
+from ai_hats.surfaces.agy.provider import AgyProvider
 
 pytestmark = pytest.mark.integration
 

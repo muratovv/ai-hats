@@ -1001,7 +1001,7 @@ def _ask_for(cmd, tool_input, args, anchor, ordinal, total, label, headline) -> 
             "permissionDecisionReason": f"{headline} {_TICKET_TERMS}",
             # One key, because one dialect reaches this script: the surface's
             # own bridge renames it on the way in and on the way back out
-            # (`ai_hats_agy.claude_hook_adapter`, HATS-1776).
+            # (`ai_hats.surfaces.agy.claude_hook_adapter`, HATS-1776).
             # a rewrite filed under `command` would be dropped in silence.
             "updatedInput": {**tool_input, "command": rewritten},
         }

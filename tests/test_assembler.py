@@ -673,7 +673,7 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
 def test_agy_build_session_prompt_creates_rules_dir(project_with_library):
     """HATS-993: session role rides a GEMINI.md in an --include-directories dir."""
     import shutil
-    from ai_hats_agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgyProvider
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -1258,7 +1258,7 @@ def test_agy_build_session_prompt_has_no_literal_placeholder(
 ):
     """Agy session GEMINI.md must be expanded."""
     from ai_hats.composer import Composer
-    from ai_hats_agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgyProvider
     from ai_hats.resolver import LibraryResolver
 
     project, lib = project_with_placeholder_library

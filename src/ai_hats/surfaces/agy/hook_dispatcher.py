@@ -1,11 +1,11 @@
 """Global Hook Dispatcher for AGY surface (HATS-1166).
 
-Located entirely inside `ai_hats_agy` surface package.
+Located entirely inside the `ai_hats.surfaces.agy` package.
 Executes session-specific hooks from `<session_cache_dir>/hooks.json` when invoked
 by the global AGY hook registered in `~/.gemini/antigravity-cli/settings.json`.
 
 The cache dir arrives pre-resolved in `AI_HATS_SESSION_CACHE_DIR` (HATS-1398):
-this process runs on every tool call, so it must not import ai-hats to re-derive
+this process runs on every tool call, so it reads the pin rather than re-deriving
 a path the session builder already knew.
 """
 
@@ -18,6 +18,9 @@ import sys
 import subprocess
 from pathlib import Path
 
+from ai_hats.env import ENV_SESSION_CACHE_DIR
+from ai_hats.session_identity import ENV_SESSION_IDENTITY
+from ai_hats_observe.trace import ENV_SESSION_ID
 from .claude_hook_adapter import (
     agy_tool_name,
     from_claude_decision,
@@ -29,14 +32,6 @@ from .claude_hook_adapter import (
 #: indistinguishable from "hung" and the tool call must not wait any longer.
 HOOK_TIMEOUT_S = 60.0
 _TIMEOUT_ENV = "AI_HATS_AGY_HOOK_TIMEOUT_S"
-
-# Sanctioned mirror of the env contract (ADR-0025 D5): this process must not
-# import ai-hats (see the module docstring), so the spellings are declared here
-# and held against the home by ``tests/test_env_contract.py``.
-ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
-ENV_SESSION_ID = "AI_HATS_SESSION_ID"
-ENV_AI_HATS_PROJECT_DIR = "AI_HATS_PROJECT_DIR"
-ENV_SESSION_IDENTITY = "AI_HATS_SESSION_IDENTITY"
 
 
 def _session_identity() -> dict | None:

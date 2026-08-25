@@ -436,7 +436,7 @@ def test_agy_override_creates_session_rules_dir(cli_project):
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats_agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgyProvider
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "agy"])

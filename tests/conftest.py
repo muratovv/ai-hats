@@ -75,7 +75,7 @@ def _provider_integrity_state() -> _ProviderIntegrityState:
 def _workspace_surface_providers() -> Iterator[None]:
     """Register workspace provider classes without installing their distributions."""
     from ai_hats import providers
-    from ai_hats_agy import AgyProvider
+    from ai_hats.surfaces.agy import AgyProvider
     from ai_hats.surfaces.cline import ClineProvider
     from ai_hats.surfaces.codex import CodexProvider
 

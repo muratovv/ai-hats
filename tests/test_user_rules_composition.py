@@ -17,7 +17,7 @@ from ai_hats.materialize import compose_for_role, discover_user_rules
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG, user_rules_dir
 from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 from ai_hats.surfaces.cline.provider import ClineProvider
 from ai_hats_core import CompositionResult
 

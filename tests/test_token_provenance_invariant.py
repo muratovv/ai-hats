@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_agy.parser import AgyParser
+from ai_hats.surfaces.agy.parser import AgyParser
 from ai_hats_observe.artifacts import (
     FLAG_NO_TOKEN_TELEMETRY,
     FLAG_TOKEN_TELEMETRY_ESTIMATED,

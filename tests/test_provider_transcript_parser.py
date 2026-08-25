@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 from ai_hats.composition_seam import build_composition_payload
 from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.parser import AgyParser
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.parser import AgyParser
+from ai_hats.surfaces.agy.provider import AgyProvider
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats_observe.parsers.trace import TraceParser
 

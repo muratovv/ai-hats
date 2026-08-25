@@ -23,7 +23,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.paths import session_cache_dir
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -60,7 +60,7 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
         if isinstance(h, dict)
     ), "wt_gate.py PreToolUse row must be in agy hooks.json"
 
-    from ai_hats_agy.claude_hook_adapter import matches_claude_hook
+    from ai_hats.surfaces.agy.claude_hook_adapter import matches_claude_hook
 
     matcher = next(h["matcher"] for h in pre_tool_hooks if "wt_gate.py" in h.get("command", ""))
     assert matches_claude_hook(matcher, "Create"), "the row must answer agy's own tool name"
@@ -135,7 +135,7 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
     # translates them at spawn (`claude_hook_adapter`, HATS-1776). The script's
     # private five-key fan-out is gone: one dialect reaches it now, and what
     # this test still proves is the CHAIN — agy's spelling reaches a deny.
-    from ai_hats_agy.claude_hook_adapter import to_claude_payload
+    from ai_hats.surfaces.agy.claude_hook_adapter import to_claude_payload
 
     payload = json.dumps(
         to_claude_payload(

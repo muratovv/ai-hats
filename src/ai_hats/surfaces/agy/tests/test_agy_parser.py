@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from ai_hats_agy.parser import AgyParser
+from ai_hats.surfaces.agy.parser import AgyParser
 from ai_hats_observe.artifacts import (
     FLAG_NO_TOKEN_TELEMETRY,
     FLAG_TOKEN_TELEMETRY_ESTIMATED,
 )
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 
 
 def test_agy_parser_fallback_when_jsonl_absent(tmp_path: Path) -> None:

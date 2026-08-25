@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ai_hats.surfaces.claude.provider import ClaudeProvider, Provider
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgyProvider
 
 
 def test_claude_model_flags() -> None:

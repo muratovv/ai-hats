@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from ai_hats.materialization import ApplyMaterializer
-from ai_hats_agy.global_hook import (
+from ai_hats.surfaces.agy.global_hook import (
     DISPATCHER_COMMAND,
     MANAGED_DISPATCHER_TAG,
     ensure_global_dispatcher_hook,
