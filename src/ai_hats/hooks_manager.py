@@ -33,7 +33,7 @@ def _read_manifest(path: Path) -> set[str]:
 
 if TYPE_CHECKING:
     from .models import ProjectConfig
-    from .providers import Provider
+    from .surfaces import Provider
 
 logger = logging.getLogger(__name__)
 

@@ -25,9 +25,7 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
 from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats.providers import (
-    _extract_frontmatter_description,
-)
+from ai_hats.surfaces.contract import _extract_frontmatter_description
 from ai_hats_agy.provider import AgyProvider
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 from ai_hats.paths import PROJECT_CONFIG

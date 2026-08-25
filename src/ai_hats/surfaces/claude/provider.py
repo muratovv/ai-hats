@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from ai_hats.providers import ProviderHint
+    from .. import ProviderHint
     from ai_hats_observe.parsers.base import TranscriptParser
 
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
-from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
+from .. import Provider, ProviderRunResult, SubagentEngine
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
 from .sdk_options import (
     assemble_first_user_message,
@@ -120,7 +120,7 @@ class ClaudeProvider(Provider):
         return True
 
     def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.providers import ProviderHint
+        from .. import ProviderHint
 
         return [
             ProviderHint(

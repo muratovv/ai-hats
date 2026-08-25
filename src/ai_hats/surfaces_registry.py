@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
-    from .providers import Provider
+    from .surfaces import Provider
 
 
 class SurfaceInfo(NamedTuple):

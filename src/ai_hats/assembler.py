@@ -50,7 +50,8 @@ from .plugin_dir import (
 
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
-from .providers import Provider, get_provider
+from .surfaces import Provider
+from .providers import get_provider
 from .constants import (
     AGENT_DIR,
     CANONICAL_DIR,

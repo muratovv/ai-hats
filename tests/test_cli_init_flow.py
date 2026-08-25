@@ -1159,7 +1159,7 @@ def test_init_harness_path_requires_local_channel(cli_project):
 def test_init_cline_surface_auto_installs(cli_project, monkeypatch):
     """ai-hats self init -p cline accepts known surface and auto-installs it (HATS-1179)."""
     from unittest.mock import MagicMock
-    from ai_hats.providers import Provider
+    from ai_hats.surfaces import Provider
 
     project, runner = cli_project
 

@@ -21,7 +21,7 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, Resolv
 from ai_hats.check_resolve import CheckResolutionError, resolve_carried_checks
 from ai_hats.check_snapshot import legacy_launch_notices
 from ai_hats.materialization import PlanMaterializer
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Provider
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
 SID = "20260801-000000-1-42"

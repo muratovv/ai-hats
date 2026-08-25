@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Provider
 from ai_hats.surfaces_registry import (
     detect_surface_presence,
     get_installed_providers,

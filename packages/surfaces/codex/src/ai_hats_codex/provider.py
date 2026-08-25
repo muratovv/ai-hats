@@ -18,7 +18,7 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Provider
 from ai_hats.session_artifacts import (
     AutomateLaunch,
     BuiltArtifacts,
@@ -35,7 +35,8 @@ from .session_home import (
 )
 
 if TYPE_CHECKING:
-    from ai_hats.providers import CompositionResult, ProviderHint
+    from ai_hats.surfaces import ProviderHint
+    from ai_hats.providers import CompositionResult
 
 
 _DANGEROUS_FLAGS = {
@@ -166,7 +167,7 @@ class CodexProvider(Provider):
         return True
 
     def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.providers import ProviderHint
+        from ai_hats.surfaces import ProviderHint
 
         return [
             ProviderHint(

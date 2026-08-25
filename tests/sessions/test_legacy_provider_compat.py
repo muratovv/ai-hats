@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Provider
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 

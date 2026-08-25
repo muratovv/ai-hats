@@ -26,7 +26,7 @@ pytestmark = pytest.mark.integration
 _PLUGIN_SRC = """\
 from pathlib import Path
 
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Provider
 
 
 class AcmeProvider(Provider):

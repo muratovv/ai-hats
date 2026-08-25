@@ -19,7 +19,7 @@ from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:
     from .hooks_manager import HooksManager
-    from .providers import Provider
+    from .surfaces import Provider
 
 
 @dataclass(frozen=True)

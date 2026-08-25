@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
     from ai_hats_core import CompositionResult
 
-    from ai_hats.providers import Provider
+    from .. import Provider
     from ai_hats.session_artifacts import BuiltArtifacts
 
 

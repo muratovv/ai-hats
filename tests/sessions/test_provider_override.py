@@ -18,7 +18,8 @@ from click.testing import CliRunner
 
 from ai_hats import providers as prov
 from ai_hats.cli import main
-from ai_hats.providers import Provider, register_provider
+from ai_hats.surfaces import Provider
+from ai_hats.providers import register_provider
 
 # The project fixture configures ``claude``; an override must beat it.
 OVERRIDE = "stub-surface"

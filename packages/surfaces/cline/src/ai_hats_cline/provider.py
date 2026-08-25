@@ -12,12 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Provider
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 
 if TYPE_CHECKING:
     # Workspace-boundary Rule 1 (HATS-869): only first-party root is `ai_hats`.
-    from ai_hats.providers import CompositionResult, ProviderHint
+    from ai_hats.surfaces import ProviderHint
+    from ai_hats.providers import CompositionResult
     from ai_hats_observe.parsers.base import TranscriptParser
 
 
@@ -32,7 +33,7 @@ class ClineProvider(Provider):
         return True
 
     def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.providers import ProviderHint
+        from ai_hats.surfaces import ProviderHint
 
         return [
             ProviderHint(

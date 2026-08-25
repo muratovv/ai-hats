@@ -67,7 +67,7 @@ def test_session_run_continues_when_cleanup_notice_cannot_be_written(caplog) -> 
 
 
 def test_provider_interface_does_not_publish_session_resource_lifecycle() -> None:
-    from ai_hats.providers import Provider
+    from ai_hats.surfaces import Provider
 
     assert "recover_session_artifacts" not in Provider.__dict__
     assert "finalize_session_artifacts" not in Provider.__dict__

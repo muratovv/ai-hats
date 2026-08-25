@@ -61,7 +61,7 @@ class HoldfastProvider(ClaudeProvider):
     def describe_automate_launch(self, *args, **kwargs):
         # ClaudeProvider describes SDK options, not an argv. Take the base
         # class's CLI description, which is what that legacy path executes.
-        from ai_hats.providers import Provider
+        from ai_hats.surfaces import Provider
 
         return Provider.describe_automate_launch(self, *args, **kwargs)
 '''

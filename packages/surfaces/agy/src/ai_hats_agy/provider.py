@@ -29,7 +29,7 @@ from ai_hats.paths import (
     gemini_md,
     session_cache_dir,
 )
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Provider
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 
 
@@ -41,7 +41,7 @@ def agy_user_settings_json() -> Path:
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
-    from ai_hats.providers import ProviderHint
+    from ai_hats.surfaces import ProviderHint
 
 
 class AgyProvider(Provider):
@@ -55,7 +55,7 @@ class AgyProvider(Provider):
         return [".gemini", ".agy"]
 
     def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.providers import ProviderHint
+        from ai_hats.surfaces import ProviderHint
 
         return [
             ProviderHint(
