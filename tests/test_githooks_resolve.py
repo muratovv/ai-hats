@@ -645,3 +645,35 @@ def test_an_untrustworthy_envelope_refuses_instead_of_skipping(
     assert rc != 0, f"an untrusted envelope must not wave the commit through:\n{err}"
     assert not marker.exists(), "no gate may run under an identity we do not trust"
     assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err, "a deny must name its hatch"
+
+
+@pytest.mark.integration
+def test_a_missing_journal_warns_that_the_hatch_will_not_be_recorded(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """The gates still run — no journal is not a disarm — but the warning has to
+    say the hatch is now unrecordable.
+
+    Otherwise the ADR-0020 D2 promise ("never SILENTLY") is quietly void exactly
+    when someone reaches for the flag, and nothing would ever say so.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    marker = tmp_path / "ran.txt"
+    project = _gate_project(tmp_path, body=f'touch "{marker}"')
+    # A library that is structurally complete but ships no `hooks/` — the shape a
+    # partial install presents, and the only one `builtin_library_hooks` answers
+    # None for. A merely-empty dir is rejected as a library and falls back.
+    hookless = tmp_path / "hookless-lib"
+    (hookless / "core" / "pipelines").mkdir(parents=True)
+    (hookless / "usage").mkdir()
+    monkeypatch.setenv("AI_HATS_LIBRARY_ROOT", str(hookless))
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 0, err
+    assert marker.exists(), f"a missing journal must not disarm the gates:\n{err}"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err and "NOT be recorded" in err, err
