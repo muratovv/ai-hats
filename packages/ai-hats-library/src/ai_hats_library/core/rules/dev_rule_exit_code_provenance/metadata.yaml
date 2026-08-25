@@ -1,5 +1,0 @@
-name: dev_rule_exit_code_provenance
-license: MIT
-description: The exit code you act on must belong to the runner, not to whatever ran last — a pipeline filter, a trailing command, or a background wrapper; redirect and judge in a separate call
-author: ai-hats
-tags: [development, testing, gate, shell]

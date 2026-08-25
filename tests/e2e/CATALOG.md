@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**266 of 266 files catalogued — 275 flows.**
+**267 of 267 files catalogued — 276 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1007,6 +1007,21 @@ as a claim to check, not as evidence.
 
 - **expect** — command exits with code 2 explaining that explicit role specification is required for batch
 - **why** — without role validation in batch mode, execution runs under uninitialized default roles
+
+## `test_exit_code_shell_awareness_chain.py`
+
+*pins HATS-1798*
+
+- **flow** — an agent preserving a pipeline's runner status, in the shell the Bash tool actually runs (zsh), driven through the whole composed PreToolUse chain
+- **cmds**
+
+  ```console
+  ruff check src/ | tail; exit ${PIPESTATUS[0]}
+  ruff check src/ | tail; exit ${pipestatus[1]}
+  ```
+
+- **expect** — the bash-only spelling is nudged (in zsh it returns 0 for every run) and the zsh-correct spelling is not
+- **why** — the guard exempted any command containing PIPESTATUS, so it stayed silent on a form that reads a red run as green, and nudged the only spelling that works here — the exemption has to know which shell it is guarding
 
 ## `test_gate_primitive.py`
 

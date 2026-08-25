@@ -150,6 +150,9 @@ def test_noncovered_command_forms_get_no_nudge(command):
         "ci-local.sh | tail",
         "npm test | head",
         'python -m pytest tests/ > /tmp/gate.log 2>&1; echo "EXIT=$?"',
+        # bash-only spelling with no bash in sight: in the tool's zsh this is
+        # `exit ""` -> 0 for every run, so it masks rather than preserves.
+        "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
     ],
 )
 def test_exit_code_masking_nudges(command):
@@ -167,12 +170,23 @@ def test_exit_code_masking_nudges(command):
     [
         "pytest tests/ && true",
         "set -o pipefail; pytest tests/ | tail",
-        "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
+        # The zsh spelling — the one that preserves the status in the shell the
+        # Bash tool runs (HATS-1798). Its bash-only twin is nudged instead.
+        "pytest tests/ | tail; exit ${pipestatus[1]}",
+        # ...unless an explicit bash runs it, where PIPESTATUS is the right name.
+        "bash -c 'pytest tests/ | tail; exit ${PIPESTATUS[0]}'",
         "pytest tests/",
         "python -m pytest tests/",
-        # The rule's own "✅ intra-command" form: the status is CAPTURED to a
-        # file the agent then reads, so nothing is masked — nudging here taught
-        # the agent to distrust the one shape the rule prescribes.
+        # The rule's default shape: redirect only. The harness reports the
+        # runner's own exit code, so no status file is involved (HATS-1798).
+        "pytest tests/ > /tmp/gate.log 2>&1",
+        # The rule's reserved shape, for a verdict that must outlive the call:
+        # the leading rm -f is what proves the file belongs to THIS run.
+        "rm -f /tmp/gate.rc; pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
+        # Capturing the status to a file does not MASK it, at any path — so the
+        # guard stays silent here even without the rm -f. Freshness is the
+        # rule's business, not this hook's; nudging these taught the agent to
+        # distrust capture itself.
         "pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
         "python -m pytest tests/ -q > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
         "ruff check src/ > /tmp/lint.log 2>&1; echo $?>/tmp/lint.rc",

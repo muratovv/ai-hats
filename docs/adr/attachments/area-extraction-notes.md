@@ -222,6 +222,26 @@ produces — a taxonomy grows by incident, not by imagination.
     conclusion rests on it — a fresh path per run, or its mtime checked against the
     run's start.
 
+    *Measured (HATS-1798), in the Bash tool's own shell — zsh 5.9, `$BASH_VERSION`
+    empty — with `false` standing in for the runner. The status of a compound
+    command is the status of the last command it ran; every row below is that one
+    rule, and a wrapper script is a compound command too:*
+
+    | command                          | status |  | command                                   | status |
+    | -------------------------------- | -----: |  | ----------------------------------------- | -----: |
+    | `false`                          |      1 |  | `false && true`                           |  **1** |
+    | `false; true`                    |      0 |  | `set -o pipefail; false \| tail`          |      1 |
+    | `false \| tail`                  |      0 |  | `false \| tail; exit "${PIPESTATUS[0]}"`  |  **0** |
+    | `false \| tee log`               |      0 |  | `false \| tail; exit "${pipestatus[1]}"`  |      1 |
+    | `false \|\| true`                |      0 |  | `false > log; echo $? > rc`               | 0, `rc`=1 |
+
+    The bare `false` returns 1 to the harness, which reports it faithfully — the
+    harness never misreports, it is handed the last command's status. The two bold
+    cells are the traps: `&&` needs no exception because it short-circuits, and
+    `${PIPESTATUS[0]}` is bash-only, so in zsh `exit "${PIPESTATUS[0]}"` is
+    `exit ""` → 0 for every run, silently. Re-measure rather than trusting this
+    table: `echo "$ZSH_VERSION / $BASH_VERSION"`.
+
 12. **The precondition was inherited, not established.** The gate is written about the
     right subject and it does bite — but only from a state a neighbour left. Moving the
     built-in steps to entry points made them resolve lazily, so `_REGISTRY` starts a

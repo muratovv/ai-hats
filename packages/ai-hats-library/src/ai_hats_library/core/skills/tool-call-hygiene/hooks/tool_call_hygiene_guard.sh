@@ -68,13 +68,27 @@ cmd="${cmd#"${cmd%%[![:space:]]*}"}"
 # Detect test runner commands piped or chained in ways that mask non-zero exit codes.
 runner_rx='(^|[[:space:]|;&])(pytest|ruff|make|ci-local\.sh|go[[:space:]]+test|cargo[[:space:]]+test|npm[[:space:]]+(run[[:space:]]+)?test|yarn[[:space:]]+test|pnpm[[:space:]]+test|python[3]?[[:space:]]+-m[[:space:]]+(pytest|unittest))($|[[:space:]|;&])'
 if [[ "$cmd" =~ $runner_rx ]]; then
-    if [[ "$cmd" != *"pipefail"* && "$cmd" != *"PIPESTATUS"* ]]; then
+    # What counts as preserving the status depends on the SHELL the command will
+    # run in (HATS-1798). `set -o pipefail` is correct in bash and zsh both.
+    # `${PIPESTATUS[0]}` is bash-only: zsh has no such name, so `exit
+    # "${PIPESTATUS[0]}"` becomes `exit ""` -> 0, silently, for every run. Its
+    # zsh spelling is the lowercase `${pipestatus[1]}`, indexed from 1. Exempting
+    # the uppercase name outright let the silent-zero through and nudged the one
+    # spelling that works here — so it is excused only under an explicit bash.
+    preserved=""
+    if [[ "$cmd" == *"pipefail"* || "$cmd" == *"pipestatus"* ]]; then
+        preserved=1
+    elif [[ "$cmd" == *"PIPESTATUS"* && "$cmd" =~ (^|[[:space:]])bash([[:space:]]|$) ]]; then
+        preserved=1
+    fi
+    if [[ -z "$preserved" ]]; then
         pipe_rx='\|[[:space:]]*(tail|head|grep|rg|tee)'
         semi_rx=';[[:space:]]*(echo|true|exit[[:space:]]+0)'
         or_rx='\|\|[[:space:]]*(echo|true|exit[[:space:]]+0)'
-        # `; echo $? > file` is the rule's own prescribed form: the status is
-        # captured for the agent to read, not printed and lost. Only the chain
-        # grounds are excused — a pipe still masks (HATS-1436 heir).
+        # `; echo $? > file` captures the status for the agent to read rather
+        # than printing and losing it, so it is not masking at any path. Whether
+        # that file belongs to THIS run is the rule's business, not the hook's.
+        # Only the chain grounds are excused — a pipe still masks.
         capture_rx=';[[:space:]]*echo[[:space:]]+\$\?[[:space:]]*>'
         masked=""
         if [[ "$cmd" =~ $pipe_rx ]]; then
@@ -83,7 +97,7 @@ if [[ "$cmd" =~ $runner_rx ]]; then
             masked=1
         fi
         if [[ -n "$masked" ]]; then
-            msg="exit code masking detected in test runner command — dev_rule_exit_code_provenance: piped/chained runner commands mask non-zero exit codes. Use set -o pipefail, \${PIPESTATUS[0]}, or run without exit code masking."
+            msg="exit code masking detected in test runner command — a compound command's status is the LAST command's, so the runner's is lost. Use set -o pipefail (correct in bash and zsh), or redirect and read the log in a separate call. \${PIPESTATUS[0]} is bash-only: in zsh it is unset, so exiting on it returns 0 for every run — the zsh name is \${pipestatus[1]}."
             printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
             exit 0
         fi
