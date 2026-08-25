@@ -102,6 +102,15 @@ load-bearing **rules** are:
 > `ai-hats-tracker` cell below and in §2/§3 and both diagrams is the decision as
 > taken; see *Amendments* (2026-08-14) for what the tree did with it.
 
+> **The Surfaces tier is a tier this repository no longer publishes.** ADR-0026
+> D10 (a distribution does not follow from a module) and HATS-1826 retired it on
+> 2026-08-25: `packages/surfaces/` is gone, a surface is a folder in the
+> `ai_hats.surfaces` area (`src/ai_hats/surfaces/<name>/`) declared in the root
+> `pyproject.toml` and shipped inside `ai-hats`, and a module is promoted to a
+> distribution only under D10's three conditions. The row below and the HATS-956
+> amendment are the decision as taken; see *Amendments* (2026-08-25) for what the
+> tree did with it.
+
 The **role-model + provider-materialization** and **init/wizard** are integrator, not
 modules — the layer that "takes different projects into itself." Full `ai-hats-core`
 contract (in/out tables + open-field boundary rule + shared-mechanism litmus):
@@ -1073,6 +1082,39 @@ component-granular)?
   `ProjectConfig` still carries only `library_paths` and `harness:`, so
   per-project version selection is `AI_HATS_LIBRARY_ROOT` plus the
   `library_paths` overlay, exactly as senses (B) and (C) describe.
+
+- **Retired, dated 2026-08-25 (HATS-1826) — a surface is not a distribution.**
+  §1's tier table, the HATS-956 amendment beneath it and the 2026-08-14
+  divergence all place a surface in `packages/surfaces/*` as an
+  independently-publishable package. Four of them existed — `ai-hats-agy`,
+  `ai-hats-cline`, `ai-hats-codex`, `ai-hats-opencode` — and HATS-1826 folded all
+  four into `src/ai_hats/surfaces/<name>/`, where the `claude` surface already
+  lived. `packages/surfaces/` no longer exists; the four register next to
+  `claude` under `[project.entry-points."ai_hats.providers"]` in the root
+  `pyproject.toml` and ship inside `ai-hats`. Read every `packages/surfaces/*`
+  path above as `src/ai_hats/surfaces/<name>/`, with three specifics the
+  substitution does not carry:
+  - **What survived is the seam, not the package.** A surface is still an
+    entry-point `Provider`, still the one tier that may depend *up* on the
+    integrator, and the entry point is still the only registration channel — an
+    out-of-tree distribution can register a provider exactly as before. What the
+    fold removed is the claim that *being a surface* means *being a
+    distribution*.
+  - **The rule that replaced it is [ADR-0026](0026-capability-ownership-and-the-project-value.md) D10**:
+    a module is promoted to a distribution only when all three hold — a real
+    consumer outside ai-hats, an entry point a human types or a documented API
+    someone imports, and someone answering for its release cycle. No surface met
+    any of them. `ai-hats-agy` (0.2.0) and `ai-hats-cline` (0.5.0) had reached
+    PyPI and are pruned from an upgraded venv; `ai-hats-codex` and
+    `ai-hats-opencode` never published at all, so the tier's cost was paid four
+    times and its value collected zero.
+  - **The workspace is one line shorter than the divergence above says.** "Today's
+    workspace" is `ai-hats-core`, `ai-hats-wt`, `ai-hats-rack`, `ai-hats-observe`,
+    `ai-hats-library` and the `ai-hats` integrator — six distributions, no
+    surfaces. The boundary lint's surface case (`packages/surfaces/* -> ai-hats`,
+    widened by HATS-960 to `{core, integrator} | every module`) matches no member
+    any more: every workspace member is a module again, and the surface → surface
+    prohibition it also carried is now an intra-package concern.
 
 ## References
 

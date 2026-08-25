@@ -8,13 +8,13 @@ This file is the naming source-of-truth. When another doc needs to define a core
 
 ## Provider
 
-A target LLM CLI that ai-hats wraps. The built-ins are `claude` and `gemini`; the set is an **open registry** (HATS-870) — any package outside `src/ai_hats/**` can register another provider (e.g. `cline`, see [Surface plugin](#surface-plugin)) under the `ai_hats.providers` entry point. The choice lives in `ai-hats.yaml` (`provider:`). A role composition is built per session and delivered per provider from the session cache — see [1] for the per-surface table. Switching keeps composition intact: `ai-hats config set -p <provider>`.
+A target LLM CLI that ai-hats wraps. The set is an **open registry** (HATS-870) — every provider is discovered through the `ai_hats.providers` entry point, whether it ships inside `ai-hats` (`claude`, `agy`, `cline`, `codex`, `opencode`) or in another installed package (see [Surface plugin](#surface-plugin)). The choice lives in `ai-hats.yaml` (`provider:`). A role composition is built per session and delivered per provider from the session cache — see [1] for the per-surface table. Switching keeps composition intact: `ai-hats config set -p <provider>`.
 
 Detail — see [1].
 
 ## Surface plugin
 
-An entry-point plugin — a package outside `src/ai_hats/**` — that registers a [Provider](#provider) for another agent CLI through the `ai_hats.providers` entry point (HATS-870), giving ai-hats a new surface. Surface plugins may ship in-tree under `packages/surfaces/<name>/` or as separate out-of-tree repos; `ai-hats-cline` (the `cline` CLI) is the first, in-tree (HATS-956). A surface may also ship a `TranscriptParser` that rides the provider (`Provider.transcript_parser`, HATS-948) to normalize its session log into audit + usage; `Provider.resolve_transcript` (HATS-1087) is the matching half — the parser knows HOW to read the log, the resolver knows WHERE it lives. A surface without a structured log overrides neither and falls back to the trace log.
+A [Provider](#provider) for another agent CLI registered through the `ai_hats.providers` entry point (HATS-870), giving ai-hats a new surface. The entry point is the only seam, so an out-of-tree package can still register one — but the built-in surfaces are **not** separate distributions: each is a folder in the surfaces area (`src/ai_hats/surfaces/<name>/`), declared in the root `pyproject.toml` and shipped inside `ai-hats`, so it arrives with the integrator and nothing installs it. Until HATS-1826 `agy` / `cline` / `codex` / `opencode` were published packages under `packages/surfaces/<name>/`; they paid a distribution's cost without its value, which is the case ADR-0026 D10 refuses. A surface may also ship a `TranscriptParser` that rides the provider (`Provider.transcript_parser`, HATS-948) to normalize its session log into audit + usage; `Provider.resolve_transcript` (HATS-1087) is the matching half — the parser knows HOW to read the log, the resolver knows WHERE it lives. A surface without a structured log overrides neither and falls back to the trace log.
 
 ## Session
 
