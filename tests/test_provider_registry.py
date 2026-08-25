@@ -180,6 +180,7 @@ def test_pyproject_declares_provider_entry_point_group():
         # HATS-1826 folds the out-of-tree surface distributions into the area, so
         # the integrator now declares their entry points too.
         "codex": "ai_hats.surfaces.codex.provider:CodexProvider",
+        "opencode": "ai_hats.surfaces.opencode.provider:OpenCodeProvider",
     }
 
 

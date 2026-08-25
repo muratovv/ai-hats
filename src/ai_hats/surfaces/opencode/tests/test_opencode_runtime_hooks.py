@@ -10,8 +10,8 @@ import pytest
 
 from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from ai_hats_opencode import OpenCodeProvider
-from ai_hats_opencode.runtime_hooks import MANIFEST_VERSION, plugin_source
+from ai_hats.surfaces.opencode import OpenCodeProvider
+from ai_hats.surfaces.opencode.runtime_hooks import MANIFEST_VERSION, plugin_source
 
 
 def _make_hooked_skill(tmp_path: Path, name: str = "safety-guard") -> Path:
@@ -144,7 +144,7 @@ def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> No
 
 def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
     source = _make_hooked_skill(tmp_path)
-    (source / "hooks" / "guard.sh").unlink()
+    (source / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
 
     provider = OpenCodeProvider()
     project = _project(tmp_path)

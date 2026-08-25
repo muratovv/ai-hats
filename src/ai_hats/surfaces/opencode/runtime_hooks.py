@@ -27,7 +27,7 @@ PLUGIN_ASSET = "ai-hats-hooks.mjs"
 def plugin_source() -> str:
     """Return the packaged dispatcher plugin source."""
     return (
-        resources.files("ai_hats_opencode")
+        resources.files("ai_hats.surfaces.opencode")
         .joinpath("plugin", PLUGIN_ASSET)
         .read_text(encoding="utf-8")
     )

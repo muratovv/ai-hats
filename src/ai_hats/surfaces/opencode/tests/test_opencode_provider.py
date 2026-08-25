@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from ai_hats_opencode import OpenCodeProvider
-from ai_hats_opencode.provider import AGENT_NAME, ENV_OPENCODE_CONFIG
+from ai_hats.surfaces.opencode import OpenCodeProvider
+from ai_hats.surfaces.opencode.provider import AGENT_NAME, ENV_OPENCODE_CONFIG
 
 
 @pytest.fixture(autouse=True)
