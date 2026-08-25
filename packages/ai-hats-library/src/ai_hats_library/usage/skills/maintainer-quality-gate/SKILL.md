@@ -203,11 +203,6 @@ things about that path:
   (HATS-1682: 125 had accumulated on one checkout). A malformed value is
   reported on stderr and the sweep falls back to 30; it never fails the run.
 
-Before the stages run, `gate_export_pytest_addopts` applies the same gate-scoped
-pytest policy as pre-push: concise diagnostics and, when pytest-xdist is
-available, `-n min(logical_cpus, 8) --dist=loadgroup`. Direct dispatcher and CI
-stage invocations stay serial, so they remain the independent serial oracle.
-
 A marker counts only when its filename and its recorded `tree=` line agree
 (`gate_marker_ok`) — a half-written or hand-copied file names content it does
 not certify.
@@ -366,9 +361,9 @@ preview for as long as the sweeper judged by name alone — and freed nothing
 while 145 GB accumulated. `AI_HATS_E2E_CLEAN_TMP=1` escalates to `--force`,
 which also takes the unlocked run dirs pytest keeps for triage.
 Then it runs the tier as the project's own `e2e`
-stage — one selection, not a second copy of it (HATS-1604) — carrying the shared
-gate-scoped flags in `PYTEST_ADDOPTS`: `--tb=line --no-header -p no:cacheprovider`,
-plus `-n min(cpus,8) --dist=loadgroup` when pytest-xdist is present (HATS-589/592).
+stage — one selection, not a second copy of it (HATS-1604) — carrying the gate's
+own flags in `PYTEST_ADDOPTS`: `--tb=line --no-header -p no:cacheprovider`, plus
+`-n min(cpus,8) --dist=loadgroup` when pytest-xdist is present (HATS-589/592).
 `AI_HATS_E2E_REQUIRE_VENV=1` is armed so the tier-2 venv fixture fails closed
 (HATS-645); quarantined known-flaky tests are deselected by the selection itself
 (HATS-676).
@@ -442,7 +437,7 @@ consuming project.
 - Plan (gate origin): `.agent/ai-hats/tracker/backlog/tasks/HATS-550/plan.md`
 - Plan (review→done gate): `.agent/ai-hats/tracker/backlog/tasks/HATS-1137/plan.md`
 - E2e tests: `tests/e2e/test_prepush_e2e_master_gate.py`,
-  `tests/e2e/test_done_gate.py`, `tests/e2e/test_card_gate_parallel_xdist.py`
+  `tests/e2e/test_done_gate.py`
 - Wrapper: `scripts/run-e2e-gate.sh`
 - Gate compositions: `scripts/ci-local.sh` → `gate_composition`, one line per
   gate; `--stages <gate>` prints one
