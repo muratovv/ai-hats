@@ -5,6 +5,9 @@ observe was silently omitted from the publish workflow (the integrator declared
 install and a gate-blocked master push). This guards against the next package
 being missed the same way: every ``packages/*/pyproject.toml`` ``name`` must be
 BOTH built and published by ``release-packages.yml``.
+
+Also owns the environment-uniqueness invariant of that same workflow, which
+arrived here from the retired ``test_surface_publish_coverage.py`` (HATS-1826).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-packages.yml"
 
 
 def _package_names() -> list[str]:
+    # One level deep on purpose; tests/test_packages_flat_layout.py keeps that true.
     return [
         tomllib.loads(pp.read_text())["project"]["name"]
         for pp in sorted(REPO_ROOT.glob("packages/*/pyproject.toml"))
@@ -64,4 +68,22 @@ def test_every_package_is_built_and_published() -> None:
     assert not missing, (
         "release-packages.yml must build AND publish every workspace package "
         f"(an unwired package ships a DOA stable channel): {missing}"
+    )
+
+
+def test_publish_environments_are_distinct() -> None:
+    """PyPI refuses two pending publishers sharing one (repo, workflow, environment).
+
+    HATS-1826: inherited from ``test_surface_publish_coverage.py``, the only
+    assertion there that outlived the surface distributions — it reads the
+    workflow's publish jobs, never the surface registry.
+    """
+    jobs = _workflow()["jobs"]
+    environments = [job["environment"] for job in jobs.values() if job.get("environment")]
+
+    duplicates = {env for env in environments if environments.count(env) > 1}
+
+    assert not duplicates, (
+        f"publish jobs share an environment {sorted(duplicates)} — PyPI rejects the "
+        "pending trusted publisher as already registered for another project"
     )
