@@ -20,8 +20,11 @@ brief), use **task-summary** instead.
 ## Procedure
 
 1. **Identify the handoff path:**
-   - Task-scoped: `<ai_hats_dir>/tracker/backlog/tasks/<ID>/handoff.md`
    - Session-scoped: `<ai_hats_dir>/sessions/handoffs/YYYY-MM-DD-<title>.md`
+   - Task-scoped: write it OUTSIDE the tracker (`/tmp/<ID>-handoff.md`), then
+     bring it in with `rack transition <ID> --attach /tmp/<ID>-handoff.md:handoff.md`.
+     A direct write under `tracker/backlog/tasks/<ID>/` is denied by
+     `backlog_write_gate.py` — `plan.md` is the one carve-out.
 
 2. **Collect only what matters.** Ignore routine actions. Focus on:
    - **Architectural decisions** — what was chosen and WHY (not just what)

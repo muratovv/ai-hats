@@ -19,9 +19,9 @@ injection: |
   - One verdict per active HYP — see **review-hypothesis**.
   - Vote / create / triage on PROP — see **review-proposal**.
 
-  Role-composition audits (`review-role`) are NOT bundled here — they
-  live with `role-curator`, not in reflect-mode (reflect = backlog
-  triage; role coherence is a separate domain).
+  Role-composition audits are NOT bundled here — `role-auditor` owns them
+  via **role-coherence-protocol** (reflect = backlog triage; role coherence
+  is a separate domain).
 
   How the verdicts are *reported* depends on your role:
   - `reflect-session` / `session-reviewer` → emit a single

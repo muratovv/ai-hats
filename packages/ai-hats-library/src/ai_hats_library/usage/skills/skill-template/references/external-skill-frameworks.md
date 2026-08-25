@@ -76,8 +76,9 @@ GPL-licensed: we borrow *ideas* and cite *primary* sources, never lift text.
 - **Lost-in-the-middle / U-shaped attention** — LLMs recall start/end of context
   far better than the middle. Primary: Liu et al. 2023, *Lost in the Middle: How
   Language Models Use Long Contexts*, TACL 2024 (arXiv:2307.03172). This is the
-  rationale behind HATS-620's `## Guardrails`-placed-early convention; wired into
-  `docs/how-to-extend.md` and the `review-role` attention-placement audit axis.
+  rationale behind HATS-620's `## Guardrails`-placed-early convention, wired into
+  `docs/how-to-extend.md`. No audit enforces the placement: the axis that named
+  it lived in `review-role`, a skeleton HATS-1825 removed.
 - **Persuasion → compliance** — instruction framing (Authority/Commitment/Social
   Proof) roughly doubles compliance; avoid Liking/Reciprocity (breed sycophancy).
   Primary: Meincke et al. 2025. (Candidate for a prompt-engineering skill.)

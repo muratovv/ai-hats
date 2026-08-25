@@ -13,8 +13,7 @@ composition:
     - library-curator
     - dev::python
   rules: []
-  skills:
-    - review-role
+  skills: []
 injection: |
   # ROLE: ROLE CURATOR
 

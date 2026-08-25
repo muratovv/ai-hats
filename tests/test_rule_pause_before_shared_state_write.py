@@ -13,6 +13,7 @@ tests/e2e/ exercises the actual hook scripts.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
@@ -36,18 +37,39 @@ def test_rule_metadata_well_formed() -> None:
     assert "safety" in meta
 
 
-def test_rule_body_covers_irreversible_commands() -> None:
+#: A per-command verdict claim: a table row whose cell is `denies`/`allows`/`asks`.
+_VERDICT_CLAIM = re.compile(r"\|\s*\**(denies|allows|asks)\**\s*\|", re.IGNORECASE)
+
+
+def test_rule_does_not_restate_the_hooks_verdicts() -> None:
+    """The rule points at the hook; it must not mirror what the hook decides.
+
+    What stood here asserted that the strings `gh pr merge` and `--force` were
+    present and called that "semantic lockstep". The table it certified promised
+    `denies` for both while `test_shared_state_guard.py` — green, same run —
+    pinned the hook at `ask`. A check shaped like the invariant's NAME rather
+    than its content cannot see that (HATS-1825).
+    """
+    planted = "| `gh pr merge` | **irreversible** | **denies** |"
+    assert _VERDICT_CLAIM.search(planted), "pattern misses a verdict shown to it"
+
     body = (RULE_DIR / "rule.md").read_text()
-    # The reversibility table must name the irreversible subset the
-    # Level-3 hook also blocks — keep rule + hook in semantic lockstep.
-    assert "gh pr merge" in body
-    assert "git push --force" in body or "--force" in body
-    # The explicit "no chaining" rule (the actual failure mode that
-    # produced HYP-026/HYP-027) must be present.
-    assert "chain" in body.lower()
-    # Override env must be named so agents see the per-command escape
-    # hatch (otherwise they may falsely treat the hook block as terminal).
+    hit = _VERDICT_CLAIM.search(body)
+    assert hit is None, (
+        f"rule.md restates a hook verdict ({hit.group(0)!r}). The hook prints its "
+        f"own refusal; a copy here drifts silently."
+    )
+
+
+def test_rule_defers_to_the_classifier_and_names_both_consent_channels() -> None:
+    """Deleting the table must not delete what the agent actually needs: which
+    commands are in scope, and the two ways consent can arrive."""
+    body = (RULE_DIR / "rule.md").read_text()
+    assert "shared_state_classifier.sh" in body
+    for verdict in ("irreversible", "gated", "shared", "safe"):
+        assert f"`{verdict}`" in body, verdict
     assert "AI_HATS_SHARED_STATE_ACK" in body
+    assert "chain" in body.lower()
 
 
 def test_rule_listed_in_trait_agent_composition() -> None:

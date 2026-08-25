@@ -70,9 +70,11 @@ injection: |
     `trait_injections`, a dict keyed by trait name. Rules and skills dedup by
     name, but injections dedup by **text** — two traits carrying identical
     injection prose contribute it once, silently.
-    `merged_injection` joins the injections — skill **descriptions** (SKILL.md
-    frontmatter), rule injection text, trait injection bullets — and NOT
-    SKILL.md bodies; to verify a body, read the file or `ResolvedComponent`.
+    `merged_injection` joins ONLY injections — trait, role and overlay text.
+    Rule BODIES are a separate `## RULES` section the provider appends
+    (`providers.py:339`), and skill descriptions never enter the prompt at all —
+    the harness indexes them. To verify a rule or skill body, read the file or
+    `ResolvedComponent`; grepping `merged_injection` for one finds nothing.
   - `builtin_library_root` / `builtin_library_layers` in
     `src/ai_hats/paths/library.py` (`paths` is a package, not `paths.py`;
     `assembler.py` only imports the layers helper under an alias). Precedence:
