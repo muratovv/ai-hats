@@ -33,12 +33,14 @@ injection: |
   Precedent: `dev_rule_tool_call_hygiene` → `core/skills/tool-call-hygiene/hooks/`.
 
   ### Component Types
+
+  Library root: `packages/ai-hats-library/src/ai_hats_library`, layered `core/` + `usage/`.
   - **Rule:** Behavioral constraint. No decision logic — just "do this / don't do that."
-    Structure: `libraries/rules/<name>/rule.md` + `metadata.yaml`
+    Structure: `<layer>/rules/<name>/rule.md` + `metadata.yaml`
   - **Skill:** Procedure, protocol, or checklist. Has decision logic or steps.
-    Structure: `libraries/skills/<name>/SKILL.md`
+    Structure: `<layer>/skills/<name>/SKILL.md`
   - **Trait:** Behavioral profile. Bundles rules + skills + injection text.
-    Structure: `libraries/traits/<name>/config.yaml`
+    Structure: `<layer>/traits/<name>/config.yaml`
     Traits CANNOT include other traits (flat model).
 
   ### When to Create vs Update

@@ -91,7 +91,7 @@ exist), not as the deliverable shape.
 ### Worked example
 
 **HATS-364 (glossary extend, 2026-05-17).** Task listed 37 components from
-`library/core/` (7 roles + 6 traits + 5 rules + 19 skills) with a one-line
+`packages/ai-hats-library/src/ai_hats_library/core/` (7 roles + 6 traits + 5 rules + 19 skills) with a one-line
 purpose each. Initial plan: document all 37.
 
 User trimmed to **5 entries** (3 key roles + 2 key traits), dropped Rules and
@@ -170,8 +170,7 @@ pre-HATS-252 era — predecessor never grep-verified. Caught at round-2 user
 review. Same root cause as a stale `reflect all` → `judge` role mention
 elsewhere in the same doc.
 
-Applies to **translation tasks** (`feedback-doc-style-upfront`) AND
-**drift-fix tasks** alike — verification is orthogonal to text content.
+Applies to translation tasks and drift-fix tasks alike — verification is orthogonal to text content.
 
 ---
 

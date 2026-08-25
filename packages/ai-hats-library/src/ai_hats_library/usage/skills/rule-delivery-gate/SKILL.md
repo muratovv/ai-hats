@@ -4,7 +4,8 @@ description: Pre-commit check that staged trait/role injections never point `see
 ai_hats:
   # HATS-700 — hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. On a staged
-  # `library/**/config.yaml` it runs `python -m ai_hats.rule_delivery library`
+  # `{ai_hats_library,library,libraries}/**/config.yaml` (three spellings, one
+  # live here) it runs `python -m ai_hats.rule_delivery library`
   # and blocks the commit if a `see rule X` pointer names an undeliverable
   # rule. Fail-open if python/ai_hats absent; override AI_HATS_RULE_DELIVERY_ACK=1.
   git_hooks:
@@ -22,9 +23,10 @@ through composition.
 
 ## What it gates
 
-- **Scope:** fires only when a commit stages a `library/**/config.yaml` (a
-  trait/role injection — where a dangling pointer is introduced). The check then
-  scans the whole working-tree `library/`, because a pointer's validity
+- **Scope:** fires only when a commit stages a trait/role injection —
+  `{ai_hats_library,library,libraries}/**/config.yaml`, the three layouts the
+  filter knows. The check then scans the whole working-tree library, because a
+  pointer's validity
   depends on rule existence across the library, not a single diff.
 - **Invariant:** every `see rule X` must resolve to a rule that exists in the library.
   A pointer to a non-existent rule blocks the commit.

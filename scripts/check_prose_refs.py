@@ -45,7 +45,8 @@ PATH_SUFFIXES = frozenset(
 FENCE_RE = re.compile(r"^[ \t]*(```|~~~)")
 TICK_RE = re.compile(r"`([^`\n]{1,160})`")
 
-#: `component § "Heading"` — rigid enough to check, like `ADR-0014 §D4`.
+#: `component § "Heading"` — as rigid a form as an ADR marker citation, and
+#: checked the same way: the component resolves, then the heading must exist.
 SECTION_RE = re.compile(r"`([a-z0-9][a-z0-9._-]*)`\s*§\s*[\"“]([^\"”\n]+)[\"”]")
 
 #: `Class.method`, the one code-symbol shape prose actually uses.
@@ -59,8 +60,7 @@ UNCOVERED = (
     "unanchored paths — first segment is not a tracked top-level entry; the "
     "count is printed above, and a claim among them can only be checked by hand",
     "fenced code blocks — samples and commands, not claims about this tree",
-    "prose claims with no reference shape at all — `[project.scripts]` in "
-    "pyproject.toml is one",
+    "prose claims with no reference shape at all — `[project.scripts]` in pyproject.toml is one",
     "a bare component name: no marker form separates `reflect-session` from "
     "`benchdiff` or `data-testid`, and every form tried read tool names as "
     "components. The `§` resolver below covers the one case that stayed exact",

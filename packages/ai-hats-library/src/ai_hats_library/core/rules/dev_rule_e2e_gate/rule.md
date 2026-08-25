@@ -18,7 +18,8 @@ Concretely, the rule fires if the task changed any of:
 - `src/ai_hats/cli/**/*.py` — click commands, command nesting, CLI args/flags.
 - `scripts/*.sh` — shell scripts (`install-launcher.sh`, `bootstrap.sh`, etc.).
 - `src/ai_hats/_bootstrap.py`, `src/ai_hats/cli/maintenance.py` — pip install / launcher / venv flow.
-- `[project.scripts]` block in `pyproject.toml` — new or renamed entry-points.
+- `[project.scripts]` in any workspace `packages/*/pyproject.toml` — new or
+  renamed entry-points (the root `pyproject.toml` declares none).
 - `packages/ai-hats-library/**/hooks/**` and `**/git_hooks/**` — PreToolUse /
   PostToolUse hook scripts and the installed git hooks (`git_hooks` is a
   distinct segment: a `**/hooks/**` glob does not match it).
@@ -41,7 +42,7 @@ A test passes the gate only if **all** of these hold:
 - Spawns a **real** subprocess chain: real `bash`, real `pip install`, real `ai-hats` binary. No `MagicMock`, no `monkeypatch` on `subprocess.Popen`, no `CliRunner.invoke()`.
 - Asserts observable end-to-end side effects (exit codes, files on disk, captured output) — not internal call counts.
 
-Pipeline-integration tests (`tests/pipeline/`) and in-process `CliRunner` tests do **not** satisfy this rule, regardless of marker.
+In-process `CliRunner` tests do **not** satisfy this rule, regardless of marker.
 
 ## 3. Plan-stage requirement
 

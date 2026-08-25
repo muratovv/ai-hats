@@ -4,7 +4,7 @@ description: Pre-commit gate for staged library SKILL.md — a license/provenanc
 ai_hats:
   # HATS-617/877 — hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. Over STAGED
-  # `library/**/SKILL.md` it runs two checks: (1) HATS-877 license/provenance
+  # `{ai_hats_library,library,libraries}/**/SKILL.md` it runs two checks: (1) HATS-877 license/provenance
   # regression-guard (always-on, pure bash, covers golang-*); (2) HATS-617 agnix
   # spec-lint against the repo-root `.agnix.toml` (excludes golang-*, fail-open
   # if agnix/node absent). Per-commit override AI_HATS_SKILL_LINT_ACK=1.
@@ -23,7 +23,7 @@ entirely through composition.
 
 ## What it gates
 
-Over STAGED `library/**/SKILL.md` (changed-files scope, so the gate never
+Over STAGED `{ai_hats_library,library,libraries}/**/SKILL.md` (changed-files scope, so the gate never
 retro-blocks the pre-existing backlog), the hook runs, in order:
 
 1. **License/provenance regression-guard** (HATS-877 — pure bash, always-on, NOT

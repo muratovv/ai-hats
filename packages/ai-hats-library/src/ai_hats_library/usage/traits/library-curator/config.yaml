@@ -25,7 +25,8 @@ injection: |
   - Traits:  `$LIB/{core,usage}/traits/<name>/config.yaml`
   - Skills:  `$LIB/{core,usage}/skills/<name>/SKILL.md`
   - Rules:   `$LIB/{core,usage}/rules/<name>/rule.md` + `metadata.yaml`
-  - User overrides: `~/.ai-hats/library/...` (last-wins precedence)
+  - User overrides: `~/.ai-hats/{core,usage,rules,skills,traits}/`, plus any
+    root listed in `~/.ai-hats/library_paths.yaml` (last-wins precedence)
 
   ### How-to references (consult BEFORE editing)
   - `docs/how-to.md` — entry-point index of all how-to docs.

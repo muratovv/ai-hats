@@ -24,7 +24,8 @@ does not matter; that it is checkable and unchecked does.
    HarnessReliabilityError branch
 ❌ `library/core/` + `library/usage/` in a role injection — the library
    moved under packages/, the paths kept pointing at a directory that
-   no longer exists, and nothing went red
+   no longer exists (the `prose-refs` CI stage now refuses this one;
+   the three kinds below it still have no machine)
 ❌ a count you recalled instead of counting
 ```
 

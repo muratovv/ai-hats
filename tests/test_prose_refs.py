@@ -31,7 +31,9 @@ def repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "src" / "pkg").mkdir(parents=True)
     (root / "docs").mkdir()
-    (root / "src" / "pkg" / "real.py").write_text("class Widget:\n    def build(self):\n        pass\n")
+    (root / "src" / "pkg" / "real.py").write_text(
+        "class Widget:\n    def build(self):\n        pass\n"
+    )
     (root / "docs" / "guide.md").write_text("# guide\n")
     (root / LIB / "core" / "skills" / "demo").mkdir(parents=True)
     (root / LIB / "core" / "rules" / "demo_rule").mkdir(parents=True)

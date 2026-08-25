@@ -49,7 +49,7 @@ array is a *fatal* `unbound variable` on 3.2 — and fine on 4.4+. Use one of:
 ```
 
 Two of these shipped to users before the guard existed (HATS-1294, HATS-1352).
-`tests/e2e/test_library_shell_bash32_compat.py` lints the table; hook tests
+`tests/test_library_shell_bash32_compat.py` lints the table; hook tests
 parametrize over every bash on the host, so 3.2 is actually executed.
 
 ## Makefiles
