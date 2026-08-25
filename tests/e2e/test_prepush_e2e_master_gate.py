@@ -645,6 +645,8 @@ def test_run_mode_dirty_tree_writes_no_marker(tmp_path: Path):
     assert "dirty" in res.stderr.lower()
     assert "NO marker" in res.stderr
     assert not (_marker_dir(repo) / _tree(repo)).exists()
+    # HATS-1819: this promise used to print right after "NO marker written".
+    assert "pass instantly" not in res.stderr, f"contradicts NO marker: {res.stderr}"
 
 
 @pytest.mark.integration

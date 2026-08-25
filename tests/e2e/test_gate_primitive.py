@@ -138,7 +138,14 @@ def test_the_run_stops_at_the_first_red_stage(repo: Path):
 
 def test_a_green_run_on_a_dirty_tree_earns_no_marker(repo: Path):
     """A marker describes COMMITTED content, so on a dirty tree what passed is
-    not what the branch holds. The run still counts as a run — rc 0."""
+    not what the branch holds.
+
+    rc NONZERO (HATS-1819): what the caller asked for is a marker, and it did not
+    get one — the same outcome the marker-unwritable branch already reported as
+    failure. Returning 0 also let each caller's ``||`` fall through to its success
+    line, so a dirty run printed "NO marker written" and "passes instantly" in
+    consecutive lines.
+    """
     (repo / "uncommitted.txt").write_text("dirty", encoding="utf-8")
     tree = _tree(repo)
 
@@ -146,7 +153,7 @@ def test_a_green_run_on_a_dirty_tree_earns_no_marker(repo: Path):
         f'. "{MARKER_LIB}"; gate_stamp done-gate . "{tree}" "lint unit"', repo, lib=GATE_LIB
     )
 
-    assert stamped.returncode == 0, stamped.stdout + stamped.stderr
+    assert stamped.returncode != 0, "a run that earned no marker must not report success"
     assert "dirty" in stamped.stderr
     ok = _bash(f'gate_marker_ok . "{tree}" lint', repo)
     assert ok.returncode != 0, "no marker may exist for a tree that was never committed"
