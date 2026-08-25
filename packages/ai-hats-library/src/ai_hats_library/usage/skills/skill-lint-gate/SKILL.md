@@ -1,6 +1,6 @@
 ---
 name: skill-lint-gate
-description: Pre-commit gate for staged library SKILL.md — a license/provenance regression-guard plus agnix spec validation, for skill-authoring roles. Use when composing the maintainer or role-curator role, when a commit touches a library/**/SKILL.md, or when diagnosing why a commit was blocked by the skill-lint hook.
+description: Pre-commit gate over staged library `SKILL.md`. Use when composing the maintainer or role-curator role, or when diagnosing why the skill-lint hook blocked a commit.
 ai_hats:
   # HATS-617/877 — hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. Over STAGED

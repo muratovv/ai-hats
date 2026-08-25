@@ -1,6 +1,6 @@
 ---
 name: rule-delivery-gate
-description: Pre-commit check that staged trait/role injections never point `see rule X` at a rule the agent cannot read. Use when composing the maintainer or role-curator role, when a commit touches a library/**/config.yaml injection, or when diagnosing why a commit was blocked by the rule-delivery hook.
+description: Pre-commit gate over staged trait and role injections. Use when composing the maintainer or role-curator role, or when diagnosing why the rule-delivery hook blocked a commit.
 ai_hats:
   # HATS-700 — hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. On a staged

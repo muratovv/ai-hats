@@ -1,6 +1,6 @@
 ---
 name: plan-discipline
-description: Get a plan into its one canonical home — the tracker plan.md — never .claude/plans. Run this skill when you enter plan mode (EnterPlanMode), when you have a plan draft (incl. plan-mode / ExitPlanMode output), or when a task enters brainstorm→plan. It walks task creation and draft→tracker authoring, including the plan-mode two-phase flow.
+description: Put a plan in its one canonical home, the tracker `plan.md`, never `.claude/plans`. Use on entering plan mode, on any plan draft including ExitPlanMode output, or when a task enters brainstorm→plan.
 license: MIT
 ---
 

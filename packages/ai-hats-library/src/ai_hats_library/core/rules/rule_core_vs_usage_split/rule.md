@@ -47,26 +47,12 @@ New rule / skill / trait
 - **Putting universal patterns in `usage/`** — buries reusable concepts under project-specific folders; consumers won't discover them.
 - **Skipping the dedicated usage/ trait** for project-specific rules — putting the project-specific rule directly into a usage role bypasses the trait layer that makes the bundling reusable.
 
-## Worked example
+Shipped shape of the split: `dev_rule_e2e_gate` is a `core/` rule (the concept
+transfers) bundled by the `usage/` trait `ai-hats-maintainer` (its trigger
+surface does not), which roles opt into.
 
-**HATS-373 (E2E gate, 2026-05).** First draft attached the new
-`dev_rule_e2e_gate` (narrow trigger: CLI/shell/pip ai-hats codebase) to
-`trait-agent` alongside `backlog_discipline` and `tool_call_hygiene`. The rule
-itself was reusable in concept (other projects with CLI surface might want
-the same gate), but its **specific trigger surface** was ai-hats-internal.
-
-User redirect: "let's split out a separate trait `ai-hats-maintainer`" — full
-rewrite of the plan. The corrected split:
-
-- `<LIB>/core/rules/dev_rule_e2e_gate/` — rule (reusable concept).
-- `<LIB>/usage/traits/ai-hats-maintainer/` — bundles the rule + project-specific framing.
-- Roles like `maintainer` opt in via composition; other roles don't.
-
-## Source
-
-PROP-037 (accepted). Class of error: pattern-matching to nearest neighbour
-without the universal-vs-specific check. Cheap pre-check prevents costly plan
-rewrites.
+Source: PROP-037, from HATS-373 — pattern-matching to the nearest neighbour
+instead of asking universal-vs-specific, paid for with a full plan rewrite.
 
 ## See also
 

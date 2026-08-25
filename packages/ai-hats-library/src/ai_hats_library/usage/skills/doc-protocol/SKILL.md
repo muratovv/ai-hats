@@ -1,6 +1,6 @@
 ---
 name: doc-protocol
-description: Plan-stage style forks, scope triage, and pre-commit artifact verification for documentation tasks. Use when a task changes any docs/*.md, README.md, or CONTRIBUTING.md, lifts structure from a precedent doc, enumerates six or more items to document, or adds/renames names of code-side artifacts (skills, roles, paths, CLI).
+description: Use when a task changes `docs/*.md`, `README.md` or `CONTRIBUTING.md`, lifts structure from a precedent doc, enumerates six or more items to document, or adds or renames a code-side name (skill, role, path, CLI).
 license: MIT
 ---
 

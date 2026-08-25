@@ -60,4 +60,5 @@ If any check fails, the card returns to `execute`.
 
 ## 5. Source
 
-PROP-031 (accepted). Motivation: HATS-333 epic shipped two production bugs (PEP 508 rejection for local-path `ai-hats @ /path`, click command-nesting drift) past `done` because the unit suite stubbed the very contracts the change broke. The e2e gate is the cheapest reliable catch for this class of failure.
+PROP-031, from HATS-333 — two production bugs shipped past `done` because the
+unit suite stubbed the very contracts the change broke.

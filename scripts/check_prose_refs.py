@@ -45,6 +45,16 @@ PATH_SUFFIXES = frozenset(
 FENCE_RE = re.compile(r"^[ \t]*(```|~~~)")
 TICK_RE = re.compile(r"`([^`\n]{1,160})`")
 
+#: The stale library prefix is exact enough to judge OUTSIDE backticks too — it
+#: names a directory that does not exist, quoted or not. Nothing else is: an
+#: unquoted slash in prose is usually prose (HATS-1825 found two such refs living
+#: in `description:` frontmatter, where backticks are unconventional).
+BARE_LIBRARY_RE = re.compile(
+    #: The `-` in the lookbehind matters: without it the tail of
+    #: `packages/ai-hats-library/src/...` reads as a bare `library/` reference.
+    r"(?<![\w\-`/])((?:library|libraries)/[^\s,;:)\]`\"]+)"
+)
+
 #: `component § "Heading"` — as rigid a form as an ADR marker citation, and
 #: checked the same way: the component resolves, then the heading must exist.
 SECTION_RE = re.compile(r"`([a-z0-9][a-z0-9._-]*)`\s*§\s*[\"“]([^\"”\n]+)[\"”]")
@@ -64,6 +74,8 @@ UNCOVERED = (
     "a bare component name: no marker form separates `reflect-session` from "
     "`benchdiff` or `data-testid`, and every form tried read tool names as "
     "components. The `§` resolver below covers the one case that stayed exact",
+    "unquoted references, except the stale `library/` prefix: only backticked "
+    "spans are judged, because an unquoted slash in prose is usually prose",
     "behaviour: that a hook DOES what the prose says it does (HATS-1825 class A)",
 )
 
@@ -245,6 +257,13 @@ def scan_file(
             if heading.lower() not in body.lower():
                 note = f"`{name}` declares no such section"
                 findings.append(Finding(rel, lineno, f"{name} § {heading}", note))
+        for match in BARE_LIBRARY_RE.finditer(line):
+            token = match.group(1).rstrip(".")
+            if not is_path_shaped(token):
+                continue
+            message = check_library_alias(token, roots)
+            if message:
+                findings.append(Finding(rel, lineno, token, message))
         for match in TICK_RE.finditer(line):
             token = match.group(1).strip()
             symbol = SYMBOL_RE.match(token)
