@@ -6,7 +6,6 @@ composition:
     - dev_rule_comment_discipline
     - dev_rule_exit_code_provenance
   skills:
-    - exit-code-provenance
     - systematic-debugging
     - audit-reviewer
     - predictive-accounting
@@ -32,7 +31,7 @@ injection: |
   - **Vertical slicing only.** Write ONE test, get it to GREEN, then the next test. Do NOT write all tests first then all implementation — bulk-written tests verify shape, not behavior, and are insensitive to real changes. Never refactor while RED.
 
   ### Reading a test run
-  The exit code you act on must be the **runner's**. One mechanism covers every form: a compound command's status is that of the **last command it ran** — pipes, `;`, `||` and backgrounded chains alike (`&&` needs no exception: it short-circuits, so a failing runner stays last). Default: redirect and read the log in a **separate** call (`pytest … > /tmp/gate.log 2>&1`); the harness reports the runner's own code, so no status file is needed. Need a pipe? `set -o pipefail` — `${PIPESTATUS[0]}` is bash-only and silently returns 0 in the Bash tool's zsh. A status file only when the verdict must outlive the call, `rm -f` at the head of the chain. See rule `dev_rule_exit_code_provenance` + skill **exit-code-provenance**.
+  The exit code you act on must be the **runner's** — not a filter's, a trailing command's, or a wrapper script's. Report the number, never an adjective. See rule `dev_rule_exit_code_provenance`.
 
   ### Debugging
   Evidence-first; isolate bugs with a failing test before fixing — full protocol in skill **systematic-debugging**.

@@ -83,12 +83,18 @@ def test_pipefail_stays_exempt(hooked_project):
 
 
 @pytest.mark.integration
-def test_nudge_does_not_teach_the_broken_cure(hooked_project):
-    """The nudge text itself must stop prescribing the spelling that returns 0."""
+def test_nudge_teaches_the_spelling_that_works_here(hooked_project):
+    """The nudge is the only delivery that fires at the moment of the mistake.
+
+    It used to prescribe ``${PIPESTATUS[0]}`` flatly — the form that returns 0
+    in this shell. It must still name it, but as the trap it is, next to the
+    spelling that works.
+    """
     project, env, settings = hooked_project
     ctx = _nudge(project, env, settings, "ruff check src/ | tail")
     assert "exit code masking detected" in ctx, f"expected a nudge: {ctx!r}"
-    assert "${PIPESTATUS[0]}" not in ctx, (
-        "the highest-traffic delivery of this advice was prescribing the bash-only "
-        f"form to every agent it nudged: {ctx!r}"
+    assert "pipefail" in ctx, f"the cure correct in both shells must lead: {ctx!r}"
+    assert "bash-only" in ctx, (
+        f"naming PIPESTATUS without the bash-only qualifier prescribes it: {ctx!r}"
     )
+    assert "${pipestatus[1]}" in ctx, f"the zsh spelling must be given: {ctx!r}"

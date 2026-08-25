@@ -171,8 +171,7 @@ def test_exit_code_masking_nudges(command):
         "pytest tests/ && true",
         "set -o pipefail; pytest tests/ | tail",
         # The zsh spelling — the one that preserves the status in the shell the
-        # Bash tool runs (HATS-1798). Its bash-only twin is nudged instead; see
-        # test_exit_code_masking_nudges and the chain test.
+        # Bash tool runs (HATS-1798). Its bash-only twin is nudged instead.
         "pytest tests/ | tail; exit ${pipestatus[1]}",
         # ...unless an explicit bash runs it, where PIPESTATUS is the right name.
         "bash -c 'pytest tests/ | tail; exit ${PIPESTATUS[0]}'",
