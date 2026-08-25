@@ -76,6 +76,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC = REPO_ROOT / "src"
 AREA = "ai_hats.pipeline"
 
+# comment-length: allow — a small pin that will grow has to say so, or it reads as done
+# The second area (HATS-1826). Four of its five implementations still ship as separate
+# distributions under packages/surfaces/, so today this name covers `claude` alone: the
+# pin below GROWS as each surface moves in, and is driven back down from there. There is
+# also no facade yet — `src/ai_hats/surfaces/__init__.py` does not exist — so every entry
+# here is deep by definition, and 2 is a starting line, not a near-clean tree.
+SURFACES = "ai_hats.surfaces"
+
 # From the test's own location, not via ``builtin_library_root()``: that resolver honours
 # AI_HATS_PROJECT_DIR, which in a worktree names the MAIN checkout — so this gate compared
 # one tree's YAML against another tree's catalog, and a worktree adding a pipeline stayed green.
@@ -94,6 +102,22 @@ PINNED_DEEP_ENTRIES: tuple[str, ...] = (
     "ai_hats.cli.assembly -> ai_hats.pipeline.pipeline",
     "ai_hats.cli.assembly -> ai_hats.pipeline.steps.emit",
     "ai_hats.cli.assembly -> ai_hats.pipeline.steps.materialize",
+)
+
+# comment-length: allow — the two entries and the zero next to them are the whole slice
+# Every import naming a part of the surfaces area instead of the area itself. Both are
+# the same shape: a caller that wants ONE implementation by name rather than the
+# `Provider` contract every implementation answers. Measured at HATS-1826 S1; the entries
+# a fold ADDS are the slice's work list.
+#
+# Zero is the number to keep in view here: `src/ai_hats/**` imports `ai_hats_agy`,
+# `ai_hats_cline`, `ai_hats_codex` and `ai_hats_opencode` exactly **0** times — the
+# shipped integrator never reaches into a surface package, it resolves them through the
+# `ai_hats.providers` entry-point group. So folding them in rewrites no shipped import;
+# the import churn lives in tests/, and this pin is what keeps it from moving to src/.
+PINNED_SURFACES_DEEP_ENTRIES: tuple[str, ...] = (
+    "ai_hats.providers -> ai_hats.surfaces.claude.provider",
+    "ai_hats.sweeper -> ai_hats.surfaces.claude.provider",
 )
 
 # Every pipeline assembled in code instead of loaded from its YAML. Each is a second
@@ -192,15 +216,15 @@ def _source_modules() -> list[tuple[str, Path, ast.AST]]:
     return found
 
 
-def _outside_modules() -> list[tuple[str, Path, ast.AST]]:
+def _outside_modules(area: str = AREA) -> list[tuple[str, Path, ast.AST]]:
     return [
         entry
         for entry in _source_modules()
-        if not (entry[0] == AREA or entry[0].startswith(f"{AREA}."))
+        if not (entry[0] == area or entry[0].startswith(f"{area}."))
     ]
 
 
-def _area_submodules() -> frozenset[str]:
+def _area_submodules(area: str = AREA) -> frozenset[str]:
     """Everything under the area that a name can reach — modules and subpackages alike.
 
     Taken from the module inventory, not from ``<name>.py`` on disk: that spelling saw
@@ -211,22 +235,22 @@ def _area_submodules() -> frozenset[str]:
     return frozenset(
         module
         for module, _path, _tree in _source_modules()
-        if module != AREA and module.startswith(f"{AREA}.")
+        if module != area and module.startswith(f"{area}.")
     )
 
 
-def _deep_entries() -> tuple[str, ...]:
-    """``module -> ai_hats.pipeline.<something>`` — every import past the facade."""
-    submodules = _area_submodules()
+def _deep_entries(area: str = AREA) -> tuple[str, ...]:
+    """``module -> <area>.<something>`` — every import past the facade."""
+    submodules = _area_submodules(area)
     entries = []
-    for module, path, tree in _outside_modules():
+    for module, path, tree in _outside_modules(area):
         for target, name in _import_targets(tree, module, path.name == "__init__.py"):
             if target in submodules:
                 entries.append(f"{module} -> {target}")
-            elif target == AREA and name is not None and f"{AREA}.{name}" in submodules:
+            elif target == area and name is not None and f"{area}.{name}" in submodules:
                 # A name the facade re-exports is the contract; a name that *is* a
                 # module under the area is the same breach spelled through __init__.
-                entries.append(f"{module} -> {AREA}.{name}")
+                entries.append(f"{module} -> {area}.{name}")
     return tuple(sorted(entries))
 
 
@@ -408,6 +432,16 @@ def test_no_new_deep_entry_into_the_pipeline_area() -> None:
         "PINNED_DEEP_ENTRIES",
         "imports entering ai_hats.pipeline past its __init__ (ADR-0026 D14)",
         PINNED_DEEP_ENTRIES,
+        entries,
+    )
+
+
+def test_no_new_deep_entry_into_the_surfaces_area() -> None:
+    entries = _deep_entries(SURFACES)
+    assert entries == PINNED_SURFACES_DEEP_ENTRIES, _repin(
+        "PINNED_SURFACES_DEEP_ENTRIES",
+        "imports entering ai_hats.surfaces past its facade (ADR-0026 D14, HATS-1826)",
+        PINNED_SURFACES_DEEP_ENTRIES,
         entries,
     )
 
