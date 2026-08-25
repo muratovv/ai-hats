@@ -23,9 +23,10 @@ why:    rack must provision isolated worktrees on execute and resolve the main
 
 from __future__ import annotations
 from _helpers.git import git as _git
-from _helpers.sessions import stand_in_session
+from _helpers.sessions import stand_in_wrapped_session
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -74,7 +75,11 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
         "AI_HATS_ROOT_PID": str(os.getpid()),
     }
     # HATS-1594: a session is its envelope; the bare id reads as an older build.
-    stand_in_session(env, main, "e2e-rack-cutover")
+    stand_in_wrapped_session(env, main, "e2e-rack-cutover")
+    wrapped_rack_path = shutil.which("rack", path=env["PATH"])
+    assert wrapped_rack_path is not None
+    wrapped_rack = Path(wrapped_rack_path)
+    assert wrapped_rack != rack, "the consent assertion must cross the external wrapper"
 
     # --- C1a: the wired kernel refreshes STATE.md after create (bare does not) ---
     created = _rack(rack, "create", "wired flow", "--role", "assistant", cwd=main, env=env)
@@ -118,26 +123,15 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     assert ls_flagged.returncode == 0, ls_flagged.stderr
     assert ls_flagged.stdout == ls_positional.stdout
 
-    # --- C1d: `done` with nobody asked is a typed refusal, not a raw traceback ---
-    # Since HATS-1682 the road into master is gated at the EDGE, in-lock, before
-    # the merge is attempted — so the refusal this reaches is the edge's, and
-    # `AI_HATS_MERGE_ACK` is no longer what decides. The wt-merge recipe this
-    # used to read still has its own pins: `test_wt_merge_consent_gate.py`,
-    # `test_rack_cli_provider.py` and `test_consent_advice_is_followable.py`.
+    # HATS-1755: `done` crosses the external wrapper; kernel checks stay direct.
     (worktree / "work.txt").write_text("deliverable")
     _git(worktree, "add", "-A")
     _git(worktree, "commit", "-m", "work")
     _rack(rack, "transition", "SBX-001", "document", cwd=main, env=env)
     _rack(rack, "transition", "SBX-001", "review", cwd=main, env=env)
-    done = _rack(rack, "transition", "SBX-001", "done", cwd=main, env=env)
-    assert done.returncode == 1, "the road into master with nobody asked must refuse"
+    done = _rack(wrapped_rack, "transition", "SBX-001", "done", cwd=main, env=env)
+    assert done.returncode == 2, "the road into master with nobody asked must refuse"
     combined = done.stdout + done.stderr
-    assert "aborted by 'consent'" in combined, combined
+    assert "requires supervisor approval" in combined, combined
+    assert "consent rack.transition" in combined, combined
     assert "Traceback" not in done.stderr, "the consent refusal must be typed (C1, HATS-1019)"
-    # HATS-1654: the recipe is followed one line at a time, so the export must
-    # reach the command it approves on the line it was typed with.
-    recipe = [ln for ln in combined.splitlines() if "export AI_HATS_CONSENT_ACK=1" in ln]
-    assert recipe, f"consent refusal carries no export recipe:\n{combined}"
-    assert all("&& ai-hats" in ln for ln in recipe), (
-        f"a lone export dies with the shell that ran it (HATS-1654): {recipe}"
-    )
