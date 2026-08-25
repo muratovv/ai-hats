@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import threading
 
-from .constants import PROVIDER_CLAUDE
 from .provider_entry_points import (
     _is_first_party_entry_point,
     _provider_entry_points,
@@ -18,9 +17,6 @@ from .provider_entry_points import (
 from .surfaces import Provider
 
 logger = logging.getLogger(__name__)
-
-# HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
-# designed switch, so the sweeper now reclaims the root ai-hats:* entries.
 
 _PROVIDER_REGISTRY: dict[str, type[Provider]] = {}
 
@@ -37,11 +33,15 @@ def register_provider(name: str, cls: type[Provider]) -> None:
 
 
 def _load_provider_entry_points() -> None:
-    """Discover + register out-of-tree providers via entry points (IoC).
+    """Register every advertised surface — ai-hats' own included (IoC).
 
-    A built-in already self-registered wins (silent skip); a broken or duplicate
-    third-party entry point is warned and skipped. First-party entry points
-    shipped by ai-hats itself must fail loudly on load failure (HATS-1121).
+    There is no built-in shortcut: `claude` reaches this process the same way any
+    surface does, through the group ai-hats declares in its own pyproject. It used
+    to self-register here first, which meant its declaration was never exercised
+    and a broken one would have gone unnoticed (HATS-1826).
+
+    A broken or duplicate third-party entry point is warned and skipped; a
+    first-party one fails loudly (HATS-1121).
     """
     try:
         entry_points = list(_provider_entry_points())
@@ -72,7 +72,6 @@ def _ensure_entry_points_loaded(force: bool = False) -> None:
     with _ENTRY_POINTS_LOCK:
         if not _ENTRY_POINTS_LOADED or force:
             _ENTRY_POINTS_LOADED = True
-            _register_builtins()
             _load_provider_entry_points()
 
 
@@ -124,15 +123,6 @@ def get_provider(name: str, *, auto_install: bool = True) -> Provider:
     if cls is None:
         raise UnknownProviderError(name, provider_names())
     return cls()
-
-
-def _register_builtins() -> None:
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
-
-    for name, cls in ((PROVIDER_CLAUDE, ClaudeProvider),):
-        if name in _PROVIDER_REGISTRY:
-            continue
-        register_provider(name, cls)
 
 
 def _reset_for_tests() -> None:

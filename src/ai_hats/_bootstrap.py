@@ -51,6 +51,10 @@ _PEP508_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 # the launcher exec's into, and the assembler it reaches for first (HATS-1116).
 _INTEGRITY_MODULES = ("ai_hats.cli", "ai_hats.assembler")
 _STEP_ENTRY_POINT_GROUP = "ai_hats.steps"
+_PROVIDER_ENTRY_POINT_GROUP = "ai_hats.providers"
+# Groups ai-hats declares for ITSELF. Both reach a process only through installed
+# metadata, so on an editable checkout both go stale the same way (HATS-1810).
+_FIRST_PARTY_ENTRY_POINT_GROUPS = (_STEP_ENTRY_POINT_GROUP, _PROVIDER_ENTRY_POINT_GROUP)
 
 
 def _normalise(dist: str) -> str:
@@ -120,40 +124,46 @@ def _live_pyproject_deps(src: str) -> list[str] | None:
     return [d for d in deps if isinstance(d, str)]
 
 
-def _live_step_entry_points(src: str) -> list[tuple[str, str]] | None:
-    """Step declarations from an editable checkout; ``None`` when unreadable."""
+def _live_entry_points(src: str, group: str) -> list[tuple[str, str]] | None:
+    """One group's declarations from an editable checkout; ``None`` when unreadable."""
     import tomllib
 
     try:
         with open(os.path.join(src, "pyproject.toml"), "rb") as fh:
-            group = tomllib.load(fh)["project"]["entry-points"][_STEP_ENTRY_POINT_GROUP]
+            declared = tomllib.load(fh)["project"]["entry-points"][group]
     except (OSError, ValueError, KeyError, TypeError):
         return None
-    if not isinstance(group, dict) or not all(
-        isinstance(name, str) and isinstance(value, str) for name, value in group.items()
+    if not isinstance(declared, dict) or not all(
+        isinstance(name, str) and isinstance(value, str) for name, value in declared.items()
     ):
         return None
-    return sorted(group.items())
+    return sorted(declared.items())
 
 
-def find_editable_step_metadata_drift() -> list[str]:
-    """Report stale first-party step metadata for the active editable checkout."""
+def find_editable_entry_point_drift() -> list[str]:
+    """Report stale first-party entry-point metadata for the active editable checkout.
+
+    Both groups, because both are how ai-hats reaches its own code: a step the
+    loader resolves by id, and a surface the registry looks up by name. Neither
+    has a fallback table by design (ADR-0026 D3), so stale metadata does not
+    degrade — it removes the thing (HATS-1810, HATS-1826).
+    """
     src = _editable_source_dir()
     if src is None:
         return []
-    live = _live_step_entry_points(src)
-    if live is None:
-        return []
     dist = importlib.metadata.distribution("ai-hats")
-    installed = sorted(
-        (ep.name, ep.value) for ep in dist.entry_points if ep.group == _STEP_ENTRY_POINT_GROUP
-    )
-    if installed == live:
-        return []
-    return [
-        f"{_STEP_ENTRY_POINT_GROUP} metadata is stale for editable checkout {src}: "
-        f"live={live!r}, installed={installed!r}"
-    ]
+    drift = []
+    for group in _FIRST_PARTY_ENTRY_POINT_GROUPS:
+        live = _live_entry_points(src, group)
+        if live is None:
+            continue
+        installed = sorted((ep.name, ep.value) for ep in dist.entry_points if ep.group == group)
+        if installed != live:
+            drift.append(
+                f"{group} metadata is stale for editable checkout {src}: "
+                f"live={live!r}, installed={installed!r}"
+            )
+    return drift
 
 
 def _declared_requirements() -> list[str]:
@@ -286,7 +296,7 @@ def bootstrap_or_die() -> None:
     importable for the actual command the user invoked.
     """
     missing = find_missing_runtime_deps()
-    metadata_drift = find_editable_step_metadata_drift()
+    metadata_drift = find_editable_entry_point_drift()
     if not missing and not metadata_drift:
         return
 
@@ -306,7 +316,7 @@ def bootstrap_or_die() -> None:
     # HATS-1359: uv can exit 0 as a no-op (stale dist-info, import still
     # broken) — recheck before re-exec'ing forever into the same state.
     still_missing = find_missing_runtime_deps()
-    still_drift = find_editable_step_metadata_drift()
+    still_drift = find_editable_entry_point_drift()
     if still_missing or still_drift:
         remaining = list(still_drift)
         if still_missing:
@@ -480,7 +490,8 @@ def verify_after_install() -> int:
             return 1
 
     failures = find_integrity_failures()
-    failures.extend(_first_party_entry_point_failures(_STEP_ENTRY_POINT_GROUP))
+    for group in _FIRST_PARTY_ENTRY_POINT_GROUPS:
+        failures.extend(_first_party_entry_point_failures(group))
     if failures:
         sys.stderr.write("ai-hats: post-install verify found a broken install:\n")
         for line in failures:

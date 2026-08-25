@@ -73,15 +73,19 @@ def test_unknown_provider_raises_valueerror():
         get_provider("nope")
 
 
-def test_only_claude_selfregisters_as_builtin():
+def test_claude_arrives_through_its_declared_entry_point():
+    """No built-in shortcut: claude registers the way every other surface does.
+
+    It used to self-register ahead of entry-point discovery, so the declaration in
+    ai-hats' own pyproject was never exercised and a broken one would have gone
+    unnoticed. Deliberately unmonkeypatched — the real group, read from installed
+    metadata (HATS-1826).
+    """
     from ai_hats.constants import PROVIDER_CLAUDE
     from ai_hats.surfaces.claude.provider import ClaudeProvider
 
-    prov._register_builtins()
-    # claude is the sole in-tree builtin; agy/cline are out-of-tree entry-point
-    # plugins discovered via ``ai_hats.providers`` (test_out_of_tree_… below).
-    # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
-    assert list(prov._PROVIDER_REGISTRY) == [PROVIDER_CLAUDE]
+    prov._reset_for_tests()
+    assert PROVIDER_CLAUDE in provider_names()
     assert isinstance(get_provider(PROVIDER_CLAUDE), ClaudeProvider)
 
 
@@ -106,7 +110,6 @@ def test_out_of_tree_provider_is_discovered_via_entry_point(monkeypatch):
     ep = _FakeEntryPoint("plugin", _FakeProvider)
     monkeypatch.setattr(prov, "_provider_entry_points", lambda: [ep])
     prov._reset_for_tests()
-    prov._register_builtins()
 
     assert not ep.loaded  # lazy — nothing loaded before discovery runs
     prov._load_provider_entry_points()
@@ -121,14 +124,12 @@ def test_broken_entry_point_is_skipped_not_fatal(monkeypatch, caplog):
     good = _FakeEntryPoint("plugin", _FakeProvider)
     monkeypatch.setattr(prov, "_provider_entry_points", lambda: [bad, good])
     prov._reset_for_tests()
-    prov._register_builtins()
 
     with caplog.at_level("WARNING"):
         prov._load_provider_entry_points()  # must not raise
 
     assert "broken" not in provider_names()  # bad one skipped
     assert "plugin" in provider_names()  # good one still registered
-    assert {"claude"} <= set(provider_names())  # built-ins intact
     assert any("broken" in r.message for r in caplog.records)
 
 
@@ -137,7 +138,6 @@ def test_first_party_broken_entry_point_raises(monkeypatch):
     bad = _FakeEntryPoint("firstparty", _FakeProvider, boom=True, dist=bad_dist)
     monkeypatch.setattr(prov, "_provider_entry_points", lambda: [bad])
     prov._reset_for_tests()
-    prov._register_builtins()
 
     with pytest.raises(RuntimeError, match="plugin import blew up"):
         prov._load_provider_entry_points()
@@ -163,10 +163,9 @@ def test_discovery_failure_is_non_fatal(monkeypatch):
 
     monkeypatch.setattr(prov, "_provider_entry_points", _boom)
     prov._reset_for_tests()
-    prov._register_builtins()
 
     prov._load_provider_entry_points()  # swallows the error
-    assert provider_names() == ["claude"]
+    assert provider_names() == []  # nothing advertised, nothing registered
 
 
 def test_pyproject_declares_provider_entry_point_group():

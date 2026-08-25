@@ -827,7 +827,7 @@ def test_t19_editable_step_metadata_drift_detects_exact_mapping(
 
     monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
 
-    failures = _bootstrap.find_editable_step_metadata_drift()
+    failures = _bootstrap.find_editable_entry_point_drift()
 
     assert len(failures) == 1
     assert repr(sorted(live)) in failures[0]

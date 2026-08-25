@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**272 of 272 files catalogued — 282 flows.**
+**273 of 273 files catalogued — 283 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1825,6 +1825,22 @@ as a claim to check, not as evidence.
 
 - **expect** — custom provider entry point is discovered dynamically and listed alongside built-in providers
 - **why** — without entry point discovery, custom out-of-tree provider plugins cannot be registered or used
+
+## `test_provider_entry_point_resolution.py`
+
+*pins HATS-1826*
+
+- **flow** — a user installs the released ai-hats wheel and asks for a surface by name; `claude` has to resolve, and it has to resolve ONLY through the installed distribution's entry-point metadata
+- **cmds**
+
+  ```console
+  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
+  uv venv <tmp>/venv && uv pip install --no-deps <wheel>
+  <tmp>/venv/bin/python -c "get_provider('claude')"
+  ```
+
+- **expect** — the installed dist advertises `claude` under `ai_hats.providers` and the registry resolves it; a wheel built without that one declaration cannot resolve it at all, and says so naming what is available
+- **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised — a broken or missing one would have gone unnoticed in every tier. The second test is the one that holds the change: restore the built-in registration and it goes red, because claude resolves again from a wheel that does not declare it
 
 ## `test_pty_escape_hatch.py`
 
