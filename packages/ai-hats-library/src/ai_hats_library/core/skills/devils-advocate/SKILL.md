@@ -105,8 +105,8 @@ impact, even when the impact is *proceed*.
 - **Challenging scope here.** "This abstraction is speculative" is
   `design-minimalism`'s job (HOW MUCH). This stage asks whether the *value* is
   real (WHY), not whether the means are minimal.
-- **Reviewing output.** `audit-reviewer` / judge skills critique work already
-  done; this challenges the **decision before** work starts.
+- **Reviewing output.** Judge skills critique work already done; this
+  challenges the **decision before** work starts.
 - **Doubt without resolution.** A counter with no recorded impact/decision is
   noise. Every counter ends in proceed / descope / redirect / drop, with a why.
 
@@ -124,4 +124,4 @@ impact, even when the impact is *proceed*.
 - `requirements-interview` — the prior stage; *states* the value this challenges.
 - `design-minimalism` — the next stage; minimises the means once the value settles.
 - `trait-agent` "Anti-Anchoring" — the base principle this stage operationalises.
-- `audit-reviewer` — reviews output *after* work; this challenges the decision *before*.
+- `domain-reviewer` — reviews code *after* work; this challenges the decision *before*.

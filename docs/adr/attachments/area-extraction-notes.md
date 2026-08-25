@@ -43,38 +43,25 @@ lists those separately, and they are work, not noise.
 
 ## 2. Describing an interface
 
-The public surface of an area is a reviewed artefact (ADR-0026 D14), so it is written
-for a reader who has none of your context. What review demanded, three times, on the
-same file:
+The public surface of an area is a reviewed artefact (ADR-0026 D14), written for a
+reader who has none of your context. The shapes themselves — say why a field exists,
+name the reader of every field, never illustrate with what the contract does not know,
+one home for an undecided type, one way to perform one action — are the skill
+**interface-design**. What belongs here is what this epic measured on its own contract:
 
-- **Say why a field exists, not what the code does with it.** "Where the run happens:
-  resolved once by the entry point and passed down" describes a process; "every path a
-  step touches hangs off it, and it is resolved once so nothing below rediscovers it"
-  says why the reader should care.
-- **Name the reader of every field.** A field's comment names the step that consumes
-  it. A field whose reader cannot be named is then visible as a field nobody reads —
-  which is how `model`, `isolation` and `ticket` turned out to be Automate-only and
-  moved off the session.
-- **Never illustrate with something the contract does not know.** A comment on
-  `exit_code` that explains "None for `init` and `reflect-session`" re-imports the
-  application vocabulary the type was just cleared of. Describe the condition
-  ("the run launched no session"), not the instances.
-- **A name with no decided type is a named alias with a card**, not `object` inline —
-  see the debt file above.
+- **The three fields with no nameable reader were real.** `model`, `isolation` and
+  `ticket` had no step that consumed them on the session path; naming the reader is what
+  made that visible, and all three turned out to be Automate-only and moved off.
 - **A value the area only carries is typed as such and said so.** Carrying is not
   knowing: write that the steps read it and the area does not.
-- **An interface offers exactly one way to perform one action.** Two spellings of the
-  same read are a defect even when both work, because the second one is what the next
-  migration standardises on by accident — nobody chooses it, it is simply the one that
-  was in front of the agent doing the conversion. `PipelineResult` typed `exit_code`
-  and `session` *and* handed the same entries out in `produced`, the raw final funnel;
-  the fix was not to document which to prefer but to delete the choice. `from_state`
-  now **lifts** the keys the contract answers for out of the funnel instead of copying
-  them beside it, so a typed field has no raw twin, and everything else — the exit code
-  included — is read once, through the typed readers in `session_policy.py`. The rule
-  is testable in that form and only in that form: the area pins its typed field list
-  (`pipeline/tests/test_pipeline_result_contract.py`), and a field added without
-  lifting its key is red.
+- **The "one way" rule became testable here, and only in this form.** `PipelineResult`
+  typed `exit_code` and `session` *and* handed the same entries out in `produced`, the
+  raw final funnel. The fix was not documenting which to prefer: `from_state` now
+  **lifts** the keys the contract answers for out of the funnel instead of copying them
+  beside it, so a typed field has no raw twin, and everything else — the exit code
+  included — is read once through the typed readers in `session_policy.py`. The area
+  pins its typed field list (`pipeline/tests/test_pipeline_result_contract.py`), and a
+  field added without lifting its key is red.
 
 ## 3. Where a thing lives
 
@@ -227,13 +214,13 @@ produces — a taxonomy grows by incident, not by imagination.
     command is the status of the last command it ran; every row below is that one
     rule, and a wrapper script is a compound command too:*
 
-    | command                          | status |  | command                                   | status |
-    | -------------------------------- | -----: |  | ----------------------------------------- | -----: |
-    | `false`                          |      1 |  | `false && true`                           |  **1** |
-    | `false; true`                    |      0 |  | `set -o pipefail; false \| tail`          |      1 |
-    | `false \| tail`                  |      0 |  | `false \| tail; exit "${PIPESTATUS[0]}"`  |  **0** |
-    | `false \| tee log`               |      0 |  | `false \| tail; exit "${pipestatus[1]}"`  |      1 |
-    | `false \|\| true`                |      0 |  | `false > log; echo $? > rc`               | 0, `rc`=1 |
+    | command | status | | command | status |
+    | -------------------------------- | -----: | | ----------------------------------------- | -----: |
+    | `false` | 1 | | `false && true` | **1** |
+    | `false; true` | 0 | | `set -o pipefail; false \| tail` | 1 |
+    | `false \| tail` | 0 | | `false \| tail; exit "${PIPESTATUS[0]}"` | **0** |
+    | `false \| tee log` | 0 | | `false \| tail; exit "${pipestatus[1]}"` | 1 |
+    | `false \|\| true` | 0 | | `false > log; echo $? > rc` | 0, `rc`=1 |
 
     The bare `false` returns 1 to the harness, which reports it faithfully — the
     harness never misreports, it is handed the last command's status. The two bold

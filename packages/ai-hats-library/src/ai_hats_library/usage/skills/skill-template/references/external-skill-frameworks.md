@@ -57,7 +57,7 @@ Note: skill-creator helps design and refine but does not execute automated test 
 Both frameworks validate our approach:
 - **Progressive disclosure** aligns with our frontmatter → SKILL.md → references/ pattern
 - **Structured testing** (triggering + functional + comparison) maps to our Level 1-3 verification
-- **Multi-agent review** concept maps to our audit-reviewer skill (3 perspectives)
+- **Multi-agent review** concept maps to our domain-reviewer skill (specialist lenses)
 - **Iterative refinement** maps to our retro-to-framework feedback loop
 
 ### What we can adopt
@@ -83,6 +83,6 @@ GPL-licensed: we borrow *ideas* and cite *primary* sources, never lift text.
   Primary: Meincke et al. 2025. (Candidate for a prompt-engineering skill.)
 - **"95% finding"** — token usage (~80%), tool-call count (~10%), model (~5%)
   explain most agent-performance variance (BrowseComp). (Candidate evidence for
-  audit-reviewer / eval guidance.)
+  reviewer-skill / eval guidance.)
 
 Full triage of all 14 borrowable patterns lives in the HATS-631 work log.
