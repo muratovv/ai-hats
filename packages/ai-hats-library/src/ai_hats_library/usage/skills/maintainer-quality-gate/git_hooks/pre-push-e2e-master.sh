@@ -10,7 +10,7 @@
 #      local_sha, require a green pass-marker keyed to the TREE that sha names.
 #      All present → allow (exit 0). Any missing → block (exit 1) with the run
 #      command. No pytest, no network → finishes well under GitHub's ~30s SSH
-#      idle window, which killed the old in-hook 27-min run (HATS-684 — exit
+#      idle window, which killed the old in-hook run (HATS-684 — exit
 #      141, twice).
 #
 #   2. RUN MODE (`--run`, invoked manually / via scripts/run-e2e-gate.sh).
@@ -35,7 +35,7 @@
 # HATS-1137: the marker mechanism moved to ../lib/gate-marker.sh, parameterised
 # by gate name. This gate keeps the name `e2e-gate`, so the directory it reads
 # and writes is byte-identical to the pre-1137 one — that move cost the
-# maintainer no marker, and no push turned into a surprise 27-min run.
+# maintainer no marker, and no push turned into a surprise full-suite run.
 #
 # Run-mode behaviour carried over from earlier tickets:
 #   * HATS-568: sweeps stale `build/` wheel artefacts before the run.

@@ -99,15 +99,22 @@ gate_export_pytest_addopts() {
 }
 
 # Mark a green run — but only when the tree is clean. A marker describes
-# COMMITTED content, and on a dirty tree what passed is not what the branch
-# holds. rc 0 either way: the run itself succeeded, the marker just isn't honest.
+# COMMITTED content, and on a dirty tree what passed is not what the branch holds.
+#
+# NONZERO when no marker was earned, dirty tree included (HATS-1819). This used to
+# return 0 here — "the run itself succeeded" — while the branch ten lines down
+# returned 1 for the same outcome, a green run with no marker. Worse, 0 let the
+# caller's `||` fall through to its success line, so the run announced "NO marker
+# written" and "passes instantly" one after the other and an agent read the second
+# and committed. What the caller asked for is a marker; not earning one is failure,
+# and saying so in the exit code is what makes the two lines agree.
 gate_stamp() {
     local gate="$1" repo_root="$2" tree="$3" stages="$4"
     shift 4
     if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
         printf '[%s] green BUT the working tree is dirty — NO marker written.\n' "$gate" >&2
         printf 'Commit (or stash), then re-run so the marker matches the tree that ships.\n' >&2
-        return 0
+        return 1
     fi
     local marker
     marker="$(gate_marker_write "$gate" "$repo_root" "$tree" "$stages" ${@+"$@"})" || {
