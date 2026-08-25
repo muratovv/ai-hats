@@ -242,3 +242,67 @@ def test_a_commit_stops_when_a_gate_has_no_shebang(tmp_path: Path):
     guard.chmod(0o755)
 
     _assert_refuses_with_a_hatch(_commit(project, "a.txt"), project, "gate without a shebang")
+
+
+# ---------------------------------------------------------------------------
+# HATS-1828: the chain is bounded, end to end through a real `git commit`
+# ---------------------------------------------------------------------------
+
+
+def _bounded_env(seconds: str = "1") -> dict[str, str]:
+    return {**_pinned_env(), "AI_HATS_GIT_HOOK_TIMEOUT_S": seconds}
+
+
+def test_a_hung_gate_stops_the_commit_instead_of_hanging_it(tmp_path: Path):
+    """Before this, `run_chain` spawned with no timeout at all — a gate that hung
+    hung `git commit` with nothing but Ctrl-C to end it, and no Ctrl-C in CI, in
+    cron, or in an agent session.
+
+    The bound is the point; stopping is the consequence. A hang is the script's
+    own behaviour, so the refusal points at the budget, not at the skip flag.
+    """
+    project, lib = _project(tmp_path)
+    _self_init(project)
+    guard = lib / "skills" / "guard_skill" / "git_hooks" / "guard.sh"
+    guard.write_text("#!/usr/bin/env bash\nsleep 60\n")
+    guard.chmod(0o755)
+
+    cp = _commit(project, "a.txt", env=_bounded_env())
+
+    assert cp.returncode != 0, f"a hung gate must not pass the commit\n{cp.stderr}"
+    assert "AI_HATS_GIT_HOOK_TIMEOUT_S" in cp.stderr, f"no budget named\n{cp.stderr}"
+
+
+def test_a_hung_dropin_is_bounded_too(tmp_path: Path):
+    """A drop-in is a human's own script under `<event>.d/`, and it never passes
+    through `resolve_git_gates` — it was the headline case for this card, since
+    nothing about it is ai-hats' to validate ahead of time."""
+    project, _lib = _project(tmp_path)
+    _self_init(project)
+    dropin = project / ".githooks" / "pre-commit.d" / "zz-hang.sh"
+    dropin.parent.mkdir(parents=True, exist_ok=True)
+    dropin.write_text("#!/usr/bin/env bash\nsleep 60\n")
+    dropin.chmod(0o755)
+
+    cp = _commit(project, "a.txt", env=_bounded_env())
+
+    assert cp.returncode != 0, f"a hung drop-in must not pass the commit\n{cp.stderr}"
+    assert "AI_HATS_GIT_HOOK_TIMEOUT_S" in cp.stderr, f"no budget named\n{cp.stderr}"
+
+
+def test_the_broken_gate_hatch_does_not_open_a_hung_one(tmp_path: Path):
+    """The two hatches are not interchangeable, and saying so is the contract.
+
+    `AI_HATS_GIT_GATE_BROKEN_ACK` covers gates ai-hats failed to DELIVER. A gate
+    that ran and hung was delivered fine; letting the delivery flag wave it
+    through would quietly turn a permanently-hanging gate into a disarmed one.
+    """
+    project, lib = _project(tmp_path)
+    _self_init(project)
+    guard = lib / "skills" / "guard_skill" / "git_hooks" / "guard.sh"
+    guard.write_text("#!/usr/bin/env bash\nsleep 60\n")
+    guard.chmod(0o755)
+
+    cp = _commit(project, "a.txt", env={**_bounded_env(), "AI_HATS_GIT_GATE_BROKEN_ACK": "1"})
+
+    assert cp.returncode != 0, f"the delivery hatch must not open a hang\n{cp.stderr}"

@@ -582,3 +582,66 @@ def test_the_hatch_turns_that_refusal_back_into_a_recorded_skip(
     journal = project / ".git" / "ai-hats" / "bypasses.jsonl"
     assert journal.is_file(), f"the skip was not journalled: {err}"
     assert "edge:typo" in journal.read_text(encoding="utf-8")
+
+
+# ----- HATS-1643: one unreadable identity, two reactions ----------------------
+
+
+@pytest.mark.integration
+def test_a_session_too_old_to_name_itself_degrades_to_the_configured_role(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """Nothing is torn here — the envelope was never written — so the configured
+    role is a sound answer and the gates still RUN, degraded and on record.
+
+    The inversion this closes: a session that cannot name itself is more
+    suspicious than no session at all, yet it used to get the weaker check.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    marker = tmp_path / "ran.txt"
+    project = _gate_project(tmp_path, body=f'touch "{marker}"')
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "20260101-000000-1-1")
+    monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 0, err
+    assert marker.exists(), f"the degraded path must still run the gates:\n{err}"
+    journal = project / ".git" / "ai-hats" / "bypasses.jsonl"
+    assert journal.is_file(), f"the degrade was not journalled:\n{err}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "envelope",
+    ["}not json{", '"a string, not an object"', '{"v": 99, "id": "x"}'],
+    ids=["torn", "not-an-object", "version-drift"],
+)
+def test_an_untrustworthy_envelope_refuses_instead_of_skipping(
+    tmp_path: Path, capsys, monkeypatch, envelope: str
+) -> None:
+    """The type's own docstring says 'never a skip', and its consumer did exactly
+    that: `return 0`, on the same condition rack answers with an abort.
+
+    Corruption and version drift are trust failures, not staleness — nothing here
+    licenses guessing a role, so the event stops and names its hatch.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    marker = tmp_path / "ran.txt"
+    project = _gate_project(tmp_path, body=f'touch "{marker}"')
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "20260101-000000-1-1")
+    monkeypatch.setenv("AI_HATS_SESSION_IDENTITY", envelope)
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc != 0, f"an untrusted envelope must not wave the commit through:\n{err}"
+    assert not marker.exists(), "no gate may run under an identity we do not trust"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err, "a deny must name its hatch"
