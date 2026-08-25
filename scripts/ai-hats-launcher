@@ -189,6 +189,7 @@ probe_imports() {
     fi
     local mods="ai_hats.cli" init out rc
     if [[ -n "$LOCAL_SRC" ]]; then
+        # One level deep on purpose; tests/test_packages_flat_layout.py keeps that true.
         for init in "$LOCAL_SRC"/packages/*/src/*/__init__.py; do
             [[ -e "$init" ]] || continue
             mods+=", $(basename "$(dirname "$init")")"

@@ -109,8 +109,8 @@ def test_a_pin_without_a_floor_cannot_be_judged():
 def test_workspace_versions_finds_every_package():
     found = mod.workspace_versions(REPO_ROOT)
 
-    # HATS-1826 folded the surfaces into src/ai_hats/surfaces, so packages/ is flat
-    # again and every member is named here rather than sampled.
+    # packages/ is flat — one member per directory, enforced by
+    # tests/test_packages_flat_layout.py — so every member is named here.
     assert set(found) == {
         "ai-hats-core",
         "ai-hats-library",

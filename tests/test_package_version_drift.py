@@ -24,6 +24,7 @@ pytestmark = pytest.mark.integration
 
 
 def _member_pyprojects() -> list[Path]:
+    # One level deep on purpose; tests/test_packages_flat_layout.py keeps that true.
     return sorted(REPO_ROOT.glob("packages/*/pyproject.toml"))
 
 
