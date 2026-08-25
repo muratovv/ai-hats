@@ -96,6 +96,11 @@ RACK_VALUE_FLAGS = frozenset(
     }
 )  # fmt: skip
 
+#: `ai-hats` global options that eat the NEXT token. Measured on master: without
+#: them `ai-hats --provider claude wt merge x` reads `claude` as the subcommand
+#: and BOTH readers go silent on a real merge into master (HATS-1816).
+AI_HATS_VALUE_FLAGS = frozenset({"-p", "--provider", "-r", "--role", "--tag"})
+
 _ARROW = "->"
 
 
@@ -146,7 +151,7 @@ def _read_transition(argv: Sequence[str]) -> Reading | None:
 
 
 def _read_wt_merge(argv: Sequence[str]) -> Reading | None:
-    ops = operands(argv, frozenset())
+    ops = operands(argv, AI_HATS_VALUE_FLAGS)
     if ops[:2] != ["wt", "merge"]:
         return None
     # The branch may be omitted — the CLI detects it from the cwd — so this is a
@@ -189,6 +194,7 @@ REGISTRY: dict[str, OperationSpec] = {
         selector_reason=_pre_merge_only,
         admits=_pre_merge_admits,
         legacy_flags=lambda _r: (_ACK, "AI_HATS_MERGE_ACK"),
+        value_flags=AI_HATS_VALUE_FLAGS,
     ),
 }
 

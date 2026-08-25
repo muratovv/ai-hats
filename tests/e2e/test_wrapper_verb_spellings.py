@@ -3,7 +3,7 @@
 flow:   the materialized consent wrapper is invoked through its real shim, with
         the verb spelled the ways that used to slip past it
 cmds:
-    ai-hats --verbose wt merge task/x
+    ai-hats --provider claude wt merge task/x
     rack transition --tasks-dir /t HATS-1 execute
     rack transition --state execute HATS-1
 expect: every spelling is RECOGNIZED as the declared operation, so the wrapper
@@ -13,7 +13,7 @@ why:    the wrapper read argv positionally while the PreToolUse gate skipped
         reached the wrapper as no-match and the operation ran with no question —
         and `--state execute X` matched with the ticket bound to `--state`
         instead of the task id. Revert `operations.operands` and the two
-        `--verbose`/`--tasks-dir` rows spawn the stub, turning these red.
+        `--provider`/`--tasks-dir` rows spawn the stub, turning these red.
 """  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
@@ -98,7 +98,8 @@ def _run(wrapped, surface: str, argv: list[str]) -> int:
 @pytest.mark.parametrize(
     ("surface", "argv"),
     [
-        ("ai-hats", ["--verbose", "wt", "merge", "task/x"]),
+        ("ai-hats", ["--provider", "claude", "wt", "merge", "task/x"]),
+        ("ai-hats", ["-r", "maintainer", "wt", "merge", "task/x"]),
         ("ai-hats", ["wt", "merge", "task/x"]),
         ("rack", ["transition", "--tasks-dir", "/t", "HATS-1", "execute"]),
         ("rack", ["transition", "--state", "execute", "HATS-1"]),

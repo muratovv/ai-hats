@@ -64,8 +64,18 @@ def test_a_flag_before_the_id_does_not_hide_the_move(argv, source, expected):
     assert matched.operation.subject == expected
 
 
-def test_a_flag_before_the_subcommand_does_not_hide_a_merge():
-    matched = match_operation("ai-hats", ["--verbose", "wt", "merge", "task/x"], POLICY)
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--provider", "claude", "wt", "merge", "task/x"],
+        ["-r", "maintainer", "wt", "merge", "task/x"],
+        ["--provider=claude", "wt", "merge", "task/x"],
+    ],
+)
+def test_a_global_option_does_not_hide_a_merge(argv):
+    """`--provider` and `-r` take a VALUE, and that value used to read as the
+    subcommand — measured on master, both readers went silent on a real merge."""
+    matched = match_operation("ai-hats", argv, POLICY)
     assert matched is not None
     assert matched.operation.subject == "task/x"
 

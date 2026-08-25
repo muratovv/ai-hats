@@ -3436,13 +3436,13 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats --verbose wt merge task/x
+  ai-hats --provider claude wt merge task/x
   rack transition --tasks-dir /t HATS-1 execute
   rack transition --state execute HATS-1
   ```
 
 - **expect** — every spelling is RECOGNIZED as the declared operation, so the wrapper stops instead of spawning the original binary
-- **why** — the wrapper read argv positionally while the PreToolUse gate skipped flags and their values. A flag before the positional argument therefore reached the wrapper as no-match and the operation ran with no question — and `--state execute X` matched with the ticket bound to `--state` instead of the task id. Revert `operations.operands` and the `--verbose`/`--tasks-dir` rows spawn the stub, turning these red.
+- **why** — the wrapper read argv positionally while the PreToolUse gate skipped flags and their values. A flag before the positional argument therefore reached the wrapper as no-match and the operation ran with no question — and `--state execute X` matched with the ticket bound to `--state` instead of the task id. Measured on master, `ai-hats --provider claude wt merge x` reached BOTH readers as no-match — a real merge with no question. Revert `operations.operands` or the `AI_HATS_VALUE_FLAGS` entry and these rows spawn the stub, turning red.
 
 ## `test_write_op_refused_at_non_project_root.py`
 

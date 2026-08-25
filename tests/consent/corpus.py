@@ -40,7 +40,11 @@ CORPUS: tuple[Row, ...] = (
     Row("ai-hats", ("wt", "merge", "task/x"), None),
     Row("ai-hats", ("wt", "merge"), None, "branch detected from cwd"),
     Row("ai-hats", ("wt", "merge", "task/x", "--accept-drift"), None),
-    Row("ai-hats", ("--verbose", "wt", "merge", "task/x"), None, "flag before subcommand"),
+    # REAL global options, and they take a VALUE: measured on master, both
+    # readers went silent on these — a merge into master with no question.
+    Row("ai-hats", ("--provider", "claude", "wt", "merge", "task/x"), None, "value flag first"),
+    Row("ai-hats", ("-r", "maintainer", "wt", "merge", "task/x"), None, "short value flag"),
+    Row("ai-hats", ("--provider=claude", "wt", "merge", "task/x"), None, "inline value"),
     # neighbours that must stay quiet
     Row("ai-hats", ("wt", "list"), None),
     Row("ai-hats", ("wt", "create", "task/x"), None),
