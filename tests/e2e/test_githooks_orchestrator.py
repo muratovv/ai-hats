@@ -181,35 +181,56 @@ def test_the_next_commit_after_an_update_runs_the_new_gates(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# HATS-1597: a gate that cannot be exec'd degrades, it does not wedge the commit
+# HATS-1597 / HATS-1828: a gate that cannot be exec'd never raises — and since
+# HATS-1828 it refuses rather than waving the commit through
 # ---------------------------------------------------------------------------
 
 
-def _assert_fails_open(cp, project: Path, why: str) -> None:
-    """The D3 contract, spelled once: the commit lands, the skip is spoken, and
-    the gate demonstrably did not run. `Traceback` is checked explicitly because
-    that is the reported symptom — an exit code alone would not catch it."""
+def _assert_refuses_with_a_hatch(cp, project: Path, why: str) -> None:
+    """The contract, spelled once. A declared gate that cannot run is ai-hats'
+    own delivery failure, not a verdict — so the commit stops. `Traceback` is
+    still checked explicitly (HATS-1597): it is the original reported symptom,
+    and an exit code alone would not tell a refusal from a crash."""
     assert "Traceback" not in cp.stderr, f"{why}: a hook raised at the human\n{cp.stderr}"
-    assert cp.returncode == 0, f"{why}: a human commit must never be wedged\n{cp.stderr}"
-    assert "guard.sh" in cp.stderr, f"{why}: the skipped gate is not named\n{cp.stderr}"
-    assert "fail-open" in cp.stderr, f"{why}: the skip is not spoken\n{cp.stderr}"
+    assert cp.returncode != 0, f"{why}: an undeliverable gate must not pass\n{cp.stderr}"
+    assert "guard.sh" in cp.stderr, f"{why}: the broken gate is not named\n{cp.stderr}"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in cp.stderr, f"{why}: no hatch named\n{cp.stderr}"
     assert not (project / ".marker-guard").exists(), f"{why}: the gate cannot have run"
 
 
-def test_a_commit_lands_when_a_gate_is_not_executable(tmp_path: Path):
+def test_a_commit_stops_when_a_gate_is_not_executable(tmp_path: Path):
     """`git_hooks:` is a public extension point, so a declared gate arrives with
     whatever mode its author committed. Without the exec bit the dispatcher hit
-    `PermissionError` inside `subprocess.run` and the commit died on a traceback,
-    leaving `--no-verify` — which disarms the WHOLE chain — as the only way out.
+    `PermissionError` inside `subprocess.run` and the commit died on a traceback.
+
+    HATS-1597 answered that with a skip, because `--no-verify` — which disarms
+    the WHOLE chain — was the only alternative. HATS-1828 supplies a narrower
+    one, so the gate can now refuse and name it instead of disarming itself.
     """
     project, lib = _project(tmp_path)
     _self_init(project)  # init first: only the commit path is under test
     (lib / "skills" / "guard_skill" / "git_hooks" / "guard.sh").chmod(0o644)
 
-    _assert_fails_open(_commit(project, "a.txt"), project, "non-executable gate")
+    _assert_refuses_with_a_hatch(_commit(project, "a.txt"), project, "non-executable gate")
 
 
-def test_a_commit_lands_when_a_gate_has_no_shebang(tmp_path: Path):
+def test_the_hatch_lands_the_commit_the_broken_gate_stopped(tmp_path: Path):
+    """The refusal above is only legitimate because this flag works.
+
+    Also the bootstrap case: the commit that FIXES a broken gate would otherwise
+    be blocked by the very gate it repairs.
+    """
+    project, lib = _project(tmp_path)
+    _self_init(project)
+    (lib / "skills" / "guard_skill" / "git_hooks" / "guard.sh").chmod(0o644)
+
+    cp = _commit(project, "a.txt", env={**_pinned_env(), "AI_HATS_GIT_GATE_BROKEN_ACK": "1"})
+
+    assert cp.returncode == 0, f"the named hatch must open\n{cp.stderr}"
+    assert not (project / ".marker-guard").exists(), "the broken gate cannot have run"
+
+
+def test_a_commit_stops_when_a_gate_has_no_shebang(tmp_path: Path):
     """Its own test, not a parametrize case: this one is exec-bit CLEAN, so an
     `os.access(X_OK)` check passes it and the kernel refuses at execve instead
     (`OSError: [Errno 8] Exec format error`). A fix for the mode alone leaves it red.
@@ -220,4 +241,4 @@ def test_a_commit_lands_when_a_gate_has_no_shebang(tmp_path: Path):
     guard.write_text(GUARD.split("\n", 1)[1])  # every line but the shebang
     guard.chmod(0o755)
 
-    _assert_fails_open(_commit(project, "a.txt"), project, "gate without a shebang")
+    _assert_refuses_with_a_hatch(_commit(project, "a.txt"), project, "gate without a shebang")

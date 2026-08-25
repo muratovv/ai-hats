@@ -101,7 +101,9 @@ def _project(tmp_path: Path, *, gate_exit: int = 0) -> Path:
     return project
 
 
-def _commit(project: Path, name: str) -> subprocess.CompletedProcess[str]:
+def _commit(
+    project: Path, name: str, *, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Stage and commit one file, returning the commit's own outcome.
 
     Not `_helpers.git.git`: this is the call under test, so it needs the pinned
@@ -118,7 +120,7 @@ def _commit(project: Path, name: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         timeout=120,
-        env=_pinned_env(),
+        env=env or _pinned_env(),
     )
 
 
@@ -160,21 +162,37 @@ def test_gits_argument_reaches_the_gate_across_the_stubs_separator(tmp_path: Pat
     assert argv[0].endswith("COMMIT_EDITMSG"), argv
 
 
-def test_a_stub_passing_an_unknown_flag_skips_instead_of_wedging_the_commit(tmp_path: Path):
-    """R3: skew degrades to a skip — on every version, for the whole class.
+def test_a_stub_passing_an_unknown_flag_refuses_and_names_its_hatch(tmp_path: Path):
+    """Stub/CLI skew: the separator was one shape, a flag a later stub learns to
+    pass is the next, and both reach argparse as SystemExit(2).
 
-    The separator was one shape of stub/CLI skew; a flag a later stub learns to
-    pass is the next, and both reach argparse as SystemExit(2). Fail-open is the
-    stub's declared reason to exist, so the entry point owes it the same.
+    HATS-1519 made this a skip, reasoning that fail-open is the stub's declared
+    purpose so the entry point owes it the same. HATS-1828 retires that
+    inheritance: the stub fails open because its bytes CANNOT be repaired at
+    commit time, and this entry point can — it ships with this ai-hats, and
+    `self update` fixes it. Gates going quiet on skew is the failure, not the fix.
     """
     project = _project(tmp_path)
     _skew_the_stub(project, "--hook-stdin-mode replay")
 
     cp = _commit(project, "b.txt")
 
-    assert cp.returncode == 0, f"a commit must never be wedged by skew:\n{cp.stderr}"
-    assert "fail-open" in cp.stderr, cp.stderr
+    assert cp.returncode != 0, f"skew must not silently disarm the gates:\n{cp.stderr}"
+    assert "self update" in cp.stderr, cp.stderr
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in cp.stderr, "a deny must name its hatch"
     assert not (project / ".gate-argv").exists(), "no gate may run when the dispatcher gave up"
+
+
+def test_the_hatch_lands_a_commit_the_skew_stopped(tmp_path: Path):
+    """The refusal above is only legitimate because this flag works — and here it
+    cannot be journalled (no project is parsed), so the message must say so."""
+    project = _project(tmp_path)
+    _skew_the_stub(project, "--hook-stdin-mode replay")
+
+    cp = _commit(project, "b.txt", env={**_pinned_env(), "AI_HATS_GIT_GATE_BROKEN_ACK": "1"})
+
+    assert cp.returncode == 0, f"the named hatch must open:\n{cp.stderr}"
+    assert "NOT RECORDED" in cp.stderr, f"an unrecordable skip must say so:\n{cp.stderr}"
 
 
 def test_a_refusing_gate_still_blocks_the_commit(tmp_path: Path):

@@ -431,15 +431,15 @@ def test_a_hook_argument_starting_with_a_dash_is_not_read_as_our_flag(
     assert seen == [["-x", "--project-dir"]]
 
 
-def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
+def test_arguments_this_dispatcher_cannot_parse_refuse_the_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stub newer than the installed ai-hats must not wedge the commit.
+    """Stub/package skew refuses, and states the flag that opens it.
 
-    The separator was one shape of that skew; a flag a later stub learns to pass
-    is the next. argparse answers both with SystemExit(2) from inside `main`,
-    past the stub's import guard, and that 2 becomes the hook's verdict — so the
-    degradation has to happen here (HATS-1519).
+    HATS-1519 skipped here, reasoning the entry point inherits the stub's
+    fail-open duty. HATS-1828 retires that: the stub fails open because its
+    bytes cannot be fixed at commit time, and this can — `self update` repairs
+    it. No project is parsed, so this lone refusal cannot journal itself.
     """
     from ai_hats.cli.githooks_hook import main
 
@@ -460,8 +460,8 @@ def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
         ]
     )
 
-    assert rc == 0, "a dispatcher that cannot parse itself must skip, never refuse"
-    assert "fail-open" in capsys.readouterr().err
+    assert rc != 0, "a dispatcher that cannot parse itself must refuse, never skip"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in capsys.readouterr().err, "a deny names its hatch"
     assert seen == [], "no gate may run when the dispatcher gave up"
 
 
@@ -523,13 +523,14 @@ def test_a_gate_that_cannot_be_exec_d_is_refused_at_resolve_time(tmp_path: Path)
 
 
 @pytest.mark.integration
-def test_a_composition_that_refuses_does_not_wedge_the_commit(
+def test_a_composition_that_refuses_blocks_the_commit_and_names_its_hatch(
     tmp_path: Path, capsys, monkeypatch
 ) -> None:
     """A CheckBindingError (a removed script, an unknown point name) renders
     friendly only in the click layer, which a git hook never enters — so it
-    reached the human as a traceback and exit 1. Needs no broken FILE: an
-    ordinary typo in `composition.apps` gets here.
+    reached the human as a traceback and exit 1. Never a traceback (HATS-1597),
+    and since HATS-1828 never a pass either: no gate ran, which is ai-hats' own
+    failure rather than anybody's verdict.
 
     Patched on `materialize`: `main` imports the name inside its own body, so
     the source module is the only place a stub is observable.
@@ -547,11 +548,37 @@ def test_a_composition_that_refuses_does_not_wedge_the_commit(
         ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
     )
 
-    assert rc == 0, "a broken composition must not wedge a human commit"
     err = capsys.readouterr().err
-    assert "fail-open" in err and "composition" in err, err
-    # ADR-0020 D2 forbids passing a gate SILENTLY, so the skip must be on record —
-    # and on record HERE, in the sandbox this test owns (HATS-1686).
+    assert rc != 0, "a composition ai-hats cannot build is its failure, not a pass"
+    assert "edge:typo" in err, err
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err, "a deny must name its hatch"
+
+
+@pytest.mark.integration
+def test_the_hatch_turns_that_refusal_back_into_a_recorded_skip(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """The other half: the flag the refusal names has to actually work.
+
+    And taking it stays loud — ADR-0020 D2 forbids passing a gate SILENTLY, so
+    the skip is on record, in the sandbox this test owns (HATS-1686).
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    project = _gate_project(tmp_path)
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("composition refused: unknown point 'edge:typo'")
+
+    monkeypatch.setattr("ai_hats.materialize.compose_for_role", _boom)
+    monkeypatch.setenv("AI_HATS_GIT_GATE_BROKEN_ACK", "1")
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 0, f"the named hatch must open: {err}"
     journal = project / ".git" / "ai-hats" / "bypasses.jsonl"
-    assert journal.is_file(), f"the fail-open was not journalled: {err}"
+    assert journal.is_file(), f"the skip was not journalled: {err}"
     assert "edge:typo" in journal.read_text(encoding="utf-8")
