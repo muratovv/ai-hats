@@ -90,6 +90,7 @@ aggregation = [
 # it (built-ins are listed too — they self-register first, discovery no-ops them).
 [project.entry-points."ai_hats.providers"]
 claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"
+codex = "ai_hats.surfaces.codex.provider:CodexProvider"
 
 # HATS-1038 C1: the rack CLI discovers this factory by metadata (never imports
 # the integrator — import-hygiene pin) and builds the fully-wired production
@@ -195,7 +196,7 @@ testpaths = [
     "packages/ai-hats-library/tests",
     "packages/surfaces/cline/tests",
     "packages/surfaces/agy/tests",
-    "packages/surfaces/codex/tests",
+    "src/ai_hats/surfaces/codex/tests",
     "packages/surfaces/opencode/tests",
 ]
 # HATS-1624: a passing e2e test's tmp_path holds a real venv, and one measured
@@ -218,7 +219,6 @@ pythonpath = [
     "packages/ai-hats-library/src",
     "packages/surfaces/cline/src",
     "packages/surfaces/agy/src",
-    "packages/surfaces/codex/src",
     "packages/surfaces/opencode/src",
 ]
 filterwarnings = [

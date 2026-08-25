@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from ai_hats_codex.provider import CodexProvider
+from .provider import CodexProvider
 
 __all__ = ["CodexProvider"]

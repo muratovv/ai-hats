@@ -4,7 +4,7 @@ The composed runtime-hook library predates provider surfaces and its scripts
 consume Claude-shaped ``PreToolUse`` payloads. Keep that compatibility bridge
 explicit and surface-local: the dispatcher owns orchestration, while this module
 owns every agy-to-Claude tool name and payload conversion — the same division
-``ai_hats_codex.claude_hook_adapter`` already draws for Codex.
+``ai_hats.surfaces.codex.claude_hook_adapter`` already draws for Codex.
 
 Before this the bridge existed nowhere and half-existed everywhere: the tool
 name was translated by one hard-coded branch in the provider, the payload by

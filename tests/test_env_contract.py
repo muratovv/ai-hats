@@ -505,6 +505,10 @@ def _production_bypass_literals() -> set:
         for path in root.rglob("*"):
             if path.suffix not in (".py", ".sh") or not path.is_file() or path == declaring:
                 continue
+            # An area's tests live inside its own folder (ADR-0026 D5, HATS-1826); a
+            # fixture is not a gate, and the wheel does not ship them either.
+            if "tests" in path.relative_to(root).parts:
+                continue
             found |= {
                 name
                 for name in spelling.findall(path.read_text(encoding="utf-8", errors="ignore"))

@@ -14,8 +14,8 @@ import pytest
 from ai_hats.paths import project_key, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.session_run import SessionRun
-from ai_hats_codex import CodexProvider
-from ai_hats_codex.provider import _readiness_warnings
+from ai_hats.surfaces.codex import CodexProvider
+from ai_hats.surfaces.codex.provider import _readiness_warnings
 
 
 @pytest.fixture(autouse=True)
@@ -412,7 +412,7 @@ def test_session_run_build_reconciles_crash_home_without_cache(
                 str(session_home / "sessions" / rollout.relative_to(base_home / "sessions")),
             ),
         )
-    session_cache_dir(project, "sid-crashed").rmdir()
+    session_cache_dir(project, "sid-crashed").rmdir()  # safe-delete: ok empty-dir
 
     run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
     with run:

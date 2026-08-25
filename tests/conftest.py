@@ -77,7 +77,7 @@ def _workspace_surface_providers() -> Iterator[None]:
     from ai_hats import providers
     from ai_hats_agy import AgyProvider
     from ai_hats_cline import ClineProvider
-    from ai_hats_codex import CodexProvider
+    from ai_hats.surfaces.codex import CodexProvider
 
     saved = dict(providers._PROVIDER_REGISTRY)
     for name, provider in (

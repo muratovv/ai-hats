@@ -6,7 +6,7 @@
 // <AI_HATS_SESSION_CACHE_DIR>/opencode/hooks.json using the same manifest
 // schema (version 1) as the cline and codex surfaces.
 //
-// Tool-hook semantics mirror ai_hats_codex.hook_dispatcher:
+// Tool-hook semantics mirror ai_hats.surfaces.codex.hook_dispatcher:
 //   - no AI_HATS_SESSION_CACHE_DIR pin  -> inert (by design)
 //   - manifest missing                  -> warn once, inert (nothing to run)
 //   - manifest unreadable/malformed     -> fail closed (every mapped tool blocked)

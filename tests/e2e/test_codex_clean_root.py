@@ -67,7 +67,7 @@ if barrier_dir:
         time.sleep(0.02)
 manifest = json.loads((cache_dir / "hooks.json").read_text())
 hook = subprocess.run(
-    [os.environ["AI_HATS_PYTHON"], "-m", "ai_hats_codex.hook_dispatcher"],
+    [os.environ["AI_HATS_PYTHON"], "-m", "ai_hats.surfaces.codex.hook_dispatcher"],
     input=json.dumps(payload),
     env=os.environ.copy(),
     capture_output=True,

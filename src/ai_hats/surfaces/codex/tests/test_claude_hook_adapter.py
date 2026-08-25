@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats_codex.claude_hook_adapter import (
+from ai_hats.surfaces.codex.claude_hook_adapter import (
     matches_claude_hook,
     to_claude_hook_payloads,
 )

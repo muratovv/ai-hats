@@ -404,7 +404,7 @@ class CodexProvider(Provider):
                 f"{result.remaining} rollout reference(s) remain"
             )
         if session_home.is_dir():
-            shutil.rmtree(session_home)
+            shutil.rmtree(session_home)  # safe-delete: ok session-cache
         return None
 
     def _validated_session_metadata(

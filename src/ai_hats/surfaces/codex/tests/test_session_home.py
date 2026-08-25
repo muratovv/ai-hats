@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_codex.session_home import normalize_rollout_paths
+from ai_hats.surfaces.codex.session_home import normalize_rollout_paths
 
 
 def _database(path: Path, rows: list[tuple[str, str]]) -> Path:

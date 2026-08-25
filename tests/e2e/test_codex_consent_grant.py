@@ -111,7 +111,7 @@ payload = {
     "cwd": os.getcwd(),
 }
 hook = subprocess.run(
-    [python, "-m", "ai_hats_codex.hook_dispatcher"],
+    [python, "-m", "ai_hats.surfaces.codex.hook_dispatcher"],
     input=json.dumps(payload),
     cwd=os.getcwd(),
     env=os.environ.copy(),

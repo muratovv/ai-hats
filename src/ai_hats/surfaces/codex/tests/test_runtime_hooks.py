@@ -12,9 +12,9 @@ from types import SimpleNamespace
 
 from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from ai_hats_codex.hook_dispatcher import DISPATCHER_COMMAND, dispatch_hook
-from ai_hats_codex.provider import CodexProvider
-from ai_hats_codex.runtime_hooks import (
+from ai_hats.surfaces.codex.hook_dispatcher import DISPATCHER_COMMAND, dispatch_hook
+from ai_hats.surfaces.codex.provider import CodexProvider
+from ai_hats.surfaces.codex.runtime_hooks import (
     CODEX_HOOK_EVENTS,
     build_hook_cli_args,
     materialize_hook_manifest,
@@ -425,7 +425,7 @@ def test_two_overlapping_dispatcher_processes_keep_session_state_disjoint(
 
     def process_env(cache: Path, session_id: str, output: Path) -> dict[str, str]:
         env = _session_env(cache, session_id=session_id)
-        codex_src = Path(__file__).resolve().parents[1] / "src"
+        codex_src = Path(__file__).resolve().parents[4]
         env["PYTHONPATH"] = os.pathsep.join(
             value for value in (str(codex_src), env.get("PYTHONPATH")) if value
         )
@@ -443,7 +443,7 @@ def test_two_overlapping_dispatcher_processes_keep_session_state_disjoint(
             }
         )
 
-    command = [sys.executable, "-m", "ai_hats_codex.hook_dispatcher"]
+    command = [sys.executable, "-m", "ai_hats.surfaces.codex.hook_dispatcher"]
     processes = [
         subprocess.Popen(
             command,
@@ -577,7 +577,7 @@ def test_exit_two_from_claude_hook_denies_permission_request(
 def test_real_safety_guard_deny_survives_the_codex_adapter(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    repo = Path(__file__).resolve().parents[4]
+    repo = Path(__file__).resolve().parents[5]
     guard = (
         repo
         / "packages/ai-hats-library/src/ai_hats_library/core/skills"
@@ -608,7 +608,7 @@ def test_real_safety_guard_deny_survives_the_codex_adapter(
 def test_real_worktree_gate_blocks_main_but_allows_the_linked_worktree(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    repo = Path(__file__).resolve().parents[4]
+    repo = Path(__file__).resolve().parents[5]
     guard = (
         repo
         / "packages/ai-hats-library/src/ai_hats_library/core/skills"

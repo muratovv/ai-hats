@@ -177,6 +177,9 @@ def test_pyproject_declares_provider_entry_point_group():
     assert group == {
         # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
         "claude": "ai_hats.surfaces.claude.provider:ClaudeProvider",
+        # HATS-1826 folds the out-of-tree surface distributions into the area, so
+        # the integrator now declares their entry points too.
+        "codex": "ai_hats.surfaces.codex.provider:CodexProvider",
     }
 
 
