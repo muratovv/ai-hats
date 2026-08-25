@@ -57,7 +57,7 @@ def materialize_runtime_hooks(
     hooks_dir = cache_dir / "hooks"
     artifacts.port.mkdir(cache_dir)
     artifacts.port.remove_tree(hooks_dir)
-    with as_file(files("ai_hats_cline").joinpath("hooks")) as source:
+    with as_file(files("ai_hats.surfaces.cline").joinpath("hooks")) as source:
         artifacts.port.copy_tree(source, hooks_dir)
 
     manifest_path = cache_dir / "hooks.json"

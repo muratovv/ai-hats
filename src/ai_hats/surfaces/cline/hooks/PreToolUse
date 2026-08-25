@@ -7,4 +7,4 @@ if [[ -z "${AI_HATS_PYTHON:-}" ]]; then
     exit 0
 fi
 
-exec "$AI_HATS_PYTHON" -m ai_hats_cline.hook_dispatcher PreToolUse
+exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.cline.hook_dispatcher PreToolUse

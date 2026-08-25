@@ -32,7 +32,7 @@ def _has_cline_plugin() -> bool:
     import importlib
 
     try:
-        importlib.import_module("ai_hats_cline")
+        importlib.import_module("ai_hats.surfaces.cline")
         return True
     except ImportError:
         return False

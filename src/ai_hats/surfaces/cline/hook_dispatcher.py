@@ -10,11 +10,10 @@ import sys
 from pathlib import Path
 from typing import Mapping
 
+from ai_hats.env import ENV_AI_HATS_DIR, ENV_SESSION_CACHE_DIR
+from ai_hats_observe.trace import ENV_SESSION_ID
 from .claude_hook_adapter import matches_claude_hook, to_claude_hook_payloads
 
-ENV_SESSION_ID = "AI_HATS_SESSION_ID"
-ENV_AI_HATS_DIR = "AI_HATS_DIR"
-ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
 HOOK_TIMEOUT_S = 60.0
 
 
@@ -227,7 +226,7 @@ def dispatch_hook(
 
 def main() -> None:
     if len(sys.argv) != 2:
-        sys.stderr.write("usage: python -m ai_hats_cline.hook_dispatcher EVENT\n")
+        sys.stderr.write("usage: python -m ai_hats.surfaces.cline.hook_dispatcher EVENT\n")
         raise SystemExit(2)
     raise SystemExit(dispatch_hook(sys.argv[1]))
 

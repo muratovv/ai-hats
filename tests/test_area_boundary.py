@@ -77,9 +77,9 @@ SRC = REPO_ROOT / "src"
 AREA = "ai_hats.pipeline"
 
 # comment-length: allow — a small pin that will grow has to say so, or it reads as done
-# The second area (HATS-1826). Two of its five implementations still ship as separate
-# distributions under packages/surfaces/, so today this name covers `claude`, `codex` and
-# `opencode`: the pin below GROWS as each surface moves in, and is driven back down.
+# The second area (HATS-1826). One of its five implementations still ships as a separate
+# distribution under packages/surfaces/, so today this name covers everything but `agy`:
+# the pin below GROWS as each surface moves in, and is driven back down from there.
 SURFACES = "ai_hats.surfaces"
 
 # From the test's own location, not via ``builtin_library_root()``: that resolver honours

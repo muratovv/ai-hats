@@ -90,6 +90,7 @@ aggregation = [
 # it (built-ins are listed too — they self-register first, discovery no-ops them).
 [project.entry-points."ai_hats.providers"]
 claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"
+cline = "ai_hats.surfaces.cline.provider:ClineProvider"
 codex = "ai_hats.surfaces.codex.provider:CodexProvider"
 opencode = "ai_hats.surfaces.opencode.provider:OpenCodeProvider"
 
@@ -195,8 +196,8 @@ testpaths = [
     "packages/ai-hats-rack/tests",
     "packages/ai-hats-observe/tests",
     "packages/ai-hats-library/tests",
-    "packages/surfaces/cline/tests",
     "packages/surfaces/agy/tests",
+    "src/ai_hats/surfaces/cline/tests",
     "src/ai_hats/surfaces/codex/tests",
     "src/ai_hats/surfaces/opencode/tests",
 ]
@@ -218,7 +219,6 @@ pythonpath = [
     "packages/ai-hats-rack/src",
     "packages/ai-hats-observe/src",
     "packages/ai-hats-library/src",
-    "packages/surfaces/cline/src",
     "packages/surfaces/agy/src",
 ]
 filterwarnings = [

@@ -17,7 +17,7 @@ import pytest
 
 from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
-from ai_hats_cline import ClineProvider
+from ai_hats.surfaces.cline import ClineProvider
 
 
 def _fake_result(skills: list[Path] | None = None) -> SimpleNamespace:

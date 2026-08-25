@@ -34,6 +34,7 @@ PATCH_METHODS = frozenset({"setattr", "delattr", "setitem", "delitem", "chdir"})
 TEST_GLOBS = (
     "tests/**/*.py",
     "src/ai_hats/*/tests/**/*.py",
+    "src/ai_hats/*/*/tests/**/*.py",  # the surfaces area nests one deeper (HATS-1826)
     "packages/*/tests/**/*.py",
     "packages/*/*/tests/**/*.py",
 )

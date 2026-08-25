@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_cline import ClineParser, ClineProvider
+from ai_hats.surfaces.cline import ClineParser, ClineProvider
 from ai_hats_observe.parsers.base import ParsedTranscript, TranscriptParser
 from ai_hats_observe.usage import SCHEMA_VERSION
 

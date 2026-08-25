@@ -45,7 +45,7 @@ class ClineProvider(Provider):
 
     def transcript_parser(self) -> TranscriptParser:
         # Lazy import: provider discovery must not eager-load observe parsers.
-        from ai_hats_cline.parser import ClineParser
+        from .parser import ClineParser
 
         return ClineParser()
 
@@ -166,7 +166,7 @@ class ClineProvider(Provider):
     # -- hooks -----------------------------------------------------------------
 
     def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
-        from ai_hats_cline.runtime_hooks import materialize_runtime_hooks
+        from .runtime_hooks import materialize_runtime_hooks
 
         hooks_dir = materialize_runtime_hooks(
             project_dir,

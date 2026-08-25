@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_cline.claude_hook_adapter import to_claude_hook_payloads
-from ai_hats_cline.hook_dispatcher import dispatch_hook
+from ai_hats.surfaces.cline.claude_hook_adapter import to_claude_hook_payloads
+from ai_hats.surfaces.cline.hook_dispatcher import dispatch_hook
 
 
 def _script(path: Path, body: str) -> Path:

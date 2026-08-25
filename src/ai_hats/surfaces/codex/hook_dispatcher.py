@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Mapping
 
 from ai_hats.env import ENV_AI_HATS_DIR, ENV_SESSION_CACHE_DIR
+from ai_hats_observe.trace import ENV_SESSION_ID
 from .claude_hook_adapter import matches_claude_hook, to_claude_hook_payloads
 
 DISPATCHER_COMMAND = (
@@ -21,8 +22,6 @@ DISPATCHER_COMMAND = (
     '"ai-hats-codex-hook: incomplete dispatcher environment" >&2; exit 2; fi\''
 )
 
-# AI_HATS_SESSION_ID is homed in ai_hats_observe.trace, which this leaf may not import.
-ENV_SESSION_ID = "AI_HATS_SESSION_ID"
 HOOK_TIMEOUT_S = 60.0
 
 
