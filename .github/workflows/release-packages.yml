@@ -18,14 +18,13 @@ on:
     branches: [master]
     paths:
       - "packages/*/pyproject.toml"
-      - "packages/surfaces/*/pyproject.toml"
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: build (core + wt + observe + library + cline + agy + codex + opencode + rack)
+    name: build (core + wt + observe + library + rack)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,10 +36,6 @@ jobs:
           uv build packages/ai-hats-wt -o dist-wt
           uv build packages/ai-hats-observe -o dist-observe
           uv build packages/ai-hats-library -o dist-library
-          uv build packages/surfaces/cline -o dist-cline
-          uv build packages/surfaces/agy -o dist-agy
-          uv build packages/surfaces/codex -o dist-codex
-          uv build packages/surfaces/opencode -o dist-opencode
           uv build packages/ai-hats-rack -o dist-rack
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
@@ -51,10 +46,6 @@ jobs:
             dist-wt/
             dist-observe/
             dist-library/
-            dist-cline/
-            dist-agy/
-            dist-codex/
-            dist-opencode/
             dist-rack/
           if-no-files-found: error
 
@@ -156,189 +147,6 @@ jobs:
         with:
           packages-dir: dist-rack/
           skip-existing: true
-
-  publish-cline:
-    name: publish ai-hats-cline (PyPI trusted publishing)
-    # Observe first — the cline surface plugin depends on ai-hats-observe
-    # (ClineParser reuses its TranscriptParser base + usage/v1 schema, HATS-960).
-    needs: publish-observe
-    runs-on: ubuntu-latest
-    environment: pypi-cline
-    permissions:
-      id-token: write
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: packages-dist
-      - name: Publish ai-hats-cline to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist-cline/
-          skip-existing: true
-
-  publish-agy:
-    name: publish ai-hats-agy (PyPI trusted publishing)
-    # Core first — the agy surface plugin depends on ai-hats-core (and on the
-    # integrator, which ships from release.yml on the v* tag, not from here).
-    needs: publish-core
-    runs-on: ubuntu-latest
-    environment: pypi-agy
-    permissions:
-      id-token: write
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: packages-dist
-      - name: Publish ai-hats-agy to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist-agy/
-          skip-existing: true
-
-  codex-integrator-ready:
-    name: check ai-hats-codex integrator floor
-    needs: build
-    runs-on: ubuntu-latest
-    outputs:
-      ready: ${{ steps.check.outputs.ready }}
-    steps:
-      - id: check
-        name: Check ai-hats 0.15+ exists on PyPI
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from urllib.request import urlopen
-
-          with urlopen("https://pypi.org/pypi/ai-hats/json", timeout=30) as response:
-              releases = json.load(response)["releases"]
-          ready = any(
-              tuple(int(part) for part in version.split(".")) >= (0, 15, 0)
-              for version in releases
-              if version.count(".") == 2 and all(part.isdigit() for part in version.split("."))
-          )
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"ready={'true' if ready else 'false'}\n")
-          PY
-
-  publish-codex:
-    name: publish ai-hats-codex (PyPI trusted publishing)
-    # The surface imports the ai-hats 0.15 provider/artifact seam. A package
-    # version bump can land before the matching integrator tag, so skip rather
-    # than publish a distribution no resolver can install yet.
-    needs: [build, codex-integrator-ready]
-    if: needs.codex-integrator-ready.outputs.ready == 'true'
-    runs-on: ubuntu-latest
-    environment: pypi-codex
-    permissions:
-      id-token: write
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: packages-dist
-      - name: Publish ai-hats-codex to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist-codex/
-          skip-existing: true
-
-  verify-codex-remote-install:
-    name: verify ai-hats-codex remote install
-    needs: publish-codex
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-      - name: Fresh venv + surface install + import
-        run: |
-          set -euo pipefail
-          uv venv --python 3.11 /tmp/verify-codex-venv
-          ok=""
-          for attempt in 1 2 3 4 5; do
-            if uv pip install --python /tmp/verify-codex-venv/bin/python --refresh \
-                 "ai-hats-codex==0.1.0"; then
-              ok=1; break
-            fi
-            echo "install attempt $attempt failed (PyPI CDN lag?) — retry in 20s" >&2
-            sleep 20
-          done
-          test -n "$ok" || { echo "ai-hats-codex install never succeeded" >&2; exit 1; }
-          /tmp/verify-codex-venv/bin/python -c \
-            "from ai_hats_codex import CodexProvider; assert CodexProvider().name == 'codex'"
-
-  opencode-integrator-ready:
-    name: check ai-hats-opencode integrator floor
-    needs: build
-    runs-on: ubuntu-latest
-    outputs:
-      ready: ${{ steps.check.outputs.ready }}
-    steps:
-      - id: check
-        name: Check ai-hats 0.15+ exists on PyPI
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from urllib.request import urlopen
-
-          with urlopen("https://pypi.org/pypi/ai-hats/json", timeout=30) as response:
-              releases = json.load(response)["releases"]
-          ready = any(
-              tuple(int(part) for part in version.split(".")) >= (0, 15, 0)
-              for version in releases
-              if version.count(".") == 2 and all(part.isdigit() for part in version.split("."))
-          )
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"ready={'true' if ready else 'false'}\n")
-          PY
-
-  publish-opencode:
-    name: publish ai-hats-opencode (PyPI trusted publishing)
-    # Same floor as codex: the surface imports the ai-hats 0.15 provider/artifact
-    # seam; skip rather than publish a distribution no resolver can install yet.
-    needs: [build, opencode-integrator-ready]
-    if: needs.opencode-integrator-ready.outputs.ready == 'true'
-    runs-on: ubuntu-latest
-    environment: pypi-opencode
-    permissions:
-      id-token: write
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: packages-dist
-      - name: Publish ai-hats-opencode to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist-opencode/
-          skip-existing: true
-
-  verify-opencode-remote-install:
-    name: verify ai-hats-opencode remote install
-    needs: publish-opencode
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-      - name: Fresh venv + surface install + import
-        run: |
-          set -euo pipefail
-          uv venv --python 3.11 /tmp/verify-opencode-venv
-          ok=""
-          for attempt in 1 2 3 4 5; do
-            if uv pip install --python /tmp/verify-opencode-venv/bin/python --refresh \
-                 "ai-hats-opencode==0.1.0"; then
-              ok=1; break
-            fi
-            echo "install attempt $attempt failed (PyPI CDN lag?) — retry in 20s" >&2
-            sleep 20
-          done
-          test -n "$ok" || { echo "ai-hats-opencode install never succeeded" >&2; exit 1; }
-          /tmp/verify-opencode-venv/bin/python -c \
-            "from ai_hats_opencode import OpenCodeProvider; assert OpenCodeProvider().name == 'opencode'"
 
   verify-remote-install:
     # HATS-943 #2: reproduce the remote channel post-publish — a fresh venv
