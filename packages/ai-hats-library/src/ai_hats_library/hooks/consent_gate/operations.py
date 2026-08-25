@@ -16,6 +16,7 @@ no second place to spell the grammar.
 
 from __future__ import annotations
 
+import string
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
@@ -98,8 +99,16 @@ RACK_VALUE_FLAGS = frozenset(
 _ARROW = "->"
 
 
+#: What a state name may be spelled with.
+_STATE_CHARS = frozenset(string.ascii_letters + string.digits + "_.-")
+
+
 def _arrow_selector_reason(selector: str) -> str | None:
-    """Why ``selector`` is not a transition arrow, or ``None`` when it is."""
+    """Why ``selector`` is not a usable transition arrow, or ``None`` when it is.
+
+    Wide ends are refused rather than accepted-and-narrowed: `ANY->x` and an
+    empty OUTPUT are reserved (HATS-1720), and `NONE` is reserved by HATS-1703.
+    """
     if any(character.isspace() for character in selector):
         return "a selector carries no whitespace"
     if _ARROW not in selector:
@@ -108,7 +117,18 @@ def _arrow_selector_reason(selector: str) -> str | None:
         return f"a selector carries exactly one {_ARROW!r}"
     source, _, target = selector.partition(_ARROW)
     if not source and not target:
-        return "a selector names at least one end"
+        return "both halves empty"
+    if "NONE" in (source, target):
+        return "'NONE' is reserved by HATS-1703"
+    if target in ("", "ANY"):
+        return "a wide OUTPUT is reserved by HATS-1720"
+    if source == "ANY":
+        return f"write '{_ARROW}{target}' instead of 'ANY->{target}'"
+    for end in (source, target):
+        if {character for character in end if character not in _STATE_CHARS}:
+            return "a selector half is not a state name"
+        if end.endswith("-"):
+            return "a selector half ends in '-'"
     return None
 
 

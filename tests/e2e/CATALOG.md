@@ -3428,6 +3428,22 @@ as a claim to check, not as evidence.
 - **expect** — the hook rebuilds a venv whose files the sweeper deleted instead of reading the surviving bin/python as "already provisioned"
 - **why** — a gutted venv failed the done-gate with a ModuleNotFoundError naming an unrelated module, and re-running the hook could not heal it
 
+## `test_wrapper_verb_spellings.py`
+
+*pins HATS-1816*
+
+- **flow** — the materialized consent wrapper is invoked through its real shim, with the verb spelled the ways that used to slip past it
+- **cmds**
+
+  ```console
+  ai-hats --verbose wt merge task/x
+  rack transition --tasks-dir /t HATS-1 execute
+  rack transition --state execute HATS-1
+  ```
+
+- **expect** — every spelling is RECOGNIZED as the declared operation, so the wrapper stops instead of spawning the original binary
+- **why** — the wrapper read argv positionally while the PreToolUse gate skipped flags and their values. A flag before the positional argument therefore reached the wrapper as no-match and the operation ran with no question — and `--state execute X` matched with the ticket bound to `--state` instead of the task id. Revert `operations.operands` and the `--verbose`/`--tasks-dir` rows spawn the stub, turning these red.
+
 ## `test_write_op_refused_at_non_project_root.py`
 
 *pins HATS-839, HATS-1263*

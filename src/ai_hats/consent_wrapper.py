@@ -20,40 +20,9 @@ REFUSED = 2
 _TICKET_ENV = "AI_HATS_CONSENT_TICKET"
 _GLOBAL_ACK = "AI_HATS_CONSENT_ACK"
 CONFIG_ENV = "AI_HATS_CONSENT_WRAPPER_CONFIG"
-_SURFACES = {"rack.transition": "rack", "wt.merge": "ai-hats"}
 _ARROW = "->"
 _STATE_CHARS = frozenset(string.ascii_letters + string.digits + "_.-")
 _SOURCE_QUERY_TIMEOUT_S = 30
-
-
-class ConsentPolicyError(ValueError):
-    """A role declared consent middleware the session cannot enforce."""
-
-
-def _transition_selector_reason(selector: str) -> str | None:
-    """Validate consent_gate's rack.transition command matcher."""
-    if any(character.isspace() for character in selector):
-        return "a selector carries no whitespace"
-    if _ARROW not in selector:
-        return "a rack transition selector is an arrow"
-    if selector.count(_ARROW) != 1:
-        return f"a selector carries exactly one {_ARROW!r}"
-    source, _, target = selector.partition(_ARROW)
-    if not source and not target:
-        return "both halves empty"
-    if "NONE" in (source, target):
-        return "'NONE' is reserved by HATS-1703"
-    if target in ("", "ANY"):
-        return "a wide OUTPUT is reserved by HATS-1720"
-    if source == "ANY":
-        return f"write '{_ARROW}{target}' instead of 'ANY->{target}'"
-    for end in (source, target):
-        stray = {character for character in end if character not in _STATE_CHARS}
-        if stray:
-            return "a selector half is not a state name"
-        if end.endswith("-"):
-            return "a selector half ends in '-'"
-    return None
 
 
 @dataclass(frozen=True)
@@ -68,6 +37,10 @@ class MatchedOperation:
     operation: Operation
     ticket_subject: str | None
     legacy_flags: tuple[str, ...]
+
+
+class ConsentPolicyError(ValueError):
+    """A role declared consent middleware the session cannot enforce."""
 
 
 def policy_from(points: Sequence[object]) -> dict[str, tuple[str, ...]]:
@@ -86,35 +59,18 @@ def policy_from(points: Sequence[object]) -> dict[str, tuple[str, ...]]:
                 f"{declared_by!r}: apps.consent_gate requires exactly one operation key"
             )
         operation = str(path[0])
-        if operation not in _SURFACES:
+        spec = operations.spec_for(operation)
+        if spec is None:
             raise ConsentPolicyError(f"unsupported consent operation {operation!r}")
-        if operation == "rack.transition":
-            reason = _transition_selector_reason(selector)
-            if reason is not None:
-                raise ConsentPolicyError(
-                    f"{declared_by!r}: invalid rack.transition selector {selector!r} — {reason}"
-                )
-        elif selector != "pre-merge":
+        reason = spec.selector_reason(selector)
+        if reason is not None:
             raise ConsentPolicyError(
-                f"{declared_by!r}: wt.merge supports only 'pre-merge', got {selector!r}"
+                f"{declared_by!r}: invalid {operation} selector {selector!r} — {reason}"
             )
         selectors = grouped.setdefault(operation, [])
         if selector not in selectors:
             selectors.append(selector)
     return {operation: tuple(selectors) for operation, selectors in grouped.items()}
-
-
-def _transition_target(argv: Sequence[str]) -> tuple[str, str] | None:
-    if len(argv) < 3 or argv[0] != "transition":
-        return None
-    task_id = argv[1]
-    for index, argument in enumerate(argv[2:], 2):
-        if argument == "--state" and index + 1 < len(argv):
-            return task_id, argv[index + 1]
-        if argument.startswith("--state="):
-            return task_id, argument.split("=", 1)[1]
-    state = argv[2]
-    return None if state.startswith("-") else (task_id, state)
 
 
 def _source_required(selectors: Sequence[str], target: str) -> bool:
@@ -166,11 +122,6 @@ def _resolve_transition_source(
     if not isinstance(state, str) or not state:
         raise ConsentPolicyError(f"cannot resolve {task_id} source state: invalid state")
     return state
-
-
-def _selector_matches(selector: str, source_state: str | None, target: str) -> bool:
-    source, _, selected_target = selector.partition(_ARROW)
-    return selected_target == target and (not source or source == source_state)
 
 
 def match_operation(
@@ -271,11 +222,13 @@ def run_wrapped(
         )
         return REFUSED
     source_state = None
-    if surface == "rack" and "rack.transition" in config.policy:
-        transition = _transition_target(argv)
-        if transition is not None:
-            task_id, target = transition
-            if _source_required(config.policy["rack.transition"], target):
+    if "rack.transition" in config.policy:
+        # The registry reads the verb here too: a local parse would be the third
+        # grammar in this file, which is the defect HATS-1816 removed.
+        reading = operations.read("rack.transition", surface, argv)
+        if reading is not None:
+            task_id = reading.subject
+            if _source_required(config.policy["rack.transition"], reading.target):
                 try:
                     source_state = resolve_transition_source(original, task_id, argv, env)
                 except ConsentPolicyError as exc:
@@ -347,7 +300,7 @@ def materialize_consent_wrappers(
     policy = policy_from(result.consent)
     if not policy:
         return
-    unknown = sorted(set(policy) - set(_SURFACES))
+    unknown = sorted(op for op in policy if operations.spec_for(op) is None)
     if unknown:
         raise RuntimeError(f"unsupported consent operations: {', '.join(unknown)}")
     if not provider.supports_session_command_wrappers():
@@ -360,7 +313,7 @@ def materialize_consent_wrappers(
     env = os.environ if environ is None else environ
     effective_path = artifacts.extra_env.get("PATH", env.get("PATH", ""))
     lookup_path = _original_lookup_path(effective_path)
-    surfaces = sorted({_SURFACES[operation] for operation in policy})
+    surfaces = operations.wrapped_surfaces(policy)
     originals: dict[str, str] = {}
     for surface in surfaces:
         original = which(surface, path=lookup_path)
