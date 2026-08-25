@@ -675,6 +675,13 @@ def test_agent_role_composes_hatrack_not_backlog_manager(role):
     assert "backlog-manager" not in skills, f"{role} still composes backlog-manager"
 
 
+@pytest.mark.parametrize("role", _AGENT_ROLES)
+def test_agent_role_composes_positive_control(role):
+    skills = {s.name for s in _real_composer().compose(role).skills}
+    assert "hatrack" in skills, f"{role}: composition control missing"
+    assert "positive-control" in skills, f"{role}: positive-control missing"
+
+
 def test_no_library_role_composes_backlog_manager():
     """Acceptance criterion (HATS-1054 R1): `backlog-manager` is composed by ZERO
     roles — the single trait-agent swap is the only attachment site."""

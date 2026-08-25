@@ -25,6 +25,7 @@ composition:
     - context-handoff
     - task-summary
     - tool-call-hygiene
+    - positive-control
     - design-minimalism
   # HATS-1755 — external session middleware owns consent. The operation type is
   # the path below consent_gate; `at` is the selector its adapter matches.
