@@ -4,7 +4,7 @@
   ``claude --version`` exits 0. Mirrors the probe used by other e2e
   files (test_role_isolation.py, test_subagent_sdk_smoke.py).
 * ``requires_agy_auth`` — skip-marker: ``agy`` binary on PATH +
-  ``agy --version`` exits 0.
+  ``agy --version`` and a bounded live turn exit 0.
 * ``repo_root`` — single source of truth for repo path math.
 * ``tmp_project`` — generic role-less project for subprocess-only
   tests against the ``ai-hats`` CLI. Function-scoped. Returns a
@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -335,14 +336,49 @@ def requires_cline_auth() -> None:
         pytest.skip(f"cline auth/execution probe failed: {output[-300:]}")
 
 
-@pytest.fixture
+def _agy_execution_probe(
+    agy_bin: str,
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> str | None:
+    try:
+        probe = run(
+            [
+                agy_bin,
+                "--output-format",
+                "json",
+                "--print-timeout",
+                "15s",
+                "-p",
+                "Reply OK",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"agy execution probe failed: {exc}"
+    if probe.returncode != 0:
+        output = ((probe.stdout or "") + "\n" + (probe.stderr or "")).strip()
+        try:
+            payload = json.loads(probe.stdout or "")
+        except json.JSONDecodeError:
+            detail = output[-300:]
+        else:
+            error = payload.get("error") if isinstance(payload, dict) else None
+            detail = error[-300:] if isinstance(error, str) else output[-300:]
+        return f"agy auth/execution probe failed: {detail}"
+    return None
+
+
+@pytest.fixture(scope="session")
 def requires_agy_auth() -> None:
-    """Skip if ``agy`` binary missing (HATS-1391)."""
-    if not shutil.which("agy"):
+    """Skip if ``agy`` cannot complete a minimal live turn (HATS-1391, HATS-1820)."""
+    agy_bin = shutil.which("agy")
+    if not agy_bin:
         pytest.skip("agy binary not found in PATH")
     try:
-        cp = subprocess.run(
-            ["agy", "--version"],
+        cp = subprocess.run(  # noqa: S603 - agy_bin is resolved by shutil.which
+            [agy_bin, "--version"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -351,6 +387,9 @@ def requires_agy_auth() -> None:
         pytest.skip(f"agy --version probe failed: {exc}")
     if cp.returncode != 0:
         pytest.skip(f"agy --version exit {cp.returncode}: {cp.stderr[:200]}")
+
+    if unavailable := _agy_execution_probe(agy_bin):
+        pytest.skip(unavailable)
 
 
 @pytest.fixture(scope="session")
