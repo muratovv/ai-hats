@@ -1839,8 +1839,8 @@ as a claim to check, not as evidence.
   <tmp>/venv/bin/python -c "get_provider('claude')"
   ```
 
-- **expect** — the installed dist advertises `claude` under `ai_hats.providers` and the registry resolves it; a wheel built without that one declaration cannot resolve it at all, and says so naming what is available
-- **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised — a broken or missing one would have gone unnoticed in every tier. The second test is the one that holds the change: restore the built-in registration and it goes red, because claude resolves again from a wheel that does not declare it
+- **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
+- **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised, and a broken or missing one would have gone unnoticed in every tier. The other half of the claim — that NOTHING registers claude behind the declaration's back — is structural and lives in tests/test_area_boundary.py, whose surfaces pin is empty: no shipped module may name a surface implementation at all (HATS-1826)
 
 ## `test_pty_escape_hatch.py`
 
