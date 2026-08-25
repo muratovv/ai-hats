@@ -114,13 +114,6 @@ injection: |
   Passing `wt` explicitly is what makes the worktree's library win here —
   this path never consulted cwd, before the fix or after.
 
-  **Positive-control discipline.** When verifying that a NEW rule/skill
-  is now present, also assert that an EXISTING rule/skill from the same
-  trait still composes. If both come out "MISSING", the verification
-  method is broken (e.g. overlays not passed). If only the new one is
-  missing, the implementation is broken. Without the positive control,
-  the two failure modes are indistinguishable.
-
   ### Workflow
   1. Identify the change shape: new component vs refactor vs audit.
   2. Apply `rule_core_vs_usage_split`: universal → `core/`,
