@@ -193,29 +193,31 @@ REGISTRY: dict[str, OperationSpec] = {
 }
 
 
-def spec_for(operation: str) -> OperationSpec | None:
+def spec_for(operation: str, *, registry: dict | None = None) -> OperationSpec | None:
     """The specification for ``operation``, or ``None`` when nothing declares it."""
-    return REGISTRY.get(operation)
+    return (REGISTRY if registry is None else registry).get(operation)
 
 
-def read(operation: str, surface: str, argv: Sequence[str]) -> Reading | None:
+def read(
+    operation: str, surface: str, argv: Sequence[str], *, registry: dict | None = None
+) -> Reading | None:
     """What ``argv`` on ``surface`` says about ``operation`` — the ONE reading.
 
     Both the session wrapper and the PreToolUse gate come here. A reader that
     parsed the verb itself would be the second grammar this module exists to
     remove.
     """
-    spec = REGISTRY.get(operation)
+    spec = spec_for(operation, registry=registry)
     if spec is None or (spec.surface is not None and spec.surface != surface):
         return None
     return spec.read(argv)
 
 
-def wrapped_surfaces(operations) -> list[str]:
+def wrapped_surfaces(operations, *, registry: dict | None = None) -> list[str]:
     """The binaries to shim for ``operations`` — hook-only ones contribute none."""
     found = {
         spec.surface
         for operation in operations
-        if (spec := REGISTRY.get(operation)) is not None and spec.surface is not None
+        if (spec := spec_for(operation, registry=registry)) is not None and spec.surface is not None
     }
     return sorted(found)

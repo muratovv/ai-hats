@@ -104,3 +104,63 @@ def test_an_operation_with_no_surface_must_say_why():
 def test_hook_only_operations_materialise_no_shim():
     assert operations.wrapped_surfaces(["rack.transition", "wt.merge"]) == ["ai-hats", "rack"]
     assert operations.wrapped_surfaces(["nothing.declared"]) == []
+
+
+def test_a_new_operation_is_one_entry():
+    """The point of opening the registry: declaring a verb touches ONE place.
+
+    Before HATS-1816 a new operation had to be added to `_SURFACES`, to a branch
+    of `match_operation`, and to a two-case selector validator — and missing any
+    one of them failed at session materialization instead of at the declaration.
+    """
+    from ai_hats.consent_wrapper import policy_from
+
+    spec = operations.OperationSpec(
+        type="probe.verb",
+        surface="probe-bin",
+        read=lambda argv: (
+            operations.Reading(subject=argv[1], label=f"probe {argv[1]}")
+            if list(argv[:1]) == ["probe"] and len(argv) > 1
+            else None
+        ),
+        selector_reason=lambda s: None if s == "pre-probe" else "supports only 'pre-probe'",
+        admits=lambda selectors, _src, _r: "pre-probe" in selectors,
+        legacy_flags=lambda _r: (),
+    )
+    registry = {"probe.verb": spec}
+
+    reading = operations.read(
+        "probe.verb", "probe-bin", ["probe", "subj", "--flag"], registry=registry
+    )
+    assert reading is not None and reading.subject == "subj"
+    assert operations.wrapped_surfaces(["probe.verb"], registry=registry) == ["probe-bin"]
+
+    point = type(
+        "P",
+        (),
+        {
+            "app": "consent_gate",
+            "path": ("probe.verb",),
+            "selector": "pre-probe",
+            "declared_by": "probe-trait",
+        },
+    )()
+    assert policy_from([point], registry=registry) == {"probe.verb": ("pre-probe",)}
+
+
+def test_the_gate_records_a_missing_registry_instead_of_going_quiet():
+    """Requirement 5: absent registry is journaled, never a silent narrowing."""
+    import safety_gate
+
+    said: list = []
+    reading = safety_gate._read_operation(
+        "rack.transition",
+        "rack",
+        ["rack", "transition", "X", "execute"],
+        module=None,
+        said=set(),
+        journal=lambda *a, **k: said.append(a),
+    )
+    assert reading is None
+    assert said, "the guard stopped reading verbs and said nothing"
+    assert "operations" in said[0][1]

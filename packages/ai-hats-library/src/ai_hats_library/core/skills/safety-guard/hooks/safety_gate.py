@@ -98,22 +98,33 @@ try:
 except ImportError:
     _operations = None
 
-_operations_off_journaled = False
+#: Names already reported absent, so the fail-open is said once and not per call.
+_OPERATIONS_OFF: set = set()
+
+#: `None` is a MEANINGFUL value for ``module`` — it is what "the registry is not
+#: here" looks like — so the default cannot be spelled with it.
+_DEFAULT = object()
 
 
-def _read_operation(operation: str, surface: str, args):
+def _read_operation(
+    operation: str, surface: str, args, *, module=_DEFAULT, said=None, journal=None
+):
     """The registry's reading of ``args`` (binary first), or ``None``.
 
     A gate that quietly stopped reading looks exactly like a gate with nothing
     to guard, so the missing registry is journaled rather than assumed away.
+    The three collaborators are parameters with real defaults: a test that had
+    to patch this module would be patching the code under test.
     """
-    global _operations_off_journaled
-    if _operations is None:
-        if not _operations_off_journaled:
-            _operations_off_journaled = True
-            journal_bypass("fail-open", "consent_gate.operations missing", hook="safety_gate.py")
+    module = _operations if module is _DEFAULT else module
+    said = _OPERATIONS_OFF if said is None else said
+    journal = journal_bypass if journal is None else journal
+    if module is None:
+        if "operations" not in said:
+            said.add("operations")
+            journal("fail-open", "consent_gate.operations missing", hook="safety_gate.py")
         return None
-    return _operations.read(operation, surface, list(args)[1:])
+    return module.read(operation, surface, list(args)[1:])
 
 
 # HATS-1647 — the tracker predicate shares its resolver and its wording with the

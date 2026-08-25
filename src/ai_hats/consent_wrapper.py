@@ -43,7 +43,7 @@ class ConsentPolicyError(ValueError):
     """A role declared consent middleware the session cannot enforce."""
 
 
-def policy_from(points: Sequence[object]) -> dict[str, tuple[str, ...]]:
+def policy_from(points: Sequence[object], *, registry=None) -> dict[str, tuple[str, ...]]:
     grouped: dict[str, list[str]] = {}
     for point in points:
         if getattr(point, "app", "") != "consent_gate":
@@ -59,7 +59,7 @@ def policy_from(points: Sequence[object]) -> dict[str, tuple[str, ...]]:
                 f"{declared_by!r}: apps.consent_gate requires exactly one operation key"
             )
         operation = str(path[0])
-        spec = operations.spec_for(operation)
+        spec = operations.spec_for(operation, registry=registry)
         if spec is None:
             raise ConsentPolicyError(f"unsupported consent operation {operation!r}")
         reason = spec.selector_reason(selector)
@@ -130,6 +130,7 @@ def match_operation(
     policy: Mapping[str, tuple[str, ...]],
     *,
     source_state: str | None = None,
+    registry: dict | None = None,
 ) -> MatchedOperation | None:
     """The declared operation ``argv`` invokes on ``surface``, or ``None``.
 
@@ -138,7 +139,7 @@ def match_operation(
     (HATS-1816). A branch that parsed argv locally would restore the drift.
     """
     for operation, selectors in policy.items():
-        spec = operations.spec_for(operation)
+        spec = operations.spec_for(operation, registry=registry)
         if spec is None:
             continue
         reading = operations.read(operation, surface, argv)
