@@ -454,7 +454,11 @@ def install_cline_surface_venv(
     *,
     timeout: int = 300,
 ) -> Path:
-    """Install the committed root and Cline surface into a private e2e venv."""
+    """Install the committed root into a private e2e venv.
+
+    HATS-1826 folded the Cline surface into ai-hats, so the root install IS the
+    surface install — there is no second distribution to add.
+    """
     uv = shutil.which("uv")
     if uv is None:
         raise AssertionError("uv is required for the Cline surface e2e")
@@ -476,7 +480,6 @@ def install_cline_surface_venv(
             "--python",
             str(target / "bin" / "python"),
             str(repo_src),
-            str(repo_src / "packages" / "surfaces" / "cline"),
         ],
         env=env,
         capture_output=True,

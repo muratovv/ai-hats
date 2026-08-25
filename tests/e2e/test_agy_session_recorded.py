@@ -12,7 +12,6 @@ why:    without transcript resolution, session observation fails to produce audi
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -23,8 +22,6 @@ from _helpers.env import checkout_pythonpath
 from _helpers.project import Project
 
 pytestmark = pytest.mark.integration
-
-_AGY_PKG = "packages/surfaces/agy"
 
 
 def _has_agy_plugin() -> bool:
@@ -115,11 +112,7 @@ def test_agy_session_records_audit_and_usage(
     if not _has_agy_plugin():
         pytest.skip("ai-hats-agy plugin not installed in this venv")
 
-    checkout_env = {
-        "PYTHONPATH": os.pathsep.join(
-            [checkout_pythonpath(repo_root), str(repo_root / _AGY_PKG / "src")]
-        )
-    }
+    checkout_env = {"PYTHONPATH": checkout_pythonpath(repo_root)}
 
     # 1. self init configures agy provider
     tmp_project.run(

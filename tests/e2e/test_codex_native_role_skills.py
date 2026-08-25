@@ -32,7 +32,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-CODEX_SRC = REPO_ROOT / "packages/surfaces/codex/src"
 LIBRARY_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 _ROLE_MARKER = "HATS_1694_SESSION_ROLE_COPY"
 _FOREIGN_MARKER = "HATS_1694_FOREIGN_ROLE_COPY"
@@ -115,7 +114,7 @@ def test_real_codex_lists_selected_skill_from_session_home(
             "AI_HATS_USER_HOME": str(tmp_path / "user-home"),
             "CODEX_HOME": str(base_home),
             "PATH": os.pathsep.join([str(proxy_bin), env.get("PATH", "")]),
-            "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         }
     )
     env.pop("AI_HATS_CODEX_BASE_HOME", None)
@@ -326,7 +325,7 @@ def test_authenticated_pty_picker_shows_session_role_skill(
             "AI_HATS_USER_HOME": str(tmp_path / "authenticated-user-home"),
             "CODEX_HOME": str(base_home),
             "CODEX_SQLITE_HOME": os.environ.get("CODEX_SQLITE_HOME", str(base_home)),
-            "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         }
     )
     login = subprocess.run(  # noqa: S603 - fixed local Codex readiness probe
