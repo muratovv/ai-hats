@@ -10,6 +10,30 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **`prose-refs`: a CI stage that reads library prose** (HATS-1825). `scripts/check_prose_refs.py` refuses a reference in `rule.md`, `SKILL.md` or a `config.yaml` injection that no longer resolves. Four shapes, each exact enough that a finding is a fact rather than a guess: an **anchored path** (first segment is a tracked top-level entry), a **library prefix** (`library/` and `libraries/` name a directory the package left behind), a **`component § "Heading"`** section citation, and a **`Class.method`** symbol. It runs in `all`, in the linting `tier` behind both gates, and in `push-gate`.
+
+  What it is not: a check on every backticked token. That form reads 61% of an ordinary corpus as a defect — go module paths, `n/a`, branch names. A resolver for bare component names was written and **dropped**: no marker form separated `reflect-session` from `benchdiff`, `data-testid` or `writing-great-skills`, and its one true finding sat in a file this card deletes. Every narrowing is printed on each run under `not covered`, alongside the count of unanchored paths the run declined to judge, because a gate that reports only findings cannot be told apart from one that looked at nothing.
+
+  Generalised from `adr-integrity` (HATS-1646), which proved the shape on one rigid citation form.
+
+### Fixed
+
+- **Twenty-three references in the shipped library did not resolve** (HATS-1825), through months of green gates — none of them read prose. Fifteen were one stale prefix: the library moved under `packages/` and the prose kept saying `library/`. Two more lived in `description:` frontmatter, where backticks are unconventional, and were caught only after the prefix resolver was extended past backticks. `worktree-venv` still described the `library/wt-hooks/` tree HATS-1269 retired; `git-mastery` cited an `Assembler.sync_hooks` that never existed.
+
+- **`rule_pause_before_shared_state_write` promised a guardrail stronger than the one it has** (HATS-1825). Its table said `gh pr merge` and a shared-branch `git push` were **denied**; the hook escalates to the user instead, as `tests/test_shared_state_guard.py` had pinned all along — green, in the same run. The test that was supposed to hold the two in step asserted that two substrings appeared in the rule body and called that "semantic lockstep". The table is gone (the classifier's four verdicts are named instead, and the hook prints its own refusal), and the test now refuses any per-command verdict claim in the rule, proving its pattern on a planted row first. The impossible `TaskCreate | allows` row — the hook matches `Bash` and never sees that tool, and `rule_harness_reminder_hygiene` forbids it outright four hundred tokens below — went with it.
+
+- **`context-handoff`, `context-reset` and `rack-advanced` routed writes into paths `backlog_write_gate.py` denies** (HATS-1825). Handoffs now go through `rack transition <ID> --attach`; a custom backlog catalog goes beside `backlog/`, not inside it.
+
+- **`review-role` is removed** (HATS-1825). A skeleton — "full body to follow" — whose stated trigger named a role that does not exist (`ai-hats reflect role` launches `role-judge`), and the only skill `role-curator` attached on its own. `role-auditor` carries the full `role-coherence-protocol`.
+
+### Changed
+
+- **The `role-curator` prompt is 1,645 tokens lighter** (HATS-1825), 17,043 → 15,398 resident per turn, measured the same way on both sides of the same commit. Engine internals and the worktree-verification recipe moved to `docs/how-to-extend.md`; the role stopped restating the trait it composes; six skill descriptions became triggers instead of procedure summaries; origin retellings in six rules became pointers. Contrastive `✅`/`❌` examples stayed — HATS-638 requires them.
+
+- **`plan-gate` names the absence-proof contract** (HATS-1825). A verification whose result is "X no longer occurs" states three things: the pattern, the scope, and a known-present sample the pattern must still find. No sample, no verdict.
+
 ### Changed — BREAKING
 
 - **A rack lifecycle point is now an arrow, and it denotes a SET** (HATS-1719). `at: [edge:<from>--<to>]` is replaced by `at: ['<from>-><to>']`, and the new `at: ['-><to>']` binds **every** road into a state. The retired spelling is **removed, not aliased**: a role still carrying it is refused at composition, naming the row. Grammar and legality: ADR-0017 §3.
