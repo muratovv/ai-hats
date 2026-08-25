@@ -30,7 +30,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
-- **The `role-curator` prompt is 1,645 tokens lighter** (HATS-1825), 17,043 → 15,398 resident per turn, measured the same way on both sides of the same commit. Engine internals and the worktree-verification recipe moved to `docs/how-to-extend.md`; the role stopped restating the trait it composes; six skill descriptions became triggers instead of procedure summaries; origin retellings in six rules became pointers. Contrastive `✅`/`❌` examples stayed — HATS-638 requires them.
+- **The `role-curator` prompt is 1,820 tokens lighter** (HATS-1825), 17,043 → 15,223 resident per turn, measured the same way on both sides of the same commit. Engine internals and the worktree-verification recipe moved to `docs/how-to-extend.md`; the role stopped restating the trait it composes; six skill descriptions became triggers instead of procedure summaries; origin retellings in six rules became pointers. Contrastive `✅`/`❌` examples stayed — HATS-638 requires them. On review, three rules gave up what a machine already holds: `dev_rule_e2e_gate` stated its criteria three times, `rule_pause_before_shared_state_write` restated consent channels the hook prints on every refusal, and `rule_verify_authored_claims` dropped the two kinds — name and path — that `prose-refs` now refuses, keeping the quantifier and the count, which nothing checks.
 
 - **`plan-gate` names the absence-proof contract** (HATS-1825). A verification whose result is "X no longer occurs" states three things: the pattern, the scope, and a known-present sample the pattern must still find. No sample, no verdict.
 
