@@ -349,11 +349,20 @@ def test_t9_future_dep_cycle(monkeypatch, coherent_pycache):
 class _StubEP:
     """Minimal EntryPoint stand-in — only what _is_first_party / load() touch."""
 
-    def __init__(self, name: str, value: str, dist_name: str, exc: Exception | None = None):
+    def __init__(
+        self,
+        name: str,
+        value: str,
+        dist_name: str,
+        exc: Exception | None = None,
+        *,
+        group: str = "ai_hats.providers",
+    ):
         self.name = name
         self.value = value
         self.dist = type("_Dist", (), {"name": dist_name})()
         self._exc = exc
+        self.group = group
 
     def load(self):
         if self._exc is not None:
@@ -362,7 +371,11 @@ class _StubEP:
 
 
 def _stub_entry_points(monkeypatch, eps: list[_StubEP]) -> None:
-    monkeypatch.setattr(_bootstrap.importlib.metadata, "entry_points", lambda **kw: list(eps))
+    monkeypatch.setattr(
+        _bootstrap.importlib.metadata,
+        "entry_points",
+        lambda **kw: [ep for ep in eps if kw.get("group") in (None, ep.group)],
+    )
 
 
 def test_t10_stale_first_party_entry_point_fails_verify(monkeypatch):
@@ -381,6 +394,26 @@ def test_t10_stale_first_party_entry_point_fails_verify(monkeypatch):
 
     failures = _bootstrap.find_integrity_failures()
     assert any("gemini" in f for f in failures), failures
+    assert _bootstrap.verify_after_install() == 1
+
+
+def test_t10b_stale_first_party_step_entry_point_fails_verify(monkeypatch):
+    _stub_entry_points(
+        monkeypatch,
+        [
+            _StubEP(
+                "check_update_async",
+                "ai_hats.pipeline.steps.check_update:CheckUpdateAsync",
+                "ai-hats",
+                exc=AttributeError("missing CheckUpdateAsync"),
+                group="ai_hats.steps",
+            )
+        ],
+    )
+
+    health_failures = _bootstrap.find_integrity_failures()
+
+    assert not any("check_update_async" in failure for failure in health_failures), health_failures
     assert _bootstrap.verify_after_install() == 1
 
 
@@ -737,3 +770,121 @@ def test_t18b_refresh_survives_an_unusable_site_dir(monkeypatch):
     monkeypatch.setattr(site, "addsitedir", boom)
 
     _bootstrap._refresh_import_paths()  # must not raise
+
+
+# ---------- T19: editable step metadata drift (HATS-1810) ----------
+
+
+@pytest.mark.parametrize(
+    ("live", "installed"),
+    [
+        (
+            [
+                ("check_update_async", "ai_hats.pipeline.steps.check_update:CheckUpdateAsync"),
+                ("pre_log", "ai_hats.pipeline.steps.log:PreLog"),
+            ],
+            [("pre_log", "ai_hats.pipeline.steps.log:PreLog")],
+        ),
+        (
+            [("check_update_async", "ai_hats.pipeline.steps.check_update:CheckUpdateAsync")],
+            [("check_update_async", "ai_hats.pipeline.steps.log:PreLog")],
+        ),
+        (
+            [],
+            [("check_update_async", "ai_hats.pipeline.steps.check_update:CheckUpdateAsync")],
+        ),
+    ],
+    ids=["added", "retargeted", "removed"],
+)
+def test_t19_editable_step_metadata_drift_detects_exact_mapping(
+    monkeypatch, tmp_path, live, installed
+):
+    declarations = "".join(f'{name} = "{target}"\n' for name, target in live)
+    _editable_checkout(
+        monkeypatch,
+        tmp_path,
+        [],
+        body=(
+            '[project]\nname = "ai-hats"\ndependencies = []\n'
+            '[project.entry-points."ai_hats.steps"]\n'
+            f"{declarations}"
+        ),
+    )
+
+    class _Dist:
+        entry_points = [
+            type(
+                "_EP",
+                (),
+                {
+                    "group": "ai_hats.steps",
+                    "name": name,
+                    "value": target,
+                },
+            )()
+            for name, target in installed
+        ]
+
+    monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
+
+    failures = _bootstrap.find_editable_step_metadata_drift()
+
+    assert len(failures) == 1
+    assert repr(sorted(live)) in failures[0]
+    assert repr(sorted(installed)) in failures[0]
+
+
+@pytest.mark.parametrize("repair_effective", [True, False], ids=["repaired", "noop"])
+def test_t20_bootstrap_repairs_editable_step_metadata_or_fails_loudly(
+    monkeypatch, tmp_path, capsys, repair_effective
+):
+    live_target = "ai_hats.pipeline.steps.check_update:CheckUpdateAsync"
+    _editable_checkout(
+        monkeypatch,
+        tmp_path,
+        [],
+        body=(
+            '[project]\nname = "ai-hats"\ndependencies = []\n'
+            '[project.entry-points."ai_hats.steps"]\n'
+            f'check_update_async = "{live_target}"\n'
+        ),
+    )
+    state: dict[str, list[tuple[str, str]]] = {"installed": []}
+
+    class _Dist:
+        @property
+        def entry_points(self):
+            return [
+                type(
+                    "_EP",
+                    (),
+                    {"group": "ai_hats.steps", "name": name, "value": target},
+                )()
+                for name, target in state["installed"]
+            ]
+
+    monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
+
+    pip_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        pip_calls.append(list(cmd))
+        if repair_effective:
+            state["installed"] = [("check_update_async", live_target)]
+        return type("R", (), {"returncode": 0})()
+
+    execv_calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(_bootstrap.subprocess, "run", fake_run)
+    monkeypatch.setattr(_bootstrap.os, "execv", lambda path, argv: execv_calls.append((path, argv)))
+
+    if repair_effective:
+        _bootstrap.bootstrap_or_die()
+    else:
+        with pytest.raises(SystemExit) as exc:
+            _bootstrap.bootstrap_or_die()
+        assert exc.value.code == 1
+        assert "uv reported success" in capsys.readouterr().err
+
+    assert pip_calls == [["uv", "pip", "install", "--python", sys.executable, "-e", str(tmp_path)]]
+    expected_execs = [(sys.executable, [sys.executable, "-m", "ai_hats", *sys.argv[1:]])]
+    assert execv_calls == (expected_execs if repair_effective else [])

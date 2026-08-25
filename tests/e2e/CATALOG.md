@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**265 of 265 files catalogued — 274 flows.**
+**266 of 266 files catalogued — 275 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2839,6 +2839,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the installed dist advertises all 23 built-in step ids under `ai_hats.steps`; loading a YAML that names `pre_log` builds the step, imports `ai_hats.pipeline.steps.log` and NO other step module, and an unknown id fails loudly naming what is known
 - **why** — the step ids left the source tree for `[project.entry-points]` in pyproject.toml, and nothing in the source tree can tell whether that block reached the built distribution's `entry_points.txt`. A unit test of the registry passes against the developer's editable install no matter what the wheel carries; drop the block and every pipeline stops resolving, in an artefact no in-tree test opens. This runs the resolver against a real install, from a venv the checkout is not on the path of
+
+## `test_step_entry_point_update.py`
+
+*pins HATS-1810*
+
+- **flow** — an editable install's live `ai_hats.steps` declarations drift from its installed metadata before a normal command and before `self update`
+- **cmds**
+
+  ```console
+  ai-hats --help
+  ai-hats self update
+  ```
+
+- **expect** — each stale snapshot is repaired before resolution; a reinstall with a broken first-party step target fails post-install verification
+- **why** — `uv sync --check` accepts stale editable entry-point metadata, while the runtime resolver sees only the installed snapshot
 
 ## `test_stray_shadow_detector.py`
 

@@ -1,4 +1,4 @@
-"""Startup self-heal for missing runtime dependencies (HATS-213).
+"""Startup self-heal for runtime and editable-install metadata drift.
 
 Closes the bootstrap chicken-and-egg that survived HATS-207: a user upgrading
 from a pre-HATS-207 wheel runs `ai-hats self update` from the OLD in-memory code
@@ -13,9 +13,9 @@ the project itself is what may be missing dependencies.
 Two entry points:
 
 * :func:`bootstrap_or_die` — called first in ``__main__.main()``, ahead of the
-  ``ai_hats.cli`` import it protects (HATS-1368). Detects missing runtime deps;
-  uv-installs them; ``os.execv`` re-execs the same command in a fresh
-  interpreter so freshly-installed modules are importable.
+  ``ai_hats.cli`` import it protects (HATS-1368). Detects missing runtime deps
+  and stale editable step entry points; repairs the install; ``os.execv``
+  re-execs the same command in a fresh interpreter.
 * :func:`verify_after_install` — called via ``python -m ai_hats._bootstrap
   verify`` from ``cli.maintenance.update()`` as a stage-2 check inside a
   fresh subprocess. Heals without re-exec (we are already exiting).
@@ -50,6 +50,7 @@ _PEP508_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 # Importing these proves the installed tree agrees with itself: the CLI entry
 # the launcher exec's into, and the assembler it reaches for first (HATS-1116).
 _INTEGRITY_MODULES = ("ai_hats.cli", "ai_hats.assembler")
+_STEP_ENTRY_POINT_GROUP = "ai_hats.steps"
 
 
 def _normalise(dist: str) -> str:
@@ -119,6 +120,42 @@ def _live_pyproject_deps(src: str) -> list[str] | None:
     return [d for d in deps if isinstance(d, str)]
 
 
+def _live_step_entry_points(src: str) -> list[tuple[str, str]] | None:
+    """Step declarations from an editable checkout; ``None`` when unreadable."""
+    import tomllib
+
+    try:
+        with open(os.path.join(src, "pyproject.toml"), "rb") as fh:
+            group = tomllib.load(fh)["project"]["entry-points"][_STEP_ENTRY_POINT_GROUP]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(group, dict) or not all(
+        isinstance(name, str) and isinstance(value, str) for name, value in group.items()
+    ):
+        return None
+    return sorted(group.items())
+
+
+def find_editable_step_metadata_drift() -> list[str]:
+    """Report stale first-party step metadata for the active editable checkout."""
+    src = _editable_source_dir()
+    if src is None:
+        return []
+    live = _live_step_entry_points(src)
+    if live is None:
+        return []
+    dist = importlib.metadata.distribution("ai-hats")
+    installed = sorted(
+        (ep.name, ep.value) for ep in dist.entry_points if ep.group == _STEP_ENTRY_POINT_GROUP
+    )
+    if installed == live:
+        return []
+    return [
+        f"{_STEP_ENTRY_POINT_GROUP} metadata is stale for editable checkout {src}: "
+        f"live={live!r}, installed={installed!r}"
+    ]
+
+
 def _declared_requirements() -> list[str]:
     """Requirement lines ai-hats declares — live pyproject first, METADATA second.
 
@@ -174,13 +211,10 @@ def find_missing_runtime_deps() -> list[str]:
     return missing
 
 
-def attempt_self_heal(missing: list[str]) -> bool:
-    """Run ``uv pip install`` for the missing distributions. True on exit 0.
+def attempt_self_heal(missing: list[str], *, repair_editable: bool = False) -> bool:
+    """Run the repair install for dependency or editable-metadata drift."""
 
-    HATS-763: uv-only (no pip fallback, D2); ``--python sys.executable`` targets
-    THIS interp (B1). Missing-uv OSError → False → caller prints rescue + exits.
-    """
-    if not missing:
+    if not missing and not repair_editable:
         return True
     try:
         result = subprocess.run(_repair_argv(missing), check=False)
@@ -244,7 +278,7 @@ def repair_command() -> str:
 
 
 def bootstrap_or_die() -> None:
-    """Detect missing runtime deps; uv-install + re-exec, or die loudly.
+    """Repair runtime or editable-metadata drift before importing the CLI.
 
     Called as the very first action in :func:`ai_hats.__main__.main`. Side effects:
     prints to stderr, runs uv in a subprocess, and on success replaces the
@@ -252,26 +286,34 @@ def bootstrap_or_die() -> None:
     importable for the actual command the user invoked.
     """
     missing = find_missing_runtime_deps()
-    if not missing:
+    metadata_drift = find_editable_step_metadata_drift()
+    if not missing and not metadata_drift:
         return
 
+    problems = list(metadata_drift)
+    if missing:
+        problems.insert(0, f"missing runtime deps {missing}")
     sys.stderr.write(
-        f"ai-hats: missing runtime deps {missing}; healing via uv…\n"
+        f"ai-hats: {'; '.join(problems)}; healing via uv…\n"
         f"  manual command if this fails: {_rescue_command(missing)}\n"
     )
     sys.stderr.flush()
 
-    if not attempt_self_heal(missing):
+    if not attempt_self_heal(missing, repair_editable=bool(metadata_drift)):
         sys.stderr.write("ai-hats: self-heal failed. Run the manual command above, then retry.\n")
         sys.exit(1)
 
     # HATS-1359: uv can exit 0 as a no-op (stale dist-info, import still
     # broken) — recheck before re-exec'ing forever into the same state.
     still_missing = find_missing_runtime_deps()
-    if still_missing:
+    still_drift = find_editable_step_metadata_drift()
+    if still_missing or still_drift:
+        remaining = list(still_drift)
+        if still_missing:
+            remaining.insert(0, f"missing runtime deps {still_missing}")
         sys.stderr.write(
-            f"ai-hats: uv reported success but {still_missing} is still not "
-            f"importable (stale or orphaned install metadata?).\n"
+            f"ai-hats: uv reported success but {'; '.join(remaining)} remains "
+            "(stale or orphaned install metadata?).\n"
             f"  manual command: {_rescue_command(still_missing)}\n"
         )
         sys.exit(1)
@@ -300,16 +342,16 @@ def _is_first_party(ep: importlib.metadata.EntryPoint) -> bool:
     return _normalise(name) == "ai-hats"
 
 
-def _first_party_provider_failures() -> list[str]:
-    """Load every ai-hats-owned ``ai_hats.providers`` entry point; report failures.
+def _first_party_entry_point_failures(group: str) -> list[str]:
+    """Load every ai-hats-owned entry point in ``group``; report failures.
 
     Out-of-tree provider plugins are skipped on purpose: a third-party plugin
-    must not fail the install verify, matching the runtime policy in providers.
+    must not fail the install verify, matching the runtime plugin policy.
     """
     try:
-        eps = list(importlib.metadata.entry_points(group="ai_hats.providers"))
+        eps = list(importlib.metadata.entry_points(group=group))
     except Exception as exc:  # noqa: BLE001 - verify must report, never crash
-        return [f"entry_points(ai_hats.providers): {exc.__class__.__name__}: {exc}"]
+        return [f"entry_points({group}): {exc.__class__.__name__}: {exc}"]
 
     failures: list[str] = []
     for ep in eps:
@@ -321,7 +363,7 @@ def _first_party_provider_failures() -> list[str]:
             ep.load()
         except Exception as exc:  # noqa: BLE001 - collect, don't abort the sweep
             failures.append(
-                f"entry point {ep.name!r} ({ep.value}): {exc.__class__.__name__}: {exc}"
+                f"{group} entry point {ep.name!r} ({ep.value}): {exc.__class__.__name__}: {exc}"
             )
     return failures
 
@@ -409,7 +451,7 @@ def find_integrity_failures() -> list[str]:
             importlib.import_module(mod)
         except Exception as exc:  # noqa: BLE001 - report the reason, don't raise
             failures.append(f"import {mod}: {exc.__class__.__name__}: {exc}")
-    failures.extend(_first_party_provider_failures())
+    failures.extend(_first_party_entry_point_failures("ai_hats.providers"))
     failures.extend(_check_pycache_coherence())
     return failures
 
@@ -438,6 +480,7 @@ def verify_after_install() -> int:
             return 1
 
     failures = find_integrity_failures()
+    failures.extend(_first_party_entry_point_failures(_STEP_ENTRY_POINT_GROUP))
     if failures:
         sys.stderr.write("ai-hats: post-install verify found a broken install:\n")
         for line in failures:
