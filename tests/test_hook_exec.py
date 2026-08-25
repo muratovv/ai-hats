@@ -677,3 +677,128 @@ def test_the_childs_own_words_are_carried_apart_from_the_named_outcome(tmp_path)
     )
 
     assert run.said == "drain the review notes first"
+
+
+def test_argv_reaches_the_script(tmp_path):
+    """HATS-1828: git hands its hooks arguments, so the primitive must pass them.
+
+    Without this the git channel could not move onto ``run_hook`` at all — its
+    own spawn was ``[script, *argv]`` and the primitive's was ``[script]``.
+    """
+    script = _script(tmp_path / "argv.sh", 'printf "%s|" "$@"\n')
+
+    run = run_hook(
+        script,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+        argv=["origin", "git@example.com:x/y.git"],
+    )
+
+    assert run.verdict is HookVerdict.PASS
+    assert run.said == "origin|git@example.com:x/y.git|"
+
+
+def test_a_finite_payload_reaches_stdin_and_then_ends(tmp_path):
+    """HATS-1828 / ADR-0020 D2 as amended: a buffer, then EOF.
+
+    ``cat`` returning at all is the half that matters — the amendment turns on
+    the child never being able to wait on fd 0 forever.
+    """
+    script = _script(tmp_path / "stdin.sh", "cat\n")
+
+    run = run_hook(
+        script,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+        stdin_payload=b"refs/heads/x aaa refs/heads/x bbb\n",
+    )
+
+    assert run.verdict is HookVerdict.PASS
+    assert run.said == "refs/heads/x aaa refs/heads/x bbb"
+
+
+def test_without_a_payload_stdin_is_still_devnull(tmp_path):
+    """The default D2 keeps: no payload means an immediately-empty fd 0, never
+    an inherited terminal a hook could block the whole transition on."""
+    script = _script(tmp_path / "drain.sh", 'echo "read:[$(cat)]"\n')
+
+    run = run_hook(
+        script,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+    )
+
+    assert run.verdict is HookVerdict.PASS
+    assert run.said == "read:[]"
+
+
+def test_tee_shows_the_human_the_output_and_still_owns_the_verdict(tmp_path, capsys):
+    """HATS-1828: a git gate prints to the terminal a human is watching.
+
+    Capturing alone would have gone silent until the gate finished, so tee copies
+    to both. The verdict is still read from the sink — that is what keeps the two
+    spawn paths one contract instead of two.
+    """
+    script = _script(
+        tmp_path / "loud.sh",
+        'echo "checking 42 files"\necho "boom" >&2\nexit 2\n',
+    )
+
+    run = run_hook(
+        script,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+        tee=True,
+    )
+
+    seen = capsys.readouterr()
+    assert "checking 42 files" in seen.out
+    assert "boom" in seen.err
+    assert run.verdict is HookVerdict.REFUSE
+    assert run.said == "checking 42 files"
+    assert run.stderr == "boom"
+
+
+def test_tee_carries_argv_and_stdin_together(tmp_path, capsys):
+    """The git channel needs all three at once; each was proven alone above."""
+    script = _script(tmp_path / "all.sh", 'echo "argv=$1"\ncat\n')
+
+    run = run_hook(
+        script,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+        argv=["pre-push"],
+        stdin_payload=b"protocol-line\n",
+        tee=True,
+    )
+
+    capsys.readouterr()
+    assert run.verdict is HookVerdict.PASS
+    assert run.said == "argv=pre-push\nprotocol-line"
+
+
+def test_a_teed_hook_that_hangs_is_still_killed_on_budget(tmp_path, capsys):
+    """The tee path runs its own select loop, so it owns its own deadline.
+
+    This is the property the whole git slice rests on: today `githooks_run` spawns
+    with no timeout at all, and a hung gate never returns.
+    """
+    script = _script(tmp_path / "hang.sh", 'echo "started"\nsleep 30\n')
+
+    run = run_hook(
+        script,
+        budget=0.5,
+        deadline=Deadline.without_lock(0.5, why="unit test"),
+        project_dir=tmp_path,
+        tee=True,
+    )
+
+    capsys.readouterr()
+    assert run.verdict is HookVerdict.BROKE
+    assert run.kind is HookOutcomeKind.TIMED_OUT
+    assert "timed out" in run.reason
