@@ -469,7 +469,7 @@ def _stages_run(repo: Path) -> list[str]:
 
 @pytest.mark.integration
 def test_run_mode_lint_failure_blocks_before_the_e2e_tier(tmp_path: Path):
-    """A red lint stage aborts the gate without starting the 25-minute suite.
+    """A red lint stage aborts the gate without starting the e2e tier.
 
     This is the case that reached master on 2026-07-29: 66 ruff errors passed
     the gate untouched because it ran only e2e+smoke.
@@ -887,7 +887,7 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
     # HATS-1337: the wrapper resolves the gate out of the ai-hats library rather
     # than a retired `.githooks/pre-push.d/` copy. Stub the interpreter it asks,
     # so this pins the delegation contract without touching the real library —
-    # and without any chance of launching the real 30-minute suite.
+    # and without any chance of launching the real suite.
     libroot = tmp_path / "lib"
     recorder = libroot / "usage/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
     recorder.parent.mkdir(parents=True)
