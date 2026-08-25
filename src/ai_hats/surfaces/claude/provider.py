@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
-from .. import Provider, ProviderRunResult, SubagentEngine
+from .. import Provider, ProviderRunResult, SubagentEngine, sweep_stale_managed_tags
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
 from .sdk_options import (
     assemble_first_user_message,
@@ -498,50 +498,9 @@ class ClaudeProvider(Provider):
         event_list.append(want)
         return True
 
-    @staticmethod
-    def _sweep_stale_managed_tags(
-        hooks_root: dict,
-        desired_tags: set[str],
-        *,
-        tag_key: str = "_ai_hats_managed",
-        tag_prefix: str = "ai-hats:",
-    ) -> set[str]:
-        """Drop ai-hats-managed entries no longer in ``desired_tags`` from every
-        event list and return the removed tags (HATS-833). Preserves
-        user-authored entries and still-desired managed ones; cascade-drops an
-        event key whose list becomes empty.
-
-        HATS-1336: the tag's key and prefix are parameters because the generic
-        sweeper reuses this removal for agy's pre-1166 root remnant, which
-        spells the same ai-hats: tag under ``tag``. Defaults are claude's.
-        """
-        removed: set[str] = set()
-        for event in list(hooks_root.keys()):
-            event_list = hooks_root[event]
-            if not isinstance(event_list, list):
-                continue
-            kept: list = []
-            for entry in event_list:
-                if (
-                    isinstance(entry, dict)
-                    and isinstance(entry.get(tag_key), str)
-                    and entry[tag_key].startswith(tag_prefix)
-                    and entry[tag_key] not in desired_tags
-                ):
-                    removed.add(entry[tag_key])
-                else:
-                    kept.append(entry)
-            if len(kept) != len(event_list):
-                if kept:
-                    hooks_root[event] = kept
-                else:
-                    del hooks_root[event]
-        return removed
-
-    @staticmethod
     def _sweep_stale_managed(hooks_root: dict, desired_tags: set[str]) -> bool:
-        """Bool back-compat wrapper over :meth:`_sweep_stale_managed_tags`."""
-        return bool(ClaudeProvider._sweep_stale_managed_tags(hooks_root, desired_tags))
+        """Bool wrapper over the area's :func:`sweep_stale_managed_tags`."""
+        return bool(sweep_stale_managed_tags(hooks_root, desired_tags))
 
     def leaked_user_global_project_hooks(self, home: "Path") -> list[str]:
         """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.

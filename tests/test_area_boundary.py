@@ -79,9 +79,7 @@ AREA = "ai_hats.pipeline"
 # comment-length: allow — a small pin that will grow has to say so, or it reads as done
 # The second area (HATS-1826). Four of its five implementations still ship as separate
 # distributions under packages/surfaces/, so today this name covers `claude` alone: the
-# pin below GROWS as each surface moves in, and is driven back down from there. There is
-# also no facade yet — `src/ai_hats/surfaces/__init__.py` does not exist — so every entry
-# here is deep by definition, and 2 is a starting line, not a near-clean tree.
+# pin below GROWS as each surface moves in, and is driven back down from there.
 SURFACES = "ai_hats.surfaces"
 
 # From the test's own location, not via ``builtin_library_root()``: that resolver honours
@@ -104,20 +102,21 @@ PINNED_DEEP_ENTRIES: tuple[str, ...] = (
     "ai_hats.cli.assembly -> ai_hats.pipeline.steps.materialize",
 )
 
-# comment-length: allow — the two entries and the zero next to them are the whole slice
-# Every import naming a part of the surfaces area instead of the area itself. Both are
-# the same shape: a caller that wants ONE implementation by name rather than the
-# `Provider` contract every implementation answers. Measured at HATS-1826 S1; the entries
-# a fold ADDS are the slice's work list.
+# comment-length: allow — the one entry and the zero next to it are the whole slice
+# Every import naming a part of the surfaces area instead of the area itself — a caller
+# that wants ONE implementation by name rather than the `Provider` contract all of them
+# answer. Two at HATS-1826 S1; `sweeper` took the shared removal off `ClaudeProvider` and
+# now calls `sweep_stale_managed_tags` through the facade. The one left is
+# `_register_builtins`, which imports claude to register it AHEAD of its own declared
+# entry point — the same registration-by-import shape the pilot cut (HATS-1783).
 #
-# Zero is the number to keep in view here: `src/ai_hats/**` imports `ai_hats_agy`,
+# Zero is the number to keep in view beside it: `src/ai_hats/**` imports `ai_hats_agy`,
 # `ai_hats_cline`, `ai_hats_codex` and `ai_hats_opencode` exactly **0** times — the
 # shipped integrator never reaches into a surface package, it resolves them through the
 # `ai_hats.providers` entry-point group. So folding them in rewrites no shipped import;
 # the import churn lives in tests/, and this pin is what keeps it from moving to src/.
 PINNED_SURFACES_DEEP_ENTRIES: tuple[str, ...] = (
     "ai_hats.providers -> ai_hats.surfaces.claude.provider",
-    "ai_hats.sweeper -> ai_hats.surfaces.claude.provider",
 )
 
 # Every pipeline assembled in code instead of loaded from its YAML. Each is a second
