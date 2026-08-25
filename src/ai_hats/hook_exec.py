@@ -127,6 +127,7 @@ def run_hook(
     argv: Sequence[str] = (),
     stdin_payload: bytes | None = None,
     tee: bool = False,
+    drop_env: Sequence[str] = (),
 ) -> HookRun:
     """Run ``script`` under the D2 contract and return its outcome.
 
@@ -152,6 +153,10 @@ def run_hook(
     * ``tee`` — also copy the child's streams to this process's own, for a
       channel whose output belongs to a human watching it live. The reason is
       still read from the sink, so the verdict is unaffected either way.
+    * ``drop_env`` — names the channel removes from the inherited environment.
+      ``extra_env`` can only add, and git must be able to strip the venv and
+      identity keys travelling with a foreign session pin (ADR-0025 D3) before
+      any gate, drop-in or chained hook sees them.
     """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
         return _corrupt(
@@ -196,6 +201,8 @@ def run_hook(
     returncode: int | None = None
     cmd = [str(script), *argv]
     env = _hook_env(point, project_dir, force, task_id, worktree_path, tasks_dir, extra_env)
+    for name in drop_env:
+        env.pop(name, None)
     try:
         try:
             if tee:

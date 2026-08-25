@@ -11,13 +11,15 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 
 from ai_hats_core import scrubbed_git_env
+from ai_hats_core.deadline import Deadline
 
 from .env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
-from .session_identity import drop_identity
+from .hook_exec import HookOutcomeKind, HookRun, run_hook
+from .session_identity import IDENTITY_ENV_KEYS, drop_identity
 
 #: Git events that deliver a protocol on stdin every hook must see.
 STDIN_PROTOCOL_EVENTS = frozenset(
@@ -32,6 +34,79 @@ STDIN_PROTOCOL_EVENTS = frozenset(
 )
 
 PREVIOUS_HOOKS_PATH_KEY = "ai-hats.previousHooksPath"
+
+#: Fully-qualified point names this channel mints, e.g. ``git:pre-commit``.
+GIT_POINT_PREFIX = "git:"
+
+#: Generous on purpose: a `pre-commit` that runs a test suite is not a hang, and
+#: the bound exists for the caller who cannot press Ctrl-C — CI, cron, an agent
+#: session. Overridable per project.
+GIT_HOOK_TIMEOUT_S: float = 900.0
+GIT_HOOK_TIMEOUT_ENV = "AI_HATS_GIT_HOOK_TIMEOUT_S"
+
+#: Opens a materialization refusal. Named to match the established flag shape
+#: (`ACK_FLAG_RE` in tests/e2e/_helpers/hook_chain.py) so the deny-names-its-hatch
+#: invariant recognises it.
+GATE_BROKEN_ACK_ENV = "AI_HATS_GIT_GATE_BROKEN_ACK"
+
+#: What a refusal with no exit status of its own returns to git.
+GATE_BROKEN_EXIT = 1
+
+#: Outcomes meaning "ai-hats could not DELIVER a runnable gate" (ADR-0020 D2
+#: `CORRUPT`, plus a budget that expired before the script started). The gate
+#: never formed a verdict, so there is no author's decision to defer to — which
+#: is exactly what separates these from a gate that ran and exited non-zero.
+_MATERIALIZATION_KINDS = frozenset(
+    {
+        HookOutcomeKind.SCRIPT_MISSING,
+        HookOutcomeKind.NOT_EXECUTABLE,
+        HookOutcomeKind.COMMAND_NOT_FOUND,
+        HookOutcomeKind.EXEC_FAILED,
+        HookOutcomeKind.LOG_UNUSABLE,
+        HookOutcomeKind.NO_TIME_LEFT,
+    }
+)
+
+
+def resolve_git_hook_timeout() -> float:
+    """The effective per-script budget. A typo must not disable the bound, so a
+    non-numeric or non-positive override falls back to the default."""
+    raw = os.environ.get(GIT_HOOK_TIMEOUT_ENV)
+    if not raw:
+        return GIT_HOOK_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        return GIT_HOOK_TIMEOUT_S
+    return value if value > 0 else GIT_HOOK_TIMEOUT_S
+
+
+def _log_dir(project_dir: Path) -> Path | None:
+    """Where a gate's full output is kept, beside the bypass journal.
+
+    ``None`` when git will not say where its common dir is: the run then still
+    tees to the terminal and still carries a reason, so the loss is the
+    postmortem file alone — never the verdict.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+            env=scrubbed_git_env(),
+        )
+    except OSError as exc:
+        print(f"ai-hats: no hook log dir ({exc}) — output stays on screen only", file=sys.stderr)
+        return None
+    if proc.returncode != 0:
+        print("ai-hats: no hook log dir — output stays on screen only", file=sys.stderr)
+        return None
+    common = Path(proc.stdout.strip())
+    if not common.is_absolute():
+        common = project_dir / common
+    return common / "ai-hats" / "hook-logs"
 
 
 def _dropins(githooks_dir: Path, event: str) -> list[Path]:
@@ -138,6 +213,22 @@ def record_fail_open(
         )
 
 
+def foreign_pin_drops(env: Mapping[str, str], project_dir: Path) -> list[str]:
+    """Names that must not reach a child because they travel with a foreign pin.
+
+    The decision of :func:`_drop_foreign_pin` without the mutation: `run_chain`
+    hands the primitive a list of removals rather than a cleaned copy, and the
+    two must never diverge on what "foreign" means.
+    """
+    pin = env.get(AI_HATS_PROJECT_DIR_ENV)
+    if not pin or Path(pin).expanduser().resolve() == project_dir.resolve():
+        return []
+    return [
+        *(name for name in (ENV_AI_HATS_VENV, ENV_AI_HATS_DIR) if name in env),
+        *(name for name in IDENTITY_ENV_KEYS if name in env),
+    ]
+
+
 def _drop_foreign_pin(env: MutableMapping[str, str], project_dir: Path) -> None:
     """Strip a session pin naming another project before the children see it.
 
@@ -177,6 +268,12 @@ def run_chain(
     """Run gates, then the project's drop-ins, then its pre-takeover hook.
 
     Returns the first non-zero exit — git's contract for a refusing hook.
+
+    Every script goes through ``hook_exec.run_hook`` (ADR-0020 D2), so each is
+    bounded, logged and classified. What the class buys is the split this channel
+    could not make before: a gate that RAN and failed is the script author's
+    business and propagates untouched, while a gate that could not be DELIVERED
+    is ai-hats' own failure and refuses, naming the flag that opens it.
     """
     scripts = [*gates, *_dropins(githooks_dir, event)]
     chained = _previous_hook(project_dir, githooks_dir, event)
@@ -185,41 +282,80 @@ def run_chain(
     if not scripts:
         return 0
 
-    env = dict(os.environ)
-    _drop_foreign_pin(env, project_dir)
     # A gate's own $0 is its library path, so it cannot recover the event from it.
-    env["AI_HATS_HOOK_EVENT"] = event
+    extra = {"AI_HATS_HOOK_EVENT": event}
     if journal is not None:
         # The gates' relative fallback is only correct inside the builtin
         # library; the resolved path is what makes it work everywhere.
-        env["AI_HATS_BYPASS_JOURNAL"] = str(journal)
+        extra["AI_HATS_BYPASS_JOURNAL"] = str(journal)
+    drops = foreign_pin_drops(os.environ, project_dir)
 
     # Read the ref protocol ONCE and replay it into each script — one shared
     # stdin would let the first consumer drain it (HATS-654). Never read on a
     # stdin-less event: an open pipe on fd 0 would block forever.
     replay = event in STDIN_PROTOCOL_EVENTS
     payload = sys.stdin.buffer.read() if replay else None
+    budget = resolve_git_hook_timeout()
+    logs = _log_dir(project_dir)
 
     for script in scripts:
-        try:
-            proc = subprocess.run([str(script), *argv], env=env, input=payload, check=False)
-        except OSError as exc:
-            # Drop-ins and the chained hook never pass through resolve_git_gates,
-            # and a mode can change between its check and this execve — so the
-            # exec itself must degrade too, never raise at a human's commit.
+        run = run_hook(
+            script,
+            point=f"{GIT_POINT_PREFIX}{event}",
+            budget=budget,
+            # No lock governs a git hook, and each script gets its own budget:
+            # one ceiling over the chain would feed the last gates the leftovers.
+            deadline=Deadline.without_lock(budget, why=f"git {event}"),
+            project_dir=project_dir,
+            argv=argv,
+            stdin_payload=payload,
+            # The human ran `git commit` and is watching; capture alone would go
+            # silent until the gate finished (HATS-1828).
+            tee=True,
+            extra_env=extra,
+            drop_env=drops,
+            log_path=None if logs is None else logs / f"{event}-{script.name}.log",
+        )
+        if run.ok:
+            continue
+        skipped = _skip_reason(run, script)
+        if skipped is not None:
             record_fail_open(
-                journal,
-                reason=f"cannot execute '{script.name}': {exc}",
-                event=event,
-                hook=script.name,
-                project_dir=project_dir,
+                journal, reason=skipped, event=event, hook=script.name, project_dir=project_dir
             )
             continue
-        if proc.returncode != 0:
-            label = "chained project hook" if script == chained else "hook"
-            print(
-                f"ai-hats: {label} '{script.name}' failed (exit {proc.returncode})",
-                file=sys.stderr,
-            )
-            return proc.returncode
+        label = "chained project hook" if script == chained else "hook"
+        print(f"ai-hats: {label} '{script.name}' failed — {run.reason}", file=sys.stderr)
+        hatch = _hatch_line(run)
+        if hatch:
+            print(f"ai-hats: {hatch}", file=sys.stderr)
+        return run.exit_code if run.exit_code else GATE_BROKEN_EXIT
     return 0
+
+
+def _hatch_line(run: HookRun) -> str:
+    """The way out this refusal leaves open, or "" when the gate simply refused.
+
+    A gate's own verdict needs no hatch — arguing with it is between the author
+    and whoever it stopped. Everything ai-hats itself imposed owes the human a
+    named exit, or it just manufactures `--no-verify` (ADR-0020 D3, HATS-1828).
+    """
+    if run.kind is HookOutcomeKind.TIMED_OUT:
+        return f"the gate hit its budget — raise {GIT_HOOK_TIMEOUT_ENV} if it needs longer"
+    if run.kind in _MATERIALIZATION_KINDS:
+        return f"this gate could not run — set {GATE_BROKEN_ACK_ENV}=1 to commit past it"
+    return ""
+
+
+def _skip_reason(run: HookRun, script: Path) -> str | None:
+    """Why this outcome is skipped rather than refused, or ``None`` to refuse.
+
+    The hatch is read HERE and not at the top, so the deny below always states a
+    name that actually works — the deny-names-its-hatch invariant is worth
+    nothing if the flag it names is inert (HATS-1253 P4).
+    """
+    if run.kind not in _MATERIALIZATION_KINDS:
+        return None
+    if os.environ.get(GATE_BROKEN_ACK_ENV):
+        return f"{GATE_BROKEN_ACK_ENV} set — '{script.name}' SKIPPED: {run.reason}"
+    return None
