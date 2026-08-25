@@ -44,6 +44,11 @@ from ._bootstrap import _normalise, expected_runtime_deps
 #: expose, and the retired set is finite and known (HATS-1280 ruling).
 RETIRED_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
     "ai-hats-tracker": ("ai-hats-tracker",),
+    # HATS-1826 folded the surface distributions into `ai-hats`. Only the two
+    # that reached PyPI are listed: `ai-hats-codex` and `ai-hats-opencode` never
+    # published (the index answers 404), so no venv can be carrying them.
+    "ai-hats-agy": ("ai-hats-hook-dispatcher",),
+    "ai-hats-cline": (),
 }
 
 #: Set by ``tests/conftest.py``. Without it a unit run that reaches this module

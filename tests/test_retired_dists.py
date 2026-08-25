@@ -138,8 +138,15 @@ def _declares(monkeypatch: pytest.MonkeyPatch, *dists: str) -> None:
     )
 
 
-def _installed(monkeypatch: pytest.MonkeyPatch, value: bool) -> None:
-    monkeypatch.setattr(retired_dists, "_is_installed", lambda name: value)
+def _installed(monkeypatch: pytest.MonkeyPatch, value: bool, *names: str) -> None:
+    """Answer ``value`` for ``names`` only — by default the one name this suite drives.
+
+    Scoped rather than blanket: the retired set holds more than one entry
+    (HATS-1826 added the folded surface dists), and a blanket "everything is
+    installed" would add uninstalls no assertion here is about.
+    """
+    targets = set(names) or {RETIRED_NAME}
+    monkeypatch.setattr(retired_dists, "_is_installed", lambda name: value and name in targets)
 
 
 def _must_not_raise(label: str, fn, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN202
@@ -183,6 +190,20 @@ def test_retired_set_pins_the_name_this_suite_drives():
     """Every assertion below names ``ai-hats-tracker``; fail loudly if it moved."""
     assert RETIRED_NAME in retired_dists.RETIRED_DISTRIBUTIONS
     assert RETIRED_SCRIPT in retired_dists.RETIRED_DISTRIBUTIONS[RETIRED_NAME]
+
+
+def test_the_folded_surface_dists_are_retired():
+    """HATS-1826 folded the surfaces into ai-hats; an upgrade must drop the leftovers.
+
+    ``ai-hats-agy`` shipped the ``ai-hats-hook-dispatcher`` console script, so the
+    legacy venv needs that name stripped too; ``ai-hats-cline`` shipped none.
+    ``ai-hats-codex`` and ``ai-hats-opencode`` never published (the index answers
+    404), so no venv can be carrying them and listing them would be noise.
+    """
+    assert retired_dists.RETIRED_DISTRIBUTIONS["ai-hats-agy"] == ("ai-hats-hook-dispatcher",)
+    assert retired_dists.RETIRED_DISTRIBUTIONS["ai-hats-cline"] == ()
+    assert "ai-hats-codex" not in retired_dists.RETIRED_DISTRIBUTIONS
+    assert "ai-hats-opencode" not in retired_dists.RETIRED_DISTRIBUTIONS
 
 
 # ---------- T1: kill switch ----------
