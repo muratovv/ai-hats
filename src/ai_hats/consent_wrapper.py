@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from ai_hats_library.hooks.consent_gate import Operation, Outcome, Verdict
+from ai_hats_library.hooks.consent_gate import Operation, Outcome, Verdict, operations
 from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
 
 
@@ -180,33 +180,23 @@ def match_operation(
     *,
     source_state: str | None = None,
 ) -> MatchedOperation | None:
-    if surface == "rack" and "rack.transition" in policy:
-        transition = _transition_target(argv)
-        if transition is None:
-            return None
-        task_id, target = transition
-        if not any(
-            _selector_matches(selector, source_state, target)
-            for selector in policy["rack.transition"]
-        ):
-            return None
-        flags = (_GLOBAL_ACK, "AI_HATS_PLAN_ACK") if target == "execute" else (_GLOBAL_ACK,)
+    """The declared operation ``argv`` invokes on ``surface``, or ``None``.
+
+    The verb is read by the registry, never here: this half and the PreToolUse
+    gate had drifted into two grammars, and three shapes already disagreed
+    (HATS-1816). A branch that parsed argv locally would restore the drift.
+    """
+    for operation, selectors in policy.items():
+        spec = operations.spec_for(operation)
+        if spec is None:
+            continue
+        reading = operations.read(operation, surface, argv)
+        if reading is None or not spec.admits(selectors, source_state, reading):
+            continue
         return MatchedOperation(
-            operation=Operation("rack.transition", subject=task_id, label=f"{task_id}: → {target}"),
-            ticket_subject=task_id,
-            legacy_flags=flags,
-        )
-    if (
-        surface == "ai-hats"
-        and "wt.merge" in policy
-        and "pre-merge" in policy["wt.merge"]
-        and tuple(argv[:2]) == ("wt", "merge")
-    ):
-        branch = argv[2] if len(argv) > 2 and not argv[2].startswith("-") else "this worktree"
-        return MatchedOperation(
-            operation=Operation("wt.merge", subject=branch, label=f"merge {branch}"),
-            ticket_subject=None,
-            legacy_flags=(_GLOBAL_ACK, "AI_HATS_MERGE_ACK"),
+            operation=Operation(operation, subject=reading.subject, label=reading.label),
+            ticket_subject=reading.subject if spec.binds_ticket else None,
+            legacy_flags=spec.legacy_flags(reading),
         )
     return None
 
