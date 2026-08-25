@@ -141,6 +141,14 @@ ci_adr_integrity() {
     "$PY" scripts/check_adr_integrity.py
 }
 
+# Offline and instant, like the four above. HATS-1825: `adr-integrity` proved a
+# gate on prose is buildable and was aimed at one rigid citation form; this is the
+# same gate aimed at the library's own references, where 21 had already rotted.
+ci_prose_refs() {
+    echo "[ci-local] prose-refs (paths, library prefixes, sections and symbols in library prose)" >&2
+    "$PY" scripts/check_prose_refs.py
+}
+
 # The full maintainer tier (the slow one). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
@@ -173,11 +181,11 @@ ci_e2e() {
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
-    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation"
+    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs"
     case "$1" in
         merge-gate) echo "$tier unit integration" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog adr-integrity e2e" ;;
+        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs e2e" ;;
         *) return 1 ;;
     esac
 }
