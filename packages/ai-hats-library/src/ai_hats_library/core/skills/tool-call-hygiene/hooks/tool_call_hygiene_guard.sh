@@ -97,7 +97,7 @@ if [[ "$cmd" =~ $runner_rx ]]; then
             masked=1
         fi
         if [[ -n "$masked" ]]; then
-            msg="exit code masking detected in test runner command — dev_rule_exit_code_provenance: a compound command's status is the LAST command's, so the runner's is lost. Use set -o pipefail (correct in bash and zsh), or redirect and read the log in a separate call. \${PIPESTATUS[0]} is bash-only: in zsh it is unset, so exiting on it returns 0 for every run — the zsh name is \${pipestatus[1]}."
+            msg="exit code masking detected in test runner command — a compound command's status is the LAST command's, so the runner's is lost. Use set -o pipefail (correct in bash and zsh), or redirect and read the log in a separate call. \${PIPESTATUS[0]} is bash-only: in zsh it is unset, so exiting on it returns 0 for every run — the zsh name is \${pipestatus[1]}."
             printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
             exit 0
         fi

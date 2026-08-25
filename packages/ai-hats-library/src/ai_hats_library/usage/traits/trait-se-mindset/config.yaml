@@ -4,7 +4,6 @@ composition:
   rules:
     - dev_rule_secure_coding
     - dev_rule_comment_discipline
-    - dev_rule_exit_code_provenance
   skills:
     - systematic-debugging
     - audit-reviewer
@@ -31,7 +30,7 @@ injection: |
   - **Vertical slicing only.** Write ONE test, get it to GREEN, then the next test. Do NOT write all tests first then all implementation — bulk-written tests verify shape, not behavior, and are insensitive to real changes. Never refactor while RED.
 
   ### Reading a test run
-  The exit code you act on must be the **runner's** — not a filter's, a trailing command's, or a wrapper script's. Report the number, never an adjective. See rule `dev_rule_exit_code_provenance`.
+  The exit code you act on must be the **runner's** — not a filter's, a trailing command's, or a wrapper script's, each of which reports whatever ran last. Report the number, never an adjective, and only from an artefact this run produced.
 
   ### Debugging
   Evidence-first; isolate bugs with a failing test before fixing — full protocol in skill **systematic-debugging**.
