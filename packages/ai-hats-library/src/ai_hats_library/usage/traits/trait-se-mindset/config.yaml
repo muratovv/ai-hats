@@ -6,7 +6,7 @@ composition:
     - dev_rule_comment_discipline
   skills:
     - systematic-debugging
-    - audit-reviewer
+    - interface-design
     - predictive-accounting
 injection: |
   ## SE MINDSET

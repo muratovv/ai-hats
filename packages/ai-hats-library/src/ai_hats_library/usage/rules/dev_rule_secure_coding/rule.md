@@ -4,6 +4,7 @@
 
 ### 1. Layered Security (Defense in Depth)
 - **Validation**: Never trust user input. Validate all data at the entry point using schemas or strict types.
+- **Parsed is not validated**: schema validation proves *shape*, not *meaning*. Where the input is model output, check immediately after the parse that identifiers came from the input, that selections are a subset of the candidates offered, and that references resolve. Raise on failure; never warn-and-continue.
 - **Parametrization**: NEVER use raw string concatenation for SQL queries, shell commands, or HTML rendering. Always use parameterized queries or safe libraries.
 - **Least Privilege**: Grant only the minimum permissions required for a task or service.
 

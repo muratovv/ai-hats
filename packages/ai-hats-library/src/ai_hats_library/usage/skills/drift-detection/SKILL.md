@@ -13,7 +13,7 @@ Verify that what was implemented matches what was asked. Surfaces silent scope c
 Compares **what was asked vs what was built** — the implementation diff against
 the task's acceptance criteria and ADRs — to catch silent scope creep at
 `review`, on long-lived worktrees, or after a sub-agent reports done. Distinct
-from **audit-reviewer**, which judges the quality of the code *as written*;
+from **domain-reviewer**, which judges the quality of the code *as written*;
 drift-detection asks whether it's the *right scope at all*. (This is task-vs-impl
 drift, not IaC config drift.)
 

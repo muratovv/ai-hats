@@ -9,10 +9,9 @@ Coordinate deep-dive reviews of specific system domains or modules by engaging s
 
 ## When to Use
 Reach here when *one* module or domain needs several specialist lenses at depth
-(security + performance + correctness), coordinated via sub-agent critics. For a
-*general* triple-lens pass over an ordinary change before merge, the lighter
-sibling is **audit-reviewer** — don't spin up domain-reviewer's sub-agents for a
-routine diff.
+(security + performance + correctness), coordinated via sub-agent critics. Don't spin up its sub-agents
+for a routine diff: a change that only reshapes a public contract is
+**interface-design**, and one that only widens scope is **drift-detection**.
 
 ## Workflow
 
