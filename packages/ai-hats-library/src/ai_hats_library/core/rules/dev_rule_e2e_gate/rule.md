@@ -44,19 +44,12 @@ A test passes the gate only if **all** of these hold:
 
 In-process `CliRunner` tests do **not** satisfy this rule, regardless of marker.
 
-## 3. Plan-stage requirement
+## 3. Plan and review
 
-When the trigger fires, the task plan must explicitly name the e2e test(s) it will add — file path and what it asserts. "Will add e2e coverage" is not sufficient.
-
-## 4. Review-stage check
-
-The reviewer verifies before approving `done`:
-
-- The named e2e test exists at the declared path.
-- `pytest -m integration tests/e2e/` passes locally.
-- The test would fail if the change under review were reverted (i.e. it actually exercises the new behaviour, not just lives alongside it).
-
-If any check fails, the card returns to `execute`.
+The plan names the test by path and by what it asserts — "will add e2e coverage"
+is not a name. The reviewer runs it, and checks the one thing a green run cannot
+show: that it fails when the change is reverted. If it does not, it lives beside
+the change rather than exercising it, and the card returns to `execute`.
 
 ## 5. Source
 

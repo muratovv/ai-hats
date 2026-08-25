@@ -19,6 +19,14 @@ A PreToolUse runtime-hook for Bash/terminal tools. It parses the command line
 (quote-aware) and matches **what the command targets**, not what it is named,
 because `global_rule_destructive_actions` protects paths.
 
+`PreToolUse` is the Claude surface's name for the point; each other surface
+package carries its own dispatcher or adapter for it. What is NOT uniform is
+the **dialect of the refusal**: a caller whose payload declares `PreToolUse`
+gets a decision object and the user is asked, while every other caller gets
+`exit 2` with the reason on stderr — a hard block, with no one to ask. So the
+same command can be a question on one surface and a refusal on another, and
+neither outcome is the guard failing.
+
 ## The three outcomes
 
 | Target                                                                                                                                                                                            | Outcome                                      |

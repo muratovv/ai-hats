@@ -8,12 +8,14 @@ does not matter; that it is checkable and unchecked does.
 
 ## The kinds — common spellings, not the boundary
 
-| Kind           | What you wrote                                         | How to unroll it                                                            |
-| -------------- | ------------------------------------------------------ | --------------------------------------------------------------------------- |
-| **Name**       | `` `judge-protocol` ``, `library/core/`, `--isolation` | grep the source / run `--help` — does it resolve *now*, in *this* checkout? |
-| **Glob**       | `judge-*-protocol`, `**/hooks/**`                      | expand it and read the match list — is the set the one you meant?           |
-| **Quantifier** | "verdicts auto-persist", "every role composes X"       | hunt the branch that breaks it; one counterexample kills it                 |
-| **Count**      | "3 skills", "~600 chars", "the only caller"            | count it, or drop the number                                                |
+| Kind           | What you wrote                                   | How to unroll it                                            |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| **Quantifier** | "verdicts auto-persist", "every role composes X" | hunt the branch that breaks it; one counterexample kills it |
+| **Count**      | "3 skills", "~600 chars", "the only caller"      | count it, or drop the number                                |
+
+A **name** and a **path** in library prose are held by the `prose-refs` CI
+stage — it refuses a reference that does not resolve, so they are not your
+job to re-check by hand. Outside the library corpus they still are.
 
 ## The foil to cut
 

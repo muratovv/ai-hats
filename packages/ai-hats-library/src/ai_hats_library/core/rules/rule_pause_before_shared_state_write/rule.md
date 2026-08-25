@@ -25,23 +25,15 @@ user, so the agent was taught a guardrail stronger than the one it has
 most. A chained call removes the user's chance to interrupt, and an
 irreversible step in the middle of a chain cannot be rolled back.
 
-The `pre_bash_shared_state_guard.sh` PreToolUse hook and the git pre-push
-hook are the **backstop** — not permission to skip the pause, and their
-absence in a given session is not a signal to skip it.
-Consent reaches the hook in exactly two ways, and **neither is available to the
-agent** — that is the point:
+The `pre_bash_shared_state_guard.sh` PreToolUse hook and the git pre-push hook
+are the **backstop** — not permission to skip the pause, and their absence in a
+session is not a signal to skip it. Consent arrives either from the user
+answering the hook's prompt, or from an ack already present in
+the environment that launched the agent — and every ack granted is journalled.
+The hook spells both out in its own refusal; what matters here is that neither
+is reachable by the agent. That is the point.
 
-1. The user answers the permission prompt the hook raises.
-2. `AI_HATS_SHARED_STATE_ACK=1` is present in the environment that launched the
-   agent — an export in the launching shell, or the `env` block of whatever
-   settings file your harness reads — pre-approving the whole session.
-
-Either way the ack is recorded: the hook appends the bypass to
-`.git/ai-hats/bypasses.jsonl`, and the next `git push` prints what rode along
-(HATS-1407). Consent is auditable after the fact, so there is no version of
-"nobody will know".
-
-Writing `AI_HATS_SHARED_STATE_ACK=1 <command>` as a prefix on the agent's own
+One trap the hook cannot warn you out of in advance. Writing `AI_HATS_SHARED_STATE_ACK=1 <command>` as a prefix on the agent's own
 command does **nothing**: the hook runs before that command exists as a process,
 so the assignment never reaches it. The hook used to instruct exactly that and
 then refuse it, costing turns on work the user had already approved
