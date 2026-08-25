@@ -1,6 +1,6 @@
 ---
 name: interface-design
-description: Shape a public contract — its fields, its types, its dependencies — for a reader who has none of your context. Use on any CRUD to a public contract (adding, changing or removing a field, a type, a method, an enum member), when a field is typed `object`, a bare `str` or a primitive standing in for a domain value, when a contract carries an identifier belonging to another subsystem, or when reviewing a diff that touches one.
+description: Shape a public contract so a reader with none of your context can use it. Use on any CRUD to a public interface — a field, method, type or enum member added, retyped, renamed or removed — and when reviewing a diff that touches one.
 license: MIT
 ---
 
@@ -12,22 +12,18 @@ one place that gap produced a defect in review.
 
 ## When to Use
 
-Any CRUD on a public contract — a field or method added, retyped, renamed or
-removed. Two neighbours:
-
-- **api-evolution-checklist** — whether a change breaks existing callers. That is
-  compatibility over time; this is the shape itself.
-- **design-minimalism** — whether the primitive should exist at all. Settle that
-  first; this skill assumes you decided it should.
+Any CRUD on a public contract. Two neighbours: **api-evolution-checklist** asks
+whether a change breaks existing callers (compatibility over time; this is the
+shape itself), and **design-minimalism** asks whether the primitive should exist
+at all — settle that first, this skill assumes you decided it should.
 
 ## The shapes
 
 ### Start from the minimal need, and do not let callers grow it
 
-Take the smallest surface the caller genuinely needs. If something can be
-expressed with what is already there, that is the path: a new method duplicating
-an existing capability is a second way to do one thing (below). Complex machinery
-stays hidden behind the small surface, not published beside it.
+Publish the smallest surface the caller needs; if what is already there expresses
+it, that is the path — a new method duplicating an existing capability is a second
+way to do one thing (below). Machinery stays behind the surface, not beside it.
 
 The same rule from the other end: **a mechanism does not name its callers.** The
 set of things it can run is its own; the set of *uses* is the application's.
@@ -54,15 +50,19 @@ reader to guess. The same move applies at three scales:
 ✅  Request(what_to_run: Materialized, where: Placement, how: HarnessParams)
 ```
 
-Thirteen fields in a row are thirteen because that is what the one call site had
-in scope. Ask, per field, **which reader consumes it**: the domain types fall out
-of the answer, and a field whose reader you cannot name stands revealed as a
-field nobody reads — the three such fields above belonged to one caller only, and
-moved off the shared contract entirely.
+Thirteen fields are thirteen because that is what the one call site had in scope.
+To find the grouping, work out **which reader consumes each field**: the domain
+types fall out of the answer, and a field whose reader you cannot name is a field
+nobody reads — the three such fields above belonged to one caller only.
 
-Before borrowing a word from surrounding code, follow it to its use: a field
-named for the ticket *system* while carrying a card id, typed `str` where it
-needs two values, is two defects wearing one plausible name.
+That question is a design move and stays one. Do **not** write its answer into the
+comment: consumers change, comments do not, and a contract naming its consumers
+has re-imported them. Comments say why a field exists when that is not obvious,
+and nothing about who calls it.
+
+Before borrowing a word from surrounding code, follow it to its use: a field named
+for the ticket *system* while carrying a card id, typed `str` where it needs two
+values, is two defects wearing one plausible name.
 
 ### A field's type comes from its writer
 
@@ -111,40 +111,51 @@ field list, and a field added without lifting its key is red.
 
 "Resolved once by the entry point and passed down" describes the process. "Every
 path that touches a step hangs off it, and it is resolved once so nothing below
-rediscovers it" says why the reader should care.
+rediscovers it" says why the reader should care. Where the type already says it,
+say nothing.
 
 Never illustrate with something the contract does not know: "None for `init` and
 `nightly-report`" re-imports the vocabulary the type was just cleared of.
 Describe the **condition** — "the run launched no session" — not the instances.
 
-## Before you commit the contract, ask
+## Verify before the contract lands
 
-1. Smallest surface the caller needs — or did I publish machinery?
-2. Does any name here belong to a caller rather than to this mechanism?
-3. Can I name the reader of every field, and does that reader exist?
-4. Every public value a type — or did a primitive stand in for a domain value?
-5. Did I read each field's **writer** before choosing its type?
-6. Exactly one way per action, and every undefined type declared once, in a
-   shared home, with a card?
-7. Checked against **all** call sites? "It will be typed when its consumer
-   arrives" is not an answer — the next author builds against this now.
+Each step names an action and what it proves. Do the action — a yes/no answered
+from memory is the failure this list exists to prevent.
+
+1. **Read every member name aloud against the mechanism's own vocabulary.** A
+   name only the application uses is a caller that leaked in; move it to the
+   application's catalog.
+2. **For each field, work out its reader and say what it consumes.** A reader you
+   cannot name means the field belongs to one caller, not to this contract.
+3. **Open each field's writer and read what it produces.** The type comes from
+   what is written, not from the consumer you pictured.
+4. **List every primitive on the surface and say what domain value it stands
+   for.** If it stands for one, it needs that type; a closed set needs an enum.
+5. **Grep the surface for `object` and for aliases of it.** Each undefined type
+   resolves to one declaration in a shared home, carrying the card that closes it.
+6. **Name every way to perform each action and count them.** More than one means
+   deleting the extra, not documenting which to prefer.
+7. **Open all call sites and wire the contract into them.** "It will be typed
+   when its consumer arrives" is not an answer: the next author builds against
+   what ships now.
 
 ## Completion
 
-The contract is judged on the **diff at real call sites**, not on a draft: wire
-it into its callers and read what it costs them. A draft shows the shape; only
-the diff shows the price. A full contract with every shape applied →
-`references/worked-example.md`.
+The contract is judged on the **diff at real call sites**, not on a draft: wire it
+into its callers and read what it costs them. A draft shows the shape, the diff
+shows the price. A full contract with every shape applied, data and interfaces
+both → `references/worked-example.md`.
 
 **Validation scenario (RED).** Twelve interface defects from four review rounds
-on one contract: an enum naming its callers, thirteen fields in a row, `object`
-re-aliased locally, a `str` mode, a foreign id, a typed field with a raw twin, a
-field typed for a reader who did not exist yet. An agent without this skill wrote
-all twelve and defended several. GREEN: each comes out in its ✅ form unprompted.
+on one contract — an enum naming its callers, thirteen fields in a row, `object`
+re-aliased locally, a `str` mode, a foreign id, a typed field with a raw twin. An
+agent without this skill wrote all twelve and defended several; GREEN is each one
+coming out in its ✅ form unprompted.
 
 ## Anti-Patterns
 
 - Naming the principle instead of showing the shape — reciting SOLID does not
   stop the thirteen-field bag.
 - Publishing a new method for a case an existing one already expresses.
-- Answering a review note by documenting the second way instead of deleting it.
+- Writing the consumer's name into a field's comment instead of why it exists.
