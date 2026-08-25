@@ -562,15 +562,15 @@ def test_the_hatch_turns_that_refusal_back_into_a_recorded_skip(
 
     And taking it stays loud — ADR-0020 D2 forbids passing a gate SILENTLY, so
     the skip is on record, in the sandbox this test owns (HATS-1686).
+
+    Breaks delivery for real — a declared gate whose file is gone — rather than
+    stubbing `compose_for_role`: this is the refusal a project actually hits when
+    a skill stops shipping a script, and the isolation ratchet counts every stub.
     """
     from ai_hats.cli.githooks_hook import main
 
     project = _gate_project(tmp_path)
-
-    def _boom(*_a, **_kw):
-        raise RuntimeError("composition refused: unknown point 'edge:typo'")
-
-    monkeypatch.setattr("ai_hats.materialize.compose_for_role", _boom)
+    (tmp_path / "lib" / "skills" / "hook_skill" / "git_hooks" / "check.sh").unlink()
     monkeypatch.setenv("AI_HATS_GIT_GATE_BROKEN_ACK", "1")
 
     rc = main(
@@ -581,7 +581,7 @@ def test_the_hatch_turns_that_refusal_back_into_a_recorded_skip(
     assert rc == 0, f"the named hatch must open: {err}"
     journal = project / ".git" / "ai-hats" / "bypasses.jsonl"
     assert journal.is_file(), f"the skip was not journalled: {err}"
-    assert "edge:typo" in journal.read_text(encoding="utf-8")
+    assert "does not exist" in journal.read_text(encoding="utf-8")
 
 
 # ----- HATS-1643: one unreadable identity, two reactions ----------------------
