@@ -802,3 +802,30 @@ def test_a_teed_hook_that_hangs_is_still_killed_on_budget(tmp_path, capsys):
     assert run.verdict is HookVerdict.BROKE
     assert run.kind is HookOutcomeKind.TIMED_OUT
     assert "timed out" in run.reason
+
+
+def test_the_child_runs_where_the_channel_says(tmp_path):
+    """HATS-1828: git dispatches from the MAIN checkout even for a commit made in
+    a linked worktree, so the channel — not the primitive — owns the cwd.
+
+    Caught as a live regression by the worktree e2e: with the cwd pinned to
+    ``project_dir``, a gate rooting itself with ``git rev-parse --show-toplevel``
+    inspected the main checkout and passed the wrong tree.
+    """
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    script = _script(tmp_path / "pwd.sh", "pwd\n")
+
+    default = run_hook(
+        script, budget=10, deadline=Deadline.without_lock(10, why="t"), project_dir=tmp_path
+    )
+    directed = run_hook(
+        script,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="t"),
+        project_dir=tmp_path,
+        cwd=elsewhere,
+    )
+
+    assert Path(default.said).resolve() == tmp_path.resolve(), "unset must stay project_dir"
+    assert Path(directed.said).resolve() == elsewhere.resolve()

@@ -307,6 +307,11 @@ def run_chain(
             # one ceiling over the chain would feed the last gates the leftovers.
             deadline=Deadline.without_lock(budget, why=f"git {event}"),
             project_dir=project_dir,
+            # Where git called us, NOT project_dir: `core.hooksPath` is absolute,
+            # so a commit inside a linked worktree still dispatches from the main
+            # checkout, and a gate that roots itself with `rev-parse` would then
+            # inspect the wrong tree and pass (pinned by the worktree e2e).
+            cwd=Path.cwd(),
             argv=argv,
             stdin_payload=payload,
             # The human ran `git commit` and is watching; capture alone would go

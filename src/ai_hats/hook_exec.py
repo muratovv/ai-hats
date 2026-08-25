@@ -128,6 +128,7 @@ def run_hook(
     stdin_payload: bytes | None = None,
     tee: bool = False,
     drop_env: Sequence[str] = (),
+    cwd: Path | None = None,
 ) -> HookRun:
     """Run ``script`` under the D2 contract and return its outcome.
 
@@ -141,9 +142,9 @@ def run_hook(
     bounded by; the run gets the smaller, so no channel compares its own
     constant against a lock (HATS-1593).
 
-    The last three widen the primitive to the git channel (HATS-1828), and each
-    defaults to what the other four channels already do, so their path is
-    unchanged:
+    The keyword arguments below widen the primitive to the git channel
+    (HATS-1828). Each defaults to what the other four channels already do, so
+    their path through this function is unchanged:
 
     * ``argv`` — arguments the channel's own protocol hands the script. git
       passes them; the declarative channels have none.
@@ -157,6 +158,11 @@ def run_hook(
       ``extra_env`` can only add, and git must be able to strip the venv and
       identity keys travelling with a foreign session pin (ADR-0025 D3) before
       any gate, drop-in or chained hook sees them.
+    * ``cwd`` — where the child runs; ``project_dir`` when unset. git is the one
+      channel where the two differ: a commit inside a linked worktree must have
+      its gates inspect THAT tree, and a gate rooting itself with
+      ``git rev-parse --show-toplevel`` from the main checkout would validate the
+      wrong one and pass — worse than failing (ADR-0019 D5/D7).
     """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
         return _corrupt(
@@ -200,6 +206,7 @@ def run_hook(
     expired: subprocess.TimeoutExpired | None = None
     returncode: int | None = None
     cmd = [str(script), *argv]
+    run_in = str(project_dir if cwd is None else cwd)
     env = _hook_env(point, project_dir, force, task_id, worktree_path, tasks_dir, extra_env)
     for name in drop_env:
         env.pop(name, None)
@@ -208,7 +215,7 @@ def run_hook(
             if tee:
                 returncode = _run_teed(
                     cmd,
-                    cwd=str(project_dir),
+                    cwd=run_in,
                     env=env,
                     payload=stdin_payload,
                     sinks=(sink, err_sink),
@@ -217,7 +224,7 @@ def run_hook(
             else:
                 completed = subprocess.run(  # noqa: S603 — spawning the caller's hook IS the contract; no shell
                     cmd,
-                    cwd=str(project_dir),
+                    cwd=run_in,
                     env=env,
                     # `input` and `stdin` are mutually exclusive in `run`, so the
                     # absent payload is what selects D2's default.
