@@ -64,10 +64,46 @@ cmd="$(extract_command)"
 # trim leading whitespace
 cmd="${cmd#"${cmd%%[![:space:]]*}"}"
 
+# A runner NAME inside a quoted argument is not a runner CALL (HATS-1819). Every
+# structural test below reads THIS, not the raw line, so recording "pytest ... 31
+# passed" in a work_log does not read as running pytest. Two passes, and the order
+# is the point:
+#   1. UNWRAP a `-c` body — `bash -c '<runner> | tail'` really does run the runner.
+#      This was never caught (the old regex needed the name space-bounded, and a
+#      quote is not a space), so it is new reach, not a repair.
+#   2. DELETE every remaining quoted span, which is argument text, not commands.
+# The alternation is left-to-right, so whichever quote opens first closes its span.
+# No sed (or an unparsable line) leaves this empty and every test below goes quiet —
+# the file's own bias, stated at the allowlist: a missed nudge is acceptable, a
+# spurious one is noise.
+if command -v sed >/dev/null 2>&1; then
+    cmd_bare="$(printf '%s' "$cmd" \
+        | sed -E "s/-c[[:space:]]+'([^']*)'/-c \1/g; s/-c[[:space:]]+\"([^\"]*)\"/-c \1/g" 2>/dev/null \
+        | sed -E "s/'[^']*'|\"[^\"]*\"//g" 2>/dev/null)"
+else
+    # Degrading to silence is right; degrading SILENTLY is not
+    # (dev_rule_silent_fallback) — without this line the exit-code checks just
+    # stop and no log ever says why.
+    ai_hats_journal_bypass fail-open "sed absent — exit-code checks skipped"
+    cmd_bare=""
+fi
+
 # --- check for return code masking in test/check runners (HATS-1436) -----------
 # Detect test runner commands piped or chained in ways that mask non-zero exit codes.
 runner_rx='(^|[[:space:]|;&])(pytest|ruff|make|ci-local\.sh|go[[:space:]]+test|cargo[[:space:]]+test|npm[[:space:]]+(run[[:space:]]+)?test|yarn[[:space:]]+test|pnpm[[:space:]]+test|python[3]?[[:space:]]+-m[[:space:]]+(pytest|unittest))($|[[:space:]|;&])'
-if [[ "$cmd" =~ $runner_rx ]]; then
+if [[ "$cmd_bare" =~ $runner_rx ]]; then
+    # HATS-1819 — the third case, and the one no masking check can see: the status
+    # is the runner's, correct, and simply not depended on. `;` sequences, it does
+    # not gate, so the mutation runs on red exactly as it runs on green. Checked
+    # before masking and outside the `preserved` guard below: `set -o pipefail`
+    # fixes whose status you read, never whether the next command honours it.
+    mutate_rx=';[[:space:]]*(git[[:space:]]+(commit|push|add|merge|tag|rebase)|rack[[:space:]]+transition)'
+    if [[ "$cmd_bare" =~ $mutate_rx ]]; then
+        msg="a state-mutating command follows ';' after a check/test runner — ';' sequences but does not gate, so the mutation runs whatever the runner returned. Chain it with '&&' if it must not run on red. This is the case the masking checks cannot see: the status was yours and correct, and the next action simply did not depend on it."
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
+        exit 0
+    fi
+
     # What counts as preserving the status depends on the SHELL the command will
     # run in (HATS-1798). `set -o pipefail` is correct in bash and zsh both.
     # `${PIPESTATUS[0]}` is bash-only: zsh has no such name, so `exit
@@ -76,9 +112,9 @@ if [[ "$cmd" =~ $runner_rx ]]; then
     # the uppercase name outright let the silent-zero through and nudged the one
     # spelling that works here — so it is excused only under an explicit bash.
     preserved=""
-    if [[ "$cmd" == *"pipefail"* || "$cmd" == *"pipestatus"* ]]; then
+    if [[ "$cmd_bare" == *"pipefail"* || "$cmd_bare" == *"pipestatus"* ]]; then
         preserved=1
-    elif [[ "$cmd" == *"PIPESTATUS"* && "$cmd" =~ (^|[[:space:]])bash([[:space:]]|$) ]]; then
+    elif [[ "$cmd_bare" == *"PIPESTATUS"* && "$cmd_bare" =~ (^|[[:space:]])bash([[:space:]]|$) ]]; then
         preserved=1
     fi
     if [[ -z "$preserved" ]]; then
@@ -91,9 +127,9 @@ if [[ "$cmd" =~ $runner_rx ]]; then
         # Only the chain grounds are excused — a pipe still masks.
         capture_rx=';[[:space:]]*echo[[:space:]]+\$\?[[:space:]]*>'
         masked=""
-        if [[ "$cmd" =~ $pipe_rx ]]; then
+        if [[ "$cmd_bare" =~ $pipe_rx ]]; then
             masked=1
-        elif [[ ! "$cmd" =~ $capture_rx ]] && [[ "$cmd" =~ $semi_rx || "$cmd" =~ $or_rx ]]; then
+        elif [[ ! "$cmd_bare" =~ $capture_rx ]] && [[ "$cmd_bare" =~ $semi_rx || "$cmd_bare" =~ $or_rx ]]; then
             masked=1
         fi
         if [[ -n "$masked" ]]; then

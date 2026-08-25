@@ -228,3 +228,120 @@ def test_kill_switch_disables_hook():
     res = _run("grep foo .", env={"AI_HATS_TOOL_HYGIENE_OFF": "1"})
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None
+
+
+# --- HATS-1819: a name in an argument is not a call; `;` does not gate --------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The shape that made the guard cry wolf five times in one session: a
+        # work_log entry REPORTING a test run, piped to tail. Recording that the
+        # discipline was followed must not read as breaking it.
+        'rack transition ID --log "V4: pytest -m integration x.py rc=0, 31 passed" 2>&1 | tail -3',
+        'echo "run pytest later" | tee note.txt',
+        "grep -nE 'runner|pytest|make' guard.sh | head -5",
+        'git commit -m "make the gate green" | tail -1',
+    ],
+)
+def test_runner_name_inside_an_argument_is_not_a_call(command):
+    res = _run(command)
+    assert res.returncode == 0, res.stderr
+    assert _nudge(res) is None, f"spurious nudge for {command!r}: {res.stdout!r}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pytest tests/ ; git commit -m wip",
+        "make done-gate ; git push origin master",
+        "ruff check src/ ; git add -A",
+        # Masking and sequencing at once: the mutation is the worse of the two,
+        # so it is what the agent is told about.
+        "pytest tests/ | tail -5 ; git commit -m wip",
+        # `set -o pipefail` fixes WHOSE status you read, never whether the next
+        # command honours it — so it must not excuse this.
+        "set -o pipefail; pytest tests/ ; git commit -m wip",
+    ],
+)
+def test_mutation_sequenced_after_a_runner_nudges(command):
+    res = _run(command)
+    assert res.returncode == 0, res.stderr
+    ctx = _nudge(res)
+    assert ctx is not None, f"expected a sequencing nudge for {command!r}, got {res.stdout!r}"
+    assert "state-mutating command follows" in ctx
+    assert "permissionDecision" not in res.stdout
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pytest tests/ && git commit -m wip",
+        "make done-gate && git push origin master",
+        # No runner ran, so the guard has no verdict to protect.
+        "ls -la ; git commit -m wip",
+    ],
+)
+def test_gated_or_unjudged_mutation_gets_no_nudge(command):
+    res = _run(command)
+    assert res.returncode == 0, res.stderr
+    assert _nudge(res) is None, f"unexpected nudge for {command!r}: {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_a_c_body_is_still_read_as_commands():
+    """A ``-c`` body is commands, so the guard must read it.
+
+    Measured, not assumed: the guard was silent here BEFORE this card too — the
+    old regex wanted the runner name space-bounded and a quote is not a space.
+    So this pins new reach, and also pins that stripping quoted spans (which
+    would otherwise delete this body along with the argument text) does not
+    take it away again.
+    """
+    res = _run("bash -c 'pytest tests/ | tail'")
+    ctx = _nudge(res)
+    assert ctx is not None, f"the -c body went unread: {res.stdout!r}"
+    assert "exit code masking detected" in ctx
+
+
+@pytest.mark.integration
+def test_the_nudge_survives_the_whole_bash_chain(shared_launcher, tmp_path_factory):
+    """The guard is only useful if it is actually ON the chain and never gates.
+
+    Runs the MATERIALIZED PreToolUse chain, not this script alone (HATS-1253):
+    a single-hook test cannot see a peer overriding the reply.
+    """
+    import subprocess as sp
+
+    from _helpers.hook_chain import build_session_settings, pretooluse_hooks, run_chain
+
+    launcher, base_env, _venv = shared_launcher
+    env = dict(base_env)
+    env.pop("PYTHONPATH", None)
+    env["HOME"] = str(tmp_path_factory.mktemp("hygiene-chain-home"))
+    project = tmp_path_factory.mktemp("hygiene-chain-proj")
+    res = sp.run(  # noqa: S603 - launcher path from the session fixture
+        [str(launcher), "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard"],
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert res.returncode == 0, f"self init failed:\n{res.stdout}\n{res.stderr}"
+    settings = build_session_settings(project)
+
+    # Positive control: without this the assertions below pass vacuously on a
+    # chain that never loaded the guard at all.
+    hooks = pretooluse_hooks(settings)
+    assert any("tool_call_hygiene_guard.sh" in h for h in hooks), (
+        f"the guard is not on the composed Bash chain: {hooks}"
+    )
+
+    verdict = run_chain(project, "pytest tests/ ; git commit -m wip", settings=settings, env=env)
+    assert "state-mutating command follows" in verdict.context, verdict
+    assert not verdict.gated, f"this guard must never gate, it only nudges: {verdict}"
