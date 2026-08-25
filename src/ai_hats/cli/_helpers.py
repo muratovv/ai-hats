@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from ..paths import NotAnAiHatsProjectError
     from ..providers import UnknownProviderError
     from ..role_spec import RoleSpecError
-    from ..self_heal import ProviderInstallationError
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -65,15 +64,11 @@ def _handle_unknown_provider(exc: "UnknownProviderError") -> NoReturn:
     surface (HATS-965): names the bad provider, lists registered ones, hints at
     ``ai-hats list providers``. No ``Traceback`` reaches the user. Output
     contract asserted by ``tests/e2e/test_unknown_provider_friendly_error.py``.
-    """
-    with catch_broken_install():
-        from ..self_heal import get_surface_remediation
 
+    No install instruction: ai-hats does not install surfaces (HATS-1826), so the
+    only actionable fact is which names do resolve.
+    """
     click.echo(f"Error: Provider {exc.name!r} not found.\n", err=True)
-    remediation = get_surface_remediation(exc.name)
-    if remediation:
-        click.echo(f"Surface provider {exc.name!r} is not installed.", err=True)
-        click.echo(f"Fix: {remediation}\n", err=True)
     click.echo("Available providers:", err=True)
     for name in exc.available:
         click.echo(f"  - {name}", err=True)
@@ -95,12 +90,6 @@ def _handle_missing_provider(exc: "MissingProviderError") -> NoReturn:
     for name in exc.available:
         click.echo(f"  - {name}", err=True)
     click.echo("\nHint: 'ai-hats list providers' shows the full table.", err=True)
-    sys.exit(2)
-
-
-def _handle_provider_installation_error(exc: "ProviderInstallationError") -> NoReturn:
-    """Render an installer failure with its captured diagnostic and no traceback."""
-    click.echo(f"Error: {exc}", err=True)
     sys.exit(2)
 
 
@@ -142,14 +131,12 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         from ..paths import NotAnAiHatsProjectError
         from ..providers import UnknownProviderError
         from ..role_spec import RoleSpecError
-        from ..self_heal import ProviderInstallationError
 
     return (
         (RoleSpecError, _handle_role_spec_error),
         (RoleNotFoundError, _handle_role_not_found),
         (UnknownProviderError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
-        (ProviderInstallationError, _handle_provider_installation_error),
         (NotAnAiHatsProjectError, _handle_not_a_project),
         (CheckBindingError, _handle_check_binding_error),
         # HATS-1545 F7: a key defect is the same class of message as a binding

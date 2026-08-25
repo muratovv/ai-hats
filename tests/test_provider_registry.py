@@ -192,48 +192,15 @@ def test_legacy_gemini_alias_resolves_to_agy():
     assert isinstance(provider, _FakeProvider)
 
 
-def test_get_provider_auto_installs_known_surface(monkeypatch):
-    called = []
+def test_a_known_surface_without_an_entry_point_refuses_immediately(monkeypatch):
+    """ai-hats never installs a surface on the caller's behalf (HATS-1826).
+
+    ``agy`` is in ``KNOWN_SURFACES``, and that used to be the trigger for a
+    ``uv pip install`` before the lookup would refuse. With no entry point
+    advertising it, the name is simply unknown.
+    """
     monkeypatch.setattr(prov, "_provider_entry_points", lambda: [])
     prov._reset_for_tests()
 
-    def fake_ensure(name):
-        called.append(name)
-        register_provider(name, _FakeProvider)
-        return True
-
-    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
     with pytest.raises(prov.UnknownProviderError, match="Unknown provider: agy"):
-        get_provider("agy", auto_install=False)
-    assert called == []
-
-    provider = get_provider("agy")
-    assert called == ["agy"]
-    assert isinstance(provider, _FakeProvider)
-
-
-def test_get_provider_fast_fails_unknown_surface(monkeypatch):
-    called = []
-
-    def fake_ensure(name):
-        called.append(name)
-        return True
-
-    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
-    with pytest.raises(prov.UnknownProviderError, match="Unknown provider: non_existent_provider"):
-        get_provider("non_existent_provider")
-    assert called == []  # Fast-fail guard skipped ensure_surface_plugin_installed
-
-
-def test_get_provider_propagates_installation_error(monkeypatch):
-    from ai_hats.self_heal import ProviderInstallationError
-
-    monkeypatch.setattr(prov, "_provider_entry_points", lambda: [])
-    prov._reset_for_tests()
-
-    def fake_ensure(name):
-        raise ProviderInstallationError("Network failed")
-
-    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
-    with pytest.raises(ProviderInstallationError, match="Network failed"):
         get_provider("agy")

@@ -1156,31 +1156,13 @@ def test_init_harness_path_requires_local_channel(cli_project):
     assert not (project / PROJECT_CONFIG).exists()
 
 
-def test_init_cline_surface_auto_installs(cli_project, monkeypatch):
-    """ai-hats self init -p cline accepts known surface and auto-installs it (HATS-1179)."""
-    from unittest.mock import MagicMock
-    from ai_hats.surfaces import Provider
+def test_init_accepts_a_surface_that_ships_in_the_integrator(cli_project):
+    """``self init -p cline`` needs no install step: cline ships in ai-hats (HATS-1826).
 
+    It used to be accepted only because init would auto-install the surface
+    distribution first; the fold makes the surface simply present.
+    """
     project, runner = cli_project
-
-    mock_inst = MagicMock(spec=Provider)
-    mock_inst.name = "cline"
-    mock_inst.detected_home_dirs.return_value = [".cline"]
-
-    def fake_ensure(provider_name, repo_root=None):
-        if provider_name == "cline":
-            monkeypatch.setattr(
-                "ai_hats.surfaces_registry.is_surface_installed",
-                lambda p: p == "cline" or p == "claude",
-            )
-            monkeypatch.setattr(
-                "ai_hats.providers.get_provider",
-                lambda p: mock_inst if p == "cline" else Provider(),
-            )
-            return True
-        return False
-
-    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
 
     r = runner.invoke(main, ["self", "init", "-p", "cline", "--no-wizard"])
     assert r.exit_code == 0, r.output

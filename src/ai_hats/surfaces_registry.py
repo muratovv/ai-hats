@@ -1,8 +1,9 @@
-"""Single source of truth for surface plugins (HATS-1095, HATS-1178).
+"""Single source of truth for the surfaces ai-hats knows (HATS-1095, HATS-1178).
 
-Every provider surface (claude, agy, cline) is a symmetric entry point under the
-`ai_hats.providers` entry-point group (HATS-870). No special built-in vs plugin
-distinction — all surfaces are uniform entries in this registry.
+Every surface is a symmetric entry point under the `ai_hats.providers` group
+(HATS-870) — no built-in vs plugin distinction. All five listed here ship inside
+`ai-hats` itself since HATS-1826; the group stays open, so a third party can
+declare its own surface, but ai-hats never installs one on the user's behalf.
 """
 
 from __future__ import annotations
@@ -16,25 +17,16 @@ if TYPE_CHECKING:
 
 class SurfaceInfo(NamedTuple):
     ep_name: str  # entry-point provider name, e.g. "claude", "agy", "cline", "codex"
-    package_name: str  # package name, e.g. "ai-hats", "ai-hats-agy", "ai-hats-codex"
     default_home_dirs: tuple[str, ...] = ()  # default directory names under $HOME to check presence
 
 
 # Canonical registry of surfaces (state as is).
 KNOWN_SURFACES: dict[str, SurfaceInfo] = {
-    "claude": SurfaceInfo(ep_name="claude", package_name="ai-hats", default_home_dirs=(".claude",)),
-    "agy": SurfaceInfo(
-        ep_name="agy", package_name="ai-hats-agy", default_home_dirs=(".agy", ".gemini")
-    ),
-    "cline": SurfaceInfo(
-        ep_name="cline", package_name="ai-hats-cline", default_home_dirs=(".cline",)
-    ),
-    "codex": SurfaceInfo(
-        ep_name="codex", package_name="ai-hats-codex", default_home_dirs=(".codex",)
-    ),
-    "opencode": SurfaceInfo(
-        ep_name="opencode", package_name="ai-hats-opencode", default_home_dirs=(".opencode",)
-    ),
+    "claude": SurfaceInfo(ep_name="claude", default_home_dirs=(".claude",)),
+    "agy": SurfaceInfo(ep_name="agy", default_home_dirs=(".agy", ".gemini")),
+    "cline": SurfaceInfo(ep_name="cline", default_home_dirs=(".cline",)),
+    "codex": SurfaceInfo(ep_name="codex", default_home_dirs=(".codex",)),
+    "opencode": SurfaceInfo(ep_name="opencode", default_home_dirs=(".opencode",)),
 }
 
 
@@ -67,7 +59,7 @@ def is_surface_installed(provider_name: str) -> bool:
     from .providers import get_provider
 
     try:
-        get_provider(provider_name, auto_install=False)
+        get_provider(provider_name)
         return True
     except Exception:  # silent-ok: a surface that will not import is not installed
         return False
@@ -81,7 +73,7 @@ def detect_surface_presence(provider_name: str, home: Path | None = None) -> boo
     from .providers import get_provider
 
     try:
-        dirs = get_provider(provider_name, auto_install=False).detected_home_dirs()
+        dirs = get_provider(provider_name).detected_home_dirs()
     except Exception:  # silent-ok: known metadata is the read-only fallback
         dirs = []
 

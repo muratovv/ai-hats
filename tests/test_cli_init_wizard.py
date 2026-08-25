@@ -95,7 +95,7 @@ def test_wizard_prompt_preselects_when_single_detected(monkeypatch):
     assert captured["show_default"] is True
 
 
-def test_wizard_prompt_preselects_codex_and_reports_install(capsys):
+def test_wizard_prompt_preselects_codex_and_marks_it_uninstalled(capsys):
     captured = {}
 
     def fake_prompt(text, default=None, show_default=False):
@@ -112,7 +112,7 @@ def test_wizard_prompt_preselects_codex_and_reports_install(capsys):
         == "codex"
     )
     assert captured["default"] == "4"
-    assert "will install: ai-hats-codex" in capsys.readouterr().out
+    assert "not installed" in capsys.readouterr().out
 
 
 def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):

@@ -67,10 +67,10 @@ _ENTRY_POINTS_LOCK = threading.Lock()
 _ENTRY_POINTS_LOADED = False
 
 
-def _ensure_entry_points_loaded(force: bool = False) -> None:
+def _ensure_entry_points_loaded() -> None:
     global _ENTRY_POINTS_LOADED
     with _ENTRY_POINTS_LOCK:
-        if not _ENTRY_POINTS_LOADED or force:
+        if not _ENTRY_POINTS_LOADED:
             _ENTRY_POINTS_LOADED = True
             _load_provider_entry_points()
 
@@ -98,28 +98,15 @@ class UnknownProviderError(ValueError):
         super().__init__(f"Unknown provider: {name}. Available: {available}")
 
 
-def get_provider(name: str, *, auto_install: bool = True) -> Provider:
-    """Get a provider instance, optionally without mutating package state."""
+def get_provider(name: str) -> Provider:
+    """Get a provider instance for a registered surface name.
+
+    Lookup only: an unregistered name refuses. ai-hats used to try to
+    ``uv pip install`` the surface first — that bypass is closed (HATS-1826).
+    """
     _ensure_entry_points_loaded()
     canonical_name = PROVIDER_ALIASES.get(name, name)
     cls = _PROVIDER_REGISTRY.get(canonical_name)
-    if cls is None:
-        from .paths import editable_install_root
-        from .self_heal import SURFACES_SUBPATH, ensure_surface_plugin_installed
-        from .surfaces_registry import get_surface_info
-
-        root = editable_install_root("ai-hats")
-        in_tree = root.joinpath(*SURFACES_SUBPATH, canonical_name).is_dir() if root else False
-        is_known = get_surface_info(canonical_name) is not None
-
-        if auto_install and (is_known or in_tree):
-            if ensure_surface_plugin_installed(canonical_name):
-                import importlib
-
-                importlib.invalidate_caches()
-                _ensure_entry_points_loaded(force=True)
-                cls = _PROVIDER_REGISTRY.get(canonical_name)
-
     if cls is None:
         raise UnknownProviderError(name, provider_names())
     return cls()

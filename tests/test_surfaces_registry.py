@@ -19,9 +19,7 @@ def test_get_known_surfaces() -> None:
     assert "agy" in surfaces
     assert "cline" in surfaces
     assert "codex" in surfaces
-    assert surfaces["cline"].package_name == "ai-hats-cline"
     assert surfaces["cline"].default_home_dirs == (".cline",)
-    assert surfaces["codex"].package_name == "ai-hats-codex"
     assert surfaces["codex"].default_home_dirs == (".codex",)
 
 
@@ -29,12 +27,10 @@ def test_get_surface_info() -> None:
     info = get_surface_info("cline")
     assert info is not None
     assert info.ep_name == "cline"
-    assert info.package_name == "ai-hats-cline"
 
     codex = get_surface_info("codex")
     assert codex is not None
     assert codex.ep_name == "codex"
-    assert codex.package_name == "ai-hats-codex"
 
     assert get_surface_info("unknown_xyz") is None
 

@@ -21,7 +21,6 @@ from ai_hats.cli import _PassthroughGroup
 from ai_hats.composition_seam import MissingProviderError, RoleNotFoundError
 from ai_hats.paths import NotAnAiHatsProjectError
 from ai_hats.providers import UnknownProviderError
-from ai_hats.self_heal import ProviderInstallationError
 
 
 def _cases():
@@ -38,11 +37,6 @@ def _cases():
             MissingProviderError(["claude"]),
             "no provider configured",
             id="missing-provider",
-        ),
-        pytest.param(
-            ProviderInstallationError("registry denied"),
-            "registry denied",
-            id="provider-install",
         ),
         pytest.param(
             NotAnAiHatsProjectError(Path("/tmp/nowhere")),

@@ -102,9 +102,10 @@ def _wizard_provider_prompt(
             markers.append(f"detected — found ~/{found_dir}")
 
         if not installed:
-            info = known.get(name)
-            pkg = info.package_name if info else f"ai-hats-{name}"
-            markers.append(f"will install: {pkg}")
+            # Every known surface ships inside ai-hats since HATS-1826, and the
+            # wizard installs nothing — so this reads as a broken install, not a
+            # pending one.
+            markers.append("not installed")
 
         marker_str = f" [dim]({', '.join(markers)})[/]" if markers else ""
         console.print(f"  {idx}) {name}{marker_str}")

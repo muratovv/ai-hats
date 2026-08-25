@@ -1023,25 +1023,18 @@ class Assembler:
     def _validate_provider(provider_name: str) -> None:
         """Raise ValueError if `provider_name` is not a registered or known provider.
 
-        HATS-1179: If provider_name is in get_known_surfaces() but uninstalled in venv,
-        attempts auto-installation / linking via ensure_surface_plugin_installed().
+        Lookup only: ai-hats used to try to install an uninstalled surface here
+        before refusing — that bypass is closed (HATS-1826).
         """
         from .providers import PROVIDER_ALIASES, provider_names
-        from .self_heal import ensure_surface_plugin_installed, get_surface_remediation
         from .surfaces_registry import get_known_surfaces, is_surface_installed
 
         canonical = PROVIDER_ALIASES.get(provider_name, provider_name)
         if is_surface_installed(canonical):
             return
 
-        if canonical in get_known_surfaces():
-            if ensure_surface_plugin_installed(canonical):
-                return
-
-        remediation = get_surface_remediation(provider_name)
-        hint = f"\nFix: {remediation}" if remediation else ""
         available = sorted(set(provider_names()) | set(get_known_surfaces().keys()))
-        raise ValueError(f"Unknown provider: {provider_name}. Available: {available}.{hint}")
+        raise ValueError(f"Unknown provider: {provider_name}. Available: {available}.")
 
     def _build_tree(self, result: CompositionResult) -> dict:
         """Build a dependency tree representation.
