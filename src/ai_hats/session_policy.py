@@ -95,9 +95,9 @@ class RoleAudit:
     needs the run to exist before its prompt does.
     """
 
-    # The audited role's name. ``save_artifact`` (steps/save.py) projects any state
-    # key its ``out_path_template`` names and documents ``{target_role}`` as the case;
-    # reflect-role.yaml ships no save step today, so there it is carried and unread.
+    # The audited role's name, read by ``first_message`` below and nowhere else:
+    # role-judge writes its own report (its L0 carve-out), so reflect-role ships no
+    # ``save_artifact`` whose template could name it, and it is not a funnel key.
     target: str
     # Writes the breakdown under the scratch dir it is handed, and answers with the
     # directory the message points role-judge at.
@@ -151,8 +151,6 @@ class SessionRunParams:
             "interactive": isinstance(harness, Hitl),
             "prompt_path": materialize_prompt(prompt),
         }
-        if self.audit is not None:
-            state["target_role"] = self.audit.target
         if isinstance(harness, Hitl):
             state["extra_args"] = list(harness.extra_args)
         if isinstance(harness, Automate):

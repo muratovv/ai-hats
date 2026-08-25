@@ -3,7 +3,7 @@
 Replaces the prior two-step flow (SessionRetroBuilder → ReflectSessionRunner).
 Pure-Python computes factual fields via :mod:`facts`; one LLM call (role
 ``session-reviewer``) returns the analysis fields; runner merges and writes
-``.agent/retrospectives/sessions/<session_id>.md`` (schema
+``<ai_hats_dir>/sessions/retros/sessions/<session_id>.md`` (schema
 ``hats-session-review/v1``).
 
 Failure-proposal filing lives in the harness layer

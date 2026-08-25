@@ -7,7 +7,7 @@ Subcommands:
     uses --background to detach.
 - `reflect all [--dry-run]`
     Pre-flight builds a handoff under
-    `.agent/retrospectives/reflect-all/<ts>-handoff.md`, then forwards to
+    `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md`, then forwards to
     `ai-hats execute --role judge --interactive`. The triage protocol lives in
     the `judge-protocol` skill.
 - `reflect role <name>` / `reflect roles`
@@ -15,9 +15,10 @@ Subcommands:
     the target and materializes its layered breakdown under a per-session
     namespace (each run owns its `<session_id>/` subdir, so parallel runs don't
     race — HATS-308); the `reflect-role` pipeline launches `role-judge`, which reads
-    those files and writes the report to
-    `.agent/retrospectives/role-coherence/<UTC-ts>-<target>.md`. Protocols:
-    `role-coherence-protocol` + `judge-role-protocol` skills.
+    those files and writes the report itself to
+    `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md` — the
+    path is the role's own carve-out, so this pipeline ships no `save_artifact`.
+    Protocols: `role-coherence-protocol` + `judge-role-protocol` skills.
 - `reflect commit ...`
     Bulk-update proposal statuses (end of interactive chat).
 """
@@ -379,6 +380,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> SessionOutcome:
     from ..assembler import Assembler
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
+    from ..paths import retros_dir
 
     assembler = Assembler(project_dir)
     composer = assembler.composer
@@ -437,10 +439,11 @@ def _run_role_audit(project_dir: Path, target_role: str) -> SessionOutcome:
             ),
         ),
     )
-    saved = ReportOutcome.of(result).saved_path
-    if saved:
-        console.print(f"[green]✓[/green] reflect saved to {saved}")
-    return SessionOutcome.of(result)
+    outcome = SessionOutcome.of(result)
+    if outcome.exit_code_or(1) == 0:
+        # Not the file: role-judge names it with a timestamp of its own at Write time.
+        console.print(f"[green]✓[/green] report under {retros_dir(project_dir) / 'role-coherence'}")
+    return outcome
 
 
 def _materialize_target_composition(

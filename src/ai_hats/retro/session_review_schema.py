@@ -4,7 +4,7 @@ One canonical schema replacing the v1 split between SessionRetroV1 (facts) and
 ReflectSessionV1 (analysis). Pure-Python computes the factual fields; a single
 LLM call (role: session-reviewer) produces the analysis fields. The runner
 merges the two and writes the resulting document to
-``.agent/retrospectives/sessions/<session_id>.md``.
+``<ai_hats_dir>/sessions/retros/sessions/<session_id>.md``.
 """
 
 from __future__ import annotations
