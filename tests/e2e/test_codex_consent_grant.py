@@ -208,22 +208,17 @@ def _project(tmp_path: Path, library_dir: Path) -> Path:
 
 
 def _command_bin(tmp_path: Path) -> Path:
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    commands = {
-        "codex": _FAKE_CODEX,
-        "rack": (
-            f"#!{sys.executable}\nimport runpy\n"
-            "runpy.run_module('ai_hats_rack', run_name='__main__')\n"
-        ),
-        "ai-hats": (
-            f"#!{sys.executable}\nimport runpy\nrunpy.run_module('ai_hats', run_name='__main__')\n"
-        ),
-    }
-    for name, body in commands.items():
-        executable = fake_bin / name
-        executable.write_text(body)
-        executable.chmod(0o755)
+    """The session PATH entry: every checkout surface, plus the Codex stand-in.
+
+    The surfaces come from the writer the whole tier shares. A second table here
+    would drift from the consent registry unnoticed — the hole HATS-1847 closed.
+    """
+    from _helpers.surfaces import write_surface_shims
+
+    fake_bin = write_surface_shims(tmp_path / "bin")
+    codex = fake_bin / "codex"
+    codex.write_text(_FAKE_CODEX)
+    codex.chmod(0o755)
     return fake_bin
 
 
