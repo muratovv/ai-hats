@@ -88,14 +88,15 @@ handful live. Always prefer free over venv over live.
 
 ## Fixtures (`conftest.py`)
 
-| Fixture                | Scope                                      | Returns   | Notes                                                                                                                                          |
-| ---------------------- | ------------------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repo_root`            | session                                    | `Path`    | Repo checkout root. Process-wide constant.                                                                                                     |
-| `requires_claude_auth` | function                                   | `None`    | Skip marker. Skips if `claude --version` doesn't exit 0.                                                                                       |
-| `requires_agy_auth`    | session                                    | `None`    | Skip marker. Skips unless `agy --version` and a bounded live turn both exit 0.                                                                 |
-| `tmp_project`          | function                                   | `Project` | Role-less project + dev-venv binary. Free-tier.                                                                                                |
-| `tmp_venv_project`     | function (on a module-scoped venv builder) | `Project` | Fresh project dir + shared launcher venv via `AI_HATS_VENV`. Venv-tier.                                                                        |
-| `probe_project`        | function                                   | `Path`    | Bakes a deterministic `probe` role for live-session tests. Gated on `requires_claude_auth` at the test signature when a live SDK call follows. |
+| Fixture                | Scope                                      | Returns   | Notes                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repo_root`            | session                                    | `Path`    | Repo checkout root. Process-wide constant.                                                                                                                                                 |
+| `checkout_bin`         | session                                    | `Path`    | Every consent-wrapped surface (`ai-hats`, `rack`) as a shim over the interpreter under test. Lead a session `PATH` with THIS — a surface it lacks comes from the ambient PATH (HATS-1847). |
+| `requires_claude_auth` | function                                   | `None`    | Skip marker. Skips if `claude --version` doesn't exit 0.                                                                                                                                   |
+| `requires_agy_auth`    | session                                    | `None`    | Skip marker. Skips unless `agy --version` and a bounded live turn both exit 0.                                                                                                             |
+| `tmp_project`          | function                                   | `Project` | Role-less project + dev-venv binary. Free-tier.                                                                                                                                            |
+| `tmp_venv_project`     | function (on a module-scoped venv builder) | `Project` | Fresh project dir + shared launcher venv via `AI_HATS_VENV`. Venv-tier.                                                                                                                    |
+| `probe_project`        | function                                   | `Path`    | Bakes a deterministic `probe` role for live-session tests. Gated on `requires_claude_auth` at the test signature when a live SDK call follows.                                             |
 
 `tmp_venv_project` is layered: an internal module-scoped builder
 (`_shared_launcher_venv`) runs `bash scripts/install-launcher.sh` +
