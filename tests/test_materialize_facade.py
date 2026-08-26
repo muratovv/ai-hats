@@ -101,3 +101,14 @@ def test_compose_for_role_tolerates_loss_when_asked(maintainer_project):
 # HATS-267 override), so the plan's text-only F1 helper was dropped before
 # Phase 2 per design-minimalism. Re-add only alongside a real text-only
 # call-site.
+
+
+def test_no_role_at_all_is_not_a_loss(maintainer_project):
+    """A project with neither ``active_role`` nor ``default_role`` composes the
+    empty string. Nothing was declared, so nothing was lost — refusing here
+    replaced "Provider 'x' not found" with a traceback on an unconfigured
+    project, which is how HATS-1842 first broke `tests/e2e/
+    test_bare_positional_prompt.py`."""
+    result = compose_for_role(maintainer_project, "")
+    assert isinstance(result, CompositionResult)
+    assert result.skills == [] and result.rules == []

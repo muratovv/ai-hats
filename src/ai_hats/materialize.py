@@ -84,7 +84,11 @@ def compose_for_role(
         overlays=layers,
         diagnostics=diagnostics,
     )
-    if not tolerate_lossy and result.lost:
+    # An empty role name DECLARES nothing, so nothing can have been lost. The
+    # composer still reports `Role '' not found`, and refusing on that turned an
+    # unconfigured project into a traceback where it used to name the real
+    # problem (a bad `-p`, no role set).
+    if role and not tolerate_lossy and result.lost:
         raise CompositionIncompleteError(role, result.lost)
     # HATS-1203: the composer sees library_paths only, so user-rules attach
     # here — the one funnel — and reach every consumer. Discovery is delegated
