@@ -99,7 +99,7 @@ the definition, place it under `tracker/`, and it mounts on the next `rack` call
 
 **Plan sections are separate.** If (and only if) the backlog uses the plan gate,
 its plan-section catalog lives in a sibling `plan-sections.yaml`, **not** a
-`backlog.yaml` key (HATS-635 never-drift). Most custom backlogs need neither.
+`backlog.yaml` key (never-drift). Most custom backlogs need neither.
 
 ## What the backlog gets for free
 
@@ -133,7 +133,7 @@ touching the file.
 ## Search across projects
 
 List or read **one backlog across several projects** — "hypotheses of all
-projects" in one command (HATS-1081) — over the registered roots ([Registry](#registry))
+projects" in one command — over the registered roots ([Registry](#registry))
 and/or ad-hoc `--root` paths.
 
 **List** on the no-id scan (rows gain a `project` marker column / `project` json
@@ -150,8 +150,8 @@ rack ls --backlog hyp --projects all # the hyp backlog in EVERY swept project
 (or mount an unregistered project by path):
 
 ```bash
-rack context projB:HATS-9              # <root_id>:<id> routes into a registered project
-rack context projB:HATS-9 --root ../projB   # or mount it by path
+rack context projB:ACME-9              # <root_id>:<id> routes into a registered project
+rack context projB:ACME-9 --root ../projB   # or mount it by path
 ```
 
 **Boundaries.**

@@ -2,7 +2,7 @@ name: trait-analyst-base
 composition:
   traits: []
   # Mirrors trait-base universal hygiene. Any rule OR skill added to trait-base
-  # must be evaluated for symmetric attachment here — see HATS-514 / HYP-014 for
+  # must be evaluated for symmetric attachment here — see HYP-014 for
   # the silent-coverage-gap class this list closes. Skip an attachment only
   # when the rule is genuinely agent-only (e.g. agent-protocol disciplines)
   # and record the rationale in a comment if so.
@@ -11,7 +11,7 @@ composition:
     - global_rule_destructive_actions
     - rule_harness_reminder_hygiene
   skills:
-    # HATS-1268: the symmetric half of trait-base's attachment. These roles
+    # the symmetric half of trait-base's attachment. These roles
     # compose neither trait-base nor trait-agent, so without it the guards
     # stop being wired for them the moment wiring became composition-gated.
     - safety-guard

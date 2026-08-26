@@ -37,7 +37,7 @@ content; the harness has already materialized everything.
 
 Path: provided to you in the supervisor's first message via the
 `{composed_dir}` interpolation — use that path verbatim. Do not
-reconstruct it. Typical shape (per-session, HATS-308):
+reconstruct it. Typical shape (per-session):
 `<project>/<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<session_id>/composed/<target_role>/`.
 Layout:
 

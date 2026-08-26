@@ -20,13 +20,13 @@ A plan is always a task, authored into `<ai_hats_dir>/tracker/backlog/tasks/<ID>
   draft gets there). For filling each section *well*, hand off to **plan-gate**
   (it routes Requirements / Scope / Steps / Verification to their owners). Don't
   duplicate that here.
-- Not an enforcement gate: the engine per-section gate (HATS-635) blocks
+- Not an enforcement gate: the engine per-section gate blocks
   `rack transition <ID> execute` on an empty plan. This skill is the authoring discipline
   upstream of it; the gate is the backstop.
 
 ## Procedure
 
-`rack` CLI commands (reads, transitions, logs) can be run from either the main repo or any linked worktree — root resolution automatically finds the main repo's `.agent/` tracker. (Teardown commands like `ai-hats wt merge` / `discard` or closing `transition done` should be run from the main repo so your shell cwd isn't removed underfoot — see skill **worktree-isolation** / HATS-788).
+`rack` CLI commands (reads, transitions, logs) can be run from either the main repo or any linked worktree — root resolution automatically finds the main repo's `.agent/` tracker. (Teardown commands like `ai-hats wt merge` / `discard` or closing `transition done` should be run from the main repo so your shell cwd isn't removed underfoot — see skill **worktree-isolation**).
 
 ### Preferred — plan directly in the tracker (no plan mode)
 
@@ -51,7 +51,7 @@ That's expected — don't fight it, and don't apologise for the draft.
   other execute work, is to persist into the tracker — `rack create` (if needed)
   → `rack transition <ID> plan` → Read the `.claude/plans` draft → Write it into
   `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` → fill/confirm sections → `rack transition <ID> execute`. There
-  is no auto-sync (HATS-637); the `.claude/plans` file is now inert, leave or delete.
+  is no auto-sync; the `.claude/plans` file is now inert, leave or delete.
 
 ## Completion
 
@@ -68,5 +68,5 @@ That's expected — don't fight it, and don't apologise for the draft.
 - Fighting plan mode by trying `rack` CLI / tracker writes while still in it — they
   are blocked; draft, exit, then persist.
 - Drafting a plan without a task — if it's a plan, you made a task.
-- Running worktree teardown commands (`ai-hats wt merge` / `wt discard` or terminal `transition done`) from inside the worktree being deleted — this orphans your shell (HATS-788). Return to the main repo first.
+- Running worktree teardown commands (`ai-hats wt merge` / `wt discard` or terminal `transition done`) from inside the worktree being deleted — this orphans your shell. Return to the main repo first.
 

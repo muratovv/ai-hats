@@ -8,7 +8,7 @@ license: MIT
 
 The one named gate for `brainstorm → plan`. The engine writes a plan scaffold
 whose required sections are enforced at plan→execute by the per-section gate
-(HATS-635) — it blocks the transition and names any section left empty. This
+ — it blocks the transition and names any section left empty. This
 skill is the table of contents for filling them: it says which skill owns which
 section. It does **not** re-implement those skills.
 

@@ -2,10 +2,10 @@
 name: skill-lint-gate
 description: Pre-commit gate over staged library `SKILL.md`. Use when composing the maintainer or role-curator role, or when diagnosing why the skill-lint hook blocked a commit.
 ai_hats:
-  # HATS-617/877 — hook-carrier skill. The assembler installs the script below
+  # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. Over STAGED
-  # `{ai_hats_library,library,libraries}/**/SKILL.md` it runs two checks: (1) HATS-877 license/provenance
-  # regression-guard (always-on, pure bash, covers golang-*); (2) HATS-617 agnix
+  # `{ai_hats_library,library,libraries}/**/SKILL.md` it runs two checks: (1) license/provenance
+  # regression-guard (always-on, pure bash, covers golang-*); (2) agnix
   # spec-lint against the repo-root `.agnix.toml` (excludes golang-*, fail-open
   # if agnix/node absent). Per-commit override AI_HATS_SKILL_LINT_ACK=1.
   git_hooks:
@@ -26,24 +26,24 @@ entirely through composition.
 Over STAGED `{ai_hats_library,library,libraries}/**/SKILL.md` (changed-files scope, so the gate never
 retro-blocks the pre-existing backlog), the hook runs, in order:
 
-1. **License/provenance regression-guard** (HATS-877 — pure bash, always-on, NOT
+1. **License/provenance regression-guard** (pure bash, always-on, NOT
    fail-open). Blocks when a skill has no non-empty `license:` frontmatter, or is
    declared-derived (sibling `metadata.yaml` has an `upstream:` block) but is
    missing its co-located `LICENSE` file. Its scope deliberately **includes** the
    `golang-*` pack — that pack is exactly the third-party derived content this
-   guard protects. It exists to keep the HATS-875 licensing backfill from
+   guard protects. It exists to keep the licensing backfill from
    silently regressing.
-2. **agnix spec-lint** (HATS-617 — [agnix](https://github.com/avifenesh/agnix)
+2. **agnix spec-lint** ([agnix](https://github.com/avifenesh/agnix)
    against the repo-root `.agnix.toml`; target `claude-code`; rules `XML-001` /
    `XP-SK-001` / `VER-001` disabled as convention false positives). **Excludes**
-   the `golang-*` pack (drift handled separately — HATS-626/627). Fail-open if
+   the `golang-*` pack (drift handled separately). Fail-open if
    agnix/node is absent. agnix non-zero exit blocks the commit.
 
 ## Who gets it
 
 Installed via the `skill-engineer` trait, composed only by the `maintainer` and
 `role-curator` roles. Other roles do not receive the hook. The server-side
-counterpart (CI `lint-skills` job) is HATS-627.
+counterpart is the CI `lint-skills` job.
 
 ## How to bypass
 

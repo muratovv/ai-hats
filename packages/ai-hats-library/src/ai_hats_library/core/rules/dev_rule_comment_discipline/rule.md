@@ -2,7 +2,7 @@
 
 A comment or docstring carries the one thing the code can't — the **WHY** — in the
 fewest lines that hold it. Default to none; when you do write one, match the shape
-below. (`TICKET-NNN` = whatever ticket prefix *this* repo uses, never the literal.)
+below.
 
 ## The shape to write
 
@@ -19,24 +19,36 @@ def materialize_runtime_hooks(session):
 
 # ✅ module docstring — one line stating the contract, not its design history.
 
-# ✅ history — a pointer, never a retelling:
-("rule_composition_value_contract",)  # TICKET-452: always-on; see docs/adr/0005
+# ✅ a decision whose reason outlived the diff — cite the record, not the ticket:
+("rule_composition_value_contract",)  # always-on; see docs/adr/0005
+
+
+# ✅ a TODO — the one id that earns its place, because it points FORWARD at work
+#    no commit holds yet, and names the card that retires it:
+rows = fetch_all()  # TODO(PROJ-123): stream once the cursor API lands
 ```
 
-## The foil to cut (the HATS-837 shape)
+## The foil to cut
 
 ```python
 # ❌ a 4-line note restating a DI-wiring assignment   → delete; the code says it
 # ❌ a multi-paragraph docstring retelling the task    → one line of intent
-# ❌ "compute total" / decorative banners / commented-out code / ownerless TODO
+# ❌ an id as provenance — `# PROJ-123`, `Source: PROJ-123`, `(PROJ-123)` after
+#    a sentence that already carries the WHY → the reader has no tracker
+# ❌ an ownerless `TODO:` — no card means no one retires it
+# ❌ "compute total" / decorative banners / commented-out code
 # ❌ a stale-able count ("~600 chars", "only caller")  → omit
 ```
 
 ## Before typing, ask
 
 1. Does the code already say this? → delete.
-2. Is it *what changed* / task history? → `# TICKET-NNN` pointer, not prose.
+2. *What changed*, or task history? → omit, ticket id included. `git log -S`
+   finds the commit for any reader of the repo; a tracker id does not. The one
+   exception is a `TODO(<card>)`: no commit can hold work that has not happened.
 3. A count or claim that can rot? → omit.
 4. Left with a non-obvious WHY in ≤1 line? → keep it.
 
-Long rationale → ADR / task card, linked by id — never pasted into the source.
+Long rationale → an ADR, cited by number: it ships inside the repository, so the
+citation resolves for whoever reads the code, and `adr-integrity` refuses it once
+it stops resolving. Never paste the rationale into the source.

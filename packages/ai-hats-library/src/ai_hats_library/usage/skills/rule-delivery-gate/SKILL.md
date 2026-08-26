@@ -2,7 +2,7 @@
 name: rule-delivery-gate
 description: Pre-commit gate over staged trait and role injections. Use when composing the maintainer or role-curator role, or when diagnosing why the rule-delivery hook blocked a commit.
 ai_hats:
-  # HATS-700 — hook-carrier skill. The assembler installs the script below
+  # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. On a staged
   # `{ai_hats_library,library,libraries}/**/config.yaml` (three spellings, one
   # live here) it runs `python -m ai_hats.rule_delivery library`
@@ -16,7 +16,7 @@ license: MIT
 # Rule Delivery Gate
 
 Pure-infrastructure hook-carrier skill. It contributes one git pre-commit hook
-that enforces the HATS-700 rule-delivery contract: a `see rule X` pointer in a
+that enforces the rule-delivery contract: a `see rule X` pointer in a
 delivered trait/role injection must name a rule the agent can actually read.
 There is no agent-side decision logic here — the value is delivered entirely
 through composition.

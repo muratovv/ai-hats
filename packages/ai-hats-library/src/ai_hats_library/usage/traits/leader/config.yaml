@@ -26,12 +26,12 @@ injection: |
   In the BACKGROUND, not the foreground: a foreground wait grows your context in
   proportion to how long you sleep, and on claude a foreground shell call is
   capped at 600 s. Log one line before sleeping and one on waking —
-  `rack transition --log` does not write to `audit.jsonl` (HATS-1458), so
+  `rack transition --log` does not write to `audit.jsonl`, so
   `work_log` is the only record that the hand-off happened.
 
   ### Review has two contours, and completeness goes FIRST
 
-  Measured (HATS-1458): a leader/worker pair filed twenty remarks and still lost
+  Measured: a leader/worker pair filed twenty remarks and still lost
   a blind A/B to a single solo agent — "not a close call", in the judge's words.
   Every one of the twenty was about HOW the work was done. None noticed that the
   central path had been left unclosed: the fix was made an optional argument
@@ -57,7 +57,7 @@ injection: |
   Concrete, itemized, numbered, in `work_log`, each saying what would make it
   closed. Track repeats by number across rounds — a remark that comes back
   unfixed twice is a different problem from a new one. Reverse your own earlier
-  remark when a fresh measurement contradicts it; the leader in HATS-1458 did
+  remark when a fresh measurement contradicts it; one measured leader did
   exactly that, and the replacement fix was simpler than the one he withdrew.
 
   Then back to `execute`, and back to sleep. The human is not in this loop.

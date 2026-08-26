@@ -70,8 +70,8 @@ Read documents by the path `context` prints — never inline the body blind.
 
 **Work Policy.** A card's `work_policy` field is the work policy for the task and
 its children; `rack context <child>` delivers every ancestor's `work_policy` up
-the parent chain into the child's read (parent-context, HATS-1064; structured
-field since HATS-1067). Set it with `rack create --work-policy <text>` or update
+the parent chain into the child's read (parent-context; structured
+field). Set it with `rack create --work-policy <text>` or update
 an existing card with `rack transition <id> --set work_policy=<text>`. Only that
 field travels — put per-stage child policy there, not in the whole card.
 
@@ -93,7 +93,7 @@ rack transition PROJ-042 --unlink parent_task:PROJ-010 --link parent_task:PROJ-0
 ```
 
 A JSON array adds its **entries**, never itself — a list nested inside a list
-field is not a card any reader can load (HATS-1299).
+field is not a card any reader can load.
 
 State and field ops compose in one call — `rack transition PROJ-042 --state
 execute --set role=implementer` is one lock, one persist.
@@ -110,7 +110,7 @@ rack transition PROJ-042 --state done --force --reason "shipped on master"
 `--force` relaxes the FSM **arrow**, never consent — `consent | op --force`.
 Nothing you add to the command line switches the supervisor's question off, so
 run the recipe bare and let the question happen. **Every** road into `done`
-carries it, the forced one included (HATS-1752). How many times you are asked is
+carries it, the forced one included. How many times you are asked is
 not the command's property either: an open grant window pays for the move in
 silence, and where nobody can be asked, `AI_HATS_CONSENT_ACK=1` in the
 **launching** environment stands in.
@@ -164,8 +164,8 @@ completes** — never batch every transition at the end. Finished work left in
 | `plan → execute`                             | plan approved                                      | re-validate the premise first (below); rack auto-creates the `task/<id>` worktree — `cd` into it (**worktree-isolation**)                                                              |
 | `execute → document`                         | code + tests done **and committed**                | `git status` clean; log a one-line summary; then advance — do not stall in `execute`                                                                                                   |
 | `document → review`                          | work finished — this **signals "awaiting review"** | attach `summary.md` (**task-summary**), then advance to `review` and **WAIT** — do **not** self-advance to `done`                                                                      |
-| `review → done`                              | the card `reviewer` approved with no rework asked  | the reviewer drives this edge, not you; it **auto-merges the worktree** (subscriber, HATS-1019) — no `wt merge`                                                                        |
-| `review → execute` (rework)                  | review returned **WITH comments** to address       | transition `execute` (fires **no** merge — the worktree survives for the rework, HATS-1052), address the comments, then `document` → `review` again; this is the loop, not a `--force` |
+| `review → done`                              | the card `reviewer` approved with no rework asked  | the reviewer drives this edge, not you; it **auto-merges the worktree** (subscriber) — no `wt merge`                                                                        |
+| `review → execute` (rework)                  | review returned **WITH comments** to address       | transition `execute` (fires **no** merge — the worktree survives for the rework), address the comments, then `document` → `review` again; this is the loop, not a `--force` |
 | `brainstorm/plan/execute/document → blocked` | an external dependency stalls progress             | log the blocker (**request-supervisor**), transition `blocked`; return to the prior state when unblocked — NB: `review` has no `blocked` edge (see the table above)                    |
 | `execute/review → failed`                    | the task cannot be completed                       | **self-retrospective** (mandatory — why it failed), then `failed → brainstorm` to re-plan                                                                                              |
 | any non-terminal `→ cancelled`               | won't-fix / duplicate / obsolete                   | requires `--resolution "<why>"` (the audit trail); the worktree is discarded — work is not preserved                                                                                   |
@@ -191,8 +191,7 @@ stale, bounce to `brainstorm` instead of building on a dead premise
 ## Anti-Patterns
 
 - Leaving finished work in `execute`, or advancing to `review` then self-jumping
-  to `done` — advance per phase, enter `review` to signal readiness, and **wait**
-  (HATS-1047).
+  to `done` — advance per phase, enter `review` to signal readiness, and **wait**.
 - Driving lifecycle through `ai-hats task transition` in a rack session — the
   rack dispatcher/journal/worktree path is what's being dogfooded; use `rack`.
 - Reaching for a `rack update` verb — there is none; field edits are

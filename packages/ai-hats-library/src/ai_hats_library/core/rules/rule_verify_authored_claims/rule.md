@@ -41,6 +41,6 @@ Any prose you author that a reader will act on — `docs/`, `README`,
 sit under `dev_rule_comment_discipline`: same principle, narrower surface
 (it forbids a stale-able count outright rather than asking you to verify it).
 
-Source: HATS-1430. The invariant is the claim's checkability, not the lexical
+Source: The invariant is the claim's checkability, not the lexical
 shape it happened to take. The `prose-refs` CI stage now holds the name and the
 path; the glob, the quantifier and the count are still yours.

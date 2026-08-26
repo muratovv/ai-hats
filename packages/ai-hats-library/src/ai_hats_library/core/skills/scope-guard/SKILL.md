@@ -73,7 +73,7 @@ the rationalization, not just the regret:
 | Rationalization (what you tell yourself)            | Why it's wrong                                                                                                         |
 | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | "I'll just add this helper while I'm here"          | Not requested — the user scopes, your convenience doesn't                                                              |
-| "Skeleton/infra obviously means wire up everything" | Defaults to *only what was named*; ask with a concrete enumeration (HATS-265: switched 4 handlers, user rolled back 3) |
+| "Skeleton/infra obviously means wire up everything" | Defaults to *only what was named*; ask with a concrete enumeration (switched 4 handlers, user rolled back 3) |
 | "It won't compile without this extra bit"           | Maybe — but that is an escalation ("ASK first"), not a licence to expand silently                                      |
 | "Faster to do it all now than to ask"               | The ask round-trip is cheaper than the rollback                                                                        |
 
@@ -99,7 +99,7 @@ obra/superpowers, MIT.)
   "wire up the framework call for Z" — interpret as **minimum viable demo +
   ask before expanding**, NOT as "wire up all related entry-points". A
   one-liner answer about scope without an explicit "everything" defaults to
-  "only what was specifically named". Worked example: HATS-265 — user said
+  "only what was specifically named". Worked example — user said
   "нужен скелет вызова ai-hats", agent switched 4 CLI handlers via
   pipeline-presets; user rolled back 3 of them. The correct ask is: "only X,
   X and Y, or all four?" with a concrete enumeration.

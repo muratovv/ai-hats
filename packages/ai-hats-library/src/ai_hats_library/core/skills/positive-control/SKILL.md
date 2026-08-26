@@ -30,7 +30,7 @@ selecting a sensitive control requires judgment.
 
 - Report the subject, control, both outcomes, and provenance; a failed control
   leaves no subject verdict.
-- Validation — HATS-1824 case 3: RED compares a missing baseline with the current
+- Validation — case 3: RED compares a missing baseline with the current
   tree and falsely reports zero delta. GREEN checks each component's intended
   root; the baseline control fails, so the agent withholds the delta verdict.
 

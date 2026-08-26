@@ -16,28 +16,28 @@ composition:
     - dev::shell
   rules: []
   skills:
-    # HATS-550 — installs a pre-push hook that runs e2e+smoke when the
+    # installs a pre-push hook that runs e2e+smoke when the
     # push target is refs/heads/master. Pure infrastructure (no agent-side
     # decision logic); hard gate, no env-var bypass.
     - maintainer-quality-gate
-    # HATS-1291 — wt_in hook that mints a .venv in each new worktree, so the
+    # wt_in hook that mints a .venv in each new worktree, so the
     # first commit clears the smoke gate without hand-provisioning. Pure
     # infrastructure; warn-continue, never blocks worktree creation.
     - worktree-venv
-  # HATS-1540 — the live consumer of the bindings channel, on BOTH roads into
+  # the live consumer of the bindings channel, on BOTH roads into
   # master: `apps.rack.tasks` is the FSM automerge and `apps.wt` is a direct
   # `ai-hats wt merge`, and a gate that holds only one of them is the asymmetry
-  # that started this epic (HATS-1130). Each check is a marker lookup; the suites
+  # that started this epic. Each check is a marker lookup; the suites
   # run out of band via `make merge-gate` / `make done-gate`.
   #
-  # TWO GATES since HATS-1614, one per edge, because the two edges ask different
+  # TWO GATES, one per edge, because the two edges ask different
   # questions (ADR-0023 D3/D4). `->merge`: is this branch fit to enter master —
   # the agent is alone at that refusal. `->done`: is master green after this card
   # — the supervisor is present, and only here can a gate see two independently
   # green branches meeting. `merge-gate`'s composition stays a subset of
   # `done-gate`'s, so one run pays for both (D5).
   #
-  # Two rows rather than one list of points since HATS-1545: the app owns the
+  # Two rows rather than one list of points: the app owns the
   # grammar above `run:`, so a row belongs to exactly one app. `apps.rack.tasks`
   # names the backlog it gates, which is what keeps it off a sibling backlog.
   #
@@ -46,25 +46,24 @@ composition:
   # leaves the card in `review` with no merge commit. In `wt merge` it fires
   # after `_check_clean` / `_check_drift` and before any mutation.
   #
-  # HATS-1137 shipped the edge half and HATS-1538 withdrew it an hour later for
+  # An earlier pass shipped the edge half and withdrew it an hour later for
   # two reasons, both now closed: the gate fired on every backlog the rack CLI
   # touched (the script decides that itself now — AI_HATS_TASKS_DIR, see
   # done-gate.sh), and a session predating the binding had no snapshot to
-  # resolve from (there is no separate snapshot any more — HATS-1540 S1).
+  # resolve from (there is no separate snapshot any more).
   #
   # Role-scoped on purpose (ADR-0019 D7): each gate demands a composition of its
   # own name from scripts/ci-local.sh and refuses a project that names none, so
   # they belong to a role only this codebase wears — never to a base trait.
   #
   # `at: ['->done']` is EVERY road into the state, not just the review one
-  # (HATS-1719). Measured: the worktree teardown-merge fires on 8 of the 8 edges
+  # Measured: the worktree teardown-merge fires on 8 of the 8 edges
   # into `done` and this gate covered 1 — a forced close (`--state done --force`)
   # merged into master with "is master green after this card" never asked.
   apps:
     rack:
       tasks:
-        # The gate covers every road into `done` (HATS-1719), and since HATS-1752
-        # so does the question — which is why the narrow `review->done` consent row
+        # The gate covers every road into `done`, and so does the question — which is why the narrow `review->done` consent row
         # this role used to carry is gone rather than merely moved. Consent itself is
         # session middleware now, declared by trait-agent under `apps.consent_gate`
         # and read by nothing in rack (ADR-0030 D1/D3).
@@ -84,7 +83,7 @@ composition:
 #     split decision rule.
 #   - Personal workflow is layered in via ~/.ai-hats/customizations.yaml — add
 #     with `ai-hats config customize maintainer --add-trait personal-workflow
-#     --global`. Lives in user-scope, not framework defaults (HATS-433).
+#     --global`. Lives in user-scope, not framework defaults.
 injection: |
   # ROLE: AI-HATS MAINTAINER
 

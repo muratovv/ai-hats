@@ -59,9 +59,9 @@ style from `how-to-feedback-loop.md`"):
 - Precedent docs are not automatically canonical. They may have landed without
   full user approval, and may drift later.
 
-**Worked example.** HATS-358: lifted dual numbered-refs format (`**[N]**` visible
+**Worked example.** A doc lifted the dual numbered-refs format (`**[N]**` visible
 section + `[N]: url` defs) from `how-to-feedback-loop.md`. User dropped the
-link-ref defs on first review; HATS-360 later converged the convention to
+link-ref defs on first review; a later pass converged the convention to
 visible-section-only across all docs.
 
 Skip section 1 only for trivial single-paragraph doc edits.
@@ -90,7 +90,7 @@ exist), not as the deliverable shape.
 
 ### Worked example
 
-**HATS-364 (glossary extend, 2026-05-17).** Task listed 37 components from
+**A glossary-extend task.** It listed 37 components from
 `packages/ai-hats-library/src/ai_hats_library/core/` (7 roles + 6 traits + 5 rules + 19 skills) with a one-line
 purpose each. Initial plan: document all 37.
 
@@ -164,9 +164,9 @@ intentional): `AI_HATS_DOCS_INDEX_ACK=1 git commit ...`.
 
 ### Worked example
 
-**HATS-354 sync-pass on `how-to-feedback-loop.md`.** Doc referenced a
+**A sync-pass on `how-to-feedback-loop.md`.** The doc referenced a
 `hypothesis-workflow` skill that does NOT exist in `library/`. Phantom from
-pre-HATS-252 era — predecessor never grep-verified. Caught at round-2 user
+an earlier era — the predecessor never grep-verified. Caught at round-2 user
 review. Same root cause as a stale `reflect all` → `judge` role mention
 elsewhere in the same doc.
 

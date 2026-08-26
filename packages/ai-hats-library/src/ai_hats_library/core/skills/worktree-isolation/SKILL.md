@@ -6,7 +6,7 @@ ai_hats:
     PreToolUse:
       - matcher: Edit|Write|MultiEdit
         script: hooks/wt_gate.py
-      # Claude-surface tool; inert where it does not exist (HATS-1278).
+      # Claude-surface tool; inert where it does not exist.
       - matcher: EnterWorktree
         script: hooks/wt_entry_gate.py
 license: MIT
@@ -16,7 +16,7 @@ license: MIT
 
 Isolated development using git worktrees. Each task gets its own working copy — main branch stays clean.
 
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script since HATS-790):
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script):
 >
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
@@ -25,9 +25,9 @@ Isolated development using git worktrees. Each task gets its own working copy �
 >
 > If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
-> **Worktree Python Environment & Interpreter Trap (HATS-1242).** The main venv's editable install points at the MAIN checkout, so **any** command run with that interpreter observes the main checkout — not only tests. `ai-hats` CLI invocations and compose smokes count, and so does anything else you would call verification.
+> **Worktree Python Environment & Interpreter Trap.** The main venv's editable install points at the MAIN checkout, so **any** command run with that interpreter observes the main checkout — not only tests. `ai-hats` CLI invocations and compose smokes count, and so does anything else you would call verification.
 >
-> - **Run everything through the worktree's own interpreter**: `./.venv/bin/python -m pytest …`. `wt create` mints that venv for you (`worktree-venv`, HATS-1291); if it is missing, `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` (plus any workspace sub-packages `-e packages/...`).
+> - **Run everything through the worktree's own interpreter**: `./.venv/bin/python -m pytest …`. `wt create` mints that venv for you (`worktree-venv`); if it is missing, `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` (plus any workspace sub-packages `-e packages/...`).
 > - **Verifying a library-DATA change is the dangerous case.** For a code change the session tripwire (`tests/conftest.py`) refuses the run, so the trap is loud. For `SKILL.md` / trait / role `config.yaml` there is no tripwire: a compose smoke run against the main venv succeeds, exits 0, and validates a tree your change never touched. Validate the worktree file directly, or put the worktree venv on PATH.
 
 ## Workflow
@@ -41,18 +41,18 @@ Isolated development using git worktrees. Each task gets its own working copy �
    **Claude surface only — enter with `cd`, never the `EnterWorktree` tool.** It
    builds a rival worktree outside ai-hats (no state, no locks, no venv, wrong
    branch name), or raises an approval prompt nothing can suppress. The
-   `wt_entry_gate.py` PreToolUse hook denies it and repeats this recipe
-   (HATS-1278). No other surface has the tool — skip this paragraph there.
+   `wt_entry_gate.py` PreToolUse hook denies it and repeats this recipe.
+   No other surface has the tool — skip this paragraph there.
 
    **Claude surface only — delegate with `ai-hats agent --isolation`, never the
    Agent tool's `isolation: "worktree"`.** A subagent that writes leaves its
    worktree on disk on a `worktree-agent-<hex>` branch — registered in git,
-   invisible to `ai-hats wt list` (measured, HATS-1285). A read-only subagent
+   invisible to `ai-hats wt list` (measured). A read-only subagent
    needs no isolation at all. No other surface has the parameter — skip this
    paragraph there.
 
    A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** a code/config Edit/Write in
-   the **main checkout** — interactive and headless (HATS-889; the old nudge was ignored,
+   the **main checkout** — interactive and headless (the old nudge was ignored,
    PROX-375). On a deny, move into a worktree and re-apply: `ai-hats wt status` for an
    active one, else `ai-hats wt create <type>/<name>` from `master`. Don't ask to skip a
    worktree (making one is one command); ask the supervisor only for a genuine
@@ -62,7 +62,7 @@ Isolated development using git worktrees. Each task gets its own working copy �
 
 2. **Work** — commit freely in the worktree. Main tree is untouched.
 
-3. **Finish** → hand off for review; the merge is review-gated (HATS-1019).
+3. **Finish** → hand off for review; the merge is review-gated.
    In an interactive session, the external consent wrapper turns the canonical
    `rack transition … done` or direct `ai-hats wt merge` command into a
    supervisor question. The agent never exports an acknowledgement flag and
@@ -81,10 +81,10 @@ Isolated development using git worktrees. Each task gets its own working copy �
    `origin/<base>` received commits). Re-verify your changes against the
    new base (re-run grep-verify, re-check moved/renamed paths), then
    **rebase in the worktree** — `git rebase <base>` clears the guard, no
-   flag needed, so `rack transition <id> done` works again (HATS-1307).
+   flag needed, so `rack transition <id> done` works again.
    `--accept-drift` is for the other case: merging a stale baseline you
    accept knowingly. **Do not** pass `--force` for drift — `--force` only
-   bypasses uncommitted changes; drift has its own override (HATS-457).
+   bypasses uncommitted changes; drift has its own override.
    Neither `--force` nor `--accept-drift` bypasses the session wrapper.
 
 4. **Abandon** → discard:
@@ -114,7 +114,7 @@ git rebase <base-branch>         # usually master
 
 # Close from the MAIN checkout — NOT from inside the worktree. A
 # worktree-backed `transition done` issued from inside its own worktree
-# is refused (HATS-788): the merge runs `git worktree remove` on the cwd
+# is refused: the merge runs `git worktree remove` on the cwd
 # you are standing in, which would orphan your shell and desync the tracker.
 cd <project-dir>
 rack transition <id> done   # ack-free once the branch is merged; do NOT `git merge` by hand
@@ -164,7 +164,7 @@ author one see `docs/how-to-extend.md` → "Worktree lifecycle hooks".
 environment wrapper, not a teleporter: it runs your command **where you stand**
 when your cwd is inside the worktree, and at the worktree root otherwise.
 
-**It swaps the import path, not the interpreter** (HATS-1304). Measured:
+**It swaps the import path, not the interpreter**. Measured:
 
 ```bash
 ai-hats wt exec task/hats-1 -- python -c 'import sys, ai_hats; print(sys.executable, ai_hats.__file__)'
@@ -213,7 +213,7 @@ Pass `--` before any command that has its own `-C` (e.g. `make -C`).
 
 **Reaching another worktree.** A leading token naming an active branch is a
 selector and always beats cwd, so this works from inside a *different* worktree
-too (HATS-1213). Without a selector the worktree comes from cwd, else the sole
+too. Without a selector the worktree comes from cwd, else the sole
 active one; with several active and no selector, `wt exec` refuses and lists them.
 
 For interactive shell work (rare) — bare, or named to reach another worktree:
@@ -245,18 +245,18 @@ lifecycle.
 - Working directly on main branch for non-trivial changes — use a worktree
 - Forgetting to `cd` back to project dir before merge/discard — commands fail silently
 - Multiple active worktrees without tracking — leads to forgotten branches
-- Running `ai-hats wt create` / `wt merge` / `wt discard` / `rack transition <id> done|failed|cancelled` from inside a linked worktree — all blocked (HATS-788). The teardown commands run `git worktree remove` on the very cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker. Always `cd` back to the main repo first; use `ai-hats wt exec` / `ai-hats wt env` to act on a worktree without leaving it.
+- Running `ai-hats wt create` / `wt merge` / `wt discard` / `rack transition <id> done|failed|cancelled` from inside a linked worktree — all blocked. The teardown commands run `git worktree remove` on the very cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker. Always `cd` back to the main repo first; use `ai-hats wt exec` / `ai-hats wt env` to act on a worktree without leaving it.
 - Mixing manual `wt create` with `rack transition <id> execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
-- Invoking `ai-hats wt create` (or `rack transition <ID> execute`) while the main repo's HEAD is not on the worktree merge target — blocked with a "Refused: … not the worktree merge target" error (HATS-518). The worktree inherits its merge target from the current branch, so creating from the wrong branch causes `wt merge` to silently land on it. The target is `master`/`main` by default, or a configured `worktree.merge_target` (see the fork-workflow note below). Recovery: the error names the branch — `git checkout <that branch>` in the main repo, then retry.
+- Invoking `ai-hats wt create` (or `rack transition <ID> execute`) while the main repo's HEAD is not on the worktree merge target — blocked with a "Refused: … not the worktree merge target" error. The worktree inherits its merge target from the current branch, so creating from the wrong branch causes `wt merge` to silently land on it. The target is `master`/`main` by default, or a configured `worktree.merge_target` (see the fork-workflow note below). Recovery: the error names the branch — `git checkout <that branch>` in the main repo, then retry.
 - **Working without committing inside a worktree** — uncommitted work in a worktree is NOT protected. The worktree is a filesystem directory that parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task). If a step could be reverted with `git checkout HEAD -- .`, you've waited too long to commit.
-- **Finishing the worktree cycle with raw git** — running `git merge --no-ff <task-branch>`, `git worktree remove`, or a manual `git push` to the base branch instead of `ai-hats wt merge` / `rack transition <id> done`. The CLI wrappers run the FSM lifecycle hooks — per-branch + base-branch merge-locks, drift-check, stale-lock recovery, state cleanup (HATS-477/484). Raw git skips every one of them and re-opens the race/drift bugs those epics closed; a manual merge *before* FSM-`done` also produces a double-merge conflict that then needs `--force` (HYP-023). **Scope:** this targets the **lifecycle transitions only** (merge-to-base + cleanup + done). Raw git for *inspection* (`git status`/`log`/`diff`, `git worktree list`) and for *in-worktree conflict resolution* during a rebase stays fine.
+- **Finishing the worktree cycle with raw git** — running `git merge --no-ff <task-branch>`, `git worktree remove`, or a manual `git push` to the base branch instead of `ai-hats wt merge` / `rack transition <id> done`. The CLI wrappers run the FSM lifecycle hooks — per-branch + base-branch merge-locks, drift-check, stale-lock recovery, state cleanup. Raw git skips every one of them and re-opens the race/drift bugs those epics closed; a manual merge *before* FSM-`done` also produces a double-merge conflict that then needs `--force` (HYP-023). **Scope:** this targets the **lifecycle transitions only** (merge-to-base + cleanup + done). Raw git for *inspection* (`git status`/`log`/`diff`, `git worktree list`) and for *in-worktree conflict resolution* during a rebase stays fine.
 
 ## Specific base or target branch
 
 Fork/dogfood repos can cut worktrees from one branch and merge them into another
 (base ≠ merge-target) via the `worktree` block in `ai-hats.yaml`. Rarely needed;
 full contract in `docs/how-to-configure.md`, section "The `worktree` block"
-(HATS-942) — for a project whose dev trunk is not its upstream default branch.
+ — for a project whose dev trunk is not its upstream default branch.
 
 ## If You End Up With a Stray Worktree
 
@@ -274,4 +274,4 @@ Rule of thumb: one task, one worktree, one `<ai_hats_dir>/sessions/worktree.json
 Work shipped on the base out-of-band? From `brainstorm`/`plan`, fast-close with a
 forced terminal transition: `rack transition <id> --state done --force --reason "…"`.
 From `execute`/`document`/`review`: `rack transition <id> done` finalizes an
-already-merged branch even if the worktree/state is gone (HATS-697).
+already-merged branch even if the worktree/state is gone.

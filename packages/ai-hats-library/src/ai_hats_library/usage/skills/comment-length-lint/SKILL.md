@@ -16,7 +16,7 @@ Thin registration shell for a PostToolUse runtime-hook: after every agent
 `#` lines) and bloated docstrings (> 10 lines or > 700 chars) on the file are
 forwarded to the agent via non-blocking `additionalContext`. Backstop for
 `dev_rule_comment_discipline` — the few-shot guide is the primary defense; this
-catches the HATS-837 shapes that slip past it. A deliberate long contract
+catches the shapes that slip past it. A deliberate long contract
 suppresses a single finding with `# comment-length: allow` (in the block, on the
 `def`/`class` line, or inside a module docstring); the legacy
 `noqa: comment-length` still works but trips ruff's `# noqa:` parser as a bare

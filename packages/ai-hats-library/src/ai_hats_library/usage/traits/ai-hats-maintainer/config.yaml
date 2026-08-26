@@ -3,7 +3,7 @@ composition:
   traits: []
   rules:
     - dev_rule_e2e_gate
-    # HATS-1629: the injection cites this rule; without it the pointer is undeliverable.
+    # the injection cites this rule; without it the pointer is undeliverable.
     - rule_core_vs_usage_split
   skills:
     - doc-protocol
@@ -33,7 +33,7 @@ injection: |
   - **Conventional Commits**: `<type>(<scope>): <subject>`. Types: `feat`,
     `fix`, `docs`, `refactor`, `test`, `chore`, `security`.
   - Reference the backlog ID in the subject when applicable:
-    `feat(launcher): venv-first wrapper (HATS-336)`.
+    `feat(launcher): venv-first wrapper`.
   - One logical change per commit. Squash WIP before PR.
   - **No `Co-Authored-By` trailers** — commits are authored solely by the user.
 
@@ -41,7 +41,7 @@ injection: |
   - **Update ai-hats in a consuming project:** `ai-hats self update` (NOT raw
     `pip install --force-reinstall git+...`). Follow with `ai-hats self init`
     if composition changed. For projects with isolated venv, call the venv
-    interpreter explicitly (HATS-790: no `bin/ai-hats` console script):
+    interpreter explicitly (no `bin/ai-hats` console script):
     `~/<project>/.venv/bin/python -m ai_hats self update`.
   - **Backlog ops:** every change to `tasks/<ID>/**` through your composed
     backlog manager (CLI) — never direct file edits (see `rule_backlog_discipline §1`).
@@ -64,7 +64,7 @@ injection: |
   - **Glossary-first**: when adding a named visual block, role, skill, or
     user-facing concept, update `docs/glossary.md` BEFORE the code. Names
     must be locked at plan stage, not post-hoc.
-  - **Numbered-refs convention** (HATS-360): for cross-doc / cross-file /
+  - **Numbered-refs convention**: for cross-doc / cross-file /
     fixture links use `[N]` in body + visible `## References` section at the
     end. In-doc anchors (`#section`) and CLI strings stay inline. Full rules:
     `CONTRIBUTING.md#documentation-references`.
@@ -96,7 +96,7 @@ injection: |
   light and dark `theme-id` standalone. The separate `dark-theme-overrides`
   field applies only when a light theme is the default and a dark theme is
   set as an alternate — using it for `theme-id: 200` alone silently leaves
-  the Catppuccin Mocha base in place (HATS-348 first attempt).
+  the Catppuccin Mocha base in place on the first attempt.
 
   **Palette slot map** (16 slots from `_palette.d2`): `N1`–`N7` neutrals
   (text → cream background `#faf2e6`), `B1`–`B6` navy spectrum (box fills,
@@ -106,7 +106,7 @@ injection: |
 
   **Containers + nested direction.** `direction: <inner>` inside a container
   can be silently ignored by the ELK layout engine when it conflicts with
-  the outer direction. HATS-348 backlog FSMs were attempted as one diagram
+  the outer direction. The backlog FSMs were once attempted as one diagram
   with three containers → unreadable; resolved by splitting into 3 separate
   `.d2` files. Prefer **separate files** for independent diagrams when more
   than ~10 nodes are involved.
@@ -139,7 +139,7 @@ injection: |
 
   Anything you touch under session artifacts, retro storage, metrics, or a
   task's `audit.md` feeds these — that file IS the reviewer's input, so
-  trimming it silently blinds the loop (HATS-1374). Read `docs/reflect.md`
+  trimming it silently blinds the loop. Read `docs/reflect.md`
   before changing the contour; setup + policies: `docs/how-to-feedback-loop.md`.
 
   ### Architectural defaults (project conventions)
@@ -153,6 +153,6 @@ injection: |
   - **Persistence (`Path.write_text`) is not a Step** — until there is a use case like declarative pipeline manifests, persistence stays in handlers.
 
   ### Anti-patterns to refuse
-  - **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (See HATS-381 for the consolidation precedent.)
+  - **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (There is a consolidation precedent.)
   - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see `dev_rule_e2e_gate`).
   - **HYP-as-technical-risk**: HYP is for agent-behaviour hypotheses. Code / migration / harness risks belong in `rack transition <FOLLOW_UP_ID> --log "…"`, not in a new HYP (see `rule_backlog_discipline §5`).

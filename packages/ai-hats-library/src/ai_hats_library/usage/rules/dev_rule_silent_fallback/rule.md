@@ -62,5 +62,5 @@ the narrower `pass`/`continue` shape as a second contour.
 The gate checks **form**. It cannot prove point 4 — that a fallback is covered
 by a test — and does not claim to. That one is on you and on review.
 
-Source: HATS-1373 — 46 inert handlers, nine inside the gate contour itself, six
+Source: 46 inert handlers, nine inside the gate contour itself, six
 hiding a live bug.

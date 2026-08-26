@@ -1,7 +1,7 @@
 # Rule: Composition & Pipeline Value Contract
 
-Four invariants govern composition flow; breaching any reproduces HATS-452
-(role/trait injection silently absent from the prompt). Full rationale:
+Four invariants govern composition flow; breaching any drops a role or trait
+injection from the prompt, silently. Full rationale:
 `docs/adr/0005-composition-and-pipeline-value-contract.md`.
 
 1. **Immutable.** `CompositionResult` / `ResolvedComponent` are frozen — copy

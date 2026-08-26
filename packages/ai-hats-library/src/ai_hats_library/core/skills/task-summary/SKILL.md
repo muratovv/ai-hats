@@ -91,4 +91,4 @@ Result: <done | failed>
 - Writing the summary without reading the task's work_log first — you'll miss context
 - Writing the summary under `tasks/<ID>/` by hand — `summary.md` there, or a
   `summary_file:` key in task.yaml. Both break `rule_backlog_discipline §1`, and no
-  CLI writes either. `attach add` is the door (HATS-1007)
+  CLI writes either. `attach add` is the door

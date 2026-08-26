@@ -51,7 +51,7 @@ Shipped shape of the split: `dev_rule_e2e_gate` is a `core/` rule (the concept
 transfers) bundled by the `usage/` trait `ai-hats-maintainer` (its trigger
 surface does not), which roles opt into.
 
-Source: PROP-037, from HATS-373 — pattern-matching to the nearest neighbour
+Source: PROP-037 — pattern-matching to the nearest neighbour
 instead of asking universal-vs-specific, paid for with a full plan rewrite.
 
 ## See also

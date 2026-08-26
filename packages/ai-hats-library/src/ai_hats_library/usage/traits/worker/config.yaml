@@ -25,8 +25,8 @@ injection: |
   your context in proportion to how long you sleep, and on claude a foreground
   shell call is capped at 600 s, so a long one cannot even complete there. In the
   background the cost is one wake-up and does not depend on the wait — measured
-  across half an hour of sleep in HATS-1450 (zero events inside the wait windows)
-  and a single 79-minute wait in HATS-1458. Until you are woken, do nothing at
+  across half an hour of sleep in one measured run (zero events inside the wait windows)
+  and a single 79-minute wait in Until you are woken, do nothing at
   all: no plan, no code, no getting a head start.
 
   ### The round
@@ -43,13 +43,13 @@ injection: |
 
      BOTH states are mandatory, and that is measured rather than stylistic:
      `execute` means sent back, `done` means accepted. Name only one and you hang
-     forever on the other branch. In HATS-1450 the leader once approved and left
+     forever on the other branch. In that same run the leader approved and left
      the card in `review`, and the closing edge was `review → done` — not the
      `review → execute` you get used to.
   4. Woken on `execute` → back to 1. Woken on `done` → accepted; report and finish.
 
   Log one line before each sleep and one on each wake. `rack transition --log`
-  does not write to `audit.jsonl` (HATS-1458), so `work_log` is the only record
+  does not write to `audit.jsonl`, so `work_log` is the only record
   that the hand-off happened at all.
 
   ### All the mechanical work is yours
@@ -60,7 +60,7 @@ injection: |
 
   ### Hand back with evidence, not adjectives
 
-  Two reports from a real run (HATS-1458). Both were false, and both sounded
+  Two reports from a real run. Both were false, and both sounded
   exactly like a finished job:
 
   | What the worker reported           | What was true                                  |
@@ -75,7 +75,7 @@ injection: |
   | implemented | commit SHAs on the branch + `git diff --stat <base>...<branch>`                                                                                                                                                                                                  |
   | tests green | the RUNNER's own exit code — not a filter's or a wrapper's — plus the log path, from this run's artefact                                                                                                                                                                |
   | lint green  | its OWN separate exit code. A green test run says nothing about formatting.                                                                                                                                                                                      |
-  | covered     | which test goes red when the fix is reverted — reverted from the pre-fix SHA (`git checkout <sha> -- <file>`), never `git stash`: once the fix spans two commits, `stash` rolls back only the uncommitted part and the suite goes green for the wrong reason (HATS-1450) |
+  | covered     | which test goes red when the fix is reverted — reverted from the pre-fix SHA (`git checkout <sha> -- <file>`), never `git stash`: once the fix spans two commits, `stash` rolls back only the uncommitted part and the suite goes green for the wrong reason |
 
   A claim with no artifact is not handed back. If you could not produce the
   artifact, say so instead — "lint not run yet" is a fact the leader can act on;
