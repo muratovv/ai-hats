@@ -10,6 +10,12 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Reverted
+
+- **The `role-curator` / `library-curator` trim from HATS-1825 is undone** (HATS-1843). That pass moved the engine-internals map and the worktree-verification recipe out of the trait into `docs/how-to-extend.md`, and replaced the role's five-step workflow with three bullets pointing at the trait — buying back ~870 resident tokens a turn. A pointer only pays off if the agent follows it: the session that measured this one reached for the recipe from memory instead and got `ImportError: cannot import name 'build_library_paths'`, which is precisely the bounce the still-active HYP-108 exists to count. Both files are restored byte-identical to `ac5f92a3^`; the doc stays where HATS-1825 put it, so the text now lives in two places on purpose, and whether that duplication survives is HATS-1844's call rather than this card's.
+
+  Measured, not estimated: the composed `role-curator` prompt goes 53,128 → 56,665 chars, its budget 56,819 → 57,695 tokens (+876) — the original ~870 figure was accurate. `maintainer` does not move by a single token, which is the control: it composes neither component.
+
 ### Added
 
 - **`prose-refs`: a CI stage that reads library prose** (HATS-1825). `scripts/check_prose_refs.py` refuses a reference in `rule.md`, `SKILL.md` or a `config.yaml` injection that no longer resolves. Four shapes, each exact enough that a finding is a fact rather than a guess: an **anchored path** (first segment is a tracked top-level entry), a **library prefix** (`library/` and `libraries/` name a directory the package left behind), a **`component § "Heading"`** section citation, and a **`Class.method`** symbol. It runs in `all`, in the linting `tier` behind both gates, and in `push-gate`.
