@@ -22,7 +22,7 @@ from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 from .runtime_hooks import materialize_hook_manifest
 
 if TYPE_CHECKING:
-    from ai_hats.providers import CompositionResult
+    from ai_hats_core import CompositionResult
 
 ENV_OPENCODE_CONFIG = "OPENCODE_CONFIG"
 ENV_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"

@@ -35,8 +35,9 @@ from .session_home import (
 )
 
 if TYPE_CHECKING:
+    from ai_hats_core import CompositionResult
+
     from ai_hats.surfaces import ProviderHint
-    from ai_hats.providers import CompositionResult
 
 
 _DANGEROUS_FLAGS = {
