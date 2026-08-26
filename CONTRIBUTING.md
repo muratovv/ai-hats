@@ -255,12 +255,24 @@ empty surface. There is intentionally no `ai-hats self sync-hooks` command and n
 post-merge / post-checkout git hook: hook state is written at install time
 (`self init` / `self update`) and at session build, and nowhere else.
 
-The **dispatcher** is deliberately **fail-open** (HATS-1337): when ai-hats is
-missing, broken or mid-update it skips the gates with one warning line and lets
-the commit through. It used to fail closed and prescribe `ai-hats self init` —
-the one command that needs exactly the binary whose absence caused the
-degradation. A gate that cannot be resolved is a gate that does not run; it is
-never a commit that cannot happen.
+The **stub** is deliberately **fail-open** (HATS-1337): when the interpreter
+cannot be resolved or the module cannot be imported, it skips the gates with one
+warning line and lets the commit through. It used to fail closed and prescribe
+`ai-hats self init` — the one command that needs exactly the binary whose absence
+caused the degradation.
+
+Once the entry point IS executing, the answer flips (HATS-1828). A gate ai-hats
+cannot deliver — unparsable arguments, an untrusted session envelope, a failed
+composition, a rejected gate, a failed `execve`, an expired budget — **refuses**,
+because ai-hats is present and `ai-hats self update` reaches it. The old basis
+does not carry across that line: the stub's bytes cannot be repaired at commit
+time, and the entry point's can.
+
+A gate that RAN and exited non-zero is untouched either way — that is its
+author's verdict, not ai-hats' failure. And every refusal must name the flag that
+opens it (`AI_HATS_GIT_GATE_BROKEN_ACK`, or `AI_HATS_GIT_HOOK_TIMEOUT_S` for a
+budget); a deny with nowhere to go just produces `--no-verify`, which disarms the
+whole chain.
 
 **Bootstrap caveat (inherent, not a bug).** `.githooks/` is generated and
 gitignored, and `core.hooksPath` is local git config — neither travels with a

@@ -29,6 +29,7 @@ import json
 import os
 from collections.abc import MutableMapping
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from .constants import ENV_ROLE
@@ -85,6 +86,21 @@ def identity_for_project(
     return identity if identity.project_dir.expanduser().resolve() == here else None
 
 
+class IdentityFault(Enum):
+    """Why the identity could not be read — the fact, apart from its wording.
+
+    Consumers owe these two different reactions (HATS-1643): a session launched
+    by an older ai-hats can fall back to the configured role, because nothing is
+    torn — the envelope was never written. A torn or version-drifted envelope is
+    a trust failure, and the type's own contract says never a skip. Matching the
+    message text would work today and rot on the first rewording, so the fact
+    travels as a value — the same reason :class:`hook_exec.HookOutcomeKind` exists.
+    """  # comment-length: allow — the two reactions ARE the contract
+
+    TOO_OLD = "too_old"
+    UNTRUSTWORTHY = "untrustworthy"
+
+
 class SessionIdentityError(Exception):
     """The envelope is present but cannot be trusted — never a skip.
 
@@ -92,6 +108,10 @@ class SessionIdentityError(Exception):
     check channel imports, not the other way round. Consumers wrap it in
     whatever refusal their own surface speaks.
     """
+
+    def __init__(self, message: str, *, fault: IdentityFault = IdentityFault.UNTRUSTWORTHY):
+        super().__init__(message)
+        self.fault = fault
 
 
 @dataclass(frozen=True)
@@ -153,7 +173,8 @@ class SessionIdentity:
                 raise SessionIdentityError(
                     f"session {env[ENV_SESSION_ID]!r} carries no {ENV_SESSION_IDENTITY} — it was "
                     f"launched by an ai-hats too old to say what it is, so which role and "
-                    f"provider a gate belongs to cannot be known. Restart the session"
+                    f"provider a gate belongs to cannot be known. Restart the session",
+                    fault=IdentityFault.TOO_OLD,
                 )
             return None
         try:

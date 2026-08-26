@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import os
 import re
+import selectors
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from ai_hats_core.deadline import Deadline
 
@@ -122,6 +124,11 @@ def run_hook(
     extra_env: Mapping[str, str] | None = None,
     log_path: Path | None = None,
     tail_bytes: int = REASON_TAIL_BYTES,
+    argv: Sequence[str] = (),
+    stdin_payload: bytes | None = None,
+    tee: bool = False,
+    drop_env: Sequence[str] = (),
+    cwd: Path | None = None,
 ) -> HookRun:
     """Run ``script`` under the D2 contract and return its outcome.
 
@@ -134,6 +141,28 @@ def run_hook(
     ``budget`` is what the channel asks for, ``deadline`` what the caller is
     bounded by; the run gets the smaller, so no channel compares its own
     constant against a lock (HATS-1593).
+
+    The keyword arguments below widen the primitive to the git channel
+    (HATS-1828). Each defaults to what the other four channels already do, so
+    their path through this function is unchanged:
+
+    * ``argv`` — arguments the channel's own protocol hands the script. git
+      passes them; the declarative channels have none.
+    * ``stdin_payload`` — a FINITE buffer written to the child, then EOF. D2's
+      default stays ``DEVNULL``; what it forbids is an open pipe a hook can wait
+      on forever, which a buffer closed immediately is not.
+    * ``tee`` — also copy the child's streams to this process's own, for a
+      channel whose output belongs to a human watching it live. The reason is
+      still read from the sink, so the verdict is unaffected either way.
+    * ``drop_env`` — names the channel removes from the inherited environment.
+      ``extra_env`` can only add, and git must be able to strip the venv and
+      identity keys travelling with a foreign session pin (ADR-0025 D3) before
+      any gate, drop-in or chained hook sees them.
+    * ``cwd`` — where the child runs; ``project_dir`` when unset. git is the one
+      channel where the two differ: a commit inside a linked worktree must have
+      its gates inspect THAT tree, and a gate rooting itself with
+      ``git rev-parse --show-toplevel`` from the main checkout would validate the
+      wrong one and pass — worse than failing (ADR-0019 D5/D7).
     """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
         return _corrupt(
@@ -175,20 +204,40 @@ def run_hook(
         )
     err_sink, err_path = _open_scratch_sink()
     expired: subprocess.TimeoutExpired | None = None
-    proc: subprocess.CompletedProcess[bytes] | None = None
+    returncode: int | None = None
+    cmd = [str(script), *argv]
+    run_in = str(project_dir if cwd is None else cwd)
+    env = _hook_env(point, project_dir, force, task_id, worktree_path, tasks_dir, extra_env)
+    for name in drop_env:
+        env.pop(name, None)
     try:
         try:
-            proc = subprocess.run(  # noqa: S603 — spawning the caller's hook IS the contract; no shell
-                [str(script)],
-                cwd=str(project_dir),
-                env=_hook_env(
-                    point, project_dir, force, task_id, worktree_path, tasks_dir, extra_env
-                ),
-                stdin=subprocess.DEVNULL,
-                stdout=sink,
-                stderr=err_sink,
-                timeout=timeout,
-            )
+            if tee:
+                returncode = _run_teed(
+                    cmd,
+                    cwd=run_in,
+                    env=env,
+                    payload=stdin_payload,
+                    sinks=(sink, err_sink),
+                    timeout=timeout,
+                )
+            else:
+                completed = subprocess.run(  # noqa: S603 — spawning the caller's hook IS the contract; no shell
+                    cmd,
+                    cwd=run_in,
+                    env=env,
+                    # `input` and `stdin` are mutually exclusive in `run`, so the
+                    # absent payload is what selects D2's default.
+                    **(
+                        {"stdin": subprocess.DEVNULL}
+                        if stdin_payload is None
+                        else {"input": stdin_payload}
+                    ),
+                    stdout=sink,
+                    stderr=err_sink,
+                    timeout=timeout,
+                )
+                returncode = completed.returncode
         except subprocess.TimeoutExpired as exc:
             expired = exc
         except OSError as exc:
@@ -227,18 +276,18 @@ def run_hook(
                 output_size=size,
             )
 
-        assert proc is not None  # noqa: S101 — the three exits above are exhaustive
-        verdict = _classify(proc.returncode)
-        named = _diagnosis(verdict, proc.returncode, script)
+        assert returncode is not None  # noqa: S101 — the three exits above are exhaustive
+        verdict = _classify(returncode)
+        named = _diagnosis(verdict, returncode, script)
         return HookRun(
             verdict=verdict,
-            exit_code=proc.returncode,
+            exit_code=returncode,
             reason=_note_truncation(
                 _reason(verdict, named, said, stderr), truncated, size, log_path
             ),
-            kind=_kind(proc.returncode),
+            kind=_kind(returncode),
             said=said,
-            detail=_detail(proc.returncode),
+            detail=_detail(returncode),
             stderr=stderr,
             log_path=log_path,
             truncated=truncated,
@@ -250,6 +299,122 @@ def run_hook(
         err_path.unlink(missing_ok=True)  # safe-delete: ok own scratch sink, already read
         if log_path is None:
             sink_path.unlink(missing_ok=True)  # safe-delete: ok own scratch sink, already read
+
+
+#: One read/write per selector wake-up. Big enough that a chatty hook is not
+#: pumped a syscall at a time, small enough to stay off this process's heap.
+_PUMP_CHUNK = 65536
+
+
+def _run_teed(
+    cmd: list[str],
+    *,
+    cwd: str,
+    env: dict[str, str],
+    payload: bytes | None,
+    sinks: tuple,
+    timeout: float,
+) -> int:
+    """Spawn ``cmd``, copying each stream to its sink AND this process's own.
+
+    Raises :class:`subprocess.TimeoutExpired` exactly as ``subprocess.run`` does —
+    including killing the child first — so both spawn paths converge on one
+    handler upstairs. stdin rides the same selector instead of being written up
+    front: a child that fills its stdout pipe before draining stdin would
+    otherwise deadlock against a parent blocked on the write.
+
+    The child's stdout is a pipe here rather than the terminal, so `isatty()` is
+    false where a direct spawn made it true. That costs nothing this channel
+    wanted: `_hook_env` already turns colour off for every hook.
+    """  # comment-length: allow — the deadlock and the isatty change are the contract
+    out_sink, err_sink = sinks
+    proc = subprocess.Popen(  # noqa: S603 — spawning the caller's hook IS the contract; no shell
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.DEVNULL if payload is None else subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    expires_at = time.monotonic() + timeout
+    pending = memoryview(payload) if payload else None
+    sel = selectors.DefaultSelector()
+    sel.register(proc.stdout, selectors.EVENT_READ, (out_sink, sys.stdout))
+    sel.register(proc.stderr, selectors.EVENT_READ, (err_sink, sys.stderr))
+    if proc.stdin is not None:
+        if pending is None:
+            proc.stdin.close()
+        else:
+            sel.register(proc.stdin, selectors.EVENT_WRITE, None)
+    try:
+        while sel.get_map():
+            left = expires_at - time.monotonic()
+            if left <= 0:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            for key, _mask in sel.select(timeout=left):
+                if key.data is None:
+                    pending = _pump_stdin(sel, key.fileobj, pending)
+                else:
+                    _pump_out(sel, key.fileobj, *key.data)
+        return proc.wait(timeout=max(0.0, expires_at - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise
+    finally:
+        sel.close()
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            if stream is not None and not stream.closed:
+                stream.close()
+
+
+def _pump_stdin(sel: selectors.BaseSelector, stream, pending: memoryview | None):
+    """Write what fits, return what is left; unregister once the buffer is spent.
+
+    Raw ``os.write`` rather than the buffered writer: this needs the count the
+    kernel actually took, which is the whole point of pumping instead of blocking.
+    """
+    try:
+        written = os.write(stream.fileno(), pending)
+    except BrokenPipeError:
+        # A hook that does not read its protocol is within its rights — git's own
+        # `pre-push` sample ignores stdin. Nothing is owed once the child hung up.
+        written = len(pending)
+    rest = pending[written:]
+    if not rest:
+        sel.unregister(stream)
+        stream.close()
+        return None
+    return rest
+
+
+def _pump_out(sel: selectors.BaseSelector, stream, sink, mirror) -> None:
+    """Copy one chunk to the sink (the verdict's source) and to ``mirror``."""
+    chunk = stream.read1(_PUMP_CHUNK)
+    if not chunk:
+        sel.unregister(stream)
+        stream.close()
+        return
+    sink.write(chunk)
+    _mirror(chunk, mirror, sink)
+
+
+def _mirror(chunk: bytes, mirror, sink) -> None:
+    """Echo ``chunk`` to this process's stream; on failure say so IN the sink.
+
+    The sink is the reported channel — it becomes the reason and the log — so a
+    lost echo is stated where the operator will actually read it, rather than
+    swallowed or escalated into a verdict the hook never earned.
+    """
+    try:
+        buffer = getattr(mirror, "buffer", None)
+        if buffer is None:
+            mirror.write(chunk.decode("utf-8", errors="replace"))
+        else:
+            buffer.write(chunk)
+        mirror.flush()
+    except (OSError, ValueError) as exc:
+        sink.write(f"\n(ai-hats: live output stopped: {exc})\n".encode())
 
 
 def _hook_env(

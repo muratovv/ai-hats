@@ -228,20 +228,32 @@ def _unrunnable(project: Path, mode: int, *, shebang: bool) -> Path:
 @pytest.mark.parametrize(
     ("mode", "shebang"), [(0o644, True), (0o755, False)], ids=["non-executable", "no-shebang"]
 )
-def test_a_script_that_cannot_be_exec_d_does_not_raise(tmp_path, capsys, mode, shebang):
+def test_a_script_that_cannot_be_exec_d_refuses_and_names_its_hatch(
+    tmp_path, capsys, mode, shebang
+):
     """`run_chain` reaches execve for drop-ins and the chained hook too — neither
     passes through `resolve_git_gates` — and a mode can change between any check
-    and the exec. PermissionError (no x bit) and OSError/ENOEXEC (no shebang)
-    both used to surface as a traceback on a human's commit.
+    and the exec. Neither may ever raise at a human's commit (HATS-1597).
+
+    HATS-1828 changed what happens instead. A gate that could not be DELIVERED is
+    ai-hats' own failure, not a verdict, so it now refuses rather than waving the
+    commit through — and the refusal states the flag that opens it, because a
+    deny with no way out only manufactures `--no-verify`.
     """
     project = _repo(tmp_path)
 
-    assert _run(project, gates=[_unrunnable(project, mode, shebang=shebang)]) == 0
-    assert "fail-open" in capsys.readouterr().err, "the skip must be spoken"
+    assert _run(project, gates=[_unrunnable(project, mode, shebang=shebang)]) != 0
+    err = capsys.readouterr().err
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err, "a deny must name its hatch"
 
 
-def test_an_unrunnable_gate_does_not_stop_the_ones_after_it(tmp_path: Path):
-    """Skipping is per-script: one bad mode must not silently disarm the rest."""
+def test_the_hatch_skips_the_broken_gate_and_runs_the_ones_after_it(tmp_path, monkeypatch):
+    """The hatch is a scalpel: it drops the gate that cannot run and no other.
+
+    That is the whole argument for refusing at all — `--no-verify` would have
+    disarmed this later gate too, along with every drop-in and chained hook.
+    """
+    monkeypatch.setenv("AI_HATS_GIT_GATE_BROKEN_ACK", "1")
     project = _repo(tmp_path)
     broken = _unrunnable(project, 0o644, shebang=True)
     ran = project / "ran.txt"
@@ -249,6 +261,20 @@ def test_an_unrunnable_gate_does_not_stop_the_ones_after_it(tmp_path: Path):
 
     assert _run(project, gates=[broken, good]) == 0
     assert ran.exists(), "a later gate was skipped along with the broken one"
+
+
+def test_a_gate_that_ran_and_failed_still_blocks_without_a_hatch(tmp_path, capsys):
+    """The other half of the split, and the one that must NOT drift.
+
+    `exit 1` lands in `BROKE` — the downgradable class — so a policy hung on the
+    verdict instead of the outcome kind would disarm every git gate at once. The
+    script ran and decided; ai-hats propagates it and offers no way around.
+    """
+    project = _repo(tmp_path)
+    gate = _script(project / "lib" / "nope.sh", 'echo "no"\nexit 1')
+
+    assert _run(project, gates=[gate]) == 1
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" not in capsys.readouterr().err
 
 
 # ---- foreign session pin, dropped for the children (HATS-1613, ADR-0025 D3) ----
@@ -347,3 +373,32 @@ def test_the_usual_path_is_a_silent_repin_not_a_warning(tmp_path, capsys):
 
     assert env["AI_HATS_PROJECT_DIR"] == str(project)
     assert capsys.readouterr().err == "", "nothing was dropped, so nothing to announce"
+
+
+# ----- HATS-1828: the chain is bounded, and a hang is the script's own fault ---
+
+
+def test_a_hung_gate_is_cut_off_and_points_at_the_budget(tmp_path, capsys, monkeypatch):
+    """Before this, `run_chain` spawned with no timeout at all: a gate that hung
+    hung the commit, with no way out but Ctrl-C — and no Ctrl-C in CI or a cron.
+
+    A hang is the script's own behaviour, not a delivery failure, so the refusal
+    points at the budget rather than at the skip-this-gate flag.
+    """
+    monkeypatch.setenv("AI_HATS_GIT_HOOK_TIMEOUT_S", "0.5")
+    project = _repo(tmp_path)
+    gate = _script(project / "lib" / "hang.sh", "sleep 30")
+
+    assert _run(project, gates=[gate]) != 0
+    err = capsys.readouterr().err
+    assert "AI_HATS_GIT_HOOK_TIMEOUT_S" in err, "the deny must name the budget"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" not in err, "a hang is not a delivery failure"
+
+
+def test_a_bad_budget_override_keeps_the_default(tmp_path, monkeypatch):
+    """Fail-safe: a typo must not disable the bound the whole slice exists for."""
+    from ai_hats.githooks_run import GIT_HOOK_TIMEOUT_S, resolve_git_hook_timeout
+
+    for bad in ("nonsense", "0", "-5", ""):
+        monkeypatch.setenv("AI_HATS_GIT_HOOK_TIMEOUT_S", bad)
+        assert resolve_git_hook_timeout() == GIT_HOOK_TIMEOUT_S

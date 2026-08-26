@@ -431,15 +431,15 @@ def test_a_hook_argument_starting_with_a_dash_is_not_read_as_our_flag(
     assert seen == [["-x", "--project-dir"]]
 
 
-def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
+def test_arguments_this_dispatcher_cannot_parse_refuse_the_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stub newer than the installed ai-hats must not wedge the commit.
+    """Stub/package skew refuses, and states the flag that opens it.
 
-    The separator was one shape of that skew; a flag a later stub learns to pass
-    is the next. argparse answers both with SystemExit(2) from inside `main`,
-    past the stub's import guard, and that 2 becomes the hook's verdict — so the
-    degradation has to happen here (HATS-1519).
+    HATS-1519 skipped here, reasoning the entry point inherits the stub's
+    fail-open duty. HATS-1828 retires that: the stub fails open because its
+    bytes cannot be fixed at commit time, and this can — `self update` repairs
+    it. No project is parsed, so this lone refusal cannot journal itself.
     """
     from ai_hats.cli.githooks_hook import main
 
@@ -460,8 +460,8 @@ def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
         ]
     )
 
-    assert rc == 0, "a dispatcher that cannot parse itself must skip, never refuse"
-    assert "fail-open" in capsys.readouterr().err
+    assert rc != 0, "a dispatcher that cannot parse itself must refuse, never skip"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in capsys.readouterr().err, "a deny names its hatch"
     assert seen == [], "no gate may run when the dispatcher gave up"
 
 
@@ -523,13 +523,14 @@ def test_a_gate_that_cannot_be_exec_d_is_refused_at_resolve_time(tmp_path: Path)
 
 
 @pytest.mark.integration
-def test_a_composition_that_refuses_does_not_wedge_the_commit(
+def test_a_composition_that_refuses_blocks_the_commit_and_names_its_hatch(
     tmp_path: Path, capsys, monkeypatch
 ) -> None:
     """A CheckBindingError (a removed script, an unknown point name) renders
     friendly only in the click layer, which a git hook never enters — so it
-    reached the human as a traceback and exit 1. Needs no broken FILE: an
-    ordinary typo in `composition.apps` gets here.
+    reached the human as a traceback and exit 1. Never a traceback (HATS-1597),
+    and since HATS-1828 never a pass either: no gate ran, which is ai-hats' own
+    failure rather than anybody's verdict.
 
     Patched on `materialize`: `main` imports the name inside its own body, so
     the source module is the only place a stub is observable.
@@ -547,11 +548,132 @@ def test_a_composition_that_refuses_does_not_wedge_the_commit(
         ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
     )
 
-    assert rc == 0, "a broken composition must not wedge a human commit"
     err = capsys.readouterr().err
-    assert "fail-open" in err and "composition" in err, err
-    # ADR-0020 D2 forbids passing a gate SILENTLY, so the skip must be on record —
-    # and on record HERE, in the sandbox this test owns (HATS-1686).
+    assert rc != 0, "a composition ai-hats cannot build is its failure, not a pass"
+    assert "edge:typo" in err, err
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err, "a deny must name its hatch"
+
+
+@pytest.mark.integration
+def test_the_hatch_turns_that_refusal_back_into_a_recorded_skip(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """The other half: the flag the refusal names has to actually work.
+
+    And taking it stays loud — ADR-0020 D2 forbids passing a gate SILENTLY, so
+    the skip is on record, in the sandbox this test owns (HATS-1686).
+
+    Breaks delivery for real — a declared gate whose file is gone — rather than
+    stubbing `compose_for_role`: this is the refusal a project actually hits when
+    a skill stops shipping a script, and the isolation ratchet counts every stub.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    project = _gate_project(tmp_path)
+    (tmp_path / "lib" / "skills" / "hook_skill" / "git_hooks" / "check.sh").unlink()
+    monkeypatch.setenv("AI_HATS_GIT_GATE_BROKEN_ACK", "1")
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 0, f"the named hatch must open: {err}"
     journal = project / ".git" / "ai-hats" / "bypasses.jsonl"
-    assert journal.is_file(), f"the fail-open was not journalled: {err}"
-    assert "edge:typo" in journal.read_text(encoding="utf-8")
+    assert journal.is_file(), f"the skip was not journalled: {err}"
+    assert "does not exist" in journal.read_text(encoding="utf-8")
+
+
+# ----- HATS-1643: one unreadable identity, two reactions ----------------------
+
+
+@pytest.mark.integration
+def test_a_session_too_old_to_name_itself_degrades_to_the_configured_role(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """Nothing is torn here — the envelope was never written — so the configured
+    role is a sound answer and the gates still RUN, degraded and on record.
+
+    The inversion this closes: a session that cannot name itself is more
+    suspicious than no session at all, yet it used to get the weaker check.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    marker = tmp_path / "ran.txt"
+    project = _gate_project(tmp_path, body=f'touch "{marker}"')
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "20260101-000000-1-1")
+    monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 0, err
+    assert marker.exists(), f"the degraded path must still run the gates:\n{err}"
+    journal = project / ".git" / "ai-hats" / "bypasses.jsonl"
+    assert journal.is_file(), f"the degrade was not journalled:\n{err}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "envelope",
+    ["}not json{", '"a string, not an object"', '{"v": 99, "id": "x"}'],
+    ids=["torn", "not-an-object", "version-drift"],
+)
+def test_an_untrustworthy_envelope_refuses_instead_of_skipping(
+    tmp_path: Path, capsys, monkeypatch, envelope: str
+) -> None:
+    """The type's own docstring says 'never a skip', and its consumer did exactly
+    that: `return 0`, on the same condition rack answers with an abort.
+
+    Corruption and version drift are trust failures, not staleness — nothing here
+    licenses guessing a role, so the event stops and names its hatch.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    marker = tmp_path / "ran.txt"
+    project = _gate_project(tmp_path, body=f'touch "{marker}"')
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "20260101-000000-1-1")
+    monkeypatch.setenv("AI_HATS_SESSION_IDENTITY", envelope)
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc != 0, f"an untrusted envelope must not wave the commit through:\n{err}"
+    assert not marker.exists(), "no gate may run under an identity we do not trust"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err, "a deny must name its hatch"
+
+
+@pytest.mark.integration
+def test_a_missing_journal_warns_that_the_hatch_will_not_be_recorded(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """The gates still run — no journal is not a disarm — but the warning has to
+    say the hatch is now unrecordable.
+
+    Otherwise the ADR-0020 D2 promise ("never SILENTLY") is quietly void exactly
+    when someone reaches for the flag, and nothing would ever say so.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    marker = tmp_path / "ran.txt"
+    project = _gate_project(tmp_path, body=f'touch "{marker}"')
+    # A library that is structurally complete but ships no `hooks/` — the shape a
+    # partial install presents, and the only one `builtin_library_hooks` answers
+    # None for. A merely-empty dir is rejected as a library and falls back.
+    hookless = tmp_path / "hookless-lib"
+    (hookless / "core" / "pipelines").mkdir(parents=True)
+    (hookless / "usage").mkdir()
+    monkeypatch.setenv("AI_HATS_LIBRARY_ROOT", str(hookless))
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 0, err
+    assert marker.exists(), f"a missing journal must not disarm the gates:\n{err}"
+    assert "AI_HATS_GIT_GATE_BROKEN_ACK" in err and "NOT be recorded" in err, err
