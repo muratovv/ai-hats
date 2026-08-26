@@ -198,6 +198,7 @@ testpaths = [
     "packages/ai-hats-library/tests",
     "src/ai_hats/surfaces/tests",
     "src/ai_hats/surfaces/agy/tests",
+    "src/ai_hats/surfaces/claude/tests",
     "src/ai_hats/surfaces/cline/tests",
     "src/ai_hats/surfaces/codex/tests",
     "src/ai_hats/surfaces/opencode/tests",
