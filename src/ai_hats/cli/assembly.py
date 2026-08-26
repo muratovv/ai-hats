@@ -1012,7 +1012,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     auto-commit — review with ``git status`` and commit at leisure.
     """
     from ..assembler import AssemblyError
-    from ..materialize import compose_for_role
+    from ..materialize import compose_to_heal
     from ..migration_assert import assert_runtime_hooks_resolve
     from ..migration_backup import BackupError, snapshot_pre_bump
 
@@ -1038,7 +1038,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
         # through to _refresh which installs role git hooks.
         cfg = asm.project_config
         role_name = cfg.active_role or cfg.default_role
-        result = compose_for_role(asm, role_name) if role_name else None
+        result = compose_to_heal(asm, role_name) if role_name else None
 
         # 3. Unified heal/install.
         asm._refresh(install_time=True, result=result)

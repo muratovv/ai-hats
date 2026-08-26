@@ -1060,9 +1060,9 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
     if not role:
         return set(), set()
     try:
-        from ..materialize import compose_for_role
+        from ..materialize import compose_to_report
 
-        result = compose_for_role(asm, role)
+        result = compose_to_report(asm, role)
         return {r.name for r in result.rules}, {s.name for s in result.skills}
     except (AssemblyError, ValueError, OSError, KeyError, AttributeError):
         logger.debug("composition snapshot failed", exc_info=True)
@@ -1840,7 +1840,7 @@ def update(
                 # HATS-469: ``Assembler.bump`` was replaced by ``_refresh``;
                 # the bump pipeline is now an explicit composition (same
                 # as ``cli/assembly.py::do_bump``).
-                from ..materialize import compose_for_role
+                from ..materialize import compose_to_heal
                 from ..migration_assert import assert_runtime_hooks_resolve
                 from ..migration_backup import snapshot_pre_bump
 
@@ -1867,7 +1867,7 @@ def update(
                     )
                     cfg = asm.project_config
                     role_name = cfg.active_role or cfg.default_role
-                    bump_result = compose_for_role(asm, role_name) if role_name else None
+                    bump_result = compose_to_heal(asm, role_name) if role_name else None
                     asm._refresh(install_time=True, result=bump_result)
                     asm._run_diagnostics()
                     # HATS-549 Phase 3: end-of-bump smoke-assert.

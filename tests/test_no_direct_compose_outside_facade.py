@@ -218,3 +218,102 @@ def test_facade_itself_contains_one_compose_call():
         f"expected exactly 1 composer.compose( call in materialize.py "
         f"(code, not docstring), got {code_calls}. text:\n{text}"
     )
+
+
+# --------------------------------------------------------------------------
+# HATS-1842 — the same invariant, one layer up.
+#
+# HATS-456 pinned `composer.compose(overlays=)` to this facade, which is why it
+# has exactly ONE caller. Nothing pinned the facade's OWN surface, so
+# `compose_for_role` grew seventeen, each deciding for itself whether a
+# composition that lost content was still good enough — and one of them
+# uninstalled the repo's git gates over a trait typo. A caller now names a
+# PURPOSE; the policy lives once, per purpose, in materialize.py.
+# --------------------------------------------------------------------------
+
+#: The closed set, with the policy each name carries. Adding a seventh purpose
+#: means adding it here with its justification — which is the review this
+#: whitelist exists to force. Six is what the tree needs today, not a ceiling.
+COMPOSE_PURPOSES: dict[str, str] = {
+    "compose_to_run": "strict — a session composed from a lossy role runs on the wrong prompt",
+    "compose_to_install": "strict — writes on-disk state on a user's command; refuse before writing",
+    "compose_to_heal": "tolerant — bump/self update exist BECAUSE the project may be broken",
+    "compose_to_arm": "strict — a gate that did not install is indistinguishable from no gate",
+    "compose_to_report": "tolerant — a status report must SHOW the breakage, not die of it",
+    "compose_to_carry": "tolerant — HATS-1592: dropping carry on any error causes the loss it prevents",
+}
+
+FACADE_FILE = SRC_DIR / "materialize.py"
+
+
+def _find_calls_named(text: str, name: str) -> list[int]:
+    """Line numbers of every direct call to a bare function ``name``.
+
+    AST-based like its neighbour above, so prose, comments and string
+    literals mentioning the name are not offenders — only real call sites.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == name
+    ]
+
+
+def test_the_detector_finds_a_known_raw_call():
+    """Positive control, and the reason the two tests below mean anything.
+
+    A drift test is equally green when there is no drift and when the matcher
+    stopped matching. So: a sample that MUST be found, and a facade call in the
+    same sample that must NOT be.
+    """
+    sample = "compose_for_role(asm, role)\ncompose_to_run(asm, role)\n"
+    assert _find_calls_named(sample, "compose_for_role") == [1]
+    assert _find_calls_named("# compose_for_role(asm, role)\n", "compose_for_role") == [], (
+        "a mention in a comment is not a call site"
+    )
+
+
+def test_compose_for_role_is_called_only_inside_the_facade():
+    offenders: list[str] = []
+    for py_file in SRC_DIR.rglob("*.py"):
+        if py_file == FACADE_FILE:
+            continue
+        try:
+            text = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno in _find_calls_named(text, "compose_for_role"):
+            offenders.append(f"  {py_file.relative_to(REPO_ROOT)}:{lineno}")
+
+    assert not offenders, (
+        "HATS-1842 drift: compose_for_role is the funnel, not a public entry "
+        "point — a caller that reaches it directly is deciding the "
+        "tolerate-or-refuse policy for itself. Name a purpose instead:\n"
+        + "\n".join(f"  {n} — {why}" for n, why in COMPOSE_PURPOSES.items())
+        + "\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_the_purpose_set_is_closed_and_justified():
+    """Without this, the sprawl the test above prevents simply moves one layer
+    up: seventeen call sites become seventeen bespoke facades."""
+    import ai_hats.materialize as materialize
+
+    defined = {
+        name
+        for name in dir(materialize)
+        if name.startswith("compose_to_") and callable(getattr(materialize, name))
+    }
+    assert defined == set(COMPOSE_PURPOSES), (
+        "the facade set and its justifications have drifted apart; "
+        f"defined-but-unjustified={sorted(defined - set(COMPOSE_PURPOSES))}, "
+        f"justified-but-undefined={sorted(set(COMPOSE_PURPOSES) - defined)}"
+    )
+    assert all(why.strip() for why in COMPOSE_PURPOSES.values())

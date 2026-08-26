@@ -316,18 +316,18 @@ def test_run_v07_migration_composes_role_once(project_with_library, monkeypatch)
     asm.init()
     asm.set_role("test-role")
 
-    import ai_hats.assembler as assembler_mod
+    import ai_hats.materialize as materialize_mod
 
-    real_compose = assembler_mod.compose_for_role
+    real_compose = materialize_mod.compose_for_role
     roles_composed: list[str] = []
 
-    def counting_compose(assembler, role):
+    def counting_compose(assembler, role, **kw):
         roles_composed.append(role)
-        return real_compose(assembler, role)
+        return real_compose(assembler, role, **kw)
 
-    # Both call sites in _run_v07_migration use the bare module-level
-    # ``compose_for_role`` name, so one patch intercepts both.
-    monkeypatch.setattr(assembler_mod, "compose_for_role", counting_compose)
+    # Since HATS-1842 every caller reaches the funnel through a `compose_to_*`
+    # facade in `materialize`, so this single binding intercepts them all.
+    monkeypatch.setattr(materialize_mod, "compose_for_role", counting_compose)
 
     asm._run_v07_migration(force=False, check_branches=False)
 

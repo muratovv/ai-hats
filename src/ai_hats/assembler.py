@@ -22,7 +22,12 @@ import yaml
 from ai_hats_core import CompositionResult, atomic_write_bytes
 from .composer import Composer
 from .hooks_manager import HooksManager
-from .materialize import compose_for_role, discover_user_rules
+from .materialize import (
+    compose_to_heal,
+    compose_to_install,
+    compose_to_report,
+    discover_user_rules,
+)
 from .provenance import ComponentLayer, classify_component_layer
 from .resolver import LibraryResolver
 from .models import (
@@ -143,7 +148,6 @@ class Assembler:
             else HooksManager(
                 self.project_dir,
                 self.project_config,
-                compose=lambda role: compose_for_role(self, role),
                 resolve_provider=get_surface,  # HATS-865: DI so the brick never imports providers
             )
         )
@@ -463,7 +467,7 @@ class Assembler:
         cfg = self.project_config
         effective_role = role or cfg.active_role or cfg.default_role
         result: CompositionResult | None = (
-            compose_for_role(self, effective_role) if effective_role else None
+            compose_to_install(self, effective_role) if effective_role else None
         )
 
         # HATS-469: single entry-point for all heal/install work.
@@ -611,7 +615,7 @@ class Assembler:
 
         # Seed path-based provenance for all components in the composed role.
         try:
-            comp_res = result if result is not None else compose_for_role(self, role_name)
+            comp_res = result if result is not None else compose_to_report(self, role_name)
             for r in comp_res.rules:
                 p = self.resolver.resolve_rule_dir(r.name)
                 provenance["rules"][r.name] = self._classify_component_layer(p).value
@@ -680,7 +684,7 @@ class Assembler:
             self._validate_provider(provider_name)
 
         # Dry-run compose to surface unknown components before yaml write.
-        result = compose_for_role(self, role_name)
+        result = compose_to_install(self, role_name)
 
         cfg = self.project_config
         new_provider = provider_name or cfg.provider
@@ -730,10 +734,7 @@ class Assembler:
         # HATS-456: single derivation point — used for hooks install
         # AND build_system_prompt for Agy scaffold-less branch (below).
         # HATS-1435: the caller's composition OF role_name, when it has one.
-        result = result if result is not None else compose_for_role(self, role_name)
-
-        # Non-fatal compose errors (e.g. missing optional rule) are surfaced
-        # via result.errors; do not abort.
+        result = result if result is not None else compose_to_install(self, role_name)
 
         # HATS-1201: sweeps the registry cannot cover — a first session may
         # predate any bump. Idempotent.
@@ -779,10 +780,10 @@ class Assembler:
         }
 
         if effective_role:
-            result = compose_for_role(self, effective_role)
+            result = compose_to_report(self, effective_role)
             status["tree"] = self._build_tree(result)
             status["health"] = self._check_health(result)
-            status["errors"] = result.errors
+            status["errors"] = [str(e) for e in result.errors]
 
         return status
 
@@ -1190,7 +1191,7 @@ class Assembler:
         effective_role = cfg.active_role or cfg.default_role
         if effective_role:
             try:
-                composition = compose_for_role(self, effective_role)
+                composition = compose_to_heal(self, effective_role)
                 source_lookup = self._build_v07_tier2_source_lookup(composition)
             except Exception:  # noqa: BLE001 — defensive fallback for compose failure
                 composition = empty_composition()

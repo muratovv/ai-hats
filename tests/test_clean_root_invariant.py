@@ -152,7 +152,7 @@ def test_assembler_cleanup_on_init_and_set_role(tmp_path: Path) -> None:
     )
     with (
         patch.object(Assembler, "_refresh"),
-        patch("ai_hats.assembler.compose_for_role", return_value=mock_res),
+        patch("ai_hats.materialize.compose_for_role", return_value=mock_res),
     ):
         asm = Assembler(tmp_path)
         asm.set_role("maintainer")

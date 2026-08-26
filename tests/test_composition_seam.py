@@ -15,6 +15,8 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
+from ai_hats_core import CompositionError, CompositionIncompleteError
+
 from ai_hats.composition_seam import (
     MissingProviderError,
     RoleNotFoundError,
@@ -34,18 +36,19 @@ def _fake_assembler(available: list[str], project_dir: Path) -> MagicMock:
 
 
 def test_seam_routes_through_facade(tmp_path: Path):
-    """HATS-501/456 invariant, relocated: the composition goes through
-    ``compose_for_role`` (single derivation point).
+    """HATS-501/456 invariant, relocated: the composition goes through the
+    facade layer — since HATS-1842 through ``compose_to_run`` by name, because
+    a session composed from a lossy role would run on the wrong prompt.
 
     Routing only — NOT a pass count. The mocked assembler never reaches the real
     ``_get_overlay_provenance``, so this read green through all of HATS-1435,
     when a session start composed twice. Pass count lives in
     ``test_session_start_composes_exactly_once`` (real project)."""
-    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
+    fake_result = MagicMock(errors=[], lost=(), merged_injection="ROLE PROMPT")
     asm = _fake_assembler(["judge"], tmp_path)
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
-        patch("ai_hats.materialize.compose_for_role", return_value=fake_result) as facade,
+        patch("ai_hats.materialize.compose_to_run", return_value=fake_result) as facade,
         patch("ai_hats.surface_registry.get_surface", return_value=MagicMock()),
     ):
         payload = build_composition_payload(tmp_path, role_override="judge")
@@ -65,21 +68,34 @@ def test_seam_raises_role_not_found_for_explicit_role(tmp_path: Path):
     assert exc_info.value.available == ["judge"]
 
 
-def test_seam_raises_on_compose_errors(tmp_path: Path):
-    fake_result = MagicMock(errors=["role not found"])
-    asm = _fake_assembler(["ghost"], tmp_path)
-    with (
-        patch("ai_hats.assembler.Assembler", return_value=asm),
-        patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
-    ):
-        with pytest.raises(RuntimeError, match="failed to resolve role"):
-            build_composition_payload(tmp_path, role_override="ghost")
+def test_seam_refuses_a_lossy_composition_for_any_role(tmp_path: Path):
+    """HATS-1842. This test used to pin the opposite: a raise ONLY when the role
+    was named explicitly, so a role read from ``active_role``/``default_role``
+    had its losses tolerated. Both arms must refuse now — the implicit one is
+    the arm every real session takes."""
+    for override in ("ghost", None):
+        asm = _fake_assembler(["ghost"], tmp_path)
+        asm.project_config.active_role = "ghost"
+        with (
+            patch("ai_hats.assembler.Assembler", return_value=asm),
+            patch(
+                "ai_hats.materialize.compose_for_role",
+                side_effect=CompositionIncompleteError(
+                    "ghost", (CompositionError("Trait 'x' not found", lossy=True),)
+                ),
+            ),
+        ):
+            with pytest.raises(CompositionIncompleteError, match="did not compose fully"):
+                build_composition_payload(tmp_path, role_override=override)
 
 
-def test_seam_lenient_mode_skips_raises(tmp_path: Path):
-    """strict=False (retro reviewer spawn): no existence/errors raise —
-    HATS-271 owns that failure mode downstream."""
-    fake_result = MagicMock(errors=["broken"], merged_injection="")
+def test_seam_lenient_mode_skips_the_existence_raise(tmp_path: Path):
+    """strict=False (retro reviewer spawn) skips ``RoleNotFoundError`` only.
+
+    HATS-1842 narrowed it: it no longer buys tolerance of a LOSSY composition.
+    A reviewer running on a half-composed prompt used to surface as HATS-271's
+    empty transcript — a proxy for the cause, two steps downstream."""
+    fake_result = MagicMock(errors=["broken"], lost=(), merged_injection="")
     asm = _fake_assembler([], tmp_path)
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
@@ -105,7 +121,11 @@ def _provider_less_assembler(project_dir: Path) -> MagicMock:
 
 def test_seam_interactive_requires_provider(tmp_path: Path):
     """The former launch-step 'no provider configured' contract, relocated."""
-    with patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)):
+    fake_result = MagicMock(errors=[], lost=(), merged_injection="ROLE PROMPT")
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)),
+        patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
+    ):
         with pytest.raises(MissingProviderError) as exc_info:
             build_composition_payload(tmp_path, interactive=True)
     _assert_missing_provider_contract(exc_info.value)
@@ -142,7 +162,7 @@ def _provider_seam_assembler(project_dir: Path) -> MagicMock:
 
 def _resolved_provider(tmp_path: Path, **kwargs) -> str:
     """The name ``build_composition_payload`` actually resolves a provider for."""
-    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
+    fake_result = MagicMock(errors=[], lost=(), merged_injection="ROLE PROMPT")
     asm = _provider_seam_assembler(tmp_path)
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
@@ -187,7 +207,7 @@ def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
     """HATS-1218: honouring ``-p`` on the batch path must not drag the
     interactive-only ``set_role`` write along with it — the whole point of the
     fix is that ``interactive`` keeps meaning (a) and stops meaning (b)."""
-    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
+    fake_result = MagicMock(errors=[], lost=(), merged_injection="ROLE PROMPT")
     asm = _fake_assembler([], tmp_path)
     asm.project_config.provider = "claude"
     asm.project_config.active_role = ""  # would be a first run, were it HITL
@@ -204,7 +224,7 @@ def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
 def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
     """HATS-970: a hooks warning raised by the first-run set_role side effect is
     carried on payload.startup_warnings so WrapRunner surfaces it in the hold."""
-    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
+    fake_result = MagicMock(errors=[], lost=(), merged_injection="ROLE PROMPT")
     asm = _fake_assembler(["judge"], tmp_path)
     asm.project_config.active_role = ""  # first-run → set_role fires
     asm.project_config.default_role = "judge"
@@ -261,9 +281,9 @@ def _real_project(tmp_path: Path, *, active_role: str | None) -> Path:
 
 @contextmanager
 def _compose_spy():
-    """Count REAL composes. Patches both bindings: ``assembler.py`` imports
-    ``compose_for_role`` at module level, ``composition_seam.py`` lazily inside
-    functions — patching one alone silently misses the other's call sites."""
+    """Count REAL composes. One binding suffices since HATS-1842: every caller
+    reaches the funnel through a ``compose_to_*`` facade in the same module, so
+    the facades resolve this module global at call time."""
     import ai_hats.materialize as materialize
 
     real = materialize.compose_for_role
@@ -273,10 +293,7 @@ def _compose_spy():
         calls.append(role_name)
         return real(assembler, role_name, *a, **kw)
 
-    with (
-        patch("ai_hats.materialize.compose_for_role", spy),
-        patch("ai_hats.assembler.compose_for_role", spy),
-    ):
+    with patch("ai_hats.materialize.compose_for_role", spy):
         yield calls
 
 
