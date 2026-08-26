@@ -36,7 +36,7 @@ injection: |
 
   Library root: `packages/ai-hats-library/src/ai_hats_library`, layered `core/` + `usage/`.
   - **Rule:** Behavioral constraint. No decision logic — just "do this / don't do that."
-    Structure: `<layer>/rules/<name>/rule.md` + `metadata.yaml`
+    Structure: `<layer>/rules/<name>/rule.md`
   - **Skill:** Procedure, protocol, or checklist. Has decision logic or steps.
     Structure: `<layer>/skills/<name>/SKILL.md`
   - **Trait:** Behavioral profile. Bundles rules + skills + injection text.

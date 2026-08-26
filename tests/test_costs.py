@@ -19,7 +19,6 @@ def library(tmp_path):
     rule_dir = lib / "rules" / "test_rule"
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text("# Rule\nDo the right thing.")
-    (rule_dir / "metadata.yaml").write_text("name: test_rule\n")
 
     # Skill: frontmatter (name + description, always-on) + body (on-demand)
     skill_dir = lib / "skills" / "test_skill"

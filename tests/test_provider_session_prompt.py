@@ -43,7 +43,6 @@ def project_with_library(tmp_path):
     rule_dir = lib / "rules" / "r"
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text("# Rule body")
-    (rule_dir / "metadata.yaml").write_text("name: r\n")
 
     skill_dir = lib / "skills" / "s"
     skill_dir.mkdir(parents=True)

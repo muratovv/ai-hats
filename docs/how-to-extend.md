@@ -141,20 +141,21 @@ its description resident and a hook costs nothing at all. If the invariant can b
 checked by a machine — a PreToolUse hook, a git hook, a CLI gate — write that
 instead. Re-derive the numbers for your own library with `ai-hats list tokens <role>`.
 
-A rule is pure behavioral constraint — no decision logic, no procedure. Two files:
+A rule is pure behavioral constraint — no decision logic, no procedure. One file:
 
 ```
 libraries/rules/my-rule/
-├── metadata.yaml     # name + description (machine-readable)
 └── rule.md           # the rule body (1-2 paragraphs)
 ```
 
+`rule.md` is the whole rule — its body is the only thing delivered, and the only
+description of itself it carries. A rule takes no sidecar: `metadata.yaml` used
+to hold a `description` for `ai-hats list rules`, but a second copy of a rule's
+meaning drifts from the body that governs (HATS-1836), so rules are catalogued
+by name alone.
+
 ```bash
 mkdir -p libraries/rules/my-rule
-cat > libraries/rules/my-rule/metadata.yaml <<'YAML'
-name: my-rule
-description: One-line summary visible in role compositions.
-YAML
 cat > libraries/rules/my-rule/rule.md <<'MD'
 # Rule: My Rule
 

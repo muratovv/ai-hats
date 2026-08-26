@@ -1,5 +1,0 @@
-name: dev_rule_silent_fallback
-license: MIT
-description: "A fallback that cannot report is forbidden — an except whose body neither raises nor reports must either start reporting or carry `# silent-ok: <reason>`; never add one without a test that exercises it"
-author: ai-hats
-tags: [development, code-health, error-handling, gate]

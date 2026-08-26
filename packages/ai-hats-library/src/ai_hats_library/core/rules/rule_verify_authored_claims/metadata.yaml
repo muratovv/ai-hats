@@ -1,5 +1,0 @@
-name: rule_verify_authored_claims
-license: MIT
-description: A claim you authored whose truth is settled by unrolling it — a name, a glob, a quantifier, a count — must be unrolled before commit; covers docs, role/trait injections and SKILL.md
-author: ai-hats
-tags: [documentation, quality, verification]
