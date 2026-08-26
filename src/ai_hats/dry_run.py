@@ -7,11 +7,13 @@ record, no worktree, no ownership hold, no audit.
 
 from __future__ import annotations
 
+import contextlib
+import shutil
 from pathlib import Path
 
 from .check_snapshot import describe_checks
 from .consent_wrapper import materialize_consent_wrappers
-from .materialization import PlanMaterializer
+from .materialization import ApplyMaterializer, Materializer, PlanMaterializer
 from .session_artifacts import (
     AT_LAUNCH,
     BuiltArtifacts,
@@ -25,8 +27,15 @@ from .session_report import SessionReport
 # A real sid is minted by the session manager, which a dry-run must not touch.
 # Fixed so reported paths are stable and diffable.
 DRY_RUN_SESSION_ID = "dry-run"
+DRY_RUN_MATERIALIZE_SESSION_ID = "dry-run-materialize"
 
-__all__ = ["AT_LAUNCH", "DRY_RUN_SESSION_ID", "dry_run_automate", "dry_run_hitl"]
+__all__ = [
+    "AT_LAUNCH",
+    "DRY_RUN_MATERIALIZE_SESSION_ID",
+    "DRY_RUN_SESSION_ID",
+    "dry_run_automate",
+    "dry_run_hitl",
+]
 
 
 def _files_under(root: Path) -> set[Path]:
@@ -47,6 +56,25 @@ def _detect_escapes(cache_dir: Path, before: set[Path]) -> tuple[Path, ...]:
     return escaped
 
 
+@contextlib.contextmanager
+def _exclusive_rebuild(cache_dir: Path, port: Materializer, *, materialize: bool):
+    """Serialise the wipe-and-rebuild of the session-cache dir.
+
+    Only ``--materialize`` writes, and its sid is FIXED, so two concurrent runs
+    share one directory. That is the multi-writer case HATS-1248 argued away for
+    a sid-keyed dir — a fixed sid brings it back, and without this a peer's
+    ``rmtree`` lands in the middle of our build (HATS-1551 review).
+
+    The lock sits BESIDE the target, never inside it: the rebuild begins by
+    removing the directory (HATS-604's reason, same shape). A plan-mode port
+    locks nothing, because it writes nothing.
+    """  # comment-length: allow — why a fixed sid needs a lock at all
+    with port.lock(cache_dir.parent / f"{cache_dir.name}.lock"):
+        if materialize and cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)  # safe-delete: ok synthetic sid
+        yield
+
+
 def dry_run_hitl(
     project_dir: Path,
     *,
@@ -54,6 +82,7 @@ def dry_run_hitl(
     provider: str | None = None,
     extra_args: list[str] | None = None,
     policy: SessionPolicy | None = None,
+    materialize: bool = False,
 ) -> SessionReport:
     """Build the HITL session in plan mode and report it."""
     from .composition_seam import build_preview_payload
@@ -64,28 +93,29 @@ def dry_run_hitl(
     prov = payload.provider
     eff_policy = policy or SessionPolicy()
 
-    cache_dir = session_cache_dir(project_dir, DRY_RUN_SESSION_ID)
-    before = _files_under(cache_dir)
-    artifacts = BuiltArtifacts(port=PlanMaterializer())
-    with prov.execution_context(project_dir):
-        prov.build_session_artifacts(
-            project_dir,
-            payload.result,
-            DRY_RUN_SESSION_ID,
-            run_mode=RunMode.HITL,
-            policy=eff_policy,
-            artifacts=artifacts,
-        )
-        if prov.supports_session_command_wrappers():
-            materialize_consent_wrappers(
-                project_dir, payload.result, DRY_RUN_SESSION_ID, prov, artifacts
+    sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
+    cache_dir = session_cache_dir(project_dir, sid)
+    port = ApplyMaterializer() if materialize else PlanMaterializer()
+    artifacts = BuiltArtifacts(port=port)
+    with _exclusive_rebuild(cache_dir, port, materialize=materialize):
+        before = _files_under(cache_dir)
+        with prov.execution_context(project_dir):
+            prov.build_session_artifacts(
+                project_dir,
+                payload.result,
+                sid,
+                run_mode=RunMode.HITL,
+                policy=eff_policy,
+                artifacts=artifacts,
             )
+            if prov.supports_session_command_wrappers():
+                materialize_consent_wrappers(project_dir, payload.result, sid, prov, artifacts)
 
     env = assemble_launch_env(
         prov,
         project_dir,
         cache_dir,
-        session_id=DRY_RUN_SESSION_ID,
+        session_id=sid,
         trace_path=AT_LAUNCH,
         role=payload.role_expression,
         root_pid=AT_LAUNCH,
@@ -101,9 +131,15 @@ def dry_run_hitl(
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
     checks, check_notes = describe_checks(
-        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+        prov, project_dir, payload.result, sid, artifacts.port.plan
     )
     notes = [*check_notes, *_launch_notices(prov, project_dir, payload.result, eff_policy)]
+    if materialize:
+        notes.append(f"materialized session tree written to disk at {cache_dir}")
+        notes.append(
+            f"session tree uses synthetic session_id '{sid}'; real sessions mint their own sid"
+        )
+    escapes = () if materialize else _detect_escapes(cache_dir, before)
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,
@@ -114,7 +150,7 @@ def dry_run_hitl(
         prompt=prompt,
         plan=artifacts.port.plan,
         cwd=str(project_dir),
-        escapes=_detect_escapes(cache_dir, before),
+        escapes=escapes,
         checks=checks,
         consent=payload.result.consent,
         notes=tuple(notes),
@@ -151,6 +187,7 @@ def dry_run_automate(
     ticket_id: str = "",
     model: str = "",
     policy: SessionPolicy | None = None,
+    materialize: bool = False,
 ) -> SessionReport:
     """Build the sub-agent session in plan mode and report it.
 
@@ -166,27 +203,30 @@ def dry_run_automate(
     prov = payload.provider
     eff_policy = policy or SessionPolicy()
 
-    cache_dir = session_cache_dir(project_dir, DRY_RUN_SESSION_ID)
-    before = _files_under(cache_dir)
-    artifacts = BuiltArtifacts(port=PlanMaterializer())
-    with prov.execution_context(project_dir):
-        prov.build_session_artifacts(
-            project_dir,
-            payload.result,
-            DRY_RUN_SESSION_ID,
-            run_mode=RunMode.AUTOMATE,
-            policy=eff_policy,
-            artifacts=artifacts,
-        )
+    sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
+    cache_dir = session_cache_dir(project_dir, sid)
+    port = ApplyMaterializer() if materialize else PlanMaterializer()
+    artifacts = BuiltArtifacts(port=port)
+    with _exclusive_rebuild(cache_dir, port, materialize=materialize):
+        before = _files_under(cache_dir)
+        with prov.execution_context(project_dir):
+            prov.build_session_artifacts(
+                project_dir,
+                payload.result,
+                sid,
+                run_mode=RunMode.AUTOMATE,
+                policy=eff_policy,
+                artifacts=artifacts,
+            )
 
-    checks, notes = describe_checks(
-        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+    checks, check_notes = describe_checks(
+        prov, project_dir, payload.result, sid, artifacts.port.plan
     )
     env = assemble_launch_env(
         prov,
         project_dir,
         cache_dir,
-        session_id=DRY_RUN_SESSION_ID,
+        session_id=sid,
         trace_path=AT_LAUNCH,
         role=payload.role_expression,
         root_pid=AT_LAUNCH,
@@ -197,7 +237,7 @@ def dry_run_automate(
     described = prov.describe_automate_launch(
         project_dir,
         payload.result,
-        DRY_RUN_SESSION_ID,
+        sid,
         artifacts,
         task=task,
         ticket_id=ticket_id,
@@ -205,6 +245,13 @@ def dry_run_automate(
         env=env,
     )
 
+    notes = list(check_notes)
+    if materialize:
+        notes.append(f"materialized session tree written to disk at {cache_dir}")
+        notes.append(
+            f"session tree uses synthetic session_id '{sid}'; real sessions mint their own sid"
+        )
+    escapes = () if materialize else _detect_escapes(cache_dir, before)
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,
@@ -215,8 +262,8 @@ def dry_run_automate(
         prompt=next((p for p in artifacts.materialized if p.suffix == ".md"), None),
         plan=artifacts.port.plan,
         cwd="<worktree, assigned at launch>",
-        escapes=_detect_escapes(cache_dir, before),
-        notes=notes,
+        escapes=escapes,
+        notes=tuple(notes),
         checks=checks,
         consent=payload.result.consent,
         prompt_text=described.prompt,

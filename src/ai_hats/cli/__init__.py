@@ -174,6 +174,12 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     help="With --dry-run: dump the composed prompt body, not just its path.",
 )
 @click.option(
+    "--materialize",
+    "materialize",
+    is_flag=True,
+    help="With --dry-run: write the materialized session tree to disk without spawning.",
+)
+@click.option(
     "--tree",
     is_flag=True,
     is_eager=True,
@@ -190,6 +196,7 @@ def main(
     dry_run: bool,
     dry_run_json: bool,
     dry_run_full: bool,
+    materialize: bool,
 ):
     """ai-hats — AI agent role composition framework.
 
@@ -206,13 +213,14 @@ def main(
                 "       or written without spaces:  ai-hats -r maintainer+leader"
             )
 
-        if dry_run or dry_run_json or dry_run_full:
+        if dry_run or dry_run_json or dry_run_full or materialize:
             _dry_run_session(
                 provider=provider,
                 role=role,
                 extra_args=ctx.args,
                 as_json=dry_run_json,
                 full=dry_run_full,
+                materialize=materialize,
             )
             return
 
@@ -235,8 +243,9 @@ def _dry_run_session(
     extra_args: list[str] | None,
     as_json: bool,
     full: bool,
+    materialize: bool = False,
 ) -> None:
-    """Print what a launch would deliver; spawn nothing, write nothing."""
+    """Print what a launch would deliver; spawn nothing, write nothing unless materialize is set."""
     import json as _json
 
     from ..dry_run import dry_run_hitl
@@ -245,7 +254,11 @@ def _dry_run_session(
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     report = dry_run_hitl(
-        _project_dir(), role=role, provider=provider, extra_args=list(extra_args or [])
+        _project_dir(),
+        role=role,
+        provider=provider,
+        extra_args=list(extra_args or []),
+        materialize=materialize,
     )
 
     if as_json:
