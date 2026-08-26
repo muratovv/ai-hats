@@ -57,14 +57,14 @@ The two component kinds that ai-hats injects into the **provider** prompt, compo
 
 | Component | What it is                                                  | Format (under `library/{core,usage}/…`)                                 |
 | --------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
-| **Rule**  | Behavioural constraint (do / don't). No decision logic.     | `rules/<name>/rule.md` + `metadata.yaml`                                |
+| **Rule**  | Behavioural constraint (do / don't). No decision logic.     | `rules/<name>/rule.md`                                                  |
 | **Skill** | Procedure, checklist, or protocol with steps and branching. | `skills/<name>/SKILL.md` (+ `metadata.yaml`, `scripts/`, `references/`) |
 
 Catalog — `ai-hats list {rules,skills}`. Formats — see [3]; library layout and override precedence — see [9].
 
 **Skill↔tool dependency.** A skill is portable `SKILL.md` content that **declares** the engine/CLI it drives via an optional `ai_hats.requires.{cli,mcp}` frontmatter block; ai-hats **verifies presence and warns** at compose/session time (with an install `hint`) and **never auto-installs**. Engine-owned skills bind to their engine by `requires`, **not** by living inside the engine package (which would invert the dependency arrow). `requires.mcp` is written once in a neutral form and compiled to each surface's native MCP channel (`.mcp.json` / `cline_mcp_settings.json` / `gemini-extension.json`). The `ai_hats.skills` entry-point remains the discovery seam for out-of-tree skill sources. Full rationale — see [ADR-0016](adr/0016-skill-tool-dependency-model.md) (amends [ADR-0014](adr/0014-composable-component-decomposition.md) §"Engine-owned skills").
 
-**Rule-delivery contract (HATS-700 / HATS-1511 / HATS-1514 / HATS-1515).** Every composed rule's body is delivered into the prompt under the `## RULES` section. The `delivery: always_on` metadata field remains accepted as a legacy synonym. Composed rules with empty bodies log explicit warnings. A `see rule X` pointer in prose or `composition.rules` in `config.yaml` across all library layers (`build_library_paths()`) must name a rule that exists in the library; the **rule-delivery-gate** pre-commit hook and the G2 unit test (`find_dangling_rule_pointers`) enforce this so an author never ships a pointer to a non-existent rule.
+**Rule-delivery contract (HATS-700 / HATS-1511 / HATS-1514 / HATS-1515 / HATS-1836).** Every composed rule's body is delivered into the prompt under the `## RULES` section. A rule is one file — `rule.md`; it carries no `metadata.yaml`, and a leftover one from an external library is never read (HATS-1836). Composed rules with empty bodies log explicit warnings. A `see rule X` pointer in prose or `composition.rules` in `config.yaml` across all library layers (`build_library_paths()`) must name a rule that exists in the library; the **rule-delivery-gate** pre-commit hook and the G2 unit test (`find_dangling_rule_pointers`) enforce this so an author never ships a pointer to a non-existent rule.
 
 ## Backlog
 
