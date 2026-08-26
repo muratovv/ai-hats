@@ -102,6 +102,7 @@ def test_an_unparsable_payload_fails_open_across_the_whole_chain(hooked_project)
 #: comment_length_lint carry the same change on PostToolUse, a different event.)
 GUARDED = (
     ("Bash", "safety_gate.py"),
+    ("Bash", "wt_interpreter_gate.py"),
     ("EnterWorktree", "wt_entry_gate.py"),
     ("Write", "backlog_write_gate.py"),
     ("Write", "wt_gate.py"),

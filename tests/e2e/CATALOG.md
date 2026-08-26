@@ -3897,6 +3897,21 @@ as a claim to check, not as evidence.
 - **expect** — wt_in lifecycle hook executes during worktree creation and populates initial files
 - **why** — wt_in hook must fire during worktree setup to provision required environment state
 
+## `test_wt_interpreter_gate_hook.py`
+
+*pins HATS-1856*
+
+- **flow** — an agent standing in a linked worktree launching a check runner
+- **cmds**
+
+  ```console
+  /main/.venv/bin/python -m pytest tests/
+  ./.venv/bin/python -m pytest tests/
+  ```
+
+- **expect** — the composed PreToolUse Bash chain nudges on the first (the interpreter belongs to another checkout) and stays silent on the second, never gating
+- **why** — an interpreter from the wrong checkout makes the run measure sources the agent did not write, and the two existing guards are blind to it
+
 ## `test_wt_inworktree_refused.py`
 
 *pins HATS-788*
