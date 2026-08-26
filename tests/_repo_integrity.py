@@ -1,12 +1,12 @@
 """HATS-887 — pure snapshot/diff of a repo's test-mutable surface, for the
 session-scoped real-repo integrity tripwire.
 
-Watches the checked-out branch's HEAD + THIS worktree's index (``git ls-files
--s`` digest), NOT all refs: in a multi-agent shared clone other agents
-legitimately move sibling branches / master, which an all-refs snapshot would
-misreport as a test mutation. HEAD + index catch the incident class (a commit
-onto the checkout, or the staged −178393 tree delete) while staying immune to
-that concurrent external ref churn. Split out pure for unit-testability.
+Watches the checked-out HEAD + THIS worktree's index (``git ls-files -s``
+digest), NOT all refs: other agents in a shared clone legitimately move sibling
+branches, which an all-refs snapshot would misreport as a test mutation.
+
+HATS-1675: a movement is all this observes — never its author, so the snapshot
+also carries the top of HEAD's reflog as quotable evidence.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _NOT_A_REPO = "<not-a-git-repo>"
+_REFLOG_WINDOW = 20
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class RepoState:
     head: str
     index_digest: str  # sha256 of `git ls-files -s`; "" when not a repo
     tracked_count: int | None  # kept for a human-readable delta message
+    reflog: tuple[str, ...] = ()  # top HEAD reflog lines, newest first; () when unreadable
 
     @property
     def is_repo(self) -> bool:
@@ -71,7 +73,10 @@ def snapshot_repo(root: Path) -> RepoState:
     else:
         digest, count = "", None
 
-    return RepoState(head=head, index_digest=digest, tracked_count=count)
+    log_proc = _git(root, "reflog", "show", "HEAD", f"-n{_REFLOG_WINDOW}", "--format=%h %gs")
+    reflog = tuple(log_proc.stdout.splitlines()) if log_proc.returncode == 0 else ()
+
+    return RepoState(head=head, index_digest=digest, tracked_count=count, reflog=reflog)
 
 
 def diff_repo(before: RepoState, after: RepoState) -> str | None:
@@ -84,3 +89,60 @@ def diff_repo(before: RepoState, after: RepoState) -> str | None:
     if before.index_digest != after.index_digest:
         parts.append(f"index changed (tracked {before.tracked_count} -> {after.tracked_count})")
     return "; ".join(parts) if parts else None
+
+
+def reflog_since(before: RepoState, after: RepoState) -> tuple[str, ...]:
+    """HEAD reflog lines that landed between the two snapshots.
+
+    Empty when the window cannot prove it — no baseline, or a baseline already
+    scrolled past — so old operations are never presented as new ones.
+    """
+    if not before.reflog or before.reflog[0] not in after.reflog:
+        return ()
+    return after.reflog[: after.reflog.index(before.reflog[0])]
+
+
+def _reading(entries: tuple[str, ...]) -> str:
+    """The plainest reading the evidence supports — a reading, never a verdict."""
+    if any(line.partition(" ")[2].startswith("merge ") for line in entries):
+        return (
+            "A merge of a local branch is what a parallel session landing its work in this "
+            "shared checkout looks like: nothing is broken, but the tests ran against a "
+            "moving tree — rerun them on a quiet checkout before trusting this result."
+        )
+    if entries:
+        return (
+            "None of them is a merge landing in this checkout. If nobody else was working "
+            "here, a test wrote to the real repo — that is the bug to chase."
+        )
+    return (
+        "Without reflog evidence both readings stay open: another session landing work in "
+        "this shared checkout, or a test writing to the real repo."
+    )
+
+
+def describe_movement(before: RepoState, after: RepoState, root: Path) -> str | None:
+    """Operator-facing report for a repo that moved under a test run, or None.
+
+    HATS-1675: states the observation, quotes the reflog entries that landed in
+    the window, and offers the reading they support — an equal explanation of a
+    moved HEAD is a parallel session's merge, which the guard cannot rule out.
+    """
+    delta = diff_repo(before, after)
+    if delta is None:
+        return None
+
+    entries = reflog_since(before, after)
+    evidence = (
+        ["reflog entries that appeared while the tests ran:", *(f"    {e}" for e in entries)]
+        if entries
+        else ["reflog: nothing attributable to this run (empty, expired or unreadable)."]
+    )
+    return "\n".join(
+        [
+            f"[repo-integrity] the repo at {root} moved while the tests ran: {delta}",
+            *evidence,
+            _reading(entries),
+            "This guard observes the movement; it does not establish who caused it.",
+        ]
+    )

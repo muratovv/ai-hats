@@ -149,18 +149,19 @@ def _wt_sandbox(tmp_path_factory, request):
 
 @pytest.fixture(scope="session", autouse=True)
 def _real_repo_integrity_tripwire():
-    """Fail the session loud if any test mutated the real repo (HATS-887).
+    """Fail the session loud if the real repo moved while the tests ran (HATS-887).
 
     Snapshots the checked-out HEAD + this worktree's index at session start and
-    asserts them unchanged at session end, naming the delta — catches the "a test
-    wrote real ``.git``" class. Deliberately not all-refs: a sibling branch moved
-    by a concurrent agent in a shared clone must not trip it. Watched root defaults
-    to this repo; ``AI_HATS_REPO_INTEGRITY_ROOT`` overrides it (pytester self-test).
+    asserts them unchanged at session end — catches the "a test wrote real
+    ``.git``" class. Deliberately not all-refs: a sibling branch moved by a
+    concurrent agent in a shared clone must not trip it. The report states the
+    movement and its reflog evidence, never an author (HATS-1675). Watched root
+    defaults to this repo; ``AI_HATS_REPO_INTEGRITY_ROOT`` overrides it.
     """
     import os
     from pathlib import Path
 
-    from tests._repo_integrity import diff_repo, snapshot_repo
+    from tests._repo_integrity import describe_movement, snapshot_repo
 
     override = os.environ.get("AI_HATS_REPO_INTEGRITY_ROOT")
     root = Path(override) if override else Path(__file__).resolve().parent.parent
@@ -168,12 +169,9 @@ def _real_repo_integrity_tripwire():
     yield
     if not before.is_repo:
         return
-    delta = diff_repo(before, snapshot_repo(root))
-    if delta is not None:
-        pytest.fail(
-            f"[repo-integrity] a test mutated the real repo at {root}: {delta}",
-            pytrace=False,
-        )
+    report = describe_movement(before, snapshot_repo(root), root)
+    if report is not None:
+        pytest.fail(report, pytrace=False)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -227,8 +225,11 @@ def _dev_environment_integrity_tripwire(
 
     if deltas:
         pytest.fail(
-            "[dev-env-integrity] a test mutated the developer's environment (HATS-1164):\n  "
-            + "\n  ".join(deltas),
+            "[dev-env-integrity] the developer's environment changed while the tests "
+            "ran (HATS-1164):\n  "
+            + "\n  ".join(deltas)
+            + "\nA test may have done it; so would a `pip install` in this venv from "
+            "another session. This guard observes the change, not its author.",
             pytrace=False,
         )
 

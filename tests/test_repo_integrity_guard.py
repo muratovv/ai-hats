@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from tests._pytester_env import pythonpath_with_repo_root
-from tests._repo_integrity import diff_repo, snapshot_repo
+from tests._repo_integrity import describe_movement, diff_repo, snapshot_repo
 
 _CONFTEST = Path(__file__).resolve().parent / "conftest.py"
 
@@ -75,6 +75,56 @@ def test_diff_ignores_sibling_ref_change(repo: Path) -> None:
     before = snapshot_repo(repo)
     _git(repo, "branch", "sibling-from-another-agent")
     assert diff_repo(before, snapshot_repo(repo)) is None
+
+
+def test_movement_by_foreign_merge_is_named_not_blamed(repo: Path) -> None:
+    """HATS-1675: a parallel session landing its branch moves HEAD under the run.
+
+    The guard sees a movement, never an author. Here the reflog says ``merge
+    task/…`` — the report must quote that operation and name the parallel-session
+    reading, and must NOT claim a test mutated the repo.
+    """
+    trunk = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    _git(repo, "checkout", "-b", "task/hats-9999")
+    (repo / "c.txt").write_text("c\n")
+    _git(repo, "add", "c.txt")
+    _git(repo, "commit", "-m", "work from the other session")
+    _git(repo, "checkout", trunk)
+
+    before = snapshot_repo(repo)
+    _git(repo, "merge", "--no-ff", "-m", "merge task/hats-9999", "task/hats-9999")
+    report = describe_movement(before, snapshot_repo(repo), repo)
+
+    assert report is not None, "a moved HEAD must still be reported"
+    assert "merge task/hats-9999" in report, "the reflog line is the evidence — quote it"
+    assert "parallel session" in report
+    assert "mutated" not in report, "authorship the guard cannot establish"
+    assert "does not establish who caused it" in report
+
+
+def test_movement_by_local_commit_names_the_test_hypothesis(repo: Path) -> None:
+    """HATS-1675: the other reading — a commit landing with no merge in the reflog.
+
+    Same observation, different evidence: the report names the test-wrote-to-the-
+    real-repo hypothesis instead of the parallel session, still without asserting
+    authorship.
+    """
+    before = snapshot_repo(repo)
+    (repo / "c.txt").write_text("c\n")
+    _git(repo, "add", "c.txt")
+    _git(repo, "commit", "-m", "rogue")
+    report = describe_movement(before, snapshot_repo(repo), repo)
+
+    assert report is not None
+    assert "commit: rogue" in report, "the reflog line is the evidence — quote it"
+    assert "a test wrote to the real repo" in report
+    assert "rerun them on a quiet checkout" not in report, "that is the other case's advice"
+    assert "does not establish who caused it" in report
+
+
+def test_describe_movement_none_when_unchanged(repo: Path) -> None:
+    before = snapshot_repo(repo)
+    assert describe_movement(before, snapshot_repo(repo), repo) is None
 
 
 def test_snapshot_non_repo_is_noop(tmp_path: Path) -> None:
