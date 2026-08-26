@@ -20,7 +20,7 @@ or any other reviewer.
 > **Harness shell prelude.** Before any `ai-hats` invocation:
 >
 > ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # no bin/ai-hats console script
 > ```
 
 ## When to Use
@@ -48,7 +48,7 @@ Pay attention to `success_criterion`, `observation_window`, `exit_criteria`,
 `expected_outcome`, and `freshness_rule` — these define what
 `confirmed` / `refuted` / `inconclusive` / `n/a` mean for *this* hypothesis.
 
-### Step 1.5 — Read the HYP's `verification_protocol` (HATS-528)
+### Step 1.5 — Read the HYP's `verification_protocol`
 
 If the HYP YAML contains a **`verification_protocol`** field, your
 `--evidence` string MUST follow that protocol — verbatim if it
@@ -58,21 +58,21 @@ The protocol is the HYP author's contract with future auditors:
 
 The field is free-form text written by the HYP author at document-stage,
 after the diff is final (see **library-change-hypothesis-protocol**;
-HYPs are filed post-ship, not at plan — HATS-567). It is stored under
-`Hypothesis.extra` (the schema is permissive) — `rack context HYP-NNN`
+HYPs are filed post-ship, not at plan). It is stored under
+the card's extras — `hypotheses/backlog.yaml` declares no `extras:` key,
+so an undeclared field round-trips untouched. `rack context HYP-NNN`
 prints it verbatim; do not silently drop it.
 
 **If `verification_protocol` is absent** — proceed with free-form
-evidence per the original convention. Legacy HYPs (001–015) have no
-protocol field; their verdicts continue to look the way they always
-have.
+evidence per the original convention. HYPs predating the field have no
+protocol; their verdicts continue to look the way they always have.
 
 **If your verdict is `n/a`** — protocol-shape compliance is OPTIONAL: a
 short free-form rationale (`"session has no <relevant phase>"`) is fine
 even when the HYP carries a `verification_protocol`. The protocol is for
 signal-bearing verdicts (`confirmed` / `refuted` / `inconclusive`).
 
-Strict vs loose protocol examples (HYP-016 / HYP-017) →
+Strict vs loose protocol examples →
 [`references/examples.md`](references/examples.md).
 
 **Format check before persist.** Before calling `append-verdict`, eyeball
@@ -137,8 +137,8 @@ observation window has filled, flip the status:
 rack transition HYP-NNN {confirmed|refuted|stalled}
 ```
 
-`append-verdict` does NOT auto-flip status — `set-status` is a separate,
-deliberate step.
+`append-verdict` does NOT auto-flip state — the `transition` above is a
+separate, deliberate step.
 
 ## Output handoff
 
@@ -150,11 +150,11 @@ How the verdict is *reported* depends on the calling role:
 - **Running as `judge`** — verdicts feed into the judge report at
   `<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md` per **judge-protocol**.
 
-In both cases the persistence (`append-verdict`, `set-status`) is the same — only
+In both cases the persistence (`append-verdict`, `transition`) is the same — only
 the wrapper artifact differs.
 
 ## Examples
 
 Worked examples — confirmed / inconclusive / silent-n/a / missing-verdict,
-plus `verification_protocol`-anchored verdicts (HATS-528 PoC) — live in
+plus `verification_protocol`-anchored verdicts — live in
 [`references/examples.md`](references/examples.md).
