@@ -115,9 +115,7 @@ class CompositionIncompleteError(RuntimeError):
     def __init__(self, role: str, lost: "tuple[CompositionError, ...]") -> None:
         self.role = role
         self.lost = lost
-        super().__init__(
-            f"role {role!r} did not compose fully: {'; '.join(str(e) for e in lost)}"
-        )
+        super().__init__(f"role {role!r} did not compose fully: {'; '.join(str(e) for e in lost)}")
 
 
 @dataclass(frozen=True)
