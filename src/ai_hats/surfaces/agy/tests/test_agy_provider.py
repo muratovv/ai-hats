@@ -1,4 +1,4 @@
-"""AgyProvider skills + prompt-channel tests (HATS-993, HATS-1166)."""
+"""AgySurface skills + prompt-channel tests (HATS-993, HATS-1166)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG, gemini_md, session_cache_dir
-from ai_hats.surfaces.agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgySurface
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def agy_project(tmp_path, monkeypatch):
 
 def test_wrap_materializes_skills_into_session_skills_dir(agy_project) -> None:
     project, result = agy_project
-    provider = AgyProvider()
+    provider = AgySurface()
 
     provider.build_session_prompt(project, result, "sid-1")
 
@@ -56,7 +56,7 @@ def test_wrap_materializes_skills_into_session_skills_dir(agy_project) -> None:
 
 def test_automate_hook_materializes_and_returns_no_args(agy_project) -> None:
     project, result = agy_project
-    provider = AgyProvider()
+    provider = AgySurface()
 
     args = provider.materialize_runtime_skills(project, result, "sid-2")
 
@@ -68,7 +68,7 @@ def test_automate_hook_materializes_and_returns_no_args(agy_project) -> None:
 def test_system_prompt_omits_skills_index(agy_project) -> None:
     _, result = agy_project
 
-    prompt = AgyProvider().build_system_prompt(result)
+    prompt = AgySurface().build_system_prompt(result)
 
     assert "## AVAILABLE SKILLS" not in prompt
 
@@ -76,7 +76,7 @@ def test_system_prompt_omits_skills_index(agy_project) -> None:
 def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
     project, result = agy_project
 
-    args, env, prompt = AgyProvider().build_session_prompt(project, result, "sid-4")
+    args, env, prompt = AgySurface().build_session_prompt(project, result, "sid-4")
 
     assert args[0] == "--add-dir"
     session_md = Path(args[1]) / "GEMINI.md"
@@ -87,7 +87,7 @@ def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
 
 def test_wrap_session_dirs_isolated_per_session(agy_project) -> None:
     project, result = agy_project
-    provider = AgyProvider()
+    provider = AgySurface()
 
     args_a, _, _ = provider.build_session_prompt(project, result, "sid-a")
     args_b, _, _ = provider.build_session_prompt(project, result, "sid-b")
@@ -98,13 +98,13 @@ def test_wrap_session_dirs_isolated_per_session(agy_project) -> None:
 def test_get_env_carries_no_dead_rules_path(agy_project, tmp_path) -> None:
     project, _ = agy_project
 
-    env = AgyProvider().get_env(tmp_path / "sess", project)
+    env = AgySurface().get_env(tmp_path / "sess", project)
 
     assert "GEMINI_CLI_PROJECT_RULES_PATH" not in env
 
 
 def test_get_run_command_headless_skips_trust() -> None:
-    cmd = AgyProvider().get_run_command(["agy"], "do it")
+    cmd = AgySurface().get_run_command(["agy"], "do it")
 
     assert "-p" in cmd
     assert cmd[-1] == "do it"
@@ -118,7 +118,7 @@ def test_execution_context_is_clean_no_op_native_by_default(tmp_path) -> None:
     gemini.write_text("root gemini rules")
     agents.write_text("root agents rules")
 
-    provider = AgyProvider()
+    provider = AgySurface()
     with provider.execution_context(project):
         assert gemini.exists()
         assert agents.exists()
@@ -129,27 +129,27 @@ def test_execution_context_is_clean_no_op_native_by_default(tmp_path) -> None:
 
 
 def test_provider_name() -> None:
-    assert AgyProvider().name == "agy"
+    assert AgySurface().name == "agy"
 
 
 def test_system_prompt_path(tmp_path: Path) -> None:
     project = tmp_path / "proj"
-    assert AgyProvider().system_prompt_path(project) == gemini_md(project)
+    assert AgySurface().system_prompt_path(project) == gemini_md(project)
 
 
 def test_rules_dir(tmp_path: Path) -> None:
     session_dir = tmp_path / "session"
-    assert AgyProvider().rules_dir(session_dir) == session_dir / "rules"
+    assert AgySurface().rules_dir(session_dir) == session_dir / "rules"
 
 
 def test_get_cli_command() -> None:
-    provider = AgyProvider()
+    provider = AgySurface()
     assert provider.get_cli_command() == ["agy"]
     assert provider.get_cli_command(["--foo", "bar"]) == ["agy", "--foo", "bar"]
 
 
 def test_get_cli_launch_args_translates_positional_prompt() -> None:
-    provider = AgyProvider()
+    provider = AgySurface()
     base_cmd = ["agy", "hello world", "--add-dir", "/path/to/rules"]
     assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
         "agy",
@@ -161,13 +161,13 @@ def test_get_cli_launch_args_translates_positional_prompt() -> None:
 
 
 def test_get_cli_launch_args_preserves_existing_prompt_flag() -> None:
-    provider = AgyProvider()
+    provider = AgySurface()
     base_cmd = ["agy", "-i", "hello world", "--add-dir", "/path/to/rules"]
     assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == base_cmd
 
 
 def test_get_cli_launch_args_with_model_flag_and_positional_prompt() -> None:
-    provider = AgyProvider()
+    provider = AgySurface()
     base_cmd = ["agy", "--model", "gemini-2.5-pro", "hello world", "--add-dir", "/path/to/rules"]
     assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
         "agy",
@@ -181,7 +181,7 @@ def test_get_cli_launch_args_with_model_flag_and_positional_prompt() -> None:
 
 
 def test_get_run_command_with_harness_flags() -> None:
-    provider = AgyProvider()
+    provider = AgySurface()
     flags = provider.model_flags("gemini-2.5-pro")
     cmd = provider.get_run_command(["agy"] + flags, "task prompt")
     assert cmd == [
@@ -198,7 +198,7 @@ def test_get_run_command_with_harness_flags() -> None:
 def test_get_env(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     session_dir = tmp_path / "session"
-    env = AgyProvider().get_env(session_dir, project)
+    env = AgySurface().get_env(session_dir, project)
     assert env["AI_HATS_PROJECT_DIR"] == str(project)
     assert env["AI_HATS_DIR"] == str(project / ".agent" / "ai-hats")
 
@@ -213,7 +213,7 @@ def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path, monkeypatc
 
     project = tmp_path / "project"
     project.mkdir()
-    provider = AgyProvider()
+    provider = AgySurface()
     provider.materialize_runtime_skills(project, result, "sid-wt")
 
     wt_skill_dir = (
@@ -235,7 +235,7 @@ def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_roo
 
     project = tmp_path / "project"
     project.mkdir()
-    provider = AgyProvider()
+    provider = AgySurface()
 
     provider.build_session_prompt(project, result, "sid-sp-settings")
 
@@ -254,7 +254,7 @@ def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_roo
 
 
 def test_agy_provider_detected_home_dirs() -> None:
-    provider = AgyProvider()
+    provider = AgySurface()
     assert ".gemini" in provider.detected_home_dirs()
     assert ".agy" in provider.detected_home_dirs()
 
@@ -308,7 +308,7 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     asm.init()
     result = asm.composer.compose("hook-role")
 
-    provider = AgyProvider()
+    provider = AgySurface()
     artifacts = BuiltArtifacts()
     provider.build_session_artifacts(
         project, result, "sid-auto", run_mode=RunMode.AUTOMATE, artifacts=artifacts

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.surfaces.cline import ClineParser, ClineProvider
+from ai_hats.surfaces.cline import ClineParser, ClineSurface
 from ai_hats_observe.parsers.base import ParsedTranscript, TranscriptParser
 from ai_hats_observe.usage import SCHEMA_VERSION
 
@@ -37,7 +37,7 @@ def test_satisfies_protocol() -> None:
 
 
 def test_provider_wires_cline_parser() -> None:
-    assert isinstance(ClineProvider().transcript_parser(), ClineParser)
+    assert isinstance(ClineSurface().transcript_parser(), ClineParser)
 
 
 # -- parse() -> ParsedTranscript ---------------------------------------------

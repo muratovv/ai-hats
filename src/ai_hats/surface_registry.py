@@ -14,18 +14,18 @@ from .provider_entry_points import (
     _is_first_party_entry_point,
     _provider_entry_points,
 )
-from .surfaces import Provider
+from .surfaces import Surface
 
 logger = logging.getLogger(__name__)
 
-_PROVIDER_REGISTRY: dict[str, type[Provider]] = {}
+_PROVIDER_REGISTRY: dict[str, type[Surface]] = {}
 
 
 class ProviderRegistryError(RuntimeError):
     """Raised when a provider name is already registered."""
 
 
-def register_provider(name: str, cls: type[Provider]) -> None:
+def register_surface(name: str, cls: type[Surface]) -> None:
     """Register a provider class under ``name`` (dup-guarded)."""
     if name in _PROVIDER_REGISTRY:
         raise ProviderRegistryError(f"provider already registered: {name!r}")
@@ -53,7 +53,7 @@ def _load_provider_entry_points() -> None:
             continue
         try:
             cls = ep.load()
-            register_provider(ep.name, cls)
+            register_surface(ep.name, cls)
         except Exception as exc:  # noqa: BLE001 - one bad plugin must not break the rest
             if isinstance(exc, AttributeError):
                 logger.warning("skipping retired provider entry point %r: %s", ep.name, exc)
@@ -80,14 +80,14 @@ PROVIDER_ALIASES: dict[str, str] = {
 }
 
 
-def provider_names() -> list[str]:
+def surface_names() -> list[str]:
     """Registered provider names in registration order (deterministic)."""
     _ensure_entry_points_loaded()
     return list(_PROVIDER_REGISTRY)
 
 
-class UnknownProviderError(ValueError):
-    """Unknown provider name at ``get_provider``. Subclasses ``ValueError`` so
+class UnknownSurfaceError(ValueError):
+    """Unknown provider name at ``get_surface``. Subclasses ``ValueError`` so
     existing ``except ValueError`` catchers keep working; carries ``name`` +
     ``available`` for the friendly CLI launch handler (mirrors
     ``RoleNotFoundError`` — HATS-965)."""
@@ -98,7 +98,7 @@ class UnknownProviderError(ValueError):
         super().__init__(f"Unknown provider: {name}. Available: {available}")
 
 
-def get_provider(name: str) -> Provider:
+def get_surface(name: str) -> Surface:
     """Get a provider instance for a registered surface name.
 
     Lookup only: an unregistered name refuses. ai-hats used to try to
@@ -108,7 +108,7 @@ def get_provider(name: str) -> Provider:
     canonical_name = PROVIDER_ALIASES.get(name, name)
     cls = _PROVIDER_REGISTRY.get(canonical_name)
     if cls is None:
-        raise UnknownProviderError(name, provider_names())
+        raise UnknownSurfaceError(name, surface_names())
     return cls()
 
 

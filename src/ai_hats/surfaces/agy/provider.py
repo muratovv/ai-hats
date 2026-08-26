@@ -1,4 +1,4 @@
-"""Agy surface adapter — maps the `agy` (Antigravity) CLI to the ai-hats `Provider`.
+"""Agy surface adapter — maps the `agy` (Antigravity) CLI to the ai-hats `Surface`.
 
 Materialization contract (``build_session_artifacts`` / ADR-0018). ``<sc>`` is the
 out-of-project per-session cache ``<cache_root>/sessions/<sid>/`` (HATS-1398):
@@ -29,7 +29,7 @@ from ai_hats.paths import (
     gemini_md,
     session_cache_dir,
 )
-from ai_hats.surfaces import Provider
+from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 
 
@@ -41,11 +41,11 @@ def agy_user_settings_json() -> Path:
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
-    from ai_hats.surfaces import ProviderHint
+    from ai_hats.surfaces import SurfaceHint
 
 
-class AgyProvider(Provider):
-    """`agy` CLI adapter, registered via the `ai_hats.providers` entry point."""
+class AgySurface(Surface):
+    """`agy` CLI adapter, registered via the `ai_hats.surface_registry` entry point."""
 
     @property
     def name(self) -> str:
@@ -54,16 +54,16 @@ class AgyProvider(Provider):
     def detected_home_dirs(self) -> list[str]:
         return [".gemini", ".agy"]
 
-    def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.surfaces import ProviderHint
+    def surface_hints(self) -> list["SurfaceHint"]:
+        from ai_hats.surfaces import SurfaceHint
 
         return [
-            ProviderHint(
+            SurfaceHint(
                 name="--model",
                 values="gemini-2.5-pro, ...",
                 description="Overrides the model to use for the session.",
             ),
-            ProviderHint(
+            SurfaceHint(
                 name="--headless",
                 values="N/A",
                 description="Run agy in headless mode without TUI.",

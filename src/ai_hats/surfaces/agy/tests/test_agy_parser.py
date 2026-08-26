@@ -1,4 +1,4 @@
-"""Unit tests for AgyParser and AgyProvider.resolve_transcript (HATS-1391)."""
+"""Unit tests for AgyParser and AgySurface.resolve_transcript (HATS-1391)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ai_hats_observe.artifacts import (
     FLAG_NO_TOKEN_TELEMETRY,
     FLAG_TOKEN_TELEMETRY_ESTIMATED,
 )
-from ai_hats.surfaces.agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgySurface
 
 
 def test_agy_parser_fallback_when_jsonl_absent(tmp_path: Path) -> None:
@@ -73,7 +73,7 @@ def test_agy_provider_resolve_transcript(tmp_path: Path, monkeypatch) -> None:
     gemini_home = tmp_path / ".gemini"
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(gemini_home))
 
-    provider = AgyProvider()
+    provider = AgySurface()
     session_id = "20260730-120000-1-12345"
 
     # Absent directory -> empty list
@@ -100,7 +100,7 @@ def test_agy_provider_resolve_transcript_multiple_segments(tmp_path: Path, monke
     gemini_home = tmp_path / ".gemini"
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(gemini_home))
 
-    provider = AgyProvider()
+    provider = AgySurface()
     session_id = "20260730-120000-1-12345"
 
     log_dir1 = (

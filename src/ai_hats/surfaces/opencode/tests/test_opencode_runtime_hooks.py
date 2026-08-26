@@ -10,7 +10,7 @@ import pytest
 
 from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from ai_hats.surfaces.opencode import OpenCodeProvider
+from ai_hats.surfaces.opencode import OpenCodeSurface
 from ai_hats.surfaces.opencode.runtime_hooks import MANIFEST_VERSION, plugin_source
 
 
@@ -61,14 +61,14 @@ def _project(tmp_path: Path) -> Path:
 SESSION_ID = "20260822-000000-1-00000"
 
 
-def _config(project: Path, provider: OpenCodeProvider) -> dict:
+def _config(project: Path, provider: OpenCodeSurface) -> dict:
     path = provider.session_config_path(project, SESSION_ID)
     assert path.is_file()
     return json.loads(path.read_text())
 
 
 def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     result = _fake_result([_make_hooked_skill(tmp_path)])
     artifacts = BuiltArtifacts()
@@ -112,7 +112,7 @@ def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> Non
 
 def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> None:
     """HATS-1792: the manifest carries role permission policy even without hooks."""
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     plain = tmp_path / "skill-sources" / "hatrack"
     plain.mkdir(parents=True)
     (plain / "SKILL.md").write_text("---\nname: hatrack\ndescription: x\n---\nbody\n")
@@ -146,7 +146,7 @@ def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
     source = _make_hooked_skill(tmp_path)
     (source / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
 
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     artifacts = BuiltArtifacts()
     provider.build_session_artifacts(

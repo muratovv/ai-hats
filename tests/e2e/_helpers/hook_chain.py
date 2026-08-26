@@ -226,10 +226,10 @@ def build_session_settings(
     from ai_hats.assembler import Assembler
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     result = Assembler(project).composer.compose(role)
-    ClaudeProvider().build_session_artifacts(
+    ClaudeSurface().build_session_artifacts(
         project, result, session_id, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
     )
     return session_cache_dir(project, session_id) / "settings.json"

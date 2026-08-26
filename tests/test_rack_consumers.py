@@ -807,7 +807,7 @@ def _mirror_root(project_dir: Path, session_id: str) -> Path:
 def _identity(project_dir: Path, session_id: str, skills_root: Path | None = None):
     """The envelope a session carries — where the root now comes from (HATS-1594).
 
-    Through HATS-1593 an autouse fixture stubbed ``providers.get_provider`` here,
+    Through HATS-1593 an autouse fixture stubbed ``providers.get_surface`` here,
     because the channel asked the registry for the root on every resolve. It no
     longer does: the surface answers once at launch and the answer rides the
     envelope, so the root is stated by the test instead of stubbed behind it.

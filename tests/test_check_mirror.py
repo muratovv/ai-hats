@@ -21,7 +21,7 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, Resolv
 from ai_hats.check_resolve import CheckResolutionError, resolve_carried_checks
 from ai_hats.check_snapshot import legacy_launch_notices
 from ai_hats.materialization import PlanMaterializer
-from ai_hats.surfaces import Provider
+from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
 SID = "20260801-000000-1-42"
@@ -74,7 +74,7 @@ def _topology():
     )
 
 
-class _MirrorSurface(Provider):
+class _MirrorSurface(Surface):
     """A category-aware surface whose skill mirror is a plain named dir."""
 
     name = "stub"
@@ -164,9 +164,9 @@ def _project(tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def _stub_provider(monkeypatch):
     """Register the stub surface under the name the project config names."""
-    from ai_hats import providers
+    from ai_hats import surface_registry as providers
 
-    monkeypatch.setattr(providers, "get_provider", lambda name: _MirrorSurface())
+    monkeypatch.setattr(providers, "get_surface", lambda name: _MirrorSurface())
     yield
 
 
@@ -377,7 +377,7 @@ def test_a_surface_that_mirrors_nothing_refuses(tmp_path: Path):
 # loads a provider at all — it reads the root off the envelope — so there is
 # nothing left here to be unloadable. A session cannot exist under a provider
 # that will not load: `build_composition_payload` resolves it through
-# `get_provider` before anything launches, and refuses there.
+# `get_surface` before anything launches, and refuses there.
 
 
 def test_a_broken_composition_refuses_even_when_the_caller_supplied_it(tmp_path: Path):
@@ -458,7 +458,7 @@ class _StaleSurface(_MirrorSurface):
     perfectly well, inherits the `Provider` default of ``None`` for the root."""
 
     def session_skills_root(self, project_dir: Path, session_id: str):
-        return Provider.session_skills_root(self, project_dir, session_id)
+        return Surface.session_skills_root(self, project_dir, session_id)
 
     def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
         # It DOES write a mirror — it just will not say where. That asymmetry IS
@@ -620,13 +620,13 @@ def test_a_dry_run_under_a_stale_surface_warns_before_the_session_starts(
     Staying quiet here is the same silence the notice exists to remove — the
     operator would learn it one session too late, which is the HATS-1538 shape.
     """
-    from ai_hats import providers
+    from ai_hats import surface_registry as providers
     from ai_hats.dry_run import dry_run_hitl
 
     project = _project(tmp_path)
     skill = _skill(project)
     result = _result(skills=[skill], checks=[_check(skill)])
-    monkeypatch.setattr(providers, "get_provider", lambda name: _StaleSurface())
+    monkeypatch.setattr(providers, "get_surface", lambda name: _StaleSurface())
     monkeypatch.setattr(
         "ai_hats.composition_seam.build_preview_payload",
         lambda *a, **kw: _preview(_StaleSurface(), result),

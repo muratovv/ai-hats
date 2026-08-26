@@ -19,7 +19,7 @@ from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:
     from .hooks_manager import HooksManager
-    from .surfaces import Provider, TranscriptResolver
+    from .surfaces import Surface, TranscriptResolver
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class CompositionPayload:
     seam (:mod:`ai_hats.composition_seam`), consumed by runners and pipeline."""
 
     result: CompositionResult
-    provider: "Provider"
+    provider: "Surface"
     effective_role: str
     # HATS-1594: what the session composed, operators included. `effective_role`
     # stays the base name reports carry; a gate needs the whole expression, or a

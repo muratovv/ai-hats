@@ -44,11 +44,11 @@ def _stdin_is_tty() -> bool:
 def _detected_providers() -> list[str]:
     """Providers whose home-config directory exists on the host.
 
-    HATS-1179: Queries all known surfaces from `surfaces_registry.py` and uses
+    HATS-1179: Queries all known surfaces from `surface_catalog.py` and uses
     provider-agnostic `detect_surface_presence(name)`. Returns matches in
     deterministic order.
     """
-    from ..surfaces_registry import detect_surface_presence, get_known_surfaces
+    from ..surface_catalog import detect_surface_presence, get_known_surfaces
 
     detected: list[str] = []
     for name in get_known_surfaces():
@@ -71,8 +71,8 @@ def _wizard_provider_prompt(
     zero or several are present the choice is ambiguous, so the user picks
     explicitly rather than silently inheriting the dict-first provider (HATS-613).
     """
-    from ..providers import get_provider
-    from ..surfaces_registry import (
+    from ..surface_registry import get_surface
+    from ..surface_catalog import (
         get_known_surfaces,
         is_surface_installed,
     )
@@ -82,7 +82,7 @@ def _wizard_provider_prompt(
     names = list(known.keys())
     ask = prompt or click.prompt
     installed_lookup = installed_lookup or is_surface_installed
-    provider_lookup = provider_lookup or get_provider
+    provider_lookup = provider_lookup or get_surface
 
     console.print("[bold]Choose provider:[/]")
     for idx, name in enumerate(names, start=1):
@@ -454,12 +454,12 @@ def set_role(
             raise SystemExit(1)
         console.print(f"[green]Initialized[/] ai-hats in {project_dir}")
     elif provider and not role:
-        # Provider-only update — validate before persisting, so unknown
+        # Surface-only update — validate before persisting, so unknown
         # providers do not get silently written to ai-hats.yaml.
-        from ..providers import get_provider
+        from ..surface_registry import get_surface
 
         try:
-            get_provider(provider)
+            get_surface(provider)
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)

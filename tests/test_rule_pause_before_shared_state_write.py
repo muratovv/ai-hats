@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ComponentConfig
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
@@ -72,7 +72,7 @@ def test_rule_listed_in_trait_agent_composition() -> None:
 def test_rule_present_in_composed_assistant_prompt() -> None:
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("assistant", overlays=asm._get_overlays("assistant"))
-    composed = ClaudeProvider().build_system_prompt(result)
+    composed = ClaudeSurface().build_system_prompt(result)
     # Section heading the provider emits per always-on rule.
     assert "### rule_pause_before_shared_state_write" in composed
     # A signal line from rule.md body.
@@ -82,6 +82,6 @@ def test_rule_present_in_composed_assistant_prompt() -> None:
 def test_rule_present_in_composed_maintainer_prompt() -> None:
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("maintainer", overlays=asm._get_overlays("maintainer"))
-    composed = ClaudeProvider().build_system_prompt(result)
+    composed = ClaudeSurface().build_system_prompt(result)
     assert "### rule_pause_before_shared_state_write" in composed
     assert "gh pr merge" in composed

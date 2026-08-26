@@ -84,7 +84,7 @@ def _module_resolves(module: str) -> bool:
 
 
 def find_broken_surface_providers() -> list[BrokenProvider]:
-    """Provider entry points whose top-level module can't be located in this venv."""
+    """Surface entry points whose top-level module can't be located in this venv."""
     broken: list[BrokenProvider] = []
     for ep in _provider_entry_points():
         module = _ep_module(ep.value)

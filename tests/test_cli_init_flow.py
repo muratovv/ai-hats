@@ -224,7 +224,7 @@ def test_set_unknown_provider_only_fails_loud(cli_project):
 
     assert result.exit_code != 0, result.output
     assert "bogus-provider" in result.output
-    # Provider in ai-hats.yaml must not have been overwritten.
+    # Surface in ai-hats.yaml must not have been overwritten.
     cfg_after = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg_after.provider == "claude"
 
@@ -345,7 +345,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     from ai_hats.assembler import Assembler
     from ai_hats.models import ProjectConfig
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, runner = cli_project
 
@@ -357,7 +357,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     # Build override for a different role (simulate what WrapRunner.run does)
     asm = Assembler(project)
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("sre")
     args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
@@ -382,13 +382,13 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     asm = Assembler(project)
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
 
     # Simulate 3 parallel override sessions for different roles. Each session
     # gets its own session_id (HATS-294 isolation contract).
@@ -436,13 +436,13 @@ def test_agy_override_creates_session_rules_dir(cli_project):
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats.surfaces.agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "agy"])
 
     asm = Assembler(project)
-    provider = AgyProvider()
+    provider = AgySurface()
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")

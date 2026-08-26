@@ -39,12 +39,12 @@ def test_agy_session_transcript_resolution_and_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Unit-integration verification: AgyProvider.resolve_transcript + AuditWriter
+    """Unit-integration verification: AgySurface.resolve_transcript + AuditWriter
 
     Simulates an agy session producing transcript.jsonl in brain dir, verifying that
     AuditWriter produces an audit.md with 👤 turn markers and 🔧 tool calls.
     """
-    from ai_hats.surfaces.agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
     from ai_hats_observe.audit import AuditWriter
     from ai_hats_observe.session import Session
 
@@ -80,7 +80,7 @@ def test_agy_session_transcript_resolution_and_audit(
     ]
     transcript_file.write_text("\n".join(json.dumps(line) for line in lines))
 
-    provider = AgyProvider()
+    provider = AgySurface()
     resolved = provider.resolve_transcript(tmp_path, session_id)
     assert resolved == [transcript_file]
 

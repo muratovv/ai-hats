@@ -14,13 +14,13 @@ from pathlib import Path
 
 
 from ai_hats.paths import claude_transcripts_dir
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats_observe import Session
 from ai_hats.pipeline.steps.make_audit import MakeAudit
 
 # HATS-1087: discovery moved to the provider; the step no longer has a
 # Claude-specific fallback. Tests inject the real resolver.
-_claude_resolver = ClaudeProvider().resolve_transcript
+_claude_resolver = ClaudeSurface().resolve_transcript
 
 
 def make_session(tmp_path: Path) -> Session:

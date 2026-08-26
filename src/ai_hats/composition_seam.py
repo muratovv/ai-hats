@@ -141,11 +141,11 @@ def _project_context(project_dir: Path, role_override: str | None, *, prefer_cwd
 class MissingProviderError(RuntimeError):
     """Raised by the compose seam when no provider is configured at all.
 
-    The sibling of ``UnknownProviderError`` (a *named* provider absent from the
+    The sibling of ``UnknownSurfaceError`` (a *named* provider absent from the
     registry) for the *unnamed* case; carries ``available`` so the CLI handler
     renders without re-querying the registry. Subclasses ``RuntimeError`` so
     ``config show-prompt``'s broad catch keeps working — the same
-    backwards-compat move as ``UnknownProviderError(ValueError)`` (HATS-1224).
+    backwards-compat move as ``UnknownSurfaceError(ValueError)`` (HATS-1224).
     """
 
     def __init__(self, available: list[str]) -> None:
@@ -159,9 +159,9 @@ def _effective_provider(cfg, override: str | None) -> str:
     """The provider-fallback chain: override → cfg.provider, loud when absent."""
     eff = override or cfg.provider
     if not eff:
-        from .providers import provider_names
+        from .surface_registry import surface_names
 
-        raise MissingProviderError(provider_names())
+        raise MissingProviderError(surface_names())
     return eff
 
 
@@ -243,7 +243,7 @@ def build_composition_payload(
     ``cfg.provider`` on either path (HATS-1218).
     """
     from ai_hats_observe import AuditWriter, Session
-    from .providers import get_provider
+    from .surface_registry import get_surface
 
     asm, cfg, effective_role, runtime_overlay, spec = _project_context(project_dir, role_override)
     # HATS-1753: allocated BEFORE the compose it collects from — the hooks
@@ -261,7 +261,7 @@ def build_composition_payload(
 
     # HATS-1218: the batch arm used to hard-read cfg and drop the override here.
     eff_provider = _effective_provider(cfg, provider_name)
-    provider = get_provider(eff_provider)
+    provider = get_surface(eff_provider)
 
     startup_warnings: list[str] = []
     cfg = _maybe_sync_active_role(
@@ -318,7 +318,7 @@ def build_preview_payload(
     renders as a friendly exit 2.
     """
     from .materialize import compose_for_role
-    from .providers import get_provider
+    from .surface_registry import get_surface
 
     asm, cfg, eff_role, runtime_overlay, _spec = _project_context(
         project_dir, role, prefer_cwd=True
@@ -340,7 +340,7 @@ def build_preview_payload(
         )
     return CompositionPayload(
         result=result,
-        provider=get_provider(eff_provider),
+        provider=get_surface(eff_provider),
         effective_role=eff_role,
     )
 
@@ -485,12 +485,12 @@ def _static_cost_analyzer(project_dir: Path):
 
 def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
     """Best-effort provider resolution for CLI help (e.g., ai-hats --help)."""
-    from .providers import get_provider
+    from .surface_registry import get_surface
     from .cli._helpers import _project_dir
 
     if provider_name:
         try:
-            return get_provider(provider_name)
+            return get_surface(provider_name)
         except Exception:  # silent-ok: best-effort provider resolution for --help
             return None
 
@@ -499,7 +499,7 @@ def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
             asm, cfg, effective_role, _runtime, _spec = _project_context(_project_dir(), role_name)
             eff = cfg.provider
             if eff:
-                return get_provider(eff)
+                return get_surface(eff)
         except Exception:  # silent-ok: best-effort provider resolution for --help  # noqa: S110
             pass
 

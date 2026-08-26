@@ -400,7 +400,7 @@ def worktree_checkouts_dir(project_dir: Path) -> Path:
 
 
 # HATS-1540: `session_checks_dir` is gone. A bound check resolves from the
-# surface's own skill mirror (`Provider.session_skills_root`) — the channel keeps
+# surface's own skill mirror (`Surface.session_skills_root`) — the channel keeps
 # no private copy, so there is no second root to name here.
 
 

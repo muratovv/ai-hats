@@ -34,7 +34,7 @@ SKILL = "gate-skill"
 #: HATS-1540 also the root a bound check resolves from (ADR-0019 D9 / R3.1), so
 #: these are three answers to one question and the ACTIVE surface picks. Literal
 #: because the decoys need the roots the active surface does NOT own; every entry
-#: is pinned against ``Provider.session_skills_root`` below, so it cannot drift.
+#: is pinned against ``Surface.session_skills_root`` below, so it cannot drift.
 #  comment-length: allow — why a literal table is safe here is the contract
 SURFACE_SKILL_TREES = {
     "claude": Path("plugin") / "skills",
@@ -382,11 +382,11 @@ def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Pa
     """
     from ai_hats.models import ProjectConfig
     from ai_hats.paths.constants import PROJECT_CONFIG
-    from ai_hats.providers import get_provider
+    from ai_hats.surface_registry import get_surface
 
     with mock.patch.dict(os.environ, env, clear=True):
         surface = ProjectConfig.from_yaml(project / PROJECT_CONFIG).provider
-        return get_provider(surface).session_skills_root(
+        return get_surface(surface).session_skills_root(
             project, session_id or env["AI_HATS_SESSION_ID"]
         )
 
@@ -471,11 +471,11 @@ def venv_surfaces(shared_launcher) -> dict[str, bool]:
             str(venv / "bin" / "python"),
             "-c",
             "import json, pathlib; "
-            "from ai_hats.providers import provider_names, get_provider; "
+            "from ai_hats.surface_registry import surface_names, get_surface; "
             "p = pathlib.Path('/tmp'); "
-            "print(json.dumps({n: bool(get_provider(n).handles_artifact_categories() "
-            "and get_provider(n).session_skills_root(p, 'probe') is not None) "
-            "for n in provider_names()}))",
+            "print(json.dumps({n: bool(get_surface(n).handles_artifact_categories() "
+            "and get_surface(n).session_skills_root(p, 'probe') is not None) "
+            "for n in surface_names()}))",
         ],
         capture_output=True,
         text=True,

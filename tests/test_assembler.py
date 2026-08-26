@@ -581,8 +581,8 @@ def test_preserve_local_rules(project_with_library):
 
 
 def test_claude_build_session_prompt_creates_temp_file(project_with_library):
-    """ClaudeProvider.build_session_prompt() creates temp file with override prompt."""
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    """ClaudeSurface.build_session_prompt() creates temp file with override prompt."""
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -592,7 +592,7 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     asm.set_role("test-role", provider_name="claude")
 
     # Build override for other-role
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("other-role")
     args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
@@ -620,7 +620,7 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
 def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(project_with_library):
     """HATS-307: spawned role's skills must end up under --plugin-dir/skills/."""
     import shutil as _shutil
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -629,7 +629,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
     # composes test_skill — exactly the HATS-307 scenario.
     asm.set_role("other-role", provider_name="claude")
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
     args, _, _ = provider.build_session_prompt(project, result, "test-sid")
 
@@ -645,7 +645,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
 
 def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_with_library):
     """build_session_prompt() must never modify the project CLAUDE.md if user authored one."""
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -656,7 +656,7 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
     user_claude.write_text("# User hand-written CLAUDE.md\nRules here.\n")
     original_content = user_claude.read_text()
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("other-role")
     args, _, _ = provider.build_session_prompt(project, result, "test-sid")
 
@@ -673,14 +673,14 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
 def test_agy_build_session_prompt_creates_rules_dir(project_with_library):
     """HATS-993: session role rides a GEMINI.md in an --include-directories dir."""
     import shutil
-    from ai_hats.surfaces.agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")  # sets up .agent/rules/
 
-    provider = AgyProvider()
+    provider = AgySurface()
     result = asm.composer.compose("other-role")
     args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
@@ -1147,7 +1147,7 @@ def test_user_skill_dir_survives_bump(project_with_library):
 def test_tool_call_hygiene_inlined_in_prompt(tmp_path):
     """dev_rule_tool_call_hygiene must appear in system prompt (HATS-251)."""
     from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     # HATS-700: the rule body is read on demand from source_path/rule.md.
     rule_dir = tmp_path / "dev_rule_tool_call_hygiene"
@@ -1165,7 +1165,7 @@ def test_tool_call_hygiene_inlined_in_prompt(tmp_path):
         skills=[],
         injections=[],
     )
-    prompt = ClaudeProvider().build_system_prompt(result)
+    prompt = ClaudeSurface().build_system_prompt(result)
     assert "dev_rule_tool_call_hygiene" in prompt
     assert "Tool-Call Hygiene" in prompt
 
@@ -1258,7 +1258,7 @@ def test_agy_build_session_prompt_has_no_literal_placeholder(
 ):
     """Agy session GEMINI.md must be expanded."""
     from ai_hats.composer import Composer
-    from ai_hats.surfaces.agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
     from ai_hats.resolver import LibraryResolver
 
     project, lib = project_with_placeholder_library
@@ -1266,7 +1266,7 @@ def test_agy_build_session_prompt_has_no_literal_placeholder(
     asm.init()
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _, _ = AgyProvider().build_session_prompt(project, result, "test-sid")
+    args, _, _ = AgySurface().build_session_prompt(project, result, "test-sid")
     override = Path(args[1]) / "GEMINI.md"
     content = override.read_text()
     assert "<ai_hats_dir>" not in content
@@ -1278,7 +1278,7 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
 ):
     """Claude --system-prompt-file content must be expanded."""
     from ai_hats.composer import Composer
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
     from ai_hats.resolver import LibraryResolver
 
     project, lib = project_with_placeholder_library
@@ -1287,7 +1287,7 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _, _ = ClaudeProvider().build_session_prompt(project, result, "test-sid")
+    args, _, _ = ClaudeSurface().build_session_prompt(project, result, "test-sid")
     # build_session_prompt returns ["--system-prompt-file", <path>]
     prompt_file = Path(args[args.index("--system-prompt-file") + 1])
     content = prompt_file.read_text()
@@ -1298,11 +1298,11 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
 def _subagent_payload(result):
     """Minimal payload for SubAgentRunner helper-method seams (HATS-865)."""
     from ai_hats.composition_payload import CompositionPayload
-    from ai_hats.providers import get_provider
+    from ai_hats.surface_registry import get_surface
 
     return CompositionPayload(
         result=result,
-        provider=get_provider("claude"),
+        provider=get_surface("claude"),
         effective_role=result.name,
     )
 
@@ -1330,7 +1330,7 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     """HATS-380 residual gap: the sub-agent meta-prompt must expand
     `<ai_hats_dir>` in result.merged_injection. Roles like session-reviewer
     (auto-spawned by reflect-session) carry the literal in their injection."""
-    from ai_hats.providers import get_provider
+    from ai_hats.surface_registry import get_surface
 
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
@@ -1338,7 +1338,7 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
-    meta_prompt = _sdk_audit(get_provider("claude"), project, result, task="")
+    meta_prompt = _sdk_audit(get_surface("claude"), project, result, task="")
 
     assert "<ai_hats_dir>" not in meta_prompt
     # Spot-check both trait + role injection landed expanded.
@@ -1353,7 +1353,7 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
     and the dominant consumer (session-reviewer) never used it; the backlog is
     reachable on-demand via the `ai-hats task` CLI."""
     from ai_hats.paths import state_md_path
-    from ai_hats.providers import get_provider
+    from ai_hats.surface_registry import get_surface
 
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
@@ -1366,7 +1366,7 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    meta_prompt = _sdk_audit(get_provider("claude"), project, result, task="do the real thing")
+    meta_prompt = _sdk_audit(get_surface("claude"), project, result, task="do the real thing")
 
     assert "# TASK" in meta_prompt  # the real task still lands
     assert "# PROJECT_STATE" not in meta_prompt

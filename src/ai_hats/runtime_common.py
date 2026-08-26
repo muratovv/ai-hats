@@ -329,7 +329,7 @@ def _finalize_sub_agent(
     Called from every sub-agent terminal path (success, timeout, error) so
     session_dir is always consistently closed: transcript.txt + reasoning.log
     written if we have any output, metrics.json written with exit_code and
-    optional timed_out/error/tags/duration_s fields. Provider-agnostic —
+    optional timed_out/error/tags/duration_s fields. Surface-agnostic —
     behaves identically for claude and agy.
 
     ``extra_metrics`` (HATS-474): provider-specific keys to merge into
@@ -366,8 +366,8 @@ def _finalize_sub_agent(
                 # finalize path's base metrics dict (only the HITL counterpart
                 # `_finalize_session_basic` wrote it). The downstream
                 # `AuditWriter._render_audit` then read `metrics.get("provider",
-                # "unknown")` → audit.md said `Provider: unknown` for every
-                # SubAgent / `execute --batch` session. Provider is known by
+                # "unknown")` → audit.md said `Surface: unknown` for every
+                # SubAgent / `execute --batch` session. Surface is known by
                 # `SubAgentRunner` (its `CompositionPayload.provider`, HATS-865)
                 # and is threaded through here.
                 "provider": provider,

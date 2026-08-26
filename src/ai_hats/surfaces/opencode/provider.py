@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ai_hats.surfaces import Provider
+from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
 from .runtime_hooks import materialize_hook_manifest
@@ -41,7 +41,7 @@ _DANGEROUS_FLAGS = {"--auto"}
 _SCHEMA = "https://opencode.ai/config.json"
 
 
-class OpenCodeProvider(Provider):
+class OpenCodeSurface(Surface):
     """The ``opencode`` entry-point surface, isolated to one ai-hats session."""
 
     @property
@@ -56,11 +56,11 @@ class OpenCodeProvider(Provider):
         # provider-agnostic (ADR-0030); opencode inherits launch env like codex.
         return True
 
-    def provider_hints(self) -> list:
-        from ai_hats.surfaces import ProviderHint
+    def surface_hints(self) -> list:
+        from ai_hats.surfaces import SurfaceHint
 
         return [
-            ProviderHint(
+            SurfaceHint(
                 name="--model",
                 values="<provider/model>",
                 description="Override the model for this session.",

@@ -3,7 +3,7 @@
 Beside the contract rather than inside it (ADR-0026 D14, HATS-1826). Reading a rule's
 ``metadata.yaml``, a skill's frontmatter and a marker-delimited file is knowledge of
 this application's layout, and a contract carrying it makes every implementor inherit
-ai-hats internals to declare itself. The seams stay on ``Provider``: what left the
+ai-hats internals to declare itself. The seams stay on ``Surface``: what left the
 contract is the knowledge, not the extension point.
 """
 

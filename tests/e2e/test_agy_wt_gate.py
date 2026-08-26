@@ -23,7 +23,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.paths import session_cache_dir
-from ai_hats.surfaces.agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgySurface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -43,7 +43,7 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     # Compose maintainer role (includes worktree-isolation skill) and materialize for agy
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("maintainer")
-    provider = AgyProvider()
+    provider = AgySurface()
     provider.build_session_prompt(main, result, "sid-agy-gate")
 
     hooks_file = session_cache_dir(main, "sid-agy-gate") / "hooks.json"
@@ -117,7 +117,7 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
 
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("maintainer")
-    provider = AgyProvider()
+    provider = AgySurface()
     provider.materialize_runtime_skills(main, result, "sid-agy-gate-create")
     provider.ensure_runtime_hooks(main, result, session_id="sid-agy-gate-create")
 

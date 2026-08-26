@@ -9,8 +9,8 @@ Expansion happens at every writer layer (each "last gate" before the
 prompt or path reaches the agent / filesystem):
 
 - The canonical-dir writer in :mod:`ai_hats.assembler`.
-- :meth:`ai_hats.providers.AgyProvider.build_session_prompt` and
-  :meth:`ai_hats.providers.ClaudeProvider.build_session_prompt` (the
+- :meth:`ai_hats.surface_registry.AgySurface.build_session_prompt` and
+  :meth:`ai_hats.surface_registry.ClaudeSurface.build_session_prompt` (the
   per-session composed prompt) plus the plugin-dir materialization in
   :mod:`ai_hats.plugin_dir` (HATS-380 parity for SKILL.md content).
 - :func:`ai_hats.session_artifacts.assemble_meta_prompt`.

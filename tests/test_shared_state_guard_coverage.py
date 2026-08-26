@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.paths import claude_plugin_skills_dir
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
@@ -32,7 +32,7 @@ def _builtin_roles() -> list[str]:
 
 def _guard_wired(role: str) -> bool:
     result = Assembler(REPO_ROOT).composer.compose(role)
-    entries = ClaudeProvider()._desired_runtime_entries(
+    entries = ClaudeSurface()._desired_runtime_entries(
         result, claude_plugin_skills_dir(Path("/probe/plugin"))
     )
     return any(

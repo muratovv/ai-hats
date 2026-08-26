@@ -40,7 +40,7 @@ _EntryPointFingerprint = tuple[tuple[str, int, int], ...]
 @dataclass
 class _ProviderIntegrityState:
     fingerprint: _EntryPointFingerprint
-    provider_names: tuple[str, ...]
+    surface_names: tuple[str, ...]
     attributed_added: set[str] = field(default_factory=set)
     attributed_removed: set[str] = field(default_factory=set)
 
@@ -67,26 +67,26 @@ def _entry_point_files_fingerprint() -> _EntryPointFingerprint:
 def _provider_integrity_state() -> _ProviderIntegrityState:
     return _ProviderIntegrityState(
         fingerprint=_entry_point_files_fingerprint(),
-        provider_names=_provider_names(),
+        surface_names=_provider_names(),
     )
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _workspace_surface_providers() -> Iterator[None]:
     """Register workspace provider classes without installing their distributions."""
-    from ai_hats import providers
-    from ai_hats.surfaces.agy import AgyProvider
-    from ai_hats.surfaces.cline import ClineProvider
-    from ai_hats.surfaces.codex import CodexProvider
+    from ai_hats import surface_registry as providers
+    from ai_hats.surfaces.agy import AgySurface
+    from ai_hats.surfaces.cline import ClineSurface
+    from ai_hats.surfaces.codex import CodexSurface
 
     saved = dict(providers._PROVIDER_REGISTRY)
     for name, provider in (
-        ("agy", AgyProvider),
-        ("cline", ClineProvider),
-        ("codex", CodexProvider),
+        ("agy", AgySurface),
+        ("cline", ClineSurface),
+        ("codex", CodexSurface),
     ):
         if name not in providers._PROVIDER_REGISTRY:
-            providers.register_provider(name, provider)
+            providers.register_surface(name, provider)
     yield
     providers._PROVIDER_REGISTRY.clear()
     providers._PROVIDER_REGISTRY.update(saved)
@@ -195,7 +195,7 @@ def _dev_environment_integrity_tripwire(
 
     before_file = getattr(ai_hats, "__file__", None)
     before_ver = getattr(ai_hats, "__version__", None)
-    before_eps = _provider_integrity_state.provider_names
+    before_eps = _provider_integrity_state.surface_names
     before_pyc = len(list(src_root.glob("**/*.pyc")))
 
     yield
@@ -242,7 +242,7 @@ def _provider_entry_point_integrity(
     """Attribute provider entry-point mutations to their function test."""
     before_fingerprint = _entry_point_files_fingerprint()
     if before_fingerprint == _provider_integrity_state.fingerprint:
-        before_names = _provider_integrity_state.provider_names
+        before_names = _provider_integrity_state.surface_names
     else:
         before_names = _provider_names()
 
@@ -251,11 +251,11 @@ def _provider_entry_point_integrity(
     after_fingerprint = _entry_point_files_fingerprint()
     _provider_integrity_state.fingerprint = after_fingerprint
     if before_fingerprint == after_fingerprint:
-        _provider_integrity_state.provider_names = before_names
+        _provider_integrity_state.surface_names = before_names
         return
 
     after_names = _provider_names()
-    _provider_integrity_state.provider_names = after_names
+    _provider_integrity_state.surface_names = after_names
     added = set(after_names) - set(before_names)
     removed = set(before_names) - set(after_names)
     if not added and not removed:

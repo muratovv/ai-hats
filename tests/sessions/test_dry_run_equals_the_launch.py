@@ -316,10 +316,10 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
     """  # comment-length: allow — why the decoy exists is the point of the test
     import subprocess
 
-    from ai_hats.surfaces.cline import ClineProvider
+    from ai_hats.surfaces.cline import ClineSurface
 
     monkeypatch.setattr(
-        ClineProvider,
+        ClineSurface,
         "materialize_runtime_skills",
         lambda *a, **k: ["--config", "/decoy-from-the-second-derivation"],
     )

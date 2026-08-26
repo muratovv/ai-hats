@@ -16,7 +16,7 @@ Three contracts locked here, all under epic HATS-506:
 
 3. **HITL lock-in** — the same overlay content must reach
    ``--system-prompt-file`` in the HITL ``WrapRunner`` /
-   ``ClaudeProvider.build_session_prompt`` path. Direct invocation,
+   ``ClaudeSurface.build_session_prompt`` path. Direct invocation,
    no pipeline involvement.
 
 Sister to ``test_funnel_value_contract.py`` — same HATS-452 contract
@@ -32,7 +32,7 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.materialize import compose_for_role
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 
 # Non-built-in w.r.t. ``maintainer.composition.traits`` so the trait-body
@@ -246,7 +246,7 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     the runtime path doesn't depend on the pipeline funnel for
     correctness anymore.
     """
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
@@ -254,8 +254,8 @@ def test_runtime_sdk_path_carries_all_overlay_content(
 
     result = compose_for_role(asm, "maintainer")
     # HATS-1130: the SDK path under test is Claude's. ec85f43d swapped in
-    # AgyProvider, whose prompt is a different shape entirely.
-    sdk_text = _sdk_audit(ClaudeProvider(), project, result, task="test")
+    # AgySurface, whose prompt is a different shape entirely.
+    sdk_text = _sdk_audit(ClaudeSurface(), project, result, task="test")
 
     missing = [m for m in markers.values() if m not in sdk_text]
     assert not missing, (
@@ -269,7 +269,7 @@ def test_hitl_session_prompt_carries_all_overlay_content(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """Lock-in counterpart: ``WrapRunner`` / ``ClaudeProvider.
+    """Lock-in counterpart: ``WrapRunner`` / ``ClaudeSurface.
     build_session_prompt`` already propagates overlay content (verified
     empirically during HATS-501 brainstorm).
 
@@ -282,7 +282,7 @@ def test_hitl_session_prompt_carries_all_overlay_content(
 
     asm = Assembler(project)
     result = compose_for_role(asm, "maintainer")
-    args, _env, _ = ClaudeProvider().build_session_prompt(
+    args, _env, _ = ClaudeSurface().build_session_prompt(
         project,
         result,
         "test-sid-501",

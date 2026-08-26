@@ -94,9 +94,9 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     from ai_hats.assembler import Assembler
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     asm = Assembler(project)
     result = asm.composer.compose("e2e-rthook-role")
     provider.build_session_artifacts(
@@ -148,9 +148,9 @@ def test_e2e_materialized_runtime_hook_is_live(installed_launcher, tmp_path):
 
     from ai_hats.assembler import Assembler
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    ClaudeProvider().build_session_artifacts(
+    ClaudeSurface().build_session_artifacts(
         project,
         Assembler(project).composer.compose("e2e-rthook-role"),
         SESSION_ID,

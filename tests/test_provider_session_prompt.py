@@ -1,7 +1,7 @@
 """Phase 1 unit tests for the per-session compose path (HATS-294).
 
 Coverage:
-- Fork E: ``ClaudeProvider.build_session_prompt`` is byte-stable across
+- Fork E: ``ClaudeSurface.build_session_prompt`` is byte-stable across
   consecutive calls for the same role and session_id.
 - Fork F: composed default-role prompt content-equivalent to the v0.6
   canonical baseline captured in
@@ -23,8 +23,8 @@ from ai_hats.assembler import Assembler
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats.surfaces.agy.provider import AgyProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 from ai_hats.paths import PROJECT_CONFIG
 
@@ -76,7 +76,7 @@ def test_build_session_prompt_byte_stable_across_two_calls(project_with_library)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     args1, _, _ = provider.build_session_prompt(project, result, "stable-sid")
@@ -94,7 +94,7 @@ def test_build_session_prompt_byte_stable_distinct_session_ids(project_with_libr
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     args_a, _, _ = provider.build_session_prompt(project, result, "sid-a")
@@ -131,7 +131,7 @@ def test_composed_default_role_covers_canonical_baseline_content(tmp_path):
     # Compose the project's default-role-equivalent (assistant).
     asm = Assembler(repo_root)
     result = asm.composer.compose("assistant", overlay=asm._get_overlay("assistant"))
-    composed = ClaudeProvider().build_system_prompt(result)
+    composed = ClaudeSurface().build_system_prompt(result)
 
     # Signals from the v0.6 baseline that must survive.
     baseline = _BASELINE_FIXTURE.read_text()
@@ -165,7 +165,7 @@ def test_build_session_prompt_writes_under_cache_dir(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     args, _, _ = provider.build_session_prompt(project, result, "my-sid")
@@ -265,7 +265,7 @@ def test_build_session_prompt_recovers_from_stale_cache_dir(project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     # Plant a stale file in the would-be cache dir.
@@ -327,8 +327,8 @@ def test_native_registry_providers_omit_skills_index(tmp_path):
     agy .agy/skills/ (HATS-993)."""
     result = _skill_composition(tmp_path)
 
-    claude_prompt = ClaudeProvider().build_system_prompt(result)
-    agy_prompt = AgyProvider().build_system_prompt(result)
+    claude_prompt = ClaudeSurface().build_system_prompt(result)
+    agy_prompt = AgySurface().build_system_prompt(result)
 
     # The divergence — the core of HATS-701.
     assert "## AVAILABLE SKILLS" not in claude_prompt, (
@@ -373,14 +373,14 @@ def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
         injections=[],
     )
 
-    # ClaudeProvider
-    claude_p = ClaudeProvider()
+    # ClaudeSurface
+    claude_p = ClaudeSurface()
     _, claude_env, _ = claude_p.build_session_prompt(project, result, "sid-claude")
     assert "PATH" in claude_env
     assert str(skill_dir / "scripts") in claude_env["PATH"]
 
-    # AgyProvider
-    agy_p = AgyProvider()
+    # AgySurface
+    agy_p = AgySurface()
     _, agy_env, _ = agy_p.build_session_prompt(project, result, "sid-agy")
     assert "PATH" in agy_env
     assert str(skill_dir / "scripts") in agy_env["PATH"]

@@ -1,5 +1,5 @@
 """OpenCode surface plugin for ai-hats (HATS-1788)."""
 
-from .provider import OpenCodeProvider
+from .provider import OpenCodeSurface
 
-__all__ = ["OpenCodeProvider"]
+__all__ = ["OpenCodeSurface"]

@@ -194,7 +194,7 @@ def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
 
     m = _read_metrics(session)
     # HATS-561: ``provider`` lands in metrics so post-session audit
-    # rebuild stops emitting ``Provider: unknown``.
+    # rebuild stops emitting ``Surface: unknown``.
     assert m == {
         "schema_version": "audit/v1",  # HATS-948: versioned metrics surface
         "finalized": True,  # HATS-1374: teardown reached its end
@@ -228,7 +228,7 @@ def test_success_finalize_is_provider_agnostic(tmp_path, provider):
 
     m = _read_metrics(session)
     # HATS-561: ``provider`` lands in metrics so post-session audit
-    # rebuild stops emitting ``Provider: unknown``.
+    # rebuild stops emitting ``Surface: unknown``.
     assert m == {
         "schema_version": "audit/v1",  # HATS-948: versioned metrics surface
         "finalized": True,  # HATS-1374: teardown reached its end

@@ -80,7 +80,7 @@ def _seed_library(project_path: Path) -> None:
 
 #: The claude plugin's skills root inside a dry-run session — the surface's own
 #: mirror, and since HATS-1540 the root a bound check resolves its script from
-#: (``ClaudeProvider.session_skills_root``). ``tmp_project`` pins the provider.
+#: (``ClaudeSurface.session_skills_root``). ``tmp_project`` pins the provider.
 MIRROR_SUFFIX = "/sessions/dry-run/plugin/skills/gate-skill"
 
 

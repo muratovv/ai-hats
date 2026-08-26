@@ -121,7 +121,7 @@ HOOK_SUBAGENT_STOP = "SubagentStop"
 HOOK_NOTIFICATION = "Notification"
 
 
-# Provider registry names (HATS-917) — leaf home: runners must not import providers.
+# Surface registry names (HATS-917) — leaf home: runners must not import providers.
 # Only the builtin lives here; agy/cline are out-of-tree surfaces (own their names).
 PROVIDER_CLAUDE = "claude"
 

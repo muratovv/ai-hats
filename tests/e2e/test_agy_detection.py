@@ -34,16 +34,16 @@ def test_agy_detected_via_gemini_home_dir(repo_root: Path, tmp_path: Path):
     env["PYTHONPATH"] = checkout_pythonpath(repo_root)
 
     cmd = [
-        # HATS-1826 folded agy into ai-hats: the `ai_hats.providers` entry point
+        # HATS-1826 folded agy into ai-hats: the `ai_hats.surface_registry` entry point
         # now ships in the integrator's own metadata, so the interpreter that has
         # ai-hats installed IS the registry — no synthesised dist-info.
         sys.executable,
         "-c",
         "from ai_hats.cli.assembly import _detected_providers; "
-        "from ai_hats.providers import get_provider; "
+        "from ai_hats.surface_registry import get_surface; "
         "detected = _detected_providers(); "
         "assert 'agy' in detected, f'agy not in {detected}'; "
-        "p = get_provider('gemini'); "
+        "p = get_surface('gemini'); "
         "assert p.name == 'agy', f'expected agy, got {p.name}'",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)

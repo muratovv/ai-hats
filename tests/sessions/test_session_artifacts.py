@@ -1,4 +1,4 @@
-"""Tests for session_artifacts core and ClaudeProvider builder integration (HATS-1170)."""
+"""Tests for session_artifacts core and ClaudeSurface builder integration (HATS-1170)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ai_hats.session_artifacts import (
     DeliveryMode,
     SessionPolicy,
 )
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 
 def test_session_artifacts_types():
@@ -40,7 +40,7 @@ def test_claude_build_session_artifacts_hitl(tmp_path: Path):
     project_dir = tmp_path / "project"
     project_dir.mkdir()
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = CompositionResult(name="test-role", priorities=[], rules=[], skills=[], injections=[])
     session_id = "20260724-120000-1"
 
@@ -72,7 +72,7 @@ def test_claude_build_session_artifacts_automate(tmp_path: Path):
     project_dir = tmp_path / "project"
     project_dir.mkdir()
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = CompositionResult(name="test-role", priorities=[], rules=[], skills=[], injections=[])
     session_id = "20260724-120000-1"
 
@@ -98,7 +98,7 @@ def test_claude_session_policy_hooks_disabled(tmp_path: Path):
     project_dir = tmp_path / "project"
     project_dir.mkdir()
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = CompositionResult(name="test-role", priorities=[], rules=[], skills=[], injections=[])
     session_id = "20260724-120000-1"
 
@@ -114,7 +114,7 @@ def test_clean_root_scaffold_disabled(tmp_path: Path):
     project_dir = tmp_path / "project"
     project_dir.mkdir()
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
 
     provider.ensure_runtime_hooks(project_dir)
     assert not (project_dir / "CLAUDE.md").exists()

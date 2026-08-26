@@ -1,8 +1,8 @@
 """Tests for the provider open-registry (HATS-870 / T10).
 
 The closed ``PROVIDERS`` dict became an open registry: providers self-register
-at import and third parties register via ``register_provider`` (or the
-``ai_hats.providers`` entry-point group — see ``test_provider_entry_points``).
+at import and third parties register via ``register_surface`` (or the
+``ai_hats.surface_registry`` entry-point group — see ``test_provider_entry_points``).
 """
 
 from __future__ import annotations
@@ -12,20 +12,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from ai_hats import providers as prov
+from ai_hats import surface_registry as prov
 from ai_hats.provider_entry_points import (
     PROVIDER_ENTRY_POINT_GROUP,
     _is_first_party_entry_point,
 )
-from ai_hats.providers import (
-    Provider,
-    get_provider,
-    provider_names,
-    register_provider,
+from ai_hats.surface_registry import (
+    Surface,
+    get_surface,
+    surface_names,
+    register_surface,
 )
 
 
-class _FakeProvider(Provider):
+class _FakeProvider(Surface):
     @property
     def name(self) -> str:
         return "fake"
@@ -57,20 +57,20 @@ def _isolate_registry():
 
 
 def test_register_and_get_roundtrips_a_provider():
-    register_provider("fake", _FakeProvider)
-    assert "fake" in provider_names()
-    assert isinstance(get_provider("fake"), _FakeProvider)
+    register_surface("fake", _FakeProvider)
+    assert "fake" in surface_names()
+    assert isinstance(get_surface("fake"), _FakeProvider)
 
 
 def test_double_register_raises():
-    register_provider("fake", _FakeProvider)
+    register_surface("fake", _FakeProvider)
     with pytest.raises(prov.ProviderRegistryError, match="already registered"):
-        register_provider("fake", _FakeProvider)
+        register_surface("fake", _FakeProvider)
 
 
 def test_unknown_provider_raises_valueerror():
     with pytest.raises(ValueError, match="Unknown provider: nope"):
-        get_provider("nope")
+        get_surface("nope")
 
 
 def test_claude_arrives_through_its_declared_entry_point():
@@ -82,11 +82,11 @@ def test_claude_arrives_through_its_declared_entry_point():
     metadata (HATS-1826).
     """
     from ai_hats.constants import PROVIDER_CLAUDE
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     prov._reset_for_tests()
-    assert PROVIDER_CLAUDE in provider_names()
-    assert isinstance(get_provider(PROVIDER_CLAUDE), ClaudeProvider)
+    assert PROVIDER_CLAUDE in surface_names()
+    assert isinstance(get_surface(PROVIDER_CLAUDE), ClaudeSurface)
 
 
 class _FakeEntryPoint:
@@ -115,8 +115,8 @@ def test_out_of_tree_provider_is_discovered_via_entry_point(monkeypatch):
     prov._load_provider_entry_points()
 
     assert ep.loaded
-    assert "plugin" in provider_names()
-    assert isinstance(get_provider("plugin"), _FakeProvider)
+    assert "plugin" in surface_names()
+    assert isinstance(get_surface("plugin"), _FakeProvider)
 
 
 def test_broken_entry_point_is_skipped_not_fatal(monkeypatch, caplog):
@@ -128,8 +128,8 @@ def test_broken_entry_point_is_skipped_not_fatal(monkeypatch, caplog):
     with caplog.at_level("WARNING"):
         prov._load_provider_entry_points()  # must not raise
 
-    assert "broken" not in provider_names()  # bad one skipped
-    assert "plugin" in provider_names()  # good one still registered
+    assert "broken" not in surface_names()  # bad one skipped
+    assert "plugin" in surface_names()  # good one still registered
     assert any("broken" in r.message for r in caplog.records)
 
 
@@ -165,7 +165,7 @@ def test_discovery_failure_is_non_fatal(monkeypatch):
     prov._reset_for_tests()
 
     prov._load_provider_entry_points()  # swallows the error
-    assert provider_names() == []  # nothing advertised, nothing registered
+    assert surface_names() == []  # nothing advertised, nothing registered
 
 
 def test_pyproject_declares_provider_entry_point_group():
@@ -175,20 +175,20 @@ def test_pyproject_declares_provider_entry_point_group():
     data = tomllib.loads((root / "pyproject.toml").read_text())
     group = data["project"]["entry-points"][PROVIDER_ENTRY_POINT_GROUP]
     assert group == {
-        "agy": "ai_hats.surfaces.agy.provider:AgyProvider",
-        # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
-        "claude": "ai_hats.surfaces.claude.provider:ClaudeProvider",
+        "agy": "ai_hats.surfaces.agy.provider:AgySurface",
+        # HATS-1130: ec85f43d relocated ClaudeSurface into surfaces/.
+        "claude": "ai_hats.surfaces.claude.provider:ClaudeSurface",
         # HATS-1826 folds the out-of-tree surface distributions into the area, so
         # the integrator now declares their entry points too.
-        "cline": "ai_hats.surfaces.cline.provider:ClineProvider",
-        "codex": "ai_hats.surfaces.codex.provider:CodexProvider",
-        "opencode": "ai_hats.surfaces.opencode.provider:OpenCodeProvider",
+        "cline": "ai_hats.surfaces.cline.provider:ClineSurface",
+        "codex": "ai_hats.surfaces.codex.provider:CodexSurface",
+        "opencode": "ai_hats.surfaces.opencode.provider:OpenCodeSurface",
     }
 
 
 def test_legacy_gemini_alias_resolves_to_agy():
-    register_provider("agy", _FakeProvider)
-    provider = get_provider("gemini")
+    register_surface("agy", _FakeProvider)
+    provider = get_surface("gemini")
     assert isinstance(provider, _FakeProvider)
 
 
@@ -202,5 +202,5 @@ def test_a_known_surface_without_an_entry_point_refuses_immediately(monkeypatch)
     monkeypatch.setattr(prov, "_provider_entry_points", lambda: [])
     prov._reset_for_tests()
 
-    with pytest.raises(prov.UnknownProviderError, match="Unknown provider: agy"):
-        get_provider("agy")
+    with pytest.raises(prov.UnknownSurfaceError, match="Unknown provider: agy"):
+        get_surface("agy")

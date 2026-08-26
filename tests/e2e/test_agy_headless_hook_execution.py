@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.surfaces.agy.provider import AgyProvider
+from ai_hats.surfaces.agy.provider import AgySurface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -91,7 +91,7 @@ print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PreToolUse"}}}}))
     agy_dir.mkdir(parents=True, exist_ok=True)
     (agy_dir / "settings.json").write_text(json.dumps(settings_data, indent=2))
 
-    provider = AgyProvider()
+    provider = AgySurface()
 
     # Run agy -p headless command
     cmd = provider.get_run_command(["agy"], "Use Bash to run echo test_execution")

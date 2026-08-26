@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
-    from .surfaces import Provider
+    from .surfaces import Surface
 
 
 class SurfaceInfo(NamedTuple):
@@ -40,14 +40,14 @@ def get_known_surfaces() -> dict[str, SurfaceInfo]:
     return dict(KNOWN_SURFACES)
 
 
-def get_installed_providers() -> dict[str, Provider]:
-    """Get name -> Provider mapping for all currently installed & importable surfaces in venv."""
-    from .providers import get_provider, provider_names
+def get_installed_providers() -> dict[str, Surface]:
+    """Get name -> Surface mapping for all currently installed & importable surfaces in venv."""
+    from .surface_registry import get_surface, surface_names
 
-    providers: dict[str, Provider] = {}
-    for name in provider_names():
+    providers: dict[str, Surface] = {}
+    for name in surface_names():
         try:
-            providers[name] = get_provider(name)
+            providers[name] = get_surface(name)
         except Exception:  # noqa: S110
             # silent-ok: a surface that will not import is not installed
             pass
@@ -55,25 +55,25 @@ def get_installed_providers() -> dict[str, Provider]:
 
 
 def is_surface_installed(provider_name: str) -> bool:
-    """Return True iff provider_name is installed and resolves to a Provider instance."""
-    from .providers import get_provider
+    """Return True iff provider_name is installed and resolves to a Surface instance."""
+    from .surface_registry import get_surface
 
     try:
-        get_provider(provider_name)
+        get_surface(provider_name)
         return True
     except Exception:  # silent-ok: a surface that will not import is not installed
         return False
 
 
 def detect_surface_presence(provider_name: str, home: Path | None = None) -> bool:
-    """Provider-agnostic check whether a surface (installed or known) is present on the host."""
+    """Surface-agnostic check whether a surface (installed or known) is present on the host."""
     if home is None:
         home = Path.home()
 
-    from .providers import get_provider
+    from .surface_registry import get_surface
 
     try:
-        dirs = get_provider(provider_name).detected_home_dirs()
+        dirs = get_surface(provider_name).detected_home_dirs()
     except Exception:  # silent-ok: known metadata is the read-only fallback
         dirs = []
 

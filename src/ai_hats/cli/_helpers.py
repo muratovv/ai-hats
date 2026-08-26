@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..libraries.models import CheckBindingError
     from ..paths import NotAnAiHatsProjectError
-    from ..providers import UnknownProviderError
+    from ..surface_registry import UnknownSurfaceError
     from ..role_spec import RoleSpecError
 
 console = Console()
@@ -57,8 +57,8 @@ def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     sys.exit(2)
 
 
-def _handle_unknown_provider(exc: "UnknownProviderError") -> NoReturn:
-    """Render an ``UnknownProviderError`` as friendly stderr + exit 2.
+def _handle_unknown_provider(exc: "UnknownSurfaceError") -> NoReturn:
+    """Render an ``UnknownSurfaceError`` as friendly stderr + exit 2.
 
     The provider analogue of ``_handle_role_not_found`` for the bare-launch
     surface (HATS-965): names the bad provider, lists registered ones, hints at
@@ -129,13 +129,13 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         from ..composition_seam import MissingProviderError, RoleNotFoundError
         from ..libraries.models import CheckBindingError, ComponentKeyError
         from ..paths import NotAnAiHatsProjectError
-        from ..providers import UnknownProviderError
+        from ..surface_registry import UnknownSurfaceError
         from ..role_spec import RoleSpecError
 
     return (
         (RoleSpecError, _handle_role_spec_error),
         (RoleNotFoundError, _handle_role_not_found),
-        (UnknownProviderError, _handle_unknown_provider),
+        (UnknownSurfaceError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),
         (CheckBindingError, _handle_check_binding_error),

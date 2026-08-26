@@ -114,7 +114,7 @@ def _extract_session_block_body(text: str) -> str:
     ``<!-- AI-HATS:END -->`` markers (markers excluded, surrounding
     whitespace stripped) from a session prompt file.
 
-    Mirrors how ``ClaudeProvider.build_session_prompt`` writes the file:
+    Mirrors how ``ClaudeSurface.build_session_prompt`` writes the file:
     it inserts ``f"{START}\\n{prompt_content}\\n{END}"`` where
     ``prompt_content`` is ``build_system_prompt(result)`` after
     placeholder expansion. So stripping the markers + edges yields

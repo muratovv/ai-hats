@@ -56,9 +56,9 @@ def _managed_guard_command(project: Path) -> str:
     from ai_hats.assembler import Assembler
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     asm = Assembler(project)
     result = asm.composer.compose("assistant")
     provider.build_session_artifacts(

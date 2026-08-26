@@ -1,7 +1,7 @@
 """Which bytes a bound check runs, and from which root (HATS-1141, ADR-0019 D9).
 
 Two modes, one composition. In a session the root is the surface's own mirror of
-the composed skills (``Provider.session_skills_root``); outside one it is the
+the composed skills (``Surface.session_skills_root``); outside one it is the
 live composed skill. The mirror freezes bytes, not the binding list, so both
 modes compose — what differs is only the root each ``ResolvedCheck.script`` is
 re-based against.

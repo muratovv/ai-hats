@@ -1,9 +1,9 @@
 """Nothing shipped may install a provider on the user's behalf (HATS-1826).
 
 ai-hats used to reach for ``uv pip install`` when a surface name did not resolve
-— from ``get_provider``, from the assembler's provider validation and from
+— from ``get_surface``, from the assembler's provider validation and from
 ``self_heal``. That capability is gone, third parties included: the
-``ai_hats.providers`` entry-point group stays open so anyone can declare and
+``ai_hats.surface_registry`` entry-point group stays open so anyone can declare and
 ship a surface, but installing one is the user's job. ADR-0026 D3 — a bypass is
 closed, not documented.
 

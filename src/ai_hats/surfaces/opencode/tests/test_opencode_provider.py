@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from ai_hats.surfaces.opencode import OpenCodeProvider
+from ai_hats.surfaces.opencode import OpenCodeSurface
 from ai_hats.surfaces.opencode.provider import AGENT_NAME, ENV_OPENCODE_CONFIG
 
 
@@ -68,7 +68,7 @@ def _snapshot(project: Path) -> dict[str, bytes]:
 
 
 def test_provider_identity_and_session_cache_contract(tmp_path: Path) -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     assert provider.name == "opencode"
     assert provider.detected_home_dirs() == [".opencode"]
     assert provider.system_prompt_path(tmp_path) is None
@@ -79,7 +79,7 @@ def test_provider_identity_and_session_cache_contract(tmp_path: Path) -> None:
 
 
 def test_context_hitl_materializes_session_agent(tmp_path: Path) -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     result = _fake_result(
         skills=[_make_skill(tmp_path, "hatrack", "Drive the backlog")],
@@ -109,7 +109,7 @@ def test_context_hitl_materializes_session_agent(tmp_path: Path) -> None:
 
 def test_context_config_carries_no_permission_keys(tmp_path: Path) -> None:
     """HATS-1792: work policy lives in the role's manifest, not the config."""
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
 
     provider.build_session_artifacts(
@@ -126,7 +126,7 @@ def test_context_config_carries_no_permission_keys(tmp_path: Path) -> None:
 
 
 def test_hitl_build_writes_nothing_into_project_root(tmp_path: Path) -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     before = _snapshot(project)
 
@@ -142,7 +142,7 @@ def test_hitl_build_writes_nothing_into_project_root(tmp_path: Path) -> None:
 
 
 def test_skills_mirror_lands_in_session_cache_with_path_env(tmp_path: Path) -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     skill_source = _make_skill(tmp_path, "hatrack")
     (skill_source / "scripts").mkdir()
@@ -168,7 +168,7 @@ def test_skills_mirror_lands_in_session_cache_with_path_env(tmp_path: Path) -> N
 
 def test_skills_mirror_is_natively_discoverable_via_xdg(tmp_path: Path) -> None:
     """HATS-1791: the mirror lives under the redirected config dir."""
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     result = _fake_result(skills=[_make_skill(tmp_path, "hatrack")])
     artifacts = BuiltArtifacts()
@@ -198,7 +198,7 @@ def test_base_config_home_is_projected_not_mutated(
     (base_opencode / "plugins").mkdir()
     monkeypatch.setenv("AI_HATS_OPENCODE_CONFIG_HOME", str(base))
 
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     composed = _make_skill(tmp_path, "hatrack")
 
@@ -230,7 +230,7 @@ def test_composed_skill_shadows_same_named_user_skill(
     (base_skill / "SKILL.md").write_text("---\nname: hatrack\ndescription: user\n---\nuser\n")
     monkeypatch.setenv("AI_HATS_OPENCODE_CONFIG_HOME", str(base))
 
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     composed = _make_skill(tmp_path, "hatrack", "composed wins")
 
@@ -249,7 +249,7 @@ def test_composed_skill_shadows_same_named_user_skill(
 
 
 def test_skillsless_role_pins_no_xdg(tmp_path: Path) -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     project = _project(tmp_path)
     artifacts = BuiltArtifacts()
 
@@ -267,20 +267,20 @@ def test_skillsless_role_pins_no_xdg(tmp_path: Path) -> None:
 def test_get_env_pins_framework_identity(tmp_path: Path) -> None:
     from ai_hats.env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     env = provider.get_env(tmp_path / "session", tmp_path)
     assert env[ENV_AI_HATS_DIR].endswith(".agent/ai-hats") or "ai-hats" in env[ENV_AI_HATS_DIR]
     assert env[AI_HATS_PROJECT_DIR_ENV] == str(tmp_path)
 
 
 def test_get_run_command_inserts_headless_run_subcommand() -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     command = provider.get_run_command(["opencode", "--agent", AGENT_NAME], "do the task")
     assert command == ["opencode", "run", "--agent", AGENT_NAME, "do the task"]
 
 
 def test_passthrough_rejects_dangerous_and_owned_flags() -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     assert provider.get_cli_command(["--mini"]) == ["opencode", "--mini"]
     with pytest.raises(ValueError, match="--auto"):
         provider.get_cli_command(["--auto"])
@@ -289,5 +289,5 @@ def test_passthrough_rejects_dangerous_and_owned_flags() -> None:
 
 
 def test_model_flags_use_opencode_format() -> None:
-    provider = OpenCodeProvider()
+    provider = OpenCodeSurface()
     assert provider.model_flags("openai/gpt-5") == ["--model", "openai/gpt-5"]

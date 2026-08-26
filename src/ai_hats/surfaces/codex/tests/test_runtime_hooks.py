@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.codex.hook_dispatcher import DISPATCHER_COMMAND, dispatch_hook
-from ai_hats.surfaces.codex.provider import CodexProvider
+from ai_hats.surfaces.codex.provider import CodexSurface
 from ai_hats.surfaces.codex.runtime_hooks import (
     CODEX_HOOK_EVENTS,
     build_hook_cli_args,
@@ -199,7 +199,7 @@ def test_provider_artifact_pipeline_delivers_manifest_and_static_hook_config(
         user_rules=(),
     )
 
-    artifacts = CodexProvider().build_session_artifacts(
+    artifacts = CodexSurface().build_session_artifacts(
         project,
         result,
         "sid-pipeline",

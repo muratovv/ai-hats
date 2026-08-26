@@ -89,7 +89,7 @@ def materialize_hook_manifest(
 ) -> Path:
     """Write this composition's hook manifest and publish its runtime pins.
 
-    Provider integration is intentionally a two-line surface-local call::
+    Surface integration is intentionally a two-line surface-local call::
 
         path = materialize_hook_manifest(..., skills_dir=self.session_skills_root(...))
         artifacts.cli_args.extend(build_hook_cli_args())

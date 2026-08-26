@@ -54,13 +54,13 @@ def _session(project: Path, home: Path) -> Path:
     from ai_hats.assembler import Assembler
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
 
     result = Assembler(REPO_ROOT).composer.compose("maintainer")
     before = os.environ.get("HOME")
     os.environ["HOME"] = str(home)
     try:
-        AgyProvider().build_session_artifacts(
+        AgySurface().build_session_artifacts(
             project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
         )
     finally:

@@ -50,8 +50,8 @@ from .plugin_dir import (
 
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
-from .surfaces import Provider
-from .providers import get_provider
+from .surfaces import Surface
+from .surface_registry import get_surface
 from .constants import (
     AGENT_DIR,
     CANONICAL_DIR,
@@ -144,7 +144,7 @@ class Assembler:
                 self.project_dir,
                 self.project_config,
                 compose=lambda role: compose_for_role(self, role),
-                resolve_provider=get_provider,  # HATS-865: DI so the brick never imports providers
+                resolve_provider=get_surface,  # HATS-865: DI so the brick never imports providers
             )
         )
 
@@ -303,7 +303,7 @@ class Assembler:
         """
         # Validate inputs BEFORE creating any filesystem artifacts.
         if provider is not None:
-            from .providers import PROVIDER_ALIASES
+            from .surface_registry import PROVIDER_ALIASES
 
             provider = PROVIDER_ALIASES.get(provider, provider)
             self._validate_provider(provider)
@@ -349,7 +349,7 @@ class Assembler:
         # Persist path overrides NOW so subsequent path resolution
         # (runs_dir / tasks_dir) reads the new ai_hats_dir from yaml.
         if early_delta:
-            # Provider must be set before the first save (yaml rejects none).
+            # Surface must be set before the first save (yaml rejects none).
             # Requested value, else claude — the sole builtin (agy/cline are
             # out-of-tree, maybe uninstalled; HATS-1093).
             if not self.config_path.exists() and not self.project_config.provider:
@@ -726,7 +726,7 @@ class Assembler:
         if provider_name is not None:
             self._validate_provider(provider_name)
 
-        provider = get_provider(provider_name or self.project_config.provider)
+        provider = get_surface(provider_name or self.project_config.provider)
         # HATS-456: single derivation point — used for hooks install
         # AND build_system_prompt for Agy scaffold-less branch (below).
         # HATS-1435: the caller's composition OF role_name, when it has one.
@@ -746,7 +746,7 @@ class Assembler:
         # called from here — runtime auto-trigger stays silent (HATS-469 R3).
         self._refresh(install_time=False, result=result, warnings_sink=warnings_sink)
 
-        # Provider inline system prompt. Agy writes ./GEMINI.md; Claude and
+        # Surface inline system prompt. Agy writes ./GEMINI.md; Claude and
         # Cline deliver theirs per-session (ADR-0018) and no-op here.
         prompt_content = provider.build_system_prompt(result)
         prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
@@ -864,7 +864,7 @@ class Assembler:
         """
         self._warn_orphan_user_level_managed_skills()
         if self.project_config.provider:
-            provider = get_provider(self.project_config.provider)
+            provider = get_surface(self.project_config.provider)
             self._warn_leaked_user_global_project_hooks(provider)
         self._note_empty_legacy_agent_dir()
         self._warn_leftover_hook_sidecars()
@@ -1026,14 +1026,14 @@ class Assembler:
         Lookup only: ai-hats used to try to install an uninstalled surface here
         before refusing — that bypass is closed (HATS-1826).
         """
-        from .providers import PROVIDER_ALIASES, provider_names
-        from .surfaces_registry import get_known_surfaces, is_surface_installed
+        from .surface_registry import PROVIDER_ALIASES, surface_names
+        from .surface_catalog import get_known_surfaces, is_surface_installed
 
         canonical = PROVIDER_ALIASES.get(provider_name, provider_name)
         if is_surface_installed(canonical):
             return
 
-        available = sorted(set(provider_names()) | set(get_known_surfaces().keys()))
+        available = sorted(set(surface_names()) | set(get_known_surfaces().keys()))
         raise ValueError(f"Unknown provider: {provider_name}. Available: {available}.")
 
     def _build_tree(self, result: CompositionResult) -> dict:
@@ -1069,7 +1069,7 @@ class Assembler:
         del result  # composition is checked in-memory via composer.compose
         health: dict[str, str] = {}
         try:
-            provider = get_provider(self.project_config.provider)
+            provider = get_surface(self.project_config.provider)
             prompt_path = provider.system_prompt_path(self.project_dir)
         except Exception as exc:
             # An unresolvable provider used to drop the key entirely, so the
@@ -1498,7 +1498,7 @@ class Assembler:
         """HATS-465: WARN when `~/.claude/skills/.ai-hats-managed` exists.
 
         ai-hats has never written to ``~/.claude/skills/``. Pre-HATS-294
-        ``Provider.skills_export_dir`` for Claude pointed at the
+        ``Surface.skills_export_dir`` for Claude pointed at the
         project-level ``<project>/.claude/skills`` mirror; HATS-294
         removed permanent export entirely in favor of the per-session
         plugin-dir under ``<cache_root>/sessions/<sid>/plugin/``.
@@ -1535,7 +1535,7 @@ class Assembler:
         )
         return True
 
-    def _warn_leaked_user_global_project_hooks(self, provider: Provider) -> bool:
+    def _warn_leaked_user_global_project_hooks(self, provider: Surface) -> bool:
         """HATS-961: WARN when the active surface leaked ai-hats project hooks into
         user-global config (double-fires + 404s off project-root). Detection is the
         provider's (Claude surface); this only reports. WARN only — never mutate.

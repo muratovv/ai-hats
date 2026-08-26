@@ -1,6 +1,6 @@
 """A pre-ADR-0018 out-of-tree surface still works, and says what it cannot do (HATS-1207 R4).
 
-``ai_hats.providers`` is a published entry point, so a third-party surface may
+``ai_hats.surface_registry`` is a published entry point, so a third-party surface may
 implement only ``build_session_prompt`` and know nothing about categories or
 ``SessionPolicy``. Routing such a provider through the builder would not raise —
 ``build_category_artifact`` no-ops — it would hand the session an EMPTY prompt.
@@ -12,12 +12,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.surfaces import Provider
+from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 
-class LegacySurface(Provider):
+class LegacySurface(Surface):
     """What an out-of-tree provider looked like before ADR-0018."""
 
     name = "legacy"
@@ -43,7 +43,7 @@ class LegacySurface(Provider):
 
 def test_legacy_surface_is_detected_as_not_category_aware():
     assert LegacySurface().handles_artifact_categories() is False
-    assert ClaudeProvider().handles_artifact_categories() is True
+    assert ClaudeSurface().handles_artifact_categories() is True
 
 
 def test_routing_a_legacy_surface_through_the_builder_would_deliver_nothing(tmp_path: Path):

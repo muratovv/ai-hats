@@ -421,7 +421,7 @@ def test_t11_out_of_tree_provider_plugin_does_not_fail_verify(monkeypatch, coher
     """A third-party plugin must not fail the install verify (mirrors providers policy)."""
     _stub_entry_points(
         monkeypatch,
-        [_StubEP("agy", "ai_hats_agy:AgyProvider", "ai-hats-agy", exc=ImportError("boom"))],
+        [_StubEP("agy", "ai_hats_agy:AgySurface", "ai-hats-agy", exc=ImportError("boom"))],
     )
 
     assert _bootstrap.find_integrity_failures() == []

@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from .provider import CodexProvider
+from .provider import CodexSurface
 
-__all__ = ["CodexProvider"]
+__all__ = ["CodexSurface"]

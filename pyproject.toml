@@ -89,11 +89,11 @@ aggregation = [
 # Provider under this group is discovered + registered without ai-hats importing
 # it (built-ins are listed too — they self-register first, discovery no-ops them).
 [project.entry-points."ai_hats.providers"]
-agy = "ai_hats.surfaces.agy.provider:AgyProvider"
-claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"
-cline = "ai_hats.surfaces.cline.provider:ClineProvider"
-codex = "ai_hats.surfaces.codex.provider:CodexProvider"
-opencode = "ai_hats.surfaces.opencode.provider:OpenCodeProvider"
+agy = "ai_hats.surfaces.agy.provider:AgySurface"
+claude = "ai_hats.surfaces.claude.provider:ClaudeSurface"
+cline = "ai_hats.surfaces.cline.provider:ClineSurface"
+codex = "ai_hats.surfaces.codex.provider:CodexSurface"
+opencode = "ai_hats.surfaces.opencode.provider:OpenCodeSurface"
 
 # HATS-1038 C1: the rack CLI discovers this factory by metadata (never imports
 # the integrator — import-hygiene pin) and builds the fully-wired production

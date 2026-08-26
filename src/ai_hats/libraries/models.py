@@ -461,7 +461,7 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
 )
 
 
-# Provider runtime-hook events recognized by the framework (HATS-597).
+# Surface runtime-hook events recognized by the framework (HATS-597).
 # Skills declare hooks under one of these keys in metadata.yaml's
 # `runtime_hooks:` block. Names match Claude Code's native hook event names
 # so the provider can wire them into `.claude/settings.json` verbatim. v1

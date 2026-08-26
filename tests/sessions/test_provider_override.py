@@ -16,16 +16,16 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from ai_hats import providers as prov
+from ai_hats import surface_registry as prov
 from ai_hats.cli import main
-from ai_hats.surfaces import Provider
-from ai_hats.providers import register_provider
+from ai_hats.surfaces import Surface
+from ai_hats.surface_registry import register_surface
 
 # The project fixture configures ``claude``; an override must beat it.
 OVERRIDE = "stub-surface"
 
 
-class _StubProvider(Provider):
+class _StubProvider(Surface):
     @property
     def name(self) -> str:
         return OVERRIDE
@@ -49,7 +49,7 @@ class _StubProvider(Provider):
 @pytest.fixture
 def stub_provider():
     """Register a second surface, so "override wins" is observable at all."""
-    register_provider(OVERRIDE, _StubProvider)
+    register_surface(OVERRIDE, _StubProvider)
     yield OVERRIDE
     prov._PROVIDER_REGISTRY.pop(OVERRIDE, None)
 

@@ -22,7 +22,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.paths import PROJECT_CONFIG
 
 
@@ -140,7 +140,7 @@ def _run_probe(
     """
     asm = Assembler(project)
     result = asm.composer.compose(role, overlay=asm._get_overlay(role))
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     args, env, _ = provider.build_session_prompt(project, result, session_id)
 
     cmd = [

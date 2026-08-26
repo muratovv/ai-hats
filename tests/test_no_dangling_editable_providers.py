@@ -8,7 +8,7 @@ asserts, in whatever environment runs it, that:
 
 1. every advertised provider entry-point module RESOLVES (``find_spec``), and
 2. discovery and the live registry AGREE — nothing discovered is silently
-   dropped (``provider_names()`` covers every entry-point name).
+   dropped (``surface_names()`` covers every entry-point name).
 
 Fail-under-regress: reintroduce a dangling editable (or a provider plugin with a
 broken import) into the installed venv → this turns red.
@@ -23,7 +23,7 @@ Deliberate contract docstring — noqa: comment-length.
 
 from __future__ import annotations
 
-from ai_hats.providers import provider_names
+from ai_hats.surface_registry import surface_names
 from ai_hats.self_heal import _provider_entry_points, find_broken_surface_providers
 
 
@@ -37,7 +37,7 @@ def test_no_installed_provider_is_dangling() -> None:
 
 def test_discovery_and_registry_agree() -> None:
     discovered = {ep.name for ep in _provider_entry_points()}
-    registered = set(provider_names())
+    registered = set(surface_names())
     silently_dropped = discovered - registered
     assert not silently_dropped, (
         f"provider(s) discovered but not registered (failed to load): {sorted(silently_dropped)}"

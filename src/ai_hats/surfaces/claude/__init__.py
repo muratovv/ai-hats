@@ -1,3 +1,3 @@
-from .provider import ClaudeProvider
+from .provider import ClaudeSurface
 
-__all__ = ["ClaudeProvider"]
+__all__ = ["ClaudeSurface"]

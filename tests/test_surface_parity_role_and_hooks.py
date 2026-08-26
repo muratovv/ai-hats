@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats.surfaces.agy.provider import AgyProvider
-from ai_hats.surfaces.cline import ClineProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
+from ai_hats.surfaces.cline import ClineSurface
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 
 
@@ -48,7 +48,7 @@ def composition_result(test_skill: ResolvedComponent) -> CompositionResult:
     )
 
 
-@pytest.mark.parametrize("provider_cls", [ClaudeProvider, AgyProvider, ClineProvider])
+@pytest.mark.parametrize("provider_cls", [ClaudeSurface, AgySurface, ClineSurface])
 def test_role_propagation_and_hook_materialization_parity(
     tmp_path: Path, composition_result: CompositionResult, provider_cls
 ) -> None:

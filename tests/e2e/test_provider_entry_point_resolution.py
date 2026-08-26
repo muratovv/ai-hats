@@ -6,8 +6,8 @@ flow:   a user installs the released ai-hats wheel and asks for a surface by nam
 cmds:
     uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
     uv venv <tmp>/venv && uv pip install --no-deps <wheel>
-    <tmp>/venv/bin/python -c "get_provider('claude')"
-expect: the installed dist advertises `claude` under `ai_hats.providers`, the
+    <tmp>/venv/bin/python -c "get_surface('claude')"
+expect: the installed dist advertises `claude` under `ai_hats.surface_registry`, the
         registry resolves it, and the probe proves it read the wheel built here
         rather than some release resolved from the index
 why:    `claude` used to self-register in `providers._register_builtins` before
@@ -40,8 +40,8 @@ PROBE_TIMEOUT_S = 120
 
 #: The declaration under test, as pyproject writes it and as the installed
 #: ``entry_points.txt`` spells the same line.
-CLAUDE_DECLARATION = 'claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"'
-CLAUDE_ENTRY_POINT = "claude = ai_hats.surfaces.claude.provider:ClaudeProvider"
+CLAUDE_DECLARATION = 'claude = "ai_hats.surfaces.claude.provider:ClaudeSurface"'
+CLAUDE_ENTRY_POINT = "claude = ai_hats.surfaces.claude.provider:ClaudeSurface"
 
 #: Runs inside the installed venv and reports; every assertion is made by the
 #: test, so a probe failure is legible rather than a bare non-zero exit.
@@ -52,14 +52,14 @@ import importlib.metadata, json
 # index instead would otherwise report THAT release's behaviour as this one's.
 version = importlib.metadata.version("ai-hats")
 
-advertised = sorted(ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers"))
+advertised = sorted(ep.name for ep in importlib.metadata.entry_points(group="ai_hats.surface_registry"))
 
-from ai_hats.providers import UnknownProviderError, get_provider
+from ai_hats.surface_registry import UnknownSurfaceError, get_surface
 
 resolved, refusal = "", ""
 try:
-    resolved = type(get_provider("claude")).__name__
-except UnknownProviderError as exc:
+    resolved = type(get_surface("claude")).__name__
+except UnknownSurfaceError as exc:
     refusal = str(exc)
 
 print(json.dumps({
@@ -182,7 +182,7 @@ def declared(declared_venv: tuple[Path, str], tmp_path_factory) -> dict:
 
 def test_the_installed_wheel_advertises_claude_and_resolves_it(declared: dict) -> None:
     assert "claude" in declared["advertised"], (
-        f"the built wheel advertises {declared['advertised']} under ai_hats.providers — "
+        f"the built wheel advertises {declared['advertised']} under ai_hats.surface_registry — "
         "claude's declaration did not reach entry_points.txt"
     )
-    assert declared["resolved"] == "ClaudeProvider", declared["refusal"]
+    assert declared["resolved"] == "ClaudeSurface", declared["refusal"]

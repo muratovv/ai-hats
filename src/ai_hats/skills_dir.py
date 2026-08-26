@@ -1,6 +1,6 @@
 """Materializer for directory-convention skill registries.
 
-Extracted from ClineProvider (HATS-963/981) for providers whose harness
+Extracted from ClineSurface (HATS-963/981) for providers whose harness
 discovers skills from a directory convention (agy's ``rules/.agents/skills/``).
 That dir was project-scoped when this module was written; since HATS-1166 it is
 session-scoped, so the rebuild is a plain wipe-and-copy — see

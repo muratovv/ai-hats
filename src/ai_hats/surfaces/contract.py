@@ -3,7 +3,7 @@
 A surface is one way of running an agent: Claude Code, agy, cline, codex,
 opencode. This module says what all of them have in common, and nothing about
 which ones exist — the catalog, the registry and the lookup are the
-application's (``ai_hats.providers``), because knowing the list is knowing how
+application's (``ai_hats.surface_registry``), because knowing the list is knowing how
 the product uses the area.
 
 Signatures and defaults, not the work behind them: what a default *does* when it
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ProviderRunResult:
+class SurfaceRunResult:
     exit_code: int
     session_id: str | None
     total_cost_usd: float
@@ -58,7 +58,7 @@ class ProviderRunResult:
 
 
 @dataclass
-class ProviderHint:
+class SurfaceHint:
     """A CLI hint describing a parameter or state supported by the provider."""
 
     name: str
@@ -67,7 +67,7 @@ class ProviderHint:
 
 
 class TranscriptResolver(Protocol):
-    """``Provider.resolve_transcript`` seen from outside — where a session's log landed.
+    """``Surface.resolve_transcript`` seen from outside — where a session's log landed.
 
     Named here because the application passes it down as a value rather than importing
     a surface to find a file (HATS-1087): it rides ``CompositionPayload`` to the runners
@@ -103,11 +103,11 @@ class SubagentEngine(abc.ABC):
         model: str | None,
         timeout_s: int,
         artifacts: BuiltArtifacts | None = None,
-    ) -> ProviderRunResult:
+    ) -> SurfaceRunResult:
         pass
 
 
-class Provider(abc.ABC):
+class Surface(abc.ABC):
     """Abstract provider interface."""
 
     @property
@@ -118,7 +118,7 @@ class Provider(abc.ABC):
         """Directory names under $HOME to check for provider presence (e.g. ['.agy', '.gemini'])."""
         return [f".{self.name}"]
 
-    def provider_hints(self) -> list[ProviderHint]:
+    def surface_hints(self) -> list[SurfaceHint]:
         """A list of hints for the user about supported parameters and states.
 
         Returned by CLI (e.g. `ai-hats --help`) when this provider is active.
@@ -141,7 +141,7 @@ class Provider(abc.ABC):
         skills, so a binding has nothing to resolve against and refuses —
         ``legacy_launch_notices`` announces that at launch rather than leaving it
         to be discovered when a gate does not fire. Concrete, not abstract: an
-        out-of-tree provider behind ``ai_hats.providers`` predates this accessor
+        out-of-tree provider behind ``ai_hats.surface_registry`` predates this accessor
         and must keep importing (ADR-0019 D9).
         """  # comment-length: allow — the None branch IS the contract
         return None
@@ -189,7 +189,7 @@ class Provider(abc.ABC):
         ``build_session_prompt``: routing it through the builder would deliver an
         empty session rather than fail, since the dispatch above finds no handler.
         """
-        if type(self).build_category_artifact is not Provider.build_category_artifact:
+        if type(self).build_category_artifact is not Surface.build_category_artifact:
             return True  # overrides the seam wholesale — its own dispatch
         return any(
             hasattr(self, f"_build_{c.value}_{m.value}") for c in ArtifactCategory for m in RunMode
@@ -261,7 +261,7 @@ class Provider(abc.ABC):
 
         ai-hats wires hooks only into *project* config; a copy in user-global
         config double-fires and 404s off project-root (HATS-961). Base surfaces
-        manage no user-global hooks → none; ClaudeProvider overrides to scan
+        manage no user-global hooks → none; ClaudeSurface overrides to scan
         ``~/.claude/settings.json``.
         """
         return []
@@ -269,7 +269,7 @@ class Provider(abc.ABC):
     def settings_lint_warnings(self, project_dir: Path) -> list[str]:
         """Known surface-settings pitfalls to surface at session start (HATS-1006).
 
-        Base surfaces lint nothing; ClaudeProvider overrides to check the Claude
+        Base surfaces lint nothing; ClaudeSurface overrides to check the Claude
         settings chain for permission rules the CLI has deprecated.
         """
         return []
@@ -289,7 +289,7 @@ class Provider(abc.ABC):
     def get_cli_launch_args(
         self, base_cmd: list[str], session_id: str, is_resume: bool
     ) -> list[str]:
-        """Provider-specific launch flags (e.g. session-id linkage).
+        """Surface-specific launch flags (e.g. session-id linkage).
 
         Default: none. ``wrap_runner`` calls this on EVERY provider, so a
         claude-only override left agy/cline/gemini raising AttributeError
@@ -426,13 +426,13 @@ class Provider(abc.ABC):
         ensured. Idempotent — safe to invoke on every role apply.
 
         ``result`` is the active role's composition (``None`` on the legacy
-        bare-bump path with no active role); ``ClaudeProvider`` reads the
+        bare-bump path with no active role); ``ClaudeSurface`` reads the
         skills' ``runtime_hooks:`` declarations from it (HATS-597).
 
         Default: no-op. Providers without a runtime-hook channel (Agy)
         rely on the rule layer plus skill-contributed git hooks.
 
-        HATS-437: ClaudeProvider overrides to write a PreToolUse entry
+        HATS-437: ClaudeSurface overrides to write a PreToolUse entry
         for ``library/hooks/pre_bash_shared_state_guard.sh`` into
         ``.claude/settings.json``, plus any skill-declared runtime hooks.
         """
@@ -443,7 +443,7 @@ class Provider(abc.ABC):
         self, project_dir: Path, result: CompositionResult | None = None
     ) -> list[tuple[str, str]]:
         """Managed runtime-hook wiring drift as ``[(name, "wiring")]``. Default:
-        none (no settings.json channel); ``ClaudeProvider`` overrides (HATS-833)."""
+        none (no settings.json channel); ``ClaudeSurface`` overrides (HATS-833)."""
         del project_dir, result
         return []
 

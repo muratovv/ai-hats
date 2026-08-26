@@ -1,10 +1,10 @@
-"""Tests for surfaces_registry API (HATS-1178)."""
+"""Tests for surface_catalog API (HATS-1178)."""
 
 from pathlib import Path
 from unittest.mock import patch
 
-from ai_hats.surfaces import Provider
-from ai_hats.surfaces_registry import (
+from ai_hats.surfaces import Surface
+from ai_hats.surface_catalog import (
     detect_surface_presence,
     get_installed_providers,
     get_known_surfaces,
@@ -46,7 +46,7 @@ def test_is_surface_installed() -> None:
 def test_get_installed_providers() -> None:
     installed = get_installed_providers()
     assert "claude" in installed
-    assert isinstance(installed["claude"], Provider)
+    assert isinstance(installed["claude"], Surface)
 
 
 def test_detect_surface_presence(tmp_path: Path) -> None:
@@ -56,7 +56,7 @@ def test_detect_surface_presence(tmp_path: Path) -> None:
     assert detect_surface_presence("claude", home=tmp_path) is True
 
     # 2. Test uninstalled known surface (cline) with directory present
-    with patch("ai_hats.providers.get_provider", side_effect=ValueError("Not installed")):
+    with patch("ai_hats.surface_registry.get_surface", side_effect=ValueError("Not installed")):
         assert detect_surface_presence("cline", home=tmp_path) is False
         cline_dir = tmp_path / ".cline"
         cline_dir.mkdir()

@@ -1,3 +1,3 @@
-from .provider import AgyProvider
+from .provider import AgySurface
 
-__all__ = ["AgyProvider"]
+__all__ = ["AgySurface"]

@@ -24,7 +24,7 @@ from ai_hats.self_heal import (
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("ai_hats_cline:ClineProvider", "ai_hats_cline"),
+        ("ai_hats_cline:ClineSurface", "ai_hats_cline"),
         ("pkg.sub.mod:Obj", "pkg"),
         ("  spaced :X", "spaced"),
     ],

@@ -32,5 +32,5 @@ def test_provider_hints_with_role_help():
         result = runner.invoke(main, ["-r", "architect", "--help"])
 
     assert result.exit_code == 0
-    # Depending on the role's provider, we should see Provider Hints
+    # Depending on the role's provider, we should see Surface Hints
     assert "Provider Hints" in result.output

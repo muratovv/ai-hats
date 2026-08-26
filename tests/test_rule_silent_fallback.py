@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ComponentConfig
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
@@ -69,7 +69,7 @@ def test_a_go_role_is_not_handed_a_python_rule() -> None:
     """
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("go-dev", overlays=asm._get_overlays("go-dev"))
-    composed = ClaudeProvider().build_system_prompt(result)
+    composed = ClaudeSurface().build_system_prompt(result)
 
     assert "dev_rule_silent_fallback" not in {r.name for r in result.rules}
     assert "dev_rule_silent_fallback" not in composed
@@ -78,7 +78,7 @@ def test_a_go_role_is_not_handed_a_python_rule() -> None:
 def test_rule_present_in_composed_maintainer_prompt() -> None:
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("maintainer", overlays=asm._get_overlays("maintainer"))
-    composed = ClaudeProvider().build_system_prompt(result)
+    composed = ClaudeSurface().build_system_prompt(result)
 
     assert "### dev_rule_silent_fallback" in composed
     assert "# silent-ok:" in composed

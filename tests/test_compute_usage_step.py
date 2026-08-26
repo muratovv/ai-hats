@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ai_hats.paths import claude_transcripts_dir
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats_observe import Session
 from ai_hats.pipeline.steps.compute_usage import ComputeUsage
 from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON
@@ -26,7 +26,7 @@ TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
 # HATS-1087: discovery moved to the provider; the step no longer has a
 # Claude-specific fallback. Tests inject the real resolver, mirroring the
 # production path (composition_seam threads provider.resolve_transcript).
-_claude_resolver = ClaudeProvider().resolve_transcript
+_claude_resolver = ClaudeSurface().resolve_transcript
 
 
 def make_session(tmp_path: Path) -> Session:

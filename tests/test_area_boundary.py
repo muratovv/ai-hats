@@ -106,7 +106,7 @@ PINNED_DEEP_ENTRIES: tuple[str, ...] = (
 
 # comment-length: allow — an empty pin has to say what emptied it, or nobody can defend it
 # Every import naming a part of the surfaces area instead of the area itself — a caller
-# that wants ONE implementation by name rather than the `Provider` contract all of them
+# that wants ONE implementation by name rather than the `Surface` contract all of them
 # answer. Two at HATS-1826 S1, and both were that shape: `sweeper` reached past the
 # contract for a shared removal, which is now `sweep_stale_managed_tags` on the facade;
 # `providers._register_builtins` imported claude to register it AHEAD of its own declared
@@ -116,7 +116,7 @@ PINNED_DEEP_ENTRIES: tuple[str, ...] = (
 #
 # Still empty after the fold, which is what the measurement beside it predicted: the
 # shipped integrator imported `ai_hats_agy`, `ai_hats_cline`, `ai_hats_codex` and
-# `ai_hats_opencode` exactly **0** times, resolving them through the `ai_hats.providers`
+# `ai_hats_opencode` exactly **0** times, resolving them through the `ai_hats.surface_registry`
 # group instead. So moving all four in rewrote no shipped import; the churn was in
 # tests/, and this pin is what keeps it from moving into src/.
 PINNED_SURFACES_DEEP_ENTRIES: tuple[str, ...] = ()

@@ -109,7 +109,7 @@ from pathlib import Path
 
 
 def test_installs_synthetic_provider():
-    names = sorted(ep.name for ep in metadata.entry_points(group="ai_hats.providers"))
+    names = sorted(ep.name for ep in metadata.entry_points(group="ai_hats.surface_registry"))
     Path(os.environ["HATS1700_SEEN_PROVIDERS"]).write_text(json.dumps(names))
     subprocess.run(
         [

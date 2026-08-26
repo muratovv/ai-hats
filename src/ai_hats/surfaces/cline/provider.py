@@ -1,4 +1,4 @@
-"""Cline surface adapter — maps the `cline` CLI to the ai-hats `Provider`.
+"""Cline surface adapter — maps the `cline` CLI to the ai-hats `Surface`.
 
 HATS-1171: cline runs through the unified artifact-builder (ADR-0018) on the
 clean-root invariant — skills materialize into the per-session cache and reach
@@ -12,18 +12,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ai_hats.surfaces import Provider
+from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
     from ai_hats_observe.parsers.base import TranscriptParser
 
-    from ai_hats.surfaces import ProviderHint
+    from ai_hats.surfaces import SurfaceHint
 
 
-class ClineProvider(Provider):
-    """`cline` CLI adapter, registered via the `ai_hats.providers` entry point."""
+class ClineSurface(Surface):
+    """`cline` CLI adapter, registered via the `ai_hats.surface_registry` entry point."""
 
     @property
     def name(self) -> str:
@@ -32,11 +32,11 @@ class ClineProvider(Provider):
     def supports_session_command_wrappers(self) -> bool:
         return True
 
-    def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.surfaces import ProviderHint
+    def surface_hints(self) -> list["SurfaceHint"]:
+        from ai_hats.surfaces import SurfaceHint
 
         return [
-            ProviderHint(
+            SurfaceHint(
                 name="--yolo",
                 values="N/A",
                 description="Run cline in fully autonomous mode without asking for permission.",

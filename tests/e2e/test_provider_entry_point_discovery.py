@@ -59,7 +59,7 @@ def _write_plugin_dist(root: Path) -> Path:
     dist_info.mkdir()
     (dist_info / "METADATA").write_text("Metadata-Version: 2.1\nName: acme-hats\nVersion: 0.1\n")
     (dist_info / "entry_points.txt").write_text(
-        "[ai_hats.providers]\nacme = acme_provider:AcmeProvider\n"
+        "[ai_hats.surface_registry]\nacme = acme_provider:AcmeProvider\n"
     )
     return root
 

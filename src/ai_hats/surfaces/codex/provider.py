@@ -18,7 +18,7 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ai_hats.surfaces import Provider
+from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import (
     AutomateLaunch,
     BuiltArtifacts,
@@ -37,7 +37,7 @@ from .session_home import (
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
 
-    from ai_hats.surfaces import ProviderHint
+    from ai_hats.surfaces import SurfaceHint
 
 
 _DANGEROUS_FLAGS = {
@@ -154,7 +154,7 @@ def _reconcile_policy_default(
     return command
 
 
-class CodexProvider(Provider):
+class CodexSurface(Surface):
     """The ``codex`` entry-point surface, isolated to one ai-hats session."""
 
     @property
@@ -167,16 +167,16 @@ class CodexProvider(Provider):
     def supports_session_command_wrappers(self) -> bool:
         return True
 
-    def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.surfaces import ProviderHint
+    def surface_hints(self) -> list["SurfaceHint"]:
+        from ai_hats.surfaces import SurfaceHint
 
         return [
-            ProviderHint(
+            SurfaceHint(
                 name="--profile",
                 values="<name>",
                 description="Use a profile from the user's existing Codex config.",
             ),
-            ProviderHint(
+            SurfaceHint(
                 name="--model",
                 values="<model>",
                 description="Override the Codex model for this session.",

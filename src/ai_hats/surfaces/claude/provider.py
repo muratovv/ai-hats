@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from .. import ProviderHint
+    from .. import SurfaceHint
     from ai_hats_observe.parsers.base import TranscriptParser
 
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
-from .. import Provider, ProviderRunResult, SubagentEngine, sweep_stale_managed_tags
+from .. import Surface, SurfaceRunResult, SubagentEngine, sweep_stale_managed_tags
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
 from .sdk_options import (
     assemble_first_user_message,
@@ -111,7 +111,7 @@ def lint_settings_files(paths: "Iterable[Path]") -> list[SettingsFinding]:
     return findings
 
 
-class ClaudeProvider(Provider):
+class ClaudeSurface(Surface):
     @property
     def name(self) -> str:
         return PROVIDER_CLAUDE
@@ -119,11 +119,11 @@ class ClaudeProvider(Provider):
     def supports_session_command_wrappers(self) -> bool:
         return True
 
-    def provider_hints(self) -> list["ProviderHint"]:
-        from .. import ProviderHint
+    def surface_hints(self) -> list["SurfaceHint"]:
+        from .. import SurfaceHint
 
         return [
-            ProviderHint(
+            SurfaceHint(
                 name="--model",
                 values="claude-3-5-sonnet-20241022, ...",
                 description="Overrides the model to use for the session.",
@@ -425,7 +425,7 @@ class ClaudeProvider(Provider):
         still desired, else the skill segment of the ``ai-hats:<skill>:…`` tag."""
         entry = desired_by_tag.get(tag)
         if entry:
-            cmd = (entry.get(ClaudeProvider._SETTINGS_HOOKS_KEY) or [{}])[0].get("command", "")
+            cmd = (entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY) or [{}])[0].get("command", "")
             base = str(cmd).rsplit("/", 1)[-1]
             if base:
                 return base
@@ -480,11 +480,11 @@ class ClaudeProvider(Provider):
                 event_list[i] = want
                 return True
 
-        want_basename = want[ClaudeProvider._SETTINGS_HOOKS_KEY][0]["command"].rsplit("/", 1)[-1]
+        want_basename = want[ClaudeSurface._SETTINGS_HOOKS_KEY][0]["command"].rsplit("/", 1)[-1]
         for entry in event_list:
             if not isinstance(entry, dict) or entry.get("_ai_hats_managed"):
                 continue
-            for hook in entry.get(ClaudeProvider._SETTINGS_HOOKS_KEY, []) or []:
+            for hook in entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY, []) or []:
                 if not isinstance(hook, dict):
                     continue
                 # Exact basename match — NOT endswith. A user file whose name
@@ -555,7 +555,7 @@ class ClaudeProvider(Provider):
 
 
 class ClaudeSubagentEngine(SubagentEngine):
-    def __init__(self, provider: ClaudeProvider) -> None:
+    def __init__(self, provider: ClaudeSurface) -> None:
         self._provider = provider
 
     def run(
@@ -571,7 +571,7 @@ class ClaudeSubagentEngine(SubagentEngine):
         model: str | None,
         timeout_s: int,
         artifacts: BuiltArtifacts | None = None,
-    ) -> ProviderRunResult:
+    ) -> SurfaceRunResult:
         if artifacts is None:
             artifacts = self._provider.build_session_artifacts(
                 project_dir,
@@ -593,7 +593,7 @@ class ClaudeSubagentEngine(SubagentEngine):
         msg = assemble_first_user_message(project_dir, task=task, ticket_id=ticket_id)
         run_res = sdk_runner.run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
 
-        return ProviderRunResult(
+        return SurfaceRunResult(
             exit_code=run_res.exit_code,
             stdout=run_res.stdout,
             stderr=run_res.stderr,
