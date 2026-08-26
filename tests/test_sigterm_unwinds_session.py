@@ -72,6 +72,12 @@ def _run_until_started(child: Path, scratch: Path, started: Path) -> subprocess.
         "TMPDIR": str(scratch),
         "PYTHONPATH": f"{REPO_ROOT}{os.pathsep}{REPO_ROOT / 'src'}",
     }
+    # The subject is a SERIAL run killed at a ceiling. Inheriting the parent's
+    # PYTEST_ADDOPTS puts the child under xdist too, and an xdist controller
+    # unwinds on SIGTERM by itself — which makes the unhandled half pass its
+    # teardown and destroys the premise the pair is built on (HATS-1663).
+    for leaked in ("PYTEST_ADDOPTS", "PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT"):
+        env.pop(leaked, None)
     proc = subprocess.Popen(
         [sys.executable, "-m", "pytest", str(child), "-q", "-p", "no:cacheprovider"],
         cwd=str(child),
