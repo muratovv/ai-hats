@@ -91,6 +91,42 @@ except ImportError:  # sibling absent -> only the bare spelling is seen; recorde
         return []
 
 
+# HATS-1816 — the ONE reading of a guarded verb, shared with the session wrapper.
+# Absent sibling costs the guard its sight of every verb, so it is recorded.
+try:
+    from consent_gate import operations as _operations
+except ImportError:
+    _operations = None
+
+#: Names already reported absent, so the fail-open is said once and not per call.
+_OPERATIONS_OFF: set = set()
+
+#: `None` is a MEANINGFUL value for ``module`` — it is what "the registry is not
+#: here" looks like — so the default cannot be spelled with it.
+_DEFAULT = object()
+
+
+def _read_operation(
+    operation: str, surface: str, args, *, module=_DEFAULT, said=None, journal=None
+):
+    """The registry's reading of ``args`` (binary first), or ``None``.
+
+    A gate that quietly stopped reading looks exactly like a gate with nothing
+    to guard, so the missing registry is journaled rather than assumed away.
+    The three collaborators are parameters with real defaults: a test that had
+    to patch this module would be patching the code under test.
+    """
+    module = _operations if module is _DEFAULT else module
+    said = _OPERATIONS_OFF if said is None else said
+    journal = journal_bypass if journal is None else journal
+    if module is None:
+        if "operations" not in said:
+            said.add("operations")
+            journal("fail-open", "consent_gate.operations missing", hook="safety_gate.py")
+        return None
+    return module.read(operation, surface, list(args)[1:])
+
+
 # HATS-1647 — the tracker predicate shares its resolver and its wording with the
 # Edit/Write half of the gate: two texts for one rule is how the coarser one wins.
 try:
@@ -565,10 +601,8 @@ def merge_branch(args) -> str:
     The branch may be omitted — the CLI detects it from the cwd — so this is a
     LABEL for the question, never the binding. What binds is the invocation.
     """
-    rest = [tok for tok in args[1:] if not tok.startswith("-")]
-    if rest[:2] != ["wt", "merge"]:
-        return ""
-    return rest[2] if len(rest) > 2 else "this worktree"
+    reading = _read_operation("wt.merge", "ai-hats", args)
+    return "" if reading is None else reading.subject
 
 
 def transition_target(args):
@@ -580,34 +614,10 @@ def transition_target(args):
     NO flag turns the reading off. There used to be a `RACK_UNGATED_FLAGS` set
     holding `--force`, and the whole set is gone rather than that one entry:
     consent is not a property of the command, so nothing ADDED to the command
-    can remove it — `consent | op --force`. A list of flags we do not ask on
-    contradicts that as a category, and the next flag added would join it
-    silently. `--force` now reads as any other unrecognised flag.
-
-    One pass, because options come before the positional id as readily as after
-    it (`rack transition --tasks-dir /t X execute`) — and the refusal tells the
-    agent to re-run its command, so a shape that goes quiet makes it a liar.
+    can remove it. `--force` now reads as any other unrecognised flag.
     """  # comment-length: allow — why the exemption set is gone, not shortened
-    rest = args[1:]
-    if not rest or rest[0] != "transition":
-        return "", ""
-    task_id, target, i = "", "", 1
-    while i < len(rest):
-        tok = rest[i]
-        if tok in RACK_VALUE_FLAGS:
-            if tok == "--state" and i + 1 < len(rest):
-                target = rest[i + 1]
-            i += 2
-            continue
-        if tok.startswith("-"):
-            i += 1
-            continue
-        if not task_id:
-            task_id = tok
-        elif not target:
-            target = tok  # a bare token after the id IS the state op
-        i += 1
-    return (task_id, target) if task_id and target else ("", "")
+    reading = _read_operation("rack.transition", "rack", args)
+    return ("", "") if reading is None else (reading.subject, reading.target)
 
 
 def auto_allowed(args) -> bool:
