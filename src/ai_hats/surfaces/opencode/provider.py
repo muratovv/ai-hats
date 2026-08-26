@@ -78,7 +78,7 @@ class OpenCodeProvider(Provider):
     def build_system_prompt(self, result: "CompositionResult") -> str:
         # The session-aware skill index is appended by _expanded_prompt, where
         # exact paths in this session's cache are available.
-        return self._compose_sections(result, include_skills=False)
+        return self._compose_sections(result)
 
     # --- deterministic session paths -------------------------------------------------
 

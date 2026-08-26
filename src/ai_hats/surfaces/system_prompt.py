@@ -21,43 +21,21 @@ from ..constants import (
     PUBLISH_AGGREGATOR_END,
     PUBLISH_AGGREGATOR_START,
 )
-from ..frontmatter import FrontmatterError, read_frontmatter
 from ..models import RuleMetadata
 from ..resolver import read_rule_body
 
 logger = logging.getLogger(__name__)
 
 
-def extract_frontmatter_description(skill: ResolvedComponent) -> str:
-    """Extract ``description`` from a skill's SKILL.md frontmatter, else its name.
-
-    Best-effort: a malformed block warns and falls back to the name rather than
-    crashing the prompt build for one skill — the loud raise is the hook path's
-    job (HATS-814).
-    """
-    try:
-        data = read_frontmatter(skill.source_path / "SKILL.md")
-    except FrontmatterError as exc:
-        logger.warning(
-            "skill %r: malformed SKILL.md frontmatter; using name in the skill index: %s",
-            skill.name,
-            exc,
-        )
-        return skill.name
-    desc = data.get("description")
-    return desc if isinstance(desc, str) and desc else skill.name
-
-
-def compose_sections(result: CompositionResult, *, include_skills: bool) -> str:
+def compose_sections(result: CompositionResult) -> str:
     """Assemble the shared system-prompt sections.
 
-    Order: PRIORITIES → merged role/trait injection → always-on RULES →
-    USER RULES → optional AVAILABLE SKILLS index.
+    Order: PRIORITIES → merged role/trait injection → always-on RULES → USER RULES.
 
-    ``include_skills`` is the per-surface toggle (HATS-701). All five surfaces pass
-    ``False`` today — the last ``True`` caller went with HATS-993 — because each one
-    has a native skill registry that already carries every description, and emitting
-    the index here would duplicate it.
+    No skill index: every surface has a native skill registry that already carries
+    each description, so the text index was a duplicate. It was a per-surface toggle
+    (HATS-701) whose last ``True`` caller went with HATS-993 and which all five
+    surfaces then passed ``False`` — a branch no caller reached, removed in HATS-1826.
     """
     sections: list[str] = []
 
@@ -123,14 +101,6 @@ def compose_sections(result: CompositionResult, *, include_skills: bool) -> str:
             emitted = True
     if emitted:
         sections.append(user_rules_section)
-
-    # Skills: index only (body loaded on demand via native provider).
-    if include_skills and result.skills:
-        lines = ["## AVAILABLE SKILLS\n"]
-        for skill in result.skills:
-            desc = extract_frontmatter_description(skill)
-            lines.append(f"- **{skill.name}** — {desc}")
-        sections.append("\n".join(lines))
 
     return "\n\n".join(sections)
 

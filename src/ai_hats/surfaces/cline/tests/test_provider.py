@@ -173,8 +173,8 @@ def test_build_system_prompt_composes_sections() -> None:
 
 
 def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
-    # HATS-963: skills delivered via the native <cache>/skills registry. The
-    # text index is suppressed — Claude precedent (include_skills=False).
+    # HATS-963: skills delivered via the native <cache>/skills registry, so the
+    # composed sections carry no text index (HATS-1826 removed the toggle).
     skill_path = _make_skill(tmp_path, "my-skill")
     out = ClineProvider().build_system_prompt(_fake_result(skills=[skill_path]))
     assert "## AVAILABLE SKILLS" not in out

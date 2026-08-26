@@ -168,11 +168,11 @@ class ClaudeProvider(Provider):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        # HATS-701: skills reach the agent via the native --plugin-dir (HITL)
-        # / SDK plugin (sub-agent) registry materialized in build_session_prompt
-        # / sdk_options. Suppress the AVAILABLE SKILLS index here to avoid the
-        # 2-3x duplicate listing (~1.5k tok/session).
-        return self._compose_sections(result, include_skills=False)
+        # HATS-701: skills reach the agent via the native --plugin-dir (HITL) / SDK
+        # plugin (sub-agent) registry materialized in build_session_prompt /
+        # sdk_options, so the sections carry no skill index — it would be a 2-3x
+        # duplicate listing (~1.5k tok/session).
+        return self._compose_sections(result)
 
     # SETTINGS delivers nothing in either mode — hence no handler for it.
 

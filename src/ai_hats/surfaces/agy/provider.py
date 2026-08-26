@@ -112,7 +112,7 @@ class AgyProvider(Provider):
 
     def build_system_prompt(self, result: CompositionResult) -> str:
         # HATS-993: skills reach agy via the native .agy/skills/ registry
-        return self._compose_sections(result, include_skills=False)
+        return self._compose_sections(result)
 
     def _session_skills_dir(self, project_dir: Path, session_id: str) -> Path:
         return session_cache_dir(project_dir, session_id) / "rules" / ".agents" / "skills"

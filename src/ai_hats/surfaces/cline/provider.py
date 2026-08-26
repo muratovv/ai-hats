@@ -88,7 +88,7 @@ class ClineProvider(Provider):
 
     def build_system_prompt(self, result: CompositionResult) -> str:
         # Skills reach cline natively via <cache>/skills/ — a text index duplicates them.
-        return self._compose_sections(result, include_skills=False)
+        return self._compose_sections(result)
 
     # ----- HATS-1171: unified artifact-builder (ADR-0018) -----
 

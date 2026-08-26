@@ -199,7 +199,7 @@ class CodexProvider(Provider):
     def build_system_prompt(self, result: "CompositionResult") -> str:
         # The session-aware skill index is appended by _expanded_prompt, where
         # exact paths in this session's cache are available.
-        return self._compose_sections(result, include_skills=False)
+        return self._compose_sections(result)
 
     def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
         return self.session_codex_home(project_dir, session_id) / "skills"

@@ -274,13 +274,13 @@ class Provider(abc.ABC):
         """
         return []
 
-    def _compose_sections(self, result: CompositionResult, *, include_skills: bool) -> str:
+    def _compose_sections(self, result: CompositionResult) -> str:
         """The shared system-prompt sections — see ``system_prompt.compose_sections``.
 
         Kept as a method because it is the seam every surface calls on ``self``, in
         this tree and out of it.
         """
-        return compose_sections(result, include_skills=include_skills)
+        return compose_sections(result)
 
     @abc.abstractmethod
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
