@@ -26,8 +26,8 @@ injection: |
   ## Workflow
   1. Confirm the change is non-harness (else hand to `maintainer`).
   2. Pick or open the child task under the active library-curation epic.
-  3. NEW components → `skill-engineer` review checklist +
-     `rule_core_vs_usage_split` for placement.
+  3. NEW components → `skill-engineer` review checklist; placement by layer
+     per `CONTRIBUTING.md` § "Library structure".
   4. Audits → delegate to `role-auditor` as sub-agent.
   5. Validate by composing the affected role and reading rendered
      injection (see `library-curator` § "Verifying compositions from a worktree").
@@ -36,5 +36,6 @@ injection: |
   When a composition issue traces back to engine code
   (composer / assembler / models / paths), fix it in-place — you have
   the `dev::python` gear and the engine-internals map in the
-  `library-curator` trait. Honor `dev_rule_e2e_gate` for harness paths.
+  `library-curator` trait. Honor skill `maintainer-quality-gate` for harness
+  paths — it owns both the e2e policy and the gates.
 

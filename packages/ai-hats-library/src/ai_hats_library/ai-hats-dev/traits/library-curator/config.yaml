@@ -5,9 +5,8 @@ composition:
   skills:
     - doc-protocol
     - library-change-hypothesis-protocol
-    # HATS-1834: `maintainer-quality-gate` absorbed dev_rule_e2e_gate, so
-    # role-curator now also installs its pre-push hook — approved, not a
-    # side effect.
+    # HATS-1834: carries the e2e policy now, so role-curator also installs its
+    # pre-push hook — approved, not a side effect.
     - maintainer-quality-gate
 injection: |
   ## LIBRARY CURATOR

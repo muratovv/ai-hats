@@ -97,7 +97,7 @@ step) — the rest of this skill governs.
 | 2    | **skill text**            | low         | Edit an existing `SKILL.md` or add a new one under `library/`. No engine touch.                                          |
 | 3    | **trait wiring**          | low         | Attach an existing skill to a trait's composition, or add an injection bullet to a trait. No engine touch.               |
 | 4    | **handoff / runner code** | medium      | Minimal Python under `src/ai_hats/retro/` or `src/ai_hats/cli/` to surface or consume a YAML field. Unit-tested.         |
-| 5    | **CLI flags**             | medium-high | Typed flags on an existing CLI command. Requires `dev_rule_e2e_gate` coverage.                                           |
+| 5    | **CLI flags**             | medium-high | Typed flags on an existing CLI command. Owes e2e coverage.                                                            |
 | 6    | **typed schema**          | high        | Pydantic model fields, migrations, validators. Reserve for "shape is stable and we need rejection at the storage layer". |
 
 ### Don't skip rungs
