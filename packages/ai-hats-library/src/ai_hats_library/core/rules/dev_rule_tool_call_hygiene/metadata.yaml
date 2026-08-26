@@ -1,5 +1,0 @@
-name: dev_rule_tool_call_hygiene
-license: MIT
-description: Batch and parallelize tool calls, minimize sequential round-trips
-author: ai-hats
-tags: [development, efficiency, tools, batching]

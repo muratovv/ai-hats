@@ -34,7 +34,6 @@ from .libraries.models import (  # noqa: F401
     ComponentType,
     Composition,
     LeftoverSidecarHooksError,
-    RuleMetadata,
     RuntimeHook,
     SkillMetadata,
     parse_app_bindings,

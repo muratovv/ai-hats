@@ -179,7 +179,6 @@ def test_real_checker_allows_existing_rule_without_delivery_field(repo: Path):
 
     rule_dir = repo / "library" / "core" / "rules" / "rule_existing"
     rule_dir.mkdir(parents=True)
-    (rule_dir / "metadata.yaml").write_text("name: rule_existing\n")
     (rule_dir / "rule.md").write_text("Existing rule body.\n")
 
     _stage_cfg(

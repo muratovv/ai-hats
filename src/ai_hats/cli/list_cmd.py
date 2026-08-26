@@ -84,30 +84,12 @@ def list_traits():
 @list_cmd.command("rules")
 def list_rules():
     """List available rules."""
-    from ..models import ComponentType, RuleMetadata
+    from ..models import ComponentType
 
     asm = _assembler()
     names = asm.resolver.list_components(ComponentType.RULE)
     for name in names:
-        path = asm.resolver.resolve(name, ComponentType.RULE)
-        desc = ""
-        if path:
-            meta_path = path / "metadata.yaml"
-            if meta_path.exists():
-                try:
-                    meta = RuleMetadata.from_yaml(meta_path)
-                    desc = meta.description
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "rule %r: failed to load metadata at %s: %s",
-                        name,
-                        meta_path,
-                        exc,
-                    )
-        if desc:
-            console.print(f"  [cyan]{name}[/]  [dim]{desc}[/]")
-        else:
-            console.print(f"  [cyan]{name}[/]")
+        console.print(f"  [cyan]{name}[/]")
 
 
 @list_cmd.command("skills")

@@ -6,7 +6,7 @@ Internal model of ai-hats: components, composition rules, project layout, librar
 
 | Component  | Description                      | Format                                                    |
 | ---------- | -------------------------------- | --------------------------------------------------------- |
-| **Rules**  | Behavioral directives            | `rule.md` + `metadata.yaml`                               |
+| **Rules**  | Behavioral directives            | `rule.md`                                                 |
 | **Skills** | Capabilities with implementation | `SKILL.md` + `metadata.yaml` + `scripts/` + `references/` |
 | **Traits** | Composite components             | `config.yaml` (composition + injection)                   |
 | **Roles**  | Root configurations              | `config.yaml` (traits + priorities + injection)           |

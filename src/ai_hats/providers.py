@@ -30,7 +30,6 @@ from .provider_entry_points import (
     _is_first_party_entry_point,
     _provider_entry_points,
 )
-from .models import RuleMetadata
 from .resolver import read_rule_body
 
 
@@ -305,26 +304,6 @@ class Provider(abc.ABC):
 
         rules_to_deliver: list[tuple[ResolvedComponent, str]] = []
         for rule in result.rules:
-            if rule.source_path and rule.source_path.is_dir():
-                meta_file = rule.source_path / "metadata.yaml"
-                if meta_file.is_file():
-                    try:
-                        meta = RuleMetadata.from_yaml(meta_file)
-                        if meta.delivery is not None and meta.delivery not in ("always_on", ""):
-                            logger.warning(
-                                "rule %r: unrecognized delivery value %r at %s",
-                                rule.name,
-                                meta.delivery,
-                                meta_file,
-                            )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "rule %r: failed to load metadata at %s: %s",
-                            rule.name,
-                            meta_file,
-                            exc,
-                        )
-
             body = read_rule_body(rule.source_path) if rule.source_path else ""
             if body:
                 rules_to_deliver.append((rule, body))

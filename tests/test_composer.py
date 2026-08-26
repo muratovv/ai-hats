@@ -16,13 +16,11 @@ def library(tmp_path):
     rule_dir = lib / "rules" / "test_rule"
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text("# Test Rule\nDo good things.")
-    (rule_dir / "metadata.yaml").write_text("name: test_rule\n")
 
     # Rule 2 (role-only rule)
     rule_own_dir = lib / "rules" / "own_rule"
     rule_own_dir.mkdir(parents=True)
     (rule_own_dir / "rule.md").write_text("# Own Rule\nRole-only rule.")
-    (rule_own_dir / "metadata.yaml").write_text("name: own_rule\n")
 
     # Skill
     skill_dir = lib / "skills" / "test_skill"
@@ -352,7 +350,6 @@ def overlay_library(tmp_path):
         d = lib / "rules" / name
         d.mkdir(parents=True)
         (d / "rule.md").write_text(f"# {name}")
-        (d / "metadata.yaml").write_text(f"name: {name}\n")
 
     # Skills
     for name in ("skill_a", "skill_b", "skill_c"):
@@ -564,7 +561,6 @@ def test_compose_trait_with_empty_injection_excluded(tmp_path):
     rule_dir = lib / "rules" / "r1"
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text("# r1")
-    (rule_dir / "metadata.yaml").write_text("name: r1\n")
 
     trait_dir = lib / "traits" / "trait-empty"
     trait_dir.mkdir(parents=True)

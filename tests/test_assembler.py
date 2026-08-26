@@ -34,7 +34,6 @@ def project_with_library(tmp_path):
     rule_dir = lib / "rules" / "test_rule"
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text("# Test Rule")
-    (rule_dir / "metadata.yaml").write_text("name: test_rule\n")
 
     # Skill
     skill_dir = lib / "skills" / "test_skill"
@@ -1187,7 +1186,6 @@ def project_with_placeholder_library(tmp_path):
     rule_dir = lib / "rules" / "ph_rule"
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text("Rule body refs <ai_hats_dir>/state.\n")
-    (rule_dir / "metadata.yaml").write_text("name: ph_rule\n")
 
     skill_dir = lib / "skills" / "ph_skill"
     skill_dir.mkdir(parents=True)

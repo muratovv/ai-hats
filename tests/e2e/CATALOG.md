@@ -1547,19 +1547,19 @@ as a claim to check, not as evidence.
 - **expect** — the gate exits non-zero and names that file, instead of reporting green
 - **why** — `ruff check` walked the whole tree while `ruff format --check` walked only src/ and tests/, so a file under packages/ earned a green gate
 
-## `test_list_rules_survives_broken_metadata.py`
+## `test_list_rules_ignores_metadata.py`
 
-*pins HATS-1510*
+*pins HATS-1836*
 
-- **flow** — a developer running list rules when a rule metadata.yaml file is malformed
+- **flow** — a developer running list rules against a rule that still ships a metadata.yaml
 - **cmds**
 
   ```console
   ai-hats list rules
   ```
 
-- **expect** — list rules skips malformed metadata gracefully, printing warning while listing valid rules
-- **why** — without resilient metadata loading, one corrupt rule file breaks list rules for the whole project
+- **expect** — the rule is listed by name and nothing from the sidecar reaches stdout
+- **why** — rules are catalogued by name alone since HATS-1836 — a sidecar description was a second copy of the rule's meaning that drifted (5 of 14 had), and an external library's leftover sidecar must now be inert rather than half-read
 
 ## `test_migration_no_replay_without_config.py`
 

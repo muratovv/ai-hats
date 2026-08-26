@@ -24,6 +24,14 @@ since the latest tag lives under **Unreleased** until the next release.
 
   Generalised from `adr-integrity` (HATS-1646), which proved the shape on one rigid citation form.
 
+### Removed
+
+- **Rules no longer carry a `metadata.yaml`** (HATS-1836). A rule is one file, `rule.md`. The sidecar held a second copy of each rule's meaning in `description`, and **5 of 14 had drifted** from the bodies they described: `rule_pause_before_shared_state_write` still named `TaskCreate` (zero occurrences in the body), `rule_harness_reminder_hygiene` kept a conditional framing its §1 had made unconditional, `rule_verify_authored_claims` advertised four kinds against a two-row table, `dev_rule_tool_call_hygiene` sold batching where the thesis is now tool-narrowness, and `rule_backlog_discipline` said "ai-hats CLI" where the body says `rack`. Nothing machine-checkable holds two copies in agreement — a semantic divergence is not a gate's to catch — so the copy went. `ai-hats list rules` prints names, symmetric with `list skills` and `list traits`.
+
+  The `delivery` field went with it, finishing what HATS-1515 started: it had been kept as a tripwire against a stale `delivery: summarized`, and its population is now zero.
+
+  **For external libraries:** nothing to migrate. A leftover `rules/<name>/metadata.yaml` is simply never read — rule discovery has always been marked by `rule.md`, so the sidecar can stay or go without effect.
+
 ### Fixed
 
 - **`library-change-hypothesis-protocol` sent HYP authors down a route the tracker gate denies** (HATS-1831). The skill offered "`rack hyp create` (or hand-write the YAML; both routes work)", and `backlog_write_gate.py` denies the second. The one that works — `rack transition HYP-NNN --set verification_protocol=…` — was named nowhere in it. HATS-1825 met the deny, read it as the field being unreachable, and shipped HYP-112 with the protocol folded into `success_criterion` and no `source_task` link; a sibling session had written the same field normally an hour earlier. The deny names the working route in its own refusal, so what failed was not the machine: a false instruction in a trusted skill outweighed the machine's own correction. Same defect class as the three skills above, in a fourth that card missed.
