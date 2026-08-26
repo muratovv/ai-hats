@@ -4,7 +4,7 @@ steps:
   - id: resolve_prompt
     params: {default_text: ""}
   - id: launch_provider
-    # HATS-378: role-judge is a reporting role — silent runs were
+    # role-judge is a reporting role — silent runs were
     # the original motivator. Interactive (WrapRunner) sessions have
     # trace-enriched metrics so the zero-output guard catches the
     # tokens=0/tool_calls=0 failure mode (failed session

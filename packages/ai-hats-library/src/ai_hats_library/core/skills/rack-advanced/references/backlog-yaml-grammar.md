@@ -27,7 +27,7 @@ The **engine anchor** — `id`, `state`, `title`, `work_log`, `created`,
 `updated` (+ the `extras` passthrough) — is kernel-owned and is **not** declared
 in `fields`. `title` is the only required create input. There is **no
 `sections:` key**: the plan-section catalog lives in a sibling
-`plan-sections.yaml` (HATS-635 never-drift), config of the plan extension, not
+`plan-sections.yaml` (never-drift), config of the plan extension, not
 of the backlog.
 
 ## `fsm` → `initial / states / edges`
@@ -70,7 +70,7 @@ kind → `name / arity / inverse / derived / aliases / handlers / targets / read
 | `aliases`          | list[str] — alternate CLI tokens (e.g. `depends` → `depends_on`).                                              |
 | `handlers`         | list[handler-ref] — in-lock link/unlink handlers. A **stored inverse pair requires `[mirror-link]`** (below).  |
 | `targets`          | Sibling backlog `name` a cross-backlog kind points at (e.g. HYP `source_task` → `tasks`). Unset = own backlog. |
-| `read`,`read_docs` | Read-phase enricher handlers + doc names surfaced on a `context` read (HATS-1064).                             |
+| `read`,`read_docs` | Read-phase enricher handlers + doc names surfaced on a `context` read.                                        |
 
 **Stored-inverse rule (`MissingMirrorReactionError`):** a stored kind whose
 `inverse` is another stored, non-symmetric kind **must** declare

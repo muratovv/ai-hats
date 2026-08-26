@@ -1,18 +1,18 @@
 name: finalize-hitl
-# HITL (WrapRunner) post-spawn finalize sub-pipeline (HATS-535).
+# HITL (WrapRunner) post-spawn finalize sub-pipeline.
 # Invoked by WrapRunner.run() from its `finally` block via the
 # `PipelineHarness.run("finalize-hitl", initial=...)` surface. Runner
 # passes session_id, session_dir, claude_session_id, project_dir,
 # exit_code as initial state — they do NOT appear in the main `human`
 # pipeline funnel.
 #
-# HATS-530: `maybe_spawn_session_reviewer` extracted from inline
+# `maybe_spawn_session_reviewer` extracted from inline
 # inside `run_session_end`. The same step is now also wired into
 # `finalize-subagent` — single source of truth for auto-retro spawn,
 # closing the HITL/SubAgent asymmetry.
 steps:
   - id: make_audit
-  # HATS-664: sibling of make_audit — same post-session JSONL, emits the
+  # Sibling of make_audit — same post-session JSONL, emits the
   # machine-readable usage.json (usage/v1) consumed by the comparison task.
   - id: compute_usage
   - id: maybe_spawn_session_reviewer

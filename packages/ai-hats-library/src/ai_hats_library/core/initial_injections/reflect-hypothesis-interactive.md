@@ -1,7 +1,7 @@
 # Reflect-hypothesis — Phase 2 (judge, HITL with supervisor)
 
 You are starting **Phase 2** of a two-phase reflect-hypothesis sweep
-(HATS-513 / ADR-0007). Phase 1 (`judge-auditor`, headless, read-only)
+(ADR-0007). Phase 1 (`judge-auditor`, headless, read-only)
 already produced the draft below.
 
 Apply **judge-protocol** end-to-end:

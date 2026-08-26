@@ -1,5 +1,5 @@
 name: reflect-hypothesis-phase1
-# Phase 1 of 2-phase judge split (HATS-513 / ADR-0007). Headless auditor
+# Phase 1 of 2-phase judge split (ADR-0007). Headless auditor
 # pass: judge-auditor role (L0 / base-auditor) produces a draft-report
 # with proposed verdicts and proposed mutations — no CLI side-effects.
 # CLI (`ai-hats reflect hypothesis [--headless]`) reads `saved_path`
@@ -16,7 +16,7 @@ steps:
   - id: resolve_prompt
     params: {default_text: ""}
   - id: provider
-    # HATS-378: reporting role — apply zero-output guard. A judge-auditor
+    # Reporting role — apply zero-output guard. A judge-auditor
     # session that emits no BEGIN_JUDGE_DRAFT marker is a harness
     # incident, not a silent success.
     harness:

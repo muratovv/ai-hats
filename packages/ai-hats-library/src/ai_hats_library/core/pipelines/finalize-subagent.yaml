@@ -1,25 +1,25 @@
 name: finalize-subagent
-# SubAgent (SubAgentRunner) post-run finalize sub-pipeline (HATS-535).
+# SubAgent (SubAgentRunner) post-run finalize sub-pipeline.
 # Invoked by SubAgentRunner.finalize() (and `_finalize_sub_agent` for
 # the SDK-Claude path with work_dir + claude_session_id).
 #
 # Composition vs `finalize-hitl`:
 #   - `make_audit`                     — shared (structured audit.md parity)
-#   - `maybe_spawn_session_reviewer`   — shared (HATS-530: auto-retro spawn,
+#   - `maybe_spawn_session_reviewer`   — shared (auto-retro spawn,
 #                                        same threshold/policy as HITL)
 #   - `run_session_end`                — HITL-only (cyan retro banner;
 #                                        SubAgent has no TTY for the banner)
 #
-# HATS-530 closes the HITL/SubAgent auto-retro asymmetry: before this,
+# This closes the HITL/SubAgent auto-retro asymmetry: before it,
 # only HITL sessions triggered `_spawn_session_reviewer_background` at
 # session-end. Now the SubAgent path triggers the same reviewer when
 # the retro threshold is met.
 #
-# (HATS-707: the SESSION_END lifecycle-hook dispatch `run_session_end`
+# (The SESSION_END lifecycle-hook dispatch `run_session_end`
 # once carried was deleted — the `hooks:` channel had zero consumers —
 # so `run_session_end` is now banner-only and stays HITL-only.)
 steps:
   - id: make_audit
-  # HATS-664: sibling of make_audit — emits usage.json (usage/v1).
+  # Sibling of make_audit — emits usage.json (usage/v1).
   - id: compute_usage
   - id: maybe_spawn_session_reviewer
