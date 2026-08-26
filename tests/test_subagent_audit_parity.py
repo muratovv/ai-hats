@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 
 from ai_hats.paths import claude_transcripts_dir
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats_observe import AuditWriter, Session
 from ai_hats.runtime import _finalize_sub_agent
 
@@ -109,7 +109,7 @@ def test_subagent_audit_md_contains_user_and_assistant_markers(
         # HATS-1087: transcript_resolver too — production threads it via payload.
         session_factory=Session,
         audit_writer_factory=AuditWriter,
-        transcript_resolver=ClaudeProvider().resolve_transcript,
+        transcript_resolver=ClaudeSurface().resolve_transcript,
     )
 
     audit_text = session.audit_path.read_text()

@@ -146,7 +146,7 @@ _WT_LIBRARY_PATHS = [str(_WT_LIBRARY / "core"), str(_WT_LIBRARY / "usage")]
 def test_wizard_session_prompt_lists_live_roles(tmp_path):
     """The composed initial-wizard prompt carries the live catalog."""
     from ai_hats.assembler import Assembler
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project = tmp_path / "proj"
     project.mkdir()
@@ -155,7 +155,7 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
     asm.init()
 
     result = asm.composer.compose("initial-wizard")
-    _, _, content = ClaudeProvider().build_session_prompt(project, result, "sid-xyz")
+    _, _, content = ClaudeSurface().build_session_prompt(project, result, "sid-xyz")
 
     # placeholder fully expanded
     assert ROLE_CATALOG_PLACEHOLDER not in content
@@ -172,7 +172,7 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
 def test_non_wizard_prompt_has_no_catalog(tmp_path):
     """A role without the placeholder is unaffected (no catalog injected)."""
     from ai_hats.assembler import Assembler
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project = tmp_path / "proj"
     project.mkdir()
@@ -181,7 +181,7 @@ def test_non_wizard_prompt_has_no_catalog(tmp_path):
     asm.init()
 
     result = asm.composer.compose("assistant")
-    _, _, content = ClaudeProvider().build_session_prompt(project, result, "sid-2")
+    _, _, content = ClaudeSurface().build_session_prompt(project, result, "sid-2")
 
     assert ROLE_CATALOG_PLACEHOLDER not in content
     assert "- **dev-web**" not in content  # no catalog block in a normal role

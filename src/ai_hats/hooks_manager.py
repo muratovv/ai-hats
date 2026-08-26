@@ -33,7 +33,7 @@ def _read_manifest(path: Path) -> set[str]:
 
 if TYPE_CHECKING:
     from .models import ProjectConfig
-    from .providers import Provider
+    from .surfaces import Surface
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class HooksManager:
         project_config: "ProjectConfig",
         *,
         compose: Callable[[str], CompositionResult],
-        resolve_provider: "Callable[[str], Provider]",
+        resolve_provider: "Callable[[str], Surface]",
     ) -> None:
         self.project_dir = project_dir
         self.project_config = project_config

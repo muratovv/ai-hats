@@ -7,7 +7,7 @@ path onto :mod:`claude_agent_sdk`; skills now reach the agent via
 end-to-end test is rewritten to assert the same behavioural contract on
 the new surface: the plugin entry is built, populated on disk, and
 removed after the attempt finishes. The legacy
-:meth:`ClaudeProvider.materialize_runtime_skills` unit test stays —
+:meth:`ClaudeSurface.materialize_runtime_skills` unit test stays —
 it still covers the same disk layout the Agy / future-CLI providers
 will keep using.
 """
@@ -21,8 +21,8 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.paths import PROJECT_CONFIG
 
 
@@ -67,7 +67,7 @@ def project_with_two_roles(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
-    """ClaudeProvider returns --plugin-dir with a directory that holds the skills."""
+    """ClaudeSurface returns --plugin-dir with a directory that holds the skills."""
     import shutil
     from ai_hats_core import ComponentKind, ResolvedComponent
 
@@ -93,7 +93,7 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
         injections=[],
     )
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     args = provider.materialize_runtime_skills(tmp_path, result, "test-sid")
     try:
         assert args[0] == "--plugin-dir"
@@ -115,7 +115,7 @@ def test_agy_materialize_runtime_skills_is_noop(tmp_path):
         skills=[],
         injections=[],
     )
-    assert AgyProvider().materialize_runtime_skills(tmp_path, result, "test-sid") == []
+    assert AgySurface().materialize_runtime_skills(tmp_path, result, "test-sid") == []
 
 
 def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_roles, monkeypatch):
@@ -178,7 +178,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     from ai_hats_observe import SessionManager
     from ai_hats.paths import runs_dir
 
-    class LifecycleProvider(ClaudeProvider):
+    class LifecycleProvider(ClaudeSurface):
         def build_session_artifacts(self, project_dir, result, session_id, **kwargs):
             artifacts = kwargs["artifacts"]
             assert artifacts.resources is not None

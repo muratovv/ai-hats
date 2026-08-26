@@ -279,7 +279,7 @@ bundled inside the `ai-hats-rack` engine package.
 
 On session creation, the assembler resolves skill scripts into the session tree
 (`<cache>/sessions/<sid>/plugin/skills/<skill>/hooks/`) and
-`ClaudeProvider` wires managed entries into the session's
+`ClaudeSurface` wires managed entries into the session's
 `settings.json` pointing directly to the session tree copy.
 
 Two behaviours worth knowing:
@@ -325,7 +325,7 @@ skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 > path can land **inside the committed source tree** (the secret-guard wrote a
 > telemetry `.log` into `skills/…/user-hooks/`, HATS-819). Instead, take the
 > writable anchor from **`$AI_HATS_DIR`** — the engine exports it into the
-> hook's environment (`ClaudeProvider.get_env`), resolving to `<ai_hats_dir>`.
+> hook's environment (`ClaudeSurface.get_env`), resolving to `<ai_hats_dir>`.
 > It MAY be absent under a direct `claude` launch (no `ai-hats` wrap), so a hook
 > must **self-protect**: refuse any candidate path under a source tree
 > (`*/skills/*`, `*/library/*`) and fall back to an XDG state dir (`$XDG_STATE_HOME`)

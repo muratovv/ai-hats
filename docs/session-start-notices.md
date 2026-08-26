@@ -55,9 +55,9 @@ Code v2.1.210 deprecated `Write(path)` / `NotebookEdit(path)` / `Glob(path)`
 permission rules and warns once per offending rule at startup, invisibly in a
 wrapped session.
 
-The lint lives with the surface, not the runner: `Provider.settings_lint_warnings
+The lint lives with the surface, not the runner: `Surface.settings_lint_warnings
 (project_dir)` returns human-readable warnings (base surfaces: none), and
-`WrapRunner._lint_provider_settings` maps them to WARN notices. `ClaudeProvider`
+`WrapRunner._lint_provider_settings` maps them to WARN notices. `ClaudeSurface`
 checks the settings chain
 
 1. user-global `settings.json` (`$CLAUDE_CONFIG_DIR`, else `~/.claude/`),

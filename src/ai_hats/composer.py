@@ -369,12 +369,10 @@ class Composer:
                 errors.append(f"Skill '{skill_name}' not found")
                 continue
 
-            # HATS-706: do NOT eager-load the SKILL.md body here. The only
-            # consumer of a skill's body is reflect mode, which reads it on
-            # demand from ``source_path``; ``_extract_frontmatter_description``
-            # reads its own (single) copy for the Agy index. Loading the
-            # full body for every skill on every compose was dead work for
-            # every non-reflect session.
+            # HATS-706: do NOT eager-load the SKILL.md body here. Its only
+            # consumer is reflect mode, which reads it on demand from
+            # ``source_path``. Loading every skill's full body on every compose
+            # was dead work for every non-reflect session.
             skills.append(
                 ResolvedComponent(
                     name=skill_name,

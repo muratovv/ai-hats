@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**272 of 272 files catalogued — 282 flows.**
+**272 of 272 files catalogued — 281 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -95,7 +95,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  sh -c '... "$AI_HATS_PYTHON" -m ai_hats_agy.hook_dispatcher "$@"' sh PreToolUse Edit
+  sh -c '... "$AI_HATS_PYTHON" -m ai_hats.surfaces.agy.hook_dispatcher "$@"' sh PreToolUse Edit
   ```
 
 - **expect** — the hook is killed at its budget and the dispatcher returns 1 (BROKE per ADR-0020 D2), naming the hook on stderr
@@ -124,7 +124,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  python -m ai_hats_agy.hook_dispatcher PreToolUse   # what agy's global hook runs
+  python -m ai_hats.surfaces.agy.hook_dispatcher PreToolUse   # what agy's global hook runs
   ```
 
 - **expect** — the whole composed PreToolUse chain fires on agy's own tool and argument names, and refuses what it refuses on Claude
@@ -146,17 +146,17 @@ as a claim to check, not as evidence.
 
 ## `test_agy_provider_discovery.py`
 
-*pins HATS-1093*
+*pins HATS-1093, HATS-1826*
 
-- **flow** — a developer listing available providers after installing ai-hats-agy package
+- **flow** — a developer lists the providers a plain ai-hats install offers
 - **cmds**
 
   ```console
   ai-hats list providers
   ```
 
-- **expect** — agy provider is discovered via python entry points and displayed alongside built-ins
-- **why** — without entry-point discovery, installed surface packages cannot be resolved by the main binary
+- **expect** — agy is discovered through the entry point ai-hats declares for it and is displayed alongside claude
+- **why** — a surface reaches the binary only through the `ai_hats.providers` group; agy used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
 
 ## `test_agy_session_recorded.py`
 
@@ -529,17 +529,17 @@ as a claim to check, not as evidence.
 
 ## `test_cline_provider_discovery.py`
 
-*pins HATS-956*
+*pins HATS-956, HATS-1826*
 
-- **flow** — a developer listing providers when ai-hats-cline surface package is installed
+- **flow** — a developer lists the providers a plain ai-hats install offers
 - **cmds**
 
   ```console
   ai-hats list providers
   ```
 
-- **expect** — cline provider is discovered via python entry points and displayed in provider listing
-- **why** — without entry-point discovery, third-party provider packages like cline are invisible to the CLI
+- **expect** — cline is discovered through the entry point ai-hats declares for it and is displayed alongside claude
+- **why** — a surface reaches the binary only through the `ai_hats.providers` group; cline used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
 
 ## `test_cline_runtime_hook_chain.py`
 
@@ -650,17 +650,17 @@ as a claim to check, not as evidence.
 
 ## `test_codex_provider_discovery.py`
 
-*pins HATS-1531*
+*pins HATS-1531, HATS-1826*
 
-- **flow** — a developer lists providers with the ai-hats-codex package installed
+- **flow** — a developer lists the providers a plain ai-hats install offers
 - **cmds**
 
   ```console
   ai-hats list providers
   ```
 
-- **expect** — codex is discovered through the real package entry point alongside claude
-- **why** — registry metadata alone cannot launch a surface; the distribution entry point must be visible to the shipped binary (HATS-1531)
+- **expect** — codex is discovered through the entry point ai-hats declares for it and is displayed alongside claude
+- **why** — a surface reaches the binary only through the `ai_hats.providers` group; codex used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
 
 ## `test_codex_resume.py`
 
@@ -1826,6 +1826,22 @@ as a claim to check, not as evidence.
 - **expect** — custom provider entry point is discovered dynamically and listed alongside built-in providers
 - **why** — without entry point discovery, custom out-of-tree provider plugins cannot be registered or used
 
+## `test_provider_entry_point_resolution.py`
+
+*pins HATS-1826*
+
+- **flow** — a user installs the released ai-hats wheel and asks for a surface by name; `claude` has to resolve, and it has to resolve ONLY through the installed distribution's entry-point metadata
+- **cmds**
+
+  ```console
+  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
+  uv venv <tmp>/venv && uv pip install --no-deps <wheel>
+  <tmp>/venv/bin/python -c "get_surface('claude')"
+  ```
+
+- **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
+- **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised, and a broken or missing one would have gone unnoticed in every tier. The other half of the claim — that NOTHING registers claude behind the declaration's back — is structural and lives in tests/test_area_boundary.py, whose surfaces pin is empty: no shipped module may name a surface implementation at all (HATS-1826)
+
 ## `test_pty_escape_hatch.py`
 
 *pins HATS-679*
@@ -2396,17 +2412,17 @@ as a claim to check, not as evidence.
 
 ## `test_self_heal_broken_editable.py`
 
-*pins HATS-966*
+*pins HATS-966, HATS-1367*
 
-- **flow** — a developer running self update when local editable installation link is broken
+- **flow** — a developer whose workspace-member editable link points at a deleted path
 - **cmds**
 
   ```console
-  ai-hats self update
+  ai-hats self heal-editables
   ```
 
-- **expect** — launcher heal re-links editable package dependencies to current repository path
-- **why** — without broken editable healing, moved local repositories crash on missing editable package paths
+- **expect** — the heal re-points the dangling editable at the current repository path and the member imports again
+- **why** — without broken editable healing, a moved or torn-down checkout leaves every launch dying on a ModuleNotFoundError the CLI itself cannot repair
 
 ## `test_self_init_seeds_local_channel.py`
 
@@ -2962,30 +2978,6 @@ as a claim to check, not as evidence.
 
 - **expect** — sub-agent runs through Claude SDK, recording cost telemetry and session ID in metrics.json
 - **why** — without SDK integration, sub-agent execution relies on legacy subprocesses and loses cost telemetry
-
-## `test_surface_auto_install.py`
-
-*pins HATS-1701*
-
-- **flow** — a user launches Codex from an editable checkout whose surface package is not installed in the active environment
-- **cmds**
-
-  ```console
-  ai-hats -p codex -r maintainer
-  ```
-
-- **expect** — the first launch installs the local Codex surface and starts Codex without falling through to the registry installer
-- **why** — editable installation writes a path file that the running interpreter has not processed, so an in-process recheck otherwise misses the heal
-
-- **flow** — a user launches Codex without its surface and package installation fails
-- **cmds**
-
-  ```console
-  ai-hats -p codex -r maintainer
-  ```
-
-- **expect** — the command exits 2 with the installer diagnostic and no Python traceback
-- **why** — subprocess stderr is the actionable installation failure, but a bare CalledProcessError hides it and the generic CLI path leaks a traceback
 
 ## `test_surface_cleanup.py`
 

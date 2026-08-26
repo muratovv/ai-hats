@@ -16,8 +16,8 @@ import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.composer import Composer
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.resolver import LibraryResolver
 from ai_hats.rule_delivery import find_dangling_rule_pointers
 
@@ -26,7 +26,7 @@ LIB_LAYERS = [
     REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core",
     REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage",
 ]
-PROVIDERS = [ClaudeProvider, AgyProvider]
+PROVIDERS = [ClaudeSurface, AgySurface]
 
 
 def _resolver() -> LibraryResolver:
@@ -73,7 +73,7 @@ def test_edit_efficiency_folded_into_skill_and_rule_removed():
 def test_maintainer_prompt_delivers_harness_bullet_not_edit_efficiency():
     result = Composer(_resolver()).compose("maintainer")
     assert result.errors == []
-    prompt = ClaudeProvider().build_system_prompt(result)
+    prompt = ClaudeSurface().build_system_prompt(result)
     assert "Harness Reminders" in prompt
     assert "rule_harness_reminder_hygiene" in prompt
     assert "dev_rule_edit_efficiency" not in {r.name for r in result.rules}
@@ -164,7 +164,7 @@ def test_legacy_delivery_key_in_sidecar_is_inert(tmp_path):
         skills=[],
         injections=[],
     )
-    prompt = ClaudeProvider().build_system_prompt(result)
+    prompt = ClaudeSurface().build_system_prompt(result)
 
     assert "## RULES" in prompt
     assert "### custom_rule" in prompt
@@ -193,7 +193,7 @@ def test_rule_with_empty_body_warns(tmp_path, caplog):
     )
 
     with caplog.at_level(logging.WARNING):
-        prompt = ClaudeProvider().build_system_prompt(result)
+        prompt = ClaudeSurface().build_system_prompt(result)
 
     assert "### empty_rule" not in prompt
     assert "rule 'empty_rule': body is empty or unreadable" in caplog.text
@@ -219,7 +219,7 @@ def test_malformed_sidecar_cannot_affect_prompt_build(tmp_path):
         injections=[],
     )
 
-    prompt = ClaudeProvider().build_system_prompt(result)
+    prompt = ClaudeSurface().build_system_prompt(result)
 
     assert "### bad_meta_rule" in prompt
     assert "Body text." in prompt

@@ -26,10 +26,10 @@ pytestmark = pytest.mark.integration
 _PLUGIN_SRC = """\
 from pathlib import Path
 
-from ai_hats.providers import Provider
+from ai_hats.surfaces import Surface
 
 
-class AcmeProvider(Provider):
+class AcmeProvider(Surface):
     @property
     def name(self) -> str:
         return "acme"

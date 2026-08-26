@@ -3,18 +3,25 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from ai_hats.providers import ProviderHint
+    from .. import SurfaceHint
     from ai_hats_observe.parsers.base import TranscriptParser
 
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
-from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
+from .. import (
+    MetricsSink,
+    Surface,
+    SubagentEngine,
+    SurfaceRunResult,
+    sweep_stale_managed_tags,
+)
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
 from .sdk_options import (
     assemble_first_user_message,
@@ -111,7 +118,7 @@ def lint_settings_files(paths: "Iterable[Path]") -> list[SettingsFinding]:
     return findings
 
 
-class ClaudeProvider(Provider):
+class ClaudeSurface(Surface):
     @property
     def name(self) -> str:
         return PROVIDER_CLAUDE
@@ -119,11 +126,11 @@ class ClaudeProvider(Provider):
     def supports_session_command_wrappers(self) -> bool:
         return True
 
-    def provider_hints(self) -> list["ProviderHint"]:
-        from ai_hats.providers import ProviderHint
+    def surface_hints(self) -> list["SurfaceHint"]:
+        from .. import SurfaceHint
 
         return [
-            ProviderHint(
+            SurfaceHint(
                 name="--model",
                 values="claude-3-5-sonnet-20241022, ...",
                 description="Overrides the model to use for the session.",
@@ -168,11 +175,11 @@ class ClaudeProvider(Provider):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        # HATS-701: skills reach the agent via the native --plugin-dir (HITL)
-        # / SDK plugin (sub-agent) registry materialized in build_session_prompt
-        # / sdk_options. Suppress the AVAILABLE SKILLS index here to avoid the
-        # 2-3x duplicate listing (~1.5k tok/session).
-        return self._compose_sections(result, include_skills=False)
+        # HATS-701: skills reach the agent via the native --plugin-dir (HITL) / SDK
+        # plugin (sub-agent) registry materialized in build_session_prompt /
+        # sdk_options, so the sections carry no skill index — it would be a 2-3x
+        # duplicate listing (~1.5k tok/session).
+        return self._compose_sections(result)
 
     # SETTINGS delivers nothing in either mode — hence no handler for it.
 
@@ -425,7 +432,7 @@ class ClaudeProvider(Provider):
         still desired, else the skill segment of the ``ai-hats:<skill>:…`` tag."""
         entry = desired_by_tag.get(tag)
         if entry:
-            cmd = (entry.get(ClaudeProvider._SETTINGS_HOOKS_KEY) or [{}])[0].get("command", "")
+            cmd = (entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY) or [{}])[0].get("command", "")
             base = str(cmd).rsplit("/", 1)[-1]
             if base:
                 return base
@@ -480,11 +487,11 @@ class ClaudeProvider(Provider):
                 event_list[i] = want
                 return True
 
-        want_basename = want[ClaudeProvider._SETTINGS_HOOKS_KEY][0]["command"].rsplit("/", 1)[-1]
+        want_basename = want[ClaudeSurface._SETTINGS_HOOKS_KEY][0]["command"].rsplit("/", 1)[-1]
         for entry in event_list:
             if not isinstance(entry, dict) or entry.get("_ai_hats_managed"):
                 continue
-            for hook in entry.get(ClaudeProvider._SETTINGS_HOOKS_KEY, []) or []:
+            for hook in entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY, []) or []:
                 if not isinstance(hook, dict):
                     continue
                 # Exact basename match — NOT endswith. A user file whose name
@@ -498,50 +505,9 @@ class ClaudeProvider(Provider):
         event_list.append(want)
         return True
 
-    @staticmethod
-    def _sweep_stale_managed_tags(
-        hooks_root: dict,
-        desired_tags: set[str],
-        *,
-        tag_key: str = "_ai_hats_managed",
-        tag_prefix: str = "ai-hats:",
-    ) -> set[str]:
-        """Drop ai-hats-managed entries no longer in ``desired_tags`` from every
-        event list and return the removed tags (HATS-833). Preserves
-        user-authored entries and still-desired managed ones; cascade-drops an
-        event key whose list becomes empty.
-
-        HATS-1336: the tag's key and prefix are parameters because the generic
-        sweeper reuses this removal for agy's pre-1166 root remnant, which
-        spells the same ai-hats: tag under ``tag``. Defaults are claude's.
-        """
-        removed: set[str] = set()
-        for event in list(hooks_root.keys()):
-            event_list = hooks_root[event]
-            if not isinstance(event_list, list):
-                continue
-            kept: list = []
-            for entry in event_list:
-                if (
-                    isinstance(entry, dict)
-                    and isinstance(entry.get(tag_key), str)
-                    and entry[tag_key].startswith(tag_prefix)
-                    and entry[tag_key] not in desired_tags
-                ):
-                    removed.add(entry[tag_key])
-                else:
-                    kept.append(entry)
-            if len(kept) != len(event_list):
-                if kept:
-                    hooks_root[event] = kept
-                else:
-                    del hooks_root[event]
-        return removed
-
-    @staticmethod
     def _sweep_stale_managed(hooks_root: dict, desired_tags: set[str]) -> bool:
-        """Bool back-compat wrapper over :meth:`_sweep_stale_managed_tags`."""
-        return bool(ClaudeProvider._sweep_stale_managed_tags(hooks_root, desired_tags))
+        """Bool wrapper over the area's :func:`sweep_stale_managed_tags`."""
+        return bool(sweep_stale_managed_tags(hooks_root, desired_tags))
 
     def leaked_user_global_project_hooks(self, home: "Path") -> list[str]:
         """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.
@@ -596,8 +562,11 @@ class ClaudeProvider(Provider):
 
 
 class ClaudeSubagentEngine(SubagentEngine):
-    def __init__(self, provider: ClaudeProvider) -> None:
+    def __init__(self, provider: ClaudeSurface, *, run_blocking: Callable | None = None) -> None:
         self._provider = provider
+        # The SDK call is a seam, not an import three frames down: a test drives the
+        # engine by handing in its own, instead of patching the module under test.
+        self._run_blocking = run_blocking or sdk_runner.run_claude_sdk_blocking
 
     def run(
         self,
@@ -611,8 +580,9 @@ class ClaudeSubagentEngine(SubagentEngine):
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
+        metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
-    ) -> ProviderRunResult:
+    ) -> SurfaceRunResult:
         if artifacts is None:
             artifacts = self._provider.build_session_artifacts(
                 project_dir,
@@ -632,16 +602,20 @@ class ClaudeSubagentEngine(SubagentEngine):
             env=env,
         )
         msg = assemble_first_user_message(project_dir, task=task, ticket_id=ticket_id)
-        run_res = sdk_runner.run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
+        run_res = self._run_blocking(opts, msg, timeout_s=timeout_s)
 
-        return ProviderRunResult(
+        metrics.record(
+            {
+                "claude_session_id": run_res.claude_session_id,
+                "total_cost_usd": run_res.total_cost_usd,
+                "num_turns": run_res.num_turns,
+                "stop_reason": run_res.stop_reason,
+            }
+        )
+        return SurfaceRunResult(
             exit_code=run_res.exit_code,
             stdout=run_res.stdout,
             stderr=run_res.stderr,
             timed_out=run_res.timed_out,
             error=run_res.error,
-            session_id=run_res.claude_session_id,
-            total_cost_usd=run_res.total_cost_usd,
-            num_turns=run_res.num_turns,
-            stop_reason=run_res.stop_reason,
         )

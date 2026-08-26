@@ -12,7 +12,6 @@ why:    without cline transcript resolution, audit logs remain stubbed and token
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -24,15 +23,13 @@ from _helpers.project import Project
 
 pytestmark = pytest.mark.integration
 
-_CLINE_PKG = "packages/surfaces/cline"
-
 
 def _has_cline_plugin() -> bool:
     """The cline surface plugin must be importable (editable install or src on path)."""
     import importlib
 
     try:
-        importlib.import_module("ai_hats_cline")
+        importlib.import_module("ai_hats.surfaces.cline")
         return True
     except ImportError:
         return False
@@ -51,11 +48,7 @@ def test_cline_session_records_audit_and_usage(
 
     # The shim runs the dev venv's ai_hats; PYTHONPATH points both it and the
     # cline surface at THIS checkout, else the subprocess tests the installed one.
-    checkout_env = {
-        "PYTHONPATH": os.pathsep.join(
-            [checkout_pythonpath(repo_root), str(repo_root / _CLINE_PKG / "src")]
-        )
-    }
+    checkout_env = {"PYTHONPATH": checkout_pythonpath(repo_root)}
 
     # 1. self init configures cline provider
     tmp_project.run(

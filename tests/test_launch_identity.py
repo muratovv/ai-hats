@@ -16,9 +16,9 @@ from pathlib import Path
 import pytest
 
 from ai_hats.session_artifacts import assemble_launch_command, consumed_session_id
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
-from ai_hats_cline.provider import ClineProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
+from ai_hats.surfaces.cline.provider import ClineSurface
 from ai_hats_observe.session import Session
 
 SID = "11111111-2222-3333-4444-555555555555"
@@ -34,7 +34,7 @@ def _cmd(provider, *, resume: bool = False) -> list[str]:
 
 
 def test_claude_consumes_the_session_id() -> None:
-    cmd = _cmd(ClaudeProvider())
+    cmd = _cmd(ClaudeSurface())
 
     assert SID in cmd
     assert consumed_session_id(cmd, SID) == SID
@@ -42,13 +42,13 @@ def test_claude_consumes_the_session_id() -> None:
 
 def test_claude_resume_does_not_consume_it() -> None:
     """``--resume`` reattaches claude's own prior session, so our id never reaches it."""
-    cmd = _cmd(ClaudeProvider(), resume=True)
+    cmd = _cmd(ClaudeSurface(), resume=True)
 
     assert SID not in cmd
     assert consumed_session_id(cmd, SID) == ""
 
 
-@pytest.mark.parametrize("provider", [AgyProvider(), ClineProvider()], ids=["agy", "cline"])
+@pytest.mark.parametrize("provider", [AgySurface(), ClineSurface()], ids=["agy", "cline"])
 def test_surfaces_that_drop_the_session_id_claim_no_identity(provider) -> None:
     """The F12 shape: a uuid4 was minted and persisted for surfaces that never saw it."""
     cmd = _cmd(provider)

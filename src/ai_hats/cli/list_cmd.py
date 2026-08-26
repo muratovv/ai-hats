@@ -61,10 +61,10 @@ def list_roles():
 @list_cmd.command("providers")
 def list_providers():
     """List available providers."""
-    from ..providers import get_provider, provider_names
+    from ..surface_registry import get_surface, surface_names
 
-    for name in sorted(provider_names()):
-        provider = get_provider(name)
+    for name in sorted(surface_names()):
+        provider = get_surface(name)
         sp_path = provider.system_prompt_path(Path("."))
         sp_str = str(sp_path) if sp_path is not None else "(session cache)"
         console.print(f"  [cyan]{name}[/]  →  {sp_str}")

@@ -160,7 +160,7 @@ def _render_heal_result(result: "HealResult | None") -> None:
 
 @click.command("heal-editables", hidden=True)
 def heal_editables() -> None:
-    """Re-point stale surface-plugin editables (internal; called by the launcher)."""
+    """Re-point stale editables (internal; called by the launcher)."""
     from ..self_heal import run_editable_heal
 
     _render_heal_result(run_editable_heal())

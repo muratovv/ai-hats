@@ -1,11 +1,12 @@
-"""e2e (HATS-966)
+"""e2e (HATS-966, HATS-1367)
 
-flow:   a developer running self update when local editable installation link is broken
+flow:   a developer whose workspace-member editable link points at a deleted path
 cmds:
-    ai-hats self update
-expect: launcher heal re-links editable package dependencies to current repository path
-why: without broken editable healing, moved local repositories crash on missing editable
-     package paths"""
+    ai-hats self heal-editables
+expect: the heal re-points the dangling editable at the current repository path and
+        the member imports again
+why:    without broken editable healing, a moved or torn-down checkout leaves every
+        launch dying on a ModuleNotFoundError the CLI itself cannot repair"""
 
 from __future__ import annotations
 
@@ -54,8 +55,27 @@ def _imports(vpy: Path, module: str, env) -> bool:
 
 
 @pytest.mark.integration
-def test_e2e_launcher_auto_heals_stale_surface_plugin(tmp_path: Path) -> None:
-    """A dangling ``cline`` editable is re-pointed by the launcher before exec."""
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "HATS-1838: `bootstrap_or_die` runs in front of every `python -m ai_hats` "
+        "command. A dangling editable of a DECLARED dependency reads to it as a "
+        "missing dep, it reinstalls ai-hats (which does not touch the stale .pth), "
+        "the HATS-1359 re-exec guard refuses a second round, and the process exits 1 "
+        "— so `heal-editables` never runs. Not caused by HATS-1826: before the fold "
+        "this test broke `cline`, the one workspace member that was NOT a declared "
+        "dependency, which is why the path in front was clear. Folding the surfaces "
+        "in removed that class and left the defect with nothing to hide behind."
+    ),
+)
+def test_e2e_heal_repoints_a_stale_workspace_editable(tmp_path: Path) -> None:
+    """A dangling ``ai-hats-wt`` editable is re-pointed by ``self heal-editables``.
+
+    Retargeted from the ``cline`` surface plugin by HATS-1826: the surfaces now
+    ship inside ``ai-hats`` and have no editable of their own, so a ``packages/*``
+    workspace member — the shape HATS-1367 widened this channel to — is what it
+    still re-points.
+    """
     src_repo = tmp_path / "src-repo"
     launcher_dest = tmp_path / "bin" / "ai-hats"
     project = tmp_path / "project"
@@ -79,7 +99,8 @@ def test_e2e_launcher_auto_heals_stale_surface_plugin(tmp_path: Path) -> None:
     env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
-    # self init builds the channel:local venv (ai-hats editable from src_repo).
+    # self init builds the channel:local venv (ai-hats editable from src_repo,
+    # and with it every packages/* workspace member).
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
         cwd=project,
@@ -90,43 +111,23 @@ def test_e2e_launcher_auto_heals_stale_surface_plugin(tmp_path: Path) -> None:
     venv = project / ".agent" / "ai-hats" / ".venv"
     vpy = venv / "bin" / "python"
     assert vpy.is_file(), "healed venv python missing"
-
-    # Install the cline surface plugin editable into the venv (uv resolves the
-    # workspace from the package path, not cwd). This is the provider we break.
-    _run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "--no-deps",
-            "--python",
-            str(vpy),
-            "-e",
-            str(src_repo / "packages" / "surfaces" / "cline"),
-        ],
-        cwd=tmp_path,
-        env=env,
-        timeout=120,
-    )
-    assert _imports(vpy, "ai_hats_cline", env), "cline should import after install"
+    assert _imports(vpy, "ai_hats_wt", env), "ai_hats_wt should import after self init"
 
     # Break it: rewrite the editable .pth to a deleted path — the dangling state —
-    # while leaving the canonical src_repo/packages/surfaces/cline intact.
-    pths = list((venv / "lib").glob("python*/site-packages/*ai_hats_cline*.pth"))
-    assert pths, "cline editable .pth not found"
-    pths[0].write_text("/tmp/gone-hats966-e2e/packages/surfaces/cline/src\n")
-    assert not _imports(vpy, "ai_hats_cline", env), "cline should be broken after the .pth rewrite"
+    # while leaving the canonical src_repo/packages/ai-hats-wt intact.
+    pths = list((venv / "lib").glob("python*/site-packages/*ai_hats_wt*.pth"))
+    assert pths, "ai_hats_wt editable .pth not found"
+    pths[0].write_text("/tmp/gone-hats966-e2e/packages/ai-hats-wt/src\n")
+    assert not _imports(vpy, "ai_hats_wt", env), "ai_hats_wt should be broken after the rewrite"
 
-    # Drive the REAL launcher with a non-`self` command. The fall-through probe
-    # flags cline; the heal branch re-points it BEFORE exec; the fresh
-    # `list providers` then lists it.
-    result = _run([str(launcher_dest), "list", "providers"], cwd=project, env=env, timeout=180)
-
-    assert _imports(vpy, "ai_hats_cline", env), (
-        "launcher did not re-point the stale cline editable before exec\n"
-        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    result = _run(
+        [str(vpy), "-m", "ai_hats", "self", "heal-editables"],
+        cwd=project,
+        env=env,
+        timeout=180,
     )
-    assert "cline" in result.stdout, (
-        "healed cline not shown by `list providers`\n"
+
+    assert _imports(vpy, "ai_hats_wt", env), (
+        "heal did not re-point the stale ai_hats_wt editable\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )

@@ -421,7 +421,7 @@ def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
     under test is unchanged and is the one HATS-1642 shipped broken — what a
     ticket looks like by the time it reaches agy.
     """
-    from ai_hats_agy.claude_hook_adapter import from_claude_decision, to_claude_payload
+    from ai_hats.surfaces.agy.claude_hook_adapter import from_claude_decision, to_claude_payload
 
     spoken = {
         "toolCall": {"name": "run_command", "args": {"CommandLine": "rack transition X execute"}}

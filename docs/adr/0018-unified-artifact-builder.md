@@ -75,7 +75,7 @@ now legible in the class body (HATS-1223).
 > **Пример устарел (2026-08-02, HATS-1465, замерено).** Дыра agy выше с тех
 > пор закрыта: `AgyProvider` доставляет хуки и в AUTOMATE
 > (`_build_hooks_automate` в
-> `packages/surfaces/agy/src/ai_hats_agy/provider.py`). Сам принцип
+> `src/ai_hats/surfaces/agy/provider.py`). Сам принцип
 > absent-method в силе; пример дерево больше не описывает.
 
 ```python
@@ -243,7 +243,7 @@ To maintain the **Clean-Root Invariant** without mutating `<project_root>/.gemin
 > **Поправка (2026-08-02, HATS-1465, замерено).** «at `self init`» пункта 1
 > не описывает код: регистрация выполняется на **каждой сборке сессии** —
 > `_deliver_hooks` вызывает `ensure_global_dispatcher_hook`
-> (`packages/surfaces/agy/src/ai_hats_agy/provider.py`), незалоченный
+> (`src/ai_hats/surfaces/agy/provider.py`), незалоченный
 > read-modify-write файла настроек в `$HOME` (тело
 > `ensure_global_dispatcher_hook` в `global_hook.py`, только идемпотентный
 > short-circuit). Call-site из `self init` не существует.

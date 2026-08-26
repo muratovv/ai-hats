@@ -1,7 +1,7 @@
 """A dry-run claims no resource a launch would claim (HATS-1554).
 
 ``tests/test_dry_run_guarantee.py`` fingerprints files, so "a dry-run does
-nothing" was only ever proven about the filesystem. ``ClineProvider.get_env``
+nothing" was only ever proven about the filesystem. ``ClineSurface.get_env``
 bound a real socket to pick a hub port, and both ``--dry-run`` and the
 materialization port were blind to it — the report then named a port the launch
 would never use, because the launch allocates its own.
@@ -18,7 +18,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.dry_run import AT_LAUNCH, dry_run_automate, dry_run_hitl
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.providers import get_provider, provider_names
+from ai_hats.surface_registry import get_surface, surface_names
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
@@ -81,20 +81,20 @@ def test_the_port_key_survives_into_the_report(project: Path):
 
 def test_a_real_launch_claims_a_usable_port(project: Path):
     """The sentinel is a report value; a launch still gets a bound-and-free port."""
-    claimed = get_provider("cline").claim_launch_env(project, project)
+    claimed = get_surface("cline").claim_launch_env(project, project)
 
     assert set(claimed) == {"CLINE_HUB_PORT"}
     assert 1024 < int(claimed["CLINE_HUB_PORT"]) <= 65535
 
 
-@pytest.mark.parametrize("provider_name", sorted(provider_names()))
+@pytest.mark.parametrize("provider_name", sorted(surface_names()))
 def test_what_a_launch_claims_is_a_key_the_report_already_names(provider_name: str, tmp_path: Path):
     """Else ``env_keys`` would depend on the mode, which is the same defect moved.
 
     Every registered provider, not just cline: the invariant belongs to the hook,
     and a surface added later inherits the trap, not the guarantee.
     """
-    provider = get_provider(provider_name)
+    provider = get_surface(provider_name)
 
     claimed = set(provider.claim_launch_env(tmp_path, tmp_path))
     reported = set(provider.get_env(tmp_path, tmp_path))

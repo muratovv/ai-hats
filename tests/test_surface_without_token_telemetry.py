@@ -22,7 +22,7 @@ from pathlib import Path
 from ai_hats.harness.diagnostic import is_zero_output
 from ai_hats.harness.guard import apply_post_run_guard
 from ai_hats.pipeline.harness_policy import HarnessPolicy
-from ai_hats_agy.parser import AgyParser
+from ai_hats.surfaces.agy.parser import AgyParser
 from ai_hats_observe import AuditWriter, Session
 from ai_hats_observe.artifacts import (
     FLAG_NO_TOKEN_TELEMETRY,

@@ -335,7 +335,7 @@ autonomous invocations in two layers:
 
 2. **Deterministic hooks** on the irreversible subset:
    - `pre_bash_shared_state_guard.sh` — Claude Code PreToolUse hook (in session tree plugin skills).
-     Wired into session settings.json by `ClaudeProvider.build_session_artifacts()`.
+     Wired into session settings.json by `ClaudeSurface.build_session_artifacts()`.
      Blocks `gh pr merge` and `git push --force` when run without a controlling TTY
      (i.e. agent context).
    - `packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
@@ -354,8 +354,8 @@ autonomous invocations in two layers:
 
 **Provider asymmetry.** Gemini CLI has no PreToolUse equivalent, so
 Gemini sessions get the rule + the git pre-push hook only — the
-`gh pr merge` deterministic block is Claude-only. `ClaudeProvider`
-overrides `Provider.ensure_runtime_hooks()` to perform the auto-wire;
+`gh pr merge` deterministic block is Claude-only. `ClaudeSurface`
+overrides `Surface.ensure_runtime_hooks()` to perform the auto-wire;
 `GeminiProvider` keeps the default no-op.
 
 **Skill-declared runtime hooks.** Beyond the built-in guard, any skill can

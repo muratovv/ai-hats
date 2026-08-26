@@ -74,9 +74,9 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     from ai_hats.assembler import Assembler
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     asm = Assembler(project)
     result = asm.composer.compose("e2e-rthook-role")
     provider.build_session_artifacts(

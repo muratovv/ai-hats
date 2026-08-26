@@ -15,7 +15,7 @@ from ai_hats.constants import HOOK_POST_TOOL_USE
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 
 # ----- fixtures / helpers -----
@@ -71,7 +71,7 @@ class TestRuntimeWiringRetired:
         asm = self._claude_project(tmp_path)
         s = _skill_runtime(tmp_path / "sk", "mf", HOOK_POST_TOOL_USE, "Write", "h/f.sh")
         res = _result([s])
-        prov = ClaudeProvider()
+        prov = ClaudeSurface()
 
         prov.ensure_runtime_hooks(asm.project_dir, res)
 
@@ -89,7 +89,7 @@ class TestRuntimeWiringRetired:
         user_settings = json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}})
         sp.write_text(user_settings)
 
-        prov = ClaudeProvider()
+        prov = ClaudeSurface()
         prov.ensure_runtime_hooks(asm.project_dir, res)
 
         assert sp.read_text() == user_settings

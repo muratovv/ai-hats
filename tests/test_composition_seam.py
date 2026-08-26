@@ -46,7 +46,7 @@ def test_seam_routes_through_facade(tmp_path: Path):
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
         patch("ai_hats.materialize.compose_for_role", return_value=fake_result) as facade,
-        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+        patch("ai_hats.surface_registry.get_surface", return_value=MagicMock()),
     ):
         payload = build_composition_payload(tmp_path, role_override="judge")
     facade.assert_called_once_with(asm, "judge", diagnostics=ANY)
@@ -84,7 +84,7 @@ def test_seam_lenient_mode_skips_raises(tmp_path: Path):
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
         patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
-        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+        patch("ai_hats.surface_registry.get_surface", return_value=MagicMock()),
     ):
         payload = build_composition_payload(
             tmp_path,
@@ -121,7 +121,7 @@ def test_preview_seam_requires_provider(tmp_path: Path):
 
 def _assert_missing_provider_contract(exc: MissingProviderError) -> None:
     # RuntimeError base keeps `config show-prompt`'s broad catch friendly
-    # (HATS-1224), mirroring UnknownProviderError(ValueError).
+    # (HATS-1224), mirroring UnknownSurfaceError(ValueError).
     assert isinstance(exc, RuntimeError)
     assert "no provider configured" in str(exc)
     assert "claude" in exc.available
@@ -147,10 +147,10 @@ def _resolved_provider(tmp_path: Path, **kwargs) -> str:
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
         patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
-        patch("ai_hats.providers.get_provider") as get_provider,
+        patch("ai_hats.surface_registry.get_surface") as get_surface,
     ):
         build_composition_payload(tmp_path, role_override="judge", **kwargs)
-    return get_provider.call_args.args[0]
+    return get_surface.call_args.args[0]
 
 
 @pytest.mark.parametrize("interactive", [False, True])
@@ -195,7 +195,7 @@ def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
         patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
-        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+        patch("ai_hats.surface_registry.get_surface", return_value=MagicMock()),
     ):
         build_composition_payload(tmp_path, provider_name="agy", interactive=False)
     asm.set_role.assert_not_called()
@@ -219,7 +219,7 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
         patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
-        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+        patch("ai_hats.surface_registry.get_surface", return_value=MagicMock()),
     ):
         payload = build_composition_payload(tmp_path, interactive=True)
 

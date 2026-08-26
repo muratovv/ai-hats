@@ -12,7 +12,6 @@ why:    without transcript resolution, session observation fails to produce audi
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -24,15 +23,13 @@ from _helpers.project import Project
 
 pytestmark = pytest.mark.integration
 
-_AGY_PKG = "packages/surfaces/agy"
-
 
 def _has_agy_plugin() -> bool:
     """The agy surface plugin must be importable."""
     import importlib
 
     try:
-        importlib.import_module("ai_hats_agy")
+        importlib.import_module("ai_hats.surfaces.agy")
         return True
     except ImportError:
         return False
@@ -42,12 +39,12 @@ def test_agy_session_transcript_resolution_and_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Unit-integration verification: AgyProvider.resolve_transcript + AuditWriter
+    """Unit-integration verification: AgySurface.resolve_transcript + AuditWriter
 
     Simulates an agy session producing transcript.jsonl in brain dir, verifying that
     AuditWriter produces an audit.md with 👤 turn markers and 🔧 tool calls.
     """
-    from ai_hats_agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
     from ai_hats_observe.audit import AuditWriter
     from ai_hats_observe.session import Session
 
@@ -83,7 +80,7 @@ def test_agy_session_transcript_resolution_and_audit(
     ]
     transcript_file.write_text("\n".join(json.dumps(line) for line in lines))
 
-    provider = AgyProvider()
+    provider = AgySurface()
     resolved = provider.resolve_transcript(tmp_path, session_id)
     assert resolved == [transcript_file]
 
@@ -115,11 +112,7 @@ def test_agy_session_records_audit_and_usage(
     if not _has_agy_plugin():
         pytest.skip("ai-hats-agy plugin not installed in this venv")
 
-    checkout_env = {
-        "PYTHONPATH": os.pathsep.join(
-            [checkout_pythonpath(repo_root), str(repo_root / _AGY_PKG / "src")]
-        )
-    }
+    checkout_env = {"PYTHONPATH": checkout_pythonpath(repo_root)}
 
     # 1. self init configures agy provider
     tmp_project.run(

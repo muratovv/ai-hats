@@ -2,7 +2,7 @@
 
 Pins the facade's contract before any runtime/pipeline consumer is
 migrated to it. Pure compose path — no provider build side-effects
-beyond what ``ClaudeProvider.build_system_prompt`` produces in memory.
+beyond what ``ClaudeSurface.build_system_prompt`` produces in memory.
 """
 
 from __future__ import annotations

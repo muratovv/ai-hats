@@ -327,6 +327,10 @@ def test_no_unsanitized_git_subprocess_env_in_src() -> None:
     drop a site's ``env=`` and this names it."""
     offenders: dict[str, list[int]] = {}
     for path in _SRC_DIR.rglob("*.py"):
+        # An area keeps its tests inside its own folder (ADR-0026 D5, HATS-1826) and the
+        # wheel excludes them — this gate's subject is the shipped tree, not those tests.
+        if "tests" in path.relative_to(_SRC_DIR).parts:
+            continue
         lines = _src_module_offenders(ast.parse(path.read_text()))
         if lines:
             offenders[str(path.relative_to(_SRC_DIR))] = lines

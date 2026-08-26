@@ -1,4 +1,4 @@
-"""Provider-plugin entry-point discovery — a dependency-free leaf (HATS-978).
+"""Surface-plugin entry-point discovery — a dependency-free leaf (HATS-978).
 
 Discovery, not composition: hosting these in ``providers`` forced ``self_heal``
 to import the composition layer (HATS-865/ADR-0014 violation). This leaf lets
@@ -23,11 +23,11 @@ def _provider_entry_points():
 def _is_first_party_entry_point(ep: Any) -> bool:
     """Return True if entry point `ep` is shipped directly by first-party `ai-hats`.
 
-    Distinguishes first-party entry points (distribution name `ai-hats` or `ai_hats`)
-    from out-of-tree surface plugins (e.g. `ai-hats-agy`, `ai-hats-cline`) or
-    third-party plugins. Used by provider loading to ensure first-party entry
-    point load failures raise loudly (HATS-1121) rather than being swallowed as a
-    warning line.
+    The test is the declaring distribution's name (`ai-hats` or `ai_hats`), not the
+    entry-point name — so every surface ai-hats ships answers True, including the
+    four folded in by HATS-1826, and a third-party plugin's dist answers False.
+    Surface loading uses it to raise loudly on a first-party load failure
+    (HATS-1121) instead of swallowing it as a warning line.
     """
     dist = getattr(ep, "dist", None)
     if dist is None:

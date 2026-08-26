@@ -2,7 +2,7 @@
 
 flow:   an agy tool call whose PreToolUse hook hangs instead of answering
 cmds:
-    sh -c '... "$AI_HATS_PYTHON" -m ai_hats_agy.hook_dispatcher "$@"' sh PreToolUse Edit
+    sh -c '... "$AI_HATS_PYTHON" -m ai_hats.surfaces.agy.hook_dispatcher "$@"' sh PreToolUse Edit
 expect: the hook is killed at its budget and the dispatcher returns 1 (BROKE per
         ADR-0020 D2), naming the hook on stderr
 why:    the dispatcher runs on EVERY tool call, so an unbounded hook wedges the
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_agy.global_hook import DISPATCHER_COMMAND
+from ai_hats.surfaces.agy.global_hook import DISPATCHER_COMMAND
 
 pytestmark = pytest.mark.integration
 

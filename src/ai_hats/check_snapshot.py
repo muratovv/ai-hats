@@ -110,7 +110,7 @@ def _plan_covers(plan: MaterializationPlan, runs_from: Path) -> bool:
 def surface_skew_notice(provider_name: str, provider, project_dir, result) -> str | None:
     """Said at LAUNCH when this surface cannot root a bound check (HATS-1540).
 
-    ``Provider.session_skills_root`` is concrete and defaults to ``None``, so a
+    ``Surface.session_skills_root`` is concrete and defaults to ``None``, so a
     surface package older than the accessor keeps importing — and then every
     bound transition in its sessions is refused, with a message about a missing
     file. That is the HATS-1538 brick shape from a new cause, and the operator

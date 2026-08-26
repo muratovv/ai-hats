@@ -83,7 +83,7 @@ def test_e2e_runtime_attribute_error_not_misreported(tmp_project, tmp_path: Path
     extra_env = _broken_rack_pythonpath(
         tmp_path,
         # Object-level AttributeError (not a module-level AttributeError)
-        "raise AttributeError(\"'AgyProvider' object has no attribute 'get_cli_launch_args'\")\n",
+        "raise AttributeError(\"'AgySurface' object has no attribute 'get_cli_launch_args'\")\n",
     )
 
     result = tmp_project.run(*PROBE, extra_env=extra_env, timeout=10.0)

@@ -167,10 +167,10 @@ def test_e2e_materialized_hook_blocks_irreversible_no_tty(installed_launcher, tm
     from ai_hats.assembler import Assembler
     from ai_hats.paths import claude_plugin_skills_dir, session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     sid = "sid-guard-live"
-    ClaudeProvider().build_session_artifacts(
+    ClaudeSurface().build_session_artifacts(
         project,
         Assembler(project).composer.compose("assistant"),
         sid,

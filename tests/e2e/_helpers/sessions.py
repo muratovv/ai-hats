@@ -262,7 +262,7 @@ def stand_in_wrapped_session(
     """Build a stand-in HITL session with the production command middleware."""
     from ai_hats.assembler import Assembler
     from ai_hats.consent_wrapper import materialize_consent_wrappers
-    from ai_hats.providers import get_provider
+    from ai_hats.surface_registry import get_surface
     from ai_hats.session_artifacts import BuiltArtifacts
 
     stand_in_session(env, project, session_id, role=role, provider=provider)
@@ -272,7 +272,7 @@ def stand_in_wrapped_session(
         project,
         result,
         session_id,
-        get_provider(provider),
+        get_surface(provider),
         artifacts,
         environ=env,
     )

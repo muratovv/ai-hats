@@ -51,7 +51,7 @@ def test_foreign_source_checkout_site_packages(tmp_path: Path) -> None:
 def test_discover_subpackages(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     pkg1 = repo_root / "packages" / "ai-hats-core"
-    pkg2 = repo_root / "packages" / "surfaces" / "agy"
+    pkg2 = repo_root / "packages" / "ai-hats-wt"
     pkg1.mkdir(parents=True)
     pkg2.mkdir(parents=True)
     (pkg1 / "pyproject.toml").touch()
@@ -64,14 +64,14 @@ def test_discover_subpackages(tmp_path: Path) -> None:
 def test_remedy_message(tmp_path: Path) -> None:
     repo_root = tmp_path / "worktree"
     foreign = tmp_path / "main_repo"
-    pkg = repo_root / "packages" / "surfaces" / "agy"
+    pkg = repo_root / "packages" / "ai-hats-wt"
     pkg.mkdir(parents=True)
     (pkg / "pyproject.toml").touch()
 
     msg = remedy_message(repo_root, foreign)
     assert "WRONG checkout" in msg
     assert "uv venv .venv" in msg
-    assert "-e 'packages/surfaces/agy'" in msg
+    assert "-e 'packages/ai-hats-wt'" in msg
     assert ENV_IGNORE_FOREIGN_CHECKOUT in msg
 
 

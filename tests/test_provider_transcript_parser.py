@@ -4,7 +4,7 @@ The parser rides the ``Provider`` set (no separate registry): Claude → structu
 ``ClaudeParser``; agy → ``AgyParser`` (HATS-1391), which keeps the trace-only
 fallback inside itself; a surface that declares nothing still gets ``TraceParser``.
 The compose seam injects ``partial(AuditWriter, parser=provider.transcript_parser())``.
-RED-under-revert: reverting ``ClaudeProvider`` or ``AgyProvider`` to the default,
+RED-under-revert: reverting ``ClaudeSurface`` or ``AgySurface`` to the default,
 or dropping the seam's ``partial(parser=...)``, fails the tests below.
 """
 
@@ -14,19 +14,19 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ai_hats.composition_seam import build_composition_payload
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.parser import AgyParser
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.parser import AgyParser
+from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats_observe.parsers.trace import TraceParser
 
 
 def test_claude_provider_uses_claude_parser() -> None:
-    assert isinstance(ClaudeProvider().transcript_parser(), ClaudeParser)
+    assert isinstance(ClaudeSurface().transcript_parser(), ClaudeParser)
 
 
 def test_agy_provider_uses_agy_parser() -> None:
-    parser = AgyProvider().transcript_parser()
+    parser = AgySurface().transcript_parser()
     assert isinstance(parser, AgyParser)
     assert not isinstance(parser, ClaudeParser)
 
@@ -67,7 +67,7 @@ def test_seam_injects_provider_parser(tmp_path: Path) -> None:
             "ai_hats.materialize.compose_for_role",
             return_value=MagicMock(errors=[], merged_injection="P"),
         ),
-        patch("ai_hats.providers.get_provider", return_value=provider),
+        patch("ai_hats.surface_registry.get_surface", return_value=provider),
     ):
         payload = build_composition_payload(tmp_path, role_override="judge")
 

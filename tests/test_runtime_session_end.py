@@ -440,12 +440,12 @@ def test_wrap_runner_finally_prints_summary_on_happy_path(
 def test_wrap_runner_closes_session_resources_before_session_cache(
     wrap_runner_factory,
 ):
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     runner, _project = wrap_runner_factory(pty_exit_code=0)
     events: list[str] = []
 
-    class LifecycleProvider(ClaudeProvider):
+    class LifecycleProvider(ClaudeSurface):
         def build_session_artifacts(self, project_dir, result, session_id, **kwargs):
             artifacts = kwargs["artifacts"]
             assert artifacts.resources is not None

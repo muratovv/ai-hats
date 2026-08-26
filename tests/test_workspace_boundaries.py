@@ -71,7 +71,7 @@ def _members() -> dict[str, dict]:
                 "deps": [_dep_name(s) for s in project.get("dependencies", [])],
                 "optional_deps": [_dep_name(s) for specs in optional.values() for s in specs],
                 # HATS-956: surface plugins (packages/surfaces/*) are a consumer
-                # tier ABOVE the integrator — the Provider ABC is integrator-bound
+                # tier ABOVE the integrator — the Surface ABC is integrator-bound
                 # (ADR-0014 P0#4), so a surface may depend UP on `ai-hats`.
                 "is_surface": "surfaces" in member_dir.relative_to(ROOT).parts,
             }

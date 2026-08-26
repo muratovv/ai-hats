@@ -1,12 +1,13 @@
-"""e2e (HATS-956)
+"""e2e (HATS-956, HATS-1826)
 
-flow:   a developer listing providers when ai-hats-cline surface package is installed
+flow:   a developer lists the providers a plain ai-hats install offers
 cmds:
     ai-hats list providers
-expect: cline provider is discovered via python entry points and displayed in provider
-        listing
-why:    without entry-point discovery, third-party provider packages like cline are
-        invisible to the CLI
+expect: cline is discovered through the entry point ai-hats declares for it and is
+        displayed alongside claude
+why:    a surface reaches the binary only through the `ai_hats.providers` group;
+        cline used to ship as its own distribution and HATS-1826 folded it into
+        ai-hats, so a dropped declaration would silently un-ship the surface
 """
 
 from __future__ import annotations
@@ -22,40 +23,26 @@ from _helpers.env import checkout_pythonpath
 
 pytestmark = pytest.mark.integration
 
-_CLINE_PKG = "packages/surfaces/cline"
+# HATS-1826 folded this surface out of its own distribution and into
+# ai-hats, so the integrator's pyproject is now the declaration under test.
+_SURFACE = "cline"
+_DECLARED = "ai_hats.surfaces.cline.provider:ClineSurface"
 
 
-def _entry_point_body(repo_root: Path) -> str:
-    """The real ``cline = ai_hats_cline:ClineProvider`` line, read from the
-    package pyproject so a dropped entry point fails this test."""
-    pyproject = tomllib.loads((repo_root / _CLINE_PKG / "pyproject.toml").read_text())
-    eps = pyproject["project"]["entry-points"]["ai_hats.providers"]
-    return "\n".join(f"{name} = {target}" for name, target in eps.items())
+def _declared_entry_point(repo_root: Path) -> str | None:
+    """The real ``cline = ...`` declaration, read from the integrator's pyproject
+    so a dropped entry point fails this test rather than this helper."""
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text())
+    return pyproject["project"]["entry-points"]["ai_hats.providers"].get(_SURFACE)
 
 
-def _write_dist_info(root: Path, ep_body: str) -> Path:
-    """A synthetic installed dist advertising the real cline entry point."""
-    root.mkdir(parents=True, exist_ok=True)
-    dist_info = root / "ai_hats_cline-0.3.0.dist-info"
-    dist_info.mkdir()
-    (dist_info / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: ai-hats-cline\nVersion: 0.3.0\n"
+def test_cline_surface_is_discovered_by_the_binary(ai_hats_shim: Path, repo_root: Path):
+    assert _declared_entry_point(repo_root) == _DECLARED, (
+        f"ai-hats no longer declares {_SURFACE!r} under ai_hats.providers"
     )
-    (dist_info / "entry_points.txt").write_text(f"[ai_hats.providers]\n{ep_body}\n")
-    return root
-
-
-def test_cline_surface_is_discovered_by_the_binary(
-    ai_hats_shim: Path, repo_root: Path, tmp_path: Path
-):
-    ep_body = _entry_point_body(repo_root)
-    assert "cline = ai_hats_cline:ClineProvider" in ep_body  # guards the pyproject read
-
-    dist_dir = _write_dist_info(tmp_path / "dist", ep_body)
-    cline_src = str(repo_root / _CLINE_PKG / "src")
 
     env = os.environ.copy()  # PYTHONPATH already scrubbed by _scrub_redirect_env
-    env["PYTHONPATH"] = os.pathsep.join([checkout_pythonpath(repo_root), cline_src, str(dist_dir)])
+    env["PYTHONPATH"] = checkout_pythonpath(repo_root)
 
     result = subprocess.run(
         [str(ai_hats_shim), "list", "providers"],
@@ -66,6 +53,6 @@ def test_cline_surface_is_discovered_by_the_binary(
     )
 
     assert result.returncode == 0, result.stderr
-    assert "cline" in result.stdout, result.stdout
-    # discovery augments, not replaces — the built-ins are still there
+    assert _SURFACE in result.stdout, result.stdout
+    # discovery augments, not replaces — the sibling surfaces are still there
     assert "claude" in result.stdout, result.stdout

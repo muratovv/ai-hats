@@ -30,8 +30,9 @@ from _helpers.venv import network_available, venv_unavailable  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 #: Areas laid out per ADR-0026 D5 — one entry each, as `testpaths` lists them.
-#: `pipeline` is the pilot (HATS-1783); the next area adds a string, nothing else.
-AREAS = ("pipeline",)
+#: `pipeline` is the pilot (HATS-1783); `surfaces` is the fold (HATS-1826), whose
+#: five nested test trees the catch-all at the bottom already covers.
+AREAS = ("pipeline", "surfaces")
 
 BUILD_TIMEOUT_S = 180
 

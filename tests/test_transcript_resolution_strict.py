@@ -59,8 +59,8 @@ def test_without_an_id_the_mtime_window_still_applies(tmp_path: Path) -> None:
 
 def test_surfaces_whose_filename_is_not_the_id_still_resolve(tmp_path: Path, monkeypatch) -> None:
     """F2: the backfill's stem guard accepted only claude — agy and cline nest the id in a dir."""
-    from ai_hats_agy.provider import AgyProvider
-    from ai_hats_cline.provider import ClineProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
+    from ai_hats.surfaces.cline.provider import ClineSurface
 
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(tmp_path / "gemini"))
     monkeypatch.setenv("CLINE_DATA_DIR", str(tmp_path / "cline"))
@@ -74,8 +74,8 @@ def test_surfaces_whose_filename_is_not_the_id_still_resolve(tmp_path: Path, mon
     (cline / f"{OURS}.messages.json").write_text("[]")
 
     for provider, expected in (
-        (AgyProvider(), agy / "transcript.jsonl"),
-        (ClineProvider(), cline / f"{OURS}.messages.json"),
+        (AgySurface(), agy / "transcript.jsonl"),
+        (ClineSurface(), cline / f"{OURS}.messages.json"),
     ):
         resolved = provider.resolve_transcript(tmp_path, SESSION_ID, provider_session_id=OURS)
         assert resolved == [expected]

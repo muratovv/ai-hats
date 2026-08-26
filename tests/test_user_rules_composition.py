@@ -16,9 +16,9 @@ from ai_hats.assembler import Assembler
 from ai_hats.materialize import compose_for_role, discover_user_rules
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG, user_rules_dir
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
-from ai_hats_cline.provider import ClineProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
+from ai_hats.surfaces.cline.provider import ClineSurface
 from ai_hats_core import CompositionResult
 
 
@@ -120,7 +120,7 @@ def maintainer_project(tmp_path: Path) -> Assembler:
     return asm
 
 
-ALL_PROVIDERS = [ClaudeProvider, AgyProvider, ClineProvider]
+ALL_PROVIDERS = [ClaudeSurface, AgySurface, ClineSurface]
 
 
 @pytest.mark.parametrize("provider_cls", ALL_PROVIDERS, ids=lambda c: c.__name__)
@@ -142,7 +142,7 @@ def test_user_rules_render_after_framework_rules(maintainer_project):
     _write_rule(maintainer_project.project_dir, "team")
     result = compose_for_role(maintainer_project, "maintainer")
 
-    prompt = ClaudeProvider().build_system_prompt(result)
+    prompt = ClaudeSurface().build_system_prompt(result)
 
     assert 0 <= prompt.find(SECTION_RULES) < prompt.find(SECTION_USER_RULES)
 
@@ -152,7 +152,7 @@ def test_multiple_rules_each_get_their_own_heading(maintainer_project):
     _write_rule(maintainer_project.project_dir, "beta", "B body\n")
     result = compose_for_role(maintainer_project, "maintainer")
 
-    prompt = ClaudeProvider().build_system_prompt(result)
+    prompt = ClaudeSurface().build_system_prompt(result)
 
     assert prompt.count(SECTION_USER_RULES) == 1
     assert prompt.find("### alpha") < prompt.find("### beta")
@@ -161,14 +161,14 @@ def test_multiple_rules_each_get_their_own_heading(maintainer_project):
 def test_no_section_without_rules(maintainer_project):
     """The overwhelmingly common case — no bare header, no stray separator."""
     result = compose_for_role(maintainer_project, "maintainer")
-    assert SECTION_USER_RULES not in ClaudeProvider().build_system_prompt(result)
+    assert SECTION_USER_RULES not in ClaudeSurface().build_system_prompt(result)
 
 
 def test_blank_rule_file_does_not_emit_a_section(maintainer_project):
     """A whitespace-only file is indistinguishable from no rule at all."""
     _write_rule(maintainer_project.project_dir, "empty", "   \n\n")
     result = compose_for_role(maintainer_project, "maintainer")
-    assert SECTION_USER_RULES not in ClaudeProvider().build_system_prompt(result)
+    assert SECTION_USER_RULES not in ClaudeSurface().build_system_prompt(result)
 
 
 def test_unreadable_rule_is_skipped_not_fatal(maintainer_project):
@@ -179,7 +179,7 @@ def test_unreadable_rule_is_skipped_not_fatal(maintainer_project):
     bad.chmod(0o000)
     try:
         result = compose_for_role(maintainer_project, "maintainer")
-        prompt = ClaudeProvider().build_system_prompt(result)
+        prompt = ClaudeSurface().build_system_prompt(result)
     finally:
         bad.chmod(0o644)
 

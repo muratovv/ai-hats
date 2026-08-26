@@ -31,7 +31,7 @@ def test_an_unresolvable_provider_reports_unknown_not_a_missing_key(monkeypatch,
             provider = "not-installed"
 
     monkeypatch.setattr(
-        assembler_mod, "get_provider", lambda name: (_ for _ in ()).throw(LookupError(name))
+        assembler_mod, "get_surface", lambda name: (_ for _ in ()).throw(LookupError(name))
     )
 
     health = _Assembler._check_health(_Assembler(), result=None)
@@ -49,7 +49,7 @@ def test_a_provider_whose_prompt_path_raises_also_reports_unknown(monkeypatch, t
         class project_config:  # noqa: N801
             provider = "broken"
 
-    monkeypatch.setattr(assembler_mod, "get_provider", lambda name: _BoomProvider())
+    monkeypatch.setattr(assembler_mod, "get_surface", lambda name: _BoomProvider())
 
     health = _Assembler._check_health(_Assembler(), result=None)
 

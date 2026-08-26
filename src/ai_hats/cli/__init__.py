@@ -99,7 +99,7 @@ class _PassthroughGroup(click.Group):
         if not provider:
             return
 
-        hints = provider.provider_hints()
+        hints = provider.surface_hints()
         if not hints:
             return
         table = Table(
@@ -414,11 +414,11 @@ def _observe_provider_adapter(provider: str):
     (HATS-1374). An unrecorded or retired provider name yields no reader, so the
     session is reported as having no transcript instead of being mis-parsed.
     """
-    from ..providers import UnknownProviderError, get_provider
+    from ..surface_registry import UnknownSurfaceError, get_surface
 
     try:
-        p = get_provider(provider)
-    except (UnknownProviderError, ValueError):
+        p = get_surface(provider)
+    except (UnknownSurfaceError, ValueError):
         return None, None
     return p.resolve_transcript, p.transcript_parser()
 

@@ -67,16 +67,10 @@ SANCTIONED_MIRRORS = {
     "ai_hats_rack.cli_common": ("ENV_SESSION_ID",),
     "ai_hats_rack.resolver": ("ENV_AI_HATS_DIR", "ENV_AI_HATS_PROJECT_DIR"),
     "ai_hats_observe.trace": ("ENV_SESSION_ID",),
-    # Runs on every agy tool call and must not import ai-hats (its own module
-    # docstring) — a mirror for availability, not for taste.
-    "ai_hats_agy.hook_dispatcher": (
-        "ENV_SESSION_ID",
-        "ENV_AI_HATS_PROJECT_DIR",
-        "ENV_SESSION_CACHE_DIR",
-        # It reads the envelope whole (json.loads, no ai-hats import) rather than
-        # reassembling the session from scalars that may not belong together.
-        "ENV_SESSION_IDENTITY",
-    ),
+    # The agy dispatcher was the fifth entry until HATS-1826 folded the surface into
+    # the integrator: `python -m ai_hats.surfaces.agy.hook_dispatcher` imports ai-hats
+    # to reach itself, so "may not import the home" stopped being true and the four
+    # spellings it mirrored now come from their homes.
 }
 # Spelling each mirror attribute must carry. Derived from the contract, plus the
 # aliases where a mirror spells the *Python* name differently from the home.
@@ -492,8 +486,9 @@ def test_the_flags_a_sub_agent_never_inherits_are_productions_to_name() -> None:
 #: what left a live flag off the roster (HATS-1743 review).
 def _production_bypass_literals() -> set:
     """Every withheld-shaped ``AI_HATS_*`` an executable under src/scripts/packages reads."""
+    # HATS-1826 folded packages/surfaces/*/src into src/ai_hats/surfaces, which the
+    # first root already walks — so no second, deeper glob is needed any more.
     roots = [REPO_ROOT / "src", REPO_ROOT / "scripts", *sorted(REPO_ROOT.glob("packages/*/src"))]
-    roots += sorted(REPO_ROOT.glob("packages/surfaces/*/src"))
     # The module that DECLARES the roster is not a reader of it; scanning it would
     # make this test agree with itself.
     declaring = REPO_ROOT / "src" / "ai_hats" / "constants.py"
@@ -504,6 +499,10 @@ def _production_bypass_literals() -> set:
             continue
         for path in root.rglob("*"):
             if path.suffix not in (".py", ".sh") or not path.is_file() or path == declaring:
+                continue
+            # An area's tests live inside its own folder (ADR-0026 D5, HATS-1826); a
+            # fixture is not a gate, and the wheel does not ship them either.
+            if "tests" in path.relative_to(root).parts:
                 continue
             found |= {
                 name

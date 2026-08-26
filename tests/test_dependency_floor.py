@@ -109,9 +109,15 @@ def test_a_pin_without_a_floor_cannot_be_judged():
 def test_workspace_versions_finds_every_package():
     found = mod.workspace_versions(REPO_ROOT)
 
-    assert "ai-hats-core" in found
-    # packages/surfaces/* nest one level deeper — the producer gate misses them.
-    assert "ai-hats-agy" in found, f"surfaces packages not discovered: {sorted(found)}"
+    # packages/ is flat — one member per directory, enforced by
+    # tests/test_packages_flat_layout.py — so every member is named here.
+    assert set(found) == {
+        "ai-hats-core",
+        "ai-hats-library",
+        "ai-hats-observe",
+        "ai-hats-rack",
+        "ai-hats-wt",
+    }, f"workspace packages not discovered: {sorted(found)}"
 
 
 def test_every_pin_in_this_repo_is_at_or_above_its_package_version():

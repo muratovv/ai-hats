@@ -7,7 +7,7 @@ that exits on cue; here the surface is a script whose only behaviour is to wait,
 so a session can be held open, SIGKILLed, or made to exit at once.
 
 Everything around that script is production code: the provider subclasses
-:class:`~ai_hats.surfaces.claude.provider.ClaudeProvider`, so the session cache
+:class:`~ai_hats.surfaces.claude.provider.ClaudeSurface`, so the session cache
 (``prompt.md``, the ``plugin/skills`` mirror, ``settings.json``) and the run
 artifacts under ``sessions/runs/`` are materialized by the real builders.
 
@@ -32,17 +32,17 @@ from ai_hats.session_liveness import ANCHOR_NAME
 
 from _helpers.env import checkout_pythonpath, clean_env
 
-#: Provider name the fake surface registers under.
+#: Surface name the fake surface registers under.
 SURFACE = "holdfast"
 
 _PROVIDER_SRC = f'''\
 import os
 import sys
 
-from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 
-class HoldfastProvider(ClaudeProvider):
+class HoldfastProvider(ClaudeSurface):
     """The claude surface with its CLI swapped for a script that just waits."""
 
     @property
@@ -59,11 +59,11 @@ class HoldfastProvider(ClaudeProvider):
         return None
 
     def describe_automate_launch(self, *args, **kwargs):
-        # ClaudeProvider describes SDK options, not an argv. Take the base
+        # ClaudeSurface describes SDK options, not an argv. Take the base
         # class's CLI description, which is what that legacy path executes.
-        from ai_hats.providers import Provider
+        from ai_hats.surfaces import Surface
 
-        return Provider.describe_automate_launch(self, *args, **kwargs)
+        return Surface.describe_automate_launch(self, *args, **kwargs)
 '''
 
 #: Waits out its hold and nothing else — no ``getppid() == 1`` self-exit, which

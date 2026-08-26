@@ -29,7 +29,6 @@ pytestmark = pytest.mark.integration  # HATS-1755: real Codex consent boundary
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
-CODEX_SRC = REPO_ROOT / "packages/surfaces/codex/src"
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 TASK_ID = "HATS-001"
 
@@ -111,7 +110,7 @@ payload = {
     "cwd": os.getcwd(),
 }
 hook = subprocess.run(
-    [python, "-m", "ai_hats_codex.hook_dispatcher"],
+    [python, "-m", "ai_hats.surfaces.codex.hook_dispatcher"],
     input=json.dumps(payload),
     cwd=os.getcwd(),
     env=os.environ.copy(),
@@ -302,7 +301,7 @@ def _launch_env(
             "AI_HATS_USER_HOME": str(tmp_path / "user-home"),
             "CODEX_HOME": str(base_home),
             "PATH": os.pathsep.join([str(fake_bin), os.defpath]),
-            "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         }
     )
     return env

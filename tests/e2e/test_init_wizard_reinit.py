@@ -92,7 +92,7 @@ def test_e2e_reinit_launches_wizard_and_runs_offline(tmp_venv_project, tmp_path)
     plain = strip_ansi(buf)
 
     # 1. The wizard PROMPTED, despite a pre-existing ai-hats.yaml.
-    # `wrote` is set only after "Provider [" / "Harness channel" appears, so it
+    # `wrote` is set only after "Surface [" / "Harness channel" appears, so it
     # is the interactive-wizard signal. Do NOT accept "Re-initialized" as proof:
     # init_steps.py prints it on EVERY re-init, wizard or not, which would make
     # this assertion pass even when the wizard never launched (HATS-1215 review).

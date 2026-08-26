@@ -129,6 +129,7 @@ def run(repo_root: Path, base_ref: str, *, fetch=None) -> list[Verdict]:
     packages_dir = repo_root / "packages"
     changed = changed_packages(base_ref, packages_dir, repo_root)
     verdicts: list[Verdict] = []
+    # One level deep on purpose; tests/test_packages_flat_layout.py keeps that true.
     for pkg_dir in sorted(p for p in packages_dir.iterdir() if p.is_dir()):
         pyproject = pkg_dir / "pyproject.toml"
         if not pyproject.exists():

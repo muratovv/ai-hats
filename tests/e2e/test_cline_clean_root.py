@@ -12,7 +12,6 @@ why:    without isolated session caching, surface providers pollute project root
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -22,14 +21,12 @@ from _helpers.project import Project
 
 pytestmark = pytest.mark.integration
 
-_CLINE_PKG = "packages/surfaces/cline"
-
 
 def _has_cline_plugin() -> bool:
     import importlib
 
     try:
-        importlib.import_module("ai_hats_cline")
+        importlib.import_module("ai_hats.surfaces.cline")
         return True
     except ImportError:
         return False
@@ -45,11 +42,7 @@ def test_cline_session_leaves_project_root_clean(
     if not _has_cline_plugin():
         pytest.skip("ai-hats-cline plugin not installed in this venv")
 
-    checkout_env = {
-        "PYTHONPATH": os.pathsep.join(
-            [checkout_pythonpath(repo_root), str(repo_root / _CLINE_PKG / "src")]
-        )
-    }
+    checkout_env = {"PYTHONPATH": checkout_pythonpath(repo_root)}
 
     tmp_project.run(
         "self",

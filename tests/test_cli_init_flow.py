@@ -224,7 +224,7 @@ def test_set_unknown_provider_only_fails_loud(cli_project):
 
     assert result.exit_code != 0, result.output
     assert "bogus-provider" in result.output
-    # Provider in ai-hats.yaml must not have been overwritten.
+    # Surface in ai-hats.yaml must not have been overwritten.
     cfg_after = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg_after.provider == "claude"
 
@@ -345,7 +345,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     from ai_hats.assembler import Assembler
     from ai_hats.models import ProjectConfig
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, runner = cli_project
 
@@ -357,7 +357,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     # Build override for a different role (simulate what WrapRunner.run does)
     asm = Assembler(project)
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("sre")
     args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
@@ -382,13 +382,13 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     asm = Assembler(project)
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
 
     # Simulate 3 parallel override sessions for different roles. Each session
     # gets its own session_id (HATS-294 isolation contract).
@@ -436,13 +436,13 @@ def test_agy_override_creates_session_rules_dir(cli_project):
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats_agy.provider import AgyProvider
+    from ai_hats.surfaces.agy.provider import AgySurface
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "agy"])
 
     asm = Assembler(project)
-    provider = AgyProvider()
+    provider = AgySurface()
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")
@@ -1156,31 +1156,13 @@ def test_init_harness_path_requires_local_channel(cli_project):
     assert not (project / PROJECT_CONFIG).exists()
 
 
-def test_init_cline_surface_auto_installs(cli_project, monkeypatch):
-    """ai-hats self init -p cline accepts known surface and auto-installs it (HATS-1179)."""
-    from unittest.mock import MagicMock
-    from ai_hats.providers import Provider
+def test_init_accepts_a_surface_that_ships_in_the_integrator(cli_project):
+    """``self init -p cline`` needs no install step: cline ships in ai-hats (HATS-1826).
 
+    It used to be accepted only because init would auto-install the surface
+    distribution first; the fold makes the surface simply present.
+    """
     project, runner = cli_project
-
-    mock_inst = MagicMock(spec=Provider)
-    mock_inst.name = "cline"
-    mock_inst.detected_home_dirs.return_value = [".cline"]
-
-    def fake_ensure(provider_name, repo_root=None):
-        if provider_name == "cline":
-            monkeypatch.setattr(
-                "ai_hats.surfaces_registry.is_surface_installed",
-                lambda p: p == "cline" or p == "claude",
-            )
-            monkeypatch.setattr(
-                "ai_hats.providers.get_provider",
-                lambda p: mock_inst if p == "cline" else Provider(),
-            )
-            return True
-        return False
-
-    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
 
     r = runner.invoke(main, ["self", "init", "-p", "cline", "--no-wizard"])
     assert r.exit_code == 0, r.output

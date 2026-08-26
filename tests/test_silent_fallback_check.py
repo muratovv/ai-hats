@@ -170,8 +170,9 @@ def test_every_workspace_package_is_scanned():
 
     assert any(p.startswith("src/ai_hats/") for p in scanned)
     assert any(p.startswith("packages/ai-hats-rack/") for p in scanned)
-    # surfaces/* nest one level deeper — the dependency-floor gate once missed them.
-    assert any(p.startswith("packages/surfaces/") for p in scanned)
+    # HATS-1826 folded the surfaces in, so what once nested under packages/surfaces/
+    # is now an area under src/ and has to be reached at that depth instead.
+    assert any(p.startswith("src/ai_hats/surfaces/") for p in scanned)
     assert any(p.startswith("scripts/") for p in scanned)
 
 

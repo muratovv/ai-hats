@@ -29,7 +29,7 @@ def test_is_broken_install_exception() -> None:
 
     # Object-level AttributeError must NOT be classified as broken install
     assert not is_broken_install_exception(
-        AttributeError("'AgyProvider' object has no attribute 'get_cli_launch_args'")
+        AttributeError("'AgySurface' object has no attribute 'get_cli_launch_args'")
     )
     assert not is_broken_install_exception(AttributeError("'dict' object has no attribute 'foo'"))
 
@@ -42,7 +42,7 @@ def test_catch_broken_install_ignores_non_module_attribute_error(
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
     monkeypatch.setattr(sys, "argv", ["ai-hats", "task", "ls"])
 
-    exc = AttributeError("'AgyProvider' object has no attribute 'get_cli_launch_args'")
+    exc = AttributeError("'AgySurface' object has no attribute 'get_cli_launch_args'")
     with pytest.raises(AttributeError) as exc_info:
         with catch_broken_install():
             raise exc
@@ -56,7 +56,7 @@ def test_main_entry_re_raises_non_module_attribute_error(monkeypatch: pytest.Mon
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
     monkeypatch.setattr(sys, "argv", ["ai-hats"])
 
-    exc = AttributeError("'AgyProvider' object has no attribute 'get_cli_launch_args'")
+    exc = AttributeError("'AgySurface' object has no attribute 'get_cli_launch_args'")
 
     def _failing_main() -> None:
         raise exc

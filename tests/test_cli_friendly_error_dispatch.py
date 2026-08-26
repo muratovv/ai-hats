@@ -20,8 +20,7 @@ from click.testing import CliRunner
 from ai_hats.cli import _PassthroughGroup
 from ai_hats.composition_seam import MissingProviderError, RoleNotFoundError
 from ai_hats.paths import NotAnAiHatsProjectError
-from ai_hats.providers import UnknownProviderError
-from ai_hats.self_heal import ProviderInstallationError
+from ai_hats.surface_registry import UnknownSurfaceError
 
 
 def _cases():
@@ -30,7 +29,7 @@ def _cases():
     return [
         pytest.param(RoleNotFoundError("ghost", ["judge"]), "ghost", id="role"),
         pytest.param(
-            UnknownProviderError("nope", ["claude"]),
+            UnknownSurfaceError("nope", ["claude"]),
             "nope",
             id="unknown-provider",
         ),
@@ -38,11 +37,6 @@ def _cases():
             MissingProviderError(["claude"]),
             "no provider configured",
             id="missing-provider",
-        ),
-        pytest.param(
-            ProviderInstallationError("registry denied"),
-            "registry denied",
-            id="provider-install",
         ),
         pytest.param(
             NotAnAiHatsProjectError(Path("/tmp/nowhere")),

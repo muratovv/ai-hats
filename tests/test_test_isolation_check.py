@@ -198,16 +198,17 @@ def test_scan_reaches_every_test_tree_in_the_workspace(tmp_path):
         {
             "tests/a.py": PATCHES_ONCE,
             "packages/ai-hats-rack/tests/b.py": PATCHES_ONCE,
-            "packages/surfaces/agy/tests/c.py": PATCHES_ONCE,
-            # An area keeps its tests inside the package (ADR-0026 D5).
+            # An area keeps its tests inside the package (ADR-0026 D5) — at the
+            # area root, and one level deeper for a surface (HATS-1826).
+            "src/ai_hats/surfaces/agy/tests/c.py": PATCHES_ONCE,
             "src/ai_hats/pipeline/tests/d.py": PATCHES_ONCE,
         },
     )
 
     assert mod.scan(root) == {
         "packages/ai-hats-rack/tests/b.py": 1,
-        "packages/surfaces/agy/tests/c.py": 1,
         "src/ai_hats/pipeline/tests/d.py": 1,
+        "src/ai_hats/surfaces/agy/tests/c.py": 1,
         "tests/a.py": 1,
     }
 

@@ -30,7 +30,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-CODEX_SRC = REPO_ROOT / "packages/surfaces/codex/src"
 LIBRARY_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 
 
@@ -187,7 +186,7 @@ def test_real_codex_thread_resume_survives_session_termination(
             "CODEX_HOME": str(base_home),
             "CODEX_SQLITE_HOME": str(base_home),
             "PATH": os.pathsep.join([str(proxy_bin), launch_env.get("PATH", "")]),
-            "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         }
     )
 

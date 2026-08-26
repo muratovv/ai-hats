@@ -267,7 +267,7 @@ class WrapRunner:
         """HATS-1006: WARN per provider-reported settings pitfall — the surface's
         own warnings print post-spawn where the alt-screen clobbers them.
         Fail-open; the lint itself lives with the surface
-        (``Provider.settings_lint_warnings``, docs/session-start-notices.md).
+        (``Surface.settings_lint_warnings``, docs/session-start-notices.md).
         """
         provider = self.payload.provider
         if provider is None:

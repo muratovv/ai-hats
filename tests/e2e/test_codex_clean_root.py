@@ -29,7 +29,6 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIBRARY_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
-CODEX_SRC = REPO_ROOT / "packages/surfaces/codex/src"
 
 _FAKE_CODEX = r"""#!/usr/bin/env python3
 import json
@@ -67,7 +66,7 @@ if barrier_dir:
         time.sleep(0.02)
 manifest = json.loads((cache_dir / "hooks.json").read_text())
 hook = subprocess.run(
-    [os.environ["AI_HATS_PYTHON"], "-m", "ai_hats_codex.hook_dispatcher"],
+    [os.environ["AI_HATS_PYTHON"], "-m", "ai_hats.surfaces.codex.hook_dispatcher"],
     input=json.dumps(payload),
     env=os.environ.copy(),
     capture_output=True,
@@ -174,7 +173,7 @@ def test_codex_exit_cleans_session_home_and_preserves_shared_state(
             "CODEX_HOME": str(base_home),
             "CODEX_SQLITE_HOME": str(base_home),
             "PATH": os.pathsep.join([str(fake_bin), env.get("PATH", "")]),
-            "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         }
     )
 
@@ -261,7 +260,7 @@ def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
             "CODEX_HOME": str(base_home),
             "CODEX_SQLITE_HOME": str(base_home),
             "PATH": os.pathsep.join([str(fake_bin), base_env.get("PATH", "")]),
-            "PYTHONPATH": os.pathsep.join([checkout_pythonpath(REPO_ROOT), str(CODEX_SRC)]),
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         }
     )
     processes = [

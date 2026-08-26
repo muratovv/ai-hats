@@ -1,4 +1,4 @@
-"""ClaudeProvider runtime-hook wiring in the per-session settings.json.
+"""ClaudeSurface runtime-hook wiring in the per-session settings.json.
 
 Since HATS-1268 every entry is skill-declared and its command is absolute into
 the session's own skill mirror; the project root is never written (HATS-1170),
@@ -13,8 +13,8 @@ from pathlib import Path
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import claude_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
@@ -24,7 +24,7 @@ SESSION_ID = "test-session-id"
 
 
 def _settings(project: Path, result: CompositionResult | None = None) -> dict:
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     res = result or _result([])
     artifacts = provider.build_session_artifacts(
         project, res, "test-session-id", run_mode="hitl", artifacts=BuiltArtifacts()
@@ -140,12 +140,12 @@ def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monk
 
 def test_claude_ensure_runtime_hooks_leaves_root_clean(tmp_path: Path) -> None:
     """HATS-1170: ensure_runtime_hooks is a no-op for project-root .claude/settings.json."""
-    ClaudeProvider().ensure_runtime_hooks(tmp_path)
+    ClaudeSurface().ensure_runtime_hooks(tmp_path)
     assert not (tmp_path / SETTINGS).exists()
 
 
 def test_agy_provider_does_not_touch_settings(tmp_path: Path) -> None:
-    AgyProvider().ensure_runtime_hooks(tmp_path)
+    AgySurface().ensure_runtime_hooks(tmp_path)
     assert not (tmp_path / SETTINGS).exists()
 
 
@@ -164,7 +164,7 @@ def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> No
             HOOK_POST_TOOL_USE: [("Edit|Write", "hooks/post.sh")],
         },
     )
-    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
     data = _settings(proj, _result([skill]))
 
     # Skill PreToolUse entry.
@@ -192,9 +192,9 @@ def test_claude_skill_hooks_idempotent(tmp_path: Path) -> None:
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
-    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
     first = _settings(proj, _result([skill]))
-    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
     assert _settings(proj, _result([skill])) == first
 
 
@@ -223,9 +223,9 @@ def test_claude_removing_skill_sweeps_entries_and_keeps_user(
             HOOK_POST_TOOL_USE: [("Write", "hooks/post.sh")],
         },
     )
-    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
     # Skill leaves the composition → re-apply with no skills.
-    ClaudeProvider().ensure_runtime_hooks(proj, _result([]))
+    ClaudeSurface().ensure_runtime_hooks(proj, _result([]))
     data = _settings(proj, _result([]))
 
     tags = [
@@ -248,7 +248,7 @@ def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None
         "skill-x",
         {HOOK_PRE_TOOL_USE: [("Bash", "hooks/a.sh"), ("Edit", "hooks/b.sh")]},
     )
-    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
     pre = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE]
     skill_tags = {
         e["_ai_hats_managed"]
@@ -295,14 +295,14 @@ def test_leak_detector_returns_tagged_and_untagged(tmp_path: Path) -> None:
         home,
         extra=[{"matcher": "Write", "hooks": [{"type": "command", "command": untagged}]}],
     )
-    assert ClaudeProvider().leaked_user_global_project_hooks(home) == [LEAKED_GUARD, untagged]
+    assert ClaudeSurface().leaked_user_global_project_hooks(home) == [LEAKED_GUARD, untagged]
 
 
 def test_leak_detector_does_not_mutate_settings(tmp_path: Path) -> None:
     home = tmp_path / "home"
     settings = _seed_global_leak(home)
     before = settings.read_text()
-    ClaudeProvider().leaked_user_global_project_hooks(home)
+    ClaudeSurface().leaked_user_global_project_hooks(home)
     assert settings.read_text() == before
 
 
@@ -321,11 +321,11 @@ def test_leak_detector_clean_when_only_user_hooks(tmp_path: Path) -> None:
             }
         )
     )
-    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+    assert ClaudeSurface().leaked_user_global_project_hooks(home) == []
 
 
 def test_leak_detector_empty_when_no_file(tmp_path: Path) -> None:
-    assert ClaudeProvider().leaked_user_global_project_hooks(tmp_path / "home") == []
+    assert ClaudeSurface().leaked_user_global_project_hooks(tmp_path / "home") == []
 
 
 def test_leak_detector_tolerates_malformed_json(tmp_path: Path) -> None:
@@ -333,7 +333,7 @@ def test_leak_detector_tolerates_malformed_json(tmp_path: Path) -> None:
     settings = home / SETTINGS
     settings.parent.mkdir(parents=True)
     settings.write_text("{ not valid json ,,,")
-    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+    assert ClaudeSurface().leaked_user_global_project_hooks(home) == []
 
 
 def test_leak_detector_tolerates_binary(tmp_path: Path) -> None:
@@ -342,7 +342,7 @@ def test_leak_detector_tolerates_binary(tmp_path: Path) -> None:
     settings = home / SETTINGS
     settings.parent.mkdir(parents=True)
     settings.write_bytes(b"\xff\xfe\x00\x01garbage")
-    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+    assert ClaudeSurface().leaked_user_global_project_hooks(home) == []
 
 
 def test_leak_detector_empty_on_non_object_root(tmp_path: Path) -> None:
@@ -350,7 +350,7 @@ def test_leak_detector_empty_on_non_object_root(tmp_path: Path) -> None:
     settings = home / SETTINGS
     settings.parent.mkdir(parents=True)
     settings.write_text("[]")
-    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+    assert ClaudeSurface().leaked_user_global_project_hooks(home) == []
 
 
 def test_base_surface_reports_no_leaks(tmp_path: Path) -> None:
@@ -358,7 +358,7 @@ def test_base_surface_reports_no_leaks(tmp_path: Path) -> None:
     Claude leak. Each surface owns its own detection (HATS-961)."""
     home = tmp_path / "home"
     _seed_global_leak(home)
-    assert AgyProvider().leaked_user_global_project_hooks(home) == []
+    assert AgySurface().leaked_user_global_project_hooks(home) == []
 
 
 def test_leak_detector_catches_session_tree_leaked_hooks(tmp_path: Path) -> None:
@@ -376,5 +376,5 @@ def test_leak_detector_catches_session_tree_leaked_hooks(tmp_path: Path) -> None
             }
         ],
     )
-    res = ClaudeProvider().leaked_user_global_project_hooks(home)
+    res = ClaudeSurface().leaked_user_global_project_hooks(home)
     assert leaked_cmd in res

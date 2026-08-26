@@ -158,7 +158,7 @@ def _is_plan_document(rel: tuple[str, ...]) -> bool:
 
 def _target_path(payload: dict) -> str:
     # One dialect: the surface's bridge translates before spawning this
-    # (`ai_hats_agy.claude_hook_adapter`, HATS-1776).
+    # (`ai_hats.surfaces.agy.claude_hook_adapter`, HATS-1776).
     tool_input = payload.get("tool_input") or {}
     for key in ("file_path", "path"):
         value = tool_input.get(key)

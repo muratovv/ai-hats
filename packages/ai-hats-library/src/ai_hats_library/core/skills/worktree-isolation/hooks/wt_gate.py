@@ -189,7 +189,7 @@ def main() -> int:
         return 0
 
     # One dialect: the surface's bridge translates before spawning this
-    # (`ai_hats_agy.claude_hook_adapter`, HATS-1776).
+    # (`ai_hats.surfaces.agy.claude_hook_adapter`, HATS-1776).
     tool_input = payload.get("tool_input") or {}
 
     file_path = tool_input.get("file_path") or tool_input.get("path") or ""

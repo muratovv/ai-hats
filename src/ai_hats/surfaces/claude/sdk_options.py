@@ -3,7 +3,7 @@
 Pure-ish factory mapping an ai-hats ``CompositionResult`` plus per-call
 inputs to a :class:`claude_agent_sdk.ClaudeAgentOptions` object. The
 builder is sync and side-effect-free apart from skill materialization
-(reused as-is from :class:`ClaudeProvider`, which writes to the
+(reused as-is from :class:`ClaudeSurface`, which writes to the
 per-session cache dir keyed by ``session_id``; cleaned at session_end
 by ``runtime._cleanup_session_cache``).
 
@@ -14,16 +14,14 @@ Reused by:
 **Behaviour change** (documented in plan ``HATS-474``): the legacy
 sub-agent path built its prompt with a builder that omitted rule bodies. The
 new builder reuses
-:meth:`ClaudeProvider.build_system_prompt` so HITL (WrapRunner) and
+:meth:`ClaudeSurface.build_system_prompt` so HITL (WrapRunner) and
 Automate (SubAgentRunner) paths get the same composition surface, and
 sub-agents now see safety rules they previously lacked.
 
-Skill discovery is NOT carried by the system prompt for Claude: HATS-701
-suppresses the ``AVAILABLE SKILLS`` index in
-:meth:`ClaudeProvider.build_system_prompt` because :func:`_build_plugins`
-materializes the composed skills as a native SDK plugin (the same
-``--plugin-dir`` registry HITL uses) that already lists every skill with
-its full description. The index would be a 2-3x duplicate.
+Skill discovery is NOT carried by the system prompt for Claude (HATS-701):
+:func:`_build_plugins` materializes the composed skills as a native SDK plugin —
+the same ``--plugin-dir`` registry HITL uses — which already lists every skill
+with its full description, so a text index would be a 2-3x duplicate.
 """
 
 from __future__ import annotations
@@ -37,7 +35,7 @@ if TYPE_CHECKING:
 
     from ai_hats_core import CompositionResult
 
-    from ai_hats.providers import Provider
+    from .. import Surface
     from ai_hats.session_artifacts import BuiltArtifacts
 
 
@@ -50,15 +48,15 @@ if TYPE_CHECKING:
 def _build_system_prompt(
     composition_result: "CompositionResult",
     project_dir: Path,
-    provider: "Provider",
+    provider: "Surface",
 ) -> "SystemPromptPreset":
     """Return the ``system_prompt`` payload as the SDK's preset+append shape.
 
-    Reuses :meth:`Provider.build_system_prompt` (the runner's injected
+    Reuses :meth:`Surface.build_system_prompt` (the runner's injected
     provider instance — HATS-865) so the structured sections (PRIORITIES,
-    merged role injection, always-on RULES) match HITL exactly. There is no
-    AVAILABLE SKILLS index — Claude discovers skills via the materialized SDK
-    plugin (HATS-701); see :func:`_build_plugins`. The ``<ai_hats_dir>``
+    merged role injection, always-on RULES) match HITL exactly. No skill index
+    rides along — Claude discovers skills via the materialized SDK plugin
+    (HATS-701); see :func:`_build_plugins`. The ``<ai_hats_dir>``
     placeholder is expanded here so the agent never sees the literal token.
     """
     from ai_hats.placeholders import expand_path_placeholders
@@ -72,14 +70,14 @@ def _build_plugins(
     composition_result: "CompositionResult",
     project_dir: Path,
     session_id: str,
-    provider: "Provider",
+    provider: "Surface",
 ) -> list["SdkPluginConfig"]:
     """Materialize composed skills as a single SDK plugin entry.
 
     Returns ``[]`` when the composition has no skills, otherwise one
     ``SdkPluginConfig`` of ``type='local'`` pointing at the per-session
     plugin-dir. Disk layout matches what
-    :meth:`ClaudeProvider.materialize_runtime_skills` produces today;
+    :meth:`ClaudeSurface.materialize_runtime_skills` produces today;
     cleanup is owned by ``_cleanup_session_cache`` at session_end.
 
     Defensive: if the provider's helper drifts from the
@@ -110,7 +108,7 @@ _UNSET = object()
 def build_options(
     composition_result: "CompositionResult",
     *,
-    provider: "Provider",
+    provider: "Surface",
     project_dir: Path,
     session_id: str,
     work_dir: Path | None = None,
@@ -187,7 +185,7 @@ def build_options(
 def automate_options(
     composition_result: "CompositionResult",
     *,
-    provider: "Provider",
+    provider: "Surface",
     project_dir: Path,
     session_id: str,
     artifacts: "BuiltArtifacts",

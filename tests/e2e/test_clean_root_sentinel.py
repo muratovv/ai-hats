@@ -11,7 +11,6 @@ why:    without root cleanliness guards, framework sessions pollute project root
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -22,8 +21,6 @@ from _helpers.env import checkout_pythonpath
 from _helpers.hitl import drive_bare_hitl
 
 pytestmark = pytest.mark.integration
-
-_AGY_PKG = "packages/surfaces/agy"
 
 _ALLOWLIST: set[str] = {
     ".gitignore",
@@ -87,11 +84,7 @@ def test_agy_clean_root_sentinel(
     """ADR-0021 M4 | RED-xfail | HATS-1338 will remove xfail when agy clean-root lands."""
     project = tmp_venv_project.path
 
-    checkout_env = {
-        "PYTHONPATH": os.pathsep.join(
-            [checkout_pythonpath(repo_root), str(repo_root / _AGY_PKG / "src")]
-        )
-    }
+    checkout_env = {"PYTHONPATH": checkout_pythonpath(repo_root)}
 
     tmp_venv_project.run(
         "self",

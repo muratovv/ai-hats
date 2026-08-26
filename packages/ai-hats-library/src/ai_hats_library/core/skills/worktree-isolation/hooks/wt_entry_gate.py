@@ -68,7 +68,7 @@ def main() -> int:
         return 0
 
     # One dialect reaches this script: the surface's own bridge translates
-    # before spawning it (`ai_hats_agy.claude_hook_adapter`, HATS-1776). A
+    # before spawning it (`ai_hats.surfaces.agy.claude_hook_adapter`, HATS-1776). A
     # second reading here would be a second truth about the same payload.
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):

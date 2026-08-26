@@ -226,10 +226,10 @@ def build_session_settings(
     from ai_hats.assembler import Assembler
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     result = Assembler(project).composer.compose(role)
-    ClaudeProvider().build_session_artifacts(
+    ClaudeSurface().build_session_artifacts(
         project, result, session_id, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
     )
     return session_cache_dir(project, session_id) / "settings.json"
@@ -386,7 +386,7 @@ def run_agy_dispatch(
     means running that one production string through a real shell — the exit
     code returned is the chain's verdict, not any single hook's.
     """
-    from ai_hats_agy.global_hook import DISPATCHER_COMMAND
+    from ai_hats.surfaces.agy.global_hook import DISPATCHER_COMMAND
 
     payload = json.dumps(
         {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input or {}}
@@ -454,7 +454,11 @@ def install_cline_surface_venv(
     *,
     timeout: int = 300,
 ) -> Path:
-    """Install the committed root and Cline surface into a private e2e venv."""
+    """Install the committed root into a private e2e venv.
+
+    HATS-1826 folded the Cline surface into ai-hats, so the root install IS the
+    surface install — there is no second distribution to add.
+    """
     uv = shutil.which("uv")
     if uv is None:
         raise AssertionError("uv is required for the Cline surface e2e")
@@ -476,7 +480,6 @@ def install_cline_surface_venv(
             "--python",
             str(target / "bin" / "python"),
             str(repo_src),
-            str(repo_src / "packages" / "surfaces" / "cline"),
         ],
         env=env,
         capture_output=True,

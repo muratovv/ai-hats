@@ -547,7 +547,7 @@ S3–S9.
 | hooks     | `<sc>/settings.json` (записи из `_desired_runtime_entries`)        | `_write_cache_settings`                                                                           | `--settings` (`_build_hooks_hitl`)             | `settings=<path>` + `setting_sources=[]` (`_build_hooks_automate`) |
 | settings  | —                                                                  | хендлера нет (комментарий «SETTINGS delivers nothing in either mode») — категория не доставляется | —                                              | —                                                                  |
 
-**agy** (`packages/surfaces/agy/src/ai_hats_agy/provider.py`):
+**agy** (`src/ai_hats/surfaces/agy/provider.py`):
 
 | категория | артефакт                                                | writer                                                                   | доставка                                                                                                                                       |
 | --------- | ------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -555,7 +555,7 @@ S3–S9.
 | skills    | `<sc>/rules/.agents/skills/<skill>/…`                   | `_materialize_skills` → `materialize_skills_dir`                         | неявно — agy сам сканирует дерево из `--add-dir`                                                                                               |
 | hooks     | `<sc>/hooks.json` + запись диспетчера в `$HOME`         | `_deliver_hooks`, манифест — `_hooks_manifest`                           | глобальный диспетчер читает манифест по `AI_HATS_SESSION_CACHE_DIR`; HITL и automate одинаково (`_build_hooks_hitl` / `_build_hooks_automate`) |
 
-**cline** (`packages/surfaces/cline/src/ai_hats_cline/provider.py`):
+**cline** (`src/ai_hats/surfaces/cline/provider.py`):
 
 | категория      | артефакт                       | writer                                                                             | доставка                                                   |
 | -------------- | ------------------------------ | ---------------------------------------------------------------------------------- | ---------------------------------------------------------- |

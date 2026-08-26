@@ -45,7 +45,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/surfaces/agy -e packages/surfaces/cline -e packages/surfaces/codex -e packages/surfaces/opencode -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: Run unit suite across versions
         run: bash scripts/ci-local.sh unit
 
@@ -64,7 +64,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/surfaces/agy -e packages/surfaces/cline -e packages/surfaces/codex -e packages/surfaces/opencode -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: Configure git identity (integration tests commit/merge)
         run: |
           git config --global user.email "ci@ai-hats.test"
@@ -90,7 +90,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + security tools
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/surfaces/agy -e packages/surfaces/cline -e packages/surfaces/codex -e packages/surfaces/opencode -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: Bandit SAST (fail on medium+ severity) + pip-audit
         run: bash scripts/ci-local.sh security
 
@@ -133,7 +133,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/surfaces/agy -e packages/surfaces/cline -e packages/surfaces/codex -e packages/surfaces/opencode -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: Configure git identity (e2e tests create/commit projects)
         run: |
           git config --global user.email "ci@ai-hats.test" # ai-hats: allow-secret
@@ -154,7 +154,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/surfaces/agy -e packages/surfaces/cline -e packages/surfaces/codex -e packages/surfaces/opencode -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: Configure git identity (e2e tests create/commit projects)
         run: |
           git config --global user.email "ci@ai-hats.test" # ai-hats: allow-secret

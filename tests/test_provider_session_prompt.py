@@ -1,7 +1,7 @@
 """Phase 1 unit tests for the per-session compose path (HATS-294).
 
 Coverage:
-- Fork E: ``ClaudeProvider.build_session_prompt`` is byte-stable across
+- Fork E: ``ClaudeSurface.build_session_prompt`` is byte-stable across
   consecutive calls for the same role and session_id.
 - Fork F: composed default-role prompt content-equivalent to the v0.6
   canonical baseline captured in
@@ -13,7 +13,6 @@ Coverage:
 
 from __future__ import annotations
 
-import logging
 import os
 import time
 from pathlib import Path
@@ -24,11 +23,8 @@ from ai_hats.assembler import Assembler
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
-from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats.providers import (
-    _extract_frontmatter_description,
-)
-from ai_hats_agy.provider import AgyProvider
+from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 from ai_hats.paths import PROJECT_CONFIG
 
@@ -80,7 +76,7 @@ def test_build_session_prompt_byte_stable_across_two_calls(project_with_library)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     args1, _, _ = provider.build_session_prompt(project, result, "stable-sid")
@@ -98,7 +94,7 @@ def test_build_session_prompt_byte_stable_distinct_session_ids(project_with_libr
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     args_a, _, _ = provider.build_session_prompt(project, result, "sid-a")
@@ -135,7 +131,7 @@ def test_composed_default_role_covers_canonical_baseline_content(tmp_path):
     # Compose the project's default-role-equivalent (assistant).
     asm = Assembler(repo_root)
     result = asm.composer.compose("assistant", overlay=asm._get_overlay("assistant"))
-    composed = ClaudeProvider().build_system_prompt(result)
+    composed = ClaudeSurface().build_system_prompt(result)
 
     # Signals from the v0.6 baseline that must survive.
     baseline = _BASELINE_FIXTURE.read_text()
@@ -169,7 +165,7 @@ def test_build_session_prompt_writes_under_cache_dir(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     args, _, _ = provider.build_session_prompt(project, result, "my-sid")
@@ -269,7 +265,7 @@ def test_build_session_prompt_recovers_from_stale_cache_dir(project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeProvider()
+    provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
     # Plant a stale file in the would-be cache dir.
@@ -331,8 +327,8 @@ def test_native_registry_providers_omit_skills_index(tmp_path):
     agy .agy/skills/ (HATS-993)."""
     result = _skill_composition(tmp_path)
 
-    claude_prompt = ClaudeProvider().build_system_prompt(result)
-    agy_prompt = AgyProvider().build_system_prompt(result)
+    claude_prompt = ClaudeSurface().build_system_prompt(result)
+    agy_prompt = AgySurface().build_system_prompt(result)
 
     # The divergence — the core of HATS-701.
     assert "## AVAILABLE SKILLS" not in claude_prompt, (
@@ -357,54 +353,6 @@ def test_native_registry_providers_omit_skills_index(tmp_path):
         assert "Tool-Call Hygiene" in prompt
 
 
-# --------------------------------------------------------------------- #
-# HATS-813 — _extract_frontmatter_description now parses real YAML. The
-# skill-index description lookup keeps its name fallback and never crashes
-# the prompt build on a malformed frontmatter block.
-# --------------------------------------------------------------------- #
-
-
-def _skill_on_disk(tmp_path: Path, name: str, skill_md: str) -> ResolvedComponent:
-    skill_dir = tmp_path / "skills" / name
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(skill_md)
-    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=skill_dir)
-
-
-def test_extract_description_reads_frontmatter(tmp_path):
-    skill = _skill_on_disk(tmp_path, "doc", "---\ndescription: the doc skill\n---\n# body\n")
-    assert _extract_frontmatter_description(skill) == "the doc skill"
-
-
-def test_extract_description_malformed_warns_then_falls_back(tmp_path, caplog):
-    """A broken frontmatter block must not raise on the prompt-build path — but
-    the malformed state is logged (observable), NOT silently collapsed into the
-    same path as a skill that merely declares no description."""
-    skill = _skill_on_disk(tmp_path, "broken", "---\nbad: : indent\n---\nbody\n")
-    with caplog.at_level(logging.WARNING, logger="ai_hats.providers"):
-        assert _extract_frontmatter_description(skill) == "broken"
-    assert "malformed" in caplog.text
-    assert "broken" in caplog.text
-
-
-def test_extract_description_absent_key_is_silent(tmp_path, caplog):
-    """The contrast: a valid block with no description falls back to the name
-    WITHOUT a warning — only the malformed state is noisy."""
-    skill = _skill_on_disk(tmp_path, "quiet", "---\nname: quiet\n---\nbody\n")
-    with caplog.at_level(logging.WARNING, logger="ai_hats.providers"):
-        assert _extract_frontmatter_description(skill) == "quiet"
-    assert caplog.text == ""
-
-
-def test_extract_description_missing_falls_back_to_name(tmp_path):
-    skill = ResolvedComponent(
-        name="ghost",
-        component_type=ComponentKind.SKILL,
-        source_path=tmp_path / "absent",
-    )
-    assert _extract_frontmatter_description(skill) == "ghost"
-
-
 def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
@@ -425,14 +373,14 @@ def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
         injections=[],
     )
 
-    # ClaudeProvider
-    claude_p = ClaudeProvider()
+    # ClaudeSurface
+    claude_p = ClaudeSurface()
     _, claude_env, _ = claude_p.build_session_prompt(project, result, "sid-claude")
     assert "PATH" in claude_env
     assert str(skill_dir / "scripts") in claude_env["PATH"]
 
-    # AgyProvider
-    agy_p = AgyProvider()
+    # AgySurface
+    agy_p = AgySurface()
     _, agy_env, _ = agy_p.build_session_prompt(project, result, "sid-agy")
     assert "PATH" in agy_env
     assert str(skill_dir / "scripts") in agy_env["PATH"]

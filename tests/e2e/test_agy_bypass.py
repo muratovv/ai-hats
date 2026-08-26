@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -25,25 +24,6 @@ import pytest
 from _helpers.env import checkout_pythonpath
 
 pytestmark = pytest.mark.integration
-
-_AGY_PKG = "packages/surfaces/agy"
-
-
-def _entry_point_body(repo_root: Path) -> str:
-    pyproject = tomllib.loads((repo_root / _AGY_PKG / "pyproject.toml").read_text())
-    eps = pyproject["project"]["entry-points"]["ai_hats.providers"]
-    return "\n".join(f"{name} = {target}" for name, target in eps.items())
-
-
-def _write_dist_info(root: Path, ep_body: str) -> Path:
-    root.mkdir(parents=True, exist_ok=True)
-    dist_info = root / "ai_hats_agy-0.1.0.dist-info"
-    dist_info.mkdir()
-    (dist_info / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: ai-hats-agy\nVersion: 0.1.0\n"
-    )
-    (dist_info / "entry_points.txt").write_text(f"[ai_hats.providers]\n{ep_body}\n")
-    return root
 
 
 def test_agy_bypasses_root_gemini_md(
@@ -54,12 +34,11 @@ def test_agy_bypasses_root_gemini_md(
 ):
     launcher, base_env, _venv = shared_launcher
 
-    ep_body = _entry_point_body(repo_root)
-    dist_dir = _write_dist_info(tmp_path / "dist", ep_body)
-    agy_src = str(repo_root / _AGY_PKG / "src")
-
+    # HATS-1826 folded agy into ai-hats: the launcher venv's own install carries
+    # the surface AND declares its entry point, so the checkout on PYTHONPATH is
+    # the whole setup — no separate distribution to stage.
     env = {**os.environ, **base_env}
-    env["PYTHONPATH"] = os.pathsep.join([checkout_pythonpath(repo_root), agy_src, str(dist_dir)])
+    env["PYTHONPATH"] = checkout_pythonpath(repo_root)
 
     project = tmp_path / "project"
     project.mkdir()

@@ -63,13 +63,10 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "costs",  # HATS-865: composition-tree introspection tooling, not a brick
     "composition_seam",  # HATS-865: THE integrator compose seam (payload builder)
     "sweeper",  # HATS-910 maintenance tooling (provider-managed surface sweep)
-    # HATS-1130: ec85f43d moved ClaudeProvider out of `providers` into
-    # `surfaces/`. It subclasses Provider and reuses that module's markers, so
+    # HATS-1130: ec85f43d moved ClaudeSurface out of `providers` into
+    # `surfaces/`. It subclasses Surface and reuses that module's markers, so
     # it IS the provider layer at a new path — not a brick reaching into it.
     "surfaces",
-    # HATS-1178: a registry over the `ai_hats.providers` entry-point group —
-    # provider-layer infra at a new path (mirrors `surfaces`), not a brick.
-    "surfaces_registry",
     # HATS-1184: the `self init` orchestration steps run assembly — integrator
     # orchestration (like the `cli` subtree), not a role-composition brick.
     "pipeline.steps.init_steps",
@@ -261,7 +258,7 @@ def test_schema_modules_never_import_providers():
         if refs:
             offenders[schema] = sorted(set(refs))
     assert not offenders, (
-        f"schema modules must not import ai_hats.providers (any level): {offenders}"
+        f"schema modules must not import ai_hats.surface_registry (any level): {offenders}"
     )
 
 

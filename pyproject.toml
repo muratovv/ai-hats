@@ -89,7 +89,11 @@ aggregation = [
 # Provider under this group is discovered + registered without ai-hats importing
 # it (built-ins are listed too — they self-register first, discovery no-ops them).
 [project.entry-points."ai_hats.providers"]
-claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"
+agy = "ai_hats.surfaces.agy.provider:AgySurface"
+claude = "ai_hats.surfaces.claude.provider:ClaudeSurface"
+cline = "ai_hats.surfaces.cline.provider:ClineSurface"
+codex = "ai_hats.surfaces.codex.provider:CodexSurface"
+opencode = "ai_hats.surfaces.opencode.provider:OpenCodeSurface"
 
 # HATS-1038 C1: the rack CLI discovers this factory by metadata (never imports
 # the integrator — import-hygiene pin) and builds the fully-wired production
@@ -154,10 +158,9 @@ packages = ["src/ai_hats"]
 exclude = ["src/ai_hats/**/tests"]
 
 [tool.uv.workspace]
-# HATS-956: surface plugins (out-of-tree providers) live under packages/surfaces/.
-# Exclude the category dir itself — it carries no pyproject, only member subdirs.
-members = ["packages/*", "packages/surfaces/*"]
-exclude = ["packages/surfaces"]
+# HATS-1826 folded the five surfaces into the ai_hats.surfaces area, so every
+# member is again one directory deep and carries its own pyproject.
+members = ["packages/*"]
 
 [tool.uv.sources]
 ai-hats-core = { workspace = true }
@@ -193,10 +196,12 @@ testpaths = [
     "packages/ai-hats-rack/tests",
     "packages/ai-hats-observe/tests",
     "packages/ai-hats-library/tests",
-    "packages/surfaces/cline/tests",
-    "packages/surfaces/agy/tests",
-    "packages/surfaces/codex/tests",
-    "packages/surfaces/opencode/tests",
+    "src/ai_hats/surfaces/tests",
+    "src/ai_hats/surfaces/agy/tests",
+    "src/ai_hats/surfaces/claude/tests",
+    "src/ai_hats/surfaces/cline/tests",
+    "src/ai_hats/surfaces/codex/tests",
+    "src/ai_hats/surfaces/opencode/tests",
 ]
 # HATS-1624: a passing e2e test's tmp_path holds a real venv, and one measured
 # run held 1172 of them (27.8 GB). Reaped per test, so a green run leaves
@@ -216,10 +221,6 @@ pythonpath = [
     "packages/ai-hats-rack/src",
     "packages/ai-hats-observe/src",
     "packages/ai-hats-library/src",
-    "packages/surfaces/cline/src",
-    "packages/surfaces/agy/src",
-    "packages/surfaces/codex/src",
-    "packages/surfaces/opencode/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.
