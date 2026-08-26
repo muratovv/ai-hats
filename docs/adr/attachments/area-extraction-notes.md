@@ -4,13 +4,14 @@ Working notes for the HATS-1586 epic: the conventions an agent follows when it t
 folder under `src/ai_hats/` into an **area** — a declared surface with its own tests and
 a boundary a lint holds (ADR-0026 D5).
 
-This file is written **as the pilot runs**, not after it. A rule lands here when a
+This file is written **as an area runs**, not after it. A rule lands here when a
 review produced it, with the incident that produced it named — a convention nobody can
 trace back to a defect is a preference, and preferences do not survive review.
 
-Status: pilot complete (`pipeline`, HATS-1783). §7 carries the measured recipe ADR-0026
-D12 asks for — the numbers, the sequence, and what a slice cost. The second area
-(`consent`) is scoped by comparing its own numbers against §7 **before** work starts.
+Status: two areas done — the pilot (`pipeline`, HATS-1783) and `surfaces` (HATS-1826).
+§7 carries the measured recipe ADR-0026 D12 asks for, now with both columns: the second
+area is what turns "the pilot's numbers" into a range a third one can be estimated
+against. `consent` is still unrun, and still the area that would prove D10.
 
 ## 1. Before you touch code
 
@@ -90,6 +91,11 @@ violation before being committed:
 | modules in a cycle          | no area module sits in a non-trivial import SCC    | empty set                |
 | catalog                     | shipped YAML == the application's declared catalog | set equality             |
 | registration by import      | importing the shipped tree registers no step       | empty set                |
+
+Five gate *kinds*, but since HATS-1826 the two import gates — deep entries and modules
+in a cycle — run **once per area**, and the file names each area's pin separately. When
+you add an area, both take an `area` argument or the new boundary is half-watched; that
+half-watching is what the second area shipped with (§6).
 
 Three of the five are absolutes rather than ratchets. The cycle gate reached its D12
 target of 0 when the step registry stopped resolving by import (HATS-1783), and the
@@ -265,6 +271,49 @@ Kept as a checklist because each line cost a round:
 - "we will type it when the consumer migrates" is how a wrong type ships — describe the
   shape from its writer, not from the caller you imagine.
 
+From the second area (HATS-1826), where the review found each of these in a slice that
+had already gone green:
+
+- **a contract that was moved is not a contract that was reviewed** — `surfaces/contract.py`
+  was 580 of its 594 lines byte-identical to the module it left, and the only new
+  authorship in it was its own docstring. D14 calls the public contract a reviewed
+  artefact; a relocation passes every gate and reviews nothing. Ask what the contract
+  *stopped carrying*, not whether it compiles;
+- **the `debt.py` entry your card makes retirable is your card's to retire** —
+  `TranscriptResolver` became typeable the moment the contract sat behind one facade,
+  and shipped untouched beside a second spelling of the same value on
+  `CompositionPayload`. That is the exact failure `debt.py` exists to prevent, committed
+  by the card that removed the reason for it;
+- **a gate parameterized for one area is a gate for one area** — the deep-entry gate
+  took an `area` argument; the cycle gate beside it kept the pilot hard-coded, so the
+  new area had its entrances watched and its exits not. When you generalize one gate,
+  grep for its siblings;
+- **a boundary gate that walks only `src/` cannot see a test reaching in** — a top-level
+  test imported `surfaces.contract._extract_frontmatter_description`, which is precisely
+  the breach the gate forbids everyone else. The area's own tests are the sanctioned
+  reach-in; a test outside it is a deep entry that no pin counts;
+- **a green suite after a contract change means the contract has no test** — four fields
+  left `SurfaceRunResult` and the pass count did not move, because nothing exercised
+  `SubagentEngine.run` at all. A number that should have moved and did not is a finding
+  about the instrument, not a reassurance about the change.
+
+### What landing the slice keeps catching
+
+Review is not the last gate; two of the second area's defects appeared only when the
+branch met master.
+
+- **A rebase across a rename resurrects deleted code.** Master deleted a reader while
+  the branch was moving that same reader to a new file. Git resolves per file, so the
+  deletion landed on the file the branch had emptied and the moved copy survived —
+  importing a type that no longer existed anywhere, which took the whole area down at
+  import. After any rebase that moved files, grep the destinations for what the upstream
+  deleted; a clean `git rebase` is not evidence.
+- **Renaming `[project.entry-points]` values wedges the merge commit itself.** The git
+  hook builds an `Assembler`, which resolves surfaces through *installed* metadata — and
+  that metadata cannot be current until the merge lands. The way out without
+  `--no-verify`: stage the merge, reinstall the editable (the working tree already
+  carries the merged `pyproject`), then commit. Carded as HATS-1851.
+
 ## 7. The measured recipe
 
 ADR-0026 D12 makes this section the pilot's deliverable: not "it moved", but numbers a
@@ -309,6 +358,47 @@ Four of these say something the counts alone do not:
   selector that ran only the area's own tests would save 155 s and answer for 74 of
   4 443 tests. The 297 crossing tests take 4.3 s and are the ones an area change
   actually risks — so the honest T2 unit here is "area + crossing" (4.5 s), not "area".
+
+### The second area, measured the same way
+
+`surfaces` (HATS-1826), same instrument, run against this tree. It is the column that
+turns the pilot's numbers into a **range**, and the two differ far more than "one area
+is bigger" would predict.
+
+| Measure                             | `pipeline` (pilot) | `surfaces`               |
+| ----------------------------------- | ------------------ | ------------------------ |
+| Deep entries — before / after       | 107 → 3            | **2 → 0**                |
+| Area modules in a non-trivial SCC   | 8 → 0              | 0                        |
+| External modules importing the area | 13                 | 6                        |
+| Incoming name-edges                 | 21                 | 7                        |
+| … deferred or `TYPE_CHECKING`       | 8 (38%)            | 4 (57%)                  |
+| Tests inside the area               | 74, in 7 files     | 243, in 18 files         |
+| Tests crossing into it              | 297, in 32 files   | 607, in 49 non-e2e files         |
+| Area suite vs the full suite        | 0.19 s vs 155 s    | 2.2 s vs 187 s           |
+| Area tests in the built wheel       | none               | none                     |
+| Slice size                          | epic, many slices  | 236 files, +2814 / −3837 |
+
+The instrument is the one §7 used — the helpers in `tests/test_area_boundary.py`,
+re-run on this tree. It reproduces every pilot figure above exactly except the area
+test count, now 75: one test has landed there since. The pilot column here is §7's
+recorded number, so the two tables agree.
+
+Three things this column says that the pilot's alone could not:
+
+- **Inherited deep entries, not size, decide whether the gate is reachable.** `surfaces`
+  is the bigger area by tests (243 vs 74) and took the D12 "0 deep entries" gate in one
+  slice; `pipeline` is smaller and has not taken it across a whole epic. The difference
+  is 2 versus 107 at the start. **Count a candidate's deep entries before anything else
+  about it** — that number, not LoC, is the estimate.
+- **An area can be net-negative.** Every other slice of this epic promised growth,
+  because extraction wraps a mechanism in a port. This one deleted 1 023 lines net: the
+  surfaces did not need a port, they needed to stop being four distributions. When a
+  candidate's problem is *packaging*, extraction is a removal, and predictive accounting
+  should say so before the work rather than after.
+- **The deferred share went up, not down** (38% → 57%). §7 already said that share is a
+  property of how this codebase imports rather than something extraction earns; a second
+  area with an even higher share, and a smaller absolute count, confirms it. Do not read
+  it as a quality signal in either direction — it is D8's precondition 2 and nothing else.
 
 ### The sequence a next area follows
 
