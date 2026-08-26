@@ -19,7 +19,7 @@ from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:
     from .hooks_manager import HooksManager
-    from .surfaces import Provider
+    from .surfaces import Provider, TranscriptResolver
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class CompositionPayload:
     audit_writer_factory: "Callable[[], object] | None" = None
     # HATS-1087: provider-owned transcript path discovery (WHERE the session log
     # lives) — paired with audit_writer_factory's parser (HOW to parse it).
-    transcript_resolver: "Callable[..., object | None] | None" = None
+    transcript_resolver: "TranscriptResolver | None" = None
     # HATS-970: hooks warnings from the first-run set_role side effect, routed to
     # the HITL read-hold instead of a bare pre-launch print.
     startup_warnings: tuple[str, ...] = ()

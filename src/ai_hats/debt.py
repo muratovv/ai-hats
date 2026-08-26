@@ -35,11 +35,6 @@ SessionFactory = object
 # TODO(HATS-1785)
 AuditWriterFactory = object
 
-# Answers where a provider left a session's transcript, so the area never
-# learns a provider's on-disk layout (HATS-1087).
-# TODO(HATS-1785)
-TranscriptResolver = object
-
 # Recomputes a session's cost from its transcript when the provider reports none.
 # TODO(HATS-1785)
 StaticCostAnalyzer = object

@@ -18,7 +18,7 @@ import contextlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 
 from ai_hats_core import CompositionResult, ResolvedComponent
@@ -94,6 +94,26 @@ class ProviderHint:
     name: str
     values: str
     description: str
+
+
+class TranscriptResolver(Protocol):
+    """``Provider.resolve_transcript`` seen from outside — where a session's log landed.
+
+    Named here because the application passes it down as a value rather than importing
+    a surface to find a file (HATS-1087): it rides ``CompositionPayload`` to the runners
+    and ``AuditParams`` to the audit step. Until HATS-1826 it had two spellings and no
+    owner — ``debt.TranscriptResolver = object`` and a bare ``Callable`` on the payload —
+    which is the shape ``debt.py`` exists to prevent.
+    """
+
+    def __call__(
+        self,
+        project_dir: Path,
+        session_id: str,
+        *,
+        provider_session_id: str | None = None,
+        end_ts: float | None = None,
+    ) -> list[Path]: ...
 
 
 class SubagentEngine(abc.ABC):

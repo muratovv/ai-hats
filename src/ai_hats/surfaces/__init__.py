@@ -11,7 +11,13 @@ Importing a name from under this package instead of from here is what
 
 from __future__ import annotations
 
-from .contract import Provider, ProviderHint, ProviderRunResult, SubagentEngine
+from .contract import (
+    Provider,
+    ProviderHint,
+    ProviderRunResult,
+    SubagentEngine,
+    TranscriptResolver,
+)
 from .managed_tags import sweep_stale_managed_tags
 
 __all__ = [
@@ -19,5 +25,6 @@ __all__ = [
     "ProviderHint",
     "ProviderRunResult",
     "SubagentEngine",
+    "TranscriptResolver",
     "sweep_stale_managed_tags",
 ]

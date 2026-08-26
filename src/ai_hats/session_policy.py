@@ -23,9 +23,9 @@ from .debt import (
     SessionManager,
     StaticCostAnalyzer,
     TracerFactory,
-    TranscriptResolver,
 )
 from .pipeline import PipelineResult, PromptWriter, SessionRef
+from .surfaces import TranscriptResolver
 
 
 @dataclass(frozen=True)
