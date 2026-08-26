@@ -44,14 +44,13 @@ def _stdin_is_tty() -> bool:
 def _detected_providers() -> list[str]:
     """Providers whose home-config directory exists on the host.
 
-    HATS-1179: Queries all known surfaces from `surface_catalog.py` and uses
-    provider-agnostic `detect_surface_presence(name)`. Returns matches in
-    deterministic order.
+    HATS-1179: asks every registered surface, through the surface-agnostic
+    `detect_surface_presence(name)`. Returns matches in deterministic order.
     """
-    from ..surface_catalog import detect_surface_presence, get_known_surfaces
+    from ..surface_registry import detect_surface_presence, surface_names
 
     detected: list[str] = []
-    for name in get_known_surfaces():
+    for name in surface_names():
         if detect_surface_presence(name):
             detected.append(name)
     return detected
@@ -71,15 +70,10 @@ def _wizard_provider_prompt(
     zero or several are present the choice is ambiguous, so the user picks
     explicitly rather than silently inheriting the dict-first provider (HATS-613).
     """
-    from ..surface_registry import get_surface
-    from ..surface_catalog import (
-        get_known_surfaces,
-        is_surface_installed,
-    )
+    from ..surface_registry import get_surface, is_surface_installed, surface_names
 
     home = Path.home()
-    known = get_known_surfaces()
-    names = list(known.keys())
+    names = surface_names()
     ask = prompt or click.prompt
     installed_lookup = installed_lookup or is_surface_installed
     provider_lookup = provider_lookup or get_surface
@@ -93,12 +87,9 @@ def _wizard_provider_prompt(
             if installed:
                 try:
                     dirs = provider_lookup(name).detected_home_dirs()
-                except Exception:  # silent-ok: registry dirs still render a non-mutating marker
-                    dirs = []
-            if not dirs:
-                info = known.get(name)
-                dirs = list(info.default_home_dirs) if info else [f".{name}"]
-            found_dir = next((d for d in dirs if (home / d).is_dir()), f".{name}")
+                except Exception as exc:  # noqa: BLE001 - a marker must not break the menu
+                    console.print(f"  [dim]({name}: cannot name its home dirs: {exc})[/]")
+            found_dir = next((d for d in dirs or [f".{name}"] if (home / d).is_dir()), f".{name}")
             markers.append(f"detected — found ~/{found_dir}")
 
         if not installed:

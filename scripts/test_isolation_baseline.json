@@ -131,7 +131,6 @@
   "tests/test_subagent_plugin_dir.py": 2,
   "tests/test_subagent_release_on_finish.py": 1,
   "tests/test_subagent_retry.py": 1,
-  "tests/test_surface_catalog.py": 1,
   "tests/test_tree_source_tags.py": 2,
   "tests/test_uv_install_cmd.py": 2,
   "tests/test_version_recovery.py": 5,

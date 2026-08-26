@@ -195,9 +195,9 @@ def test_legacy_gemini_alias_resolves_to_agy():
 def test_a_known_surface_without_an_entry_point_refuses_immediately(monkeypatch):
     """ai-hats never installs a surface on the caller's behalf (HATS-1826).
 
-    ``agy`` is in ``KNOWN_SURFACES``, and that used to be the trigger for a
-    ``uv pip install`` before the lookup would refuse. With no entry point
-    advertising it, the name is simply unknown.
+    ``agy`` shipping with ai-hats used to be the trigger for a ``uv pip install``
+    before the lookup would refuse. With no entry point advertising it, the name
+    is simply unknown.
     """
     monkeypatch.setattr(prov, "_provider_entry_points", lambda: [])
     prov._reset_for_tests()

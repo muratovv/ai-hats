@@ -1026,14 +1026,13 @@ class Assembler:
         Lookup only: ai-hats used to try to install an uninstalled surface here
         before refusing — that bypass is closed (HATS-1826).
         """
-        from .surface_registry import PROVIDER_ALIASES, surface_names
-        from .surface_catalog import get_known_surfaces, is_surface_installed
+        from .surface_registry import PROVIDER_ALIASES, is_surface_installed, surface_names
 
         canonical = PROVIDER_ALIASES.get(provider_name, provider_name)
         if is_surface_installed(canonical):
             return
 
-        available = sorted(set(surface_names()) | set(get_known_surfaces().keys()))
+        available = sorted(surface_names())
         raise ValueError(f"Unknown provider: {provider_name}. Available: {available}.")
 
     def _build_tree(self, result: CompositionResult) -> dict:

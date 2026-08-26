@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 
 from .provider_entry_points import (
     _is_first_party_entry_point,
@@ -110,6 +111,34 @@ def get_surface(name: str) -> Surface:
     if cls is None:
         raise UnknownSurfaceError(name, surface_names())
     return cls()
+
+
+def is_surface_installed(name: str) -> bool:
+    """Whether ``name`` resolves to a surface in this venv."""
+    try:
+        get_surface(name)
+        return True
+    except Exception as exc:  # noqa: BLE001 - any failure to resolve means "not installed"
+        logger.debug("surface %r does not resolve: %s", name, exc)
+        return False
+
+
+def detect_surface_presence(name: str, home: Path | None = None) -> bool:
+    """Whether this surface's own home directory exists under ``home``.
+
+    Where to look is the surface's answer (``detected_home_dirs``), not a table
+    beside it: until HATS-1826 a hand-kept catalog carried a second copy of those
+    directory names for surfaces that might not be installed — and every declared
+    surface now ships with ai-hats, so a name that does not resolve is not a
+    surface whose directories anyone could name.
+    """
+    try:
+        dirs = get_surface(name).detected_home_dirs()
+    except Exception as exc:  # noqa: BLE001 - an unresolvable surface has nothing to detect
+        logger.debug("surface %r does not resolve, nothing to detect: %s", name, exc)
+        return False
+    root = home if home is not None else Path.home()
+    return any((root / d).is_dir() for d in dirs)
 
 
 def _reset_for_tests() -> None:

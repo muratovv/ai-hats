@@ -10,6 +10,7 @@ from click.testing import CliRunner
 from ai_hats.cli import main
 from ai_hats.cli.assembly import _detected_providers, _wizard_provider_prompt
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.surface_registry import surface_names
 
 
 @pytest.fixture()
@@ -48,17 +49,18 @@ def test_detect_empty_when_neither(tmp_path, monkeypatch):
 
 
 def test_detect_lists_both_when_both_present(tmp_path, monkeypatch):
-    """Both home dirs present → BOTH detected, in PROVIDERS order (HATS-613).
+    """Both home dirs present → BOTH detected (HATS-613).
 
-    Pre-HATS-613 the helper returned a single string (the dict-first match,
-    agy), hiding that claude was also installed.
+    Pre-HATS-613 the helper returned a single string, hiding the second one. The
+    order is the registry's, which since HATS-1826 is the entry-point order —
+    deterministic, and no longer a hand-kept table anyone can reorder by accident.
     """
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     (fake_home / ".claude").mkdir()
     (fake_home / ".agy").mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
-    assert _detected_providers() == ["claude", "agy"]
+    assert _detected_providers() == ["agy", "claude"]
 
 
 # ---------- _wizard_provider_prompt: marker + default policy ----------
@@ -89,9 +91,10 @@ def test_wizard_prompt_preselects_when_single_detected(monkeypatch):
         return default  # simulate the user pressing Enter
 
     monkeypatch.setattr("ai_hats.cli.assembly.click.prompt", fake_prompt)
-    # claude is index 1 in PROVIDERS order (claude, agy).
+    # The menu numbers the registered surfaces, so read the index off the registry
+    # rather than pinning a literal that a new surface silently shifts.
     assert _wizard_provider_prompt(["claude"]) == "claude"
-    assert captured["default"] == "1"
+    assert captured["default"] == str(surface_names().index("claude") + 1)
     assert captured["show_default"] is True
 
 
@@ -111,7 +114,7 @@ def test_wizard_prompt_preselects_codex_and_marks_it_uninstalled(capsys):
         )
         == "codex"
     )
-    assert captured["default"] == "4"
+    assert captured["default"] == str(surface_names().index("codex") + 1)
     assert "not installed" in capsys.readouterr().out
 
 
