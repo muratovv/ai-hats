@@ -1,14 +1,16 @@
-"""HATS-1783 — what the ``pipeline`` area's boundary asserts today, stated exactly.
+"""HATS-1783, HATS-1826 — what the areas' boundaries assert today, stated exactly.
 
-Five gates. Three are the negative universals ADR-0026 D3 asks for — the cycle set
-(empty since the step registry stopped resolving by import), the registration gate, and
-the catalog. The other two pin the breach set this epic is still shrinking, so a green
-run there means "the ways in did not change", never "there is no way in".
+Five gates, and the two import gates among them run once per area: ``pipeline`` and
+``surfaces``. Four of the seven runs are the negative universals ADR-0026 D3 asks for —
+both cycle sets, the surfaces deep-entry set, the registration gate and the catalog. The
+rest pin the breach set this epic is still shrinking, so a green run there means "the
+ways in did not change", never "there is no way in".
 
 The three import gates read one tree — the modules the wheel ships (see
 ``_source_modules``) — through one walk, so "an import" means the same thing in all of
-them rather than one thing per gate. The fourth reads the shipped YAML; the fifth
-imports that same tree in a subprocess and reads what it did to the registry.
+them rather than one thing per gate, and one thing per area. The fourth reads the
+shipped YAML; the fifth imports that same tree in a subprocess and reads what it did to
+the registry.
 
 1. **Deep entries.** Asserts that the imports naming something *under* the area
    rather than the area itself equal ``PINNED_DEEP_ENTRIES`` as a multiset. Does not
@@ -30,11 +32,13 @@ imports that same tree in a subprocess and reads what it did to the registry.
    builds its ``preview`` pipeline in Python and is carded as HATS-1784. Until then
    this gate does not assert that YAML is the only way a pipeline is assembled; it
    asserts that a fourth way cannot arrive unnoticed.
-3. **Modules in a cycle.** Asserts that the area's modules sitting in a non-trivial
-   strongly connected component of the import graph equal
-   ``PINNED_AREA_MODULES_IN_A_CYCLE``. ADR-0026 D12 makes this pilot gate 0 and the
-   pin is now 0, which turns it from a ratchet into an absolute: any area module in
-   any cycle is red, and the re-pin literal below it exists only to name the offender.
+3. **Modules in a cycle.** Asserts that an area's modules sitting in a non-trivial
+   strongly connected component of the import graph equal that area's pin. ADR-0026
+   D12 makes this gate 0 and both pins are 0, which turns it from a ratchet into an
+   absolute: any area module in any cycle is red, and the re-pin literal below it
+   exists only to name the offender. It runs per area for the reason gate 1 does —
+   an area whose entrances are watched and whose exits are not has half a boundary
+   (HATS-1826).
 4. **Catalog.** Set equality between the shipped pipeline YAML and the catalog the
    application declares. This one is a true negative universal: it cannot go green
    while a shipped pipeline is undeclared. It fails, and never skips, when the
@@ -132,6 +136,13 @@ PINNED_PYTHON_ASSEMBLED: tuple[str, ...] = ("ai_hats.cli.assembly -> build(name=
 # ai_hats.pipeline_catalog sits in the surviving 26-module SCC and is absent here on
 # purpose: it is application code, and "ai_hats.pipeline" is its prefix only as a string.
 PINNED_AREA_MODULES_IN_A_CYCLE: tuple[str, ...] = ()
+
+# comment-length: allow — an empty pin has to say what emptied it, or nobody can defend it
+# The same gate for the second area (HATS-1826). Empty on the fold and kept empty by the
+# same universal: the surfaces reach the application by name in plenty of places, and
+# none of those names reaches back. The entrance pin above says what may come in; this
+# one says what going out may not turn into.
+PINNED_SURFACES_MODULES_IN_A_CYCLE: tuple[str, ...] = ()
 
 # Both modules bind the same constructors: ``__init__`` re-exports them from
 # ``pipeline.pipeline``, so a gate that watches only one of them watches neither.
@@ -399,13 +410,13 @@ def _non_trivial_sccs(graph: dict[str, set[str]]) -> list[frozenset[str]]:
     return found
 
 
-def _area_modules_in_a_cycle() -> tuple[str, ...]:
+def _area_modules_in_a_cycle(area: str = AREA) -> tuple[str, ...]:
     """Every module of the area that sits in a non-trivial SCC of the shipped graph."""
     in_area = {
         module
         for component in _non_trivial_sccs(_import_edges())
         for module in component
-        if module == AREA or module.startswith(f"{AREA}.")
+        if module == area or module.startswith(f"{area}.")
     }
     return tuple(sorted(in_area))
 
@@ -440,6 +451,16 @@ def test_no_new_deep_entry_into_the_surfaces_area() -> None:
         "imports entering ai_hats.surfaces past its facade (ADR-0026 D14, HATS-1826)",
         PINNED_SURFACES_DEEP_ENTRIES,
         entries,
+    )
+
+
+def test_no_surfaces_module_sits_in_an_import_cycle() -> None:
+    in_a_cycle = _area_modules_in_a_cycle(SURFACES)
+    assert in_a_cycle == PINNED_SURFACES_MODULES_IN_A_CYCLE, _repin(
+        "PINNED_SURFACES_MODULES_IN_A_CYCLE",
+        "ai_hats.surfaces modules in an import cycle (ADR-0026 D12, HATS-1826)",
+        PINNED_SURFACES_MODULES_IN_A_CYCLE,
+        in_a_cycle,
     )
 
 

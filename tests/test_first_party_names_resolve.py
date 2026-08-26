@@ -94,6 +94,5 @@ def test_no_first_party_import_names_a_symbol_its_module_lacks() -> None:
     assert not dangling, (
         "These imports name a symbol their module does not define. Under "
         "`TYPE_CHECKING` nothing raises at runtime and the repository ships no type "
-        "checker, so the annotation silently refers to nothing:\n  "
-        + "\n  ".join(dangling)
+        "checker, so the annotation silently refers to nothing:\n  " + "\n  ".join(dangling)
     )
