@@ -17,7 +17,7 @@ SKILL_DIR = (
     / "ai-hats-library"
     / "src"
     / "ai_hats_library"
-    / "usage"
+    / "ai-hats-dev"
     / "skills"
     / "worktree-venv"
 )

@@ -28,9 +28,21 @@ Lifecycle diagram — see [2].
 
 **Finalize shield** — the same gesture on the other side of the provider's exit. Once the child is gone the terminal is back in cooked mode, so a stray Ctrl-C arrives at the parent as a real SIGINT and lands inside whichever finalize step is running — costing that step silently (a session lost its retro decision, reviewer spawn, and `retro.log` outright). For the whole finalize window — `_finalize_session_basic`, the `finalize-hitl` / `finalize-subagent` sub-pipeline, the session-end banner — SIGINT is held: each press prints one line and is dropped, and the third inside the ~1.5 s window raises `FinalizeAborted` (deliberately not `Exception` / `KeyboardInterrupt`, both of which the per-phase HATS-086 catches would swallow), abandoning the remaining work with exit **130** while the session id still reaches stdout. Counting is shared with the parent escape-hatch (`runtime._press_trips`). Source: `runtime.sigint_shield` (HATS-1426).
 
+## Library layer
+
+One of the three tiers the shipped library is split into. All three load at every session, lowest priority first — `core` → `usage` → `ai-hats-dev` — and a later layer wins a name it shares with an earlier one; your own roots (`~/.ai-hats/`, `<project>/libraries/`) sit above all three by the same rule.
+
+| Layer          | Holds                                                                             | Required for a library root |
+| -------------- | --------------------------------------------------------------------------------- | --------------------------- |
+| `core`         | engine fundament — without it `init` / `self init` / reflect pipelines do not run | yes                         |
+| `usage`        | the opinionated catalog a consuming project picks from                            | yes                         |
+| `ai-hats-dev`  | what the ai-hats repo wears to develop itself; no use to a consumer               | no (HATS-1834)              |
+
+The layer is a property of the **component**, not of the bundle composing it: resolution is name-based across all roots, so a trait in one layer composing a skill in another is ordinary. The decision tree for a new component lives in `CONTRIBUTING.md`; the engine's own list is `LIBRARY_LAYERS` in `src/ai_hats/paths/constants.py`. Override precedence — see [9].
+
 ## Role
 
-A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `dev-python`, `dev-web`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`ai_hats_library/usage/roles/assistant/config.yaml`](../packages/ai-hats-library/src/ai_hats_library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
+A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into three [layers](#library-layer): `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent`), `library/usage/roles/` (curated user-facing: `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`) and `library/ai-hats-dev/roles/` (this repo's own: `maintainer`, `role-curator`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`ai_hats_library/usage/roles/assistant/config.yaml`](../packages/ai-hats-library/src/ai_hats_library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
 
 Key system roles you will meet in cross-doc prose:
 
@@ -44,7 +56,7 @@ An expression evaluated at session launch time in `-r` / `--role` (e.g. `-r "mai
 
 ## Trait
 
-An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next session. Flat model: a trait cannot include another trait. Format: `library/{core,usage}/traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3]; library layout — see [9].
+An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next session. Flat model: a trait cannot include another trait. Format: `library/{core,usage,ai-hats-dev}/traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3]; library layout — see [9].
 
 Key system traits every role inherits transitively:
 
@@ -55,7 +67,7 @@ Key system traits every role inherits transitively:
 
 The two component kinds that ai-hats injects into the **provider** prompt, composed per session and delivered from the session cache (see [1]). They apply at the provider layer — the LLM reads them and follows; ai-hats does not interpret their content.
 
-| Component | What it is                                                  | Format (under `library/{core,usage}/…`)                                 |
+| Component | What it is                                                  | Format (under `library/{core,usage,ai-hats-dev}/…`)                     |
 | --------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
 | **Rule**  | Behavioural constraint (do / don't). No decision logic.     | `rules/<name>/rule.md`                                                  |
 | **Skill** | Procedure, checklist, or protocol with steps and branching. | `skills/<name>/SKILL.md` (+ `metadata.yaml`, `scripts/`, `references/`) |

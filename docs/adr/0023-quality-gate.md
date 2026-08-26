@@ -551,7 +551,7 @@ server-side сигнал, но до HATS-927 не неотключаемый п�
   `docs/adr/0017-backlog-yaml-single-definition.md`
 - [5] Диспетчер стадий: `scripts/ci-local.sh`
 - [6] Гейты и механизм маркера:
-  `packages/ai-hats-library/src/ai_hats_library/usage/skills/maintainer-quality-gate/`
+  `packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/`
 - [7] Журнал обходов:
   `packages/ai-hats-library/src/ai_hats_library/hooks/bypass_journal.sh`
 - [8] Фактура ревизии, из которой выросла карточка:

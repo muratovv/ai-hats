@@ -13,7 +13,12 @@ from __future__ import annotations
 LIBRARY_PKG = "ai_hats_library"
 
 # Composition layers under the library root, lowest priority first.
-LIBRARY_LAYERS = ("core", "usage")
+LIBRARY_LAYERS = ("core", "usage", "ai-hats-dev")
+
+# The subset a dir must hold to BE a library root (HATS-1834). Kept apart from
+# LIBRARY_LAYERS so a newer integrator still validates an older library wheel
+# that predates a layer — `is_library_root` is an all() over this tuple.
+REQUIRED_LIBRARY_LAYERS = ("core", "usage")
 
 # Project-local (downstream) library dir name — the topology-B layer that an
 # agent may edit inside a linked worktree (distinct from the builtin ``library/``).
@@ -41,6 +46,7 @@ from ..env import (  # noqa: E402
 __all__ = [
     "LIBRARY_PKG",
     "LIBRARY_LAYERS",
+    "REQUIRED_LIBRARY_LAYERS",
     "LIBRARIES_DIRNAME",
     "HOOKS_DIRNAME",
     "PIPELINES_SUBPATH",

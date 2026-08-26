@@ -36,7 +36,9 @@ def _load(rel: str) -> ComponentConfig:
 
 
 def test_maintainer_role_exists() -> None:
-    role = _load("packages/ai-hats-library/src/ai_hats_library/usage/roles/maintainer/config.yaml")
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
+    )
     assert role.name == "maintainer"
 
 
@@ -52,11 +54,18 @@ def test_personal_workflow_trait_removed_from_library() -> None:
     assert not (LIBRARY / "usage/traits/personal-workflow").exists()
 
 
-def test_rule_core_vs_usage_split_exists() -> None:
-    rule_md = (LIBRARY / "core/rules/rule_core_vs_usage_split/rule.md").read_text()
-    assert "Core vs Usage" in rule_md
-    assert "universal" in rule_md.lower()
-    assert "project-specific" in rule_md.lower()
+def test_layer_decision_is_not_a_component() -> None:
+    """HATS-1834: the rule was deleted, not replaced by a skill.
+
+    The criterion is already always-on in the ``ai-hats-framework`` injection;
+    a component would have made a fourth copy of one four-line test.
+    """
+    assert not (LIBRARY / "core/rules/rule_core_vs_usage_split").exists()
+    assert not (LIBRARY / "ai-hats-dev/skills/library-layer-split").exists()
+
+    contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text()
+    for layer in ("**core**", "**usage**", "**ai-hats-dev**"):
+        assert layer in contributing, f"CONTRIBUTING must name the {layer} layer"
 
 
 @pytest.mark.parametrize(
@@ -64,7 +73,7 @@ def test_rule_core_vs_usage_split_exists() -> None:
     [
         "packages/ai-hats-library/src/ai_hats_library/core/skills/design-minimalism/SKILL.md",
         "packages/ai-hats-library/src/ai_hats_library/core/skills/predictive-accounting/SKILL.md",
-        "packages/ai-hats-library/src/ai_hats_library/usage/skills/doc-protocol/SKILL.md",
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/doc-protocol/SKILL.md",
     ],
 )
 def test_new_skill_exists_with_frontmatter(skill_rel: str) -> None:
@@ -78,7 +87,9 @@ def test_new_skill_exists_with_frontmatter(skill_rel: str) -> None:
 
 
 def test_maintainer_composition_has_expected_traits() -> None:
-    role = _load("packages/ai-hats-library/src/ai_hats_library/usage/roles/maintainer/config.yaml")
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
+    )
     # HATS-433: personal-workflow dropped — now layered via user-scope `--global`.
     expected = {
         "trait-base",
@@ -95,7 +106,9 @@ def test_maintainer_composition_has_expected_traits() -> None:
 
 
 def test_maintainer_injection_has_role_header() -> None:
-    role = _load("packages/ai-hats-library/src/ai_hats_library/usage/roles/maintainer/config.yaml")
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
+    )
     assert "AI-HATS MAINTAINER" in role.injection
 
 
@@ -133,42 +146,54 @@ def test_maintainer_injection_has_role_header() -> None:
 )
 def test_ai_hats_maintainer_injection_contains(needle: str) -> None:
     trait = _load(
-        "packages/ai-hats-library/src/ai_hats_library/usage/traits/ai-hats-maintainer/config.yaml"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
     )
     assert needle in trait.injection, f"missing in ai-hats-maintainer injection: {needle!r}"
 
 
 def test_ai_hats_maintainer_attaches_doc_protocol() -> None:
     trait = _load(
-        "packages/ai-hats-library/src/ai_hats_library/usage/traits/ai-hats-maintainer/config.yaml"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
     )
     assert "doc-protocol" in trait.composition.skills
 
 
-def test_ai_hats_maintainer_keeps_e2e_gate_rule() -> None:
+def test_e2e_gate_policy_folded_into_the_gate_skill() -> None:
+    """HATS-1834: the rule was absorbed by the skill that enforces it."""
     trait = _load(
-        "packages/ai-hats-library/src/ai_hats_library/usage/traits/ai-hats-maintainer/config.yaml"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
     )
-    assert "dev_rule_e2e_gate" in trait.composition.rules
+    assert "dev_rule_e2e_gate" not in trait.composition.rules
+    assert not (LIBRARY / "core/rules/dev_rule_e2e_gate").exists()
+
+    gate = (LIBRARY / "ai-hats-dev/skills/maintainer-quality-gate/SKILL.md").read_text()
+    assert "tests/e2e/" in gate and "@pytest.mark.integration" in gate
+
+    # The stub stays always-on: knowing the gate EXISTS must not wait on a trigger.
+    assert "### E2E gate" in trait.injection
+    assert "maintainer-quality-gate" in trait.injection
 
 
-# --- ai-hats-framework trait — injection only, rule lives on library-curator --
+# --- ai-hats-framework trait — injection only, no component behind it --------
 
 
-def test_ai_hats_framework_does_not_carry_core_vs_usage_rule() -> None:
-    """HATS-510 (B): ``rule_core_vs_usage_split`` ownership moved to the
-    ``library-curator`` trait (role-curator domain). ``ai-hats-framework``
-    keeps the framework-awareness *injection* but carries no formal
-    constraint — non-trivial library work hands off to role-curator."""
+def test_the_layer_split_is_carried_by_no_component() -> None:
+    """HATS-510 (B) then HATS-1834: ``ai-hats-framework`` keeps the
+    framework-awareness *injection* and carries no formal constraint. Neither
+    does anything else — the criterion is four lines of always-on injection, so
+    a rule or a skill behind it would only be a second copy."""
     framework = _load(
         "packages/ai-hats-library/src/ai_hats_library/core/traits/ai-hats-framework/config.yaml"
     )
-    assert "rule_core_vs_usage_split" not in framework.composition.rules
+    assert framework.composition.rules == []
+    assert framework.composition.skills == []
 
     curator = _load(
-        "packages/ai-hats-library/src/ai_hats_library/usage/traits/library-curator/config.yaml"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/library-curator/config.yaml"
     )
-    assert "rule_core_vs_usage_split" in curator.composition.rules
+    for carrier in ("rule_core_vs_usage_split", "library-layer-split"):
+        assert carrier not in curator.composition.rules
+        assert carrier not in curator.composition.skills
 
 
 def test_ai_hats_framework_injection_mentions_layered_library() -> None:
@@ -176,12 +201,13 @@ def test_ai_hats_framework_injection_mentions_layered_library() -> None:
         "packages/ai-hats-library/src/ai_hats_library/core/traits/ai-hats-framework/config.yaml"
     )
     inj = trait.injection
-    # HATS-1629: assert the layering, not the pre-packages `library/` spelling —
-    # pinning the literal is what let the retired path survive in the injection.
-    assert "ai_hats_library/" in inj
-    assert "/core/" in inj
-    assert "/usage/" in inj
+    # HATS-1629: assert the layering, not a path spelling — pinning the literal
+    # is what let a retired path survive here. HATS-1834: and no source path at
+    # all, since a consumer's library lives in site-packages, not the checkout.
+    for layer in ("`core/`", "`usage/`", "`ai-hats-dev/`"):
+        assert layer in inj, f"injection must name the {layer} layer"
     assert "universal" in inj.lower()
+    assert "packages/ai-hats-library" not in inj
 
 
 # --- personal-workflow trait — content lives in user-scope (HATS-433) -----

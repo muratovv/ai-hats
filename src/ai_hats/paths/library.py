@@ -29,6 +29,7 @@ from .. import env
 from .constants import (
     HOOKS_DIRNAME,
     LIBRARY_LAYERS,
+    REQUIRED_LIBRARY_LAYERS,
     LIBRARY_PKG,
     PIPELINES_SUBPATH,
 )
@@ -212,7 +213,7 @@ def builtin_library_root(
 
 
 def _importlib_library_layers() -> list[Path]:
-    """Resolve ``[core, usage]`` from the installed ``ai_hats_library`` package.
+    """Resolve the present ``LIBRARY_LAYERS`` from the installed library package.
 
     Falls back to an empty list when the package data is missing (sdist
     inspection in CI / broken install) — callers degrade gracefully.
@@ -226,11 +227,12 @@ def _importlib_library_layers() -> list[Path]:
 def builtin_library_layers(
     project_dir: Path | None = None, *, prefer_cwd: bool = False
 ) -> list[Path]:
-    """The builtin ``[core, usage]`` layers (core first = lowest priority).
+    """The builtin layers present under the root, lowest priority first.
 
-    Derived from :func:`builtin_library_root` (see it for ``prefer_cwd``); both
-    layers must exist under the resolved root, else we fall through to the
-    installed package (never a partial builtin).
+    Derived from :func:`builtin_library_root` (see it for ``prefer_cwd``). Every
+    REQUIRED layer must exist under the resolved root, else we fall through to
+    the installed package (never a partial builtin); an optional layer is
+    included when present and skipped when not (HATS-1834).
     """
     root = (
         builtin_library_root(project_dir, prefer_cwd=prefer_cwd)
@@ -239,9 +241,8 @@ def builtin_library_layers(
     )
     if root is None:
         return []
-    layers = [root / layer for layer in LIBRARY_LAYERS]
-    if all(p.is_dir() for p in layers):
-        return layers
+    if all((root / layer).is_dir() for layer in REQUIRED_LIBRARY_LAYERS):
+        return [root / layer for layer in LIBRARY_LAYERS if (root / layer).is_dir()]
     return _importlib_library_layers()
 
 

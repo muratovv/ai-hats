@@ -24,7 +24,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 py="${PYTHON:-python3}"
 [[ -x "$repo_root/.venv/bin/python3" ]] && py="$repo_root/.venv/bin/python3"
 libroot="$("$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"
-hook="${libroot}/usage/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
+hook="${libroot}/ai-hats-dev/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
 
 if [[ -z "$libroot" || ! -f "$hook" ]]; then
     echo "[run-e2e-gate] cannot resolve the e2e-master gate in the ai-hats library." >&2

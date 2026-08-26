@@ -578,8 +578,8 @@ ai-hats only as a **dev tool** (like an editor or linter). A published tool used
 edit data is not a build cycle — same as a compiler written in its own language.
 
 **`role-curator` is library content (self-hosting).** It lives at
-`usage/roles/role-curator/` inside the library — since the T18 extraction that
-path is `packages/ai-hats-library/src/ai_hats_library/usage/roles/role-curator/`
+`ai-hats-dev/roles/role-curator/` inside the library — since the T18 extraction that
+path is `packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/`
 — and composes `skill-engineer` +
 `library-curator` + `review-role` — all library content. So "we need ai-hats with
 role-curator" = the ai-hats *tool* + a library checkout (which *contains*

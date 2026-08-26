@@ -2,9 +2,9 @@ name: ai-hats-maintainer
 composition:
   traits: []
   rules:
-    - dev_rule_e2e_gate
-    # the injection cites this rule; without it the pointer is undeliverable.
-    - rule_core_vs_usage_split
+    # off trait-agent, onto the one trait whose roles touch these classes —
+    # nine other roles stopped paying always-on for integrator internals.
+    - rule_composition_value_contract
   skills:
     - doc-protocol
 injection: |
@@ -14,18 +14,11 @@ injection: |
   install/launcher flow, library content, docs. Discipline beyond the
   generic agent baseline:
 
-  ### E2E gate (see rule `dev_rule_e2e_gate`)
-  If your change touches code that runs **outside the Python process**, the
-  plan MUST name the e2e test(s) you will add under `tests/e2e/` (real bash +
-  real pip + real `ai-hats` binary, `@pytest.mark.integration`). That surface
-  is `src/ai_hats/cli/`, `scripts/*.sh`, `_bootstrap.py`, `cli/maintenance.py`,
-  `[project.scripts]`, and **every installed hook** — `hooks/` and
-  `git_hooks/` alike, the highest blast radius in the repo, whose test must
-  drive the composed chain via `tests/e2e/_helpers/hook_chain.py`. A path not
-  in that list crossing the same boundary triggers the gate too.
-  Pipeline-integration tests and in-process `CliRunner` tests do NOT satisfy
-  this gate. Reviewer rejects `done` if the named test is missing or doesn't
-  fail-under-revert.
+  ### E2E gate
+  A change to code running **outside the Python process** — the CLI, a
+  `scripts/*.sh`, the install/venv flow, any installed hook — owes an e2e test
+  named in the plan by path. Expand skill **maintainer-quality-gate** for the
+  full trigger surface and what counts; it is a `done` gate, not advice.
 
   ### Branches and commits
   - Branch names: `task/hats-NNN` for tracked work, `fix/<slug>` and
@@ -117,14 +110,12 @@ injection: |
     push an annotated tag, create a GitHub Release with the CHANGELOG
     section as body.
 
-  ### Library split (see rule `rule_core_vs_usage_split` + trait `ai-hats-framework`)
-  - New component → universal vs project-specific question FIRST.
-  - Universal → the library's `core/`. Project-specific → `core/` rule (if
-    reusable concept) + dedicated `usage/` trait + role wiring.
+  ### Library split (trait `ai-hats-framework` states the three layers)
   - Never attach a component whose trigger surface names this repo to a trait
     under `core/` — any component type, any core trait, not just a rule on
     `trait-agent`/`trait-base`. It pollutes universal traits with narrow
     concerns that other ai-hats consumers then inherit.
+  - Placing a NEW component is `role-curator`'s call, not yours — hand it off.
 
   ### Reflexive loop (map: `docs/reflect.md`)
   The framework audits its own sessions. These components EXIST — name them,
@@ -154,5 +145,5 @@ injection: |
 
   ### Anti-patterns to refuse
   - **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (There is a consolidation precedent.)
-  - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see `dev_rule_e2e_gate`).
+  - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see skill `maintainer-quality-gate`).
   - **HYP-as-technical-risk**: HYP is for agent-behaviour hypotheses. Code / migration / harness risks belong in `rack transition <FOLLOW_UP_ID> --log "…"`, not in a new HYP (see `rule_backlog_discipline §5`).

@@ -92,8 +92,21 @@ class Finding:
 
 
 def library_roots(root: Path) -> list[Path]:
+    """The library root plus every composition layer under it.
+
+    Layers are DISCOVERED, not listed: a layer this script had to be told about
+    is a layer it silently never scans until someone remembers (HATS-1834). A
+    layer is any child dir holding at least one component bucket.
+    """
     lib = root / LIBRARY_RELPATH
-    return [p for p in (lib, lib / "core", lib / "usage") if p.is_dir()]
+    if not lib.is_dir():
+        return []
+    layers = sorted(
+        child
+        for child in lib.iterdir()
+        if child.is_dir() and any((child / b).is_dir() for b in COMPONENT_DIRS)
+    )
+    return [lib, *layers]
 
 
 def tracked_top_level(root: Path) -> frozenset[str]:

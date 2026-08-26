@@ -55,7 +55,7 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 
 **New artifacts**
 
-- `library/core/rules/rule_composition_value_contract/` — agent-facing reminder; attached to `trait-agent` so the rule body materializes in every agent session prompt (~600-char budget).
+- `library/ai-hats-dev/rules/rule_composition_value_contract/` — agent-facing reminder. Attached to `trait-agent` when this ADR was written, so it materialized in *every* agent session prompt; HATS-1834 moved it onto the `ai-hats-maintainer` trait, since the classes it names are integrator internals that 9 unrelated roles were paying always-on for.
 - `tests/test_composer_immutable.py` — D1 invariants.
 - `tests/test_wraprunner_signature.py` — D2 invariants.
 - `src/ai_hats/pipeline/tests/test_funnel_value_contract.py` — D3 invariant. (Filed under `tests/pipeline/`; moved inside the area by HATS-1783, ADR-0026 D5.)

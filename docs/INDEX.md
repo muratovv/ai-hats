@@ -71,5 +71,5 @@ When adding, removing, or renaming a file under `docs/`:
    [`pre-commit-docs-index.sh`](../packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh)
    hook blocks the commit otherwise.
 
-See also: [doc-protocol](../packages/ai-hats-library/src/ai_hats_library/usage/skills/doc-protocol/SKILL.md) skill
+See also: [doc-protocol](../packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/doc-protocol/SKILL.md) skill
 for the full pre-commit verification checklist for doc tasks.

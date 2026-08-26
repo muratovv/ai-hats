@@ -62,7 +62,7 @@ composition:
 
 Пример не гипотетический — у каждой из трёх форм есть носитель в библиотеке.
 Консент-only строки живут на `core/traits/trait-agent/config.yaml`, совмещённая
-строка — на `usage/roles/maintainer/config.yaml` (`done-gate.sh` на
+строка — на `ai-hats-dev/roles/maintainer/config.yaml` (`done-gate.sh` на
 `review->done`, `consent: true` рядом с `run:`). Совмещённую написали
 именно потому, что довод «строка несёт `run`, `consent` или оба» опирался на
 форму, которой в библиотеке не существовало: решение супервизора по развилке Q3
@@ -90,7 +90,7 @@ composition:
 карточка добавила строки `apps` трейту `trait-agent` — и это ровно те
 консент-only строки, ради которых `run:` и стал необязательным. Проверяется
 перебором: `grep -rln '^  apps:' --include=config.yaml packages/ai-hats-library/src/ai_hats_library` даёт
-`core/traits/trait-agent` и `usage/roles/maintainer`, и никого больше.
+`core/traits/trait-agent` и `ai-hats-dev/roles/maintainer`, и никого больше.
 
 **D1b. Ключ трёхзначный, разрешение — по точкам.** Отсутствие ключа не равно
 `false`: иначе каждая гейт-строка молча гасила бы консент своего трейта.

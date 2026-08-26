@@ -27,10 +27,13 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL = "maintainer-quality-gate"
-SKILL_SRC = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library" / "usage" / "skills" / SKILL
+SKILL_SRC = (
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library" / "ai-hats-dev" / "skills" / SKILL
+)
 #: The role that carries the shipped binding — read, never edited, by this file.
 MAINTAINER_ROLE = (
-    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/usage/roles/maintainer/config.yaml"
+    REPO_ROOT
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
 )
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
@@ -326,7 +329,9 @@ def test_the_maintainer_role_is_ai_hats_specific_not_generic():
     """The gate refuses any project with no ``done-gate`` stage, so the role that
     carries it must be one only this codebase wears."""
     text = MAINTAINER_ROLE.read_text(encoding="utf-8")
-    assert "/usage/roles/" in MAINTAINER_ROLE.as_posix(), "usage/ is the project-specific layer"
+    assert "/ai-hats-dev/roles/" in MAINTAINER_ROLE.as_posix(), (
+        "ai-hats-dev/ is the layer for what only this repository composes"
+    )
     assert "ai-hats-maintainer" in text
     assert "ai-hats codebase" in text
 

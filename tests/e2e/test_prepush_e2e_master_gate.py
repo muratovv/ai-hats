@@ -49,7 +49,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/maintainer-quality-gate"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
     / "git_hooks/pre-push-e2e-master.sh"
 )
 WRAPPER = REPO_ROOT / "scripts" / "run-e2e-gate.sh"
@@ -889,7 +889,9 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
     # so this pins the delegation contract without touching the real library —
     # and without any chance of launching the real suite.
     libroot = tmp_path / "lib"
-    recorder = libroot / "usage/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
+    recorder = (
+        libroot / "ai-hats-dev/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
+    )
     recorder.parent.mkdir(parents=True)
     recorder.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{repo}/hook_argv"\nexit 0\n')
     recorder.chmod(0o755)
