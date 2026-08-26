@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**268 of 268 files catalogued — 277 flows.**
+**269 of 269 files catalogued — 279 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3676,6 +3676,30 @@ as a claim to check, not as evidence.
 
 - **expect** — worktree is cut from base_branch and changes are merged into merge_target on done
 - **why** — fork repository setups require cutting from base branch while landing work on merge target
+
+## `test_wt_gate_extensions_source.py`
+
+*pins HATS-1829*
+
+- **flow** — a maintainer widens the worktree gate by adding an extension to `code_extensions.json` inside the project's own copy of the skill
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r maintainer --no-wizard
+  ```
+
+- **expect** — the file the composed PreToolUse chain allowed before that edit is denied after it, with nothing else changed
+- **why** — the JSON is the documented knob, and the only road it reaches the gate by is the copy the session materializes beside the hook — the second source path the script carried pointed at a `library/` prefix no layout has produced since the monorepo move, so nothing tested whether the live road works
+
+- **flow** — a maintainer runs a session whose materialized skill lost that data file
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r maintainer --no-wizard
+  ```
+
+- **expect** — the gate still denies a .py edit in the main checkout, and the bypass journal says the verdict came from the embedded defaults
+- **why** — falling through to `_DEFAULT_LANGS` in silence is what kept a dead source path looking alive for months
 
 ## `test_wt_gate_hook.py`
 

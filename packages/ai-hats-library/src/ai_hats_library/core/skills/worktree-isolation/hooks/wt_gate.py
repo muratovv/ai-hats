@@ -34,13 +34,10 @@ except ImportError:  # helper absent -> say so; never skip quietly
 _KILL_SWITCH = "AI_HATS_WT_GATE_OFF"
 _EXTS_ENV = "AI_HATS_WT_GATE_EXTS"
 _EXTS_FILENAME = "code_extensions.json"
-# Canonical skill-source location of the extensions file, relative to a git repo
-# root — lets the flattened ``library/hooks/`` copy still pick up project edits.
-_SKILL_EXTS_RELPATH = "library/core/skills/worktree-isolation/hooks/" + _EXTS_FILENAME
 
-# Embedded mirror of ``code_extensions.json`` — the production fallback used once
-# the engine flattens this script away from its sibling. Keep in sync with the
-# JSON (asserted by tests/test_wt_gate_wiring.py).
+# Embedded mirror of ``code_extensions.json`` — the last resort when the file
+# shipped beside this script is unreadable. Keep in sync with the JSON (asserted
+# by tests/test_wt_gate_wiring.py).
 _DEFAULT_LANGS = {
     "python": (".py", ".pyi", ".pyx"),
     "shell": (".sh", ".bash", ".zsh"),
@@ -91,19 +88,25 @@ def _read_exts_json(path: Path) -> frozenset[str] | None:
     return frozenset(exts) or None
 
 
-def _load_extensions(repo_root: Path | None) -> frozenset[str]:
-    """Triggering extensions, first resolvable source wins (see module docstring)."""
+def _load_extensions() -> frozenset[str]:
+    """Triggering extensions: the env override, else the JSON shipped beside this
+    script — the session mirrors a skill whole, so that copy is the one the
+    project's own override produced (HATS-1268). Falling back to the embedded
+    defaults is a degraded verdict, so it is recorded (HATS-1829)."""
     candidates: list[Path] = []
     env = os.environ.get(_EXTS_ENV)
     if env:
         candidates.append(Path(env).expanduser())
     candidates.append(Path(__file__).resolve().parent / _EXTS_FILENAME)
-    if repo_root is not None:
-        candidates.append(repo_root / _SKILL_EXTS_RELPATH)
     for path in candidates:
         exts = _read_exts_json(path)
         if exts:
             return exts
+    journal_bypass(
+        "degraded",
+        f"no readable {_EXTS_FILENAME} — deciding on _DEFAULT_LANGS",
+        hook="wt_gate.py",
+    )
     return frozenset(e for exts in _DEFAULT_LANGS.values() for e in exts)
 
 
@@ -119,8 +122,8 @@ def _nearest_existing_dir(file_path: str) -> str | None:
     return str(d) if d.exists() else None
 
 
-def _git_info(directory: str) -> tuple[str, Path | None, Path | None]:
-    """Classify `directory` as ('main'|'linked'|'nongit', repo_toplevel, common_dir).
+def _git_info(directory: str) -> tuple[str, Path | None]:
+    """Classify `directory` as ('main'|'linked'|'nongit', common_dir).
 
     One ``git rev-parse`` (HATS-490): 'main' iff a git work tree whose
     --git-dir == --git-common-dir; 'linked' iff they differ; 'nongit' on any
@@ -134,7 +137,6 @@ def _git_info(directory: str) -> tuple[str, Path | None, Path | None]:
                 "git",
                 "rev-parse",
                 "--path-format=absolute",
-                "--show-toplevel",
                 "--git-dir",
                 "--git-common-dir",
             ],
@@ -145,14 +147,14 @@ def _git_info(directory: str) -> tuple[str, Path | None, Path | None]:
             timeout=5,
         )
     except (subprocess.SubprocessError, OSError):
-        return ("nongit", None, None)
+        return ("nongit", None)
     lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-    if len(lines) != 3:
-        return ("nongit", None, None)
-    toplevel, git_dir, common_dir = lines
+    if len(lines) != 2:
+        return ("nongit", None)
+    git_dir, common_dir = lines
     common = Path(common_dir).resolve()
     loc = "linked" if Path(git_dir).resolve() != common else "main"
-    return (loc, Path(toplevel), common)
+    return (loc, common)
 
 
 def _is_git_ignored(file_path: str, directory: str) -> bool:
@@ -197,7 +199,7 @@ def main() -> int:
     directory = _nearest_existing_dir(file_path)
     if directory is None:
         return 0  # unresolvable path -> silent
-    location, repo_root, file_common = _git_info(directory)
+    location, file_common = _git_info(directory)
     if location != "main":
         return 0  # non-git path or already inside a linked worktree -> silent
 
@@ -206,11 +208,11 @@ def main() -> int:
     # --git-common-dir (shared main+worktrees); unresolved cwd falls back to old deny.
     cwd = (payload.get("cwd") or "").strip()
     if cwd:
-        _, _, session_common = _git_info(cwd)
+        _, session_common = _git_info(cwd)
         if session_common is not None and file_common != session_common:
             return 0  # file belongs to another repo than the session -> silent
 
-    if Path(file_path).suffix not in _load_extensions(repo_root):
+    if Path(file_path).suffix not in _load_extensions():
         return 0  # docs / non-triggering file -> silent
 
     if _is_git_ignored(file_path, directory):
