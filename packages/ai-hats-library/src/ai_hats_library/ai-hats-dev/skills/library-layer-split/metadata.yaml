@@ -1,0 +1,5 @@
+name: library-layer-split
+license: MIT
+description: Decide which library layer a component belongs to — core, usage, or ai-hats-dev. Use when creating, moving, or reviewing a rule, skill, trait or role, or when a component's trigger surface stops matching the layer it sits in.
+author: ai-hats
+tags: [framework, component-lifecycle, library-split]

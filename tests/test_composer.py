@@ -635,7 +635,11 @@ from pathlib import Path  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _LIB_BASE = _REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
-_LIB_LAYERS = [_LIB_BASE / "core", _LIB_BASE / "usage"]
+from ai_hats.paths.constants import LIBRARY_LAYERS  # noqa: E402
+
+# Engine order, never a hand-kept subset — a missing layer here reads as
+# "Role not found" rather than as a stale fixture (HATS-1834).
+_LIB_LAYERS = [_LIB_BASE / layer for layer in LIBRARY_LAYERS]
 
 
 def _real_composer() -> Composer:

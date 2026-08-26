@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .models import ComponentType
+from .paths.constants import LIBRARY_LAYERS
 
 if TYPE_CHECKING:
     from .resolver import LibraryResolver
@@ -33,15 +34,13 @@ def _layer_of(role_dir: Path) -> str:
     """Classify a resolved role dir by its library layer.
 
     ``role_dir`` is ``<libroot>/roles/<name>``; ``<libroot>`` is the
-    last-wins library path the resolver matched. The builtin layers end in
-    ``.../library/core`` and ``.../library/usage``; everything else
-    (``~/.ai-hats``, ``<project>/libraries``) is user/project scope.
+    last-wins library path the resolver matched. A builtin layer ends in its
+    own name (``.../library/core``, ``.../library/ai-hats-dev``); everything
+    else (``~/.ai-hats``, ``<project>/libraries``) is user/project scope.
     """
     libroot_name = role_dir.parent.parent.name
-    if libroot_name == "core":
-        return "core"
-    if libroot_name == "usage":
-        return "usage"
+    if libroot_name in LIBRARY_LAYERS:
+        return libroot_name
     return "user"
 
 

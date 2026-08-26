@@ -29,6 +29,7 @@ from ai_hats.paths import (
     core_pipeline_path,
 )
 from ai_hats.paths import library as libmod
+from ai_hats.paths.constants import LIBRARY_LAYERS
 
 
 def _populate_lib(lib: Path) -> Path:
@@ -167,7 +168,7 @@ def test_downstream_cwd_falls_back_to_importlib(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     layers = builtin_library_layers()
     assert layers, "expected importlib fallback to yield the installed library"
-    assert all(p.name in ("core", "usage") for p in layers)
+    assert all(p.name in LIBRARY_LAYERS for p in layers)
     assert tmp_path not in {p.parent.parent for p in layers}
 
 

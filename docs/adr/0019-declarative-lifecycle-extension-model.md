@@ -152,7 +152,7 @@ One new field on `Composition`; **no new `SKILL.md` frontmatter**:
 ```yaml
 # Illustrative — a trait in a user-scope library. The skill it binds lives
 # outside this repo, so no in-tree path is shown; the one binding this
-# repository ships is in `usage/roles/maintainer/config.yaml` (HATS-1540).
+# repository ships is in `ai-hats-dev/roles/maintainer/config.yaml` (HATS-1540).
 name: hunk-review-trait
 composition:
   skills: [hunk-review-comments]

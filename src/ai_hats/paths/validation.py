@@ -14,15 +14,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path, PurePosixPath
 
-from .constants import LIBRARY_LAYERS, PIPELINES_SUBPATH
+from .constants import PIPELINES_SUBPATH, REQUIRED_LIBRARY_LAYERS
 
 # What a root must SERVE, not merely contain: `core/`+`usage/` alone is satisfied
 # by a __pycache__ shadow of a half-removed worktree (HATS-1157). `hooks/` stays
 # out — a source tree without it is legal (callers degrade on None).
 _LIBRARY_ROOT_MANIFEST: tuple[tuple[str, ...], ...] = (
-    *((layer,) for layer in LIBRARY_LAYERS),
+    *((layer,) for layer in REQUIRED_LIBRARY_LAYERS),
     PIPELINES_SUBPATH,
 )
+
+_MANIFEST_HUMAN = " · ".join("/".join(parts) + "/" for parts in _LIBRARY_ROOT_MANIFEST)
 
 
 def is_library_root(root: Path) -> bool:
@@ -52,7 +54,7 @@ def _validated_library_root(raw: str | None) -> Path | None:
         return root
     print(
         f"[ai-hats] AI_HATS_LIBRARY_ROOT={raw!r} does not hold a complete "
-        "builtin library (core/ · usage/ · core/pipelines/); "
+        f"builtin library ({_MANIFEST_HUMAN}); "
         "ignoring it and resolving the builtin library normally.",
         file=sys.stderr,
     )

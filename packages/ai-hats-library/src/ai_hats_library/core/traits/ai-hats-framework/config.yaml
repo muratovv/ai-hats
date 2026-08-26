@@ -1,28 +1,31 @@
 name: ai-hats-framework
 composition:
   traits: []
-  # rule_core_vs_usage_split is owned by `library-curator` trait (role-curator
-  # domain). Roles that compose ai-hats-framework get framework-awareness
-  # injection but no formal constraint — non-trivial library work hands off
-  # to role-curator.
+  # The decision tree lives in the `library-layer-split` skill, owned by the
+  # role-curator domain (HATS-1834; was rule_core_vs_usage_split). Roles that
+  # compose this trait get layer-awareness always-on and no formal constraint —
+  # non-trivial library work hands off to role-curator.
   rules: []
   skills: []
 injection: |
   ## AI-HATS FRAMEWORK
 
-  This project (or its tooling) is composed via ai-hats. The library ships as a
-  package — `packages/ai-hats-library/src/ai_hats_library/` (below `<LIB>`) — and
-  is layered:
+  This project (or its tooling) is composed via ai-hats. The shipped library is
+  layered, lowest priority first — a later layer overrides a name from an
+  earlier one:
 
-  - **`<LIB>/core/`** — engine fundament. System roles, base traits, global
-    rules, foundational skills, pipelines. Universal across consumers.
-  - **`<LIB>/usage/`** — opinionated content catalog. Domain roles, dev::/env::
-    traits, opt-in skills. Project- or domain-specific.
+  - **`core/`** — engine fundament. System roles, base traits, global rules,
+    foundational skills, pipelines. Universal; without it nothing runs.
+  - **`usage/`** — opinionated content catalog. Domain roles, `dev::` / `env::`
+    traits, opt-in skills. Take what fits, ignore the rest.
+  - **`ai-hats-dev/`** — the layer the ai-hats repository wears to develop
+    itself. Present only in that checkout; nothing here is meant for a
+    consuming project.
 
-  When creating a new rule / skill / trait, first ask: **universal or
-  project-specific?** Universal → `core/` (attach to a base trait).
-  Project-specific → `core/` for the rule (if the concept is reusable across
-  projects) + dedicated `usage/` trait that bundles it + role wiring in
-  `usage/roles/`. The formal decision tree (`rule_core_vs_usage_split`) and
-  ownership of library curation live with the `role-curator` role — hand off
+  Above all three sit your own overrides (`~/.ai-hats/`, a project's
+  `libraries/`), which win by the same last-wins rule.
+
+  When creating a rule / skill / trait, the layer is a **plan-stage** answer,
+  not a post-hoc one: expand skill `library-layer-split` for the decision tree.
+  Ownership of library curation lives with the `role-curator` role — hand off
   non-trivial library changes there.

@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL_SRC = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library"
-    / "usage"
+    / "ai-hats-dev"
     / "skills"
     / "maintainer-quality-gate"
 )

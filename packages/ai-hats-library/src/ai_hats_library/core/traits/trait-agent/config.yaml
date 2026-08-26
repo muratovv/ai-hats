@@ -4,7 +4,9 @@ composition:
   rules:
     - rule_backlog_discipline
     - rule_pause_before_shared_state_write
-    - rule_composition_value_contract
+    # HATS-1834: rule_composition_value_contract left here for the
+    # `ai-hats-maintainer` trait — it names CompositionResult / WrapRunner, and
+    # a base trait made 9 unrelated roles pay always-on for integrator internals.
     - rule_verify_authored_claims
     - dev_rule_tool_call_hygiene
   skills:

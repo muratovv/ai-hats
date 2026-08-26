@@ -283,11 +283,11 @@ git gates are NOT re-checked at session start (HATS-1337: the project is written
 at install time only), and they survive `self update` by content because the
 gate set is resolved fresh on every commit.
 
-## Library structure: core vs usage
+## Library structure: the three layers
 
-Built-in content (roles, traits, rules, skills, pipelines) lives at the repo
-root in `library/`, split into two layers shipped together inside the
-`ai_hats.library` Python sub-package:
+Built-in content (roles, traits, rules, skills, pipelines) ships inside the
+`ai_hats_library` data package, split into three layers loaded together —
+`core` → `usage` → `ai-hats-dev`, later wins a shared name:
 
 - **`library/core/`** — engine fundament. System roles (`session-reviewer`,
   `role-auditor`, …), base traits (`trait-base`, `trait-agent`,
@@ -299,19 +299,29 @@ root in `library/`, split into two layers shipped together inside the
 - **`library/usage/`** — curated content catalog. Opinionated roles
   (`assistant`, `architect`, `sre`, `go-dev`, …), domain traits
   (`trait-se-mindset`, `dev::*`, `env::*`), opt-in skills (golang stack,
-  terraform, observability, system-design, …).
+  terraform, observability, system-design, component authoring, …).
+- **`library/ai-hats-dev/`** — what this repository wears to develop itself:
+  the `maintainer` and `role-curator` roles, their traits, and the gates wired
+  to this repo's CI. A consuming project has no use for any of it.
 
-**Where does a new component go?** Decide by:
+**Where does a new component go?** Decide by, in order:
 
 1. Is it referenced by name in `src/ai_hats/` code, or pulled in transitively
    by a core trait (`trait-base`, `trait-agent`, `trait-analyst-base`,
    `base-judge`, `base-auditor`, `trait-reflect-mode`)? → **core**.
 2. Does removing it break `ai-hats init` / `ai-hats self init` / a reflect
    pipeline? → **core**.
-3. Otherwise — **usage**.
+3. Would a consuming project ever compose it? → **usage**.
+4. Otherwise only this repository composes it — its trigger surface names
+   ai-hats' own source, or it exists to develop ai-hats → **ai-hats-dev**.
 
-A skill that *drives an engine tool* still goes in the **library** (core or
-usage) — never inside the engine package. It declares the tool as a dependency
+The layer is a property of the component, not of the bundle that composes it:
+resolution is name-based across all roots, so a trait in `ai-hats-dev/`
+composing a skill in `usage/` is ordinary. The agent-facing form of this
+decision is the `library-layer-split` skill.
+
+A skill that *drives an engine tool* still goes in the **library** (any layer)
+— never inside the engine package. It declares the tool as a dependency
 in its `SKILL.md` frontmatter (`ai_hats.requires.cli`), and the engine ships a
 console entry so the probe resolves on `PATH`. `hatrack` is the example:
 it lives in `core/skills/` and declares `requires.cli: ai-hats-rack`; the
@@ -319,7 +329,7 @@ it lives in `core/skills/` and declares `requires.cli: ai-hats-rack`; the
 (ADR-0016). The dependency arrow is skill → tool, so the skill iterates without
 forcing an engine release.
 
-**Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (auto-injected via `trait-agent`) is the agent-facing short form.
+**Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (injected via the `ai-hats-maintainer` trait since HATS-1834; it rode `trait-agent` until then) is the agent-facing short form.
 
 For end-user docs on extending the library (worked examples for roles /
 traits / rules / skills, override precedence, replacing a system role) see

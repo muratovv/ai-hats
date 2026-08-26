@@ -2,14 +2,17 @@
 
 Add your own roles, traits, rules, skills, and pipelines to ai-hats — without forking the package. For `ai-hats.yaml` overlay tweaks (add a skill to an existing role, change provider, etc.) see [1]. For implementing a custom pipeline step in Python, see [2] §1.
 
-## The shipped library: core vs usage
+## The shipped library: three layers
 
-When you install ai-hats, two layers ship as built-in content:
+When you install ai-hats, three layers ship as built-in content:
 
 - **`library/core/`** — engine fundament. System roles (`initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`hatrack`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
-- **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `dev-python`, `dev-web`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::web`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and ~55 optional skills (golang, terraform, ansible, observability, system-design, …).
+- **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::web`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and the optional skills (golang, terraform, ansible, observability, system-design, component authoring, …).
+- **`library/ai-hats-dev/`** — the layer the ai-hats repository wears to develop *itself*: the `maintainer` and `role-curator` roles, their traits, and the gates wired to this repo's CI. Nothing here is meant for a consuming project; it ships today only because it has not yet been unbundled.
 
-The split is informational — both layers are loaded at runtime. You can override either from your own library path.
+The split is informational — all three layers are loaded at runtime, `core` → `usage` → `ai-hats-dev`, and a later layer wins a name it shares with an earlier one. You can override any of them from your own library path.
+
+Deciding which layer a *new* component belongs to is the `library-layer-split` skill's job.
 
 ## Override points (last-wins precedence)
 
@@ -19,12 +22,13 @@ When resolving a component by name, ai-hats walks these paths in order; **later 
 | - | -------------------------------------------- | ------------------- |
 | 1 | `<pkg>/ai_hats_library/core/`                | built-in (shipped)  |
 | 2 | `<pkg>/ai_hats_library/usage/`               | built-in (shipped)  |
-| 3 | `ai_hats.skills` entry-point packages        | out-of-tree plugins |
-| 4 | `~/.ai-hats/`                                | user-global         |
-| 5 | each path in `~/.ai-hats/library_paths.yaml` | user-global config  |
-| 6 | each path in `ai-hats.yaml: library_paths:`  | project-config      |
-| 7 | `<project>/libraries/`                       | project-local       |
-| 8 | CLI `--library-path` extras (rarely used)    | session-scoped      |
+| 3 | `<pkg>/ai_hats_library/ai-hats-dev/`         | built-in (shipped)  |
+| 4 | `ai_hats.skills` entry-point packages        | out-of-tree plugins |
+| 5 | `~/.ai-hats/`                                | user-global         |
+| 6 | each path in `~/.ai-hats/library_paths.yaml` | user-global config  |
+| 7 | each path in `ai-hats.yaml: library_paths:`  | project-config      |
+| 8 | `<project>/libraries/`                       | project-local       |
+| 9 | CLI `--library-path` extras (rarely used)    | session-scoped      |
 
 So a `~/.ai-hats/roles/my-role/` is visible to every project on your machine; a `<project>/libraries/roles/my-role/` is visible only to that project; both override anything with the same name in the built-in layers.
 
@@ -566,7 +570,7 @@ libraries/
 ```
 
 The `--prompt <name>` flag resolves `initial_injections/<name>.md` across the
-**full `library_paths` chain** (built-in core → usage → entry-point packages → `~/.ai-hats/` → `~/.ai-hats/library_paths.yaml` → `cfg.library_paths` → `<project>/libraries/`), last-wins. So your plugin's
+**full `library_paths` chain** (built-in core → usage → ai-hats-dev → entry-point packages → `~/.ai-hats/` → `~/.ai-hats/library_paths.yaml` → `cfg.library_paths` → `<project>/libraries/`), last-wins. So your plugin's
 prompts are discoverable by short name without any package fork (HATS-445).
 
 **2. Shell wrapper** (in `~/.zshrc` or `~/.bashrc`):
@@ -744,7 +748,7 @@ turn to answer a question that arises only while verifying a change.
   `AI_HATS_LIBRARY_ROOT` → cwd source-checkout **only under `prefer_cwd`, which
   read-only composition passes and writers never do (HATS-1501)** →
   `project_dir` → `importlib.resources`. Full layer order (lowest → highest):
-  builtin/core, builtin/usage, `~/.ai-hats`, project config-specified,
+  builtin/core, builtin/usage, builtin/ai-hats-dev, `~/.ai-hats`, project config-specified,
   project-local `libraries/`, explicit extras — first-wins when searching for a
   component, last-wins when a layer overrides one (`build_library_paths`).
 

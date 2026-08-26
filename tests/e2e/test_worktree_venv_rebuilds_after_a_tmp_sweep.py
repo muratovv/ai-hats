@@ -29,7 +29,7 @@ pytestmark = pytest.mark.integration
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/usage/skills"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills"
     / "worktree-venv/hooks/provision-venv.sh"
 )
 

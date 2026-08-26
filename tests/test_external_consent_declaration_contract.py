@@ -117,7 +117,7 @@ def test_the_maintainer_gate_does_not_own_consent():
     import yaml
 
     config = yaml.safe_load(
-        (_LIBRARY / "usage/roles/maintainer/config.yaml").read_text(encoding="utf-8")
+        (_LIBRARY / "ai-hats-dev/roles/maintainer/config.yaml").read_text(encoding="utf-8")
     )
     (gate,) = config["composition"]["apps"]["rack"]["tasks"]
 
@@ -152,7 +152,7 @@ def test_the_shipped_question_rides_every_road_into_done():
     assert question["consent"] is True
 
     gate = yaml.safe_load(
-        (_LIBRARY / "usage/roles/maintainer/config.yaml").read_text(encoding="utf-8")
+        (_LIBRARY / "ai-hats-dev/roles/maintainer/config.yaml").read_text(encoding="utf-8")
     )
     (gate_row,) = gate["composition"]["apps"]["rack"]["tasks"]
     assert gate_row["at"] == ["->done"], "the gate and the question must cover one set"

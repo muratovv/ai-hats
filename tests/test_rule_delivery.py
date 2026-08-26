@@ -21,11 +21,13 @@ from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.resolver import LibraryResolver
 from ai_hats.rule_delivery import find_dangling_rule_pointers
 
+from ai_hats.paths.constants import LIBRARY_LAYERS  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LIB_LAYERS = [
-    REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core",
-    REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage",
-]
+_LIB_ROOT = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+# Every shipped layer, in engine order — a hand-kept subset here silently
+# resolves a role to "not found" the day a layer is added.
+LIB_LAYERS = [_LIB_ROOT / layer for layer in LIBRARY_LAYERS]
 PROVIDERS = [ClaudeSurface, AgySurface]
 
 

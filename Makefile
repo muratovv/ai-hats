@@ -81,7 +81,7 @@ e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 define run_gate
 @py="$(PYTHON)"; [ -x "$(CURDIR)/.venv/bin/python3" ] && py="$(CURDIR)/.venv/bin/python3"; \
 libroot="$$("$$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"; \
-hook="$$libroot/usage/skills/maintainer-quality-gate/hooks/$(1).sh"; \
+hook="$$libroot/ai-hats-dev/skills/maintainer-quality-gate/hooks/$(1).sh"; \
 if [ -z "$$libroot" ] || [ ! -f "$$hook" ]; then \
 	printf "cannot resolve the $(1) in the ai-hats library — install it here first: ai-hats self init\n" >&2; \
 	exit 1; \
