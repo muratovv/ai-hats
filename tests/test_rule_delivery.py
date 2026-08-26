@@ -141,12 +141,12 @@ def test_g2_catches_an_undelivered_pointer(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# HATS-1511 / HATS-1515: delivery metadata & warnings
+# HATS-1836: a leftover rule metadata.yaml is inert
 # --------------------------------------------------------------------------- #
 
 
-def test_rule_with_metadata_delivery_always_on_included_in_prompt(tmp_path):
-    """HATS-1511 / HATS-1515: A rule declaring delivery: always_on in metadata.yaml is delivered in ## RULES."""
+def test_legacy_delivery_key_in_sidecar_is_inert(tmp_path):
+    """An external library's leftover `delivery:` key changes nothing about delivery."""
     rule_dir = tmp_path / "custom_rule"
     rule_dir.mkdir()
     (rule_dir / "metadata.yaml").write_text("name: custom_rule\ndelivery: always_on\n")
@@ -171,42 +171,12 @@ def test_rule_with_metadata_delivery_always_on_included_in_prompt(tmp_path):
     assert "Body of custom rule." in prompt
 
 
-def test_rule_with_unrecognized_delivery_value_warns_and_delivers(tmp_path, caplog):
-    """HATS-1515: Unrecognized delivery metadata logs warning, but body is still delivered."""
-    import logging
-
-    rule_dir = tmp_path / "unrecognized_rule"
-    rule_dir.mkdir()
-    (rule_dir / "metadata.yaml").write_text("name: unrecognized_rule\ndelivery: summarized\n")
-    (rule_dir / "rule.md").write_text("Body of unrecognized rule.\n")
-
-    rule = ResolvedComponent(
-        name="unrecognized_rule",
-        component_type=ComponentKind.RULE,
-        source_path=rule_dir,
-    )
-    result = CompositionResult(
-        name="unrecognized_delivery_test",
-        priorities=[],
-        rules=[rule],
-        skills=[],
-        injections=[],
-    )
-
-    with caplog.at_level(logging.WARNING):
-        prompt = ClaudeProvider().build_system_prompt(result)
-
-    assert "### unrecognized_rule" in prompt
-    assert "rule 'unrecognized_rule': unrecognized delivery value 'summarized'" in caplog.text
-
-
-def test_rule_always_on_with_empty_body_warns(tmp_path, caplog):
+def test_rule_with_empty_body_warns(tmp_path, caplog):
     """HATS-1511: Rule with empty/missing body issues warning."""
     import logging
 
     rule_dir = tmp_path / "empty_rule"
     rule_dir.mkdir()
-    (rule_dir / "metadata.yaml").write_text("name: empty_rule\ndelivery: always_on\n")
     (rule_dir / "rule.md").write_text("")
 
     rule = ResolvedComponent(
@@ -229,10 +199,8 @@ def test_rule_always_on_with_empty_body_warns(tmp_path, caplog):
     assert "rule 'empty_rule': body is empty or unreadable" in caplog.text
 
 
-def test_malformed_metadata_yaml_does_not_crash_and_warns(tmp_path, caplog):
-    """HATS-1511: Unreadable/malformed metadata.yaml is caught, logs warning, and does not crash prompt build."""
-    import logging
-
+def test_malformed_sidecar_cannot_affect_prompt_build(tmp_path):
+    """HATS-1836: a rule's metadata.yaml is never parsed, so even invalid YAML is harmless."""
     rule_dir = tmp_path / "bad_meta_rule"
     rule_dir.mkdir()
     (rule_dir / "metadata.yaml").write_text("name: : : invalid yaml syntax [[[\n")
@@ -251,11 +219,10 @@ def test_malformed_metadata_yaml_does_not_crash_and_warns(tmp_path, caplog):
         injections=[],
     )
 
-    with caplog.at_level(logging.WARNING):
-        prompt = ClaudeProvider().build_system_prompt(result)
+    prompt = ClaudeProvider().build_system_prompt(result)
 
     assert "### bad_meta_rule" in prompt
-    assert "rule 'bad_meta_rule': failed to load metadata at" in caplog.text
+    assert "Body text." in prompt
 
 
 # --------------------------------------------------------------------------- #
@@ -303,15 +270,14 @@ def test_find_dangling_pointers_scans_multiple_library_roots(tmp_path):
     assert "dangling-two" in rules
 
 
-def test_opt_in_delivery_rule_not_flagged_as_dangling(tmp_path):
-    """HATS-1514 / HATS-1511 regression: rule with delivery: always_on is deliverable and not flagged."""
+def test_sidecarless_rule_not_flagged_as_dangling(tmp_path):
+    """HATS-1514 regression: a rule dir carrying only rule.md is deliverable and not flagged."""
     lib = tmp_path / "lib"
     trait_dir = lib / "traits" / "t_opt"
     rule_dir = lib / "rules" / "opt-in-rule"
     trait_dir.mkdir(parents=True)
     rule_dir.mkdir(parents=True)
 
-    (rule_dir / "metadata.yaml").write_text("name: opt-in-rule\ndelivery: always_on\n")
     (rule_dir / "rule.md").write_text("Rule body.\n")
 
     (trait_dir / "config.yaml").write_text(

@@ -447,7 +447,6 @@ class RuleMetadata(_YamlModel):
     description: str = ""
     author: str = ""
     tags: list[str] = Field(default_factory=list)
-    delivery: str | None = None
 
     @classmethod
     def from_yaml(cls, path: Path) -> RuleMetadata:
