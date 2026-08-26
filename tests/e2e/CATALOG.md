@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**272 of 272 files catalogued — 281 flows.**
+**273 of 273 files catalogued — 282 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -470,6 +470,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] prose-refs`, states on every run what it does NOT cover, and is named in the merge-gate composition. Whether the live corpus is INTACT belongs to the stage, not here (HATS-1714/1716) — the refusal is proved instead against a planted tree, which no sibling session can change
 - **why** — the checker's own silence is the thing under test. HATS-1823 measured 21 references in this library that did not resolve, and every gate in the repo stayed green through all of them, because none reads prose. A checker that is wired but never refuses anything reproduces exactly that.
+
+## `test_ci_local_ticket_ids.py`
+
+*pins HATS-1853*
+
+- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a tracker id has crept back into prose the library ships to other projects
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh ticket-ids           # announces the stage it dispatched to
+  bash scripts/ci-local.sh no-such-stage        # exit 2, and the usage names the stage
+  bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] ticket-ids`, reports on every run what it does NOT cover and how many ids the pattern still finds where history lives, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
+- **why** — the checker's own silence is the thing under test. 177 ids had accumulated in this library while a rule actively prescribed the form, and every gate stayed green through all of them because none read prose for what it must NOT carry. A checker that is wired but never refuses anything reproduces exactly that, and the ONE id this repo legitimately keeps is the reason a blanket "no matches ever" assertion would not do.
 
 ## `test_claude_scaffold_drop.py`
 
