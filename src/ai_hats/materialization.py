@@ -160,8 +160,9 @@ def _key_diff(current_text: str | None, desired: dict) -> str:
 class Materializer(abc.ABC):
     """Every session write goes through here. Read ``plan`` after the build."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, lock_timeout: float = LOCK_TIMEOUT) -> None:
         self.plan = MaterializationPlan()
+        self._lock_timeout = lock_timeout
 
     def _record(self, entry: MaterializationEntry) -> None:
         self.plan.entries.append(entry)
@@ -259,13 +260,13 @@ class ApplyMaterializer(Materializer):
         import filelock
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        flock = filelock.FileLock(str(path), timeout=LOCK_TIMEOUT)
+        flock = filelock.FileLock(str(path), timeout=self._lock_timeout)
         try:
             with flock:
                 yield
         except filelock.Timeout as exc:
             raise RuntimeError(
-                f"materialization blocked >{LOCK_TIMEOUT:.0f}s on lock {path} — "
+                f"materialization blocked >{self._lock_timeout:g}s on lock {path} — "
                 f"a stuck ai-hats process likely holds it. "
                 f"If safe, remove the lock file and retry."
             ) from exc

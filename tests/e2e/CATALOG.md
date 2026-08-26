@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**270 of 270 files catalogued — 280 flows.**
+**272 of 272 files catalogued — 282 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -924,6 +924,22 @@ as a claim to check, not as evidence.
 
 - **expect** — done gate verifies review approval, documentation completeness, and e2e catalog freshness before allowing transition
 - **why** — without done gates, agents transition unreviewed, undocumented, or catalog-stale task cards directly to done
+
+## `test_dry_run_materialize.py`
+
+*pins HATS-1551*
+
+- **flow** — an operator inspecting the session tree a role would get, on disk, without spawning
+- **cmds**
+
+  ```console
+  ai-hats --dry-run-json -r test-role
+  ai-hats --dry-run-json --materialize -r test-role
+  ai-hats agent test-role --task "e2e task" --json --dry-run --materialize
+  ```
+
+- **expect** — a plain dry-run leaves both sid dirs absent; --materialize writes the tree under the fixed `dry-run-materialize` sid, reports its path in `notes`, and still shows no escapes; the AUTOMATE path writes the same tree.
+- **why** — the flag can regress in either direction — --materialize silently writing nothing, leaving the operator inspecting an empty tree, or a plain --dry-run starting to write, so a read-only inspection mutates the cache a real launch then reads.
 
 ## `test_e2e_catalog_gate.py`
 
@@ -1980,6 +1996,22 @@ as a claim to check, not as evidence.
 
 - **expect** — card artifacts are created inside the directory specified by AI_HATS_DIR and the current project directory remains unmodified
 - **why** — rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation without polluting project repositories
+
+## `test_rack_race_condition.py`
+
+*pins HATS-1466*
+
+- **flow** — several agents log work against the SAME card at once — parallel sub-agents on one ticket, or a session racing its own hooks
+- **cmds**
+
+  ```console
+  rack create race-target-task --description "..."
+  rack transition <ID> --log "<message>"
+  rack doctor
+  ```
+
+- **expect** — every entry survives — the card holds exactly as many work_log lines as calls made, the YAML still parses, and `rack doctor` reports the backlog intact
+- **why** — without the card lock a losing writer's read-modify-write drops the winner's entry, or leaves half-serialised YAML — both invisible until someone looks for a log line that was never there. The Kernel-API tier is covered by test_card_lock_concurrency.py (HATS-1264); this drives the CLI, the surface agents actually call.
 
 ## `test_rack_reparent_e2e.py`
 

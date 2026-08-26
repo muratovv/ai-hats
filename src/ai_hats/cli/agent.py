@@ -50,6 +50,12 @@ from ai_hats_wt import IsolationMode
     help="Report what the sub-agent would receive (prompt sections, launch, "
     "materialized files) and exit without spawning. Writes nothing.",
 )
+@click.option(
+    "--materialize",
+    "materialize",
+    is_flag=True,
+    help="With --dry-run: write the materialized session tree to disk without spawning.",
+)
 def run_subagent(
     role: str,
     ticket: str | None,
@@ -60,6 +66,7 @@ def run_subagent(
     tags_raw: tuple[str, ...],
     as_json: bool,
     dry_run: bool,
+    materialize: bool,
 ):
     """Run a sub-agent with the given role.
 
@@ -75,7 +82,7 @@ def run_subagent(
     from ._batch_launch import run_batch
     from ._helpers import _project_dir
 
-    if dry_run:
+    if dry_run or materialize:
         import json as _json
 
         from ..dry_run import dry_run_automate
@@ -89,6 +96,7 @@ def run_subagent(
             ticket_id=ticket or "",
             model=model or "",
             provider=provider,
+            materialize=materialize,
         )
         click.echo(
             _json.dumps(report.to_dict(), indent=2) if as_json else report.render(),

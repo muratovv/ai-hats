@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import sys
 import tempfile
 import warnings
@@ -32,6 +33,22 @@ pytest_plugins = ["pytester"]
 
 #: Read before any test can chdir away — the one dir known to outlive them all.
 _SESSION_CWD = os.getcwd()
+
+
+def _sigterm_as_keyboard_interrupt(signum, _frame):
+    raise KeyboardInterrupt(f"pytest terminated by signal {signum}")
+
+
+def pytest_configure(config):
+    """Route SIGTERM into pytest's own interrupt path (HATS-1663).
+
+    A run the harness kills at its ceiling would otherwise die without
+    unwinding, skipping the two session tripwires that are the only check that a
+    test wrote to the real checkout. KeyboardInterrupt reaches teardown and
+    keeps the exit at ``ExitCode.INTERRUPTED`` — a killed run must never be able
+    to report green.
+    """
+    signal.signal(signal.SIGTERM, _sigterm_as_keyboard_interrupt)
 
 
 @pytest.fixture(autouse=True)
