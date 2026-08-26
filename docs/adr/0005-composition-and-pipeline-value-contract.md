@@ -95,6 +95,17 @@ The sites were *accidentally* aligned — they all spelled the call the same way
 
 **Phase-2 closure.** New module `src/ai_hats/materialize.py` exposes one function — `compose_for_role(assembler, role) -> CompositionResult` — which is the sole place in `src/ai_hats/` where the with-overlays compose call appears. Every consumer above now routes through it. A grep-style guard (`tests/test_no_direct_compose_outside_facade.py`) makes future drift fail at test time.
 
+> **Extended (HATS-1842, 2026-08-26).** The facade unified *how* a role is
+> composed, not *who may decide what a broken composition is worth*. Seventeen
+> call sites read `compose_for_role` directly, each choosing for itself whether
+> a composition that lost declared content was still usable — and one of them
+> uninstalled the repo's git gates over a trait typo. `compose_for_role` is now
+> private to `materialize.py`, callers name one of six purposes
+> (`compose_to_run` / `_install` / `_heal` / `_arm` / `_report` / `_carry`), and
+> the Phase-2 guard gained the matching assertion one layer up: a direct call to
+> the funnel outside the facade module is a drift signal, and the purpose set is
+> a justified whitelist.
+
 The build surface stays runtime-specific per D2: `WrapRunner` builds session argv+env+materialized-text via `build_session_prompt` (3-tuple since HATS-523 — the third element is the exact bytes the provider sees as system-prompt override, persisted by the caller via `Session.save_meta_prompt` to `<session_dir>/meta_prompt.txt` for post-hoc audit, symmetric with the Automate path), `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt` (the runner-private builder was later folded into the provider — today it reads `Provider.describe_automate_launch(...).prompt`), `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
 
 One pattern was intentionally **not** migrated to the facade:
