@@ -1836,7 +1836,7 @@ as a claim to check, not as evidence.
   ```console
   uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
   uv venv <tmp>/venv && uv pip install --no-deps <wheel>
-  <tmp>/venv/bin/python -c "get_provider('claude')"
+  <tmp>/venv/bin/python -c "get_surface('claude')"
   ```
 
 - **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
