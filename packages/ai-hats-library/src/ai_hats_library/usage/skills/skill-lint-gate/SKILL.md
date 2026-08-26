@@ -26,14 +26,14 @@ entirely through composition.
 Over STAGED `{ai_hats_library,library,libraries}/**/SKILL.md` (changed-files scope, so the gate never
 retro-blocks the pre-existing backlog), the hook runs, in order:
 
-1. **License/provenance regression-guard** (— pure bash, always-on, NOT
+1. **License/provenance regression-guard** (pure bash, always-on, NOT
    fail-open). Blocks when a skill has no non-empty `license:` frontmatter, or is
    declared-derived (sibling `metadata.yaml` has an `upstream:` block) but is
    missing its co-located `LICENSE` file. Its scope deliberately **includes** the
    `golang-*` pack — that pack is exactly the third-party derived content this
    guard protects. It exists to keep the licensing backfill from
    silently regressing.
-2. **agnix spec-lint** (— [agnix](https://github.com/avifenesh/agnix)
+2. **agnix spec-lint** ([agnix](https://github.com/avifenesh/agnix)
    against the repo-root `.agnix.toml`; target `claude-code`; rules `XML-001` /
    `XP-SK-001` / `VER-001` disabled as convention false positives). **Excludes**
    the `golang-*` pack (drift handled separately). Fail-open if

@@ -25,20 +25,31 @@ since the latest tag lives under **Unreleased** until the next release.
   so its citation resolves for whoever reads the code and `adr-integrity` refuses
   it once it stops resolving; a tracker id does neither.
 
-  189 of the 193 ids in `rule.md`, `SKILL.md` and `config.yaml` injections are
-  gone. The four that stay are not provenance, and the distinction is the whole
-  job: the CLI-grammar placeholders (`rack transition PROP-NNN --link
-  related_tasks:HATS-NNN`), the id the checkout guard *prints* — so the prose can
-  name what you will see on screen — and the epic a usage-layer skill tells you
-  to file under. Two `core/` components were shipping this repo's own ids as
-  their worked example, which is exactly the leak; those became neutral prefixes.
+  176 of the 177 ids in `rule.md`, `SKILL.md` and `config.yaml` injections are
+  gone. The one that stays is not provenance, and that distinction is the whole
+  job: `tests/_checkout_guard.py` *prints* `HATS-1242` at the agent, so the prose
+  naming it names what you will see on screen rather than citing history. The
+  CLI-grammar placeholders (`rack transition PROP-NNN --link
+  related_tasks:HATS-NNN`) and the 42 `ADR-NNNN` citations were never in scope:
+  one teaches the shape of an id, the other resolves inside this repository. Two
+  `core/` components were shipping this repo's own ids as their worked example,
+  which is exactly the leak; those became neutral prefixes.
+
+  One form keeps earning its id: a `TODO(<card>)` points FORWARD at work no
+  commit holds yet, so `git log -S` cannot find it and an ADR is not its home.
+  The rule blesses that spelling and refuses the ownerless `TODO:` instead —
+  `scripts/todo_context.sh` is built on it and cites this rule as its authority,
+  so banning it would have left a shipped tool arguing with the rule it names.
 
   Not swept, each for a reason: engine code and hooks (1,852 sites, where a bare
   `# HATS-NNNN` with no words has to be rewritten rather than deleted), `tests/`
   — `tests/e2e` cannot be, since `e2e-catalog` requires the pin — and
   `docs/adr/` plus `CHANGELOG.md`, where the number is the record rather than a
-  leak. Resident prompt cost: +33 tokens, near neutral; this was a shareability
-  change, not a shrink.
+  leak. Resident prompt cost, measured on one commit: `role-curator` 56,665 →
+  57,188 chars (+131 tokens), `maintainer` +127. It goes **up**, and honestly so:
+  the rewritten rule is resident in both roles and grew by more than the
+  injections saved, while the `SKILL.md` bodies that lost the most load on
+  trigger. This was a shareability change, not a shrink.
 
 ### Added
 

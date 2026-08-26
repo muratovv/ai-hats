@@ -79,7 +79,7 @@ injection: |
     `src/ai_hats/paths/library.py` (`paths` is a package, not `paths.py`;
     `assembler.py` only imports the layers helper under an alias). Precedence:
     `AI_HATS_LIBRARY_ROOT` → cwd source-checkout **only under `prefer_cwd`,
-    which read-only composition passes and writers never do (HATS-1501)** →
+    which read-only composition passes and writers never do** →
     `project_dir` → `importlib.resources`. Full layer order (lowest → highest):
     builtin/core, builtin/usage, `~/.ai-hats`, project config-specified,
     project-local `libraries/`, explicit extras — first-wins when searching for
@@ -87,14 +87,14 @@ injection: |
 
   ### Verifying compositions from a worktree
   A **read-only** command run from inside a worktree composes THAT
-  worktree's library (HATS-1501): `config show-prompt` and friends key off
+  worktree's library: `config show-prompt` and friends key off
   cwd, so your edit is what you see.
 
   A command that **writes** — init, sync, anything materializing into
   `.agent/` — deliberately still keys off the project, which for a linked
   worktree is the MAIN checkout (`_project_dir` hops there so tracker ops
-  reach the one live backlog, HATS-524). Composing one checkout's library
-  into another project's `.agent` is HATS-1123; do not expect a worktree
+  reach the one live backlog). Composing one checkout's library
+  into another project's `.agent` is a known gap; do not expect a worktree
   edit to reach a materialized artifact.
 
   To force either way explicitly:

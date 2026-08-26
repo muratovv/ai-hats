@@ -21,6 +21,11 @@ def materialize_runtime_hooks(session):
 
 # ✅ a decision whose reason outlived the diff — cite the record, not the ticket:
 ("rule_composition_value_contract",)  # always-on; see docs/adr/0005
+
+
+# ✅ a TODO — the one id that earns its place, because it points FORWARD at work
+#    no commit holds yet, and names the card that retires it:
+rows = fetch_all()  # TODO(PROJ-123): stream once the cursor API lands
 ```
 
 ## The foil to cut
@@ -28,8 +33,9 @@ def materialize_runtime_hooks(session):
 ```python
 # ❌ a 4-line note restating a DI-wiring assignment   → delete; the code says it
 # ❌ a multi-paragraph docstring retelling the task    → one line of intent
-# ❌ a ticket id — `# PROJ-123`, `TODO(PROJ-123)`     → the reader has no tracker
-# ❌ a TODO — with an id it leaks that tracker, without one it has no owner
+# ❌ an id as provenance — `# PROJ-123`, `Source: PROJ-123`, `(PROJ-123)` after
+#    a sentence that already carries the WHY → the reader has no tracker
+# ❌ an ownerless `TODO:` — no card means no one retires it
 # ❌ "compute total" / decorative banners / commented-out code
 # ❌ a stale-able count ("~600 chars", "only caller")  → omit
 ```
@@ -38,7 +44,8 @@ def materialize_runtime_hooks(session):
 
 1. Does the code already say this? → delete.
 2. *What changed*, or task history? → omit, ticket id included. `git log -S`
-   finds the commit for any reader of the repo; a tracker id does not.
+   finds the commit for any reader of the repo; a tracker id does not. The one
+   exception is a `TODO(<card>)`: no commit can hold work that has not happened.
 3. A count or claim that can rot? → omit.
 4. Left with a non-obvious WHY in ≤1 line? → keep it.
 
