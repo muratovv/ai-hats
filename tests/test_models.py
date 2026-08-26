@@ -1197,7 +1197,6 @@ def test_facade_surface_parity():
         "ComponentType",
         "Composition",
         "LeftoverSidecarHooksError",
-        "RuleMetadata",
         "RuntimeHook",
         "SkillMetadata",
         "resolve_namespace",

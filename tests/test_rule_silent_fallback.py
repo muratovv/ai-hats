@@ -23,14 +23,7 @@ RULE_DIR = LIBRARY / "usage/rules/dev_rule_silent_fallback"
 
 
 def test_rule_files_exist() -> None:
-    assert (RULE_DIR / "metadata.yaml").is_file()
     assert (RULE_DIR / "rule.md").is_file()
-
-
-def test_rule_metadata_well_formed() -> None:
-    meta = (RULE_DIR / "metadata.yaml").read_text()
-    assert "name: dev_rule_silent_fallback" in meta
-    assert "error-handling" in meta
 
 
 def test_rule_body_draws_the_distinction_the_gate_relies_on() -> None:

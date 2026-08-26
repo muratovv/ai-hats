@@ -26,15 +26,7 @@ RULE_DIR = LIBRARY / "core/rules/rule_pause_before_shared_state_write"
 
 
 def test_rule_files_exist() -> None:
-    assert (RULE_DIR / "metadata.yaml").is_file()
     assert (RULE_DIR / "rule.md").is_file()
-
-
-def test_rule_metadata_well_formed() -> None:
-    meta = (RULE_DIR / "metadata.yaml").read_text()
-    assert "name: rule_pause_before_shared_state_write" in meta
-    # tags should mark this safety-critical so future audit/grep finds it.
-    assert "safety" in meta
 
 
 #: A per-command verdict claim: a table row whose cell is `denies`/`allows`/`asks`.

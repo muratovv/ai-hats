@@ -442,19 +442,6 @@ class ComponentConfig(_YamlModel):
             )
 
 
-class RuleMetadata(_YamlModel):
-    name: str = ""
-    description: str = ""
-    author: str = ""
-    tags: list[str] = Field(default_factory=list)
-
-    @classmethod
-    def from_yaml(cls, path: Path) -> RuleMetadata:
-        if not path.exists():
-            return cls()
-        return cls.model_validate(yaml.safe_load(path.read_text()) or {})
-
-
 # Git hook events recognized by the framework. Skills declare their hooks
 # under one of these keys in metadata.yaml's `git_hooks:` block. The keys
 # match git's actual hook filenames so the dispatcher path is unambiguous.

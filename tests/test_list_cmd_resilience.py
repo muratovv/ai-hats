@@ -9,17 +9,21 @@ from ai_hats.cli import main
 from ai_hats.paths import PROJECT_CONFIG
 
 
-def test_list_rules_survives_broken_metadata(tmp_path, monkeypatch, caplog):
+def test_list_rules_ignores_a_leftover_sidecar(tmp_path, monkeypatch):
+    """HATS-1836: rules are listed by name; a leftover metadata.yaml is never read.
+
+    The sidecar here is both malformed AND carries a description — neither may
+    reach the output, and neither may break the listing.
+    """
     project = tmp_path / "project"
     project.mkdir()
     user_home = tmp_path / "user_home"
     user_home.mkdir()
 
-    # Create a user rule with broken metadata.yaml
-    broken_rule_dir = user_home / ".ai-hats" / "rules" / "broken_rule"
-    broken_rule_dir.mkdir(parents=True)
-    (broken_rule_dir / "rule.md").write_text("# Broken Rule\n")
-    (broken_rule_dir / "metadata.yaml").write_text("description: unquoted: colon string\n")
+    rule_dir = user_home / ".ai-hats" / "rules" / "leftover_rule"
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "rule.md").write_text("# Leftover Rule\n")
+    (rule_dir / "metadata.yaml").write_text("description: SENTINEL-1836: unquoted colon\n")
 
     monkeypatch.chdir(project)
     monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home))
@@ -28,13 +32,11 @@ def test_list_rules_survives_broken_metadata(tmp_path, monkeypatch, caplog):
         "schema_version: 2\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
     )
 
-    runner = CliRunner()
-    with caplog.at_level(logging.WARNING):
-        result = runner.invoke(main, ["list", "rules"])
+    result = CliRunner().invoke(main, ["list", "rules"])
 
     assert result.exit_code == 0, f"list rules failed with {result.exit_code}: {result.output}"
-    assert "broken_rule" in result.output
-    assert "failed to load metadata at" in caplog.text or "broken_rule" in caplog.text
+    assert "leftover_rule" in result.output
+    assert "SENTINEL-1836" not in result.output
 
 
 def test_list_roles_survives_broken_config(tmp_path, monkeypatch, caplog):
