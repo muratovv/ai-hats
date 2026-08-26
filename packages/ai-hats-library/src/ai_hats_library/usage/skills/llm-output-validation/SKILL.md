@@ -76,7 +76,7 @@ Raise `ValueError` (or a domain-specific error) on failure. Do **not** log a
 warning and continue — the whole point is to prevent downstream consumers from
 acting on garbage.
 
-## Case Study: HATS-066
+## Case Study
 
 An LLM in the (then-current) retrospective pipeline was asked to evaluate
 `bundle_id="001"`. It returned a schema-valid result object with

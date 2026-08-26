@@ -40,7 +40,7 @@ A guard that can only say "no" pushes the agent toward blunt instruments.
 
 `git push` is **not** handled here — `pre_bash_shared_state_guard.sh` owns it
 (`rule_pause_before_shared_state_write`). Two gates on one concern means the
-coarser one silently wins (HATS-1253).
+coarser one silently wins.
 
 ## Some moves are consent-gated
 

@@ -42,10 +42,9 @@ retype, package split) can't land as one green tracer bullet. Sequence it:
 
 Batches that can't stay green alone share an integration branch plus a final
 integrate-and-verify task — green is promised only there. (Retrofitted after
-review in HATS-858; HATS-831's 470-line/88-importer mid-execute move is the
-failure mode.)
+review; the failure mode was a 470-line, 88-importer move made mid-execute.)
 
 ## Completion
 
 Steps section holds one-session slices with edges declared; any wide refactor
-is sequenced expand–contract. Validation scenario: HATS-1002 task card.
+is sequenced expand–contract.

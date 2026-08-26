@@ -41,7 +41,7 @@ Show a table:
 
 | Change                      | Short-term delta | Long-term delta | Dependency        | Work cost |
 | --------------------------- | ---------------- | --------------- | ----------------- | --------- |
-| Inline skill X into trait Y | +1086 tokens     | -458 tokens     | requires HATS-307 | 1 commit  |
+| Inline skill X into trait Y | +1086 tokens     | -458 tokens     | needs the removal task first | 1 commit  |
 | Collapse traits A+B+C → D   | -205 tokens      | -205 tokens     | none              | 1 commit  |
 | ...                         | ...              | ...             | ...               | ...       |
 
@@ -55,7 +55,7 @@ should be able to choose: "skip", "do only the dependency-free wins",
 
 ## Worked Example
 
-**HATS-309 (2026-05-13) — "shrink ~120-150 lines".**
+**A "shrink ~120-150 lines" request.**
 
 The agent (without this skill) made:
 
@@ -65,7 +65,7 @@ The agent (without this skill) made:
 Then presented honest accounting:
 
 - **Short-term**: +1086 tokens (new skill bodies inlined permanently grow prompts).
-- **Long-term**: -458 tokens, **only after** HATS-307 lands (which removes the now-redundant skill files).
+- **Long-term**: -458 tokens, **only after** the follow-up lands that removes the now-redundant skill files.
 
 User reverted both commits, kept only the trait-collapse work which delivered a clean **-205 tokens immediately**, no dependency.
 

@@ -93,7 +93,7 @@ Skills materialize into the per-session cache under
 
 **Never `cp` skill files by hand** into `.claude/skills/` or
 `<ai_hats_dir>/library/skills/`. Neither is a mirror of the installed library:
-the first was retired in HATS-294, the second is where components **you** author
+the first is retired, the second is where components **you** author
 locally live. A hand-made copy drifts from source-of-truth and earns a WARN
 about an orphan `.ai-hats-managed` marker on every run.
 
@@ -103,7 +103,7 @@ Confirm what a launch would actually compose with `ai-hats config status` or
 ## Validation scenario (RED → GREEN → REFACTOR)
 
 A skill is not done until one **named baseline scenario** shows it changes
-behaviour — the same discipline we already apply to code (HATS-645):
+behaviour — the same discipline we already apply to code:
 
 - **RED** — name a concrete task where an agent *without* this skill gets it
   wrong (the failure the skill exists to prevent). If you can't name one, the

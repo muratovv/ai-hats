@@ -2,9 +2,9 @@
 name: maintainer-quality-gate
 description: Maintainer-only quality gates — pre-push e2e+smoke to master, plus the ->merge and ->done gates on the two roads a card takes into it
 ai_hats:
-  # HATS-550 / HATS-686 — hook-carrier skill. `ai-hats self init` installs one
+  # hook-carrier skill. `ai-hats self init` installs one
   # dispatcher per event in `.githooks/`; the script below is resolved from this
-  # directory and run in place at push time (HATS-1337, nothing is copied).
+  # directory and run in place at push time (nothing is copied).
   # Hard gate: no env-var bypass; `git push --no-verify` is the only escape.
   git_hooks:
     pre-push:
@@ -37,8 +37,7 @@ is a **narrow** claim, and this is the only way to see how narrow.
 
 Neither card gate runs the e2e tier. If `--stages` does not name what your change
 touched, run it yourself and say so — e.g. `pytest -m integration tests/e2e/`.
-Nothing refuses here, which is why the second command is not optional
-(HATS-1682).
+Nothing refuses here, which is why the second command is not optional.
 
 Use `make merge-gate` only to merge now and close later.
 
@@ -65,8 +64,7 @@ taking minutes dies with `Connection closed by remote host` → SIGPIPE (exit 14
 and the pack is never sent.
 
 **Do not re-attempt:** client-side `ServerAliveInterval` at 60 **and** 15 did not
-fix it, and the 2022 community keepalive workaround no longer works (HATS-684,
-paid for twice).
+fix it, and the 2022 community keepalive workaround no longer works (paid for twice).
 
 ## No bypass
 

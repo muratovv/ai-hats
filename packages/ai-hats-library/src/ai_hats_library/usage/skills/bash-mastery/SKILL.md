@@ -48,7 +48,7 @@ array is a *fatal* `unbound variable` on 3.2 — and fine on 4.4+. Use one of:
 [[ ${#arr[@]} -eq 0 ]] && return # or guard on the count first — this is safe
 ```
 
-Two of these shipped to users before the guard existed (HATS-1294, HATS-1352).
+Two of these shipped to users before the guard existed.
 `tests/test_library_shell_bash32_compat.py` lints the table; hook tests
 parametrize over every bash on the host, so 3.2 is actually executed.
 

@@ -16,7 +16,7 @@ license: MIT
 HITL protocol for the **judge** role: discuss the Phase 1 draft with
 the supervisor, ack proposed mutations, execute them via CLI, write
 the final report. Phase 2 of the two-phase judge split
-(HATS-513 / ADR-0007).
+(ADR-0007).
 
 Runs via `ai-hats reflect hypothesis` (after Phase 1 `judge-auditor`
 produces a draft) or `ai-hats execute --role judge` (standalone — see
@@ -25,7 +25,7 @@ Edge Cases).
 > **Harness shell prelude.** Before any `ai-hats` invocation:
 >
 > ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # no bin/ai-hats console script
 > ```
 
 ## When to Use
@@ -54,14 +54,14 @@ rack ls --backlog proposal --state open --all
 **Why unconditional.** The inbox is the other half of the reflex loop, and no
 launch shape guarantees you see it: Shapes A/B hand you a Phase 1 draft whose
 `## Proposals` section may be thin, and Shape C hands you nothing at all. In
-HATS-1323 the kickoff scoped the session to the HYP contour, no one listed the
+one measured session the kickoff scoped the work to the HYP contour, no one listed the
 inbox, and 136 open proposals went unread — among them PROP-107 and PROP-118,
 findings the same epic then rediscovered from scratch at full cost. A scope
 that omits the inbox is a scope you widen, not an instruction to skip this.
 
 Carry three numbers into Step 3 and into the report: total open, how many are
 auto-filed noise (**review-proposal** Step 3b), and the leaders by votes **and**
-by age. Both axes matter: vote counts on cards older than the HATS-1397 fix are
+by age. Both axes matter: vote counts on cards older than the fix are
 systematically depressed — `session-reviewer` was emitting `n/a` for months —
 so ranking on votes alone buries precisely the pre-fix cards.
 
@@ -95,7 +95,7 @@ audit yourself before dialoguing — walk the inventory, draft verdicts
 mentally, then proceed to Step 2 with the supervisor. There is no
 auditor draft to validate; you are doing both phases in one session.
 
-> The legacy `reflect all` pipeline is deprecated (HATS-540) but kept
+> The legacy `reflect all` pipeline is deprecated but kept
 > for one bake cycle. Don't refuse — supervisor may invoke it
 > intentionally during transition. Apply the same Steps 2 → 3 → 3.5 →
 > 4 flow; just skip the "validate auditor proposals" framing.
@@ -295,7 +295,7 @@ Forbidden without L2 activation:
   rather than what the inbox holds. Run Step 0 and rewrite the section
   before Write. `0 open` is a fine value; a missing line is not.
 - **Kickoff scopes you away from the inbox** — Step 0 still runs. A
-  narrow kickoff is what produced the HATS-1323 miss; report the count
+  narrow kickoff is what produced the miss; report the count
   even when the pass itself stays inside the scoped contour.
 
 ## Scope

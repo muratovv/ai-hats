@@ -8,7 +8,7 @@ license: MIT
 
 Convert project-level retrospective findings into framework-level improvements.
 
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats self init` (step 5), define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script since HATS-790):
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats self init` (step 5), define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script):
 >
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }

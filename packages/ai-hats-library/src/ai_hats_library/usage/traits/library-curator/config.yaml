@@ -50,7 +50,7 @@ injection: |
   **Some of that prose is executable contract, not commentary.** The Write
   instruction inside `role-judge`'s injection is the only thing that
   persists the role-coherence report — `reflect-role.yaml` carries no
-  `save_artifact` step (HATS-1423). Trim it as "verbose" and the report
+  `save_artifact` step. Trim it as "verbose" and the report
   silently stops being written; no test goes red. Before cutting prose from
   a loop component, check whether a code path leans on it.
 

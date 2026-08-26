@@ -28,7 +28,7 @@ Concretely, the rule fires if the task changed any of:
   must drive the **composed chain** (all hooks on the matcher, in order) via
   `tests/e2e/_helpers/hook_chain.py`, never one script in isolation: a
   single-hook test cannot observe a second hook overriding its verdict, which
-  is how HATS-1113 shipped a blanket deny past a green suite (HATS-1253).
+  is how a blanket deny once shipped past a green suite.
 - Anything else crossing an external contract: PEP 508 URL forms, click nesting, shell quoting, venv invocation.
 
 **Does not trigger:** internal Python modules (storage, parsing, business logic), docs, tests-only changes, version bump.
@@ -53,5 +53,5 @@ the change rather than exercising it, and the card returns to `execute`.
 
 ## 5. Source
 
-PROP-031, from HATS-333 — two production bugs shipped past `done` because the
+PROP-031 — two production bugs shipped past `done` because the
 unit suite stubbed the very contracts the change broke.

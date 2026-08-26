@@ -13,7 +13,7 @@ license: MIT
 
 # Judge Auditor Protocol
 
-Phase 1 of the two-phase judge split (HATS-513 / ADR-0007). Runs headless via
+Phase 1 of the two-phase judge split (ADR-0007). Runs headless via
 `SubAgentRunner` from `ai-hats reflect hypothesis [--headless]`. Produce a
 **draft** — proposed verdicts, proposed mutations — for the HITL `judge` session
 (Phase 2) to consume.

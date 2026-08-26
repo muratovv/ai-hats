@@ -69,7 +69,7 @@ shipping it.
 
 ## Worked Example
 
-**HATS-629 (the epic this stage belongs to).** The original plan proposed a
+**The epic this stage belongs to.** The original plan proposed a
 phased split of the unified plan-gate. A counter-pass steelmanned it
 ("phases isolate risk"), named the assumption ("each phase delivers value
 alone"), countered it ("the section is useless without its method — M3 ships

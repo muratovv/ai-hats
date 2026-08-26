@@ -49,7 +49,7 @@ Ask:
 
 ## Worked Example
 
-**HATS-261 plan-design (2026-05-08), 7 iterations of rewrites.**
+**A plan-design that took seven iterations of rewrites.**
 
 User explicitly rejected, across iterations:
 
@@ -118,7 +118,7 @@ Every behavioral-delivery `plan.md` states the chosen rung explicitly:
 This sentence is the artefact the auditor sweep reads (see the companion
 HYP authored at document-stage per `library-change-hypothesis-protocol`).
 
-### Case study — HATS-527 / 528 / 534
+### Case study — the verification-protocol PoC
 
 - **Initial plan (rejected).** Extended `ValidationLogEntry` schema
   (rung 6) + four typed CLI flags (rung 5) + rewrote four downstream
@@ -128,7 +128,7 @@ HYP authored at document-stage per `library-change-hypothesis-protocol`).
 - **Shipped plan.** Five-step PoC: free-form `verification_protocol`
   string under `extra="allow"` in `HYP-*.yaml` (rung 1) + lightweight
   `library-change-hypothesis-protocol` skill (rung 2) + handoff
-  formatter patch in HATS-534 (rung 4, escalated **only** after the
+  formatter patch (rung 4, escalated **only** after the
   rung-1 PoC showed the data wasn't reaching reviewers). Zero engine
   schema changes. Same observable behavior.
 

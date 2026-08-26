@@ -2,27 +2,27 @@
 name: git-mastery
 description: Advanced git operations covering branches, conventional commits, worktrees, and rebasing. Use for any git operation beyond basic add/commit/push, for branch management, rebasing, and conflict resolution, or when setting up commit conventions for a project.
 ai_hats:
-  # Skill-contributed git hooks (HATS-088 framework). The assembler installs
+  # Skill-contributed git hooks. The assembler installs
   # these into the project's .githooks/<event>.d/ at composition time.
   git_hooks:
     pre-commit:
       - git_hooks/pre-commit-privacy.sh
       - git_hooks/pre-commit-smoke.sh
-      # HATS-444: enforce docs/INDEX.md freshness — block commits that
+      # enforce docs/INDEX.md freshness — block commits that
       # add/delete/rename docs/*.md without staging INDEX.md alongside.
       - git_hooks/pre-commit-docs-index.sh
-      # HATS-470: forbid raw path.unlink / shutil.rmtree / .rmdir outside
+      # forbid raw path.unlink / shutil.rmtree / .rmdir outside
       # ai_hats_core/safe_delete.py without an inline
       # `# safe-delete: ok <reason>` marker. No-op on non-ai-hats projects.
       - git_hooks/pre-commit-no-raw-destructive.sh
-    # HATS-437: provider-agnostic safety net for `git push --force`. Claude
+    # provider-agnostic safety net for `git push --force`. Claude
     # gets a stronger PreToolUse-level block via ClaudeProvider auto-wiring;
     # this pre-push hook protects Gemini sessions and direct-terminal pushes.
     pre-push:
       - git_hooks/pre-push-shared-state.sh
-      # HATS-1407: a journal with no reader is a sensor with no consumer.
+      # a journal with no reader is a sensor with no consumer.
       - git_hooks/pre-push-bypass-report.sh
-    # HATS-1407: pre-commit records a bypass before the commit exists, so the
+    # pre-commit records a bypass before the commit exists, so the
     # SHA is stamped on afterwards — that join is what names the ungated commit.
     post-commit:
       - git_hooks/post-commit-bypass-stamp.sh
@@ -131,7 +131,7 @@ Heuristic: tag `integration` when the task touches an external tool, process,
 network call, sub-agent invocation, or filesystem writes outside `.agent/`.
 
 ```bash
-# Harness bash lacks an activated venv — resolve a runner first (HATS-790: no
+# Harness bash lacks an activated venv — resolve a runner first (no
 # bin/ai-hats console script, so the fallback runs the venv interpreter's module):
 ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
 rack transition <ID> --append tags=integration
@@ -161,9 +161,9 @@ As with the privacy override, only acknowledge after the user has confirmed — 
 
 Two further pre-commit hooks ship here and stay out of the way unless tripped:
 
-- `pre-commit-docs-index.sh` (HATS-444) — blocks adding/deleting/renaming a
+- `pre-commit-docs-index.sh` — blocks adding/deleting/renaming a
   `docs/*.md` without staging `docs/INDEX.md` alongside.
-- `pre-commit-no-raw-destructive.sh` (HATS-470) — blocks raw `path.unlink` /
+- `pre-commit-no-raw-destructive.sh` — blocks raw `path.unlink` /
   `shutil.rmtree` / `.rmdir` outside `ai_hats_core/safe_delete.py` unless
   the line carries `# safe-delete: ok <reason>`. No-op on non-ai-hats projects.
 
@@ -179,7 +179,7 @@ what it healed. Drift-gated and fail-open: a clean start is silent, a heal
 failure never blocks the launch.
 
 - There is **no** `ai-hats self sync-hooks` command and **no** post-merge /
-  post-checkout git hook anymore (HATS-833 consolidated all healing to session
+  post-checkout git hook anymore (all healing is consolidated to session
   start). A `git pull` + `git commit` with no ai-hats launch between can run stale
   git hooks until the next launch heals them — launch ai-hats (or `ai-hats self
   init`) to refresh sooner.
@@ -195,5 +195,5 @@ failure never blocks the launch.
 - Commit messages describing what ("changed X") instead of why
 - Committing agent config files to project repos — local agent state
 - Committing empty/placeholder files — wait for real content
-- Bypassing the privacy hook (`AI_HATS_PRIVACY_ACK=1`) without showing the user what was flagged — it is a peer review, not an obstacle (it exists because agents proved they could not catch leaks unaided, HATS-001 retro)
+- Bypassing the privacy hook (`AI_HATS_PRIVACY_ACK=1`) without showing the user what was flagged — it is a peer review, not an obstacle (it exists because agents proved they could not catch leaks unaided)
 - Declaring "done" on integration work without running the real-path smoke test at least once

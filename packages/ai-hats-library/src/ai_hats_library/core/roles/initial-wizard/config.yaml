@@ -159,7 +159,7 @@ injection: |
   ```
 
   **2d — harness source** (default: `stable` — **recommend it**):
-  > Where `ai-hats self update` pulls ai-hats from (HATS-764):
+  > Where `ai-hats self update` pulls ai-hats from:
   > `stable` (latest PyPI release — recommended for most users),
   > `edge` (your repo's HEAD — for teams running a fork),
   > `local` (an editable working tree — for ai-hats developers).
@@ -225,8 +225,8 @@ injection: |
 
   ### Step 5 — task-id prefix
   Explain briefly: ai-hats numbers tasks like `<PREFIX>-001`,
-  `<PREFIX>-002`, … and the prefix is per-project (e.g. `ACME-001`,
-  `HATS-001`). Ask the user what to use (3–6 uppercase letters / digits).
+  `<PREFIX>-002`, … and the prefix is per-project (e.g. `ACME-001`).
+  Ask the user what to use (3–6 uppercase letters / digits).
   Default is `TASK`. If they accept the default — skip; otherwise:
   ```
   ai-hats config set --task-prefix <PREFIX>

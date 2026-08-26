@@ -55,8 +55,7 @@ chooses what to record.
 
     Run the 5 sub-steps in order. Do not skip ahead — each gate exists
     because skipping it produced a real class of HYP-backlog noise
-    (audit of HYP-001..026 found ~50% drop+merge waste, baseline for
-    HATS-548).
+    (audit of HYP-001..026 found ~50% drop+merge waste — the baseline).
 
     #### 4.5.a Filter — drop noise BEFORE formulating
 
@@ -79,7 +78,7 @@ chooses what to record.
     A finding that fails any criterion is **not** a HYP. Either drop
     it, route it to step 7 (task card), or attach it as evidence to an
     existing HYP. Single-instance one-off contexts almost always fail
-    the recurrence gate — most of the dropped HYPs in the HATS-548
+    the recurrence gate — most of the dropped HYPs in that
     baseline were single-context (HYP-023, 024, 026).
 
     #### 4.5.b Root-cause — chain to Step 3, do not restate

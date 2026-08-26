@@ -20,7 +20,7 @@ Role-agnostic: same procedure whether you are running as `reflect-session`,
 > **Harness shell prelude.** Before any `ai-hats` invocation:
 >
 > ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # no bin/ai-hats console script
 > ```
 
 ## When to Use
@@ -45,7 +45,7 @@ rack ls --backlog proposal --state open --all
 
 Keep `--all`: the default caps at 30 id-sorted rows, so without it you read
 the *oldest* thirtieth of the inbox and conclude you read the inbox. On the
-day HATS-1385 measured it, that was 30 of 147.
+day that was measured, it was 30 of 147.
 
 A proposal is "similar" if it covers the same change (same `category` +
 `target`). **Vote rather than create whenever in doubt** — duplicates
@@ -109,9 +109,9 @@ indefinitely.
 The runtime safety net files a PROP on every zero-output / timeout run
 (`harness incident: <sid>`) and every incomplete session review
 (`session-reviewer incomplete: <sid>`). They accumulate faster than anyone
-reads them — 76 of 147 open when HATS-1385 measured it — and they bury the
+reads them — 76 of 147 open when that was measured — and they bury the
 hand-authored half. Sweep them as one batch under a shared criterion, the
-move the HATS-1323 HYP pass made with 61 hypotheses.
+move the HYP pass made with 61 hypotheses.
 
 A card is auto-noise only when **all four** hold:
 
