@@ -176,8 +176,8 @@ def _compose_validated(
 ):
     """Compose via the facade; an explicitly requested role validates existence
     before (``RoleNotFoundError``). Loss is refused by ``compose_to_run`` for
-    every role — HATS-1842 retired the ``explicit_role``-only check, under which
-    a role read from config had its errors tolerated."""
+    every role. The former ``explicit_role``-only check tolerated the losses of
+    a role read from config — the arm every real session takes."""
     from .materialize import compose_to_run
 
     if explicit_role:
@@ -352,8 +352,8 @@ def compose_for_checks(project_dir: Path, role: str | None = None) -> Compositio
     Bindings are collected per-role over a ``CompositionResult`` (ADR-0019 D7),
     so with no role there is no composition and therefore no binding — refusing
     would be refusing on the absence of the very thing that would carry a gate.
-    A role that IS set but does not resolve still refuses — since HATS-1842 by
-    ``compose_to_arm`` raising, rather than by the caller reading ``errors``.
+    A role that IS set but does not resolve still refuses — by ``compose_to_arm``
+    raising, rather than by the caller reading ``errors``.
     """  # comment-length: allow — the contrast with its neighbour IS the contract
     from .materialize import compose_to_arm
 

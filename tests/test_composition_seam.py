@@ -37,7 +37,7 @@ def _fake_assembler(available: list[str], project_dir: Path) -> MagicMock:
 
 def test_seam_routes_through_facade(tmp_path: Path):
     """HATS-501/456 invariant, relocated: the composition goes through the
-    facade layer — since HATS-1842 through ``compose_to_run`` by name, because
+    facade layer — through ``compose_to_run`` by name, because
     a session composed from a lossy role would run on the wrong prompt.
 
     Routing only — NOT a pass count. The mocked assembler never reaches the real
@@ -69,7 +69,7 @@ def test_seam_raises_role_not_found_for_explicit_role(tmp_path: Path):
 
 
 def test_seam_refuses_a_lossy_composition_for_any_role(tmp_path: Path):
-    """HATS-1842. This test used to pin the opposite: a raise ONLY when the role
+    """This test used to pin the opposite: a raise ONLY when the role
     was named explicitly, so a role read from ``active_role``/``default_role``
     had its losses tolerated. Both arms must refuse now — the implicit one is
     the arm every real session takes."""
@@ -92,7 +92,7 @@ def test_seam_refuses_a_lossy_composition_for_any_role(tmp_path: Path):
 def test_seam_lenient_mode_skips_the_existence_raise(tmp_path: Path):
     """strict=False (retro reviewer spawn) skips ``RoleNotFoundError`` only.
 
-    HATS-1842 narrowed it: it no longer buys tolerance of a LOSSY composition.
+    It has narrowed: it no longer buys tolerance of a LOSSY composition.
     A reviewer running on a half-composed prompt used to surface as HATS-271's
     empty transcript — a proxy for the cause, two steps downstream."""
     fake_result = MagicMock(errors=["broken"], lost=(), merged_injection="")
@@ -281,7 +281,7 @@ def _real_project(tmp_path: Path, *, active_role: str | None) -> Path:
 
 @contextmanager
 def _compose_spy():
-    """Count REAL composes. One binding suffices since HATS-1842: every caller
+    """Count REAL composes. One binding suffices: every caller
     reaches the funnel through a ``compose_to_*`` facade in the same module, so
     the facades resolve this module global at call time."""
     import ai_hats.materialize as materialize

@@ -221,7 +221,7 @@ def test_facade_itself_contains_one_compose_call():
 
 
 # --------------------------------------------------------------------------
-# HATS-1842 — the same invariant, one layer up.
+# The same invariant, one layer up (docs/adr/0005).
 #
 # HATS-456 pinned `composer.compose(overlays=)` to this facade, which is why it
 # has exactly ONE caller. Nothing pinned the facade's OWN surface, so
@@ -292,7 +292,7 @@ def test_compose_for_role_is_called_only_inside_the_facade():
             offenders.append(f"  {py_file.relative_to(REPO_ROOT)}:{lineno}")
 
     assert not offenders, (
-        "HATS-1842 drift: compose_for_role is the funnel, not a public entry "
+        "drift: compose_for_role is the funnel, not a public entry "
         "point — a caller that reaches it directly is deciding the "
         "tolerate-or-refuse policy for itself. Name a purpose instead:\n"
         + "\n".join(f"  {n} — {why}" for n, why in COMPOSE_PURPOSES.items())

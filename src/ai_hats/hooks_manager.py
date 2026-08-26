@@ -133,11 +133,10 @@ def install_git_hooks(
 
     declared = _collect_skill_git_hooks(result)
     wanted = {event for event, entries in declared.items() if entries}
-    # HATS-1842: a composition that LOST content cannot say a gate is absent —
-    # "declares no hooks" and "the skill that declared them dropped out" reach
-    # here as the same empty dict, and dropping on the second uninstalls the
-    # repo's gates over a typo. Installing what IS wanted stays unconditional:
-    # that direction is additive.
+    # A composition that LOST content cannot say a gate is absent: "declares no
+    # hooks" and "the skill that declared them dropped out" reach here as the
+    # same empty dict, and dropping on the second uninstalls the repo's gates
+    # over a typo. Installing what IS wanted stays unconditional — additive.
     if result.lost:
         losses = "; ".join(str(e) for e in result.lost)
         warnings.append(

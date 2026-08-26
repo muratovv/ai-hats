@@ -431,7 +431,7 @@ def test_skill_lint_gate_absent_from_non_authoring_roles():
         )
 
 
-# ----- a lossy composition may not justify ABSENCE (HATS-1842) -----
+# ----- a lossy composition may not justify ABSENCE -----
 
 
 def _break_the_role(lib: Path) -> None:

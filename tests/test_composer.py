@@ -133,7 +133,7 @@ def test_compose_collects_checks_traits_before_role(checks_composer, checks_libr
 
 def test_broken_binding_raises_where_a_broken_rule_only_reports(checks_library):
     """Two defects in one library: the rule REPORTS (as a lossy error the
-    facade then refuses on — HATS-1842), the binding RAISES at compose.
+    facade then refuses on), the binding RAISES at compose.
 
     The distinction outlived the fail-open that motivated it. A broken binding
     raises inside ``composer.compose`` itself, so no facade — not even a

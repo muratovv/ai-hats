@@ -104,7 +104,7 @@ class ResolvedCheck:
 
 
 class CompositionIncompleteError(RuntimeError):
-    """Composing a role lost content that was declared (HATS-1842).
+    """Composing a role lost content that was declared.
 
     Raised by the compose facade rather than reported into ``errors``, because
     a consumer that cannot tell "declared nothing" from "lost what was

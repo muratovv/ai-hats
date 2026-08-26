@@ -68,9 +68,9 @@ def compose_for_role(
     outside this module are a HATS-456 drift signal (caught by
     ``test_no_direct_compose_outside_facade``).
 
-    **Private to this module** (HATS-1842): every consumer names a purpose
-    instead — see the six ``compose_to_*`` facades below, pinned by
-    ``tests/test_no_direct_compose_outside_facade.py``.
+    **Private to this module**: every consumer names a purpose instead — see the
+    six ``compose_to_*`` facades below, pinned by
+    ``tests/test_no_direct_compose_outside_facade.py`` and ``docs/adr/0005``.
 
     Fail-closed by default: a composition that LOST declared content raises
     :class:`CompositionIncompleteError`. ``tolerate_lossy=True`` is the one
@@ -96,7 +96,7 @@ def compose_for_role(
     return result.with_user_rules(assembler.user_rules())
 
 
-# ----- the six purposes (HATS-1842) -----
+# ----- the six purposes (see docs/adr/0005) -----
 #
 # One question decides a consumer's facade: may a composition that LOST
 # declared content still serve this caller? The answer is a property of the
@@ -151,6 +151,6 @@ def compose_to_carry(
     *,
     runtime_overlay: OverlayConfig | None = None,
 ) -> CompositionResult:
-    """Tolerant — HATS-1592: dropping the carry on any error would cause the
-    very data loss the record exists to prevent. ``wt_carry`` warns instead."""
+    """Tolerant — dropping the carry on any error would cause the very data loss
+    the record exists to prevent. ``wt_carry`` warns instead."""
     return compose_for_role(assembler, role, runtime_overlay=runtime_overlay, tolerate_lossy=True)

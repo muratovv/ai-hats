@@ -325,7 +325,7 @@ def test_run_v07_migration_composes_role_once(project_with_library, monkeypatch)
         roles_composed.append(role)
         return real_compose(assembler, role, **kw)
 
-    # Since HATS-1842 every caller reaches the funnel through a `compose_to_*`
+    # Every caller reaches the funnel through a `compose_to_*`
     # facade in `materialize`, so this single binding intercepts them all.
     monkeypatch.setattr(materialize_mod, "compose_for_role", counting_compose)
 

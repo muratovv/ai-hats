@@ -4,9 +4,8 @@ Loud by construction: every way a declared gate can fail to install raises
 ``CheckBindingError`` here, at composition, rather than reporting into
 ``CompositionResult.errors``. That list was tolerated silently on the
 implicit-role path (``composition_seam``) — the fail-open this channel was
-built to escape. HATS-1842 closed it for every channel: an error that LOST
-declared content now refuses in the compose facade itself, so this one is no
-longer alone. Raising here still buys something the facade cannot: it fires
+That hole is closed for every channel now: an error that LOST declared
+content refuses in the compose facade itself, so this one is no longer alone. Raising here still buys something the facade cannot: it fires
 before a result exists, so even a caller that declared tolerance never
 receives a composition carrying a broken binding.
 

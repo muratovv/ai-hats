@@ -309,7 +309,8 @@ def test_the_broken_gate_hatch_does_not_open_a_hung_one(tmp_path: Path):
 
 
 def test_a_broken_role_does_not_disarm_the_committed_gates(tmp_path: Path):
-    """HATS-1842, end to end through a real `git commit`.
+    """A lossy composition may not disarm a gate — end to end, through a real
+    `git commit`.
 
     On master, pointing the role at a missing trait composed to zero skills;
     the gate then vanished from `.githooks/` on the next install, and every

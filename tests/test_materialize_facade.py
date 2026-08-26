@@ -76,7 +76,7 @@ def test_compose_for_role_uses_assembler_overlays(maintainer_project):
 
 
 def test_compose_for_role_refuses_an_unknown_role(maintainer_project):
-    """HATS-1842 inverted this. It used to assert the opposite — that an
+    """This assertion is inverted. It used to say the opposite — that an
     unknown role is returned as an empty result with the error merely
     RECORDED — which is how a role naming a missing trait composed to zero
     skills and uninstalled the repo's git gates without a word."""
@@ -107,8 +107,8 @@ def test_no_role_at_all_is_not_a_loss(maintainer_project):
     """A project with neither ``active_role`` nor ``default_role`` composes the
     empty string. Nothing was declared, so nothing was lost — refusing here
     replaced "Provider 'x' not found" with a traceback on an unconfigured
-    project, which is how HATS-1842 first broke `tests/e2e/
-    test_bare_positional_prompt.py`."""
+    project — the shape that broke `tests/e2e/test_bare_positional_prompt.py`
+    the first time this refusal shipped."""
     result = compose_for_role(maintainer_project, "")
     assert isinstance(result, CompositionResult)
     assert result.skills == [] and result.rules == []
