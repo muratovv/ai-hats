@@ -196,6 +196,7 @@ testpaths = [
     "packages/ai-hats-rack/tests",
     "packages/ai-hats-observe/tests",
     "packages/ai-hats-library/tests",
+    "src/ai_hats/surfaces/tests",
     "src/ai_hats/surfaces/agy/tests",
     "src/ai_hats/surfaces/cline/tests",
     "src/ai_hats/surfaces/codex/tests",

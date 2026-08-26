@@ -6,10 +6,13 @@ which ones exist — the catalog, the registry and the lookup are the
 application's (``ai_hats.providers``), because knowing the list is knowing how
 the product uses the area.
 
-Six members are abstract, the rest carry a default that a surface overrides only
-when its harness differs. Read the default before writing an override: on the
-measurement that opened HATS-1826, ``opencode`` needed six of twenty-four.
-"""
+Signatures and defaults, not the work behind them: what a default *does* when it
+is more than a couple of lines lives beside this module (``system_prompt``,
+``managed_tags``), so implementing a surface does not mean inheriting how ai-hats
+reads a rule's metadata or writes a marker block. Six members are abstract; the
+24 public ones carrying a default are overridden only when a harness differs, and
+``opencode`` needed six of them.
+"""  # comment-length: allow — the reviewed contract has to say what it is and is not
 
 from __future__ import annotations
 
@@ -21,8 +24,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 
-from ai_hats_core import CompositionResult, ResolvedComponent
+from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.trace import TraceParser
+
 from ai_hats.session_artifacts import (
     ArtifactCategory,
     AutomateLaunch,
@@ -32,46 +36,12 @@ from ai_hats.session_artifacts import (
     assemble_meta_prompt,
 )
 
+from .system_prompt import compose_sections, write_managed_block
+
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
 
-from ..frontmatter import FrontmatterError, read_frontmatter
-from ..models import RuleMetadata
-from ..resolver import read_rule_body
-
-
 logger = logging.getLogger(__name__)
-
-
-# HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
-# designed switch, so the sweeper now reclaims the root ai-hats:* entries.
-
-from ..constants import (  # noqa: E402
-    INJECTION_START,
-    INJECTION_END,
-    PUBLISH_AGGREGATOR_START,
-    PUBLISH_AGGREGATOR_END,
-)
-
-
-def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
-    """Extract ``description`` from a skill's SKILL.md frontmatter, else its name.
-
-    Best-effort: a malformed block warns and falls back to the name rather than
-    crashing the prompt build for one skill — the loud raise is the hook path's
-    job (HATS-814).
-    """
-    try:
-        data = read_frontmatter(skill.source_path / "SKILL.md")
-    except FrontmatterError as exc:
-        logger.warning(
-            "skill %r: malformed SKILL.md frontmatter; using name in the skill index: %s",
-            skill.name,
-            exc,
-        )
-        return skill.name
-    desc = data.get("description")
-    return desc if isinstance(desc, str) and desc else skill.name
 
 
 @dataclass
@@ -305,92 +275,12 @@ class Provider(abc.ABC):
         return []
 
     def _compose_sections(self, result: CompositionResult, *, include_skills: bool) -> str:
-        """Assemble the shared system-prompt sections.
+        """The shared system-prompt sections — see ``system_prompt.compose_sections``.
 
-        Order: PRIORITIES → merged role/trait injection → always-on RULES →
-        USER RULES → optional AVAILABLE SKILLS index.
-
-        ``include_skills`` is the provider-specific toggle (HATS-701). Agy
-        passes ``True`` — it has no native skill registry, so this index is
-        its only discovery channel. Claude passes ``False`` — it materializes
-        skills as a ``--plugin-dir`` (HITL) / SDK plugin (sub-agent) registry
-        that already lists every skill with its full description, so emitting
-        the index here would be a 2-3x duplicate (~1.5k tok/session).
+        Kept as a method because it is the seam every surface calls on ``self``, in
+        this tree and out of it.
         """
-        sections: list[str] = []
-
-        if result.priorities:
-            sections.append(
-                "## PRIORITIES\n"
-                + "\n".join(f"{i + 1}. {p}" for i, p in enumerate(result.priorities))
-            )
-
-        if result.merged_injection:
-            sections.append(result.merged_injection)
-
-        rules_to_deliver: list[tuple[ResolvedComponent, str]] = []
-        for rule in result.rules:
-            if rule.source_path and rule.source_path.is_dir():
-                meta_file = rule.source_path / "metadata.yaml"
-                if meta_file.is_file():
-                    try:
-                        meta = RuleMetadata.from_yaml(meta_file)
-                        if meta.delivery is not None and meta.delivery not in ("always_on", ""):
-                            logger.warning(
-                                "rule %r: unrecognized delivery value %r at %s",
-                                rule.name,
-                                meta.delivery,
-                                meta_file,
-                            )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "rule %r: failed to load metadata at %s: %s",
-                            rule.name,
-                            meta_file,
-                            exc,
-                        )
-
-            body = read_rule_body(rule.source_path) if rule.source_path else ""
-            if body:
-                rules_to_deliver.append((rule, body))
-            else:
-                logger.warning(
-                    "rule %r: body is empty or unreadable at %s",
-                    rule.name,
-                    rule.source_path,
-                )
-
-        if rules_to_deliver:
-            rules_section = "## RULES\n"
-            for rule, body in rules_to_deliver:
-                rules_section += f"\n### {rule.name}\n{body}\n"
-            sections.append(rules_section)
-
-        # HATS-1203: project-authored rules, after the framework's own so they
-        # read as the more specific layer. Unfiltered — see discover_user_rules.
-        user_rules_section = "## USER RULES\n"
-        emitted = False
-        user_rules = getattr(result, "user_rules", ())
-        for rule_path in user_rules:
-            try:
-                body = rule_path.read_text()
-            except OSError:
-                continue
-            if body.strip():
-                user_rules_section += f"\n### {rule_path.stem}\n{body}\n"
-                emitted = True
-        if emitted:
-            sections.append(user_rules_section)
-
-        # Skills: index only (body loaded on demand via native provider).
-        if include_skills and result.skills:
-            lines = ["## AVAILABLE SKILLS\n"]
-            for skill in result.skills:
-                desc = _extract_frontmatter_description(skill)
-                lines.append(f"- **{skill.name}** — {desc}")
-            sections.append("\n".join(lines))
-
-        return "\n\n".join(sections)
+        return compose_sections(result, include_skills=include_skills)
 
     @abc.abstractmethod
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
@@ -568,47 +458,7 @@ class Provider(abc.ABC):
         return below provides a defense-in-depth no-op if it is invoked
         anyway.
         """
-        from ai_hats_core.safe_delete import replace as _safe_replace
-
         prompt_path = self.system_prompt_path(project_dir)
         if prompt_path is None:
             return None
-        prompt_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if prompt_path.exists():
-            existing = prompt_path.read_text()
-            # HATS-284: lowercase scaffold markers signal the project is on
-            # the canonical-publish layout — `./CLAUDE.md` is user-owned and
-            # the framework injection lives in `.claude/CLAUDE.md`.
-            if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
-                return prompt_path
-            if INJECTION_START in existing and INJECTION_END in existing:
-                # Update between markers, preserve everything outside
-                before = existing[: existing.index(INJECTION_START)]
-                after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
-                new_content = f"{before}{INJECTION_START}\n{content}\n{INJECTION_END}{after}"
-                _safe_replace(
-                    prompt_path,
-                    new_content.encode("utf-8"),
-                    reason="system-prompt",
-                    project_dir=project_dir,
-                )
-                return prompt_path
-            if existing.strip():
-                # Existing file without markers — preserve as project context
-                _safe_replace(
-                    prompt_path,
-                    f"{INJECTION_START}\n{content}\n{INJECTION_END}\n\n{existing}".encode("utf-8"),
-                    reason="system-prompt",
-                    project_dir=project_dir,
-                )
-                return prompt_path
-
-        # Fresh write with markers
-        _safe_replace(
-            prompt_path,
-            f"{INJECTION_START}\n{content}\n{INJECTION_END}\n".encode("utf-8"),
-            reason="system-prompt",
-            project_dir=project_dir,
-        )
-        return prompt_path
+        return write_managed_block(prompt_path, content, project_dir=project_dir)

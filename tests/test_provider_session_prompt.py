@@ -13,7 +13,6 @@ Coverage:
 
 from __future__ import annotations
 
-import logging
 import os
 import time
 from pathlib import Path
@@ -25,7 +24,6 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
 from ai_hats.surfaces.claude.provider import ClaudeProvider
-from ai_hats.surfaces.contract import _extract_frontmatter_description
 from ai_hats.surfaces.agy.provider import AgyProvider
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 from ai_hats.paths import PROJECT_CONFIG
@@ -353,54 +351,6 @@ def test_native_registry_providers_omit_skills_index(tmp_path):
         assert "Reliability" in prompt
         assert "dev_rule_tool_call_hygiene" in prompt
         assert "Tool-Call Hygiene" in prompt
-
-
-# --------------------------------------------------------------------- #
-# HATS-813 — _extract_frontmatter_description now parses real YAML. The
-# skill-index description lookup keeps its name fallback and never crashes
-# the prompt build on a malformed frontmatter block.
-# --------------------------------------------------------------------- #
-
-
-def _skill_on_disk(tmp_path: Path, name: str, skill_md: str) -> ResolvedComponent:
-    skill_dir = tmp_path / "skills" / name
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(skill_md)
-    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=skill_dir)
-
-
-def test_extract_description_reads_frontmatter(tmp_path):
-    skill = _skill_on_disk(tmp_path, "doc", "---\ndescription: the doc skill\n---\n# body\n")
-    assert _extract_frontmatter_description(skill) == "the doc skill"
-
-
-def test_extract_description_malformed_warns_then_falls_back(tmp_path, caplog):
-    """A broken frontmatter block must not raise on the prompt-build path — but
-    the malformed state is logged (observable), NOT silently collapsed into the
-    same path as a skill that merely declares no description."""
-    skill = _skill_on_disk(tmp_path, "broken", "---\nbad: : indent\n---\nbody\n")
-    with caplog.at_level(logging.WARNING, logger="ai_hats.providers"):
-        assert _extract_frontmatter_description(skill) == "broken"
-    assert "malformed" in caplog.text
-    assert "broken" in caplog.text
-
-
-def test_extract_description_absent_key_is_silent(tmp_path, caplog):
-    """The contrast: a valid block with no description falls back to the name
-    WITHOUT a warning — only the malformed state is noisy."""
-    skill = _skill_on_disk(tmp_path, "quiet", "---\nname: quiet\n---\nbody\n")
-    with caplog.at_level(logging.WARNING, logger="ai_hats.providers"):
-        assert _extract_frontmatter_description(skill) == "quiet"
-    assert caplog.text == ""
-
-
-def test_extract_description_missing_falls_back_to_name(tmp_path):
-    skill = ResolvedComponent(
-        name="ghost",
-        component_type=ComponentKind.SKILL,
-        source_path=tmp_path / "absent",
-    )
-    assert _extract_frontmatter_description(skill) == "ghost"
 
 
 def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
