@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _helpers.git import commit_file, git, init_repo
 
 pytestmark = pytest.mark.integration
 
@@ -37,24 +38,17 @@ HOOK = (
 PROSE = "packages/ai-hats-library/src/ai_hats_library/core/skills/demo/SKILL.md"
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(  # noqa: S603
-        ["git", "-C", str(cwd), *args],  # noqa: S607
-        check=True,
-        capture_output=True,
-    )
-
-
 def _repo(tmp_path: Path, body: str, *, card: str | None = "ACME-42", path: str = PROSE) -> Path:
     """A project with one staged prose file and, optionally, one tracker card."""
     root = tmp_path / "project"
+    root.mkdir(parents=True)
+    init_repo(root)
     target = root / path
-    target.parent.mkdir(parents=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(body)
     if card:
         (root / ".agent/ai-hats/tracker/backlog/tasks" / card).mkdir(parents=True)
-    _git(root.parent, "init", "-q", str(root))
-    _git(root, "add", "-A")
+    git(root, "add", "-A")
     return root
 
 
@@ -150,16 +144,14 @@ def test_a_tracked_but_unstaged_id_does_not_retro_block_the_commit(tmp_path: Pat
     quietly widened to `git ls-files` would still pass.
     """
     root = _repo(tmp_path, "clean prose.\n")
-    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base")
+    git(root, "commit", "-m", "base")
 
     neighbour = (root / PROSE).parent / "OTHER.md"
-    neighbour.write_text("clean too.\n")
-    _git(root, "add", str(neighbour))
-    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "neighbour")
+    commit_file(root, neighbour.relative_to(root), "clean too.\n", "neighbour")
 
     neighbour.write_text("history lives in ACME-1430.\n")  # tracked, NOT staged
     (root / PROSE).write_text("still clean, and this one IS staged.\n")
-    _git(root, "add", PROSE)
+    git(root, "add", PROSE)
 
     done = _run(root)
     assert done.returncode == 0, done.stdout + done.stderr
