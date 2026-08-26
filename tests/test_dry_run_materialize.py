@@ -110,28 +110,42 @@ def test_a_second_materialize_waits_instead_of_wiping_the_first(project: Path, m
     exactly one writer. ``--materialize`` pins the sid, which brings the second
     writer back — and its first act is ``rmtree`` on the tree we are building.
     Asserted by holding the lock and watching the build refuse to proceed.
+    Driven at the unit that owns the serialising, with the wait injected: the
+    entry point resolves the real default, so reaching in to shorten it would
+    patch the code under test (scripts/check_test_isolation.py).
     """  # comment-length: allow — the argument this re-opens is worth naming
     import filelock
 
-    import ai_hats.materialization as materialization
+    from ai_hats.dry_run import _exclusive_rebuild
+    from ai_hats.materialization import ApplyMaterializer
 
-    monkeypatch.setattr(materialization, "LOCK_TIMEOUT", 0.1)
     cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
     lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
+    port = ApplyMaterializer(lock_timeout=0.1)
     with filelock.FileLock(str(lock_path)):
         with pytest.raises(RuntimeError, match="materialization blocked"):
-            dry_run_hitl(project, provider="claude", materialize=True)
+            with _exclusive_rebuild(cache_mat, port, materialize=True):
+                pass
 
 
-def test_a_held_lock_does_not_stall_a_plain_dry_run(project: Path, monkeypatch):
+def test_the_materializing_entry_point_goes_through_the_lock(project: Path):
+    """Wires the unit above to the entry point, without waiting on a timeout.
+
+    Taking the lock creates the file beside the cache dir, so its presence after
+    a clean run is the proof that the rebuild was serialised at all.
+    """
+    dry_run_hitl(project, provider="claude", materialize=True)
+
+    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    assert (cache_mat.parent / f"{cache_mat.name}.lock").exists()
+
+
+def test_a_held_lock_does_not_stall_a_plain_dry_run(project: Path):
     """The default path writes nothing, so it has nothing to serialise against."""
     import filelock
 
-    import ai_hats.materialization as materialization
-
-    monkeypatch.setattr(materialization, "LOCK_TIMEOUT", 0.1)
     cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
     lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
