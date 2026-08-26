@@ -1,10 +1,8 @@
 """The contract every surface answers — ADR-0026 D14, HATS-1826.
 
-A surface is one way of running an agent: Claude Code, agy, cline, codex,
-opencode. This module says what all of them have in common, and nothing about
-which ones exist — the catalog, the registry and the lookup are the
-application's (``ai_hats.surface_registry``), because knowing the list is knowing how
-the product uses the area.
+A surface is one way of running an agent. This module says what all of them have in
+common and names none of them: which surfaces exist is the application's question,
+answered by ``ai_hats.surface_registry`` off the entry-point group.
 
 Signatures and defaults, not the work behind them: what a default *does* when it
 is more than a couple of lines lives beside this module (``system_prompt``,
@@ -36,6 +34,7 @@ from ai_hats.session_artifacts import (
     assemble_meta_prompt,
 )
 
+from ..debt import SessionId
 from .system_prompt import compose_sections, write_managed_block
 
 if TYPE_CHECKING:
@@ -46,7 +45,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SurfaceRunResult:
+    """What one sub-agent run reported, as the surface saw it."""
+
     exit_code: int
+    # The SURFACE's own id for this run (Claude's uuid4, codex's thread id) — not
+    # ai-hats' `session_id`, which the caller already holds. None when it has none.
     session_id: str | None
     total_cost_usd: float
     num_turns: int
@@ -59,7 +62,7 @@ class SurfaceRunResult:
 
 @dataclass
 class SurfaceHint:
-    """A CLI hint describing a parameter or state supported by the provider."""
+    """A CLI hint describing a parameter or state supported by the surface."""
 
     name: str
     values: str
@@ -79,9 +82,16 @@ class TranscriptResolver(Protocol):
     def __call__(
         self,
         project_dir: Path,
-        session_id: str,
+        # ai-hats' own session id, `YYYYMMDD-HHMMSS-<n>-<pid>`. Its first 15 chars
+        # ARE the session's start time and the resolver parses them, so this is a
+        # timestamped identity, never an opaque uuid (`paths.session_start_ts`).
+        session_id: SessionId,
         *,
+        # The same session in the SURFACE's numbering (Claude's uuid4). Not a parent
+        # session: held, it names the transcript exactly instead of guessing by time.
         provider_session_id: str | None = None,
+        # Upper bound of the mtime window when there is no id to match on — without
+        # it a file written after the session ended matches (HATS-1400).
         end_ts: float | None = None,
     ) -> list[Path]: ...
 
@@ -96,7 +106,7 @@ class SubagentEngine(abc.ABC):
         result: "CompositionResult",
         project_dir: Path,
         work_dir: Path,
-        session_id: str,
+        session_id: SessionId,
         task: str,
         ticket_id: str,
         env: dict[str, str],
@@ -108,32 +118,32 @@ class SubagentEngine(abc.ABC):
 
 
 class Surface(abc.ABC):
-    """Abstract provider interface."""
+    """What every surface answers. Six members abstract, the rest defaulted."""
 
     @property
     @abc.abstractmethod
     def name(self) -> str: ...
 
     def detected_home_dirs(self) -> list[str]:
-        """Directory names under $HOME to check for provider presence (e.g. ['.agy', '.gemini'])."""
+        """Directory names under $HOME to check for the surface's presence (e.g. ['.agy', '.gemini'])."""
         return [f".{self.name}"]
 
     def surface_hints(self) -> list[SurfaceHint]:
         """A list of hints for the user about supported parameters and states.
 
-        Returned by CLI (e.g. `ai-hats --help`) when this provider is active.
+        Returned by CLI (e.g. `ai-hats --help`) when this surface is active.
         """
         return []
 
     @abc.abstractmethod
     def system_prompt_path(self, project_dir: Path) -> Path | None:
-        """Path to the system prompt file for this provider, or None if omitted."""
+        """Path to the system prompt file for this surface, or None if omitted."""
 
     @abc.abstractmethod
     def rules_dir(self, session_dir: Path) -> Path:
         """Directory where rules files should be placed."""
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path | None:
+    def session_skills_root(self, project_dir: Path, session_id: SessionId) -> Path | None:
         """Where this surface mirrors the session's composed skills (HATS-1540).
 
         The root a bound check resolves its script from in-session, one level
@@ -148,7 +158,7 @@ class Surface(abc.ABC):
 
     @contextlib.contextmanager
     def execution_context(self, project_dir: Path) -> contextlib.AbstractContextManager[None]:
-        """Context manager active around provider CLI execution.
+        """Context manager active around the surface's CLI execution.
 
         Subclasses override to perform workspace setup/teardown during launch.
         """
@@ -163,7 +173,7 @@ class Surface(abc.ABC):
         category: ArtifactCategory,
         project_dir: Path,
         result: CompositionResult,
-        session_id: str,
+        session_id: SessionId,
         *,
         run_mode: RunMode,
         artifacts: BuiltArtifacts,
@@ -178,14 +188,14 @@ class Surface(abc.ABC):
         """
         handler = getattr(self, f"_build_{category.value}_{RunMode(run_mode).value}", None)
         if handler is None:
-            logger.debug("Provider %s delivers no %s in %s", self.name, category, run_mode)
+            logger.debug("Surface %s delivers no %s in %s", self.name, category, run_mode)
             return
         handler(project_dir, result, session_id, artifacts)
 
     def handles_artifact_categories(self) -> bool:
         """Whether this surface implements the ADR-0018 per-category seam.
 
-        False for a pre-ADR-0018 out-of-tree provider that overrides only
+        False for a pre-ADR-0018 out-of-tree surface that overrides only
         ``build_session_prompt``: routing it through the builder would deliver an
         empty session rather than fail, since the dispatch above finds no handler.
         """
@@ -199,13 +209,13 @@ class Surface(abc.ABC):
         self,
         project_dir: Path,
         result: CompositionResult,
-        session_id: str,
+        session_id: SessionId,
         *,
         run_mode: RunMode | str = RunMode.HITL,
         policy: SessionPolicy | None = None,
         artifacts: BuiltArtifacts,
     ) -> BuiltArtifacts:
-        """Build and materialize session artifacts per category and provider delivery mode.
+        """Build and materialize session artifacts per category and delivery mode.
 
         The caller owns ``artifacts`` and therefore its ``port``: hand one carrying
         a ``PlanMaterializer`` and the whole build becomes a dry-run (HATS-1211).
@@ -231,7 +241,7 @@ class Surface(abc.ABC):
     def transcript_parser(self) -> TranscriptParser:
         """The parser ``AuditWriter`` uses for this surface's session record.
 
-        HATS-948: the parser rides the provider (no separate registry). Default
+        HATS-948: the parser rides the surface (no separate registry). Default
         is trace-only; a surface with a structured session log (Claude JSONL)
         overrides with a richer parser.
         """
@@ -240,7 +250,7 @@ class Surface(abc.ABC):
     def resolve_transcript(
         self,
         project_dir: Path,
-        session_id: str,
+        session_id: SessionId,
         *,
         provider_session_id: str | None = None,
         end_ts: float | None = None,
@@ -284,25 +294,25 @@ class Surface(abc.ABC):
 
     @abc.abstractmethod
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
-        """Get the CLI command to launch this provider."""
+        """Get the CLI command to launch this surface."""
 
     def get_cli_launch_args(
-        self, base_cmd: list[str], session_id: str, is_resume: bool
+        self, base_cmd: list[str], session_id: SessionId, is_resume: bool
     ) -> list[str]:
         """Surface-specific launch flags (e.g. session-id linkage).
 
-        Default: none. ``wrap_runner`` calls this on EVERY provider, so a
+        Default: none. ``wrap_runner`` calls this on EVERY surface, so a
         claude-only override left agy/cline/gemini raising AttributeError
         before launch (HATS-1130).
         """
         return base_cmd
 
     def model_flags(self, model: str) -> list[str]:
-        """Convert a model name into provider-specific CLI flags."""
+        """Convert a model name into surface-specific CLI flags."""
         return ["--model", model]
 
     def supports_sdk_engine(self) -> bool:
-        """Whether this provider provides a native SDK SubagentEngine."""
+        """Whether this surface provides a native SDK SubagentEngine."""
         return False
 
     def supports_session_command_wrappers(self) -> bool:
@@ -310,7 +320,7 @@ class Surface(abc.ABC):
         return False
 
     def engine(self) -> SubagentEngine | None:
-        """Get the native SDK SubagentEngine for this provider."""
+        """Get the native SDK SubagentEngine for this surface."""
         return None
 
     def get_run_command(
@@ -318,7 +328,7 @@ class Surface(abc.ABC):
         cmd: list[str],
         meta_prompt: str,
     ) -> list[str]:
-        """Build a non-interactive command that runs ``meta_prompt`` through this provider.
+        """Build a non-interactive command that runs ``meta_prompt`` through this surface.
 
         Default: return ``cmd`` unchanged. Subclasses tailor the invocation
         to their CLI (e.g. Claude needs ``--print -p``, Agy needs ``-p``).
@@ -329,7 +339,7 @@ class Surface(abc.ABC):
         self,
         project_dir: Path,
         result: CompositionResult,
-        session_id: str,
+        session_id: SessionId,
         artifacts: BuiltArtifacts,
         *,
         task: str,
@@ -356,7 +366,7 @@ class Surface(abc.ABC):
 
     @abc.abstractmethod
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        """Environment variables this provider needs. Pure — claims nothing.
+        """Environment variables this surface needs. Pure — claims nothing.
 
         A value that only exists once something is taken for real (a bound port,
         a lease) belongs in :meth:`claim_launch_env`, or ``--dry-run`` performs
@@ -376,22 +386,22 @@ class Surface(abc.ABC):
         self,
         project_dir: Path,
         result: CompositionResult,
-        session_id: str,
+        session_id: SessionId,
     ) -> tuple[list[str], dict[str, str], str]:
         """Build CLI args and env vars for a per-session composed prompt.
 
         Called for EVERY session (default role and explicit ``--role`` alike).
         ``session_id`` keys the per-session cache dir
         ``<cache_root>/sessions/<session_id>/`` — outside the project — where
-        the provider writes the prompt file and plugin-dir. Caller owns dir
+        the surface writes the prompt file and plugin-dir. Caller owns dir
         cleanup at session_end (``_cleanup_session_cache`` in runtime.py).
 
         Returns ``(extra_args, extra_env, meta_prompt)``. ``meta_prompt`` is
-        the EXACT bytes that the provider will see as system-prompt override
+        the EXACT bytes that the surface will see as system-prompt override
         (HATS-523: persisted to ``<session_dir>/meta_prompt.txt`` by
         ``WrapRunner.run`` for post-hoc audit / regression detection,
         symmetric with ``SubAgentRunner.run``). Empty string when the
-        provider has no system-prompt channel.
+        surface has no system-prompt channel.
 
         Default: no-op (subclasses override).
         """
@@ -401,17 +411,17 @@ class Surface(abc.ABC):
         self,
         project_dir: Path,
         result: CompositionResult,
-        session_id: str,
+        session_id: SessionId,
     ) -> list[str]:
         """Materialize the composed role's skills for runtime discovery.
 
         HATS-307: returns extra CLI args (e.g. ``["--plugin-dir", <path>]``)
-        that make the spawned provider session see the role's skills via its
+        that make the spawned surface session see the role's skills via its
         own Skill registry. ``session_id`` keys the cache dir; plugin lives
         at ``<cache_dir>/plugin/`` and is cleaned with the whole cache dir
         at session_end.
 
-        Default: no-op — the provider has no per-spawn skill materialization
+        Default: no-op — the surface has no per-spawn skill materialization
         mechanism (Agy case — see HATS-367 follow-up).
         """
         del project_dir, result, session_id
@@ -420,9 +430,9 @@ class Surface(abc.ABC):
     def ensure_runtime_hooks(
         self, project_dir: Path, result: CompositionResult | None = None, **kwargs
     ) -> None:
-        """Install provider-specific runtime hooks (e.g. Claude Code PreToolUse).
+        """Install surface-specific runtime hooks (e.g. Claude Code PreToolUse).
 
-        Called by ``Assembler._refresh`` after the provider scaffold is
+        Called by ``Assembler._refresh`` after the surface scaffold is
         ensured. Idempotent — safe to invoke on every role apply.
 
         ``result`` is the active role's composition (``None`` on the legacy
@@ -450,9 +460,9 @@ class Surface(abc.ABC):
     def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
         """Write or update the inline system prompt block.
 
-        Used by providers without a scaffold (e.g. Agy) to maintain the
+        Used by surfaces without a scaffold (e.g. Agy) to maintain the
         AI-HATS-managed section of `./GEMINI.md` between `INJECTION_START` /
-        `INJECTION_END` markers. For providers that declare a scaffold
+        `INJECTION_END` markers. For surfaces that declare a scaffold
         (Claude — HATS-284), this method is dormant: `Assembler.set_role`
         skips the call entirely (HATS-286), and the lowercase-marker early
         return below provides a defense-in-depth no-op if it is invoked
