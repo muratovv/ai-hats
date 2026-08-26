@@ -7,10 +7,6 @@ composition:
     - rule_composition_value_contract
   skills:
     - doc-protocol
-    # was rule_core_vs_usage_split until the decision tree became a
-    # skill. The injection cites it. `maintainer-quality-gate` (which absorbed
-    # dev_rule_e2e_gate) rides the role, which also binds its hooks.
-    - library-layer-split
 injection: |
   ## AI-HATS MAINTAINER
 
@@ -114,12 +110,12 @@ injection: |
     push an annotated tag, create a GitHub Release with the CHANGELOG
     section as body.
 
-  ### Library split (see skill `library-layer-split` + trait `ai-hats-framework`)
-  - New component → which of the three layers, asked FIRST, not after writing.
+  ### Library split (trait `ai-hats-framework` states the three layers)
   - Never attach a component whose trigger surface names this repo to a trait
     under `core/` — any component type, any core trait, not just a rule on
     `trait-agent`/`trait-base`. It pollutes universal traits with narrow
     concerns that other ai-hats consumers then inherit.
+  - Placing a NEW component is `role-curator`'s call, not yours — hand it off.
 
   ### Reflexive loop (map: `docs/reflect.md`)
   The framework audits its own sessions. These components EXIST — name them,

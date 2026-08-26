@@ -317,8 +317,35 @@ Built-in content (roles, traits, rules, skills, pipelines) ships inside the
 
 The layer is a property of the component, not of the bundle that composes it:
 resolution is name-based across all roots, so a trait in `ai-hats-dev/`
-composing a skill in `usage/` is ordinary. The agent-facing form of this
-decision is the `library-layer-split` skill.
+composing a skill in `usage/` is ordinary. Never move a component just to sit
+next to its composer.
+
+**Reading step 4.** The signal is the trigger surface, not the vocabulary. A
+component that says "ai-hats" in prose but fires on any project is `usage`; one
+that never says it but only ever fires here is `ai-hats-dev`. Step 4 is `yes`
+when the component names `src/ai_hats/…`, `packages/ai-hats-library/…`, this
+repo's `CONTRIBUTING.md`, `docs/adr/…` or `scripts/ci-local.sh` **as a
+dependency rather than as an example**. A guarded fast path is not a dependency:
+`rule-delivery-gate` hard-codes the library path and still lives in `usage`,
+because the hard-code is an `if [[ -d … ]]` branch with a package-resolve
+fallback, so it works in any project.
+
+| Component                                                    | Layer         | Why                                              |
+| ------------------------------------------------------------ | ------------- | ------------------------------------------------ |
+| `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                    |
+| `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them     |
+| `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path                 |
+| `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs              |
+| `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`         |
+| `skill-engineer` trait                                       | `ai-hats-dev` | its injection is about *this* library            |
+
+The failure to avoid: a component in `core` whose body names `src/ai_hats/`.
+Every consumer then pays always-on tokens for ai-hats internals — which is how
+`rule_composition_value_contract` rode `trait-agent` into 11 roles until
+HATS-1834. Check the answer with `ai-hats list tokens <role>` before and after:
+a component that moved *out* of a base trait must disappear from the roles that
+no longer carry it and stay in the ones that do; if it vanished from both, the
+detach was too wide.
 
 A skill that *drives an engine tool* still goes in the **library** (any layer)
 — never inside the engine package. It declares the tool as a dependency

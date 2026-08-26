@@ -5,11 +5,10 @@ composition:
   skills:
     - doc-protocol
     - library-change-hypothesis-protocol
-    # HATS-1834: both were rules on this trait. `maintainer-quality-gate`
-    # absorbed dev_rule_e2e_gate, so role-curator now also installs its
-    # pre-push hook — approved by the supervisor, not a side effect.
+    # HATS-1834: `maintainer-quality-gate` absorbed dev_rule_e2e_gate, so
+    # role-curator now also installs its pre-push hook — approved, not a
+    # side effect.
     - maintainer-quality-gate
-    - library-layer-split
 injection: |
   ## LIBRARY CURATOR
 
@@ -122,8 +121,9 @@ injection: |
 
   ### Workflow
   1. Identify the change shape: new component vs refactor vs audit.
-  2. Apply skill `library-layer-split`: engine fundament → `core/`,
-     consumer catalog → `usage/`, this-repo-only → `ai-hats-dev/`.
+  2. Place it by layer: engine fundament → `core/`, consumer catalog →
+     `usage/`, this-repo-only → `ai-hats-dev/`. Worked examples and the
+     trigger-surface test: `CONTRIBUTING.md` § "Library structure".
   3. Compose minimally — no speculative rules/skills/traits.
   4. Verify the rendered injection (no duplication, no contradictions)
      by composing the affected role and reading the output.

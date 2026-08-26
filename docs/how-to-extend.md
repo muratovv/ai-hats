@@ -12,7 +12,7 @@ When you install ai-hats, three layers ship as built-in content:
 
 The split is informational — all three layers are loaded at runtime, `core` → `usage` → `ai-hats-dev`, and a later layer wins a name it shares with an earlier one. You can override any of them from your own library path.
 
-Deciding which layer a *new* component belongs to is the `library-layer-split` skill's job.
+Deciding which layer a *new* component belongs to is `CONTRIBUTING.md` § "Library structure"; in this repo it is `role-curator`'s call.
 
 ## Override points (last-wins precedence)
 

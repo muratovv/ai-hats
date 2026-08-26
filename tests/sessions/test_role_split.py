@@ -54,12 +54,18 @@ def test_personal_workflow_trait_removed_from_library() -> None:
     assert not (LIBRARY / "usage/traits/personal-workflow").exists()
 
 
-def test_library_layer_split_skill_exists() -> None:
-    """HATS-1834: the layer decision tree stopped being an always-on rule."""
+def test_layer_decision_is_not_a_component() -> None:
+    """HATS-1834: the rule was deleted, not replaced by a skill.
+
+    The criterion is already always-on in the ``ai-hats-framework`` injection;
+    a component would have made a fourth copy of one four-line test.
+    """
     assert not (LIBRARY / "core/rules/rule_core_vs_usage_split").exists()
-    skill = (LIBRARY / "ai-hats-dev/skills/library-layer-split/SKILL.md").read_text()
-    for layer in ("core/", "usage/", "ai-hats-dev/"):
-        assert layer in skill, f"decision tree must name the {layer} layer"
+    assert not (LIBRARY / "ai-hats-dev/skills/library-layer-split").exists()
+
+    contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text()
+    for layer in ("**core**", "**usage**", "**ai-hats-dev**"):
+        assert layer in contributing, f"CONTRIBUTING must name the {layer} layer"
 
 
 @pytest.mark.parametrize(
@@ -168,23 +174,26 @@ def test_e2e_gate_policy_folded_into_the_gate_skill() -> None:
     assert "maintainer-quality-gate" in trait.injection
 
 
-# --- ai-hats-framework trait — injection only, rule lives on library-curator --
+# --- ai-hats-framework trait — injection only, no component behind it --------
 
 
-def test_ai_hats_framework_does_not_carry_core_vs_usage_rule() -> None:
-    """HATS-510 (B): ``rule_core_vs_usage_split`` ownership moved to the
-    ``library-curator`` trait (role-curator domain). ``ai-hats-framework``
-    keeps the framework-awareness *injection* but carries no formal
-    constraint — non-trivial library work hands off to role-curator."""
+def test_the_layer_split_is_carried_by_no_component() -> None:
+    """HATS-510 (B) then HATS-1834: ``ai-hats-framework`` keeps the
+    framework-awareness *injection* and carries no formal constraint. Neither
+    does anything else — the criterion is four lines of always-on injection, so
+    a rule or a skill behind it would only be a second copy."""
     framework = _load(
         "packages/ai-hats-library/src/ai_hats_library/core/traits/ai-hats-framework/config.yaml"
     )
-    assert "rule_core_vs_usage_split" not in framework.composition.rules
+    assert framework.composition.rules == []
+    assert framework.composition.skills == []
 
     curator = _load(
         "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/library-curator/config.yaml"
     )
-    assert "library-layer-split" in curator.composition.skills
+    for carrier in ("rule_core_vs_usage_split", "library-layer-split"):
+        assert carrier not in curator.composition.rules
+        assert carrier not in curator.composition.skills
 
 
 def test_ai_hats_framework_injection_mentions_layered_library() -> None:

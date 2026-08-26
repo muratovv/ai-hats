@@ -38,7 +38,7 @@ One of the three tiers the shipped library is split into. All three load at ever
 | `usage`        | the opinionated catalog a consuming project picks from                            | yes                         |
 | `ai-hats-dev`  | what the ai-hats repo wears to develop itself; no use to a consumer               | no (HATS-1834)              |
 
-The layer is a property of the **component**, not of the bundle composing it: resolution is name-based across all roots, so a trait in one layer composing a skill in another is ordinary. Choosing a layer for a new component is the `library-layer-split` skill's job; the engine's own list is `LIBRARY_LAYERS` in `src/ai_hats/paths/constants.py`. Override precedence — see [9].
+The layer is a property of the **component**, not of the bundle composing it: resolution is name-based across all roots, so a trait in one layer composing a skill in another is ordinary. The decision tree for a new component lives in `CONTRIBUTING.md`; the engine's own list is `LIBRARY_LAYERS` in `src/ai_hats/paths/constants.py`. Override precedence — see [9].
 
 ## Role
 

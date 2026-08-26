@@ -80,7 +80,7 @@ composition:
 #     branch/commit conventions, what-NOT-to-commit, glossary-first, d2 diagram
 #     workflow, release flow, architectural defaults.
 #   - Framework knowledge via the `ai-hats-framework` trait: the three library
-#     layers; the decision tree itself is the `library-layer-split` skill.
+#     layers. Placing a new component is role-curator's call, not this role's.
 #   - Personal workflow is layered in via ~/.ai-hats/customizations.yaml — add
 #     with `ai-hats config customize maintainer --add-trait personal-workflow
 #     --global`. Lives in user-scope, not framework defaults.

@@ -1,10 +1,9 @@
 name: ai-hats-framework
 composition:
   traits: []
-  # The decision tree lives in the `library-layer-split` skill, owned by the
-  # role-curator domain (HATS-1834; was rule_core_vs_usage_split). Roles that
-  # compose this trait get layer-awareness always-on and no formal constraint —
-  # non-trivial library work hands off to role-curator.
+  # HATS-1834: no rule here. The injection carries layer-awareness always-on;
+  # the decision itself is CONTRIBUTING's, and placing a component is
+  # role-curator's call.
   rules: []
   skills: []
 injection: |
@@ -26,6 +25,5 @@ injection: |
   `libraries/`), which win by the same last-wins rule.
 
   When creating a rule / skill / trait, the layer is a **plan-stage** answer,
-  not a post-hoc one: expand skill `library-layer-split` for the decision tree.
-  Ownership of library curation lives with the `role-curator` role — hand off
-  non-trivial library changes there.
+  not a post-hoc one. Ownership of library curation lives with the
+  `role-curator` role — hand off non-trivial library changes there.
