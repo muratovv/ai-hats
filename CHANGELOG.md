@@ -15,6 +15,30 @@ since the latest tag lives under **Unreleased** until the next release.
 - **The `role-curator` / `library-curator` trim from HATS-1825 is undone** (HATS-1843). That pass moved the engine-internals map and the worktree-verification recipe out of the trait into `docs/how-to-extend.md`, and replaced the role's five-step workflow with three bullets pointing at the trait — buying back ~870 resident tokens a turn. A pointer only pays off if the agent follows it: the session that measured this one reached for the recipe from memory instead and got `ImportError: cannot import name 'build_library_paths'`, which is precisely the bounce the still-active HYP-108 exists to count. Both files are restored byte-identical to `ac5f92a3^`; the doc stays where HATS-1825 put it, so the text now lives in two places on purpose, and whether that duplication survives is HATS-1844's call rather than this card's.
 
   Measured, not estimated: the composed `role-curator` prompt goes 53,128 → 56,665 chars, its budget 56,819 → 57,695 tokens (+876) — the original ~870 figure was accurate. `maintainer` does not move by a single token, which is the control: it composes neither component.
+### Changed
+
+- **A ticket id no longer appears in a comment or in shipped library prose.** The
+  comment rule used to *prescribe* a `TICKET-NNN` pointer — it was introduced to
+  displace four-line retellings of task history, so dropping it alone would have
+  opened the road back. It now refuses both, and names the positive form: a
+  one-line WHY, an ADR for anything longer. An ADR ships inside the repository,
+  so its citation resolves for whoever reads the code and `adr-integrity` refuses
+  it once it stops resolving; a tracker id does neither.
+
+  189 of the 193 ids in `rule.md`, `SKILL.md` and `config.yaml` injections are
+  gone. The four that stay are not provenance, and the distinction is the whole
+  job: the CLI-grammar placeholders (`rack transition PROP-NNN --link
+  related_tasks:HATS-NNN`), the id the checkout guard *prints* — so the prose can
+  name what you will see on screen — and the epic a usage-layer skill tells you
+  to file under. Two `core/` components were shipping this repo's own ids as
+  their worked example, which is exactly the leak; those became neutral prefixes.
+
+  Not swept, each for a reason: engine code and hooks (1,852 sites, where a bare
+  `# HATS-NNNN` with no words has to be rewritten rather than deleted), `tests/`
+  — `tests/e2e` cannot be, since `e2e-catalog` requires the pin — and
+  `docs/adr/` plus `CHANGELOG.md`, where the number is the record rather than a
+  leak. Resident prompt cost: +33 tokens, near neutral; this was a shareability
+  change, not a shrink.
 
 ### Added
 
