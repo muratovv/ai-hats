@@ -7,7 +7,7 @@ Every line is one shape from `SKILL.md`; read it there for why.
 ```python
 # types.py — the one home for names whose type is not decided yet
 StepId = NewType("StepId", str)
-Tracer = object          # TODO(TICKET-412): real type once the tracer lands
+Tracer = object          # placeholder: real type lands with the tracer
 
 
 class Isolation(Enum):   # a closed set of values, so not a str

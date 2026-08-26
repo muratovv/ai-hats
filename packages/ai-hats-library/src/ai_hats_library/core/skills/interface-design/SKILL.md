@@ -79,7 +79,7 @@ reader is not written yet.
     Tracer = object                           # and now: same thing or not?
 
 ✅  # types.py — the one home
-    TracerFactory = object   # TODO(TICKET-NNN): real type once the tracer lands
+    TracerFactory = object   # placeholder: real type lands with the tracer
 ```
 
 Whoever does not read your file declares their own alias, and a third person
