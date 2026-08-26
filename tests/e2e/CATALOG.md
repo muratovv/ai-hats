@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**273 of 273 files catalogued — 282 flows.**
+**274 of 274 files catalogued — 283 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3179,6 +3179,21 @@ as a claim to check, not as evidence.
 
 - **expect** — rack resolves the main repository tracker directory and successfully reads or updates task card data
 - **why** — rack commands issued inside linked worktrees must locate the main repository tracker without requiring relative path navigation
+
+## `test_ticket_id_gate_hook.py`
+
+*pins HATS-1853*
+
+- **flow** — a library author commits prose that still carries a tracker id, and the pre-commit gate has to refuse it before the id ships to other projects
+- **cmds**
+
+  ```console
+  bash packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
+  python -m ai_hats.cli.githooks_hook pre-commit --project-dir . --githooks-dir .githooks
+  ```
+
+- **expect** — the hook blocks on a staged `<PREFIX>-<digits>`, spares the `<PREFIX>-NNN` placeholder beside it, honours the same-line allow marker, learns the prefix from the project's own cards rather than carrying one, and its refusal survives a later permissive hook in the materialized chain.
+- **why** — the hook is itself shipped library content, so a hardcoded prefix in it would BE the leak it refuses — the learning path is load-bearing, not a convenience. And a single-hook test cannot see a sibling hook overriding the verdict, which is how a blanket deny once shipped past a green suite, so the composite chain is driven here too.
 
 ## `test_tool_call_hygiene_guard.py`
 
