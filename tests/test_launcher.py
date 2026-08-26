@@ -582,7 +582,7 @@ def test_launcher_probe_fails_on_missing_first_party_entry_point_attribute(tmp_p
     python_stub.write_text(
         "#!/usr/bin/env bash\n"
         'if [[ "${1:-}" == "-c" ]]; then\n'
-        "    echo \"failed loading entry point 'gemini' (ai_hats.surface_registry:GeminiProvider): AttributeError\" >&2\n"
+        "    echo \"failed loading entry point 'gemini' (ai_hats.providers:GeminiProvider): AttributeError\" >&2\n"
         "    exit 1\n"
         "fi\n"
         "exit 0\n"

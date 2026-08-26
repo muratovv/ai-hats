@@ -92,6 +92,12 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed — BREAKING
 
+- **The surfaces area speaks `surface`; the product keeps saying `provider`** (HATS-1826). Every in-process symbol renamed: `Provider` → `Surface`, `ProviderHint` → `SurfaceHint`, `ProviderRunResult` → `SurfaceRunResult`, `ClaudeProvider` → `ClaudeSurface` (and the four siblings), `ai_hats.providers` → `ai_hats.surface_registry` with `get_provider`/`register_provider`/`provider_names` → `get_surface`/`register_surface`/`surface_names`, and `ai_hats.surfaces_registry` → `ai_hats.surface_catalog`.
+
+  **Unchanged, on purpose:** the `ai_hats.providers` entry-point group, `-p/--provider`, `ai-hats list providers`, the `provider:` key in `ai-hats.yaml`, and the `provider` marker in session artifacts. Renaming those would break installed third-party surfaces and existing sessions and buys nothing; `docs/glossary.md` records the boundary so neither side gets "fixed" to match the other.
+
+  **What actually breaks for an out-of-tree surface:** `Provider` / `ProviderHint` / `ProviderRunResult` survive as deprecated aliases on `ai_hats.surfaces`, so `class MySurface(Provider)` still imports. The **method rename does not alias** — a surface overriding `provider_hints` is silently never called again; rename the override to `surface_hints`.
+
 - **A rack lifecycle point is now an arrow, and it denotes a SET** (HATS-1719). `at: [edge:<from>--<to>]` is replaced by `at: ['<from>-><to>']`, and the new `at: ['-><to>']` binds **every** road into a state. The retired spelling is **removed, not aliased**: a role still carrying it is refused at composition, naming the row. Grammar and legality: ADR-0017 §3.
 
   Why it is worth the break: the shipped `->done` gate ("is master green after this card") was bound to `edge:review--done` — **one** of the **eight** edges into `done` that the worktree teardown-merge fires on. A forced close (`rack transition <id> --state done --force`, blessed by `docs/ARCHITECTURE.md`) merged into master with that question never asked. `at: ['->done']` closes all eight, and the forced close is now gated like every other road.

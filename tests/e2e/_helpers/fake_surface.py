@@ -334,7 +334,7 @@ def install(tmp_project, tmp_path: Path, repo_root: Path) -> FakeSurface:
         "Metadata-Version: 2.1\nName: holdfast-hats\nVersion: 0.1\n"
     )
     (dist_info / "entry_points.txt").write_text(
-        f"[ai_hats.surface_registry]\n{SURFACE} = holdfast_provider:HoldfastProvider\n"
+        f"[ai_hats.providers]\n{SURFACE} = holdfast_provider:HoldfastProvider\n"
     )
 
     log_sink = tmp_path / "log-sink"

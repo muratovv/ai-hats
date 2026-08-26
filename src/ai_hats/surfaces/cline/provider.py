@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 class ClineSurface(Surface):
-    """`cline` CLI adapter, registered via the `ai_hats.surface_registry` entry point."""
+    """`cline` CLI adapter, registered via the `ai_hats.providers` entry point."""
 
     @property
     def name(self) -> str:

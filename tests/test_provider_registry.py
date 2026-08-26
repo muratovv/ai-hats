@@ -2,7 +2,7 @@
 
 The closed ``PROVIDERS`` dict became an open registry: providers self-register
 at import and third parties register via ``register_surface`` (or the
-``ai_hats.surface_registry`` entry-point group — see ``test_provider_entry_points``).
+``ai_hats.providers`` entry-point group — see ``test_provider_entry_points``).
 """
 
 from __future__ import annotations

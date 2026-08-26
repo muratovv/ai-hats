@@ -7,7 +7,7 @@ cmds:
     uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
     uv venv <tmp>/venv && uv pip install --no-deps <wheel>
     <tmp>/venv/bin/python -c "get_surface('claude')"
-expect: the installed dist advertises `claude` under `ai_hats.surface_registry`, the
+expect: the installed dist advertises `claude` under `ai_hats.providers`, the
         registry resolves it, and the probe proves it read the wheel built here
         rather than some release resolved from the index
 why:    `claude` used to self-register in `providers._register_builtins` before
@@ -52,7 +52,7 @@ import importlib.metadata, json
 # index instead would otherwise report THAT release's behaviour as this one's.
 version = importlib.metadata.version("ai-hats")
 
-advertised = sorted(ep.name for ep in importlib.metadata.entry_points(group="ai_hats.surface_registry"))
+advertised = sorted(ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers"))
 
 from ai_hats.surface_registry import UnknownSurfaceError, get_surface
 
@@ -182,7 +182,7 @@ def declared(declared_venv: tuple[Path, str], tmp_path_factory) -> dict:
 
 def test_the_installed_wheel_advertises_claude_and_resolves_it(declared: dict) -> None:
     assert "claude" in declared["advertised"], (
-        f"the built wheel advertises {declared['advertised']} under ai_hats.surface_registry — "
+        f"the built wheel advertises {declared['advertised']} under ai_hats.providers — "
         "claude's declaration did not reach entry_points.txt"
     )
     assert declared["resolved"] == "ClaudeSurface", declared["refusal"]

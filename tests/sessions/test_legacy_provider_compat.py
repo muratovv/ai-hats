@@ -1,6 +1,6 @@
 """A pre-ADR-0018 out-of-tree surface still works, and says what it cannot do (HATS-1207 R4).
 
-``ai_hats.surface_registry`` is a published entry point, so a third-party surface may
+``ai_hats.providers`` is a published entry point, so a third-party surface may
 implement only ``build_session_prompt`` and know nothing about categories or
 ``SessionPolicy``. Routing such a provider through the builder would not raise —
 ``build_category_artifact`` no-ops — it would hand the session an EMPTY prompt.

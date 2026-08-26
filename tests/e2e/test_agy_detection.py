@@ -34,7 +34,7 @@ def test_agy_detected_via_gemini_home_dir(repo_root: Path, tmp_path: Path):
     env["PYTHONPATH"] = checkout_pythonpath(repo_root)
 
     cmd = [
-        # HATS-1826 folded agy into ai-hats: the `ai_hats.surface_registry` entry point
+        # HATS-1826 folded agy into ai-hats: the `ai_hats.providers` entry point
         # now ships in the integrator's own metadata, so the interpreter that has
         # ai-hats installed IS the registry — no synthesised dist-info.
         sys.executable,

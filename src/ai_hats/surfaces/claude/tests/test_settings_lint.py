@@ -1,6 +1,6 @@
 """HATS-1006: Claude settings lint — pure rule lint + ClaudeSurface chain.
 
-Lives with the surface (``ai_hats.surface_registry``), not the runner: the lint is
+Lives with the surface (``ai_hats.surfaces.claude``), not the runner: the lint is
 Claude-specific; ``WrapRunner`` only consumes ``Surface.settings_lint_warnings``.
 """
 

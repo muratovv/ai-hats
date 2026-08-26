@@ -5,7 +5,7 @@ cmds:
     ai-hats list providers
 expect: cline is discovered through the entry point ai-hats declares for it and is
         displayed alongside claude
-why:    a surface reaches the binary only through the `ai_hats.surface_registry` group;
+why:    a surface reaches the binary only through the `ai_hats.providers` group;
         cline used to ship as its own distribution and HATS-1826 folded it into
         ai-hats, so a dropped declaration would silently un-ship the surface
 """
@@ -38,7 +38,7 @@ def _declared_entry_point(repo_root: Path) -> str | None:
 
 def test_cline_surface_is_discovered_by_the_binary(ai_hats_shim: Path, repo_root: Path):
     assert _declared_entry_point(repo_root) == _DECLARED, (
-        f"ai-hats no longer declares {_SURFACE!r} under ai_hats.surface_registry"
+        f"ai-hats no longer declares {_SURFACE!r} under ai_hats.providers"
     )
 
     env = os.environ.copy()  # PYTHONPATH already scrubbed by _scrub_redirect_env

@@ -6,7 +6,7 @@ imports out of scope. That blindness is correct there and total here — the cla
 catches lives almost entirely inside those blocks, because that is where an annotation-only
 import goes.
 
-The incident: HATS-1826 moved the surface contract out of ``ai_hats.surface_registry`` into
+The incident: HATS-1826 moved the surface contract out of the registry module into
 ``ai_hats.surfaces.contract``, and three surfaces kept importing ``CompositionResult`` from
 the module that no longer had it. Nothing went red. ``from __future__ import annotations``
 means the annotation is never evaluated, ``TYPE_CHECKING`` means the import never runs, and

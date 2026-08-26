@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 
 class AgySurface(Surface):
-    """`agy` CLI adapter, registered via the `ai_hats.surface_registry` entry point."""
+    """`agy` CLI adapter, registered via the `ai_hats.providers` entry point."""
 
     @property
     def name(self) -> str:

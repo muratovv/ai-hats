@@ -116,8 +116,8 @@ PINNED_DEEP_ENTRIES: tuple[str, ...] = (
 #
 # Still empty after the fold, which is what the measurement beside it predicted: the
 # shipped integrator imported `ai_hats_agy`, `ai_hats_cline`, `ai_hats_codex` and
-# `ai_hats_opencode` exactly **0** times, resolving them through the `ai_hats.surface_registry`
-# group instead. So moving all four in rewrote no shipped import; the churn was in
+# `ai_hats_opencode` exactly **0** times, resolving them through the `ai_hats.providers`
+# entry-point group instead. So moving all four in rewrote no shipped import; the churn was in
 # tests/, and this pin is what keeps it from moving into src/.
 PINNED_SURFACES_DEEP_ENTRIES: tuple[str, ...] = ()
 
