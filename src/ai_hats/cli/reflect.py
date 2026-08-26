@@ -398,7 +398,8 @@ def _run_role_audit(project_dir: Path, target_role: str) -> SessionOutcome:
     # ``src/ai_hats/pipeline/`` only and this file is under ``cli/``.
     composition = composer.compose(target_role)
     if composition.errors:
-        raise click.ClickException(f"Cannot compose role {target_role!r}: {composition.errors}")
+        reported = "; ".join(str(e) for e in composition.errors)
+        raise click.ClickException(f"Cannot compose role {target_role!r}: {reported}")
 
     preamble_path = assembler.resolver.resolve_injection("reflect-role")
     if preamble_path is None:

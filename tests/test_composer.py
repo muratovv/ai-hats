@@ -132,13 +132,12 @@ def test_compose_collects_checks_traits_before_role(checks_composer, checks_libr
 
 
 def test_broken_binding_raises_where_a_broken_rule_only_reports(checks_library):
-    """The card's load-bearing distinction. ``CompositionResult.errors`` is NOT a
-    loud channel: ``composition_seam`` raises on it only when the role was named
-    explicitly, and tolerates it silently on the implicit-role path. A gate that
-    failed to install must therefore leave by a route no caller can ignore.
+    """Two defects in one library: the rule REPORTS (as a lossy error the
+    facade then refuses on — HATS-1842), the binding RAISES at compose.
 
-    Same library, same composer, two defects — the rule reports, the binding
-    raises.
+    The distinction outlived the fail-open that motivated it. A broken binding
+    raises inside ``composer.compose`` itself, so no facade — not even a
+    tolerant one — can hand a caller a composition carrying it.
     """
     (checks_library / "roles" / "checks-role" / "config.yaml").write_text(
         "name: checks-role\ncomposition:\n  rules: [ghost_rule]\n  skills: [test_skill]\n"
@@ -146,7 +145,8 @@ def test_broken_binding_raises_where_a_broken_rule_only_reports(checks_library):
     composer = Composer(LibraryResolver([checks_library]))
 
     result = composer.compose("checks-role")
-    assert result.errors == ["Rule 'ghost_rule' not found"]
+    assert [str(e) for e in result.errors] == ["Rule 'ghost_rule' not found"]
+    assert [e.lossy for e in result.errors] == [True], "a dropped rule IS a loss"
 
     # A `run:` naming no script inside a skill: the shape ai-hats still judges
     # after HATS-1545 moved every foreign grammar under its own app key.
@@ -230,7 +230,8 @@ def test_compose_does_not_eager_load_rule_bodies(composer):
 def test_compose_missing_role(composer):
     result = composer.compose("nonexistent")
     assert len(result.errors) > 0
-    assert "not found" in result.errors[0]
+    assert "not found" in str(result.errors[0])
+    assert result.errors[0].lossy, "an unresolved role loses everything"
 
 
 def test_compose_merged_injection(composer):
@@ -274,7 +275,9 @@ composition:
     resolver = LibraryResolver([lib])
     result = Composer(resolver).compose("test-role")
 
-    assert any("trait-bad" in e and "sub-traits" in e for e in result.errors)
+    assert any(
+        "trait-bad" in str(e) and "sub-traits" in str(e) and e.lossy for e in result.errors
+    ), "the `continue` below drops the whole trait subtree — that is a loss"
     # trait-bad's injection is skipped; trait-base is never included
     assert "Bad" not in result.merged_injection
     assert "Base" not in result.merged_injection
@@ -476,10 +479,13 @@ def test_overlay_remove_nonexistent_warns(overlay_composer):
         remove_traits=["nonexistent-trait"], remove_skills=["nonexistent-skill"]
     )
     result = overlay_composer.compose("base-role", overlay=overlay)
-    warnings = [e for e in result.errors if "Overlay" in e]
+    warnings = [e for e in result.errors if "Overlay" in str(e)]
+    assert not any(e.lossy for e in warnings), (
+        "a remove that matched nothing leaves a SUPERSET of intent — HATS-1592"
+    )
     assert len(warnings) == 2
-    assert any("nonexistent-trait" in w for w in warnings)
-    assert any("nonexistent-skill" in w for w in warnings)
+    assert any("nonexistent-trait" in str(w) for w in warnings)
+    assert any("nonexistent-skill" in str(w) for w in warnings)
 
 
 def test_overlay_none_is_noop(overlay_composer):
@@ -616,7 +622,7 @@ def test_overlay_remove_nonexistent_skill_still_errors(overlay_composer):
     # composed trait is still an error.
     overlay = OverlayConfig(remove_skills=["skill_zzz"])
     result = overlay_composer.compose("trait-skill-role", overlay=overlay)
-    assert any("skill_zzz" in e for e in result.errors)
+    assert any("skill_zzz" in str(e) and not e.lossy for e in result.errors)
 
 
 def test_overlay_remove_then_add_trait_brought_skill_is_reorder(overlay_composer):
@@ -715,7 +721,10 @@ def test_remove_nonexistent_rule_errors(composer):
     """HATS-1456 (S2b): removing a rule not in role or any trait returns an overlay error."""
     overlay = OverlayConfig(remove_rules=["non_existent_rule"])
     result = composer.compose("test-role", overlay=overlay)
-    assert any("Overlay: cannot remove rule 'non_existent_rule'" in err for err in result.errors)
+    assert any(
+        "Overlay: cannot remove rule 'non_existent_rule'" in str(err) and not err.lossy
+        for err in result.errors
+    )
 
 
 def test_remove_rule_from_role_own_list(composer):

@@ -8,6 +8,8 @@ No domain schemas (ADR-0014 core contract).
 from ai_hats_core.atomic_io import atomic_write_bytes, atomic_write_text
 from ai_hats_core.composition import (
     ComponentKind,
+    CompositionError,
+    CompositionIncompleteError,
     CompositionResult,
     ConsentPoint,
     ResolvedCheck,
@@ -21,6 +23,8 @@ from ai_hats_core.yaml_model import YamlModel
 
 __all__ = [
     "ComponentKind",
+    "CompositionError",
+    "CompositionIncompleteError",
     "CompositionResult",
     "LockTimeoutError",
     "Migration",

@@ -103,6 +103,40 @@ class ResolvedCheck:
         return self.run.split("/", 1)[1] if "/" in self.run else ""
 
 
+class CompositionIncompleteError(RuntimeError):
+    """Composing a role lost content that was declared (HATS-1842).
+
+    Raised by the compose facade rather than reported into ``errors``, because
+    a consumer that cannot tell "declared nothing" from "lost what was
+    declared" will read the second as the first — the fail-open this exception
+    exists to remove.
+    """
+
+    def __init__(self, role: str, lost: "tuple[CompositionError, ...]") -> None:
+        self.role = role
+        self.lost = lost
+        super().__init__(
+            f"role {role!r} did not compose fully: {'; '.join(str(e) for e in lost)}"
+        )
+
+
+@dataclass(frozen=True)
+class CompositionError:
+    """One thing that went wrong composing a role.
+
+    ``lossy`` — the composed set is a SUBSET of what was declared (a role,
+    trait, rule or skill did not resolve), as opposed to an overlay ``remove``
+    that matched nothing and left a SUPERSET. No default, so a new
+    ``errors.append`` site cannot be added without naming its class.
+    """
+
+    message: str
+    lossy: bool
+
+    def __str__(self) -> str:
+        return self.message
+
+
 @dataclass(frozen=True)
 class CompositionResult:
     """The flattened result of composing a role.
@@ -119,7 +153,7 @@ class CompositionResult:
     rules: list[ResolvedComponent]
     skills: list[ResolvedComponent]
     injections: list[str]  # ordered injection texts
-    errors: list[str] = field(default_factory=list)
+    errors: list[CompositionError] = field(default_factory=list)
     trait_injections: dict[str, str] = field(default_factory=dict)
     role_injection: str = ""
     overlay_injection: str = ""
@@ -128,6 +162,11 @@ class CompositionResult:
     user_rules: tuple[Path, ...] = ()
     checks: tuple[ResolvedCheck, ...] = ()
     consent: tuple[ConsentPoint, ...] = ()
+
+    @property
+    def lost(self) -> tuple[CompositionError, ...]:
+        """The errors meaning content is MISSING — see :class:`CompositionError`."""
+        return tuple(e for e in self.errors if e.lossy)
 
     @property
     def merged_injection(self) -> str:
