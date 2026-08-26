@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,7 +15,13 @@ if TYPE_CHECKING:
 
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
-from .. import Surface, SurfaceRunResult, SubagentEngine, sweep_stale_managed_tags
+from .. import (
+    MetricsSink,
+    Surface,
+    SubagentEngine,
+    SurfaceRunResult,
+    sweep_stale_managed_tags,
+)
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
 from .sdk_options import (
     assemble_first_user_message,
@@ -555,8 +562,11 @@ class ClaudeSurface(Surface):
 
 
 class ClaudeSubagentEngine(SubagentEngine):
-    def __init__(self, provider: ClaudeSurface) -> None:
+    def __init__(self, provider: ClaudeSurface, *, run_blocking: Callable | None = None) -> None:
         self._provider = provider
+        # The SDK call is a seam, not an import three frames down: a test drives the
+        # engine by handing in its own, instead of patching the module under test.
+        self._run_blocking = run_blocking or sdk_runner.run_claude_sdk_blocking
 
     def run(
         self,
@@ -570,6 +580,7 @@ class ClaudeSubagentEngine(SubagentEngine):
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
+        metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
     ) -> SurfaceRunResult:
         if artifacts is None:
@@ -591,16 +602,20 @@ class ClaudeSubagentEngine(SubagentEngine):
             env=env,
         )
         msg = assemble_first_user_message(project_dir, task=task, ticket_id=ticket_id)
-        run_res = sdk_runner.run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
+        run_res = self._run_blocking(opts, msg, timeout_s=timeout_s)
 
+        metrics.record(
+            {
+                "claude_session_id": run_res.claude_session_id,
+                "total_cost_usd": run_res.total_cost_usd,
+                "num_turns": run_res.num_turns,
+                "stop_reason": run_res.stop_reason,
+            }
+        )
         return SurfaceRunResult(
             exit_code=run_res.exit_code,
             stdout=run_res.stdout,
             stderr=run_res.stderr,
             timed_out=run_res.timed_out,
             error=run_res.error,
-            session_id=run_res.claude_session_id,
-            total_cost_usd=run_res.total_cost_usd,
-            num_turns=run_res.num_turns,
-            stop_reason=run_res.stop_reason,
         )

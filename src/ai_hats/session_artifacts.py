@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping
 
 from .materialization import ApplyMaterializer, Materializer
 
@@ -218,6 +218,20 @@ def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:
     a session that exists nowhere, which also hides the trace-recovery path.
     """
     return provider_session_id if provider_session_id in cmd else ""
+
+
+@dataclass
+class CollectedMetrics:
+    """The ``MetricsSink`` a real run hands the surface: keep what it reports.
+
+    The surface names its own keys; where they land is decided here, in
+    ``_finalize_sub_agent``'s ``extra_metrics`` (HATS-1826).
+    """
+
+    values: dict[str, object] = field(default_factory=dict)
+
+    def record(self, values: Mapping[str, object]) -> None:
+        self.values.update(values)
 
 
 @dataclass

@@ -19,7 +19,7 @@ import contextlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Mapping, Protocol
 
 
 from ai_hats_core import CompositionResult
@@ -45,19 +45,30 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SurfaceRunResult:
-    """What one sub-agent run reported, as the surface saw it."""
+    """How the sub-agent process ended — what the caller branches on.
+
+    What the run *cost* is not here: that goes to the ``MetricsSink`` handed to
+    ``SubagentEngine.run``. Until HATS-1826 this carried ``total_cost_usd``,
+    ``num_turns``, ``stop_reason`` and the surface's session id as typed fields,
+    which put ai-hats' metrics schema inside the contract every surface implements
+    — adding one metric meant editing all of them.
+    """
 
     exit_code: int
-    # The SURFACE's own id for this run (Claude's uuid4, codex's thread id) — not
-    # ai-hats' `session_id`, which the caller already holds. None when it has none.
-    session_id: str | None
-    total_cost_usd: float
-    num_turns: int
-    stop_reason: str | None
     stdout: str
     stderr: str
     timed_out: bool
     error: str | None
+
+
+class MetricsSink(Protocol):
+    """Where a surface reports what its run cost; ai-hats decides where that lands.
+
+    The surface names its own keys and never learns the on-disk layout — the same
+    inversion ``BuiltArtifacts.port`` performs for session artifacts (HATS-1211).
+    """
+
+    def record(self, values: Mapping[str, object]) -> None: ...
 
 
 @dataclass
@@ -112,6 +123,7 @@ class SubagentEngine(abc.ABC):
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
+        metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
     ) -> SurfaceRunResult:
         pass

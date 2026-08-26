@@ -28,7 +28,12 @@ from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
 from .check_snapshot import describe_checks
-from .session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
+from .session_artifacts import (
+    BuiltArtifacts,
+    CollectedMetrics,
+    RunMode,
+    assemble_launch_env,
+)
 from .session_report import SessionReport
 from .session_run import SessionRun
 from .runtime_common import (
@@ -396,6 +401,7 @@ class SubAgentRunner:
             try:
                 engine = provider.engine()
                 if engine is not None:
+                    metrics = CollectedMetrics()
                     run_result = engine.run(
                         result=result,
                         project_dir=self.project_dir,
@@ -406,11 +412,13 @@ class SubAgentRunner:
                         env=launch_env,
                         model=model,
                         timeout_s=timeout_s,
+                        metrics=metrics,
                         artifacts=artifacts,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
-                    if run_result.session_id:
-                        session.log_sub(f"Provider session_id: {run_result.session_id}")
+                    surface_session_id = metrics.values.get("claude_session_id")
+                    if surface_session_id:
+                        session.log_sub(f"Provider session_id: {surface_session_id}")
                     _finalize_sub_agent(
                         session,
                         role=role_name,
@@ -424,12 +432,7 @@ class SubAgentRunner:
                         error=run_result.error,
                         tags=tags,
                         duration_s=time.monotonic() - t0,
-                        extra_metrics={
-                            "claude_session_id": run_result.session_id,
-                            "total_cost_usd": run_result.total_cost_usd,
-                            "num_turns": run_result.num_turns,
-                            "stop_reason": run_result.stop_reason,
-                        },
+                        extra_metrics=metrics.values,
                         **observe_kwargs,
                     )
                 else:

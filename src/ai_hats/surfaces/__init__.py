@@ -12,6 +12,7 @@ Importing a name from under this package instead of from here is what
 from __future__ import annotations
 
 from .contract import (
+    MetricsSink,
     Surface,
     SurfaceHint,
     SurfaceRunResult,
@@ -30,6 +31,7 @@ ProviderHint = SurfaceHint
 ProviderRunResult = SurfaceRunResult
 
 __all__ = [
+    "MetricsSink",
     "Surface",
     "SurfaceHint",
     "SurfaceRunResult",
