@@ -710,6 +710,88 @@ This pattern works for any removed trait / skill / rule: re-create under
 `~/.ai-hats/{traits,skills,rules}/<name>/` and re-attach via the
 `--global` overlay. No fork of the role required.
 
+## Engine internals, for verifying a composition
+
+Written for the `role-curator` / `maintainer` roles; moved out of the
+`library-curator` injection in HATS-1825, where it cost ~870 resident tokens a
+turn to answer a question that arises only while verifying a change.
+
+### The objects
+
+- `class ComponentConfig` in `src/ai_hats/libraries/models.py` — a trait's or
+  role's parsed `config.yaml`: `name`, `composition`, `injection`, `priorities`.
+  (`src/ai_hats/models.py` re-exports it; the definition is not there.)
+- `class Composition`, same file — the four keys under `composition:` are
+  `traits`, `rules`, `skills`, `apps`. It is `extra="forbid"`, and an unknown key
+  is stripped with one stderr WARN each (`_strip_unknown_composition_keys`) —
+  not silently.
+- `class CompositionResult` in
+  `packages/ai-hats-core/src/ai_hats_core/composition.py` — what
+  `Composer.compose()` returns (`Composer` itself lives in
+  `src/ai_hats/composer.py`). There is **no `traits` field**: trait text is
+  `trait_injections`, a dict keyed by trait name. Rules and skills dedup by name,
+  but injections dedup by **text** — two traits carrying identical injection
+  prose contribute it once, silently.
+- `merged_injection` joins ONLY injections — trait, role and overlay text. Rule
+  BODIES are a separate `## RULES` section the provider appends
+  (`providers.py:339`), and skill descriptions never enter the prompt at all: the
+  harness indexes them. To verify a rule or skill body, read the file or
+  `ResolvedComponent`; grepping `merged_injection` for one finds nothing.
+- `builtin_library_root` / `builtin_library_layers` in
+  `src/ai_hats/paths/library.py` (`paths` is a package, not `paths.py`;
+  `assembler.py` only imports the layers helper under an alias). Precedence:
+  `AI_HATS_LIBRARY_ROOT` → cwd source-checkout **only under `prefer_cwd`, which
+  read-only composition passes and writers never do (HATS-1501)** →
+  `project_dir` → `importlib.resources`. Full layer order (lowest → highest):
+  builtin/core, builtin/usage, `~/.ai-hats`, project config-specified,
+  project-local `libraries/`, explicit extras — first-wins when searching for a
+  component, last-wins when a layer overrides one (`build_library_paths`).
+
+### Verifying a composition from a worktree
+
+A **read-only** command run from inside a worktree composes THAT worktree's
+library (HATS-1501): `config show-prompt` and friends key off cwd, so your edit
+is what you see.
+
+A command that **writes** — init, sync, anything materializing into `.agent/` —
+deliberately still keys off the project, which for a linked worktree is the MAIN
+checkout (`_project_dir` hops there so tracker ops reach the one live backlog,
+HATS-524). Composing one checkout's library into another project's `.agent` is
+HATS-1123; do not expect a worktree edit to reach a materialized artifact.
+
+To force either way explicitly:
+
+```bash
+export AI_HATS_LIBRARY_ROOT=<wt>/packages/ai-hats-library/src/ai_hats_library
+```
+
+In-process, construct the Assembler with the worktree path:
+
+```python
+from pathlib import Path
+from ai_hats.assembler import Assembler
+
+wt = Path(".").resolve()   # run this FROM inside the worktree
+a = Assembler(wt)          # wt passed explicitly IS what resolves the library
+# ALWAYS pass overlays — without them, user-global customizations
+# (~/.ai-hats/customizations.yaml) and project ai-hats.yaml overlays are
+# silently skipped, leading to false "rule absent" diagnoses.
+overlays = a._get_overlays("role-curator")
+result = a.composer.compose("role-curator", overlays=overlays)
+assert result.errors == []
+```
+
+Passing `wt` explicitly is what makes the worktree's library win here — this
+path never consulted cwd, before the fix or after.
+
+### Positive control, always
+
+When verifying that a NEW rule or skill is present, assert in the same run that
+an EXISTING one from the same trait still composes. Both "MISSING" means the
+verification method is broken; only the new one missing means the change is.
+Without the control the two are indistinguishable. The general technique is the
+**positive-control** skill.
+
 ## References
 
 **[1]** — [`docs/how-to.md`](how-to.md) — `ai-hats.yaml` overlay recipes (add a skill, change provider, switch role, project-local libraries).

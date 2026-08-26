@@ -58,8 +58,8 @@ Filing the HYP at plan-stage is a **precommitment anti-pattern**
 Triggered when transitioning a library-curation task from **execute**
 to **document** (i.e. after the implementing commits exist on
 `task/<id>` and diff is final). Library-curation = any change to
-`library/{core,usage}/roles/`, `library/{core,usage}/traits/`,
-`library/{core,usage}/skills/`, or `library/core/rules/`. Typically
+`packages/ai-hats-library/src/ai_hats_library/`
+(`{core,usage}/roles/`, `traits/`, `skills/`, or `core/rules/`). Typically
 parented to **HATS-499**.
 
 Skip when: harness-only edits (`src/ai_hats/`, `cli/`, `scripts/`,

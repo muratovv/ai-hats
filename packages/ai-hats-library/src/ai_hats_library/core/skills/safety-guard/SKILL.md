@@ -1,6 +1,6 @@
 ---
 name: safety-guard
-description: PreToolUse hooks enforcing global_rule_destructive_actions, rule_pause_before_shared_state_write, rule_backlog_discipline and the consent gate. Prevents destructive commands like in-place sed edits, deletion of protected data, and disk-formatting binaries, holds the pause before an irreversible shared-state write, keeps the tracker backlog writable only through `rack`, and turns a move the role declared consent on into a question for the supervisor — the ticket, the grant and the `consent` verb ship from here.
+description: PreToolUse hooks that refuse destructive commands, hold the pause before an irreversible shared-state write, keep the tracker writable only through `rack`, and turn a consent-declared move into a question for the supervisor. Infrastructure — read it to diagnose a block, not to invoke it.
 ai_hats:
   runtime_hooks:
     PreToolUse:
@@ -18,6 +18,14 @@ license: MIT
 A PreToolUse runtime-hook for Bash/terminal tools. It parses the command line
 (quote-aware) and matches **what the command targets**, not what it is named,
 because `global_rule_destructive_actions` protects paths.
+
+`PreToolUse` is the Claude surface's name for the point; each other surface
+package carries its own dispatcher or adapter for it. What is NOT uniform is
+the **dialect of the refusal**: a caller whose payload declares `PreToolUse`
+gets a decision object and the user is asked, while every other caller gets
+`exit 2` with the reason on stderr — a hard block, with no one to ask. So the
+same command can be a question on one surface and a refusal on another, and
+neither outcome is the guard failing.
 
 ## The three outcomes
 

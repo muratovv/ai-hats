@@ -44,8 +44,9 @@ the definition, place it under `tracker/`, and it mounts on the next `rack` call
    backlogs. Do not reuse `HATS` or an existing alias (`DuplicatePrefixError` /
    `DuplicateGroupNameError` at mount).
 2. **Make the catalog dir** under `<ai_hats_dir>/tracker/` — convention
-   `tracker/backlog/<name>/`, a sibling of `tasks/` (where the shipped HYP/PROP
-   live). Anywhere under `tracker/` works except inside the tasks catalog.
+   `tracker/<name>/`, a sibling of `backlog/`. Anywhere under `tracker/` works
+   except inside `backlog/`, which `backlog_write_gate.py` denies to every
+   writer but `rack` (its one carve-out is `tasks/<ID>/plan.md`).
 3. **Author `backlog.yaml`** at that dir's root. Full key grammar +
    fail-closed invariants: **`references/backlog-yaml-grammar.md`**. Fastest
    start — print a shipped example (HYP / PROP) from the installed package and
@@ -180,7 +181,7 @@ verb that does not exist, reuses the `HATS` prefix (`DuplicatePrefixError`), put
 a `sections:` key in the file (rejected — unknown key), or declares a
 `supersedes`/`superseded_by` pair with no `mirror-link`
 (`MissingMirrorReactionError`) — a multi-error discovery loop. GREEN — with the
-skill it writes `tracker/backlog/decisions/backlog.yaml` (unique `prefix: DEC` +
+skill it writes `tracker/decisions/backlog.yaml` (unique `prefix: DEC` +
 `cli_alias: decision`, valid fsm/fields/links, no `sections:`, `mirror-link` on
 any stored inverse), drops it in, and `rack decision create "…"` works first try.
 

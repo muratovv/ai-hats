@@ -8,12 +8,14 @@ does not matter; that it is checkable and unchecked does.
 
 ## The kinds — common spellings, not the boundary
 
-| Kind           | What you wrote                                         | How to unroll it                                                            |
-| -------------- | ------------------------------------------------------ | --------------------------------------------------------------------------- |
-| **Name**       | `` `judge-protocol` ``, `library/core/`, `--isolation` | grep the source / run `--help` — does it resolve *now*, in *this* checkout? |
-| **Glob**       | `judge-*-protocol`, `**/hooks/**`                      | expand it and read the match list — is the set the one you meant?           |
-| **Quantifier** | "verdicts auto-persist", "every role composes X"       | hunt the branch that breaks it; one counterexample kills it                 |
-| **Count**      | "3 skills", "~600 chars", "the only caller"            | count it, or drop the number                                                |
+| Kind           | What you wrote                                   | How to unroll it                                            |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| **Quantifier** | "verdicts auto-persist", "every role composes X" | hunt the branch that breaks it; one counterexample kills it |
+| **Count**      | "3 skills", "~600 chars", "the only caller"      | count it, or drop the number                                |
+
+A **name** and a **path** in library prose are held by the `prose-refs` CI
+stage — it refuses a reference that does not resolve, so they are not your
+job to re-check by hand. Outside the library corpus they still are.
 
 ## The foil to cut
 
@@ -24,18 +26,13 @@ does not matter; that it is checkable and unchecked does.
    HarnessReliabilityError branch
 ❌ `library/core/` + `library/usage/` in a role injection — the library
    moved under packages/, the paths kept pointing at a directory that
-   no longer exists, and nothing went red
+   no longer exists (the `prose-refs` CI stage now refuses this one;
+   the three kinds below it still have no machine)
 ❌ a count you recalled instead of counting
 ```
 
-## Before you commit the prose, ask
-
-1. A name? → does it resolve in THIS checkout, not the one you remember?
-2. A pattern? → expand it; is the match set the one you meant?
-3. An "every" / "always" / "never" / "auto-"? → which branch breaks it?
-4. A number? → counted, or recalled?
-5. Would anything go red if this line rotted? → if no, it is load-bearing
-   prose: verify it now, or delete it.
+One question the table cannot ask for you: **would anything go red if this line
+rotted?** If no, it is load-bearing prose — unroll it now, or delete it.
 
 ## Scope
 
@@ -44,10 +41,6 @@ Any prose you author that a reader will act on — `docs/`, `README`,
 sit under `dev_rule_comment_discipline`: same principle, narrower surface
 (it forbids a stale-able count outright rather than asking you to verify it).
 
-## Source
-
-HATS-1430. `doc-protocol` §3 asked for a grep of "every named code-artifact"
-and shipped a regex that matches identifiers — so it caught names and was
-silent on the glob, the quantifier, and the count, which fail the same way for
-the same reason. The invariant is the checkability of the claim, not the
-lexical shape the author happened to use.
+Source: HATS-1430. The invariant is the claim's checkability, not the lexical
+shape it happened to take. The `prose-refs` CI stage now holds the name and the
+path; the glob, the quantifier and the count are still yours.

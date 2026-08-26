@@ -62,11 +62,5 @@ the narrower `pass`/`continue` shape as a second contour.
 The gate checks **form**. It cannot prove point 4 — that a fallback is covered
 by a test — and does not claim to. That one is on you and on review.
 
-## Source
-
-HATS-1373, from the HATS-1252 epic judge verdict §7 ("the immune system is
-compromised as a whole"): 15 of 21 defects reached production because every
-detection layer stayed quiet. The audit found 46 inert handlers, nine of them
-inside the gate and sensor contour itself, and six where the silence was hiding
-a live bug — including `ai-hats init` silently resetting a project's provider to
-`claude` when the existing config would not load.
+Source: HATS-1373 — 46 inert handlers, nine inside the gate contour itself, six
+hiding a live bug.

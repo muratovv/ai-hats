@@ -120,10 +120,6 @@ HYP authored at document-stage per `library-change-hypothesis-protocol`).
 
 ### Case study — HATS-527 / 528 / 534
 
-Canonical retro:
-`.agent/ai-hats/sessions/retros/2026-05-26-retro-hats-527-528-534-poc-verification-protocol.md`
-(§3 root cause analysis).
-
 - **Initial plan (rejected).** Extended `ValidationLogEntry` schema
   (rung 6) + four typed CLI flags (rung 5) + rewrote four downstream
   skills (rungs 2–3) + legacy-HYP migration. ~30 min of plan-mode

@@ -2,8 +2,9 @@
 name: worktree-venv
 description: Provisions a Python venv inside every freshly created worktree — infrastructure only, no agent-side decision logic
 ai_hats:
-  # HATS-1291 — hook-carrier skill. The assembler materializes this script into
-  # `library/wt-hooks/`; the lifecycle bundle runs it after `git worktree add`.
+  # HATS-1291 — hook-carrier skill. The lifecycle bundle spawns this script in
+  # place from the skill dir after `git worktree add` (HATS-1269 retired the
+  # materialized wt-hooks tree; `migrations.py` sweeps what it left behind).
   worktree:
     wt_in:
       - script: hooks/provision-venv.sh
@@ -37,5 +38,5 @@ first commit. The paired half is the `git-mastery` smoke hook preferring
 ## References
 
 - Rationale, measurements and the rejected designs: `.agent/ai-hats/tracker/backlog/tasks/HATS-1291/plan.md`
-- Paired hook: `library/core/skills/git-mastery/git_hooks/pre-commit-smoke.sh`
+- Paired hook: `packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-smoke.sh`
 - Hook contract: `docs/how-to-extend.md#worktree-lifecycle-hooks`

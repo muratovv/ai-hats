@@ -1,6 +1,6 @@
 ---
 name: self-retrospective
-description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive). Use when the supervisor asks to "write a retro" / "do a retrospective", at the end of a multi-task work session (wrap-up across several closed tasks), after task completion (especially with failures or backtracks), after a failed task (mandatory), or when the backlog manager transitions to the review or failed state. NOT the automated session-review loop — that is reflect-session.
+description: Turn what went wrong into a systemic fix. Use when the supervisor asks for a retro, after a failed task (mandatory), after a task with backtracks, or when wrapping up a multi-task session. Not the automated audit that runs after a session closes.
 license: MIT
 ---
 

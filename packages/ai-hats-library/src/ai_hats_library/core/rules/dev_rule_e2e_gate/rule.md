@@ -18,7 +18,8 @@ Concretely, the rule fires if the task changed any of:
 - `src/ai_hats/cli/**/*.py` — click commands, command nesting, CLI args/flags.
 - `scripts/*.sh` — shell scripts (`install-launcher.sh`, `bootstrap.sh`, etc.).
 - `src/ai_hats/_bootstrap.py`, `src/ai_hats/cli/maintenance.py` — pip install / launcher / venv flow.
-- `[project.scripts]` block in `pyproject.toml` — new or renamed entry-points.
+- `[project.scripts]` in any workspace `packages/*/pyproject.toml` — new or
+  renamed entry-points (the root `pyproject.toml` declares none).
 - `packages/ai-hats-library/**/hooks/**` and `**/git_hooks/**` — PreToolUse /
   PostToolUse hook scripts and the installed git hooks (`git_hooks` is a
   distinct segment: a `**/hooks/**` glob does not match it).
@@ -41,22 +42,16 @@ A test passes the gate only if **all** of these hold:
 - Spawns a **real** subprocess chain: real `bash`, real `pip install`, real `ai-hats` binary. No `MagicMock`, no `monkeypatch` on `subprocess.Popen`, no `CliRunner.invoke()`.
 - Asserts observable end-to-end side effects (exit codes, files on disk, captured output) — not internal call counts.
 
-Pipeline-integration tests (`tests/pipeline/`) and in-process `CliRunner` tests do **not** satisfy this rule, regardless of marker.
+In-process `CliRunner` tests do **not** satisfy this rule, regardless of marker.
 
-## 3. Plan-stage requirement
+## 3. Plan and review
 
-When the trigger fires, the task plan must explicitly name the e2e test(s) it will add — file path and what it asserts. "Will add e2e coverage" is not sufficient.
-
-## 4. Review-stage check
-
-The reviewer verifies before approving `done`:
-
-- The named e2e test exists at the declared path.
-- `pytest -m integration tests/e2e/` passes locally.
-- The test would fail if the change under review were reverted (i.e. it actually exercises the new behaviour, not just lives alongside it).
-
-If any check fails, the card returns to `execute`.
+The plan names the test by path and by what it asserts — "will add e2e coverage"
+is not a name. The reviewer runs it, and checks the one thing a green run cannot
+show: that it fails when the change is reverted. If it does not, it lives beside
+the change rather than exercising it, and the card returns to `execute`.
 
 ## 5. Source
 
-PROP-031 (accepted). Motivation: HATS-333 epic shipped two production bugs (PEP 508 rejection for local-path `ai-hats @ /path`, click command-nesting drift) past `done` because the unit suite stubbed the very contracts the change broke. The e2e gate is the cheapest reliable catch for this class of failure.
+PROP-031, from HATS-333 — two production bugs shipped past `done` because the
+unit suite stubbed the very contracts the change broke.

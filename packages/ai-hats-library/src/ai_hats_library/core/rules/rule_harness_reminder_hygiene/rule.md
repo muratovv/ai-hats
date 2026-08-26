@@ -35,8 +35,5 @@ the departure from the default is what's worth one line.
 
 ## 4. Why
 
-`TaskCreate` / `TaskUpdate` are harness-level tools meant for ad-hoc local
-work. An ai-hats project already has a backlog on disk, and that backlog is the
-source of truth — whether this session drives it or only reads it. Letting the
-harness nudge override it produces two parallel trackers, neither complete.
-The rule's purpose is to keep one tracker.
+Letting the harness nudge override a backlog that already exists on disk
+produces two trackers, neither complete. One tracker is the whole point.

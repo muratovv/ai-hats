@@ -26,8 +26,9 @@ directly if you want a handoff without clearing context.
 
 2. **Run context-handoff:**
    - Execute **context-handoff** to write a handoff file
-   - For active tasks: write to `<ai_hats_dir>/tracker/backlog/tasks/<ID>/handoff.md`
    - For general sessions: write to `<ai_hats_dir>/sessions/handoffs/YYYY-MM-DD-<title>.md`
+   - For active tasks: `rack transition <ID> --attach <file>:handoff.md` —
+     the tracker refuses a direct write (see **context-handoff** step 1)
 
 3. **Update task card** (if exists):
    - Remaining work is a coherent chunk → shape it per **task-slicing**, append

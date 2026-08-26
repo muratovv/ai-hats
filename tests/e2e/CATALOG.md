@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**267 of 267 files catalogued — 276 flows.**
+**268 of 268 files catalogued — 277 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -454,6 +454,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection
 - **why** — a syntactically valid workflow can still name a missing stage or bypass the canonical dispatcher, leaving the advertised server-side gate inert
+
+## `test_ci_local_prose_refs.py`
+
+*pins HATS-1825*
+
+- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a path, a library prefix, a section or a code symbol named in library prose no longer resolves
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh prose-refs      # announces the stage it dispatched to
+  bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
+  bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] prose-refs`, states on every run what it does NOT cover, and is named in the merge-gate composition. Whether the live corpus is INTACT belongs to the stage, not here (HATS-1714/1716) — the refusal is proved instead against a planted tree, which no sibling session can change
+- **why** — the checker's own silence is the thing under test. HATS-1823 measured 21 references in this library that did not resolve, and every gate in the repo stayed green through all of them, because none reads prose. A checker that is wired but never refuses anything reproduces exactly that.
 
 ## `test_claude_scaffold_drop.py`
 

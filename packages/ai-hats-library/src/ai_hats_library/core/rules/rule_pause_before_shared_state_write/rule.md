@@ -6,46 +6,34 @@ have **no undo path**. Before each one: emit a brief message naming the
 exact command, then **wait for the user's confirmation in the next turn** —
 never act in the turn that announces the action.
 
-| Command                                          | Reversibility                                 | Hook       |
-| ------------------------------------------------ | --------------------------------------------- | ---------- |
-| `gh pr create` / `gh pr close`                   | reversible                                    | allows     |
-| `gh pr merge` (+ `--delete-branch`)              | **irreversible** — commit on default branch   | **denies** |
-| `gh issue comment` / `gh release create`         | hard to revert (visible / fetched)            | allows     |
-| `git push` to a shared branch                    | hard (rewrites what others build on)          | **denies** |
-| `git push --dry-run`                             | writes nothing                                | allows     |
-| `git push --force` / `-f` / `--force-with-lease` | **irreversible** — rewrites history           | **asks**   |
-| `git push <remote> +<refspec>` / `--mirror`      | **irreversible** — same force, other spelling | **asks**   |
-| `git push <remote> :<branch>` / `--delete`       | **irreversible** — ref gone for everyone      | **asks**   |
-| `TaskCreate` (sub-agent fan-out)                 | reversible but costly to cancel mid-flight    | allows     |
+Which commands count is the classifier's call, not this rule's.
+`shared_state_classifier.sh` sorts a command into `irreversible` (no undo —
+`gh pr merge`, `git push --force` and its other spellings), `gated` (a plain
+`git push` to a shared branch), `shared` (`gh pr create` / `close`,
+`gh issue comment`, `gh release create` — reversible, so the pause above is the
+only thing holding them) or `safe`.
 
-"asks" means the hook refuses to decide on its own and escalates. Where the
-harness supports an interactive decision you get a permission prompt, and when
-nobody can answer — a headless run, cron, CI — the call is **blocked**. On a
-harness with no such channel the hook simply blocks outright. Either way the
-command does not run unattended. "allows" means only this rule holds the pause.
+What the hook then DOES with a verdict is the hook's to say, and it says it in
+the refusal it prints. This rule deliberately does not restate it: a restatement
+drifts, and the drift is invisible — the table that stood here promised a hard
+refusal for `gh pr merge` and `git push` where the hook in fact escalates to the
+user, so the agent was taught a guardrail stronger than the one it has
+(HATS-1825). Treat every one of them as blocked until the user answers.
 
 **Never chain** a shared-state write with other commands (no `&&`, `||`,
 `;`, `|`, `$(...)`, backticks) — one Bash call = one shared-state write at
 most. A chained call removes the user's chance to interrupt, and an
 irreversible step in the middle of a chain cannot be rolled back.
 
-The `pre_bash_shared_state_guard.sh` PreToolUse hook and the git pre-push
-hook are the **backstop** — not permission to skip the pause, and their
-absence in a given session is not a signal to skip it.
-Consent reaches the hook in exactly two ways, and **neither is available to the
-agent** — that is the point:
+The `pre_bash_shared_state_guard.sh` PreToolUse hook and the git pre-push hook
+are the **backstop** — not permission to skip the pause, and their absence in a
+session is not a signal to skip it. Consent arrives either from the user
+answering the hook's prompt, or from an ack already present in
+the environment that launched the agent — and every ack granted is journalled.
+The hook spells both out in its own refusal; what matters here is that neither
+is reachable by the agent. That is the point.
 
-1. The user answers the permission prompt the hook raises.
-2. `AI_HATS_SHARED_STATE_ACK=1` is present in the environment that launched the
-   agent — an export in the launching shell, or the `env` block of whatever
-   settings file your harness reads — pre-approving the whole session.
-
-Either way the ack is recorded: the hook appends the bypass to
-`.git/ai-hats/bypasses.jsonl`, and the next `git push` prints what rode along
-(HATS-1407). Consent is auditable after the fact, so there is no version of
-"nobody will know".
-
-Writing `AI_HATS_SHARED_STATE_ACK=1 <command>` as a prefix on the agent's own
+One trap the hook cannot warn you out of in advance. Writing `AI_HATS_SHARED_STATE_ACK=1 <command>` as a prefix on the agent's own
 command does **nothing**: the hook runs before that command exists as a process,
 so the assignment never reaches it. The hook used to instruct exactly that and
 then refuse it, costing turns on work the user had already approved
