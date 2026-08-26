@@ -25,7 +25,6 @@ def _runner(project):
     hooks = HooksManager(
         project,
         ProjectConfig(),
-        compose=lambda role: None,
         resolve_provider=lambda name: None,
     )
     payload = CompositionPayload(

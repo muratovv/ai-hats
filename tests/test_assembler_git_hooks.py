@@ -22,7 +22,9 @@ from ai_hats.hooks_manager import (
     GITHOOKS_DIR,
     GITHOOKS_DISPATCHER_MARKER,
     GITHOOKS_MANIFEST,
+    install_git_hooks,
 )
+from ai_hats.materialize import compose_to_report
 from ai_hats.models import GIT_HOOK_EVENTS, ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 
@@ -427,3 +429,63 @@ def test_skill_lint_gate_absent_from_non_authoring_roles():
         assert "skill-lint-gate" not in _composed_skill_names(role), (
             f"{role} unexpectedly received skill-lint-gate"
         )
+
+
+# ----- a lossy composition may not justify ABSENCE (HATS-1842) -----
+
+
+def _break_the_role(lib: Path) -> None:
+    """Point the role at a trait that does not exist — the whole subtree, and
+    with it the hook-declaring skill, drops out of the composition."""
+    (lib / "roles" / "test-role" / "config.yaml").write_text(
+        "name: test-role\n"
+        "priorities: [Quality]\n"
+        "composition:\n"
+        "  traits:\n"
+        "    - trait-typo\n"
+        "injection: Role.\n"
+    )
+
+
+def test_a_lossy_composition_does_not_uninstall_the_dispatcher(composed):
+    """On master a trait typo made `set_role` compose to zero skills, and
+    `install_git_hooks` read that as "no event is declared any more" and
+    deleted every managed dispatcher — silently, rc 0, on every session start.
+    """
+    project, lib, _asm = composed
+    dispatcher = project / GITHOOKS_DIR / "pre-commit"
+    assert dispatcher.is_file(), "positive control: the gate was installed first"
+
+    _break_the_role(lib)
+    warnings: list[str] = []
+    asm = Assembler(project, library_paths=[lib])
+    result = compose_to_report(asm, "test-role")
+    assert result.lost, "the fixture must actually produce a lossy composition"
+    install_git_hooks(project, result, warnings_sink=warnings)
+
+    assert dispatcher.is_file(), "a lost gate is not an absent gate"
+    assert any("composed with losses" in w for w in warnings), (
+        f"the refusal to drop must be audible, got: {warnings}"
+    )
+
+
+def test_a_clean_composition_still_drops_a_retired_dispatcher(composed):
+    """The positive control for the test above. Without it, "the dispatcher
+    survived" would be indistinguishable from "the drop broke entirely" — and
+    a dispatcher nothing declares any more must still be retired (HATS-1337).
+    """
+    project, lib, _asm = composed
+    dispatcher = project / GITHOOKS_DIR / "pre-commit"
+    assert dispatcher.is_file()
+
+    # A role that HONESTLY declares no git hooks: it composes cleanly, so the
+    # empty `wanted` set means what it says.
+    (lib / "traits" / "trait-base" / "config.yaml").write_text(
+        "name: trait-base\ncomposition: {}\ninjection: Base.\n"
+    )
+    asm = Assembler(project, library_paths=[lib])
+    result = compose_to_report(asm, "test-role")
+    assert not result.lost, "this arm must be clean — otherwise it proves nothing"
+    install_git_hooks(project, result)
+
+    assert not dispatcher.exists(), "a gate nobody declares any more is retired"

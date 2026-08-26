@@ -306,3 +306,37 @@ def test_the_broken_gate_hatch_does_not_open_a_hung_one(tmp_path: Path):
     cp = _commit(project, "a.txt", env={**_bounded_env(), "AI_HATS_GIT_GATE_BROKEN_ACK": "1"})
 
     assert cp.returncode != 0, f"the delivery hatch must not open a hang\n{cp.stderr}"
+
+
+def test_a_broken_role_does_not_disarm_the_committed_gates(tmp_path: Path):
+    """HATS-1842, end to end through a real `git commit`.
+
+    On master, pointing the role at a missing trait composed to zero skills;
+    the gate then vanished from `.githooks/` on the next install, and every
+    later commit sailed through green. Both halves are asserted here: the
+    commit must be REFUSED, and the dispatcher must still be on disk.
+
+    The positive control is `test_a_worktree_commit_runs_the_same_gates`
+    above — it proves this harness installs and fires gates at all.
+    """
+    project, lib = _project(tmp_path)
+    _self_init(project)
+    dispatcher = project / ".githooks" / "pre-commit"
+
+    assert _commit(project, "before").returncode == 0, "control: a clean role commits"
+    assert (project / ".marker-guard").exists(), "control: the gate actually ran"
+
+    (lib / "roles" / "guard-role" / "config.yaml").write_text(
+        "name: guard-role\npriorities: [Quality]\n"
+        "composition:\n  traits:\n    - trait-typo\ninjection: R.\n"
+    )
+
+    cp = _commit(project, "after")
+    assert cp.returncode != 0, (
+        f"a commit whose gates cannot be composed must be refused, got rc=0:\n"
+        f"{cp.stdout}\n{cp.stderr}"
+    )
+    assert "trait-typo" in (cp.stdout + cp.stderr), (
+        f"the refusal must NAME what went missing:\n{cp.stdout}\n{cp.stderr}"
+    )
+    assert dispatcher.is_file(), "the dispatcher must survive a composition it cannot trust"
