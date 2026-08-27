@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
 from .consent_wrapper import materialize_consent_wrappers
+from .constants import PINNED_PYTHON
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -148,6 +149,64 @@ def _broken_hook_refs_text(refs, *, project_dir: Path, ours: bool) -> str:
     return "\n".join(lines)
 
 
+# The out-of-band recovery, spelled as in docs/how-to.md and self_location.py.
+_REPAIR_CMD = (
+    "curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh"
+    " | bash -s -- --repair"
+)
+
+
+def _venv_is_ai_hats_managed(project_dir: Path) -> bool:
+    """True when ``bootstrap.sh --repair`` would rebuild *this* venv (HATS-1521).
+
+    Two facts, both required. The venv must live under the framework dir — that is
+    exactly what ``--repair`` deletes, and it leaves a user-owned ``AI_HATS_VENV``
+    alone (``scripts/bootstrap.sh``). And ai-hats must be installed *into* it: an
+    editable install points back at somebody's checkout, which a rebuild from
+    GitHub would silently replace — the HATS-1522 reasoning, one file over.
+    """
+    from .paths import ai_hats_dir
+
+    try:
+        prefix = Path(sys.prefix).resolve()
+        return prefix.is_relative_to(ai_hats_dir(project_dir).resolve()) and Path(
+            __file__
+        ).resolve().is_relative_to(prefix)
+    except OSError:
+        return False
+
+
+def _interpreter_pin_text(running: str, *, project_dir: Path) -> str:
+    """Warn note for a venv off the pin; the remedy follows ownership (HATS-1521).
+
+    Not ``self update``: it moves the interpreter only when it installs a *new*
+    version (that branch builds on ``PINNED_PYTHON``), and on a current sha it
+    reuses the venv it is running from — so it is not a remedy anyone can rely
+    on. A rebuild always is.
+    """
+    lines = [
+        f"this session runs Python {running}, ai-hats pins {PINNED_PYTHON} — an "
+        "interpreter outside the tested matrix, so a failure here reproduces nowhere else.",
+        f"    venv: {sys.prefix}",
+    ]
+    if _venv_is_ai_hats_managed(project_dir):
+        lines += [
+            "    ai-hats built this venv, so it can rebuild it for you:",
+            "",
+            f"    Fix: {_REPAIR_CMD}",
+            "",
+            "    That reinstalls the launcher, drops the managed venv and rebuilds it on",
+            f"    Python {PINNED_PYTHON}. The update it runs afterwards also applies any",
+            "    ai-hats migration this project has not seen yet.",
+        ]
+    else:
+        lines += [
+            "    ai-hats did not build this venv and will not touch it — recreate it",
+            f"    on Python {PINNED_PYTHON} yourself, then reinstall ai-hats into it.",
+        ]
+    return "\n".join(lines)
+
+
 class WrapRunner:
     """PTY-proxied CLI wrapper for interactive sessions.
 
@@ -190,6 +249,18 @@ class WrapRunner:
             *(StartupNotice("warn", w) for w in self.payload.startup_warnings),
             *(StartupNotice(diag.level.value, diag.render()) for diag in self.payload.diagnostics),
         ]
+
+    def _check_interpreter_pin(self) -> list[StartupNotice]:
+        """HATS-1521: WARN when this venv is not on the pinned interpreter.
+
+        The session IS the venv's python (`$VENV/bin/python -m ai_hats`), so
+        `sys.version_info` answers it without reading `pyvenv.cfg`. Never blocks:
+        a wrong-version venv still runs, it just runs somewhere untested.
+        """
+        running = "{}.{}".format(*sys.version_info[:2])
+        if running == PINNED_PYTHON:
+            return []
+        return [StartupNotice("warn", _interpreter_pin_text(running, project_dir=self.project_dir))]
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
         """HATS-901: WARN when a composed skill will double-register this session;
@@ -623,6 +694,7 @@ class WrapRunner:
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))
+        startup_notices.extend(self._check_interpreter_pin())
         self._sweep_consent_store(session)
         # HATS-1581. LAST here on purpose: unlike its fail-open neighbours a
         # refusal does not return, so everything above must speak first. And

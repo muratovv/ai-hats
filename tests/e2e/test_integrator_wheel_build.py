@@ -119,7 +119,7 @@ def test_e2e_integrator_wheel_build(tmp_path):
     # 3. Real by-name install into a fresh venv (member wheels satisfy the deps).
     build_workspace_member_wheels(src, wheeldir, env)
     venv = tmp_path / "venv"
-    _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path, env=env, timeout=120)
+    _run(["uv", "venv", "--python", "3.13", str(venv)], cwd=tmp_path, env=env, timeout=120)
     _run(
         [
             "uv",

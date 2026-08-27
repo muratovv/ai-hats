@@ -70,7 +70,7 @@ def test_e2e_library_package_installs_alone(tmp_path):
     assert wheels, f"no ai-hats-library wheel built under {wheeldir}"
 
     venv = tmp_path / "venv"
-    _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path, env=env, timeout=120)
+    _run(["uv", "venv", "--python", "3.13", str(venv)], cwd=tmp_path, env=env, timeout=120)
     _run(
         [
             "uv",

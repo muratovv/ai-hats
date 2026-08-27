@@ -4,7 +4,7 @@
 # commands CI runs (HATS-922/725). Spelling a command out here instead forks the
 # definition of the gate — tests/test_gate_entrypoint_parity.py refuses that.
 
-.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor silent-fallback test-isolation merge-gate done-gate relay-server relay-client
+.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor python-pin silent-fallback test-isolation merge-gate done-gate relay-server relay-client
 
 .DEFAULT_GOAL := help
 
@@ -63,6 +63,9 @@ version-skew: ## Check workspace packages are ahead of PyPI (needs network)
 
 dependency-floor: ## Check every pin on a workspace package tracks its version
 	$(CI_LOCAL) dependency-floor
+
+python-pin: ## Check every copy of the Python pin agrees, and CI runs it
+	$(CI_LOCAL) python-pin
 
 silent-fallback: ## Check no broad except swallows a failure without reporting it
 	$(CI_LOCAL) silent-fallback

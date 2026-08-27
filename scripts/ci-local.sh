@@ -129,6 +129,12 @@ ci_bidi() {
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
+ci_python_pin() {
+    echo "[ci-local] python-pin (every copy of the pin agrees; CI runs it)" >&2
+    "$PY" scripts/check_python_pin.py
+}
+
+# Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_silent_fallback() {
     echo "[ci-local] silent-fallback (broad handlers nothing can escape from)" >&2
     "$PY" scripts/check_silent_fallback.py
@@ -276,6 +282,7 @@ case "$stage" in
         ci_tmp_sweep
         ci_lint
         ci_dependency_floor
+        ci_python_pin
         ci_silent_fallback
         ci_bidi
         ci_test_isolation

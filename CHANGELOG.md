@@ -10,6 +10,25 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- **Python pin and floor raised to 3.13; one `--repair` needed to cross it** (HATS-1521).
+  `PINNED_PYTHON` is 3.13 (was 3.11) and `requires-python` is `>=3.13` on the
+  integrator and all five workspace members; the CI matrix is now 3.13 + 3.14.
+  The old pin sat on the floor of the support matrix, so every fresh install got
+  the version where the HATS-1519 argparse defect lives (`--` before positionals
+  is rejected on 3.11/3.12, accepted on 3.13+).
+  **Upgrading from an earlier version fails once**: `self update` builds the new
+  version's venv with the *old* code's pin (3.11), then cannot resolve a
+  distribution requiring `>=3.13`, and exits 1 with uv's
+  `does not satisfy Python>=3.13`. Nothing is damaged and the old install keeps
+  working. Recover out-of-band, once per install:
+  `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- --repair`
+  — the launcher, not the old Python, builds the replacement venv. A session
+  whose interpreter is off the pin now says so at startup instead of failing
+  later somewhere unrelated. `scripts/check_python_pin.py` (stage `python-pin`)
+  refuses a partial bump and a pin the matrix does not run.
+
 ### Removed
 
 - **The allow-rule lint is gone, and the consent grant works again** (HATS-1861, ADR-0031). HATS-1642 rested on one measurement: a broad `permissions.allow` rule silenced the consent gate, "the harness approved the call before any prompt could appear". Re-measured on Claude Code 2.1.247 it does not reproduce — a PreToolUse hook that returns `ask` blocks the call whatever `allow` says, in `default`, `auto`, `dontAsk` and `bypassPermissions` alike. The fixture is in the repo (`experiments/harness-permission-precedence/probe.sh`, four arms, two of them controls, verdict read from a side-effect file rather than the model's prose), because the claim is about someone else's release and nothing in CI can hold it.

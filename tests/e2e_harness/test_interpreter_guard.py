@@ -41,7 +41,7 @@ def test_editable_install_of_another_checkout_is_flagged():
 
 def test_wheel_install_is_accepted():
     """HATS-685's intent: e2e SHOULD exercise a real site-packages install."""
-    resolved = checkout_path("/venv/lib/python3.11/site-packages/ai_hats/__init__.py")
+    resolved = checkout_path("/venv/lib/python3.13/site-packages/ai_hats/__init__.py")
     assert foreign_source_checkout(resolved, REPO) is None
 
 
