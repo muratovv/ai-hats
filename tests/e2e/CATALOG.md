@@ -2211,7 +2211,7 @@ as a claim to check, not as evidence.
 
   ```console
   uv build --wheel . -o dist          # the wheel a user would get
-  uv venv --python 3.11 venv          # a fresh interpreter, outside the repo
+  uv venv --python 3.13 venv          # a fresh interpreter, outside the repo
   uv pip install --python venv/bin/python dist/ai_hats-0.0.0-py3-none-any.whl
   ```
 
