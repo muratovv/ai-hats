@@ -409,6 +409,75 @@ def _imposed(run: HookRun, row: HookRow, event: HookEvent | None) -> ChainVerdic
     )
 
 
+def _skipped_by_hatch(run: HookRun, row: HookRow, environ: Mapping[str, str]) -> str | None:
+    """Why this delivery failure is skipped rather than refused, or ``None``.
+
+    The hatch is read HERE, beside the refusal it opens, for the reason the git
+    channel states at ``githooks_run._skip_reason``: the deny-names-its-hatch
+    invariant is worth nothing if the flag it names is inert (HATS-1253 P4).
+
+    Only a gate ai-hats could not MATERIALIZE qualifies. A timeout keeps its own
+    bound to raise, and opening it here would turn a hang into a pass.
+    """
+    if run.kind not in _MATERIALIZATION_KINDS:
+        return None
+    if not environ.get(GATE_BROKEN_ACK_ENV):
+        return None
+    return f"{GATE_BROKEN_ACK_ENV} set — '{row.tag}' SKIPPED: {run.reason}"
+
+
+def record_gate_skipped(reason: str, *, hook: str, project_dir: Path) -> None:
+    """Say — on stderr AND in the bypass journal — that a gate was skipped.
+
+    Passing a gate is allowed; passing one SILENTLY is not (ADR-0020 D2). The
+    journal is written in-process, the way ``consent_port.journal_sink`` does:
+    this channel already runs inside the ai-hats interpreter, so the git
+    channel's reason for spawning a writer does not apply.
+    """
+    sys.stderr.write(f"ai-hats: gate SKIPPED (hatch) — {reason}\n")
+    try:
+        from ai_hats_library.hooks.bypass_journal import journal_bypass
+    except ImportError as exc:
+        sys.stderr.write(f"ai-hats: hatch NOT RECORDED ({reason}) — {exc}\n")
+        return
+    # Never raises and reports its own failure on stderr, so a lost record is
+    # loud without this call having to re-check it.
+    journal_bypass("hatch", reason, hook=hook, cwd=project_dir)
+
+
+def undeliverable(
+    reason: str,
+    *,
+    event: HookEvent | None = None,
+    hook: str = "",
+    project_dir: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> ChainVerdict:
+    """The verdict when the gate SET could not be delivered — no gate ran at all.
+
+    The sibling of :func:`_imposed`, one level up: that one answers for a single
+    hook that would not start, this one for a manifest that never resolved. Both
+    owe the same named exit, and both must honour it — a refusal every surface
+    words identically and only one of them can open is the failure this channel
+    exists to remove.
+    """  # comment-length: allow — the two levels of delivery failure are the contract
+    env = environ if environ is not None else os.environ
+    if env.get(GATE_BROKEN_ACK_ENV):
+        record_gate_skipped(
+            f"{GATE_BROKEN_ACK_ENV} set — SKIPPED: {reason}",
+            hook=hook or "manifest",
+            project_dir=project_dir if project_dir is not None else Path.cwd(),
+        )
+        return ChainVerdict(decision=ChainDecision.ALLOW, event=event)
+    return ChainVerdict(
+        decision=ChainDecision.DENY,
+        reason=reason,
+        hook=hook,
+        event=event,
+        hatch_env=GATE_BROKEN_ACK_ENV,
+    )
+
+
 def run_chain(
     profile: SurfaceProfile,
     *,
@@ -425,6 +494,7 @@ def run_chain(
     surface gave the dispatcher; each hook draws its budget through it and a
     chain with nothing left refuses, naming the variable that widens it.
     """
+    env = environ if environ is not None else os.environ
     budget = resolve_hook_timeout(environ)
     deadline = Deadline.without_lock(budget, why=f"{profile.label} {event.value}")
     nudges: list[Nudge] = []
@@ -447,6 +517,10 @@ def run_chain(
             )
             imposed = _imposed(run, row, event)
             if imposed is not None:
+                skipped = _skipped_by_hatch(run, row, env)
+                if skipped is not None:
+                    record_gate_skipped(skipped, hook=row.tag, project_dir=project_dir)
+                    continue
                 return replace(imposed, nudges=tuple(nudges))
             try:
                 reply = parse_reply(
@@ -636,6 +710,8 @@ __all__ = [
     "REDUCTIONS",
     "Reduction",
     "BINDABLE_EVENTS",
+    "record_gate_skipped",
+    "undeliverable",
     "to_wire",
     "RETIRED_TIMEOUT_ENVS",
     "project_dir_from",

@@ -128,6 +128,57 @@ def test_a_script_that_is_not_executable_refuses_too(tmp_path: Path) -> None:
     assert _run(tmp_path, row).decision is ChainDecision.DENY
 
 
+class TestTheHatchOpens:
+    """A deny that names a flag nobody reads is worth nothing (HATS-1253 P4).
+
+    The git channel reads its hatch beside the refusal it opens
+    (``githooks_run._skip_reason``); these pin that this one does too, by
+    driving the CALL through rather than by matching the refusal's wording.
+    """
+
+    def test_an_undeliverable_gate_is_skipped_when_the_human_opened_the_hatch(
+        self, tmp_path: Path
+    ) -> None:
+        absent = HookRow(command=tmp_path / "gone", matcher="Bash", tag="ai-hats:gone")
+        verdict = _run(tmp_path, absent, environ={GATE_BROKEN_ACK_ENV: "1"})
+        assert verdict.decision is ChainDecision.ALLOW
+
+    def test_the_rest_of_the_chain_still_runs_past_the_skipped_gate(self, tmp_path: Path) -> None:
+        """Skipping the broken gate must not skip the gates behind it."""
+        absent = HookRow(command=tmp_path / "gone", matcher="Bash", tag="ai-hats:gone")
+        denied = _hook(
+            tmp_path, "deny", _emit(permissionDecision="deny", permissionDecisionReason="still no")
+        )
+        verdict = _run(tmp_path, absent, denied, environ={GATE_BROKEN_ACK_ENV: "1"})
+        assert (verdict.decision, verdict.reason) == (ChainDecision.DENY, "still no")
+
+    def test_the_skip_is_recorded_rather_than_taken_in_silence(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        absent = HookRow(command=tmp_path / "gone", matcher="Bash", tag="ai-hats:gone")
+        _run(tmp_path, absent, environ={GATE_BROKEN_ACK_ENV: "1"})
+        err = capsys.readouterr().err
+        assert GATE_BROKEN_ACK_ENV in err and "SKIPPED" in err, err
+
+    def test_the_hatch_does_not_open_a_refusal_the_hook_itself_uttered(
+        self, tmp_path: Path
+    ) -> None:
+        """Arguing with a gate that RAN is between its author and whoever it
+        stopped; the delivery hatch has no standing there."""
+        denied = _hook(
+            tmp_path, "deny", _emit(permissionDecision="deny", permissionDecisionReason="no")
+        )
+        verdict = _run(tmp_path, denied, environ={GATE_BROKEN_ACK_ENV: "1"})
+        assert verdict.decision is ChainDecision.DENY
+
+    def test_the_hatch_does_not_open_a_timeout(self, tmp_path: Path) -> None:
+        """A budget has its own bound to raise; this one would hide a hang."""
+        slow = _hook(tmp_path, "slow", "cat >/dev/null; sleep 5")
+        verdict = _run(tmp_path, slow, environ={HOOK_TIMEOUT_ENV: "0.4", GATE_BROKEN_ACK_ENV: "1"})
+        assert verdict.decision is ChainDecision.DENY
+        assert verdict.hatch_env == HOOK_TIMEOUT_ENV
+
+
 def test_a_hook_that_overruns_its_budget_refuses_and_names_the_bound(tmp_path: Path) -> None:
     slow = _hook(tmp_path, "slow", "cat >/dev/null; sleep 5")
     verdict = _run(tmp_path, slow, environ={HOOK_TIMEOUT_ENV: "0.4"})

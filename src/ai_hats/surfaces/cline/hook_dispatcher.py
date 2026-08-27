@@ -12,7 +12,6 @@ from ai_hats.env import ENV_AI_HATS_DIR, ENV_SESSION_CACHE_DIR
 from ai_hats_observe.trace import ENV_SESSION_ID
 
 from ..hook_channel import (
-    GATE_BROKEN_ACK_ENV,
     ChainDecision,
     ChainVerdict,
     HookEvent,
@@ -20,6 +19,7 @@ from ..hook_channel import (
     project_dir_from,
     reduce_to,
     run_chain,
+    undeliverable,
     worded,
 )
 from .claude_hook_adapter import to_claude_hook_payloads
@@ -106,20 +106,30 @@ def _rows(manifest: dict, event: HookEvent) -> list[HookRow]:
     return rows
 
 
-def _undeliverable(reason: str) -> ChainVerdict:
-    """A gate ai-hats could not deliver refuses, naming the way past it.
+def _undeliverable(reason: str, event: HookEvent | None = None) -> ChainVerdict:
+    """A gate ai-hats could not deliver refuses, naming a way past that works.
 
     Every one of these used to answer ``{"cancel": false}``: the tool call went
     through and the only trace was a line on stderr nobody reads mid-session.
+
+    ``event`` travels so a refusal for a call that ALREADY ran can still be
+    reduced to something the reader sees, rather than cancelling what cannot be
+    cancelled.
     """
-    return ChainVerdict(
-        decision=ChainDecision.DENY,
-        reason=f"ai-hats-cline-hook: {reason}",
-        hatch_env=GATE_BROKEN_ACK_ENV,
+    return undeliverable(
+        f"ai-hats-cline-hook: {reason}",
+        event=event,
+        project_dir=project_dir_from(os.environ),
     )
 
 
-def _reply(verdict: ChainVerdict) -> int:
+def _reply(raw: ChainVerdict) -> int:
+    """Reduce to what cline can utter, then say it.
+
+    The reduction happens HERE so every path reaches it — a delivery refusal for
+    a call that already ran used to skip it and cancel what cannot be cancelled.
+    """
+    verdict = reduce_to(PROFILE.speaks, raw)
     if verdict.decision in (ChainDecision.DENY, ChainDecision.ASK):
         said = worded(verdict)
         # Also on stderr: the agent reads errorMessage, an operator reading the
@@ -148,24 +158,21 @@ def dispatch_hook(event: str, *, stdin=None) -> int:
     try:
         payload = json.loads(source.read())
     except (OSError, ValueError) as exc:
-        return _reply(_undeliverable(f"invalid payload: {exc}"))
+        return _reply(_undeliverable(f"invalid payload: {exc}", bound))
     if not isinstance(payload, dict):
-        return _reply(_undeliverable("payload is not an object"))
+        return _reply(_undeliverable("payload is not an object", bound))
     try:
         rows = _rows(_load_manifest(os.environ), bound)
     except _ManifestError as exc:
-        return _reply(_undeliverable(str(exc)))
+        return _reply(_undeliverable(str(exc), bound))
 
     return _reply(
-        reduce_to(
-            PROFILE.speaks,
-            run_chain(
-                PROFILE,
-                event=bound,
-                rows=rows,
-                payloads=to_claude_hook_payloads(payload, event),
-                project_dir=project_dir_from(os.environ),
-            ),
+        run_chain(
+            PROFILE,
+            event=bound,
+            rows=rows,
+            payloads=to_claude_hook_payloads(payload, event),
+            project_dir=project_dir_from(os.environ),
         )
     )
 
