@@ -514,9 +514,13 @@ def test_torn_session_identity_fails_closed_without_running_foreign_hook(
     )
 
     assert code == 2
-    assert stdout == ""
     assert "session identity mismatch" in stderr
     assert not marker.exists()
+    # The status alone named no way past it, which is the half a delivery
+    # refusal on this channel owes the human.
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "AI_HATS_GATE_BROKEN_ACK" in spoken["permissionDecisionReason"]
 
 
 def test_manifest_command_outside_session_mirror_fails_closed(
@@ -543,9 +547,11 @@ def test_manifest_command_outside_session_mirror_fails_closed(
     )
 
     assert code == 2
-    assert stdout == ""
     assert "escapes the session skills mirror" in stderr
     assert not marker.exists()
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "AI_HATS_GATE_BROKEN_ACK" in spoken["permissionDecisionReason"]
 
 
 def test_exit_two_from_claude_hook_denies_permission_request(

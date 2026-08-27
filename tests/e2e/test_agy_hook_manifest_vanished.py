@@ -125,15 +125,14 @@ def test_a_guard_further_down_the_chain_still_refuses(agy_chain) -> None:
     assert _fired(agy_chain) == ["audit", "guard"], "the chain did not stop at the refusal"
 
 
-def test_a_reclaimed_cache_dir_is_reported_not_passed_off_as_hook_less(agy_chain) -> None:
+def test_a_reclaimed_cache_dir_refuses_the_call_it_can_no_longer_guard(agy_chain) -> None:
     """HATS-1339: a sweep deleted a live session's cache dir and the guard above
     stopped refusing in total silence — exit 0, empty stderr, nothing to notice.
 
-    Exit stays 0 on purpose (ADR-0020 D1, the detached channel is fail-open):
-    this runs ahead of every tool call, so refusing would kill the very session
-    the diagnostic exists to rescue. Fail-under-revert: without the manifest
-    check in ``_session_hooks_file`` the run is byte-identical to a session that
-    simply has no hooks, and the stderr assertions below find nothing.
+    That card chose to report and keep going; the reversal is deliberate, and is
+    only defensible because the hatch it names now opens (see the test below).
+    Fail-under-revert: without the manifest check the run is byte-identical to a
+    session with no hooks, and the call the guard exists to stop goes through.
     """
     agy_chain.manifest.unlink()
 
@@ -144,14 +143,35 @@ def test_a_reclaimed_cache_dir_is_reported_not_passed_off_as_hook_less(agy_chain
         tool_input={"file_path": OFF_LIMITS},
     )
 
-    assert done.returncode == 0, f"fail-open broken: exit {done.returncode}\n{done.stderr}"
-    assert "no hooks manifest at" in done.stderr, (
-        f"the vanished manifest went unreported — indistinguishable from a "
-        f"session with no hooks configured:\n{done.stderr!r}"
+    spoken = json.loads(done.stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny", done.stdout
+    assert "no hooks manifest at" in spoken["permissionDecisionReason"]
+    assert str(agy_chain.manifest) in spoken["permissionDecisionReason"]
+    assert "AI_HATS_GATE_BROKEN_ACK" in spoken["permissionDecisionReason"], (
+        f"the refusal names no way past it:\n{done.stdout!r}"
     )
-    assert str(agy_chain.manifest) in done.stderr, done.stderr
-    assert "restart it" in done.stderr, f"the report names no remedy:\n{done.stderr!r}"
-    assert _fired(agy_chain) == ["user"], (
-        "the user's own hooks must survive a reclaimed session cache dir; "
-        f"fired: {_fired(agy_chain)}"
+    assert _fired(agy_chain) == [], (
+        f"hooks ran for a call that was refused; fired: {_fired(agy_chain)}"
+    )
+
+
+def test_the_hatch_that_refusal_names_lets_the_human_through(agy_chain) -> None:
+    """The other half of the reversal, and the reason it is allowed to be one.
+
+    A refusal on every tool call with no working way past it wedges the session
+    exactly as HATS-1339 feared. This is the test that says it does not.
+    """
+    agy_chain.manifest.unlink()
+
+    done = run_agy_dispatch(
+        agy_chain.project,
+        {**agy_chain.env, "AI_HATS_GATE_BROKEN_ACK": "1"},
+        tool=GUARDED_TOOL,
+        tool_input={"file_path": OFF_LIMITS},
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "permissionDecision" not in done.stdout, done.stdout
+    assert "SKIPPED" in done.stderr, (
+        f"the hatch was taken in silence — an unrecorded bypass:\n{done.stderr!r}"
     )

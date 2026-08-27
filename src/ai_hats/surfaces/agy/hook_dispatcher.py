@@ -32,6 +32,7 @@ from ..hook_channel import (
     reduce_to,
     resolve_hook_timeout,
     run_chain,
+    undeliverable,
     worded,
 )
 from .claude_hook_adapter import (
@@ -86,30 +87,31 @@ def _kill_group(running: subprocess.Popen) -> None:
         running.kill()
 
 
-def _session_hooks_file() -> Path | None:
+class _ManifestError(RuntimeError):
+    """The composed manifest did not resolve — no gate ran, and none can."""
+
+
+def _session_hooks_file() -> Path:
     """This session's hooks manifest, from the dir the builder pinned (HATS-1398).
 
-    Two ways to have none, both reported: no pin at all, and a pin whose
-    manifest is gone. Exit 0 reads exactly like "no hooks configured", so
-    silence here would pass unreachable guards off as an unguarded session.
+    Two ways to have none, and both are a delivery failure rather than an
+    unguarded session: no pin at all, and a pin whose manifest is gone.
     """
     pinned = os.environ.get(ENV_SESSION_CACHE_DIR)
     if not pinned:
-        sys.stderr.write(
-            "ai-hats-hook-dispatcher: AI_HATS_SESSION_CACHE_DIR unset — this session "
-            "predates HATS-1398 and its hooks are unreachable; restart it.\n"
+        raise _ManifestError(
+            "AI_HATS_SESSION_CACHE_DIR unset — this session predates HATS-1398 "
+            "and its hooks are unreachable; restart it"
         )
-        return None
 
     hooks_file = Path(pinned) / "hooks.json"
     if not hooks_file.is_file():
         # The builder writes it with every pin, so absence is a reclaimed dir.
-        sys.stderr.write(
-            f"ai-hats-hook-dispatcher: no hooks manifest at {hooks_file} — the builder "
-            f"writes one whenever it pins the dir, so this session's hooks, safety "
-            f"guards included, have stopped firing; restart it.\n"
+        raise _ManifestError(
+            f"no hooks manifest at {hooks_file} — the builder writes one whenever it "
+            f"pins the dir, so this session's hooks, safety guards included, have "
+            f"stopped firing; restart it"
         )
-        return None
     return hooks_file
 
 
@@ -134,28 +136,32 @@ def _answered(said: str, payload: dict) -> str:
 
 
 def _session_rows(event: HookEvent) -> list[HookRow]:
-    """This session's composed rows, from the manifest the builder pinned."""
+    """This session's composed rows, from the manifest the builder pinned.
+
+    A row this cannot read is a gate that will not run, so it raises rather than
+    skipping: dropping it silently is indistinguishable from never having
+    declared it, which is the whole failure this channel removes.
+    """
     hooks_file = _session_hooks_file()
-    if hooks_file is None:
-        return []
     try:
         data = json.loads(hooks_file.read_text(encoding="utf-8"))
     except (OSError, ValueError) as err:
-        sys.stderr.write(
-            f"ai-hats-hook-dispatcher: hooks manifest unusable at {hooks_file}: {err} — "
-            f"this session's hooks, safety guards included, are not firing; restart it.\n"
-        )
-        return []
+        raise _ManifestError(
+            f"hooks manifest unusable at {hooks_file}: {err} — this session's hooks, "
+            f"safety guards included, are not firing; restart it"
+        ) from err
     raw = data.get(event.value, []) if isinstance(data, dict) else []
     if isinstance(raw, dict):
         raw = [raw]
+    if not isinstance(raw, list):
+        raise _ManifestError(f"hooks manifest at {hooks_file} lists no rows for {event.value}")
     rows: list[HookRow] = []
-    for entry in raw if isinstance(raw, list) else []:
+    for entry in raw:
         if not isinstance(entry, dict):
-            continue
+            raise _ManifestError(f"hook entry is {type(entry).__name__}, not an object")
         command = entry.get("command")
         if not isinstance(command, str) or not command:
-            continue
+            raise _ManifestError(f"malformed hook entry: {entry.get('tag', '<untagged>')}")
         rows.append(
             HookRow(
                 command=Path(command),
@@ -243,30 +249,36 @@ def _run_user_hooks(event: str, tool: str, spoken: str, payload: dict) -> int:
 
 
 def _reply(verdict: ChainVerdict, payload: dict) -> int:
-    """Say the verdict the way agy hears it — which is two ways, not one.
+    """Say the verdict in the form agy acts on, whoever formed it.
 
-    A hook that refused by exiting says so with its status, and agy aborts the
-    call on it; a hook that answered in JSON says so on stdout. Collapsing the
-    two would either drop a refusal or invent an exit code nobody returned.
-    """
+    ``permissionDecision`` is that form, and it used to be reserved for a
+    refusal a hook UTTERED, while a gate ai-hats could not deliver — the
+    stronger class — left through the exit status alone. That is the weaker
+    channel: a non-zero hook status is what agy reports and keeps going on
+    (HATS-1439), so the imposed refusal was the one that could go unheeded.
+    Both take the authoritative form now; the status still carries a hook's own
+    exit code, because that one IS agy's protocol for the hook's own refusal.
+    """  # comment-length: allow — which form binds on this surface is the contract
     if verdict.decision is ChainDecision.ALLOW and not verdict.nudges:
         return 0
-    if verdict.decision is ChainDecision.DENY and verdict.exit_code not in (None, 0):
-        sys.stderr.write(worded(verdict) + "\n")
-        return verdict.exit_code
-    if verdict.decision is ChainDecision.DENY and verdict.hatch_env:
-        sys.stderr.write(worded(verdict) + "\n")
-        return 1
     spoken: dict = {"hookEventName": (verdict.event or HookEvent.PRE_TOOL_USE).value}
     if verdict.decision is not ChainDecision.ALLOW:
         spoken["permissionDecision"] = verdict.decision.value
         spoken["permissionDecisionReason"] = worded(verdict)
     if verdict.updated_input is not None:
         spoken["updatedInput"] = verdict.updated_input
+    # Carried on every path: the dialect says this surface can hold them, and
+    # dropping them on a refusal made that promise false for the hooks that ran
+    # before the objector.
     if verdict.nudges:
         spoken["additionalContext"] = "\n".join(n.text for n in verdict.nudges)
     decision = from_claude_decision({"hookSpecificOutput": spoken}, payload)
     sys.stdout.write(json.dumps(decision) + "\n")
+    if verdict.decision is ChainDecision.DENY:
+        sys.stderr.write(worded(verdict) + "\n")
+        if verdict.stderr:
+            sys.stderr.write(verdict.stderr)
+        return verdict.exit_code if verdict.exit_code not in (None, 0) else 0
     return 0
 
 
@@ -339,12 +351,26 @@ def dispatch_hook(
     if event is None:
         return _run_user_hooks(native, tool, spoken, payload)
 
+    try:
+        rows = _session_rows(event)
+    except _ManifestError as exc:
+        # The user's own hooks do NOT run behind this: they gate a call that is
+        # not going to happen.
+        return _reply(
+            undeliverable(
+                f"ai-hats-hook-dispatcher: {exc}",
+                event=event,
+                project_dir=project_dir_from(os.environ),
+            ),
+            payload,
+        )
+
     verdict = reduce_to(
         PROFILE.speaks,
         run_chain(
             PROFILE,
             event=event,
-            rows=_session_rows(event),
+            rows=rows,
             # Always one payload: an unreadable call must still meet its gates.
             payloads=[to_claude_payload(payload)],
             project_dir=project_dir_from(os.environ),

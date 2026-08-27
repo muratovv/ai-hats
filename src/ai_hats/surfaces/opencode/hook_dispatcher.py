@@ -21,7 +21,6 @@ from ai_hats_observe.trace import ENV_SESSION_ID
 from ..hook_channel import (
     ChainDecision,
     ChainVerdict,
-    GATE_BROKEN_ACK_ENV,
     HookEvent,
     HookRow,
     project_dir_from,
@@ -29,6 +28,7 @@ from ..hook_channel import (
     run_chain,
     speak_args,
     to_wire,
+    undeliverable,
 )
 from .profile import PROFILE
 
@@ -101,7 +101,7 @@ def dispatch_hook(*, stdin=None, environ: Mapping[str, str] | None = None) -> in
     try:
         rows = _load_rows(env, event)
     except _ManifestError as exc:
-        return _say(_undeliverable(str(exc)))
+        return _say(reduce_to(PROFILE.speaks, _undeliverable(str(exc), event)))
 
     return _say(
         reduce_to(
@@ -129,11 +129,13 @@ def _spoken(payload: dict) -> dict:
     }
 
 
-def _undeliverable(reason: str) -> ChainVerdict:
-    return ChainVerdict(
-        decision=ChainDecision.DENY,
-        reason=f"ai-hats-opencode-hook: {reason}",
-        hatch_env=GATE_BROKEN_ACK_ENV,
+def _undeliverable(reason: str, event: HookEvent | None = None) -> ChainVerdict:
+    """A gate set that never resolved, through the one constructor that also
+    honours the hatch its refusal names."""
+    return undeliverable(
+        f"ai-hats-opencode-hook: {reason}",
+        event=event,
+        project_dir=project_dir_from(os.environ),
     )
 
 

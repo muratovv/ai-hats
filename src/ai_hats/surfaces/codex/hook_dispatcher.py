@@ -18,6 +18,7 @@ from ..hook_channel import (
     project_dir_from,
     reduce_to,
     run_chain,
+    undeliverable,
     worded,
 )
 from .claude_hook_adapter import to_claude_hook_payloads
@@ -161,17 +162,39 @@ def _emit(verdict, native_event: str) -> int:
     return 0
 
 
+def _undeliverable(reason: str, native_event: str, event: HookEvent | None) -> int:
+    """A gate set that never resolved, said in codex's own dialect.
+
+    Through the channel rather than past it: a bare status carried no verdict
+    codex could act on and, more to the point, named no way out — the one thing
+    every delivery refusal on this channel owes the human.
+    """
+    verdict = undeliverable(
+        f"ai-hats-codex-hook: {reason}",
+        event=event,
+        project_dir=project_dir_from(os.environ),
+    )
+    _emit(verdict, native_event)
+    if verdict.decision is ChainDecision.DENY:
+        # Also on stderr: codex shows the model the JSON, an operator reading
+        # the session log afterwards reads this.
+        sys.stderr.write(worded(verdict) + "\n")
+        # The status stays codex's own refusal protocol; what it never carried
+        # is the named way past, which the JSON above now does.
+        return 2
+    return 0
+
+
 def dispatch_hook(*, stdin=None) -> int:
     """Run the composed chain for the Codex event received on stdin."""
     source = stdin if stdin is not None else sys.stdin
+    pre = HookEvent.PRE_TOOL_USE
     try:
         payload = json.loads(source.read())
     except (OSError, ValueError) as exc:
-        sys.stderr.write(f"ai-hats-codex-hook: invalid payload: {exc}\n")
-        return 2
+        return _undeliverable(f"invalid payload: {exc}", pre.value, pre)
     if not isinstance(payload, dict):
-        sys.stderr.write("ai-hats-codex-hook: payload is not an object\n")
-        return 2
+        return _undeliverable("payload is not an object", pre.value, pre)
     native_event = str(payload.get("hook_event_name", HookEvent.PRE_TOOL_USE.value))
     if native_event not in PROFILE.native_events:
         return 0
@@ -182,8 +205,7 @@ def dispatch_hook(*, stdin=None) -> int:
     try:
         rows = _rows(_load_manifest(os.environ), event)
     except _ManifestError as exc:
-        sys.stderr.write(f"ai-hats-codex-hook: {exc}\n")
-        return 2
+        return _undeliverable(str(exc), native_event, event)
 
     verdict = reduce_to(
         PROFILE.speaks,

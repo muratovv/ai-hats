@@ -141,27 +141,19 @@ export const AiHatsHooksPlugin = async ({ client }) => {
   }
 
   const manifest = await loadManifest(cacheDir, sessionId);
-
-  if (manifest.state === "missing") {
-    console.warn("[ai-hats] hook manifest absent under session cache; guards disabled");
-    return {};
-  }
-  if (manifest.state !== "ready") {
-    const reason =
-      manifest.state === "foreign"
-        ? `[ai-hats] hook manifest belongs to another session; refusing tool calls (${manifest.path})`
-        : `[ai-hats] hook manifest unreadable; refusing tool calls (${manifest.path})`;
-    console.error(reason);
-    return {
-      "tool.execute.before": async () => {
-        throw new Error(reason);
-      },
-    };
-  }
-
   const permissionRules = manifest.state === "ready" ? manifest.permissions : [];
 
+  // Every non-ready state still registers the hooks and lets the dispatcher
+  // judge. A missing manifest used to return {} here, so a session that lost
+  // its manifest before the plugin loaded ran with every gate off for its whole
+  // life -- and the refusal the dispatcher would have produced, hatch and all,
+  // was never asked for.
+  const bound = manifest.state === "ready" ? manifest.hooks || {} : null;
+
   const dispatch = async (event, nativeTool, args, canDeny) => {
+    // Nothing composed is bound to this event: no gate can be missed, and the
+    // interpreter this would start costs ~120 ms on the host's own event loop.
+    if (bound && !(Array.isArray(bound[event]) && bound[event].length)) return;
     const verdict = judge(event, nativeTool, args);
     for (const nudge of verdict.nudges || []) {
       if (nudge && nudge.text) console.warn(`[ai-hats] ${nudge.hook || "guard"}: ${nudge.text}`);

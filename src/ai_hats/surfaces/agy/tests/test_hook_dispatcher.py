@@ -44,17 +44,21 @@ def test_dispatcher_noop_when_session_id_missing(monkeypatch) -> None:
     assert res == 0
 
 
-def test_dispatcher_says_so_when_the_pinned_manifest_is_gone(
+def _said(capsys) -> dict:
+    """The verdict agy acts on, off stdout."""
+    out = capsys.readouterr().out.strip()
+    return json.loads(out) if out else {}
+
+
+def test_a_reclaimed_cache_dir_refuses_rather_than_passing_the_call(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     """Pin set + no manifest is a reclaimed cache dir, not a hook-less session.
 
-    The builder writes the manifest with every pin, so the two cases are never
-    the same event — and a TTL sweep reclaiming a live session's dir (HATS-1339)
-    silenced every guard while exit 0 kept saying "nothing configured". Exit
-    stays 0 because this gate runs ahead of every tool call on a detached
-    surface (ADR-0020 D1, fail-open): refusing would kill the very session the
-    diagnostic exists to rescue.
+    HATS-1339 chose to report and keep going here; HATS-1439 is what that cost —
+    a live session ran with every gate off and one stderr line to show for it.
+    The choice is reversed: this refuses like every other surface, and
+    ``AI_HATS_GATE_BROKEN_ACK`` is the way past that a human can actually use.
     """
     project = tmp_path / "project"
     project.mkdir()
@@ -62,12 +66,25 @@ def test_dispatcher_says_so_when_the_pinned_manifest_is_gone(
 
     _in_session(monkeypatch, "sid-test", project)
     monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(cache_dir))
+    monkeypatch.delenv("AI_HATS_GATE_BROKEN_ACK", raising=False)
 
-    res = dispatch_hook("PreToolUse")
-    assert res == 0
-    complained = capsys.readouterr().err
-    assert "no hooks manifest at" in complained
-    assert str(cache_dir / "hooks.json") in complained
+    dispatch_hook("PreToolUse")
+    spoken = _said(capsys)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "no hooks manifest at" in spoken["permissionDecisionReason"]
+    assert "AI_HATS_GATE_BROKEN_ACK" in spoken["permissionDecisionReason"]
+
+
+def test_the_hatch_lets_a_human_past_the_reclaimed_dir(tmp_path: Path, monkeypatch, capsys) -> None:
+    """The refusal above is only defensible because this one passes."""
+    project = tmp_path / "project"
+    project.mkdir()
+    _in_session(monkeypatch, "sid-hatch", project)
+    monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("AI_HATS_GATE_BROKEN_ACK", "1")
+
+    assert dispatch_hook("PreToolUse") == 0
+    assert _said(capsys) == {}, "an opened hatch must not still emit a refusal"
 
 
 def _seed_manifest(cache_dir: Path, hook_script: Path) -> None:
@@ -102,10 +119,15 @@ def test_dispatcher_executes_hook_from_pinned_cache_dir(tmp_path: Path, monkeypa
     assert marker_file.read_text().strip() == "OK"
 
 
-def test_a_gone_session_manifest_still_leaves_the_user_hooks_running(
+def test_a_gone_session_manifest_holds_the_users_hooks_back_too(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """The two manifests are separate channels; losing one must not disarm both."""
+    """They gate a call that is not going to happen.
+
+    The reverse of what this asserted while the dispatcher passed the call
+    through: running the user's PreToolUse hooks behind a refusal would fire
+    their side effects for a tool call ai-hats has just cancelled.
+    """
     home = tmp_path / "home"
     (home / ".gemini" / "config").mkdir(parents=True)
     marker_file, hook_script = _marker_hook(tmp_path)
@@ -114,29 +136,31 @@ def test_a_gone_session_manifest_still_leaves_the_user_hooks_running(
     )
 
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("AI_HATS_GATE_BROKEN_ACK", raising=False)
     _in_session(monkeypatch, "sid-gone", tmp_path / "project")
     monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(tmp_path / "reclaimed"))
 
-    res = dispatch_hook("PreToolUse", tool_name="Edit")
-    assert res == 0
-    assert marker_file.read_text().strip() == "OK"
-    assert "no hooks manifest at" in capsys.readouterr().err
+    dispatch_hook("PreToolUse", tool_name="Edit")
+    assert _said(capsys)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert not marker_file.exists(), "a user hook ran for a call that was refused"
 
 
-def test_dispatcher_without_the_pin_says_so_instead_of_exiting_quietly(
+def test_dispatcher_without_the_pin_refuses_instead_of_exiting_quietly(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """An ai-hats session with no pin predates the move — say it (HATS-1373 class).
+    """An ai-hats session with no pin has unreachable hooks (HATS-1373 class).
 
-    Exit 0 alone is what "this session has no hooks" looks like, so silence here
-    would hide unreachable hooks rather than report them.
+    Passing quietly is what "this session has no hooks" looks like, so it hid
+    unreachable guards rather than reporting them.
     """
     _in_session(monkeypatch, "sid-stale", tmp_path / "project")
     monkeypatch.delenv("AI_HATS_SESSION_CACHE_DIR", raising=False)
+    monkeypatch.delenv("AI_HATS_GATE_BROKEN_ACK", raising=False)
 
-    res = dispatch_hook("PreToolUse", tool_name="Edit")
-    assert res == 0
-    assert "AI_HATS_SESSION_CACHE_DIR unset" in capsys.readouterr().err
+    dispatch_hook("PreToolUse", tool_name="Edit")
+    spoken = _said(capsys)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "AI_HATS_SESSION_CACHE_DIR unset" in spoken["permissionDecisionReason"]
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "abc", "0", "-5", "nonsense60"])
