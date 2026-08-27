@@ -10,6 +10,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Removed
+
+- **The allow-rule lint is gone, and the consent grant works again** (HATS-1861, ADR-0031). HATS-1642 rested on one measurement: a broad `permissions.allow` rule silenced the consent gate, "the harness approved the call before any prompt could appear". Re-measured on Claude Code 2.1.247 it does not reproduce — a PreToolUse hook that returns `ask` blocks the call whatever `allow` says, in `default`, `auto`, `dontAsk` and `bypassPermissions` alike. The fixture is in the repo (`experiments/harness-permission-precedence/probe.sh`, four arms, two of them controls, verdict read from a side-effect file rather than the model's prose), because the claim is about someone else's release and nothing in CI can hold it.
+
+  The lint's advice — answer each finding with a matching `ask` rule — turned out to have a price nobody had priced. An `ask` rule prompts even when the hook returned `allow`, so it silently disarmed the two places the framework deliberately says nothing: a **consent grant** (`consent wt.merge 30` bought no silence at all on the operations it names) and `allow_verdict()`'s routine-`rack` auto-allow. In this project the advice had grown `permissions.ask` to 66 entries. Deleted: `consent_permission_lint.py`, `permission_warning()` in `safety_gate.py`, five tests written against the retired behaviour, and the glossary's "Allow-rule lint (two verdicts)". `consent_spellings.py` stays — the HATS-1781 D6 runtime boundary reads the same table.
+
+### Added
+
+- **`ai-hats wt discard` is a consent point** (HATS-1861, ADR-0031 D4). It tears a worktree down and can fall back to `rm -rf` (`--force-remove`), and no hook saw it: its only pause was a `permissions.ask` rule, which does not exist in a headless session. It now declares `pre-discard` under `apps.consent_gate` like `wt.merge` does, so it refuses where nobody can be asked and a grant can cover it. `ai-hats self update` deliberately stays on the permission layer alone — it rewrites a package but destroys no data.
+
 ### Reverted
 
 - **The `role-curator` / `library-curator` trim from HATS-1825 is undone** (HATS-1843). That pass moved the engine-internals map and the worktree-verification recipe out of the trait into `docs/how-to-extend.md`, and replaced the role's five-step workflow with three bullets pointing at the trait — buying back ~870 resident tokens a turn. A pointer only pays off if the agent follows it: the session that measured this one reached for the recipe from memory instead and got `ImportError: cannot import name 'build_library_paths'`, which is precisely the bounce the still-active HYP-108 exists to count. Both files are restored byte-identical to `ac5f92a3^`; the doc stays where HATS-1825 put it, so the text now lives in two places on purpose, and whether that duplication survives is HATS-1844's call rather than this card's.

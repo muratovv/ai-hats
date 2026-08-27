@@ -328,18 +328,30 @@ def test_the_chain_does_not_wave_through_what_it_must_not(project, settings, env
     assert verdict.hook == "", f"rack create was auto-approved by {verdict.hook}"
 
 
-def test_the_chain_reports_an_allow_rule_that_silences_the_question(project, settings, env):
-    """The lint rides the hook, so the whole chain carries it (HATS-1642)."""
+def test_an_allow_rule_no_longer_silences_the_question(project, settings, env, planned):
+    """ADR-0031 D1 — the hook holds the gate, whatever `permissions.allow` says.
+
+    This arm holds the HOOK half only: the harness half (that Claude Code does
+    not let an allow-rule override a hook's `ask`) is a claim about someone
+    else's release and is measured by
+    `experiments/harness-permission-precedence/probe.sh`.
+    """
     claude = project / ".claude"
     claude.mkdir(exist_ok=True)
     (claude / "settings.local.json").write_text(
         json.dumps({"permissions": {"allow": ["Bash(rack transition *)"]}}, indent=2)
     )
+    task_id = planned("allow-rule probe")
 
-    verdict = run_chain(project, "ls -la", settings=settings, env={**env, "HOME": str(project)})
+    verdict = run_chain(
+        project,
+        f"rack transition {task_id} execute",
+        settings=settings,
+        env={**env, "HOME": str(project)},
+    )
 
-    assert "rack transition" in verdict.context, verdict.context
-    assert not verdict.gated, f"a lint must not gate: {verdict}"
+    assert verdict.decision == "ask", f"an allow-rule reached the hook: {verdict}"
+    assert verdict.context == "", f"the retired lint still speaks: {verdict.context}"
 
 
 @pytest.mark.parametrize(

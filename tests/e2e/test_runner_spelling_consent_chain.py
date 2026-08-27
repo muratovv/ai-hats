@@ -18,7 +18,6 @@ why:    measured 2026-08-20 — the chain returned NOTHING for these. `WRAPPERS`
 
 from __future__ import annotations
 
-import json
 import subprocess
 
 import pytest
@@ -110,51 +109,3 @@ def test_what_only_looks_like_a_gated_move_is_left_alone(in_session, command):
     verdict = run_chain(project, command, settings=settings, env=env)
 
     assert not verdict.gated, f"{command!r} was gated — the probe proves nothing: {verdict}"
-
-
-# --- the permission lint, driven through the same chain -----------------------
-#
-# The lint rides `additionalContext` from inside the chain, so its verdict has to
-# be read where the agent reads it. Before HATS-1754 it judged one spelling per
-# verb and never looked at `ask`: it stayed silent on the runner spellings above
-# and, on a config where an ask-rule had restored the question, said the pause
-# "never happens" on EVERY Bash call.
-
-
-def _with_permissions(project, *, allow, ask=None) -> None:
-    claude = project / ".claude"
-    claude.mkdir(exist_ok=True)
-    permissions = {"allow": allow}
-    if ask:
-        permissions["ask"] = ask
-    (claude / "settings.local.json").write_text(
-        json.dumps({"permissions": permissions}, indent=2), encoding="utf-8"
-    )
-
-
-def test_the_chain_names_the_runner_spelling_an_allow_rule_opens(runner_project):
-    project, env, settings = runner_project
-    _with_permissions(project, allow=["Bash(uv run:*)"])
-    session = stand_in_session(dict(env), project, "sid-lint-open")
-
-    verdict = run_chain(project, "ls -la", settings=settings, env=session)
-
-    assert "uv run" in verdict.context, f"the spelling was not named: {verdict.context!r}"
-    assert not verdict.gated, f"a lint must never gate a call: {verdict}"
-
-
-def test_the_chain_says_nothing_once_an_ask_rule_answers_the_spelling(runner_project):
-    """The false-positive half: an ask-rule restores the question whatever the
-    allow-rule's width, so there is nothing left to report."""
-    project, env, settings = runner_project
-    # `Bash(ai-hats:*)` on purpose: the OLD lint reported exactly this rule, so
-    # reverting the ask-read turns this green test red rather than leaving it
-    # passing for want of any finding at all.
-    _with_permissions(project, allow=["Bash(ai-hats:*)"], ask=["Bash(ai-hats wt merge:*)"])
-    session = stand_in_session(dict(env), project, "sid-lint-closed")
-
-    verdict = run_chain(project, "ls -la", settings=settings, env=session)
-
-    assert "silences a guard" not in verdict.context, (
-        f"the question is restored by the ask-rule, so this is a false alarm: {verdict.context!r}"
-    )

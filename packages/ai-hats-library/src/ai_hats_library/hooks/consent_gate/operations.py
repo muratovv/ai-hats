@@ -137,8 +137,9 @@ def _arrow_selector_reason(selector: str) -> str | None:
     return None
 
 
-def _pre_merge_only(selector: str) -> str | None:
-    return None if selector == "pre-merge" else "supports only 'pre-merge'"
+def _only(point: str):
+    """The `selector_reason` for an operation that admits exactly one point."""
+    return lambda selector: None if selector == point else f"supports only {point!r}"
 
 
 def _read_transition(argv: Sequence[str]) -> Reading | None:
@@ -150,14 +151,21 @@ def _read_transition(argv: Sequence[str]) -> Reading | None:
     return Reading(subject=task_id, label=f"{task_id}: → {target}", target=target)
 
 
-def _read_wt_merge(argv: Sequence[str]) -> Reading | None:
-    ops = operands(argv, AI_HATS_VALUE_FLAGS)
-    if ops[:2] != ["wt", "merge"]:
-        return None
-    # The branch may be omitted — the CLI detects it from the cwd — so this is a
-    # LABEL for the question, never the binding. What binds is the invocation.
-    branch = ops[2] if len(ops) > 2 else "this worktree"
-    return Reading(subject=branch, label=f"merge {branch}")
+def _read_wt(verb: str):
+    """A reader for `ai-hats wt <verb> [branch]`.
+
+    The branch may be omitted — the CLI detects it from the cwd — so it is a
+    LABEL for the question, never the binding. What binds is the invocation.
+    """
+
+    def read(argv: Sequence[str]) -> Reading | None:
+        ops = operands(argv, AI_HATS_VALUE_FLAGS)
+        if ops[:2] != ["wt", verb]:
+            return None
+        branch = ops[2] if len(ops) > 2 else "this worktree"
+        return Reading(subject=branch, label=f"{verb} {branch}")
+
+    return read
 
 
 #: The one answer, per operation, to "does a declared selector cover this call".
@@ -169,8 +177,9 @@ def _arrow_admits(selectors, source_state, reading) -> bool:
     )
 
 
-def _pre_merge_admits(selectors, _source_state, _reading) -> bool:
-    return "pre-merge" in selectors
+def _point_admits(point: str):
+    """The `admits` for an operation whose selector names a point, not an arrow."""
+    return lambda selectors, _source_state, _reading: point in selectors
 
 
 _ACK = "AI_HATS_CONSENT_ACK"
@@ -190,10 +199,21 @@ REGISTRY: dict[str, OperationSpec] = {
     "wt.merge": OperationSpec(
         type="wt.merge",
         surface="ai-hats",
-        read=_read_wt_merge,
-        selector_reason=_pre_merge_only,
-        admits=_pre_merge_admits,
+        read=_read_wt("merge"),
+        selector_reason=_only("pre-merge"),
+        admits=_point_admits("pre-merge"),
         legacy_flags=lambda _r: (_ACK, "AI_HATS_MERGE_ACK"),
+        value_flags=AI_HATS_VALUE_FLAGS,
+    ),
+    # ADR-0031 D4 — it tears a worktree down and can fall back to `rm -rf`, and
+    # until now no hook saw it: only a permissions rule, which headless has not.
+    "wt.discard": OperationSpec(
+        type="wt.discard",
+        surface="ai-hats",
+        read=_read_wt("discard"),
+        selector_reason=_only("pre-discard"),
+        admits=_point_admits("pre-discard"),
+        legacy_flags=lambda _r: (_ACK,),
         value_flags=AI_HATS_VALUE_FLAGS,
     ),
 }
