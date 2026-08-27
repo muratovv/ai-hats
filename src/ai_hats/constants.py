@@ -99,6 +99,7 @@ BYPASS_FLAGS_NOT_INHERITED = frozenset(
         "AI_HATS_TOOL_HYGIENE_OFF",
         "AI_HATS_WT_ENTRY_OFF",
         "AI_HATS_WT_GATE_OFF",
+        "AI_HATS_WT_INTERP_OFF",
         "AI_HATS_YOLO",
     }
 )
