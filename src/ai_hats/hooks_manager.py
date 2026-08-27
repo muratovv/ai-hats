@@ -4,8 +4,8 @@ Owns skill-declared git hooks (``.githooks/``). Worktree hooks spawn in place
 from their declaring skills (HATS-1269); runtime hooks live in the session tree
 (HATS-1268).
 
-Narrow DI: ``project_dir`` + a live ``project_config`` reference + a ``compose``
-callable + a ``resolve_provider`` callable.
+Narrow DI: ``project_dir`` + a live ``project_config`` reference + a
+``resolve_provider`` callable.
 """
 
 from __future__ import annotations
@@ -61,12 +61,10 @@ class HooksManager:
         project_dir: Path,
         project_config: "ProjectConfig",
         *,
-        compose: Callable[[str], CompositionResult],
         resolve_provider: "Callable[[str], Surface]",
     ) -> None:
         self.project_dir = project_dir
         self.project_config = project_config
-        self.compose = compose
         self.resolve_provider = resolve_provider
 
     def materialize(
@@ -135,8 +133,21 @@ def install_git_hooks(
 
     declared = _collect_skill_git_hooks(result)
     wanted = {event for event, entries in declared.items() if entries}
-    _drop_unwanted_dispatchers(project_dir, wanted)
+    # A composition that LOST content cannot say a gate is absent: "declares no
+    # hooks" and "the skill that declared them dropped out" reach here as the
+    # same empty dict, and dropping on the second uninstalls the repo's gates
+    # over a typo. Installing what IS wanted stays unconditional — additive.
+    if result.lost:
+        losses = "; ".join(str(e) for e in result.lost)
+        warnings.append(
+            f"git_hooks: role {result.name!r} composed with losses ({losses}) — "
+            "existing dispatchers left in place, because a lost gate is "
+            "indistinguishable from no gate here."
+        )
+    else:
+        _drop_unwanted_dispatchers(project_dir, wanted)
     if not wanted:
+        _flush(warnings, warnings_sink)
         return
 
     githooks_dir = project_dir / GITHOOKS_DIR
@@ -153,11 +164,15 @@ def install_git_hooks(
 
     _configure_hooks_path(project_dir, warnings)
 
+    _flush(warnings, warnings_sink)
+
+
+def _flush(warnings: list[str], warnings_sink: list[str] | None) -> None:
     if warnings_sink is not None:
         warnings_sink.extend(warnings)
-    else:
-        for w in warnings:
-            print(f"[ai-hats] WARNING: {w}")
+        return
+    for w in warnings:
+        print(f"[ai-hats] WARNING: {w}")
 
 
 def _managed_dispatchers(githooks_dir: Path) -> list[Path]:

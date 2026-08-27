@@ -450,9 +450,10 @@ def _composed(
     else:
         result, identity = _compose_fail_closed(project_dir, identity)
     if result is not None and result.errors:
+        reported = "; ".join(str(e) for e in result.errors)
         raise CheckResolutionError(
             f"checks are declared but composing role {result.name!r} reported "
-            f"{result.errors} — a gate cannot be installed from a broken composition"
+            f"{reported} — a gate cannot be installed from a broken composition"
         )
     return result, identity
 

@@ -14,6 +14,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats_core import CompositionResult
 from ai_hats.materialize import compose_for_role
+from ai_hats_core import CompositionIncompleteError
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 
@@ -74,16 +75,25 @@ def test_compose_for_role_uses_assembler_overlays(maintainer_project):
     assert via_facade == via_direct
 
 
-def test_compose_for_role_unknown_role_surfaces_in_errors(maintainer_project):
-    """Unknown role does not raise — the composer's non-fatal-error
-    contract is preserved by the facade (result returned with the error
-    recorded in ``result.errors``). This matches every other
-    ``composer.compose`` call site in the codebase."""
-    result = compose_for_role(maintainer_project, "definitely-not-a-real-role-xyz")
-    assert isinstance(result, CompositionResult)
-    assert any("not found" in e.lower() for e in result.errors), (
-        f"expected 'not found' in errors, got: {result.errors!r}"
+def test_compose_for_role_refuses_an_unknown_role(maintainer_project):
+    """This assertion is inverted. It used to say the opposite — that an
+    unknown role is returned as an empty result with the error merely
+    RECORDED — which is how a role naming a missing trait composed to zero
+    skills and uninstalled the repo's git gates without a word."""
+    with pytest.raises(CompositionIncompleteError) as exc:
+        compose_for_role(maintainer_project, "definitely-not-a-real-role-xyz")
+    assert "not found" in str(exc.value).lower()
+
+
+def test_compose_for_role_tolerates_loss_when_asked(maintainer_project):
+    """The one declared way past the refusal — the channel `compose_to_heal`,
+    `compose_to_report` and `compose_to_carry` are built on."""
+    result = compose_for_role(
+        maintainer_project, "definitely-not-a-real-role-xyz", tolerate_lossy=True
     )
+    assert isinstance(result, CompositionResult)
+    assert any("not found" in str(e).lower() for e in result.errors)
+    assert result.lost, "an unresolved role is a LOSS, not a no-op overlay remove"
 
 
 # No ``materialize_system_prompt`` facade: every real consumer needs the
@@ -91,3 +101,14 @@ def test_compose_for_role_unknown_role_surfaces_in_errors(maintainer_project):
 # HATS-267 override), so the plan's text-only F1 helper was dropped before
 # Phase 2 per design-minimalism. Re-add only alongside a real text-only
 # call-site.
+
+
+def test_no_role_at_all_is_not_a_loss(maintainer_project):
+    """A project with neither ``active_role`` nor ``default_role`` composes the
+    empty string. Nothing was declared, so nothing was lost — refusing here
+    replaced "Provider 'x' not found" with a traceback on an unconfigured
+    project — the shape that broke `tests/e2e/test_bare_positional_prompt.py`
+    the first time this refusal shipped."""
+    result = compose_for_role(maintainer_project, "")
+    assert isinstance(result, CompositionResult)
+    assert result.skills == [] and result.rules == []

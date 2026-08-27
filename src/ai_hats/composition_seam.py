@@ -172,13 +172,13 @@ def _compose_validated(
     runtime_overlay: OverlayConfig | None = None,
     explicit_role: str | None,
     spec: RoleSpec | None = None,
-    label: str,
     diagnostics: list[Diagnostic] | None = None,
 ):
     """Compose via the facade; an explicitly requested role validates existence
-    before (``RoleNotFoundError``) and errors after (``RuntimeError``) — the
-    former ``compose_role`` step contract."""
-    from .materialize import compose_for_role
+    before (``RoleNotFoundError``). Loss is refused by ``compose_to_run`` for
+    every role. The former ``explicit_role``-only check tolerated the losses of
+    a role read from config — the arm every real session takes."""
+    from .materialize import compose_to_run
 
     if explicit_role:
         from .models import ComponentType
@@ -189,15 +189,10 @@ def _compose_validated(
             raise RoleNotFoundError(base_role, available)
 
     if runtime_overlay is not None:
-        result = compose_for_role(
+        return compose_to_run(
             asm, effective_role, runtime_overlay=runtime_overlay, diagnostics=diagnostics
         )
-    else:
-        result = compose_for_role(asm, effective_role, diagnostics=diagnostics)
-
-    if explicit_role and result.errors:
-        raise RuntimeError(f"{label}: failed to resolve role {explicit_role!r}: {result.errors}")
-    return result
+    return compose_to_run(asm, effective_role, diagnostics=diagnostics)
 
 
 def _maybe_sync_active_role(
@@ -255,7 +250,6 @@ def build_composition_payload(
         runtime_overlay=runtime_overlay,
         explicit_role=role_override if strict else None,
         spec=spec,
-        label="compose_role",
         diagnostics=diagnostics,
     )
 
@@ -317,7 +311,7 @@ def build_preview_payload(
     ``MissingProviderError`` subclass, both of which ``config show-prompt``
     renders as a friendly exit 2.
     """
-    from .materialize import compose_for_role
+    from .materialize import compose_to_run
     from .surface_registry import get_surface
 
     asm, cfg, eff_role, runtime_overlay, _spec = _project_context(
@@ -331,13 +325,9 @@ def build_preview_payload(
         )
     eff_provider = _effective_provider(cfg, provider)
     if runtime_overlay is not None:
-        result = compose_for_role(asm, eff_role, runtime_overlay=runtime_overlay)
+        result = compose_to_run(asm, eff_role, runtime_overlay=runtime_overlay)
     else:
-        result = compose_for_role(asm, eff_role)
-    if result.errors:
-        raise RuntimeError(
-            f"materialize_system_prompt: compose errors for role {eff_role!r}: {result.errors}"
-        )
+        result = compose_to_run(asm, eff_role)
     return CompositionPayload(
         result=result,
         provider=get_surface(eff_provider),
@@ -362,14 +352,15 @@ def compose_for_checks(project_dir: Path, role: str | None = None) -> Compositio
     Bindings are collected per-role over a ``CompositionResult`` (ADR-0019 D7),
     so with no role there is no composition and therefore no binding — refusing
     would be refusing on the absence of the very thing that would carry a gate.
-    A role that IS set but does not resolve still refuses, via ``result.errors``.
+    A role that IS set but does not resolve still refuses — by ``compose_to_arm``
+    raising, rather than by the caller reading ``errors``.
     """  # comment-length: allow — the contrast with its neighbour IS the contract
-    from .materialize import compose_for_role
+    from .materialize import compose_to_arm
 
     asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
     if not effective:
         return None
-    return compose_for_role(asm, effective, runtime_overlay=runtime_overlay)
+    return compose_to_arm(asm, effective, runtime_overlay=runtime_overlay)
 
 
 # HATS-1594 retired `session_skills_root_for_checks`. It re-read
@@ -393,9 +384,9 @@ def compose_for_carry(project_dir: Path, role: str | None = None):
         asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
         if not effective:
             return None
-        from .materialize import compose_for_role
+        from .materialize import compose_to_carry
 
-        return compose_for_role(asm, effective, runtime_overlay=runtime_overlay)
+        return compose_to_carry(asm, effective, runtime_overlay=runtime_overlay)
     except Exception as exc:  # noqa: BLE001 — never block create on carry collection
         logger.warning(
             "worktree carry: could not compose role %r: %s — dropping carry",

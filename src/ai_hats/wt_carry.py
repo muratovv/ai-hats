@@ -70,7 +70,7 @@ def collect_carry_for_role(
             "is missing will be destroyed at teardown without further warning. %s",
             result.name,
             sum(len(rows) for rows in carry.values()),
-            result.errors,
+            "; ".join(str(e) for e in result.errors),
         )
     return carry
 

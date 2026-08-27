@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 
-from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats_core import (
+    ComponentKind,
+    CompositionError,
+    CompositionResult,
+    ResolvedComponent,
+)
 
 from .check_points import resolve_checks
 from .diagnostics import Diagnostic, Level, emit_to_stderr
@@ -66,13 +71,13 @@ class Composer:
                 rules=[],
                 skills=[],
                 injections=[],
-                errors=[f"Role '{role_name}' not found"],
+                errors=[CompositionError(f"Role '{role_name}' not found", lossy=True)],
             )
 
         seen_injections: set[str] = set()
         seen_rules: set[str] = set()
         seen_skills: set[str] = set()
-        errors: list[str] = []
+        errors: list[CompositionError] = []
         rules: list[ResolvedComponent] = []
         skills: list[ResolvedComponent] = []
         injections: list[str] = []
@@ -137,7 +142,11 @@ class Composer:
             rules = kept_rules
             for name in effective_rule_removes - removed_rule_names - role_level_rule_removes:
                 errors.append(
-                    f"Overlay: cannot remove rule '{name}' — not in the role or any composed trait"
+                    CompositionError(
+                        f"Overlay: cannot remove rule '{name}' — not in the role "
+                        "or any composed trait",
+                        lossy=False,
+                    )
                 )
 
         # Then resolve role's own skills
@@ -169,7 +178,11 @@ class Composer:
             skills = kept
             for name in effective_removes - removed_names - role_level_skill_removes:
                 errors.append(
-                    f"Overlay: cannot remove skill '{name}' — not in the role or any composed trait"
+                    CompositionError(
+                        f"Overlay: cannot remove skill '{name}' — not in the role "
+                        "or any composed trait",
+                        lossy=False,
+                    )
                 )
 
         # Add role's own injection last (highest priority).
@@ -222,7 +235,7 @@ class Composer:
     def _apply_overlay(
         config: ComponentConfig,
         overlay: OverlayConfig,
-        errors: list[str],
+        errors: list[CompositionError],
         requested_skill_removes: set[str],
         role_level_skill_removes: set[str],
         requested_rule_removes: set[str],
@@ -235,7 +248,12 @@ class Composer:
             if trait in comp.traits:
                 comp.traits.remove(trait)
             else:
-                errors.append(f"Overlay: cannot remove trait '{trait}' — not in base role")
+                errors.append(
+                    CompositionError(
+                        f"Overlay: cannot remove trait '{trait}' — not in base role",
+                        lossy=False,
+                    )
+                )
         # Rule removals are deferred: a trait may bring the rule later, so the
         # verdict is resolved post-resolution in compose() (HATS-1456 / S2b).
         for rule in overlay.remove_rules:
@@ -266,7 +284,7 @@ class Composer:
         skills: list[ResolvedComponent],
         injections: list[str],
         trait_injections: dict[str, str],
-        errors: list[str],
+        errors: list[CompositionError],
         visited: set[str],
         declared_checks: list[AppBinding],
     ) -> None:
@@ -277,14 +295,17 @@ class Composer:
 
             config = self.resolver.resolve_trait_config(trait_name)
             if config is None:
-                errors.append(f"Trait '{trait_name}' not found")
+                errors.append(CompositionError(f"Trait '{trait_name}' not found", lossy=True))
                 continue
 
             # Traits cannot include other traits
             if config.composition.traits:
                 errors.append(
-                    f"Trait '{trait_name}' contains sub-traits "
-                    f"{config.composition.traits} — traits cannot include other traits"
+                    CompositionError(
+                        f"Trait '{trait_name}' contains sub-traits "
+                        f"{config.composition.traits} — traits cannot include other traits",
+                        lossy=True,
+                    )
                 )
                 continue
 
@@ -325,7 +346,7 @@ class Composer:
         *,
         seen_rules: set[str],
         rules: list[ResolvedComponent],
-        errors: list[str],
+        errors: list[CompositionError],
     ) -> None:
         for rule_name in rule_names:
             if rule_name in seen_rules:
@@ -334,7 +355,7 @@ class Composer:
 
             rule_dir = self.resolver.resolve_rule_dir(rule_name)
             if rule_dir is None:
-                errors.append(f"Rule '{rule_name}' not found")
+                errors.append(CompositionError(f"Rule '{rule_name}' not found", lossy=True))
                 continue
 
             # HATS-700: do NOT eager-load the rule.md body here. Only the 6
@@ -357,7 +378,7 @@ class Composer:
         *,
         seen_skills: set[str],
         skills: list[ResolvedComponent],
-        errors: list[str],
+        errors: list[CompositionError],
     ) -> None:
         for skill_name in skill_names:
             if skill_name in seen_skills:
@@ -366,7 +387,7 @@ class Composer:
 
             skill_dir = self.resolver.resolve_skill_dir(skill_name)
             if skill_dir is None:
-                errors.append(f"Skill '{skill_name}' not found")
+                errors.append(CompositionError(f"Skill '{skill_name}' not found", lossy=True))
                 continue
 
             # HATS-706: do NOT eager-load the SKILL.md body here. Its only

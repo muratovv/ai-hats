@@ -177,8 +177,8 @@ remedy: last-writer-wins is the declared rule, so the flip is reported but never
 dressed as a defect.
 
 Transport is the sink convention already used for hooks warnings, with a typed
-payload instead of `list[str]`: `compose_for_role(..., diagnostics=<list>)`
-collects, and with no collector the findings go to stderr through
+payload instead of `list[str]`: `compose_to_run(..., diagnostics=<list>)`
+collects (through the private `compose_for_role` funnel behind it), and with no collector the findings go to stderr through
 `emit_to_stderr` — one spelling, for the plain-CLI paths that have no banner.
 `build_composition_payload` passes the seam's list, so the findings ride
 `CompositionPayload.diagnostics` into the hold.

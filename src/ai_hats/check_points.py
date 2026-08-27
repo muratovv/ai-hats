@@ -2,9 +2,12 @@
 
 Loud by construction: every way a declared gate can fail to install raises
 ``CheckBindingError`` here, at composition, rather than reporting into
-``CompositionResult.errors`` — that list is tolerated silently on the
-implicit-role path (``composition_seam``), which is the fail-open this channel
-exists to remove.
+``CompositionResult.errors``. That list was tolerated silently on the
+implicit-role path (``composition_seam``) — the fail-open this channel was
+That hole is closed for every channel now: an error that LOST declared
+content refuses in the compose facade itself, so this one is no longer alone. Raising here still buys something the facade cannot: it fires
+before a result exists, so even a caller that declared tolerance never
+receives a composition carrying a broken binding.
 
 **Scoped to the app ai-hats itself fires** since HATS-1541 (ADR-0019 D11). "Loud
 at composition" still covers everything structural — the skill composes, the

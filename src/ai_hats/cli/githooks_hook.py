@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
         run_chain,
     )
     from ..hooks_manager import GITHOOKS_BYPASS_JOURNAL
-    from ..materialize import compose_for_role
+    from ..materialize import compose_to_arm
     from ..paths import builtin_library_hooks
     from ..session_identity import IdentityFault, SessionIdentity, SessionIdentityError
 
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     gates: list[Path] = []
     if role:
         try:
-            resolution = resolve_git_gates(compose_for_role(assembler, role), args.event)
+            resolution = resolve_git_gates(compose_to_arm(assembler, role), args.event)
         except Exception as exc:  # noqa: BLE001 — a hook must never raise at a human
             # A composition refusal (removed script, unknown point name) renders
             # friendly only in the click layer, which a git hook never enters —
