@@ -10,6 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Codex ran no terminal gate at all** (HATS-1858). Codex names its shell `exec`; the tool-name table in `src/ai_hats/surfaces/codex/claude_hook_adapter.py` had no terminal row, so `Bash|run_command|execute` matched nothing and `safety_gate.py`, `pre_bash_shared_state_guard.sh` and `tool_call_hygiene_guard.sh` never fired on that surface. Measured, not inferred: the real matcher against the real name returned `False` for `exec`, `shell` and `local_shell` alike, with `Bash` → `True` as the control. Nothing was red because every dispatcher test fed its surface `tool_name: "Bash"`, a name no surface sends — `tests/test_surface_matcher_parity.py` now drives each surface's live matcher with names taken from its running tool.
+
+- **OpenCode honoured one shipped gate out of eight** (HATS-1858). The plugin read a verdict off an exit code and understood two shapes: `exit 2`, and a top-level `{"decision":"block"}` that no shipped hook emits. All eight answer in the `permissionDecision` dialect, so seven could refuse a call and be waved through, and `additionalContext` was discarded outright. The plugin is JavaScript and cannot hold a verdict, so it now shells out to `ai_hats.surfaces.opencode.hook_dispatcher` and marshals back the document it is handed. Its nine-entry tool table also lacked `patch`, and an unmapped tool returned before the matcher loop ran, so a file edit by patch met no gate. This surface had no test of any kind before; it has thirteen now.
+
+- **A hook's reply is read whole, not as a 4 KB tail** (HATS-1858). `py_security_lint` puts ruff's entire output in `additionalContext` — over 11 KB on this repo's own test files — and a tail cuts a JSON document's head off. A reply that still overruns is reported rather than read as silence.
+
+- **Nine fail-open branches in the Cline dispatcher now refuse** (HATS-1858). An unreadable payload, an unreadable manifest, a command outside the skills mirror, a timeout, an unstartable hook, a non-zero exit and an unparsable answer all replied `{"cancel": false}` — the tool call went through and the only trace was a line on stderr nobody reads mid-session. Each now refuses and names the variable that opens it. This reverses HATS-1339's deliberate choice for the vanished-manifest case; HATS-1439 is what that choice cost.
+
+### Changed
+
+- **One hook budget and one hatch across every surface** (HATS-1858). `AI_HATS_HOOK_TIMEOUT_S` (default 60 s) bounds the whole chain of one tool call rather than each hook alone, and the surface's own bound on the dispatcher is derived from it with a margin instead of being written by hand. Codex had bounded the dispatcher and the hook at the same 60, which made every timeout branch in the dispatcher unreachable and left a killed chain with no verdict at all. `AI_HATS_AGY_HOOK_TIMEOUT_S` is still honoured and says once that it moved.
+
+- **What a surface IS is data now** (HATS-1858). Tool names, argument names, manifest and skills-mirror locations, and which verdicts the surface can utter live in a `SurfaceProfile` beside each surface (`src/ai_hats/surfaces/<name>/profile.py`); execution, the reply dialect and the policy live once in `src/ai_hats/surfaces/hook_channel.py`. Fixing a surface is editing a row rather than a dispatcher — the codex fix above is one line of data. See `docs/glossary.md` "Tool-call hook channel".
+
 ### Reverted
 
 - **The `role-curator` / `library-curator` trim from HATS-1825 is undone** (HATS-1843). That pass moved the engine-internals map and the worktree-verification recipe out of the trait into `docs/how-to-extend.md`, and replaced the role's five-step workflow with three bullets pointing at the trait — buying back ~870 resident tokens a turn. A pointer only pays off if the agent follows it: the session that measured this one reached for the recipe from memory instead and got `ImportError: cannot import name 'build_library_paths'`, which is precisely the bounce the still-active HYP-108 exists to count. Both files are restored byte-identical to `ac5f92a3^`; the doc stays where HATS-1825 put it, so the text now lives in two places on purpose, and whether that duplication survives is HATS-1844's call rather than this card's.
