@@ -197,3 +197,33 @@ class TestTheManifestCommandIsChecked:
         good = _script(_mirror(tmp_path) / "ok.sh", _emit(permissionDecision="allow"))
         _manifest(tmp_path, (good, "Bash"))
         assert _judge(tmp_path)["decision"] == "allow"
+
+
+def test_the_file_argument_reaches_the_hook_under_the_name_it_defends(tmp_path: Path) -> None:
+    """opencode names it `filePath`; every shipped file gate reads `file_path`
+    or `path` and ALLOWS when neither is there (`wt_gate.py`).
+
+    So the mutation gates matched the tool and then had nothing to inspect. The
+    name is not a guess: opencode's own session database records `filePath` on
+    every read, edit and write it has ever made on this machine, the way codex's
+    `exec` came out of its rollout logs.
+    """
+    seen = tmp_path / "seen.json"
+    hook = _script(_mirror(tmp_path) / "record.sh", f"cat > {seen}\n")
+    _manifest(tmp_path, (hook, "Edit|Write|MultiEdit"))
+
+    _judge(tmp_path, tool="edit", args={"filePath": "/etc/passwd", "oldString": "a"})
+
+    handed = json.loads(seen.read_text())["tool_input"]
+    assert handed["file_path"] == "/etc/passwd", f"the gate was handed nothing to inspect: {handed}"
+
+
+def test_a_key_the_surface_already_spells_correctly_is_left_alone(tmp_path: Path) -> None:
+    """`grep` and `glob` send `path`, which the gates read directly."""
+    seen = tmp_path / "seen.json"
+    hook = _script(_mirror(tmp_path) / "record.sh", f"cat > {seen}\n")
+    _manifest(tmp_path, (hook, "Grep"))
+
+    _judge(tmp_path, tool="grep", args={"path": "/etc", "pattern": "root"})
+
+    assert json.loads(seen.read_text())["tool_input"]["path"] == "/etc"

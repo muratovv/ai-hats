@@ -123,6 +123,13 @@ function ruleMatches(rule, asked) {
   return candidates.every((value) => value.startsWith(rule.prefix));
 }
 
+function argsOf(input, output) {
+  for (const side of [output, input]) {
+    if (side && typeof side.args === "object" && side.args !== null) return side.args;
+  }
+  return {};
+}
+
 function decide(rules, asked) {
   for (const rule of rules) {
     if (ruleMatches(rule, asked)) return rule;
@@ -189,10 +196,13 @@ export const AiHatsHooksPlugin = async ({ client }) => {
       await replyPermission(client, asked.sessionID, asked.id, rule.action);
     },
     "tool.execute.before": async (input, output) => {
-      await dispatch("PreToolUse", input.tool, output.args, true);
+      await dispatch("PreToolUse", input.tool, argsOf(input, output), true);
     },
     "tool.execute.after": async (input, output) => {
-      await dispatch("PostToolUse", input.tool, output.args, false);
+      // `tool.execute.after` carries the RESULT, and the arguments are not
+      // reliably on it; whichever side holds them is where they are read from,
+      // so a PostToolUse gate is not handed an empty input by construction.
+      await dispatch("PostToolUse", input.tool, argsOf(input, output), false);
     },
   };
 };

@@ -21,7 +21,12 @@ PROFILE = SurfaceProfile(
         "todowrite": ("TodoWrite",),
     },
     native_events=BINDABLE_EVENTS,
-    arg_names={},
+    # Observed, not guessed: opencode's own session database records `filePath`
+    # on every read, edit and write, while `grep` and `glob` send `path`, which
+    # the shipped gates already read. A gate handed neither ALLOWS the call
+    # (`wt_gate.py`), so an empty row here matched the tool and inspected
+    # nothing.
+    arg_names={"filePath": "file_path"},
     manifest_subpath=("opencode",),
     skills_subpath=("opencode-xdg", "opencode", "skills"),
     speaks=Dialect(
