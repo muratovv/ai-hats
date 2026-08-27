@@ -68,9 +68,8 @@ def session(tmp_path: Path):
                 }
             )
         )
-        env = {
-            **os.environ,
-            "AI_HATS_SESSION_ID": SESSION_ID,
+        env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="codex")
+        env |= {
             "AI_HATS_DIR": str(hats_dir),
             "AI_HATS_SESSION_CACHE_DIR": str(cache),
             "AI_HATS_PROJECT_DIR": str(project),
