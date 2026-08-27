@@ -476,3 +476,60 @@ def test_ordinary_work_inside_the_worktree_is_untouched(hooked_project, linked_w
         env=leaky,
     )
     assert not verdict.gated, f"work inside the worktree must pass; got {verdict}"
+
+
+# ----- a shell redirect token is not a path -----
+
+
+def test_the_sanctioned_writer_survives_a_redirect_from_under_the_backlog(hooked_project):
+    """The gate refused `rack … 2>&1`, and only from a cwd under the backlog.
+
+    `shlex` splits `2>&1` into `['2','>&','1']`; the descriptor `1` was read as
+    a relative path, so where the shell stood decided the verdict. From the
+    repo root it passed, from a card directory it did not — which reads as
+    flakiness rather than as a rule.
+    """
+    project, env, settings = hooked_project
+    card_dir = project / TRACKER / "tasks" / "HATS-1"
+
+    for tail in ("2>&1", "1>&2", "2>&-"):
+        verdict = run_chain(
+            project,
+            f"rack transition HATS-1 --log probe {tail}",
+            settings=settings,
+            env=env,
+            cwd=card_dir,
+        )
+        assert not verdict.gated, f"`rack … {tail}` must pass the chain; got {verdict}"
+
+    control = run_chain(
+        project, "rack transition HATS-1 --log probe", settings=settings, env=env, cwd=card_dir
+    )
+    assert not control.gated, f"control: the clean call must pass too; got {control}"
+
+
+def test_a_copy_into_the_tracker_is_denied_with_a_redirect_appended(hooked_project):
+    """The fail-open half. `cp`/`ln` are judged on their LAST path, and a
+    trailing `2>&1` put the descriptor there — so the real destination was
+    never examined and the copy landed in the tracker unchallenged."""
+    project, env, settings = hooked_project
+    card = project / TRACKER / "tasks" / "HATS-1" / "task.yaml"
+
+    verdict = run_chain(project, f"cp /tmp/a {card} 2>&1", settings=settings, env=env)
+    assert verdict.denied, f"the redirect must not hide the destination; got {verdict}"
+    assert_names_the_hatch(verdict)
+
+    control = run_chain(project, f"cp /tmp/a {card}", settings=settings, env=env)
+    assert control.denied, f"control: the plain copy must be denied too; got {control}"
+
+
+def test_a_real_file_redirect_into_the_tracker_is_still_denied(hooked_project):
+    """`>&` takes a descriptor OR a filename. The fix discriminates on the
+    operand, so this arm — the one that would be lost by dropping the operator
+    from `REDIRECTS` — must stay."""
+    project, env, settings = hooked_project
+    card = project / TRACKER / "tasks" / "HATS-1" / "task.yaml"
+
+    for command in (f"echo x > {card}", f"echo x >&{card}", f"echo x &> {card}"):
+        verdict = run_chain(project, command, settings=settings, env=env)
+        assert verdict.denied, f"{command!r} writes the card and must be denied; got {verdict}"

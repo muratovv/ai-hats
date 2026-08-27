@@ -276,6 +276,26 @@ def without_shell_redirects(args):
     return kept
 
 
+def redirect_file_targets(args):
+    """The FILE each redirection writes — never a file descriptor.
+
+    `>&` is the one operator in `REDIRECTS` that takes either. `2>&1`, `1>&2`
+    and `2>&-` duplicate or close a descriptor and touch no file; `>&name` is a
+    real redirect and its target is a path. Reading the first kind as a filename
+    resolves a bare `1` against the cwd, which is how a gate came to refuse the
+    very CLI it prescribes.
+    """
+    out = []
+    for i, token in enumerate(args):
+        if token not in REDIRECTS or i + 1 >= len(args):
+            continue
+        operand = args[i + 1]
+        if token == ">&" and (operand == "-" or operand.isdigit()):
+            continue
+        out.append(operand)
+    return out
+
+
 #: One line per process: the ack is documented as per-single-command, so its
 #: presence means THIS command was waved through (HATS-1407).
 _journaled = False
@@ -1041,9 +1061,12 @@ def check_backlog_write(cmd_bin: str, args) -> str:
 
     Runs before the generic handlers so a tracker path gets the `rack` recipe
     rather than `sed -i`'s per-call ack: there is no per-call form here."""
-    targets = [args[i + 1] for i, tok in enumerate(args) if tok in REDIRECTS and i + 1 < len(args)]
+    targets = redirect_file_targets(args)
     if cmd_bin in BACKLOG_MUTATORS and (cmd_bin != "sed" or check_sed_inplace(args)):
-        paths = _paths(args)
+        # Operands are counted with the redirection stripped: `cp src <card> 2>&1`
+        # otherwise ends in the descriptor, and a DESTINATION_ONLY tail-slice then
+        # checks `1` while the real destination goes unexamined.
+        paths = _paths(without_shell_redirects(args))
         targets.extend(paths[-1:] if cmd_bin in DESTINATION_ONLY else paths)
     for target in targets:
         reason = _backlog_verdict(target)
