@@ -128,7 +128,9 @@ def test_static_dispatcher_fails_closed_when_runtime_identity_is_missing() -> No
         if key not in {"AI_HATS_SESSION_ID", "AI_HATS_DIR", "AI_HATS_PYTHON"}
     }
 
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S602 — the shell IS the subject: codex runs this
+        # string through `sh -c`, so a test spawning it any other way tests a
+        # different thing than what ships in the TOML.
         DISPATCHER_COMMAND,
         shell=True,
         env=env,

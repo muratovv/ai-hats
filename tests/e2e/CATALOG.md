@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**276 of 276 files catalogued — 285 flows.**
+**277 of 277 files catalogued — 286 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -254,6 +254,22 @@ as a claim to check, not as evidence.
 
 - **expect** — provider flag -p is respected in batch mode and produces clean error for invalid providers
 - **why** — without batch provider overrides, batch commands ignore -p flags and default to configured provider
+
+## `test_bidi_stage.py`
+
+*pins HATS-1591*
+
+- **flow** — a maintainer pushes to master, and the pre-push bundle must refuse the push when a source file carries a bidirectional control — a character that changes how the line RENDERS but not how it parses, so review cannot see it
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh bidi              # exit 0 while the tree is clean
+  bash scripts/ci-local.sh --stages push-gate # the composition names `bidi`
+  bash scripts/ci-local.sh no-such-stage     # exit 2, and the usage names it
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] bidi`, exits 0 on a clean tree, exits 1 naming the file and the codepoint when one is planted, and appears in the push-gate composition
+- **why** — this is the ONE check bandit held that ruff's `S` family does not (`B613 trojansource`); bandit itself was dropped in HATS-1591 because its other three exclusive checks name django, pytorch and huggingface, none of which this repo depends on. If this stage silently stops dispatching, the trade made in that card turns into a straight loss and nothing goes red.
 
 ## `test_bootstrap_heals_underdeclared_editable.py`
 
