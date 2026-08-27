@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**275 of 275 files catalogued — 284 flows.**
+**258 of 258 files catalogued — 267 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -95,7 +95,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  sh -c '... "$AI_HATS_PYTHON" -m ai_hats.surfaces.agy.hook_dispatcher "$@"' sh PreToolUse Edit
+  sh -c '... "$AI_HATS_PYTHON" -m ai_hats_agy.hook_dispatcher "$@"' sh PreToolUse Edit
   ```
 
 - **expect** — the hook is killed at its budget and the dispatcher returns 1 (BROKE per ADR-0020 D2), naming the hook on stderr
@@ -124,7 +124,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  python -m ai_hats.surfaces.agy.hook_dispatcher PreToolUse   # what agy's global hook runs
+  python -m ai_hats_agy.hook_dispatcher PreToolUse   # what agy's global hook runs
   ```
 
 - **expect** — the whole composed PreToolUse chain fires on agy's own tool and argument names, and refuses what it refuses on Claude
@@ -146,17 +146,17 @@ as a claim to check, not as evidence.
 
 ## `test_agy_provider_discovery.py`
 
-*pins HATS-1093, HATS-1826*
+*pins HATS-1093*
 
-- **flow** — a developer lists the providers a plain ai-hats install offers
+- **flow** — a developer listing available providers after installing ai-hats-agy package
 - **cmds**
 
   ```console
   ai-hats list providers
   ```
 
-- **expect** — agy is discovered through the entry point ai-hats declares for it and is displayed alongside claude
-- **why** — a surface reaches the binary only through the `ai_hats.providers` group; agy used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
+- **expect** — agy provider is discovered via python entry points and displayed alongside built-ins
+- **why** — without entry-point discovery, installed surface packages cannot be resolved by the main binary
 
 ## `test_agy_session_recorded.py`
 
@@ -410,22 +410,6 @@ as a claim to check, not as evidence.
 - **expect** — session initialization sweeps orphan cache keys older than TTL while preserving active keys
 - **why** — without cache key garbage collection, accumulated session directories consume unbounded disk space
 
-## `test_card_gate_parallel_xdist.py`
-
-*pins HATS-1812*
-
-- **flow** — an agent runs either card quality gate through the materialized Bash hook chain
-- **cmds**
-
-  ```console
-  ai-hats self init -p claude -r maintainer --no-wizard
-  make done-gate
-  make merge-gate
-  ```
-
-- **expect** — the whole PreToolUse chain allows the command and the real gate entry point sends adaptive xdist flags to every stage through PYTEST_ADDOPTS
-- **why** — HATS-1812 found that gate stage names were shared while execution flags depended on the entry point, making the same unit stage take 104s from a card and 27s pre-push
-
 ## `test_check_mirror_dry_run.py`
 
 *pins HATS-1241, HATS-1540, HATS-1548*
@@ -454,52 +438,6 @@ as a claim to check, not as evidence.
 
 - **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection
 - **why** — a syntactically valid workflow can still name a missing stage or bypass the canonical dispatcher, leaving the advertised server-side gate inert
-
-## `test_ci_local_prepare.py`
-
-*pins HATS-1664*
-
-- **flow** — the gate primitive making a scratch checkout of a merge commit runnable
-- **cmds**
-
-  ```console
-  bash scripts/ci-local.sh --prepare
-  ```
-
-- **expect** — the dispatcher delegates to the worktree-venv hook of the tree it is preparing, and leaves an already-usable venv untouched
-- **why** — a checkout minted by `git worktree add` has no .venv, so every real-subprocess stage would exercise the MAIN checkout's installed code while claiming to judge the commit
-
-## `test_ci_local_prose_refs.py`
-
-*pins HATS-1825*
-
-- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a path, a library prefix, a section or a code symbol named in library prose no longer resolves
-- **cmds**
-
-  ```console
-  bash scripts/ci-local.sh prose-refs      # announces the stage it dispatched to
-  bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
-  bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
-  ```
-
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] prose-refs`, states on every run what it does NOT cover, and is named in the merge-gate composition. Whether the live corpus is INTACT belongs to the stage, not here (HATS-1714/1716) — the refusal is proved instead against a planted tree, which no sibling session can change
-- **why** — the checker's own silence is the thing under test. HATS-1823 measured 21 references in this library that did not resolve, and every gate in the repo stayed green through all of them, because none reads prose. A checker that is wired but never refuses anything reproduces exactly that.
-
-## `test_ci_local_ticket_ids.py`
-
-*pins HATS-1853*
-
-- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a tracker id has crept back into prose the library ships to other projects
-- **cmds**
-
-  ```console
-  bash scripts/ci-local.sh ticket-ids           # announces the stage it dispatched to
-  bash scripts/ci-local.sh no-such-stage        # exit 2, and the usage names the stage
-  bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
-  ```
-
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] ticket-ids`, reports on every run what it does NOT cover and how many ids the pattern still finds where history lives, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
-- **why** — the checker's own silence is the thing under test. 177 ids had accumulated in this library while a rule actively prescribed the form, and every gate stayed green through all of them because none read prose for what it must NOT carry. A checker that is wired but never refuses anything reproduces exactly that, and the ONE id this repo legitimately keeps is the reason a blanket "no matches ever" assertion would not do.
 
 ## `test_claude_scaffold_drop.py`
 
@@ -559,31 +497,17 @@ as a claim to check, not as evidence.
 
 ## `test_cline_provider_discovery.py`
 
-*pins HATS-956, HATS-1826*
+*pins HATS-956*
 
-- **flow** — a developer lists the providers a plain ai-hats install offers
+- **flow** — a developer listing providers when ai-hats-cline surface package is installed
 - **cmds**
 
   ```console
   ai-hats list providers
   ```
 
-- **expect** — cline is discovered through the entry point ai-hats declares for it and is displayed alongside claude
-- **why** — a surface reaches the binary only through the `ai_hats.providers` group; cline used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
-
-## `test_cline_runtime_hook_chain.py`
-
-*pins HATS-1775*
-
-- **flow** — a real Cline HITL launch invokes its materialized PreToolUse chain
-- **cmds**
-
-  ```console
-  git push --force origin master
-  ```
-
-- **expect** — the composed safety chain cancels the unapproved tool call through Cline's native hook protocol and leaves the project root clean
-- **why** — role composition is not protection unless the Cline process actually runs it before each tool call
+- **expect** — cline provider is discovered via python entry points and displayed in provider listing
+- **why** — without entry-point discovery, third-party provider packages like cline are invisible to the CLI
 
 ## `test_cline_session_recorded.py`
 
@@ -636,7 +560,7 @@ as a claim to check, not as evidence.
 
 ## `test_codex_consent_grant.py`
 
-*pins HATS-1755, HATS-1803*
+*pins HATS-1755*
 
 - **flow** — a human grants rack.transition inside Codex; review-to-done then merges
 - **cmds**
@@ -663,48 +587,19 @@ as a claim to check, not as evidence.
 - **expect** — real Codex registers session-scoped hatrack as enabled at the session-copy path and excludes another role's skill
 - **why** — prompt diagnostics can name a skill without proving the native registry contract used by explicit $skill invocation
 
-## `test_codex_private_artifacts.py`
-
-*pins HATS-1688*
-
-- **flow** — Codex HITL and Automate sessions finish under a permissive umask
-- **cmds**
-
-  ```console
-  ai-hats -p codex -r maintainer
-  ai-hats execute --batch -p codex -r maintainer --isolation discard --prompt ping
-  ```
-
-- **expect** — each session directory is 0700 and every sensitive artifact produced is 0600
-- **why** — prompts, transcripts, traces, and audit metadata must not inherit process umask
-
 ## `test_codex_provider_discovery.py`
 
-*pins HATS-1531, HATS-1826*
+*pins HATS-1531*
 
-- **flow** — a developer lists the providers a plain ai-hats install offers
+- **flow** — a developer lists providers with the ai-hats-codex package installed
 - **cmds**
 
   ```console
   ai-hats list providers
   ```
 
-- **expect** — codex is discovered through the entry point ai-hats declares for it and is displayed alongside claude
-- **why** — a surface reaches the binary only through the `ai_hats.providers` group; codex used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
-
-## `test_codex_resume.py`
-
-*pins HATS-1801*
-
-- **flow** — real Codex persists a thread under ai-hats, then the process group gets SIGINT or SIGKILL
-- **cmds**
-
-  ```console
-  ai-hats -p codex -r resume-role app-server
-  ```
-
-- **expect** — graceful exit canonicalizes the rollout; crash retention survives cache loss; resume and native role skills work
-- **why** — cleanup-only tests cannot prove the HATS-1801 resume invariant across process termination
+- **expect** — codex is discovered through the real package entry point alongside claude
+- **why** — registry metadata alone cannot launch a surface; the distribution entry point must be visible to the shipped binary (HATS-1531)
 
 ## `test_comment_length_lint_hook.py`
 
@@ -955,22 +850,6 @@ as a claim to check, not as evidence.
 - **expect** — done gate verifies review approval, documentation completeness, and e2e catalog freshness before allowing transition
 - **why** — without done gates, agents transition unreviewed, undocumented, or catalog-stale task cards directly to done
 
-## `test_dry_run_materialize.py`
-
-*pins HATS-1551*
-
-- **flow** — an operator inspecting the session tree a role would get, on disk, without spawning
-- **cmds**
-
-  ```console
-  ai-hats --dry-run-json -r test-role
-  ai-hats --dry-run-json --materialize -r test-role
-  ai-hats agent test-role --task "e2e task" --json --dry-run --materialize
-  ```
-
-- **expect** — a plain dry-run leaves both sid dirs absent; --materialize writes the tree under the fixed `dry-run-materialize` sid, reports its path in `notes`, and still shows no escapes; the AUTOMATE path writes the same tree.
-- **why** — the flag can regress in either direction — --materialize silently writing nothing, leaving the operator inspecting an empty tree, or a plain --dry-run starting to write, so a read-only inspection mutates the cache a real launch then reads.
-
 ## `test_e2e_catalog_gate.py`
 
 *pins HATS-1498*
@@ -1069,21 +948,6 @@ as a claim to check, not as evidence.
 
 - **expect** — command exits with code 2 explaining that explicit role specification is required for batch
 - **why** — without role validation in batch mode, execution runs under uninitialized default roles
-
-## `test_exit_code_shell_awareness_chain.py`
-
-*pins HATS-1798*
-
-- **flow** — an agent preserving a pipeline's runner status, in the shell the Bash tool actually runs (zsh), driven through the whole composed PreToolUse chain
-- **cmds**
-
-  ```console
-  ruff check src/ | tail; exit ${PIPESTATUS[0]}
-  ruff check src/ | tail; exit ${pipestatus[1]}
-  ```
-
-- **expect** — the bash-only spelling is nudged (in zsh it returns 0 for every run) and the zsh-correct spelling is not
-- **why** — the guard exempted any command containing PIPESTATUS, so it stayed silent on a form that reads a red run as green, and nudged the only spelling that works here — the exemption has to know which shell it is guarding
 
 ## `test_gate_primitive.py`
 
@@ -1206,20 +1070,19 @@ as a claim to check, not as evidence.
 - **expect** — rack transition logs message cleanly without silent failure or truncated log entries
 - **why** — without log escaping, special characters in transition logs cause silent task transition drops
 
-## `test_hermetic_unit_gate.py`
+## `test_hook_call_envelope.py`
 
-*pins HATS-1700*
+*pins HATS-1724*
 
-- **flow** — a developer runs the local unit gate repeatedly after using extra provider surfaces in the caller virtual environment
+- **flow** — a gate script asking WHO moved the card and WHICH declaration called it
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh unit
-  bash scripts/ci-local.sh unit
+  rack create --parent / rack transition --state done --force
   ```
 
-- **expect** — both runs detect a test-installed provider, ignore caller-only providers, and leave the caller virtual environment and checkout unchanged
-- **why** — a unit gate that reuses its caller environment can turn the same broken tree green after the first run contaminates that environment
+- **expect** — every spawned check receives AI_HATS_HOOK_CALL, so a script tells a person's forced fast-close from the epic automation's own hop
+- **why** — the automation hop is an in-process nested transition, so the session identity and every ambient signal around it are byte-identical to the human move — a gate on a wide selector otherwise runs blind on both
 
 ## `test_hook_chain_fail_open_recorded.py`
 
@@ -1577,19 +1440,19 @@ as a claim to check, not as evidence.
 - **expect** — the gate exits non-zero and names that file, instead of reporting green
 - **why** — `ruff check` walked the whole tree while `ruff format --check` walked only src/ and tests/, so a file under packages/ earned a green gate
 
-## `test_list_rules_ignores_metadata.py`
+## `test_list_rules_survives_broken_metadata.py`
 
-*pins HATS-1836*
+*pins HATS-1510*
 
-- **flow** — a developer running list rules against a rule that still ships a metadata.yaml
+- **flow** — a developer running list rules when a rule metadata.yaml file is malformed
 - **cmds**
 
   ```console
   ai-hats list rules
   ```
 
-- **expect** — the rule is listed by name and nothing from the sidecar reaches stdout
-- **why** — rules are catalogued by name alone since HATS-1836 — a sidecar description was a second copy of the rule's meaning that drifted (5 of 14 had), and an external library's leftover sidecar must now be inert rather than half-read
+- **expect** — list rules skips malformed metadata gracefully, printing warning while listing valid rules
+- **why** — without resilient metadata loading, one corrupt rule file breaks list rules for the whole project
 
 ## `test_migration_no_replay_without_config.py`
 
@@ -1647,20 +1510,6 @@ as a claim to check, not as evidence.
 
 - **expect** — CLI exits cleanly with code 2 displaying friendly remediation instructions without traceback
 - **why** — without friendly provider error handling, uninstalled provider packages throw raw ImportErrors
-
-## `test_nested_consent_wrapper.py`
-
-*pins HATS-1806*
-
-- **flow** — a nested HITL session materializes consent wrappers over an outer session
-- **cmds**
-
-  ```console
-  rack --help
-  ```
-
-- **expect** — the inner wrapper resolves the canonical executable and invokes it once
-- **why** — recording the outer wrapper as the original recursively spawns wrappers
 
 ## `test_no_console_script_shadow.py`
 
@@ -1856,22 +1705,6 @@ as a claim to check, not as evidence.
 - **expect** — custom provider entry point is discovered dynamically and listed alongside built-in providers
 - **why** — without entry point discovery, custom out-of-tree provider plugins cannot be registered or used
 
-## `test_provider_entry_point_resolution.py`
-
-*pins HATS-1826*
-
-- **flow** — a user installs the released ai-hats wheel and asks for a surface by name; `claude` has to resolve, and it has to resolve ONLY through the installed distribution's entry-point metadata
-- **cmds**
-
-  ```console
-  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
-  uv venv <tmp>/venv && uv pip install --no-deps <wheel>
-  <tmp>/venv/bin/python -c "get_surface('claude')"
-  ```
-
-- **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
-- **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised, and a broken or missing one would have gone unnoticed in every tier. The other half of the claim — that NOTHING registers claude behind the declaration's back — is structural and lives in tests/test_area_boundary.py, whose surfaces pin is empty: no shipped module may name a surface implementation at all (HATS-1826)
-
 ## `test_pty_escape_hatch.py`
 
 *pins HATS-679*
@@ -2043,22 +1876,6 @@ as a claim to check, not as evidence.
 - **expect** — card artifacts are created inside the directory specified by AI_HATS_DIR and the current project directory remains unmodified
 - **why** — rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation without polluting project repositories
 
-## `test_rack_race_condition.py`
-
-*pins HATS-1466*
-
-- **flow** — several agents log work against the SAME card at once — parallel sub-agents on one ticket, or a session racing its own hooks
-- **cmds**
-
-  ```console
-  rack create race-target-task --description "..."
-  rack transition <ID> --log "<message>"
-  rack doctor
-  ```
-
-- **expect** — every entry survives — the card holds exactly as many work_log lines as calls made, the YAML still parses, and `rack doctor` reports the backlog intact
-- **why** — without the card lock a losing writer's read-modify-write drops the winner's entry, or leaves half-serialised YAML — both invisible until someone looks for a log line that was never there. The Kernel-API tier is covered by test_card_lock_concurrency.py (HATS-1264); this drives the CLI, the surface agents actually call.
-
 ## `test_rack_reparent_e2e.py`
 
 *pins HATS-1350*
@@ -2174,19 +1991,17 @@ as a claim to check, not as evidence.
 
 ## `test_remote_channel_install.py`
 
-*pins HATS-943, HATS-988, HATS-1717*
+*pins HATS-943*
 
-- **flow** — a maintainer checks that a released ai-hats installs the way a user's heal would install it — first-party packages resolved from the index, never from the workspace sources this repo carries
+- **flow** — a developer initializing a project configured with remote git harness channel
 - **cmds**
 
   ```console
-  uv build --wheel . -o dist          # the wheel a user would get
-  uv venv --python 3.11 venv          # a fresh interpreter, outside the repo
-  uv pip install --python venv/bin/python dist/ai_hats-0.0.0-py3-none-any.whl
+  ai-hats self init --channel remote
   ```
 
-- **expect** — the installed wheel imports `ai_hats_core.migrations` and `ai_hats.migrations`; when a first-party pin is not yet visible to the resolver the test skips carrying the resolver's OWN refusal, never a second oracle's opinion
-- **why** — a heal installs from the index, so a pin that resolves only against the workspace ships broken to every user. The skip has to be asked of `uv`: the version comparison it replaced read `pypi.org/pypi/<name>/json` while the install resolved `pypi.org/simple/<name>/`, whose compressed variant was hours stale, and the tier went red for a reason the guard was written to excuse (HATS-1717)
+- **expect** — project config sets remote harness channel and self update fetches updates from remote git repo
+- **why** — without remote channel support, production installations cannot update directly from remote git repos
 
 ## `test_retired_dist_prune_e2e.py`
 
@@ -2442,17 +2257,17 @@ as a claim to check, not as evidence.
 
 ## `test_self_heal_broken_editable.py`
 
-*pins HATS-966, HATS-1367*
+*pins HATS-966*
 
-- **flow** — a developer whose workspace-member editable link points at a deleted path
+- **flow** — a developer running self update when local editable installation link is broken
 - **cmds**
 
   ```console
-  ai-hats self heal-editables
+  ai-hats self update
   ```
 
-- **expect** — the heal re-points the dangling editable at the current repository path and the member imports again
-- **why** — without broken editable healing, a moved or torn-down checkout leaves every launch dying on a ModuleNotFoundError the CLI itself cannot repair
+- **expect** — launcher heal re-links editable package dependencies to current repository path
+- **why** — without broken editable healing, moved local repositories crash on missing editable package paths
 
 ## `test_self_init_seeds_local_channel.py`
 
@@ -2935,37 +2750,6 @@ as a claim to check, not as evidence.
 - **expect** — self update resolves latest tagged stable release and installs versioned release venv
 - **why** — without stable channel support, production users cannot pin update checks to verified releases
 
-## `test_step_entry_point_resolution.py`
-
-*pins HATS-1783*
-
-- **flow** — a user installs the released ai-hats wheel and runs a pipeline; every built-in step it names has to resolve, and it resolves only through the installed distribution's entry-point metadata
-- **cmds**
-
-  ```console
-  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
-  uv venv <tmp>/venv && uv pip install --no-deps <wheel> pyyaml
-  <tmp>/venv/bin/python -c "load_pipeline(<one-step yaml>)"
-  ```
-
-- **expect** — the installed dist advertises all 23 built-in step ids under `ai_hats.steps`; loading a YAML that names `pre_log` builds the step, imports `ai_hats.pipeline.steps.log` and NO other step module, and an unknown id fails loudly naming what is known
-- **why** — the step ids left the source tree for `[project.entry-points]` in pyproject.toml, and nothing in the source tree can tell whether that block reached the built distribution's `entry_points.txt`. A unit test of the registry passes against the developer's editable install no matter what the wheel carries; drop the block and every pipeline stops resolving, in an artefact no in-tree test opens. This runs the resolver against a real install, from a venv the checkout is not on the path of
-
-## `test_step_entry_point_update.py`
-
-*pins HATS-1810*
-
-- **flow** — an editable install's live `ai_hats.steps` declarations drift from its installed metadata before a normal command and before `self update`
-- **cmds**
-
-  ```console
-  ai-hats --help
-  ai-hats self update
-  ```
-
-- **expect** — each stale snapshot is repaired before resolution; a reinstall with a broken first-party step target fails post-install verification
-- **why** — `uv sync --check` accepts stale editable entry-point metadata, while the runtime resolver sees only the installed snapshot
-
 ## `test_stray_shadow_detector.py`
 
 *pins HATS-791*
@@ -3008,6 +2792,30 @@ as a claim to check, not as evidence.
 
 - **expect** — sub-agent runs through Claude SDK, recording cost telemetry and session ID in metrics.json
 - **why** — without SDK integration, sub-agent execution relies on legacy subprocesses and loses cost telemetry
+
+## `test_surface_auto_install.py`
+
+*pins HATS-1701*
+
+- **flow** — a user launches Codex from an editable checkout whose surface package is not installed in the active environment
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r maintainer
+  ```
+
+- **expect** — the first launch installs the local Codex surface and starts Codex without falling through to the registry installer
+- **why** — editable installation writes a path file that the running interpreter has not processed, so an in-process recheck otherwise misses the heal
+
+- **flow** — a user launches Codex without its surface and package installation fails
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r maintainer
+  ```
+
+- **expect** — the command exits 2 with the installer diagnostic and no Python traceback
+- **why** — subprocess stderr is the actionable installation failure, but a bare CalledProcessError hides it and the generic CLI path leaks a traceback
 
 ## `test_surface_cleanup.py`
 
@@ -3193,21 +3001,6 @@ as a claim to check, not as evidence.
 
 - **expect** — rack resolves the main repository tracker directory and successfully reads or updates task card data
 - **why** — rack commands issued inside linked worktrees must locate the main repository tracker without requiring relative path navigation
-
-## `test_ticket_id_gate_hook.py`
-
-*pins HATS-1853*
-
-- **flow** — a library author commits prose that still carries a tracker id, and the pre-commit gate has to refuse it before the id ships to other projects
-- **cmds**
-
-  ```console
-  bash packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
-  python -m ai_hats.cli.githooks_hook pre-commit --project-dir . --githooks-dir .githooks
-  ```
-
-- **expect** — the hook blocks on a staged `<PREFIX>-<digits>`, spares the `<PREFIX>-NNN` placeholder beside it, honours the same-line allow marker, learns the prefix from the project's own cards rather than carrying one, and its refusal survives a later permissive hook in the materialized chain.
-- **why** — the hook is itself shipped library content, so a hardcoded prefix in it would BE the leak it refuses — the learning path is load-bearing, not a convenience. And a single-hook test cannot see a sibling hook overriding the verdict, which is how a blanket deny once shipped past a green suite, so the composite chain is driven here too.
 
 ## `test_tool_call_hygiene_guard.py`
 
@@ -3409,20 +3202,6 @@ as a claim to check, not as evidence.
 - **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
 - **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
 
-## `test_wheel_excludes_area_tests.py`
-
-*pins HATS-1783*
-
-- **flow** — a user installs the released ai-hats wheel and gets every module of the `pipeline` area — but none of the area's own test suite
-- **cmds**
-
-  ```console
-  uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
-  ```
-
-- **expect** — `ai_hats/pipeline/loader.py` and every other module of the area are in the wheel; nothing under `ai_hats/pipeline/tests/` is, and no `tests/` tree ships anywhere inside the package
-- **why** — ADR-0026 D5 keeps an area's tests inside the area folder, and `[tool.hatch.build.targets.wheel] packages = ["src/ai_hats"]` ships that folder whole — the D11 exclude is the only thing between a test suite and every user's site-packages. Deleting that one line is invisible to the rest of the suite, so the built artefact is what gets asserted here, not the config that produced it
-
 ## `test_worktree_library_edit_visible.py`
 
 *pins HATS-1501*
@@ -3496,22 +3275,6 @@ as a claim to check, not as evidence.
 
 - **expect** — the hook rebuilds a venv whose files the sweeper deleted instead of reading the surviving bin/python as "already provisioned"
 - **why** — a gutted venv failed the done-gate with a ModuleNotFoundError naming an unrelated module, and re-running the hook could not heal it
-
-## `test_wrapper_verb_spellings.py`
-
-*pins HATS-1816*
-
-- **flow** — the materialized consent wrapper is invoked through its real shim, with the verb spelled the ways that used to slip past it
-- **cmds**
-
-  ```console
-  ai-hats --provider claude wt merge task/x
-  rack transition --tasks-dir /t HATS-1 execute
-  rack transition --state execute HATS-1
-  ```
-
-- **expect** — every spelling is RECOGNIZED as the declared operation, so the wrapper stops instead of spawning the original binary
-- **why** — the wrapper read argv positionally while the PreToolUse gate skipped flags and their values. A flag before the positional argument therefore reached the wrapper as no-match and the operation ran with no question — and `--state execute X` matched with the ticket bound to `--state` instead of the task id. Revert `operations.operands` and the two `--provider`/`--tasks-dir` rows spawn the stub, turning these red.
 
 ## `test_write_op_refused_at_non_project_root.py`
 
@@ -3761,30 +3524,6 @@ as a claim to check, not as evidence.
 
 - **expect** — worktree is cut from base_branch and changes are merged into merge_target on done
 - **why** — fork repository setups require cutting from base branch while landing work on merge target
-
-## `test_wt_gate_extensions_source.py`
-
-*pins HATS-1829*
-
-- **flow** — a maintainer widens the worktree gate by adding an extension to `code_extensions.json` inside the project's own copy of the skill
-- **cmds**
-
-  ```console
-  ai-hats self init -p claude -r maintainer --no-wizard
-  ```
-
-- **expect** — the file the composed PreToolUse chain allowed before that edit is denied after it, with nothing else changed
-- **why** — the JSON is the documented knob, and the only road it reaches the gate by is the copy the session materializes beside the hook — the second source path the script carried pointed at a `library/` prefix no layout has produced since the monorepo move, so nothing tested whether the live road works
-
-- **flow** — a maintainer runs a session whose materialized skill lost that data file
-- **cmds**
-
-  ```console
-  ai-hats self init -p claude -r maintainer --no-wizard
-  ```
-
-- **expect** — the gate still denies a .py edit in the main checkout, and the bypass journal says the verdict came from the embedded defaults
-- **why** — falling through to `_DEFAULT_LANGS` in silence is what kept a dead source path looking alive for months
 
 ## `test_wt_gate_hook.py`
 

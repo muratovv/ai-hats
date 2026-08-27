@@ -37,6 +37,9 @@ ENV_TASKS_DIR = "AI_HATS_TASKS_DIR"  # NOT rack's own RACK_TASKS_DIR
 # Set only once the worktree is gone AND its branch reached the base branch, so
 # it is the one signal separating "brought no code" from "already merged".
 ENV_MERGED_SHA = "AI_HATS_MERGED_SHA"
+#: The call envelope — per-CALL facts as one versioned JSON object,
+#: BESIDE the scalars above, which shell keeps reading.
+ENV_HOOK_CALL = "AI_HATS_HOOK_CALL"
 
 
 def _read(name: str) -> str | None:
@@ -142,6 +145,7 @@ __all__ = [
     "ENV_WORKTREE_PATH",
     "ENV_TASKS_DIR",
     "ENV_MERGED_SHA",
+    "ENV_HOOK_CALL",
     "user_home_override",
     "ai_hats_dir_override",
     "project_dir_pin",

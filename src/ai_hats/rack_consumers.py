@@ -130,6 +130,8 @@ class AiHatsCheckPort:
             worktree_path=self._worktree_path(request.task_id),
             tasks_dir=self._catalog,
             extra_env=self._merged_env(request.task_id),
+            actor=request.actor,
+            selector=request.selector,
             log_path=self._log_path(request.task_id, check, request.event),
         )
         return CheckOutcome(
