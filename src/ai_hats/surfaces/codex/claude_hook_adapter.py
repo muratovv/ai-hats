@@ -12,23 +12,20 @@ import os
 import re
 from pathlib import Path
 
+from ..hook_channel import matches
+from .profile import PROFILE
+
 _PATCH_PATH = re.compile(r"^\*\*\* (Update|Add|Delete) File: (.+)$", re.MULTILINE)
 _PATCH_MOVE = re.compile(r"^\*\*\* Move to: (.+)$", re.MULTILINE)
 
 
 def matches_claude_hook(matcher: str, codex_tool_name: str) -> bool:
-    """Match a Claude hook matcher against the equivalent Codex tool name."""
-    aliases = [codex_tool_name]
-    if codex_tool_name == "apply_patch":
-        aliases.extend(("Edit", "Write", "MultiEdit"))
-    elif codex_tool_name == "spawn_agent":
-        aliases.append("Agent")
-    if not matcher or matcher == "*":
-        return True
-    try:
-        return any(re.fullmatch(matcher, candidate) is not None for candidate in aliases)
-    except re.error:
-        return matcher in aliases
+    """Whether a composed row's ``matcher`` applies to this Codex tool call.
+
+    The name table it consults is data now: the terminal row used to be absent
+    here, and its absence ran no gate rather than failing anything.
+    """
+    return matches(PROFILE, matcher, codex_tool_name)
 
 
 def _patch_targets(command: str, cwd: str) -> list[tuple[str, Path]]:
