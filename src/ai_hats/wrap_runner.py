@@ -176,7 +176,7 @@ def _venv_is_ai_hats_managed(project_dir: Path) -> bool:
         return False
 
 
-def _interpreter_pin_text(running: str, *, project_dir: Path) -> str:
+def _interpreter_pin_text(running: str, *, venv: str, managed: bool) -> str:
     """Warn note for a venv off the pin; the remedy follows ownership (HATS-1521).
 
     Not ``self update``: it moves the interpreter only when it installs a *new*
@@ -187,9 +187,9 @@ def _interpreter_pin_text(running: str, *, project_dir: Path) -> str:
     lines = [
         f"this session runs Python {running}, ai-hats pins {PINNED_PYTHON} — an "
         "interpreter outside the tested matrix, so a failure here reproduces nowhere else.",
-        f"    venv: {sys.prefix}",
+        f"    venv: {venv}",
     ]
-    if _venv_is_ai_hats_managed(project_dir):
+    if managed:
         lines += [
             "    ai-hats built this venv, so it can rebuild it for you:",
             "",
@@ -205,6 +205,18 @@ def _interpreter_pin_text(running: str, *, project_dir: Path) -> str:
             f"    on Python {PINNED_PYTHON} yourself, then reinstall ai-hats into it.",
         ]
     return "\n".join(lines)
+
+
+def interpreter_pin_notices(running: str, *, venv: str, managed: bool) -> list[StartupNotice]:
+    """The notice a session off the pin owes its operator, as a function of what
+    was read rather than of what `sys` happens to hold.
+
+    The reads live at the call site so a test states the case instead of patching
+    the module under it (the test-isolation ratchet, exit INJECT).
+    """
+    if running == PINNED_PYTHON:
+        return []
+    return [StartupNotice("warn", _interpreter_pin_text(running, venv=venv, managed=managed))]
 
 
 class WrapRunner:
@@ -250,17 +262,18 @@ class WrapRunner:
             *(StartupNotice(diag.level.value, diag.render()) for diag in self.payload.diagnostics),
         ]
 
-    def _check_interpreter_pin(self) -> list[StartupNotice]:
+    def _check_interpreter_pin(self, *, running: str | None = None) -> list[StartupNotice]:
         """HATS-1521: WARN when this venv is not on the pinned interpreter.
 
         The session IS the venv's python (`$VENV/bin/python -m ai_hats`), so
         `sys.version_info` answers it without reading `pyvenv.cfg`. Never blocks:
         a wrong-version venv still runs, it just runs somewhere untested.
         """
-        running = "{}.{}".format(*sys.version_info[:2])
-        if running == PINNED_PYTHON:
-            return []
-        return [StartupNotice("warn", _interpreter_pin_text(running, project_dir=self.project_dir))]
+        return interpreter_pin_notices(
+            running or "{}.{}".format(*sys.version_info[:2]),
+            venv=sys.prefix,
+            managed=_venv_is_ai_hats_managed(self.project_dir),
+        )
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
         """HATS-901: WARN when a composed skill will double-register this session;
