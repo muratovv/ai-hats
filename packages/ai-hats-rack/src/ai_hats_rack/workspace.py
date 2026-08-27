@@ -265,6 +265,18 @@ class Workspace:
         """
         return _selectors_of(i.definition for i in self.instances if i.root_id == root_id)
 
+    def backlog_declaring_kind(self, kind: str) -> str:
+        """The mounted backlog whose registry declares ``kind``, or ``""``.
+
+        What a refusal needs to say the kind is live NEXT DOOR rather than
+        nowhere: one catalog's kind set, shown without its owner, reads as
+        absolute and sends the caller off to fix correct instructions.
+        """
+        for instance in self.instances:
+            if instance.definition.links_registry.get(kind) is not None:
+                return instance.name
+        return ""
+
     def instance_by_name(self, name: str) -> BacklogInstance:
         """Route a backlog SELECTOR (``--backlog``) to its instance by CLI name —
         ``cli_alias`` or ``name``, matched dynamically over the mounted instances

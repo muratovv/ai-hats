@@ -503,7 +503,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
     topology = _validate_topology(
         {"initial": fsm.initial, "states": fsm.states, "edges": fsm.adjacency}, source
     )
-    registry = _validate_registry({"kinds": kinds_raw}, source)
+    registry = _validate_registry({"kinds": kinds_raw}, source, name)
     _validate_stored_inverses(registry, kind_handlers, source)
     _validate_edge_names(fsm.edge_names, set(topology.states), source)
     _validate_state_gates(fields, set(topology.states), source)
