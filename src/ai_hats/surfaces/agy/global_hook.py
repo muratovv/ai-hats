@@ -10,9 +10,16 @@ if TYPE_CHECKING:
     from ai_hats.materialization import Materializer
 
 MANAGED_DISPATCHER_TAG = "ai-hats:global-dispatcher"
+#: Registered user-globally, so it fires outside ai-hats sessions too — where
+#: nothing was composed and there is no gate to miss. Inside one, an interpreter
+#: it cannot run is a gate it cannot DELIVER, and the two were the same silent
+#: exit 0 until now; codex's equivalent guard has always refused and said why.
 DISPATCHER_COMMAND = (
-    'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] && [ -x "$AI_HATS_PYTHON" ]; '
-    'then "$AI_HATS_PYTHON" -m ai_hats.surfaces.agy.hook_dispatcher "$@"; fi\' sh'
+    'sh -c \'if [ -z "$AI_HATS_SESSION_ID" ]; then exit 0; fi; '
+    'if [ ! -x "$AI_HATS_PYTHON" ]; then printf "%s\\n" '
+    "\"ai-hats-hook-dispatcher: incomplete dispatcher environment — this session'\"'\"'s "
+    'hooks cannot run; restart it" >&2; exit 2; fi; '
+    'exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.agy.hook_dispatcher "$@"\' sh'
 )
 
 

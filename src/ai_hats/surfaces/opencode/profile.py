@@ -27,8 +27,9 @@ PROFILE = SurfaceProfile(
     speaks=Dialect(
         can_ask=False,
         can_ask_with_ticket=False,
-        can_deny_after=False,  # OpenCode has no channel into the model's context; the plugin puts a
-        # nudge on the operator's console, which is onward and not nowhere.
+        can_deny_after=False,
+        # No channel into the model's context; the plugin puts a nudge on the
+        # operator's console, which is onward and not nowhere.
         can_carry_nudges=True,
     ),
 )

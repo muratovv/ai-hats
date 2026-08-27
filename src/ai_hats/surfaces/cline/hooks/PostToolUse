@@ -1,10 +1,29 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# The shim cline runs; the verdict is the dispatcher's. Two ways for it not to
+# arrive, and neither may read as consent: no interpreter to run it with, and a
+# run that produced no answer at all.
+set -uo pipefail
+
+refuse() {
+    printf '%s\n' "ai-hats-cline-hook: $1" >&2
+    if [[ -n "${AI_HATS_GATE_BROKEN_ACK:-}" ]]; then
+        printf '%s\n' "ai-hats: gate SKIPPED (hatch) — AI_HATS_GATE_BROKEN_ACK set: $1" >&2
+        printf '%s\n' '{"cancel":false}'
+        exit 0
+    fi
+    printf '%s\n' "ai-hats: this gate could not run — set AI_HATS_GATE_BROKEN_ACK=1 to proceed past it" >&2
+    printf '{"cancel":true,"errorMessage":"%s"}\n' "$1"
+    exit 0
+}
 
 if [[ -z "${AI_HATS_PYTHON:-}" ]]; then
-    printf '%s\n' 'ai-hats-cline-hook: AI_HATS_PYTHON is unset; composed hooks skipped' >&2
-    printf '%s\n' '{"cancel":false}'
-    exit 0
+    refuse "AI_HATS_PYTHON is unset, so no gate can be consulted; restart the session"
 fi
 
-exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.cline.hook_dispatcher PostToolUse
+said="$("$AI_HATS_PYTHON" -m ai_hats.surfaces.cline.hook_dispatcher PostToolUse)"
+if [[ -z "$said" ]]; then
+    # Silence is how cline reads "no objection", so a dispatcher that died
+    # before answering must not be allowed to look like one.
+    refuse "the hook dispatcher did not answer"
+fi
+printf '%s\n' "$said"

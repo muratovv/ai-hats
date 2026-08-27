@@ -334,7 +334,10 @@ def test_pretooluse_ask_fails_closed_with_the_hook_recovery_reason(
     assert code == 0, stderr
     decision = json.loads(stdout)["hookSpecificOutput"]
     assert decision["permissionDecision"] == "deny"
-    assert decision["permissionDecisionReason"] == "set AI_HATS_PUSH_ACK=1"
+    # The hook's own reason, plus the channel saying why the question became a
+    # refusal — the half the surface's local branch used to leave out.
+    assert decision["permissionDecisionReason"].startswith("set AI_HATS_PUSH_ACK=1")
+    assert "cannot carry the consent" in decision["permissionDecisionReason"]
 
 
 def test_apply_patch_is_adapted_to_claude_style_file_path(
@@ -747,4 +750,36 @@ def test_advice_gathered_before_a_refusal_still_reaches_the_model(
     assert spoken["permissionDecision"] == "deny"
     assert "prefer Grep" in spoken.get("additionalContext", ""), (
         f"the advice was dropped with the refusal:\n{stdout!r}"
+    )
+
+
+def test_a_question_on_an_arrival_codex_cannot_ask_on_is_refused_by_the_channel(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """codex can put a question only where it was already asking, and _emit
+    turned an `ask` elsewhere into a bare deny of its own making.
+
+    That is a branch of policy in a surface, and it cost the reader the wording
+    the channel exists to hold in one copy — and the hatch with it.
+    """
+    cache = tmp_path / "cache"
+    asks = _script(
+        tmp_path / "ask.sh",
+        "cat >/dev/null\n"
+        'printf \'%s\' \'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"permissionDecision":"ask","permissionDecisionReason":"needs consent"}}\'\n',
+    )
+    _manifest(cache, asks)
+
+    _code, stdout, _stderr = _run(
+        {"hook_event_name": "PreToolUse", "tool_name": "exec", "tool_input": {"command": "x"}},
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "cannot carry the consent" in spoken["permissionDecisionReason"], (
+        f"the surface invented its own refusal instead of the channel's:\n{stdout!r}"
     )

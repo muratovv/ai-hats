@@ -6,14 +6,17 @@
 // <AI_HATS_SESSION_CACHE_DIR>/opencode/hooks.json using the same manifest
 // schema (version 1) as the cline and codex surfaces.
 //
-// Tool-hook semantics mirror ai_hats.surfaces.codex.hook_dispatcher:
-//   - no AI_HATS_SESSION_CACHE_DIR pin  -> inert (by design)
-//   - manifest missing                  -> warn once, inert (nothing to run)
-//   - manifest unreadable/malformed     -> fail closed (every mapped tool blocked)
-//   - session identity mismatch         -> fail closed (stale cache protection)
-//   - hook exit 2                       -> deny: the tool call is thrown away
-//   - hook stdout {"decision":"block"}  -> deny with reason
-//   - any other hook failure            -> fail open with a warning line
+// Tool-hook semantics: this plugin does not judge. It hands the call to
+// `ai_hats.surfaces.opencode.hook_dispatcher` and marshals back the verdict
+// document it is given (`hook_channel.to_wire`), because JavaScript here cannot
+// hold a verdict and a channel that derives one from an exit code understands
+// only the shapes it happened to implement.
+//   - no AI_HATS_SESSION_CACHE_DIR pin  -> inert (by design: nothing composed)
+//   - manifest present, no rows for the event -> no spawn (nothing to miss)
+//   - anything else                     -> the dispatcher decides, including a
+//                                          missing, unreadable or foreign
+//                                          manifest, which it refuses while
+//                                          naming AI_HATS_GATE_BROKEN_ACK
 //
 // Permission semantics (HATS-1792):
 //   - native asks surface on the bus as permission.asked events; the typed

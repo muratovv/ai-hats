@@ -323,6 +323,10 @@ HOOK_TIMEOUT_ENV = "AI_HATS_HOOK_TIMEOUT_S"
 #: the failure mode this whole channel exists to remove.
 RETIRED_TIMEOUT_ENVS = ("AI_HATS_AGY_HOOK_TIMEOUT_S",)
 
+#: Said once per process, which is once per tool call — the dispatcher is a
+#: fresh process each time. Twice a call, from both resolvers, was noise.
+_RENAME_SAID: set[str] = set()
+
 #: How much room the surface must leave above the chain, so a chain that spends
 #: everything still reports instead of dying mid-sentence.
 SURFACE_TIMEOUT_MARGIN_S: float = 30.0
@@ -360,10 +364,12 @@ def resolve_hook_timeout(environ: Mapping[str, str] | None = None) -> float:
         for retired in RETIRED_TIMEOUT_ENVS:
             raw = env.get(retired)
             if raw:
-                sys.stderr.write(
-                    f"ai-hats: {retired} is now {HOOK_TIMEOUT_ENV} and bounds every "
-                    f"surface, not one — honouring it this run; rename it.\n"
-                )
+                if retired not in _RENAME_SAID:
+                    _RENAME_SAID.add(retired)
+                    sys.stderr.write(
+                        f"ai-hats: {retired} is now {HOOK_TIMEOUT_ENV} and bounds every "
+                        f"surface, not one — honouring it this run; rename it.\n"
+                    )
                 break
     if not raw:
         return HOOK_TIMEOUT_S
@@ -380,7 +386,14 @@ def surface_timeout(environ: Mapping[str, str] | None = None) -> float:
     Writing the surface's own number by hand is how codex came to bound the
     dispatcher and the hook at the same 60 seconds, which made the dispatcher's
     every timeout branch unreachable and left a killed chain with no verdict.
-    """
+
+    Read by the two surfaces that impose an outer bound at all: codex writes it
+    into its TOML, and opencode is handed it through
+    :data:`ENV_HOOK_SURFACE_TIMEOUT_MS` because its plugin is copied verbatim.
+    agy's settings entry and cline's ``--hooks-dir`` shim carry no timeout
+    field, so their dispatcher is bounded only from the inside — which is the
+    safe direction: the chain's own deadline always leaves it alive to answer.
+    """  # comment-length: allow — which surfaces impose an outer bound is the contract
     return resolve_hook_timeout(environ) + SURFACE_TIMEOUT_MARGIN_S
 
 
