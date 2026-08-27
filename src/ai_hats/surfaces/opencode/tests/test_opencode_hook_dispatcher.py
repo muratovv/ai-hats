@@ -17,8 +17,20 @@ from ai_hats.env import ENV_SESSION_CACHE_DIR
 from ai_hats_observe.trace import ENV_SESSION_ID
 
 from ..hook_dispatcher import dispatch_hook
+from ..profile import PROFILE
 
 _SESSION = "sid-opencode"
+
+
+def _mirror(cache: Path) -> Path:
+    """Where this surface's session skills actually land.
+
+    Spelled through the profile rather than restated, so a test cannot keep
+    passing against a mirror root the dispatcher no longer uses.
+    """
+    root = PROFILE.skills_root(cache)
+    assert root is not None, "opencode declares a mirror under the cache"
+    return root
 
 
 def _script(path: Path, body: str) -> Path:
@@ -80,7 +92,7 @@ def test_a_denial_in_the_dialect_every_hook_speaks_is_honoured(tmp_path: Path) -
     """THE defect: `permissionDecision` appeared nowhere in the plugin, so this
     refusal — the shape all eight shipped hooks emit — let the call through."""
     hook = _script(
-        tmp_path / "skills" / "deny.sh",
+        _mirror(tmp_path) / "deny.sh",
         _emit(permissionDecision="deny", permissionDecisionReason="off limits"),
     )
     _manifest(tmp_path, (hook, "Bash"))
@@ -91,7 +103,7 @@ def test_a_denial_in_the_dialect_every_hook_speaks_is_honoured(tmp_path: Path) -
 
 def test_a_quiet_chain_allows(tmp_path: Path) -> None:
     """The control: the refusal above is not simply everything being denied."""
-    hook = _script(tmp_path / "skills" / "quiet.sh", "cat >/dev/null\n")
+    hook = _script(_mirror(tmp_path) / "quiet.sh", "cat >/dev/null\n")
     _manifest(tmp_path, (hook, "Bash"))
     assert _judge(tmp_path)["decision"] == "allow"
 
@@ -99,9 +111,9 @@ def test_a_quiet_chain_allows(tmp_path: Path) -> None:
 def test_a_later_hook_overrides_an_earlier_one(tmp_path: Path) -> None:
     """A single-hook test cannot see this, and this is how a green test came to
     coexist with the opposite live behaviour."""
-    allowed = _script(tmp_path / "skills" / "allow.sh", _emit(permissionDecision="allow"))
+    allowed = _script(_mirror(tmp_path) / "allow.sh", _emit(permissionDecision="allow"))
     denied = _script(
-        tmp_path / "skills" / "deny.sh",
+        _mirror(tmp_path) / "deny.sh",
         _emit(permissionDecision="deny", permissionDecisionReason="B says no"),
     )
     _manifest(tmp_path, (allowed, "Bash"), (denied, "Bash"))
@@ -113,7 +125,7 @@ def test_a_file_edit_by_patch_reaches_the_edit_gates(tmp_path: Path) -> None:
     """`patch` was absent from the plugin's nine-entry table, and an unmapped
     tool returned before the matcher loop ever ran."""
     hook = _script(
-        tmp_path / "skills" / "guard.sh",
+        _mirror(tmp_path) / "guard.sh",
         _emit(permissionDecision="deny", permissionDecisionReason="not that file"),
     )
     _manifest(tmp_path, (hook, "Edit|Write|MultiEdit"))
@@ -122,14 +134,14 @@ def test_a_file_edit_by_patch_reaches_the_edit_gates(tmp_path: Path) -> None:
 
 
 def test_a_nudge_reaches_the_reader_with_its_author(tmp_path: Path) -> None:
-    hook = _script(tmp_path / "skills" / "hint.sh", _emit(additionalContext="prefer Grep"))
+    hook = _script(_mirror(tmp_path) / "hint.sh", _emit(additionalContext="prefer Grep"))
     _manifest(tmp_path, (hook, "Bash"))
     verdict = _judge(tmp_path)
     assert verdict["nudges"] == [{"text": "prefer Grep", "hook": "ai-hats:hint.sh"}]
 
 
 def test_a_manifest_from_another_session_refuses(tmp_path: Path) -> None:
-    hook = _script(tmp_path / "skills" / "quiet.sh", "cat >/dev/null\n")
+    hook = _script(_mirror(tmp_path) / "quiet.sh", "cat >/dev/null\n")
     _manifest(tmp_path, (hook, "Bash"), session="someone-else")
     verdict = _judge(tmp_path)
     assert verdict["decision"] == "deny"
@@ -143,7 +155,7 @@ def test_a_missing_manifest_refuses_and_names_a_way_past(tmp_path: Path) -> None
 
 
 def test_a_gate_whose_script_vanished_refuses(tmp_path: Path) -> None:
-    hook = _script(tmp_path / "skills" / "gone.sh", "cat >/dev/null\n")
+    hook = _script(_mirror(tmp_path) / "gone.sh", "cat >/dev/null\n")
     _manifest(tmp_path, (hook, "Bash"))
     hook.unlink()  # safe-delete: ok this test's own tmp_path fixture
     assert _judge(tmp_path)["decision"] == "deny"
@@ -154,3 +166,34 @@ def test_an_event_nothing_can_bind_to_allows(tmp_path: Path, event: str) -> None
     """The other control: not every pass is a defect — nothing composed binds
     to these, so no gate was skipped."""
     assert _judge(tmp_path, event=event)["decision"] == "allow"
+
+
+class TestTheManifestCommandIsChecked:
+    """codex and cline both refuse a command outside the session mirror; this
+    surface executed whatever string the manifest named.
+
+    The profile has carried the mirror root the whole time — ``skills_subpath``
+    with a ``skills_root()`` accessor — and nothing called it, so the field read
+    as documentation while the check it exists for was absent here.
+    """
+
+    def test_a_command_outside_the_session_mirror_refuses(self, tmp_path: Path) -> None:
+        outside = _script(tmp_path / "elsewhere" / "evil.sh", "cat >/dev/null\n")
+        _manifest(tmp_path, (outside, "Bash"))
+        verdict = _judge(tmp_path)
+        assert verdict["decision"] == "deny"
+        assert "escapes the session skills mirror" in verdict["reason"]
+
+    def test_a_command_that_is_not_executable_refuses(self, tmp_path: Path) -> None:
+        inert = _script(_mirror(tmp_path) / "inert.sh", "cat >/dev/null\n")
+        inert.chmod(0o644)
+        _manifest(tmp_path, (inert, "Bash"))
+        verdict = _judge(tmp_path)
+        assert verdict["decision"] == "deny"
+        assert "not an executable session file" in verdict["reason"]
+
+    def test_a_command_inside_the_mirror_still_runs(self, tmp_path: Path) -> None:
+        """The positive control: the check must not refuse everything."""
+        good = _script(_mirror(tmp_path) / "ok.sh", _emit(permissionDecision="allow"))
+        _manifest(tmp_path, (good, "Bash"))
+        assert _judge(tmp_path)["decision"] == "allow"

@@ -60,6 +60,13 @@ def _load_rows(environ: Mapping[str, str], event: HookEvent) -> list[HookRow]:
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
         raise _ManifestError(f"hook manifest at {path} carries no hooks mapping")
+    # Where this surface's mirror sits is a row of the profile, not a path
+    # spelled again here; codex and cline have refused an escaping command since
+    # they were written, and this one executed whatever string it was handed.
+    skills_root = PROFILE.skills_root(Path(cache_dir))
+    if skills_root is None:
+        raise _ManifestError(f"{PROFILE.label} declares no session skills mirror")
+    skills_root = skills_root.expanduser().resolve()
     raw = hooks.get(event.value, [])
     rows: list[HookRow] = []
     for entry in raw if isinstance(raw, list) else []:
@@ -68,9 +75,14 @@ def _load_rows(environ: Mapping[str, str], event: HookEvent) -> list[HookRow]:
         command = entry.get("command")
         if not isinstance(command, str) or not command:
             raise _ManifestError(f"malformed hook entry: {entry.get('tag', '<untagged>')}")
+        resolved = Path(command).expanduser().resolve()
+        if not resolved.is_relative_to(skills_root):
+            raise _ManifestError(f"hook command escapes the session skills mirror: {resolved}")
+        if not resolved.is_file() or not os.access(resolved, os.X_OK):
+            raise _ManifestError(f"hook command is not an executable session file: {resolved}")
         rows.append(
             HookRow(
-                command=Path(command),
+                command=resolved,
                 matcher=str(entry.get("matcher", "")),
                 tag=str(entry.get("tag") or command),
             )

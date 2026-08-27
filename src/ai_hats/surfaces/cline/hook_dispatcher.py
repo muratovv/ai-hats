@@ -67,7 +67,10 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
     if not isinstance(hooks, dict):
         raise _ManifestError(f"hook manifest at {path} carries no hooks mapping")
 
-    skills_root = (_resolved(cache_dir) / "skills").resolve()
+    declared = PROFILE.skills_root(Path(cache_dir))
+    if declared is None:
+        raise _ManifestError(f"{PROFILE.label} declares no session skills mirror")
+    skills_root = _resolved(str(declared))
     for entries in hooks.values():
         if not isinstance(entries, list):
             continue
