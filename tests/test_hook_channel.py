@@ -144,3 +144,43 @@ def test_the_name_a_payload_carries_is_one_its_matcher_accepts() -> None:
         for native in profile.tool_names:
             spoken = profile.spoken_name(native)
             assert spoken in profile.matcher_names(native), f"{profile.label}: {native}"
+
+
+class TestArgumentNames:
+    def test_a_surface_key_becomes_the_one_hooks_defend_against(self) -> None:
+        from ai_hats.surfaces import profiles
+        from ai_hats.surfaces.hook_channel import speak_args
+
+        spoken = speak_args(profiles.AGY, {"CommandLine": "git push"})
+        assert spoken == {"command": "git push"}
+
+    def test_a_key_the_payload_already_spelled_is_left_alone(self) -> None:
+        """The payload said it; the surface's guess must not overwrite its word."""
+        from ai_hats.surfaces import profiles
+        from ai_hats.surfaces.hook_channel import speak_args
+
+        spoken = speak_args(profiles.AGY, {"CommandLine": "guess", "command": "said"})
+        assert spoken["command"] == "said"
+
+    def test_the_way_back_names_the_key_this_payload_used(self) -> None:
+        """A rewrite returned under the wrong key runs the original line."""
+        from ai_hats.surfaces import profiles
+        from ai_hats.surfaces.hook_channel import native_arg_keys
+
+        assert native_arg_keys(profiles.AGY, {"TargetFile": "/x"}) == {"file_path": "TargetFile"}
+
+    def test_a_surface_with_no_renames_changes_nothing(self) -> None:
+        from ai_hats.surfaces import profiles
+        from ai_hats.surfaces.hook_channel import native_arg_keys, speak_args
+
+        assert speak_args(profiles.CODEX, {"command": "x"}) == {"command": "x"}
+        assert native_arg_keys(profiles.CODEX, {"command": "x"}) == {}
+
+
+def test_an_uncompilable_matcher_still_guards_the_tools_it_spells() -> None:
+    """`Edit|Write|[` compiles nowhere, and it still means to guard Edit."""
+    from ai_hats.surfaces import profiles
+    from ai_hats.surfaces.hook_channel import matches
+
+    assert matches(profiles.CLINE, "Edit|Write|[", "replace_in_file")
+    assert not matches(profiles.CLINE, "Edit|Write|[", "read_file")

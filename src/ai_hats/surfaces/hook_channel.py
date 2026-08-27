@@ -130,7 +130,12 @@ class SurfaceProfile:
 
 
 def matches(profile: SurfaceProfile, matcher: str, native_tool: str) -> bool:
-    """Whether a composed row's ``matcher`` applies to this call."""
+    """Whether a composed row's ``matcher`` applies to this call.
+
+    An unreadable matcher falls back to the alternatives it spells rather than
+    to the whole string: a row nobody can compile still names the tools it meant
+    to guard, and running that gate is the direction that fails safe.
+    """
     if not matcher or matcher == "*":
         return True
     candidates = profile.matcher_names(native_tool)
@@ -139,7 +144,30 @@ def matches(profile: SurfaceProfile, matcher: str, native_tool: str) -> bool:
     try:
         return any(re.fullmatch(matcher, name) is not None for name in candidates)
     except re.error:
-        return matcher in candidates
+        spelled = matcher.split("|")
+        return any(name in spelled for name in candidates)
+
+
+def speak_args(profile: SurfaceProfile, args: Mapping[str, object]) -> dict:
+    """``args`` with the keys hooks defend against, never dropping what was there.
+
+    An existing vocabulary key is left alone: the payload already said it, and
+    overwriting it would hand the hook the surface's guess over its own word.
+    """
+    renamed = dict(args)
+    for native, vocabulary in profile.arg_names.items():
+        if native in renamed and vocabulary not in renamed:
+            renamed[vocabulary] = renamed.pop(native)
+    return renamed
+
+
+def native_arg_keys(profile: SurfaceProfile, args: Mapping[str, object]) -> dict[str, str]:
+    """Vocabulary key -> the key THIS payload used, for the keys it carried.
+
+    The way back: a rewrite returned under the vocabulary name reaches a surface
+    that looks for its own and finds none, running the original line instead.
+    """
+    return {profile.arg_names[key]: key for key in args if key in profile.arg_names}
 
 
 class ReplyUnreadable(ValueError):
