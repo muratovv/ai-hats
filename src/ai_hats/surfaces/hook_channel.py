@@ -325,6 +325,10 @@ RETIRED_TIMEOUT_ENVS = ("AI_HATS_AGY_HOOK_TIMEOUT_S",)
 #: everything still reports instead of dying mid-sentence.
 SURFACE_TIMEOUT_MARGIN_S: float = 30.0
 
+#: Where a surface whose config is copied verbatim reads :func:`surface_timeout`
+#: from. A number written into such an asset cannot track the chain's budget.
+ENV_HOOK_SURFACE_TIMEOUT_MS = "AI_HATS_HOOK_SURFACE_TIMEOUT_MS"
+
 #: What a hook's own gate cannot be reopened without.
 GATE_BROKEN_ACK_ENV = "AI_HATS_GATE_BROKEN_ACK"
 
@@ -746,6 +750,7 @@ __all__ = [
     "run_chain",
     "resolve_hook_timeout",
     "SURFACE_TIMEOUT_MARGIN_S",
+    "ENV_HOOK_SURFACE_TIMEOUT_MS",
     "REPLY_BYTES",
     "HookRow",
     "GATE_BROKEN_ACK_ENV",

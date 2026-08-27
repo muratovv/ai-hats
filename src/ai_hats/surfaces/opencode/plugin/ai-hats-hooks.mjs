@@ -56,8 +56,10 @@ async function loadManifest(cacheDir, sessionId) {
   };
 }
 
-function judge(event, nativeTool, args) {
-  const { spawnSync } = require("node:child_process");
+async function judge(event, nativeTool, args) {
+  // `await import`, not `require`: this is an ES module, and `require` is a
+  // ReferenceError under Node — `loadManifest` above already had it right.
+  const { spawnSync } = await import("node:child_process");
   const python = process.env.AI_HATS_PYTHON;
   if (!python) {
     return {
@@ -77,10 +79,14 @@ function judge(event, nativeTool, args) {
       hook_event_name: event,
     },
   });
+  // Derived from the chain's own budget by the materializer, never written by
+  // hand here: an outer bound at or below the inner one kills the dispatcher
+  // before it can produce the verdict that names the way past.
+  const ceiling = Number(process.env.AI_HATS_HOOK_SURFACE_TIMEOUT_MS) || 300000;
   const run = spawnSync(python, ["-m", "ai_hats.surfaces.opencode.hook_dispatcher"], {
     input: request,
     encoding: "utf8",
-    timeout: 300000,
+    timeout: ceiling,
     killSignal: "SIGKILL",
     env: process.env,
   });
@@ -154,7 +160,7 @@ export const AiHatsHooksPlugin = async ({ client }) => {
     // Nothing composed is bound to this event: no gate can be missed, and the
     // interpreter this would start costs ~120 ms on the host's own event loop.
     if (bound && !(Array.isArray(bound[event]) && bound[event].length)) return;
-    const verdict = judge(event, nativeTool, args);
+    const verdict = await judge(event, nativeTool, args);
     for (const nudge of verdict.nudges || []) {
       if (nudge && nudge.text) console.warn(`[ai-hats] ${nudge.hook || "guard"}: ${nudge.text}`);
     }
