@@ -77,6 +77,10 @@ e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 # marker is keyed to the tree you run it on, which is the content the check looks
 # up. `ci-local.sh --stages <gate>` names what each runs.
 #
+# `REV=<sha>` judges ONE COMMIT instead of this checkout, in a scratch worktree
+# of its own — what a card whose worktree is already merged away needs, and what
+# the gate's own refusal hands you when that is the case (HATS-1664).
+#
 # $(1) = gate name, which is also its script's basename
 define run_gate
 @py="$(PYTHON)"; [ -x "$(CURDIR)/.venv/bin/python3" ] && py="$(CURDIR)/.venv/bin/python3"; \
@@ -86,13 +90,13 @@ if [ -z "$$libroot" ] || [ ! -f "$$hook" ]; then \
 	printf "cannot resolve the $(1) in the ai-hats library — install it here first: ai-hats self init\n" >&2; \
 	exit 1; \
 fi; \
-env PYTHON="$$py" bash "$$hook" --run
+env PYTHON="$$py" bash "$$hook" --run $(if $(REV),--rev $(REV),)
 endef
 
-merge-gate: ## Run the ->merge gate here and mark this tree green (HATS-1614)
+merge-gate: ## Run the ->merge gate here (or on REV=<sha>) and mark that tree green (HATS-1614)
 	$(call run_gate,merge-gate)
 
-done-gate: ## Run the ->done gate here and mark this tree green (HATS-1137)
+done-gate: ## Run the ->done gate here (or on REV=<sha>) and mark that tree green (HATS-1137)
 	$(call run_gate,done-gate)
 
 relay-server: ## Run local hats-relay server (delegates to relay/Makefile)

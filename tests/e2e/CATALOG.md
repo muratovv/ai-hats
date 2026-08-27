@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**274 of 274 files catalogued — 283 flows.**
+**275 of 275 files catalogued — 284 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -454,6 +454,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection
 - **why** — a syntactically valid workflow can still name a missing stage or bypass the canonical dispatcher, leaving the advertised server-side gate inert
+
+## `test_ci_local_prepare.py`
+
+*pins HATS-1664*
+
+- **flow** — the gate primitive making a scratch checkout of a merge commit runnable
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh --prepare
+  ```
+
+- **expect** — the dispatcher delegates to the worktree-venv hook of the tree it is preparing, and leaves an already-usable venv untouched
+- **why** — a checkout minted by `git worktree add` has no .venv, so every real-subprocess stage would exercise the MAIN checkout's installed code while claiming to judge the commit
 
 ## `test_ci_local_prose_refs.py`
 

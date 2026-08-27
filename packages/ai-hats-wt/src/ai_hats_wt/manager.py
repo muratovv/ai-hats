@@ -62,6 +62,10 @@ from .locks import (  # noqa: F401  -- re-export preserves the import surface (H
 
 logger = logging.getLogger(__name__)
 
+#: Merge tombstones live under the state dir, in a SUBdirectory: `list_active`
+#: globs `*.json` non-recursively, so this stays invisible to it (HATS-1664).
+MERGED_SUBDIR = "merged"
+
 
 class WorktreeDirtyError(Exception):
     """Raised when a destructive operation targets a worktree with uncommitted changes."""
@@ -1290,7 +1294,10 @@ class WorktreeManager:
             self._fire_before_teardown("merge", deadline, skip_hooks=skip_hooks)
             self._remove_worktree()
             self._delete_branch()
+            # HATS-1664: read it before _clear_state drops the only record.
+            merged_sha = self._merge_commit_sha()
             self._clear_state()
+            self._record_merged(merged_sha)
             # Match discard() / cleanup() teardown contract: a successful
             # merge invalidates self for any further lifecycle ops.
             self.worktree_path = None
@@ -1546,6 +1553,29 @@ class WorktreeManager:
             except FileNotFoundError:
                 pass
 
+    def _merge_commit_sha(self) -> str | None:
+        """The commit the merge just landed on the base branch."""
+        if not self._original_branch:
+            return None
+        try:
+            return self._git("rev-parse", "--verify", self._original_branch).stdout.strip() or None
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+            # Not fatal: the merge itself succeeded. A missing tombstone costs the
+            # ->done gate a run it could have skipped, never a wave-through.
+            logger.warning("HATS-1664: merge sha unresolved for %s: %s", self.branch_name, exc)
+            return None
+
+    def _record_merged(self, merge_sha: str | None, *, key: str | None = None) -> None:
+        """Leave the merge commit where :meth:`peek_merged_sha` can find it."""
+        if not merge_sha:
+            return
+        k = key or _state_key(self.branch_name)
+        tomb_dir = self._state_dir / MERGED_SUBDIR
+        tomb_dir.mkdir(parents=True, exist_ok=True)
+        tomb = tomb_dir / f"{k}.json"
+        with _acquire(tomb):
+            _atomic_write_json(tomb, {"branch": self.branch_name, "merge_sha": merge_sha})
+
     @classmethod
     def load_for_task(
         cls,
@@ -1604,6 +1634,33 @@ class WorktreeManager:
             return None
         path = Path(recorded)
         return path if path.exists() else None
+
+    @classmethod
+    def peek_merged_sha(
+        cls,
+        project_dir: Path,
+        task_id: str,
+        *,
+        state_dir: Path | None = None,
+    ) -> str | None:
+        """The commit this task's branch was merged as, or ``None`` — a pure read.
+
+        The counterpart of :meth:`peek_worktree_path`, and the reason it exists:
+        that one answers ``None`` both for a card that never had a worktree and
+        for one whose worktree was merged and torn down. A gate cannot tell those
+        apart, so it waved the second through (HATS-1664).
+        """
+        tomb = (
+            _resolve_state_dir(project_dir, state_dir, NOOP_LIFECYCLE)
+            / MERGED_SUBDIR
+            / (f"{_state_key(f'task/{task_id.lower()}')}.json")
+        )
+        try:
+            raw = tomb.read_text()
+        except FileNotFoundError:
+            return None  # no record is an ANSWER: nothing of this task was merged
+        # Every other failure is "cannot tell" and propagates, exactly as above.
+        return json.loads(raw).get("merge_sha") or None
 
     @classmethod
     def load_for_branch(

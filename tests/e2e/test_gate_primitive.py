@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.git import git, init_repo
+from _helpers.git import commit_file, git, init_repo
 
 pytestmark = pytest.mark.integration
 
@@ -217,6 +217,173 @@ def test_stages_no_gate_ever_ran_are_not_conjured_by_the_union(repo: Path):
     ok = _bash(f'gate_marker_ok . "{tree}" lint unit integration', repo)
 
     assert ok.returncode != 0, "`integration` ran under no gate — the union must not invent it"
+
+
+# ---------------------------------------------------------------------------
+# 2. the run mode that judges a COMMIT, not "here" (HATS-1664)
+# ---------------------------------------------------------------------------
+
+
+def _commit_dispatcher(repo: Path, stages: str, msg: str) -> None:
+    """Commit a stand-in `scripts/ci-local.sh` — the path the gate resolves. It
+    answers `--stages`, greets `--prepare`, and passes every stage."""
+    commit_file(
+        repo,
+        "scripts/ci-local.sh",
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "--stages" ]]; then echo "' + stages + '"; exit 0; fi\n'
+        'if [[ "$1" == "--prepare" ]]; then echo "PREPARED $PWD"; exit 0; fi\n'
+        'echo "ran $1 in $PWD with PYTHON=[${PYTHON:-<unset>}]"\nexit 0\n',
+        msg,
+    )
+
+
+def _repo_with_a_merge_left_behind(repo: Path) -> str:
+    """The shape every card is in at `review--done`: its content reached master
+    as a merge commit, its worktree is gone, master has moved on since, and the
+    main checkout carries untracked work. Returns that merge commit."""
+    _commit_dispatcher(repo, "one two", "dispatcher at the merge")
+    git(repo, "checkout", "-q", "-b", "task/hats-999")
+    commit_file(repo, "shipped.txt", "what the card contributed", "the card's own commit")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "--no-ff", "-q", "-m", "Merge branch 'task/hats-999'", "task/hats-999")
+    merge_sha = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    commit_file(repo, "someone-else.txt", "another card, merged after ours", "master moves on")
+    (repo / "untracked.txt").write_text("the supervisor's desk is never clean", encoding="utf-8")
+    return merge_sha
+
+
+def test_a_run_at_a_rev_marks_that_commit_and_not_where_the_agent_stands(repo: Path):
+    """MEASURED HOLE (HATS-1664). The `->done` gate demands a marker for the tree
+    of the merge commit, and the only run mode that existed judged `HEAD` of
+    wherever it was invoked. By that edge the card's worktree is gone, so the
+    agent stands in the main checkout — whose HEAD has moved under other merges
+    and whose tree is dirty, which `gate_stamp` rightly refuses to certify.
+    Green run, no marker, refusal forever: a door with no key.
+    """
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+
+    ran = _bash(
+        f'. "{MARKER_LIB}"; gate_run_and_stamp_rev done-gate "{merge_sha}" "next"',
+        repo,
+        lib=GATE_LIB,
+    )
+
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    assert "PREPARED" in ran.stdout + ran.stderr, "the project got to make the checkout runnable"
+    earned = _bash(f'gate_marker_ok . "{_tree(repo, merge_sha)}" one two', repo)
+    assert earned.returncode == 0, "the commit this card is accountable for is marked"
+    here = _bash(f'gate_marker_ok . "{_tree(repo)}" one two', repo)
+    assert here.returncode != 0, "and nothing else is — HEAD was never the subject"
+
+
+def test_every_stage_runs_inside_the_checkout_and_not_where_it_was_called_from(repo: Path):
+    """MEASURED on the rev road's first real run (HATS-1664). Naming the
+    dispatcher by path is not enough: a dispatcher re-derives its own root with
+    `git rev-parse --show-toplevel` from the CWD IT INHERITS, so the right file
+    ran the right stages against the caller's tree — and reported that as the
+    verdict on the commit. The gate's own log said "judging commit <sha>" while
+    the venv it prepared belonged to somewhere else entirely.
+    """
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+
+    ran = _bash(
+        f'. "{MARKER_LIB}"; gate_run_and_stamp_rev done-gate "{merge_sha}" "next"',
+        repo,
+        lib=GATE_LIB,
+    )
+
+    said = ran.stdout + ran.stderr
+    assert ran.returncode == 0, said
+    for line in ("PREPARED ", "ran one in ", "ran two in "):
+        where = said.split(line, 1)[1].splitlines()[0].strip()
+        assert "gate-checkouts" in where, f"{line.strip()} happened in {where}, not in the checkout"
+
+
+def test_an_interpreter_from_another_checkout_does_not_ride_along(repo: Path):
+    """The other half of the same substitution, measured on the same run
+    (HATS-1664): the entry point hands the dispatcher a `PYTHON` naming the
+    CALLER's interpreter, whose editable install points at the caller's source.
+    It beats the venv this road just built, so the stages import the wrong code
+    — caught only by the HATS-1242 guard, and only after paying for the venv."""
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+
+    ran = _bash(
+        f"export PYTHON=/somewhere/else/.venv/bin/python\n"
+        f'. "{MARKER_LIB}"; gate_run_and_stamp_rev done-gate "{merge_sha}" "next"',
+        repo,
+        lib=GATE_LIB,
+    )
+
+    said = ran.stdout + ran.stderr
+    assert ran.returncode == 0, said
+    assert "PYTHON=[<unset>]" in said, "the stages must resolve the checkout's own interpreter"
+    assert "/somewhere/else" in said, (
+        "and the gate must say what it dropped, not drop it in silence"
+    )
+
+
+def test_the_scratch_checkout_does_not_outlive_the_run(repo: Path):
+    """A gate that leaves worktrees registered behind it turns a green run into
+    housekeeping — and `git worktree list` is how a human reads this repo."""
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+    before = git(repo, "worktree", "list").stdout
+
+    _bash(
+        f'. "{MARKER_LIB}"; gate_run_and_stamp_rev done-gate "{merge_sha}" "next"',
+        repo,
+        lib=GATE_LIB,
+    )
+
+    assert git(repo, "worktree", "list").stdout == before
+
+
+def test_the_rev_road_reads_the_dispatcher_of_the_tree_it_judges(repo: Path):
+    """ADR-0023 D7: the composition belongs to the content under judgement. Here
+    the two disagree on purpose — the checkout has moved to a dispatcher naming
+    other stages, and the marker must record the merge commit's."""
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+    _commit_dispatcher(repo, "three", "the composition changed after the merge")
+
+    ran = _bash(
+        f'. "{MARKER_LIB}"; gate_run_and_stamp_rev done-gate "{merge_sha}" "next"',
+        repo,
+        lib=GATE_LIB,
+    )
+
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    tree = _tree(repo, merge_sha)
+    assert _bash(f'gate_marker_ok . "{tree}" one two', repo).returncode == 0
+    assert _bash(f'gate_marker_ok . "{tree}" three', repo).returncode != 0, (
+        "`three` is what the checkout asks for today, not what the judged tree ran"
+    )
+
+
+def test_a_swept_worktree_with_a_merge_behind_it_is_judged_not_waved_through(repo: Path):
+    """The same hole one step narrower. A state record can outlive its directory
+    (TMPDIR swept, discarded by hand), and that pass was written when it meant
+    "nothing entered master". With a merge record in hand it means the opposite,
+    and passing on the stale half is exactly the wave-through this closes."""
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+    gone = str(repo / "worktrees" / "hats-999")
+
+    checked = subprocess.run(
+        ["bash", str(SKILL_SRC / "hooks" / "done-gate.sh"), "--check"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "AI_HATS_PROJECT_DIR": str(repo),
+            "AI_HATS_TASK_ID": "HATS-999",
+            "AI_HATS_WORKTREE_PATH": gone,
+            "AI_HATS_MERGED_SHA": merge_sha,
+        },
+    )
+
+    assert checked.returncode == 2, f"a refusal on the checks channel, not {checked.returncode}"
+    assert merge_sha in checked.stdout, "and it names the merge commit as the subject"
 
 
 def test_a_marker_naming_another_tree_contributes_nothing_to_the_union(repo: Path):
