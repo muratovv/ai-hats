@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from _helpers.sessions import stand_in_session
 from _helpers.hook_chain import run_codex_dispatch
 
 SESSION_ID = "sid-codex-ticket"

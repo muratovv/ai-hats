@@ -783,3 +783,44 @@ def test_a_question_on_an_arrival_codex_cannot_ask_on_is_refused_by_the_channel(
     assert "cannot carry the consent" in spoken["permissionDecisionReason"], (
         f"the surface invented its own refusal instead of the channel's:\n{stdout!r}"
     )
+
+
+def test_advice_is_not_silently_dropped_on_the_arrival_that_cannot_carry_it(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """codex's PermissionRequest reply has a `decision` object and no slot for
+    advice, so _emit skipped the nudges there.
+
+    The dialect said this surface carries them, so the channel had already
+    stopped reducing them away — the drop happened after everything that could
+    have accounted for it. Narrowing the capability for THIS arrival makes the
+    channel do the dropping, in the one place that knows it happened.
+    """
+    hint = _script(tmp_path / "hint.sh", "cat >/dev/null\n" + _context_reply("prefer Grep"))
+    cache = tmp_path / "cache"
+    _manifest(cache, hint)
+
+    _code, stdout, _stderr = _run(
+        {
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "exec",
+            "tool_input": {"command": "x"},
+        },
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    from ai_hats.surfaces.codex.hook_dispatcher import _speaks
+
+    assert not _speaks("PermissionRequest").can_carry_nudges, (
+        "the dialect still claims an arrival with nowhere to put advice can carry it"
+    )
+    assert "prefer Grep" not in stdout
+
+
+def _context_reply(text: str) -> str:
+    spoken = json.dumps(
+        {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": text}}
+    )
+    return f"printf '%s' {json.dumps(spoken)}\n"

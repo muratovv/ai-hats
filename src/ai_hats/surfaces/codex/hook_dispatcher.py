@@ -149,7 +149,11 @@ def _speaks(native_event: str) -> Dialect:
     hatch.
     """  # comment-length: allow — where an event-shaped capability is narrowed
     if native_event == "PermissionRequest":
-        return PROFILE.speaks
+        # It is the one arrival codex asks on, and the one whose reply is a
+        # `decision` object with no slot for advice — so the same narrowing runs
+        # both ways, and the channel drops the nudges where that is accounted
+        # for rather than the emit dropping them where nothing is.
+        return replace(PROFILE.speaks, can_carry_nudges=False)
     return replace(PROFILE.speaks, can_ask=False, can_ask_with_ticket=False)
 
 
@@ -166,7 +170,7 @@ def _emit(verdict, native_event: str) -> int:
         else:
             _emit_deny(native_event, worded(verdict), advice)
         return 0
-    if verdict.nudges and native_event != "PermissionRequest":
+    if verdict.nudges:
         sys.stdout.write(
             json.dumps(
                 {
