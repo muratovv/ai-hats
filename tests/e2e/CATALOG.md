@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**277 of 277 files catalogued — 286 flows.**
+**278 of 278 files catalogued — 287 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2072,6 +2072,21 @@ as a claim to check, not as evidence.
 
 - **expect** — card artifacts are created inside the directory specified by AI_HATS_DIR and the current project directory remains unmodified
 - **why** — rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation without polluting project repositories
+
+## `test_rack_link_kind_refusal.py`
+
+*pins HATS-1866*
+
+- **flow** — an agent runs a documented link command against the wrong backlog and has to be able to tell "this kind does not exist" from "not on THIS backlog"
+- **cmds**
+
+  ```console
+  python -m ai_hats_rack transition HATS-1 --link orders_of:HATS-2
+  python -m ai_hats_rack transition HATS-1 --link nosuchkind:HATS-2
+  ```
+
+- **expect** — the refusal names the backlog whose kind set it lists, and adds the sibling that declares the kind — but only when a sibling really does
+- **why** — the message without an owner reads as absolute. One session took a correct instruction from a shipped skill, ran it against a task card, read this refusal as proof the instruction was wrong, and filed a card to edit three working CLI templates. The sibling backlog is mounted here so the hint has something true to say, and a kind belonging to nobody is asserted in the same run — a hint that always fires is a lie, not a help.
 
 ## `test_rack_race_condition.py`
 

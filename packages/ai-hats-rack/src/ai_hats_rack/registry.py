@@ -29,13 +29,30 @@ class LinksRegistryError(RackConfigError):
 
 
 class UnknownLinkKindError(RackError):
-    """A kind name not present in the loaded registry; names the configured set."""
+    """A kind name not present in the loaded registry; names the set AND its owner.
 
-    def __init__(self, kind: str, configured: Sequence[str]) -> None:
+    Naming the owner is the whole point: a set presented without one reads as
+    absolute, so a caller who reached the wrong backlog concludes the kind does
+    not exist anywhere. ``elsewhere`` is filled in by the layer that can see
+    sibling backlogs; this one cannot.
+    """
+
+    def __init__(
+        self, kind: str, configured: Sequence[str], backlog: str = "", elsewhere: str = ""
+    ) -> None:
         self.kind = kind
         self.configured = tuple(configured)
+        self.backlog = backlog
+        self.elsewhere = elsewhere
+        owner = f" on the {backlog!r} backlog" if backlog else ""
+        hint = (
+            f" — {kind!r} is a kind of the {elsewhere!r} backlog, which this id does not route to"
+            if elsewhere
+            else ""
+        )
         super().__init__(
-            f"Unknown link kind {kind!r}: configured kinds are {', '.join(self.configured)}"
+            f"Unknown link kind {kind!r}{owner}: configured kinds are "
+            f"{', '.join(self.configured)}{hint}"
         )
 
 
@@ -83,6 +100,9 @@ class LinksRegistry:
 
     kinds: tuple[LinkKind, ...]
     by_name: Mapping[str, LinkKind] = field(repr=False)
+    #: The backlog this registry was loaded from — identity, not semantics, so
+    #: the kind-blind contract above still holds.
+    backlog: str = ""
 
     def names(self) -> tuple[str, ...]:
         return tuple(k.name for k in self.kinds)
@@ -94,7 +114,7 @@ class LinksRegistry:
         """Resolve a kind by name or alias; unknown → typed error (names the set)."""
         kind = self.by_name.get(name)
         if kind is None:
-            raise UnknownLinkKindError(name, self.names())
+            raise UnknownLinkKindError(name, self.names(), self.backlog)
         return kind
 
     def stored_kinds(self) -> tuple[LinkKind, ...]:
@@ -145,14 +165,14 @@ class LinksRegistry:
         return ids[0] if ids else ""
 
 
-def _build_registry(kinds: Sequence[LinkKind]) -> LinksRegistry:
+def _build_registry(kinds: Sequence[LinkKind], backlog: str = "") -> LinksRegistry:
     by_name: dict[str, LinkKind] = {}
     for kind in kinds:
         for key in (kind.name, *kind.aliases):
             if key in by_name:
                 raise LinksRegistryError(f"duplicate link-kind name/alias {key!r}")
             by_name[key] = kind
-    return LinksRegistry(kinds=tuple(kinds), by_name=MappingProxyType(by_name))
+    return LinksRegistry(kinds=tuple(kinds), by_name=MappingProxyType(by_name), backlog=backlog)
 
 
 def _parse_kind(raw: Any, source: str) -> LinkKind:
@@ -178,7 +198,7 @@ def _parse_kind(raw: Any, source: str) -> LinkKind:
     )
 
 
-def _validate(raw: object, source: str) -> LinksRegistry:
+def _validate(raw: object, source: str, backlog: str = "") -> LinksRegistry:
     if not isinstance(raw, dict):
         raise LinksRegistryError(f"{source}: expected a mapping at top level")
     kinds_raw = raw.get("kinds")
@@ -193,7 +213,7 @@ def _validate(raw: object, source: str) -> LinksRegistry:
             raise LinksRegistryError(
                 f"{source}: kind {kind.name!r} inverse {kind.inverse!r} is not a declared kind"
             )
-    return _build_registry(kinds)
+    return _build_registry(kinds, backlog)
 
 
 def load_registry(path: Path | None = None) -> LinksRegistry:

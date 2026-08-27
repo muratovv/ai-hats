@@ -10,6 +10,33 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A refused link kind now names the backlog it was refused by** (HATS-1866).
+  `Unknown link kind 'related_tasks': configured kinds are …` listed the tasks
+  catalog's kinds without saying they were the tasks catalog's, so the set read
+  as absolute. It now reads `… 'related_tasks' on the 'tasks' backlog: …`, and
+  when a mounted sibling declares the kind, says so: `— 'related_tasks' is a kind
+  of the 'proposals' backlog, which this id does not route to`.
+
+  The cost was paid before the fix, which is why the wording counts as a defect
+  rather than a nicety. A session ran `rack transition <TASK> --link
+  related_tasks:…` — a form three shipped skills teach with a `PROP`/`HYP`
+  subject — against a task card, read the refusal as proof the shipped prose was
+  wrong, and filed a card to edit three correct CLI templates. That card is
+  cancelled; the instruction was right and the message was misleading.
+
+  Split by layer rather than by convenience: the owner is config identity, so
+  `LinksRegistry` carries it, while the sibling lookup is multi-backlog
+  semantics and lives in the verb layer — the registry's own docstring makes
+  kind-blindness a contract, and this keeps it. The hint is conditional and
+  tested in both directions: a kind belonging to no mounted backlog gets none,
+  because a hint that always fires is a false statement rather than a help.
+
+  The message had no test at all before this — `test_error_surface.py` pinned
+  the error code and payload, never the sentence a human reads.
+
+
 ### Changed — BREAKING
 
 - **Python pin and floor raised to 3.13; one `--repair` needed to cross it** (HATS-1521).
