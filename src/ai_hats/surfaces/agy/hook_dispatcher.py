@@ -342,7 +342,7 @@ def dispatch_hook(
     # four of them hand-rolled, two not at all, and those two allowed whatever
     # they could not read.
     tool = agy_tool_name(payload) or (tool_name or "")
-    spoken = json.dumps(to_claude_payload(payload)) if payload else stdin_data
+    spoken = json.dumps(to_claude_payload(payload, native)) if payload else stdin_data
 
     # The user's channel is keyed by the arrival agy sent; the composed one knows
     # only the two bindable events. Collapsing the first onto the second ran
@@ -372,7 +372,7 @@ def dispatch_hook(
             event=event,
             rows=rows,
             # Always one payload: an unreadable call must still meet its gates.
-            payloads=[to_claude_payload(payload)],
+            payloads=[to_claude_payload(payload, native)],
             project_dir=project_dir_from(os.environ),
         ),
     )

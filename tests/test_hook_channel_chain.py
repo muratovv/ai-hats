@@ -282,3 +282,73 @@ class TestBudgetResolution:
             assert resolve_hook_timeout() == 7
         finally:
             del os.environ[HOOK_TIMEOUT_ENV]
+
+
+class TestTheChannelKeepsItsOwnCounsel:
+    """Three places the child's answer was allowed to decide more than it says."""
+
+    def test_one_hooks_nudge_is_not_repeated_per_payload(self, tmp_path: Path) -> None:
+        """A surface fans one call into several payloads — cline per command,
+        codex per patched file. The hook still said it once."""
+        hint = _hook(tmp_path, "hint", _emit(additionalContext="prefer Grep"))
+        verdict = run_chain(
+            _PROFILE,
+            event=HookEvent.PRE_TOOL_USE,
+            rows=[hint],
+            payloads=[_BASH, _BASH, _BASH],
+            project_dir=tmp_path,
+        )
+        assert [n.text for n in verdict.nudges] == ["prefer Grep"]
+
+    def test_two_hooks_saying_the_same_thing_still_say_it_once_each(self, tmp_path: Path) -> None:
+        """The control: dedup is per (text, author), not a global set — two
+        gates independently objecting is two pieces of evidence."""
+        first = _hook(tmp_path, "one", _emit(additionalContext="same advice"))
+        second = _hook(tmp_path, "two", _emit(additionalContext="same advice"))
+        verdict = _run(tmp_path, first, second)
+        assert [(n.text, n.hook) for n in verdict.nudges] == [
+            ("same advice", "ai-hats:one"),
+            ("same advice", "ai-hats:two"),
+        ]
+
+    def test_a_hook_cannot_rename_the_event_it_was_called_for(self, tmp_path: Path) -> None:
+        """Four shipped scripts hardcode `PreToolUse` in their reply. Letting
+        that redefine the dispatcher's own event steers the reductions."""
+        denied = _hook(
+            tmp_path, "deny", _emit(permissionDecision="deny", permissionDecisionReason="no")
+        )
+        verdict = run_chain(
+            _PROFILE,
+            event=HookEvent.POST_TOOL_USE,
+            rows=[denied],
+            payloads=[_BASH],
+            project_dir=tmp_path,
+        )
+        assert verdict.event is HookEvent.POST_TOOL_USE
+
+    def test_an_exit_two_refusal_keeps_the_answer_it_also_wrote(self, tmp_path: Path) -> None:
+        """Exit 2 is a refusal for a hook with no JSON to hand back. One that
+        DID hand some back was having it thrown away, ticket and all."""
+        spoken = json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": "needs consent",
+                    "updatedInput": {"command": "TICKET=1 git push"},
+                }
+            }
+        )
+        both = _hook(tmp_path, "both", f"cat >/dev/null; printf '%s' {json.dumps(spoken)}; exit 2")
+        verdict = _run(tmp_path, both)
+        assert verdict.decision is ChainDecision.ASK
+        assert verdict.updated_input == {"command": "TICKET=1 git push"}
+
+    def test_an_exit_two_with_nothing_to_say_still_refuses_from_stderr(
+        self, tmp_path: Path
+    ) -> None:
+        """The control for the case above: the provider-agnostic refusal."""
+        hard = _hook(tmp_path, "hard", "cat >/dev/null; echo 'BLOCKED: no' >&2; exit 2")
+        verdict = _run(tmp_path, hard)
+        assert verdict.decision is ChainDecision.DENY
+        assert "BLOCKED: no" in verdict.reason

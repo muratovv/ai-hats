@@ -95,7 +95,7 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
     return data
 
 
-def _emit_deny(event: str, reason: str) -> None:
+def _emit_deny(event: str, reason: str, advice: str = "") -> None:
     if event == "PermissionRequest":
         output = {
             "hookSpecificOutput": {
@@ -104,13 +104,16 @@ def _emit_deny(event: str, reason: str) -> None:
             }
         }
     else:
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": HookEvent.PRE_TOOL_USE.value,
-                "permissionDecision": "deny",
-                "permissionDecisionReason": reason,
-            }
+        spoken: dict = {
+            "hookEventName": HookEvent.PRE_TOOL_USE.value,
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
         }
+        # What the gates BEFORE the objector said. The dialect promises this
+        # surface carries advice; dropping it on a refusal made that false.
+        if advice:
+            spoken["additionalContext"] = advice
+        output = {"hookSpecificOutput": spoken}
     sys.stdout.write(json.dumps(output) + "\n")
 
 
@@ -136,18 +139,19 @@ def _rows(manifest: dict, event: HookEvent) -> list[HookRow]:
 
 def _emit(verdict, native_event: str) -> int:
     relay_stderr(verdict)
+    advice = "\n".join(n.text for n in verdict.nudges)
     if verdict.decision is ChainDecision.ASK:
         # Codex has a prompt only where it was already asking. Elsewhere the
         # question has nowhere to go, and a question nobody sees is an allow.
         if native_event == "PermissionRequest":
             return 0
-        _emit_deny(native_event, worded(verdict))
+        _emit_deny(native_event, worded(verdict), advice)
         return 0
     if verdict.decision is ChainDecision.DENY:
         if native_event == "PostToolUse":
             sys.stdout.write(json.dumps({"decision": "block", "reason": worded(verdict)}) + "\n")
         else:
-            _emit_deny(native_event, worded(verdict))
+            _emit_deny(native_event, worded(verdict), advice)
         return 0
     if verdict.nudges and native_event != "PermissionRequest":
         sys.stdout.write(

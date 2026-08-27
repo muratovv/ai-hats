@@ -236,12 +236,14 @@ def parse_reply(
     tail cuts a JSON document's HEAD, so a truncated body can never be parsed
     and must not be mistaken for a hook that stayed silent.
     """
-    if exit_code == REFUSAL_EXIT:
+    body = stdout.strip()
+    if exit_code == REFUSAL_EXIT and not (body and not truncated and body.startswith("{")):
+        # Exit 2 is the refusal for a hook with no JSON to hand back. One that
+        # DID hand some back is read below, or its ticket goes with the throw.
         return HookReply(
             decision=ChainDecision.DENY,
             reason=stderr.strip() or "blocked by an ai-hats guard",
         )
-    body = stdout.strip()
     if not body:
         if truncated:
             raise ReplyUnreadable("the hook's answer was truncated away entirely")
@@ -551,7 +553,9 @@ def run_chain(
                     stderr=said,
                     hatch_env=GATE_BROKEN_ACK_ENV,
                 )
-            if reply.nudge is not None:
+            if reply.nudge is not None and reply.nudge not in nudges:
+                # A surface fans one call into several payloads (cline per
+                # command, codex per patched file); the hook still said it once.
                 nudges.append(reply.nudge)
             if reply.decision in (ChainDecision.DENY, ChainDecision.ASK):
                 return ChainVerdict(
@@ -560,7 +564,10 @@ def run_chain(
                     hook=row.tag,
                     nudges=tuple(nudges),
                     updated_input=reply.updated_input,
-                    event=reply.event or event,
+                    # The dispatcher's, never the child's: four shipped scripts
+                    # hardcode `PreToolUse` in their reply, and letting that
+                    # rename the event steers the reductions below it.
+                    event=event,
                     stderr=said,
                     exit_code=run.exit_code,
                 )
@@ -667,12 +674,18 @@ def _refusal_arrives_too_late(dialect: Dialect, verdict: ChainVerdict) -> bool:
 
 def _tell_instead(verdict: ChainVerdict) -> ChainVerdict:
     """Say it rather than drop it: the gate looked and objected, and the reader
-    is the only one who can still act on that."""
+    is the only one who can still act on that.
+
+    The text told is the WORDED refusal, so a delivery failure keeps the way
+    past it — a reader handed the bare reason gets the half they cannot act on.
+    The hatch is cleared with it, having already been said.
+    """
     return replace(
         verdict,
         decision=ChainDecision.ALLOW,
-        nudges=(*verdict.nudges, Nudge(verdict.reason, verdict.hook)),
+        nudges=(*verdict.nudges, Nudge(worded(verdict), verdict.hook)),
         reason="",
+        hatch_env="",
     )
 
 

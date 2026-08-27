@@ -332,3 +332,33 @@ class TestRefusalThatArrivesTooLate:
         """The control: only a call that ALREADY RAN is too late to stop."""
         early = ChainVerdict(decision=ChainDecision.DENY, reason="no", event=HookEvent.PRE_TOOL_USE)
         assert reduce_to(self._CANNOT_UNDO, early).decision is ChainDecision.DENY
+
+
+class TestNothingIsLostInReduction:
+    _LATE_ONLY = Dialect(
+        can_ask=False, can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=True
+    )
+
+    def test_a_refusal_told_instead_still_names_its_way_past(self) -> None:
+        """`worded` folds the hatch into the text a human reads. Telling the
+        reader the bare reason instead drops the only actionable half."""
+        from ai_hats.surfaces.hook_channel import (
+            GATE_BROKEN_ACK_ENV,
+            ChainVerdict,
+            HookEvent,
+            reduce_to,
+        )
+
+        late = ChainVerdict(
+            decision=ChainDecision.DENY,
+            reason="the gate could not run",
+            hook="ai-hats:guard",
+            event=HookEvent.POST_TOOL_USE,
+            hatch_env=GATE_BROKEN_ACK_ENV,
+        )
+        told = reduce_to(self._LATE_ONLY, late)
+
+        assert told.decision is ChainDecision.ALLOW
+        assert told.nudges, "the refusal was dropped rather than told"
+        assert GATE_BROKEN_ACK_ENV in told.nudges[-1].text
+        assert told.hatch_env == "", "the hatch was folded into the text; saying it twice misleads"

@@ -54,11 +54,19 @@ def matches_claude_hook(matcher: str, agy_tool: str) -> bool:
     return matches(PROFILE, matcher, agy_tool)
 
 
-def to_claude_payload(payload: dict) -> dict:
-    """One agy event as the Claude-shaped payload the hook scripts consume."""
+def to_claude_payload(payload: dict, event: str = "") -> dict:
+    """One agy event as the Claude-shaped payload the hook scripts consume.
+
+    ``event`` is written in because agy sends it on argv, not in the payload,
+    and a hook reading no ``hook_event_name`` concludes the caller does not
+    speak the protocol: ``pre_bash_shared_state_guard.sh`` answers that with a
+    hard deny instead of the question it would otherwise put.
+    """
     if not isinstance(payload, dict):
         return {}
     adapted = dict(payload)
+    if event and not adapted.get("hook_event_name"):
+        adapted["hook_event_name"] = event
     adapted["tool_input"] = speak_args(PROFILE, _args_of(payload))
     tool = agy_tool_name(payload)
     if tool:

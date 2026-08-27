@@ -330,3 +330,22 @@ class TestArrivalsNothingComposedCanBindTo:
         assert dispatch_hook(arrival, stdin_data=_agy_payload()) == 0
         assert user_marker.read_text().strip() == "USER"
         assert not seen.exists(), "the composed chain ran on an unbindable arrival"
+
+
+def test_the_hook_is_told_which_event_it_is_answering(tmp_path: Path, monkeypatch) -> None:
+    """cline, codex and the opencode plugin all set it; agy alone did not.
+
+    `pre_bash_shared_state_guard.sh` reads `hook_event_name`, and its absence is
+    how that script decides the caller does not speak the protocol — so it took
+    the `deny_hard` branch instead of `emit_ask`, giving a hard block with no
+    consent path on a surface whose profile declares it can ask with a ticket.
+    """
+    cache_dir = _session(tmp_path, monkeypatch, "sid-event")
+    seen, script = _recording_hook(tmp_path)
+    _manifest(cache_dir, script, "Bash")
+    # The event on argv and NOWHERE in the payload — which is how agy sends it,
+    # and why a fixture that spells hook_event_name itself proves nothing.
+    native = json.dumps({"toolCall": {"name": "run_command", "args": {"CommandLine": "git push"}}})
+    dispatch_hook("PreToolUse", stdin_data=native)
+
+    assert json.loads(seen.read_text())["hook_event_name"] == "PreToolUse"

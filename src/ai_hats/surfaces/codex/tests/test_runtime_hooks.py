@@ -698,3 +698,53 @@ def test_an_allowing_hooks_stderr_still_reaches_the_operator(
 
     assert code == 0
     assert "NOT RECORDED" in stderr, f"the hook's only trace was dropped:\n{stderr!r}"
+
+
+def test_advice_gathered_before_a_refusal_still_reaches_the_model(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """`can_carry_nudges=True` says this surface holds them, so the channel
+    stops reducing them away — and then _emit dropped them on every non-allow,
+    losing what the gates BEFORE the objector had to say."""
+    cache = tmp_path / "cache"
+    mirror = cache / "codex-home" / "skills" / "guard" / "hooks"
+    mirror.mkdir(parents=True, exist_ok=True)
+    hint = _script(
+        mirror / "hint.sh",
+        "cat >/dev/null\n"
+        'printf \'%s\' \'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"additionalContext":"prefer Grep"}}\'\n',
+    )
+    guard = _script(
+        mirror / "guard.sh",
+        "cat >/dev/null\n"
+        'printf \'%s\' \'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"permissionDecision":"deny","permissionDecisionReason":"no"}}\'\n',
+    )
+    (cache / "hooks.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "session": {"id": "sid-one", "ai_hats_dir": "/project/.agent/ai-hats"},
+                "hooks": {
+                    "PreToolUse": [
+                        {"matcher": "Bash", "command": str(hint), "tag": "ai-hats:hint"},
+                        {"matcher": "Bash", "command": str(guard), "tag": "ai-hats:guard"},
+                    ]
+                },
+            }
+        )
+    )
+
+    _code, stdout, _stderr = _run(
+        {"hook_event_name": "PreToolUse", "tool_name": "exec", "tool_input": {"command": "x"}},
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "prefer Grep" in spoken.get("additionalContext", ""), (
+        f"the advice was dropped with the refusal:\n{stdout!r}"
+    )
