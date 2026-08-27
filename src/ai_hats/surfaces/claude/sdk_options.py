@@ -240,20 +240,19 @@ def build_first_user_message(
     *,
     ticket_context: str = "",
     task: str = "",
-    project_state: str = "",
     linked_context: str = "",
 ) -> str:
     """Compose the first user message for a sub-agent session.
 
-    ``PROJECT_STATE`` goes here (not in ``system_prompt``) because it is
-    per-task runtime context rather than per-role composition.
-    ``TICKET_CONTEXT``, ``LINKED_CONTEXT`` and ``TASK`` follow in that order.
-    Empty inputs are skipped; an all-empty result returns the empty string —
-    callers decide whether to skip sending a first turn at all.
+    ``TICKET_CONTEXT``, ``LINKED_CONTEXT`` (HATS-689), ``TASK`` — in that
+    order. Per-task runtime context rides the first user turn; the per-role
+    composition rides ``system_prompt``. Empty sections are skipped, all-empty
+    returns ``""``. A fourth section, ``PROJECT_STATE``, was dropped in
+    HATS-681 and its parameter in HATS-1100.
 
-    ``LINKED_CONTEXT`` (HATS-689) carries the cards of the ticket's directly-
-    linked tasks, assembled by ``linked_context.load_linked_context``. This is
-    the live Claude channel for that section; the CLI surfaces mirror it in
+    ``LINKED_CONTEXT`` carries the cards of the ticket's directly-linked
+    tasks, assembled by ``linked_context.load_linked_context``. This is the
+    live Claude channel for that section; the CLI surfaces mirror it in
     ``session_artifacts.assemble_meta_prompt``.
 
     Callers reach this through :func:`assemble_first_user_message`, which is
@@ -261,8 +260,6 @@ def build_first_user_message(
     a one-line stand-in for the card (HATS-1552).
     """
     sections: list[str] = []
-    if project_state:
-        sections.append(f"# PROJECT_STATE\n{project_state}")
     if ticket_context:
         sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
     if linked_context:
