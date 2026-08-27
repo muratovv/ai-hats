@@ -16,7 +16,7 @@ import click
 from ai_hats_core import scrubbed_git_env
 from .. import health
 from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV
-from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT
+from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT, PINNED_PYTHON
 from ._helpers import _assembler, _project_dir, console, logger
 
 if TYPE_CHECKING:
@@ -28,9 +28,6 @@ if TYPE_CHECKING:
 # tags/branches keyed by refspec, not arbitrary commit ids — for raw SHA we
 # defer to pip's own resolution downstream).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
-
-# Lowest supported interpreter (pyproject requires-python>=3.11); uv provisions it.
-PINNED_PYTHON = "3.11"
 
 
 def _require_uv() -> None:

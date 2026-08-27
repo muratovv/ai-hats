@@ -5,7 +5,7 @@ flow:   a maintainer checks that a released ai-hats installs the way a user's he
         the workspace sources this repo carries
 cmds:
     uv build --wheel . -o dist          # the wheel a user would get
-    uv venv --python 3.11 venv          # a fresh interpreter, outside the repo
+    uv venv --python 3.13 venv          # a fresh interpreter, outside the repo
     uv pip install --python venv/bin/python dist/ai_hats-0.0.0-py3-none-any.whl
 expect: the installed wheel imports `ai_hats_core.migrations` and `ai_hats.migrations`;
         when a first-party pin is not yet visible to the resolver the test skips
@@ -48,7 +48,7 @@ def _first_party_pins() -> list[Requirement]:
 
 def _venv(tmp_path: Path) -> Path:
     venv = tmp_path / "venv"
-    _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path)
+    _run(["uv", "venv", "--python", "3.13", str(venv)], cwd=tmp_path)
     return venv / "bin" / "python"
 
 
