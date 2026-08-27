@@ -219,6 +219,7 @@ def test_the_shipped_declaration_renders_each_grammar_by_its_own_field():
         "plan->execute": "entering 'execute'",
         "->done": "entering 'done'",
         "pre-merge": "wt point",
+        "pre-discard": "wt point",
     }
 
 

@@ -33,13 +33,6 @@ except ImportError:  # helper absent -> say so; never skip quietly
 
 _backlog_off_journaled = False
 
-# HATS-1642 — the allow-rule lint, carried here because a bound check cannot
-# resolve from a linked worktree (ADR-0019 D9 clause 4).
-try:
-    import consent_permission_lint as _permission_lint
-except ImportError:  # sibling absent -> no warning to raise; every gate still runs
-    _permission_lint = None
-
 # HATS-1642 — the ticket the ask hands to the rack process. Imported, never
 # re-spelled: one module owns the nonce and the directory.
 try:
@@ -595,14 +588,28 @@ RACK_SAFE_OPS = frozenset({"--log", "--set", "--append", "--attach", "--link", "
 RACK_SAFE_OPTS = frozenset({"--json", "--tasks-dir"})
 
 
-def merge_branch(args) -> str:
-    """What ``ai-hats wt merge`` will merge, or ``""`` for another call.
+#: The `ai-hats wt` operations a role can declare: (type, point, headline).
+#: A table because there are two of them — `wt.discard` joined in ADR-0031 D4 —
+#: and two copies of one loop is how the second one goes quiet.
+WT_OPERATIONS = (
+    ("wt.merge", "pre-merge", "merging {subject} into master needs your consent."),
+    ("wt.discard", "pre-discard", "discarding {subject} destroys its work."),
+)
+
+
+def wt_subject(operation: str, args) -> str:
+    """What ``ai-hats wt <verb>`` will act on, or ``""`` for another call.
 
     The branch may be omitted — the CLI detects it from the cwd — so this is a
     LABEL for the question, never the binding. What binds is the invocation.
     """
-    reading = _read_operation("wt.merge", "ai-hats", args)
+    reading = _read_operation(operation, "ai-hats", args)
     return "" if reading is None else reading.subject
+
+
+def merge_branch(args) -> str:
+    """What ``ai-hats wt merge`` will merge, or ``""`` for another call."""
+    return wt_subject("wt.merge", args)
 
 
 def transition_target(args):
@@ -673,35 +680,6 @@ def allow_verdict(cmd: str) -> dict:
             "state. The gated moves are answered by this guard, not by a rule."
         ),
     }
-
-
-def permission_warning(cmd: str) -> str:
-    """Say what this session has not been told about the allow-list (HATS-1642).
-
-    A nudge, never a verdict — it rides ``additionalContext`` so a noisy config
-    cannot cost anyone a tool call. Any failure here is journaled and dropped:
-    the gates above have already decided, and a lint may not undo them.
-
-    The marker is consulted BEFORE the scan, not after (HATS-1754): every Bash
-    call reaches this, and an unchanged config now costs one digest instead of
-    walking every rule against every spelling.
-    """
-    if _permission_lint is None:
-        return ""
-    try:
-        store = _tickets_dir(Path.cwd())
-        if store is None:
-            # Nowhere to remember: better repeated than lost.
-            return _permission_lint.warning_for()
-        marker = store.parent / "consent-lint.json"
-        session = os.environ.get("AI_HATS_SESSION_ID", "")
-        said = _permission_lint.to_say(marker, session, _permission_lint.digest_of())
-        if not (said.findings or said.notes):
-            return ""
-        return _permission_lint.warning_for(findings=said.findings, notes=said.notes)
-    except Exception as exc:
-        journal_bypass("fail-open", f"permission lint failed: {exc!r}", hook="safety_gate.py")
-        return ""
 
 
 def prefixed_command(cmd: str, anchor: str, ordinal: int, total: int, assignment: str) -> str:
@@ -877,27 +855,27 @@ def _wrapper_bypass_verdict(cmd: str, *, targets=None, points=None) -> dict:
         if target in declared_targets:
             return _wrapper_bypass("rack transition")
 
-    merge_declared = None
+    declared: dict = {}
     wt_lookup_bypass = _changes_command_lookup(cmd, "ai-hats")
-    for anchor, _ordinal, _total, call in anchored_calls(cmd, "ai-hats"):
-        branch = merge_branch(call)
-        if not branch:
-            continue
-        if merge_declared is None:
-            merge_declared = "pre-merge" in points("wt.merge")
-        bypasses_path = (
-            call[0] != "ai-hats" or os.path.basename(anchor) == "command" or wt_lookup_bypass
-        )
-        if merge_declared and bypasses_path:
-            return _wrapper_bypass("ai-hats wt merge")
-    for call in _python_module_calls(cmd, "ai-hats"):
-        branch = merge_branch(["ai-hats", *call])
-        if not branch:
-            continue
-        if merge_declared is None:
-            merge_declared = "pre-merge" in points("wt.merge")
-        if merge_declared:
-            return _wrapper_bypass("ai-hats wt merge")
+    for operation, point, _headline in WT_OPERATIONS:
+        verb = f"ai-hats wt {operation.split('.')[1]}"
+        for anchor, _ordinal, _total, call in anchored_calls(cmd, "ai-hats"):
+            if not wt_subject(operation, call):
+                continue
+            if operation not in declared:
+                declared[operation] = point in points(operation)
+            bypasses_path = (
+                call[0] != "ai-hats" or os.path.basename(anchor) == "command" or wt_lookup_bypass
+            )
+            if declared[operation] and bypasses_path:
+                return _wrapper_bypass(verb)
+        for call in _python_module_calls(cmd, "ai-hats"):
+            if not wt_subject(operation, ["ai-hats", *call]):
+                continue
+            if operation not in declared:
+                declared[operation] = point in points(operation)
+            if declared[operation]:
+                return _wrapper_bypass(verb)
     return {}
 
 
@@ -953,26 +931,28 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
 
     # `ai-hats wt merge` — the OTHER road into master (HATS-1130). Same question,
     # different engine, which is why one declaration has to cover both.
-    for anchor, ordinal, total, call in anchored_calls(cmd, "ai-hats"):
-        branch = merge_branch(call)
-        if not branch or "pre-merge" not in _operation_points("wt.merge"):
-            continue
-        if grant_covers("wt.merge", branch, cmd):
-            return {}
-        for flag in (CONSENT_ACK, WT_MERGE_ACK):
-            if os.environ.get(flag) == "1":
-                journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
+    for operation, point, headline in WT_OPERATIONS:
+        for anchor, ordinal, total, call in anchored_calls(cmd, "ai-hats"):
+            subject = wt_subject(operation, call)
+            if not subject or point not in _operation_points(operation):
+                continue
+            if grant_covers(operation, subject, cmd):
                 return {}
-        return _ask_for(
-            cmd,
-            tool_input,
-            call,
-            anchor,
-            ordinal,
-            total,
-            branch,
-            f"merging {branch} into master needs your consent.",
-        )
+            legacy = (WT_MERGE_ACK,) if operation == "wt.merge" else ()
+            for flag in (CONSENT_ACK, *legacy):
+                if os.environ.get(flag) == "1":
+                    journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
+                    return {}
+            return _ask_for(
+                cmd,
+                tool_input,
+                call,
+                anchor,
+                ordinal,
+                total,
+                subject,
+                headline.format(subject=subject),
+            )
     return {}
 
 
@@ -1169,9 +1149,6 @@ def main() -> int:
         journal_bypass("fail-open", f"consent ask failed: {exc!r}", hook="safety_gate.py", cmd=cmd)
         return 0
 
-    nudge = permission_warning(cmd)
-    if nudge:
-        decision = {**decision, "additionalContext": nudge}
     if decision:
         _emit(decision)
     return 0

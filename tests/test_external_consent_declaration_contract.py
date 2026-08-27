@@ -110,6 +110,8 @@ def test_a_lifecycle_role_declares_only_external_wrapper_consent():
         # HATS-1752: every road into `done`, not the review edge alone.
         ("consent_gate", ("rack.transition",), "->done"),
         ("consent_gate", ("wt.merge",), "pre-merge"),
+        # ADR-0031 D4: the teardown road, which no hook saw before.
+        ("consent_gate", ("wt.discard",), "pre-discard"),
     }
 
 

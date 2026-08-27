@@ -37,6 +37,9 @@ composition:
       wt.merge:
         - at: [pre-merge]
           consent: true
+      wt.discard:
+        - at: [pre-discard]
+          consent: true
 injection: |
   ## AGENT BEHAVIOR
 

@@ -67,11 +67,15 @@ def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
                         [
                             {
                                 "app": "consent_gate",
-                                "path": ["wt.merge"],
-                                "selector": "pre-merge",
+                                "path": [operation],
+                                "selector": point,
                                 "from": None,
                                 "to": None,
                             }
+                            for operation, point in (
+                                ("wt.merge", "pre-merge"),
+                                ("wt.discard", "pre-discard"),
+                            )
                         ]
                         if wt
                         else []
@@ -85,14 +89,7 @@ def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
 
 @functools.lru_cache(maxsize=1)
 def _neutral_root() -> Path:
-    """A cwd and HOME this file owns.
-
-    The hook's permission lint scans `(Path.cwd(), Path.home())`
-    (`consent_permission_lint.py:138`), so an inherited pair makes every
-    `== {}` here an assertion about someone else's `.claude/settings*.json` —
-    red in the main checkout the moment a session accepts an allow-rule, green
-    in a worktree that has none. Found by the HATS-1716 audit, measured both ways.
-    """
+    """A cwd and HOME this file owns, so no arm reads the developer's own state."""
     root = Path(tempfile.mkdtemp(prefix="ai-hats-safety-gate-neutral-"))
     # Not a `tmp_path`: the callers are plain functions, not fixtures. Reaped at
     # exit so the tier does not leave one dir per xdist worker per run behind.
@@ -333,37 +330,6 @@ def _with_allow(repo, rules) -> None:
     )
 
 
-def test_a_rule_that_silences_a_guard_is_reported_without_blocking(repo):
-    """A bound check cannot resolve from a worktree (ADR-0019 D9 clause 4), so
-    the warning rides the hook — non-gating, on additionalContext."""
-    _with_allow(repo, ["Bash(rack transition *)", "Bash(ai-hats:*)"])
-
-    out = _decide("ls -la", cwd=repo, env_extra={"HOME": str(repo)})
-
-    said = out.get("additionalContext", "")
-    assert "rack transition" in said and "ai-hats:*" in said, out
-    assert "merge into master" in said, "the ai-hats rule silences the merge pause too"
-    assert "settings.local.json" in said, said
-    assert out.get("permissionDecision") is None, f"a lint must not gate: {out}"
-
-
-def test_the_warning_is_said_once_per_session(repo):
-    _with_allow(repo, ["Bash(rack transition *)"])
-    env = {"HOME": str(repo), "AI_HATS_SESSION_ID": "sid-1"}
-
-    assert _decide("ls -la", cwd=repo, env_extra=env).get("additionalContext"), "never said"
-    assert _decide("ls -la", cwd=repo, env_extra=env) == {}, "said twice in one session"
-    other = {**env, "AI_HATS_SESSION_ID": "sid-2"}
-    assert _decide("ls -la", cwd=repo, env_extra=other).get("additionalContext"), "not re-said"
-
-
-def test_a_clean_allow_list_draws_no_comment(repo):
-    """Fail-under-revert: without this, a lint that warns always would pass."""
-    _with_allow(repo, ["Bash(rack context *)", "Bash(git status:*)"])
-
-    assert _decide("ls -la", cwd=repo, env_extra={"HOME": str(repo)}) == {}
-
-
 def test_the_consent_question_does_not_depend_on_the_allow_list(repo):
     """The whole point of the move: no settings file is consulted to decide it."""
     (repo / ".claude").mkdir()
@@ -556,6 +522,31 @@ def test_a_direct_merge_into_master_asks_where_the_role_declared_it(tmp_path):
     assert out.get("permissionDecision") == "ask", f"the merge went unasked: {out}"
     assert "task/hats-1" in out["permissionDecisionReason"], out
     assert out["updatedInput"]["command"].startswith("AI_HATS_CONSENT_TICKET="), out
+
+
+def test_discarding_a_worktree_asks_where_the_role_declared_it(tmp_path):
+    """ADR-0031 D4 — it can fall back to `rm -rf`, and until this point existed
+    only a `permissions.ask` rule stood in front of it, which headless has not."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "execute", wt=True)
+
+    out = _decide("ai-hats wt discard task/hats-1", cwd=tmp_path)
+
+    assert out.get("permissionDecision") == "ask", f"the discard went unasked: {out}"
+    assert "task/hats-1" in out["permissionDecisionReason"], out
+    assert out["updatedInput"]["command"].startswith("AI_HATS_CONSENT_TICKET="), out
+
+
+def test_a_read_only_wt_verb_is_not_asked_about(tmp_path):
+    """Control: the declaration names two verbs, and `wt list` is neither."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "execute", wt=True)
+
+    assert _decide("ai-hats wt list", cwd=tmp_path) == {}
 
 
 def test_a_role_that_declared_no_merge_point_is_not_asked(tmp_path):
