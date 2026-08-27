@@ -104,14 +104,33 @@ class TestParseReply:
             parse_reply("", exit_code=0, truncated=True)
 
 
-_MUTE = Dialect(can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=False)
-_FLUENT = Dialect(can_ask_with_ticket=True, can_deny_after=True, can_carry_nudges=True)
+_MUTE = Dialect(
+    can_ask=False, can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=False
+)
+_FLUENT = Dialect(
+    can_ask=True, can_ask_with_ticket=True, can_deny_after=True, can_carry_nudges=True
+)
+#: A prompt, but no way to carry a rewrite with it — codex's shape.
+_PROMPT_ONLY = Dialect(
+    can_ask=True, can_ask_with_ticket=False, can_deny_after=True, can_carry_nudges=True
+)
 
 
 class TestReduceTo:
     def test_a_surface_that_cannot_ask_refuses_instead(self) -> None:
         asked = ChainVerdict(decision=ChainDecision.ASK, reason="needs consent")
         assert reduce_to(_MUTE, asked).decision is ChainDecision.DENY
+
+    def test_a_question_with_nothing_to_lose_survives_where_a_prompt_exists(self) -> None:
+        """Deferring to the surface's own prompt drops nothing when no ticket
+        travelled with the question."""
+        asked = ChainVerdict(decision=ChainDecision.ASK, reason="needs consent")
+        assert reduce_to(_PROMPT_ONLY, asked).decision is ChainDecision.ASK
+
+    def test_a_question_carrying_a_ticket_refuses_where_the_ticket_cannot_follow(self) -> None:
+        """The prompt would show the ORIGINAL command and approve that instead."""
+        asked = ChainVerdict(decision=ChainDecision.ASK, updated_input={"command": "TICKET=1 x"})
+        assert reduce_to(_PROMPT_ONLY, asked).decision is ChainDecision.DENY
 
     def test_the_refusal_drops_the_rewrite_the_question_carried(self) -> None:
         """Approving the ticketed command is the question; without it, nothing
@@ -184,3 +203,13 @@ def test_an_uncompilable_matcher_still_guards_the_tools_it_spells() -> None:
 
     assert matches(profiles.CLINE, "Edit|Write|[", "replace_in_file")
     assert not matches(profiles.CLINE, "Edit|Write|[", "read_file")
+
+
+def test_a_call_we_cannot_name_meets_every_gate_rather_than_none() -> None:
+    """Filtering on a name we do not have would drop every gate for exactly the
+    call we understand least. Each hook decides for itself instead."""
+    from ai_hats.surfaces import profiles
+    from ai_hats.surfaces.hook_channel import matches
+
+    assert matches(profiles.AGY, "Edit|Write|MultiEdit", "")
+    assert matches(profiles.AGY, "Bash", "")

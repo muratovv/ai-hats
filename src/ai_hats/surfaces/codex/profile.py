@@ -21,7 +21,9 @@ PROFILE = SurfaceProfile(
     # Codex mirrors skills outside the session cache, so only the manifest it
     # wrote knows where they landed.
     skills_subpath=None,
-    speaks=Dialect(can_ask_with_ticket=False, can_deny_after=True, can_carry_nudges=True),
+    speaks=Dialect(
+        can_ask=True, can_ask_with_ticket=False, can_deny_after=True, can_carry_nudges=True
+    ),
 )
 
 __all__ = ["PROFILE"]

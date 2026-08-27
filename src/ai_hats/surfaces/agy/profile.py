@@ -22,7 +22,9 @@ PROFILE = SurfaceProfile(
     },
     manifest_subpath=(),
     skills_subpath=("rules", ".agents", "skills"),
-    speaks=Dialect(can_ask_with_ticket=True, can_deny_after=True, can_carry_nudges=True),
+    speaks=Dialect(
+        can_ask=True, can_ask_with_ticket=True, can_deny_after=True, can_carry_nudges=True
+    ),
 )
 
 __all__ = ["PROFILE"]

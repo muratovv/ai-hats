@@ -24,7 +24,9 @@ PROFILE = SurfaceProfile(
     arg_names={},
     manifest_subpath=(),
     skills_subpath=("skills",),
-    speaks=Dialect(can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=True),
+    speaks=Dialect(
+        can_ask=False, can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=True
+    ),
 )
 
 __all__ = ["PROFILE"]

@@ -23,7 +23,9 @@ PROFILE = SurfaceProfile(
     arg_names={},
     manifest_subpath=("opencode",),
     skills_subpath=("opencode-xdg", "opencode", "skills"),
-    speaks=Dialect(can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=False),
+    speaks=Dialect(
+        can_ask=False, can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=False
+    ),
 )
 
 __all__ = ["PROFILE"]

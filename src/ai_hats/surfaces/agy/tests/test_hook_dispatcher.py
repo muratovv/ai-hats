@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.surfaces.agy.hook_dispatcher import HOOK_TIMEOUT_S, _hook_timeout, dispatch_hook
+from ai_hats.surfaces.agy.hook_dispatcher import dispatch_hook
+from ai_hats.surfaces.hook_channel import HOOK_TIMEOUT_S, resolve_hook_timeout
 
 
 def _in_session(monkeypatch, session_id: str, project: Path) -> None:
@@ -148,13 +149,13 @@ def test_unusable_budget_override_keeps_the_default(monkeypatch, raw: str) -> No
     """
     monkeypatch.setenv("AI_HATS_AGY_HOOK_TIMEOUT_S", raw)
 
-    assert _hook_timeout() == HOOK_TIMEOUT_S
+    assert resolve_hook_timeout() == HOOK_TIMEOUT_S
 
 
 def test_positive_budget_override_is_honoured(monkeypatch) -> None:
     monkeypatch.setenv("AI_HATS_AGY_HOOK_TIMEOUT_S", "2.5")
 
-    assert _hook_timeout() == 2.5
+    assert resolve_hook_timeout() == 2.5
 
 
 # --- the claude bridge, driven through the dispatcher (HATS-1776) -----------

@@ -12,14 +12,19 @@ already spell it and need no translation.
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
+
+from ai_hats_core.deadline import Deadline
 
 from ..constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
-from ..hook_exec import HookOutcomeKind
+from ..env import AI_HATS_PROJECT_DIR_ENV
+from ..hook_exec import HookOutcomeKind, HookRun, HookVerdict, run_hook
 
 #: The three matcher-vocabulary names every shipped file-mutation row treats as
 #: one class, so a profile states the class rather than restating the trio.
@@ -74,9 +79,11 @@ class Dialect:
     exists in one copy rather than one per surface.
     """
 
-    #: Ask the human AND put the rewritten input on the call, atomically. One
-    #: capability, not two: a question without the ticket approves the original
-    #: command, which is a broken consent rather than a degraded one.
+    #: Put a question to the human at all.
+    can_ask: bool
+    #: Carry the question AND the rewritten input together. A ticketed question
+    #: asked without its ticket approves the ORIGINAL command, so the two are
+    #: one capability wherever a ticket is present.
     can_ask_with_ticket: bool
     #: Cancel a call that already ran, on PostToolUse.
     can_deny_after: bool
@@ -138,9 +145,12 @@ def matches(profile: SurfaceProfile, matcher: str, native_tool: str) -> bool:
     """
     if not matcher or matcher == "*":
         return True
+    if not native_tool:
+        # Nothing to filter ON. Filtering anyway would silently drop every gate
+        # for a call whose payload we could not read — so run them all instead
+        # and let each decide for itself.
+        return True
     candidates = profile.matcher_names(native_tool)
-    if not candidates:
-        return False
     try:
         return any(re.fullmatch(matcher, name) is not None for name in candidates)
     except re.error:
@@ -279,11 +289,209 @@ class ChainVerdict:
     hatch_env: str = ""
     #: The fact behind a verdict ai-hats imposed rather than a hook uttering it.
     kind: HookOutcomeKind | None = None
+    #: What the deciding hook exited with. `kind` is coarser — a surface whose
+    #: own protocol IS the exit code has to hand back the number it was given.
+    exit_code: int | None = None
 
     @property
     def gated(self) -> bool:
         """The agent may not proceed on its own."""
         return self.decision in (ChainDecision.DENY, ChainDecision.ASK)
+
+
+#: What the whole chain for one tool call may spend. A request, not the
+#: timeout: the surface's own bound is the ceiling above it, and it must be the
+#: larger of the two or the dispatcher is killed before it can say anything.
+HOOK_TIMEOUT_S: float = 60.0
+HOOK_TIMEOUT_ENV = "AI_HATS_HOOK_TIMEOUT_S"
+
+#: The name this bound had while only one channel of four offered it. Honoured
+#: so a config that already sets it does not stop working in silence, which is
+#: the failure mode this whole channel exists to remove.
+RETIRED_TIMEOUT_ENVS = ("AI_HATS_AGY_HOOK_TIMEOUT_S",)
+
+#: How much room the surface must leave above the chain, so a chain that spends
+#: everything still reports instead of dying mid-sentence.
+SURFACE_TIMEOUT_MARGIN_S: float = 30.0
+
+#: What a hook's own gate cannot be reopened without.
+GATE_BROKEN_ACK_ENV = "AI_HATS_GATE_BROKEN_ACK"
+
+#: A reply must parse WHOLE, and the primitive returns a tail — which cuts a
+#: JSON document's head off. Set far above the largest shipped reply measured.
+REPLY_BYTES = 256 * 1024
+
+_MATERIALIZATION_KINDS = frozenset(
+    {
+        HookOutcomeKind.SCRIPT_MISSING,
+        HookOutcomeKind.NOT_EXECUTABLE,
+        HookOutcomeKind.COMMAND_NOT_FOUND,
+        HookOutcomeKind.EXEC_FAILED,
+        HookOutcomeKind.LOG_UNUSABLE,
+    }
+)
+
+
+def resolve_hook_timeout(environ: Mapping[str, str] | None = None) -> float:
+    """The chain's budget: ``AI_HATS_HOOK_TIMEOUT_S`` or the default.
+
+    Anything unusable falls back — a typo must not disarm the bound.
+    """
+    env = environ if environ is not None else os.environ
+    raw = env.get(HOOK_TIMEOUT_ENV)
+    if not raw:
+        for retired in RETIRED_TIMEOUT_ENVS:
+            raw = env.get(retired)
+            if raw:
+                sys.stderr.write(
+                    f"ai-hats: {retired} is now {HOOK_TIMEOUT_ENV} and bounds every "
+                    f"surface, not one — honouring it this run; rename it.\n"
+                )
+                break
+    if not raw:
+        return HOOK_TIMEOUT_S
+    try:
+        asked = float(raw)
+    except ValueError:
+        return HOOK_TIMEOUT_S
+    return asked if asked > 0 else HOOK_TIMEOUT_S
+
+
+def surface_timeout(environ: Mapping[str, str] | None = None) -> float:
+    """What a surface must give its dispatcher, derived so the two cannot drift.
+
+    Writing the surface's own number by hand is how codex came to bound the
+    dispatcher and the hook at the same 60 seconds, which made the dispatcher's
+    every timeout branch unreachable and left a killed chain with no verdict.
+    """
+    return resolve_hook_timeout(environ) + SURFACE_TIMEOUT_MARGIN_S
+
+
+@dataclass(frozen=True)
+class HookRow:
+    """One composed row of the session manifest."""
+
+    command: Path
+    matcher: str
+    tag: str
+
+
+def _imposed(run: HookRun, row: HookRow, event: HookEvent | None) -> ChainVerdict | None:
+    """The verdict ai-hats owes when the gate could not be DELIVERED.
+
+    ``None`` when the hook ran and answered — that answer is between its author
+    and whoever it stopped, and carries no hatch of ours.
+    """
+    if run.verdict in (HookVerdict.PASS, HookVerdict.REFUSE):
+        return None
+    out_of_time = (HookOutcomeKind.TIMED_OUT, HookOutcomeKind.NO_TIME_LEFT)
+    hatch = HOOK_TIMEOUT_ENV if run.kind in out_of_time else GATE_BROKEN_ACK_ENV
+    return ChainVerdict(
+        decision=ChainDecision.DENY,
+        reason=run.reason,
+        hook=row.tag,
+        event=event,
+        stderr=run.stderr,
+        hatch_env=hatch,
+        kind=run.kind,
+        exit_code=run.exit_code,
+    )
+
+
+def run_chain(
+    profile: SurfaceProfile,
+    *,
+    event: HookEvent,
+    rows: Sequence[HookRow],
+    payloads: Sequence[dict],
+    project_dir: Path,
+    environ: Mapping[str, str] | None = None,
+    log_dir: Path | None = None,
+) -> ChainVerdict:
+    """Run every row this call matches and return what the chain concluded.
+
+    One deadline covers the whole call, so a chain cannot outlive the bound its
+    surface gave the dispatcher; each hook draws its budget through it and a
+    chain with nothing left refuses, naming the variable that widens it.
+    """
+    budget = resolve_hook_timeout(environ)
+    deadline = Deadline.without_lock(budget, why=f"{profile.label} {event.value}")
+    nudges: list[Nudge] = []
+    for payload in payloads:
+        tool = str(payload.get("tool_name", ""))
+        for row in rows:
+            if not matches(profile, row.matcher, tool):
+                continue
+            run = run_hook(
+                row.command,
+                point=f"{profile.label}:{event.value}",
+                budget=budget,
+                deadline=deadline,
+                project_dir=project_dir,
+                stdin_payload=json.dumps(payload).encode("utf-8"),
+                tail_bytes=REPLY_BYTES,
+                log_path=(
+                    None if log_dir is None else log_dir / f"{event.value}-{row.command.name}.log"
+                ),
+            )
+            imposed = _imposed(run, row, event)
+            if imposed is not None:
+                return replace(imposed, nudges=tuple(nudges))
+            try:
+                reply = parse_reply(
+                    run.said,
+                    exit_code=run.exit_code if run.exit_code is not None else 0,
+                    hook=row.tag,
+                    stderr=run.stderr,
+                    truncated=run.truncated,
+                )
+            except ReplyUnreadable as exc:
+                return ChainVerdict(
+                    decision=ChainDecision.DENY,
+                    reason=f"{row.tag}: {exc}",
+                    hook=row.tag,
+                    nudges=tuple(nudges),
+                    event=event,
+                    stderr=run.stderr,
+                    hatch_env=GATE_BROKEN_ACK_ENV,
+                )
+            if reply.nudge is not None:
+                nudges.append(reply.nudge)
+            if reply.decision in (ChainDecision.DENY, ChainDecision.ASK):
+                return ChainVerdict(
+                    decision=reply.decision,
+                    reason=reply.reason or f"blocked by {row.tag}",
+                    hook=row.tag,
+                    nudges=tuple(nudges),
+                    updated_input=reply.updated_input,
+                    event=reply.event or event,
+                    stderr=run.stderr,
+                    exit_code=run.exit_code,
+                )
+    return ChainVerdict(decision=ChainDecision.ALLOW, nudges=tuple(nudges), event=event)
+
+
+def project_dir_from(environ: Mapping[str, str] | None = None) -> Path:
+    """The project the gates must inspect, from the pin the launcher wrote."""
+    env = environ if environ is not None else os.environ
+    pinned = env.get(AI_HATS_PROJECT_DIR_ENV)
+    return Path(pinned) if pinned else Path.cwd()
+
+
+def worded(verdict: ChainVerdict) -> str:
+    """The refusal a human reads, with the way out it leaves open.
+
+    A gate's own refusal needs no hatch — arguing with it is between its author
+    and whoever it stopped. Everything ai-hats imposed owes a named exit, or it
+    only teaches the reader to reach for the switch that disables everything.
+    """
+    if not verdict.hatch_env:
+        return verdict.reason
+    if verdict.hatch_env == HOOK_TIMEOUT_ENV:
+        way_out = f"the gate hit its budget — raise {verdict.hatch_env} if it needs longer"
+    else:
+        way_out = f"this gate could not run — set {verdict.hatch_env}=1 to proceed past it"
+    return f"{verdict.reason}\nai-hats: {way_out}"
 
 
 def reduce_to(dialect: Dialect, verdict: ChainVerdict) -> ChainVerdict:
@@ -293,25 +501,41 @@ def reduce_to(dialect: Dialect, verdict: ChainVerdict) -> ChainVerdict:
     needs both, and returning after the first would leave the second in place.
     """
     reduced = verdict
-    if reduced.decision is ChainDecision.ASK and not dialect.can_ask_with_ticket:
-        reduced = replace(
-            reduced,
-            decision=ChainDecision.DENY,
-            reason=(
-                f"{reduced.reason or 'this call needs explicit consent'}; "
-                "this surface cannot ask for consent or carry a rewritten "
-                "command, so grant it outside this tool call and retry"
-            ),
-            # The rewrite went with the question; keeping it would hand the
-            # surface an input nobody approved.
-            updated_input=None,
-        )
+    if reduced.decision is ChainDecision.ASK:
+        # A ticketed question asked without its ticket approves the original
+        # command; a question this surface cannot put at all is not a question.
+        loses_ticket = bool(reduced.updated_input) and not dialect.can_ask_with_ticket
+        if loses_ticket or not dialect.can_ask:
+            reduced = replace(
+                reduced,
+                decision=ChainDecision.DENY,
+                reason=(
+                    f"{reduced.reason or 'this call needs explicit consent'}; "
+                    "this surface cannot carry the consent this gate asked for, "
+                    "so grant it outside this tool call and retry"
+                ),
+                updated_input=None,
+            )
     if reduced.nudges and not dialect.can_carry_nudges:
         reduced = replace(reduced, nudges=())
     return reduced
 
 
 __all__ = [
+    "RETIRED_TIMEOUT_ENVS",
+    "project_dir_from",
+    "worded",
+    "surface_timeout",
+    "native_arg_keys",
+    "speak_args",
+    "run_chain",
+    "resolve_hook_timeout",
+    "SURFACE_TIMEOUT_MARGIN_S",
+    "REPLY_BYTES",
+    "HookRow",
+    "GATE_BROKEN_ACK_ENV",
+    "HOOK_TIMEOUT_S",
+    "HOOK_TIMEOUT_ENV",
     "FILE_MUTATION_NAMES",
     "ChainDecision",
     "ChainVerdict",

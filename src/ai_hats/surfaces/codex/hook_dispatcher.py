@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import json
 import os
-import signal
-import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
 from ai_hats.env import ENV_AI_HATS_DIR, ENV_SESSION_CACHE_DIR
 from ai_hats_observe.trace import ENV_SESSION_ID
-from .claude_hook_adapter import matches_claude_hook, to_claude_hook_payloads
+
+from ..hook_channel import (
+    ChainDecision,
+    HookEvent,
+    HookRow,
+    project_dir_from,
+    reduce_to,
+    run_chain,
+    worded,
+)
+from .claude_hook_adapter import to_claude_hook_payloads
+from .profile import PROFILE
 
 DISPATCHER_COMMAND = (
     'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] && [ -n "$AI_HATS_DIR" ] '
@@ -21,16 +29,6 @@ DISPATCHER_COMMAND = (
     '-m ai_hats.surfaces.codex.hook_dispatcher; else printf "%s\\n" '
     '"ai-hats-codex-hook: incomplete dispatcher environment" >&2; exit 2; fi\''
 )
-
-HOOK_TIMEOUT_S = 60.0
-
-
-@dataclass(frozen=True)
-class _HookResult:
-    decision: str = ""
-    reason: str = ""
-    context: str = ""
-    raw: dict | None = None
 
 
 class _ManifestError(RuntimeError):
@@ -95,68 +93,6 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
     return data
 
 
-def _kill_group(running: subprocess.Popen) -> None:
-    try:
-        os.killpg(os.getpgid(running.pid), signal.SIGKILL)
-    except OSError:
-        running.kill()
-
-
-def _run(command: str, payload: dict) -> _HookResult:
-    try:
-        with subprocess.Popen(  # noqa: S603 - manifest pins an executable inside skills_root
-            [command],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=os.environ.copy(),
-            start_new_session=True,
-        ) as running:
-            try:
-                stdout, stderr = running.communicate(
-                    input=json.dumps(payload), timeout=HOOK_TIMEOUT_S
-                )
-            except subprocess.TimeoutExpired:
-                _kill_group(running)
-                return _HookResult("deny", f"hook timed out after {HOOK_TIMEOUT_S:g}s: {command}")
-            code = running.returncode
-    except (OSError, ValueError) as exc:
-        return _HookResult("deny", f"hook could not start: {command}: {exc}")
-
-    if code == 2:
-        return _HookResult("deny", stderr.strip() or f"hook blocked: {command}")
-    if code != 0:
-        return _HookResult("deny", stderr.strip() or f"hook failed with exit {code}: {command}")
-    if stderr:
-        # Bypass journals and fail-open diagnostics deliberately use stderr;
-        # swallowing it here would erase the audit trail while keeping the
-        # underlying permission decision unchanged.
-        sys.stderr.write(stderr)
-    output = stdout.strip()
-    if not output:
-        return _HookResult()
-    try:
-        raw = json.loads(output)
-    except ValueError:
-        return _HookResult("deny", f"hook returned invalid JSON: {command}")
-    if not isinstance(raw, dict):
-        return _HookResult("deny", f"hook returned non-object JSON: {command}")
-    hook_output = raw.get("hookSpecificOutput")
-    hook_output = hook_output if isinstance(hook_output, dict) else {}
-    decision = str(hook_output.get("permissionDecision", "")).lower()
-    reason = str(hook_output.get("permissionDecisionReason", ""))
-    if raw.get("decision") == "block":
-        decision = "deny"
-        reason = str(raw.get("reason", ""))
-    return _HookResult(
-        decision=decision,
-        reason=reason,
-        context=str(hook_output.get("additionalContext", "")),
-        raw=raw,
-    )
-
-
 def _emit_deny(event: str, reason: str) -> None:
     if event == "PermissionRequest":
         output = {
@@ -176,6 +112,55 @@ def _emit_deny(event: str, reason: str) -> None:
     sys.stdout.write(json.dumps(output) + "\n")
 
 
+def _rows(manifest: dict, event: HookEvent) -> list[HookRow]:
+    """The composed rows for ``event``, or a manifest error naming what is wrong."""
+    raw = manifest["hooks"].get(event.value, [])
+    rows: list[HookRow] = []
+    for entry in raw if isinstance(raw, list) else []:
+        if not isinstance(entry, dict):
+            raise _ManifestError(f"hook entry is {type(entry).__name__}, not an object")
+        command = entry.get("command")
+        if not isinstance(command, str) or not command:
+            raise _ManifestError(f"malformed hook entry: {entry.get('tag', '<untagged>')}")
+        rows.append(
+            HookRow(
+                command=Path(command),
+                matcher=str(entry.get("matcher", "")),
+                tag=str(entry.get("tag") or command),
+            )
+        )
+    return rows
+
+
+def _emit(verdict, native_event: str) -> int:
+    if verdict.decision is ChainDecision.ASK:
+        # Codex has a prompt only where it was already asking. Elsewhere the
+        # question has nowhere to go, and a question nobody sees is an allow.
+        if native_event == "PermissionRequest":
+            return 0
+        _emit_deny(native_event, worded(verdict))
+        return 0
+    if verdict.decision is ChainDecision.DENY:
+        if native_event == "PostToolUse":
+            sys.stdout.write(json.dumps({"decision": "block", "reason": worded(verdict)}) + "\n")
+        else:
+            _emit_deny(native_event, worded(verdict))
+        return 0
+    if verdict.nudges and native_event != "PermissionRequest":
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": native_event,
+                        "additionalContext": "\n".join(n.text for n in verdict.nudges),
+                    }
+                }
+            )
+            + "\n"
+        )
+    return 0
+
+
 def dispatch_hook(*, stdin=None) -> int:
     """Run the composed chain for the Codex event received on stdin."""
     source = stdin if stdin is not None else sys.stdin
@@ -187,69 +172,30 @@ def dispatch_hook(*, stdin=None) -> int:
     if not isinstance(payload, dict):
         sys.stderr.write("ai-hats-codex-hook: payload is not an object\n")
         return 2
-    event = str(payload.get("hook_event_name", "PreToolUse"))
-    if event not in ("PreToolUse", "PermissionRequest", "PostToolUse"):
+    native_event = str(payload.get("hook_event_name", "PreToolUse"))
+    if native_event not in ("PreToolUse", "PermissionRequest", "PostToolUse"):
         return 0
+    # A PermissionRequest is Codex's own arrival for a call the chain judges as
+    # a PreToolUse. The mapping stops here, so the channel never learns a name
+    # only this surface uses.
+    event = HookEvent.parse(native_event) or HookEvent.PRE_TOOL_USE
     try:
-        manifest = _load_manifest(os.environ)
+        rows = _rows(_load_manifest(os.environ), event)
     except _ManifestError as exc:
         sys.stderr.write(f"ai-hats-codex-hook: {exc}\n")
         return 2
 
-    source_event = "PreToolUse" if event == "PermissionRequest" else event
-    raw_entries = manifest["hooks"].get(source_event, [])
-    entries = raw_entries if isinstance(raw_entries, list) else []
-    tool_name = str(payload.get("tool_name", ""))
-    contexts: list[str] = []
-    post_block: _HookResult | None = None
-    for entry in entries:
-        if not isinstance(entry, dict) or not matches_claude_hook(
-            str(entry.get("matcher", "")), tool_name
-        ):
-            continue
-        command = entry.get("command")
-        if not isinstance(command, str) or not command:
-            _emit_deny(event, f"malformed hook entry: {entry.get('tag', '<untagged>')}")
-            return 0
-        for adapted in to_claude_hook_payloads(payload, event):
-            result = _run(command, adapted)
-            if result.decision == "deny":
-                if event == "PostToolUse":
-                    post_block = result
-                    break
-                _emit_deny(event, result.reason or f"blocked by {entry.get('tag', command)}")
-                return 0
-            # Codex cannot turn a PreToolUse `ask` into a native prompt. Deny
-            # until the user supplies the hook's explicit ACK, while an ask
-            # observed inside an existing PermissionRequest can safely defer to
-            # that native prompt.
-            if result.decision == "ask" and event == "PreToolUse":
-                _emit_deny(
-                    event,
-                    result.reason
-                    or "runtime policy requires explicit consent; set its ACK and retry",
-                )
-                return 0
-            if result.context and result.context not in contexts:
-                contexts.append(result.context)
-        if post_block is not None:
-            break
-
-    if event == "PostToolUse" and post_block is not None:
-        sys.stdout.write(json.dumps({"decision": "block", "reason": post_block.reason}) + "\n")
-    elif contexts and event != "PermissionRequest":
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": event,
-                        "additionalContext": "\n".join(contexts),
-                    }
-                }
-            )
-            + "\n"
-        )
-    return 0
+    verdict = reduce_to(
+        PROFILE.speaks,
+        run_chain(
+            PROFILE,
+            event=event,
+            rows=rows,
+            payloads=to_claude_hook_payloads(payload, native_event),
+            project_dir=project_dir_from(os.environ),
+        ),
+    )
+    return _emit(verdict, native_event)
 
 
 def main() -> None:
