@@ -497,6 +497,84 @@ def test_a_card_with_no_worktree_passes(gate_project, rack_bin):
 
 
 # ---------------------------------------------------------------------------
+# 4b. ...but a card whose worktree was MERGED still pays — HATS-1664
+# ---------------------------------------------------------------------------
+
+WORKTREES_SUB = Path(".agent") / "ai-hats" / "sessions" / "worktrees"
+
+
+def _merge_by_hand(project: Path, task_id: str, wt: str) -> str:
+    """Leave the repo exactly as ``ai-hats wt merge`` does: branch on master, no
+    live worktree, a tombstone naming the merge commit. Returns that commit."""
+    branch = f"task/{task_id.lower()}"
+    git(project, "merge", "--no-ff", "-m", f"Merge branch '{branch}'", branch)
+    merge_sha = git(project, "rev-parse", "HEAD").stdout.strip()
+
+    shutil.rmtree(wt, ignore_errors=True)
+    key = f"task-{task_id.lower()}"
+    (project / WORKTREES_SUB / f"{key}.json").unlink(missing_ok=True)
+    tomb_dir = project / WORKTREES_SUB / "merged"
+    tomb_dir.mkdir(parents=True, exist_ok=True)
+    (tomb_dir / f"{key}.json").write_text(
+        json.dumps({"branch": branch, "merge_sha": merge_sha}), encoding="utf-8"
+    )
+    return merge_sha
+
+
+def test_a_merged_card_is_judged_by_the_merge_commit_not_waved_through(gate_project, rack_bin):
+    """The measured hole: 13 of 17 edge firings answered "has no worktree —
+    nothing to gate. Passing", 11 of them on cards already merged into master.
+
+    `wt:pre-merge` fires seconds before the edge and tears the worktree down, so
+    the ->done gate saw nothing and never once demanded `merge-smoke`, which its
+    own composition names.
+    """
+    project, env = gate_project("gated")
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    _merge_by_hand(project, task_id, wt)
+
+    refused = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert _state(project, task_id)["state"] == "review"
+    assert "has no worktree" not in _check_log(project, task_id).read_text(encoding="utf-8")
+
+
+def test_a_marker_for_the_merge_commit_lets_the_merged_card_through(gate_project, rack_bin):
+    """The other half: the gate names a tree that CAN be earned, and earning it
+    clears the edge. Otherwise the fix above would be an unopenable door."""
+    project, env = gate_project("gated")
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    merge_sha = _merge_by_hand(project, task_id, wt)
+
+    blocked = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
+    assert blocked.returncode == 1, "positive control: unmarked must refuse first"
+
+    _write_marker(project, _tree(project, merge_sha))
+
+    taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+
+    assert taken.returncode == 0, taken.stdout + taken.stderr
+    assert json.loads(taken.stdout)["task"]["state"] == "done"
+
+
+def test_the_refusal_of_a_merged_card_hands_over_a_command_that_can_earn_it(gate_project, rack_bin):
+    """A refusal is an ACTION, not a diagnosis (ADR-0023 D6) — and the plain
+    `make done-gate` it used to hand over could not possibly work here. The
+    card's worktree is gone, so the agent stands in the main checkout: HEAD has
+    moved under other merges and the tree is dirty, so that run would judge the
+    wrong content and then decline to record it. `REV=` names the subject."""
+    project, env = gate_project("gated")
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    merge_sha = _merge_by_hand(project, task_id, wt)
+
+    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert f"REV={merge_sha}" in _check_log(project, task_id).read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # 5. role scope — ADR-0019 D7
 # ---------------------------------------------------------------------------
 

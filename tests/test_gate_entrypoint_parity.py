@@ -190,3 +190,27 @@ def test_the_merge_gate_is_a_subset_of_the_done_gate():
         "merge-gate must stay a subset of done-gate or one run stops paying for "
         f"both — stages only merge-gate demands: {sorted(merge - done)}"
     )
+
+
+def test_the_done_gate_demands_what_only_it_can_ask():
+    """ADR-0023 D4 splits the two edges by question, and the split is REAL only
+    while `->done` carries stages `->merge` does not.
+
+    Shrinking a composition is the silent direction: markers already on disk stay
+    valid, so the gate keeps passing and nothing turns red (HATS-1601).
+    """
+    merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
+
+    assert done - merge == {"integration", "merge-smoke"}, (
+        "`->done` asks whether master is green after this card; `integration` and "
+        "`merge-smoke` are the stages that answer it. Actual extra: "
+        f"{sorted(done - merge)}"
+    )
+
+
+def test_preparing_a_checkout_is_never_part_of_a_verdict():
+    """`--prepare` mints a venv so the stages run against THIS tree (HATS-1664).
+    It asserts nothing, so a gate naming it would be counting a precondition as
+    evidence — and a marker would then certify that a venv got built."""
+    for gate in ("merge-gate", "done-gate", "push-gate"):
+        assert "prepare" not in _composition(gate), f"{gate} names a precondition as a stage"

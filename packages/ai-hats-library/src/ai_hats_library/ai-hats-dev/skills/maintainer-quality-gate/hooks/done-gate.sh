@@ -6,11 +6,16 @@
 # supervisor is present at this edge, so a refusal here may need coordination
 # between agents (D3).
 #
-# Two modes:
+# Three modes:
 #
 #   --check (DEFAULT — what the `composition.apps` binding runs). A marker
 #     lookup, no suite: it runs inside the per-task rack lock.
 #   --run (`make done-gate`). Run the composition and mark a clean green tree.
+#   --run --rev <sha> (`make done-gate REV=<sha>`). The same, on the content of
+#     ONE COMMIT, in a checkout of its own. What a card whose worktree has
+#     already been merged away needs — and the only form that can earn the
+#     marker the check then demands, because by that point neither the content
+#     nor a clean tree is left where the agent stands (HATS-1664).
 #
 # HATS-1604 moved the discipline into ../lib/gate.sh; HATS-1614 moved both whole
 # modes there, when `merge-gate.sh` would otherwise have copied them to change
@@ -48,11 +53,12 @@ fi
 case "${1:---check}" in
     --check) gate_check_task_worktree "$GATE_NAME" "$RUN_CMD" ;;
     --run)
-        gate_run_and_stamp_here "$GATE_NAME" \
-            "'rack transition <ID> done' on this content now passes instantly."
+        shift
+        gate_run_mode "$GATE_NAME" \
+            "'rack transition <ID> done' on this content now passes instantly." "$@"
         ;;
     *)
-        echo "usage: done-gate.sh [--check|--run]" >&2
+        echo "usage: done-gate.sh [--check|--run [--rev <sha>]]" >&2
         # 64 = EX_USAGE. Never 1 and never 2: a typo at the command line is
         # neither a refusal nor a verdict of any kind.
         exit 64

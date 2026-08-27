@@ -24,11 +24,13 @@
 #   gate_refusal  <gate> <tree> <label> <cmd> <stages>  -> prints the refusal
 #   gate_exit     <channel> pass|refuse         -> exits with that channel's code
 #
-# The two whole modes, for a checks-channel gate on a task's worktree — each
-# EXITS, it does not return (HATS-1614, when a second gate made them a copy):
+# The whole modes, for a checks-channel gate on a task's worktree — each EXITS,
+# it does not return (HATS-1614, when a second gate made them a copy):
 #
-#   gate_check_task_worktree <gate> <run_cmd>
+#   gate_check_task_worktree <gate> <run_cmd> [fuller_cmd]
 #   gate_run_and_stamp_here  <gate> <next_step>
+#   gate_run_and_stamp_rev   <gate> <rev> <next_step>          (HATS-1664)
+#   gate_run_mode            <gate> <next_step> [--rev <sha>]  (picks between them)
 
 # The tree of a revision. The unit of judgement is CONTENT, so a --no-ff merge
 # over an unchanged tree is the same subject as the branch tip (HATS-1601).
@@ -128,12 +130,18 @@ gate_stamp() {
 # retry is instant because the marker is already there. The composition is
 # RENDERED from the dispatcher, never restated here (ADR-0023 D7).
 gate_refusal() {
-    local gate="$1" tree="$2" label="$3" cmd="$4" stages="$5"
+    local gate="$1" tree="$2" label="$3" cmd="$4" stages="$5" fuller="${6:-}"
     printf '%s: no green marker for tree %s (%s).\n\n' "$gate" "$tree" "$label"
     printf 'Run the gate on that exact content, then retry:\n\n    %s\n\n' "$cmd"
     printf 'It runs %s.\n' "${stages:-the stages this project composes}"
     printf 'The marker keys on the tree, so a merge that changes nothing reuses this\n'
     printf 'run, and one run covers every card sitting on the same content.\n'
+    # Absorption (ADR-0023 D5) makes the superset the cheaper command: it stamps
+    # both gates, so the card pays one run instead of two (HATS-1664).
+    if [[ -n "$fuller" ]]; then
+        printf '\nThe ->done gate wants more than this one. Running IT here stamps both,\n'
+        printf 'so the card pays a single run:\n\n    %s\n' "$fuller"
+    fi
 }
 
 # --- whose backlog is this? ------------------------------------------------
@@ -176,7 +184,7 @@ _gate_realdir() {
 # below stays where its author can see and test it (supervisor ruling
 # 2026-08-08 P1).
 gate_check_task_worktree() {
-    local gate="$1" run_cmd="$2"
+    local gate="$1" run_cmd="$2" fuller="${3:-}"
     local project_dir="${AI_HATS_PROJECT_DIR:-$PWD}"
     local task_id="${AI_HATS_TASK_ID:-<unnamed>}"
 
@@ -205,30 +213,38 @@ gate_check_task_worktree() {
     # BOTH bound points. This used to re-derive the state path from the task id
     # and sed the JSON open — the one place a gate can silently end up judging
     # another worktree.
-    local wt branch tree dispatcher stages
+    local wt branch tree dispatcher stages merged subject run_where
     wt="${AI_HATS_WORKTREE_PATH:-}"
+    # Set only once the worktree is gone AND its branch reached the base branch,
+    # which is what separates "brought no code" from "already merged" (HATS-1664).
+    merged="${AI_HATS_MERGED_SHA:-}"
     # Named only at `wt:pre-merge`, where the wt engine owns the branch; on an
     # FSM edge the branch is rack's own convention. For messages only.
     branch="${AI_HATS_BRANCH_NAME:-task/$(printf '%s' "$task_id" | tr '[:upper:]' '[:lower:]')}"
 
-    if [[ -z "$wt" ]]; then
+    if [[ -z "$wt" && -z "$merged" ]]; then
         # F-11: the subject is the code entering master through this card. No
-        # worktree means no commits of its own. The runner refuses on its own if
-        # it could not TELL (HATS-1540), so absent here means absent, never
-        # unknown.
+        # worktree AND nothing merged means no commits of its own. The runner
+        # refuses on its own if it could not TELL (HATS-1540), so absent here
+        # means absent, never unknown.
         printf '%s: %s has no worktree — it contributes no commits, so there is\n' \
                "$gate" "$task_id"
         printf 'nothing to gate. Passing.\n'
         gate_exit checks pass
     fi
 
-    if [[ ! -d "$wt" ]]; then
-        # The record survived its worktree (TMPDIR swept, discarded by hand).
-        # Not a hole: rack's own teardown resolves this task to no active
-        # worktree and then either finalizes an already-merged branch — nothing
-        # new enters master — or raises WorktreeStateLostError and the transition
-        # never reaches a merge. Gating the branch tip here instead would refuse
-        # the first of those, a supported recovery flow.
+    if [[ -n "$wt" && ! -d "$wt" && -z "$merged" ]]; then
+        # The record survived its worktree (TMPDIR swept, discarded by hand) and
+        # NOTHING was merged. Not a hole: rack's own teardown resolves this task
+        # to no active worktree and then either finalizes an already-merged
+        # branch — nothing new enters master — or raises WorktreeStateLostError
+        # and the transition never reaches a merge. Gating the branch tip here
+        # instead would refuse the first of those, a supported recovery flow.
+        #
+        # `-z "$merged"` is load-bearing (HATS-1664): with a merge record in
+        # hand this pass would be the very hole the card closes, one step
+        # narrower — a subject that existed and vanished, waved through because
+        # only its stale record was consulted.
         printf '%s: %s recorded a worktree at %s, which no longer exists — no live\n' \
                "$gate" "$task_id" "$wt"
         printf 'branch content to gate (rack refuses the merge itself if that branch is\n'
@@ -236,13 +252,43 @@ gate_check_task_worktree() {
         gate_exit checks pass
     fi
 
-    # F-13: the TASK BRANCH's tree, never the main checkout's. At priority 15 the
-    # merge has not happened yet, so the content under judgement is what the
-    # branch holds — and content, not the commit naming it, is the subject.
-    tree="$(gate_tree "$wt" HEAD)"
+    # Two ways to name the content this card puts into master, and the tree is
+    # the subject either way — never the commit naming it. A LIVE directory is
+    # what picks the road: a record whose worktree is gone but whose branch
+    # reached the base belongs to the second one.
+    if [[ -d "$wt" ]]; then
+        # F-13: the TASK BRANCH's tree, never the main checkout's. At priority 15
+        # the merge has not happened yet, so what the branch holds IS what lands:
+        # the engine refuses a merge whose branch lacks the base tip
+        # (WorktreeDriftError), and a contained branch merges to its own tree.
+        tree="$(gate_tree "$wt" HEAD)"
+        dispatcher="$wt/scripts/ci-local.sh"
+        subject="branch $branch"
+        run_where="cd $wt"
+    else
+        # HATS-1664: the worktree is gone because the branch already reached the
+        # base branch, so what this card put into master is that merge commit.
+        #
+        # The COMPOSITION still comes from the main checkout's working copy: the
+        # check runs inside the per-task rack lock on a 20s budget, and reading a
+        # file is what fits there. The RUN does better — it reads the dispatcher
+        # of the very tree it judges (`gate_run_and_stamp_rev`). The two agree
+        # whenever the checkout has not moved past the merge, and when they do
+        # not, the marker simply fails to cover what is demanded and the gate
+        # refuses. Wrong in the safe direction, by construction.
+        tree="$(gate_tree "$project_dir" "$merged")"
+        dispatcher="$project_dir/scripts/ci-local.sh"
+        subject="merge commit $merged"
+        # NOT `cd` + a bare run: HEAD here has moved on under other merges, and
+        # this desk is almost never clean, so a run here would judge the wrong
+        # content and earn no marker at all. `REV=` names the subject instead.
+        run_where="cd $project_dir"
+        run_cmd="$run_cmd REV=$merged"
+        [[ -n "$fuller" ]] && fuller="$fuller REV=$merged"
+    fi
+
     if [[ -z "$tree" ]]; then
-        printf '%s: could not resolve the tree of the worktree %s (branch %s). The\n' \
-               "$gate" "$wt" "$branch"
+        printf '%s: could not resolve the tree of %s (%s). The\n' "$gate" "$subject" "$branch"
         printf 'gate cannot name the content it is meant to judge, so it refuses.\n'
         gate_exit checks refuse
     fi
@@ -251,7 +297,6 @@ gate_check_task_worktree() {
     # from the main checkout's. The marker certifies stages that were run there,
     # so asking anywhere else judges one tree by another tree's rules. A card
     # that changes the gate carries the change and its own verdict together.
-    dispatcher="$wt/scripts/ci-local.sh"
     stages="$(gate_stages "$dispatcher" "$gate")"
     if [[ -z "$stages" ]]; then
         printf '%s: %s names no %s composition, so no marker could ever be\n' \
@@ -265,11 +310,12 @@ gate_check_task_worktree() {
     fi
 
     if gate_marker_ok "$project_dir" "$tree" $stages; then
-        printf '%s: green marker present for tree %s (%s) — passing.\n' "$gate" "$tree" "$branch"
+        printf '%s: green marker present for tree %s (%s) — passing.\n' "$gate" "$tree" "$subject"
         gate_exit checks pass
     fi
 
-    gate_refusal "$gate" "$tree" "branch $branch" "cd $wt && $run_cmd" "$stages"
+    gate_refusal "$gate" "$tree" "$subject" "$run_where && $run_cmd" "$stages" \
+                 "${fuller:+$run_where && $fuller}"
     gate_exit checks refuse
 }
 
@@ -285,7 +331,160 @@ gate_run_and_stamp_here() {
         printf '[%s] not inside a git repo — gate ABORTED, no marker written\n' "$gate" >&2
         exit 1
     fi
+    _gate_run_and_stamp_in "$gate" "$repo_root" "$next_step"
+}
 
+# Run the gate on the content of ONE COMMIT and mark that commit's tree. EXITS.
+#
+# WHY a checkout of its own, and not "here" (HATS-1664). After `->merge` the
+# card's subject is a commit, and by the time the `->done` edge asks about it
+# BOTH halves of "here" have gone wrong — not in this repository by accident,
+# but in the agent flow by design:
+#
+#   - the card's own worktree is torn down by `wt:pre-merge`, seconds before the
+#     edge, so the content is nowhere on disk any more;
+#   - what remains is the MAIN checkout — the supervisor's desk. Other cards
+#     merge into it continuously, so its HEAD is no longer the merge commit this
+#     card is accountable for, and it carries untracked work almost always,
+#     which `gate_stamp` correctly refuses to certify.
+#
+# Judged "here", the gate would therefore run the right stages against the wrong
+# content and then decline to record the result — an unopenable door. A detached
+# worktree at the commit answers all three: clean by construction, its HEAD IS
+# the subject, and its own `scripts/ci-local.sh` is the dispatcher D7 asks for.
+# The marker still lands in the shared store: `gate_marker_root` resolves it
+# through `--git-common-dir`, which a linked worktree shares with the main
+# checkout — the same reason a task worktree's run is visible from there.
+gate_run_and_stamp_rev() {
+    local gate="$1" rev="$2" next_step="$3"
+    local repo_root sha
+    repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -z "$repo_root" ]]; then
+        printf '[%s] not inside a git repo — gate ABORTED, no marker written\n' "$gate" >&2
+        exit 1
+    fi
+
+    sha="$(git -C "$repo_root" rev-parse --verify "$rev^{commit}" 2>/dev/null || true)"
+    if [[ -z "$sha" ]]; then
+        printf '[%s] %s names no commit in %s — nothing to judge\n' "$gate" "$rev" "$repo_root" >&2
+        exit 1
+    fi
+
+    # NOT under $TMPDIR, for the reason HATS-1632 measured: macOS reaps the temp
+    # root by ACCESS time, and a uv-materialized venv arrives carrying the
+    # package cache's atime — born expired, swept at the next 03:35 run. The
+    # shared git dir is swept by nothing but us, and it is where the markers
+    # already live, so a scratch checkout keeps the same company as its verdict.
+    #
+    # GLOBAL, not local: the trap body is evaluated while the shell is already
+    # exiting, and a name that only existed inside a function is not a thing to
+    # bet a `rm -rf` on.
+    local common
+    common="$(git -C "$repo_root" rev-parse --git-common-dir 2>/dev/null)" || exit 1
+    case "$common" in /*) : ;; *) common="$repo_root/$common" ;; esac
+    _GATE_SWEEP_REPO="$repo_root"
+    mkdir -p "$common/ai-hats/gate-checkouts" || exit 1
+    _GATE_SWEEP_SCRATCH="$(mktemp -d "$common/ai-hats/gate-checkouts/XXXXXXXX")" || exit 1
+    _GATE_SWEEP_CHECKOUT="$_GATE_SWEEP_SCRATCH/tree"
+    local checkout="$_GATE_SWEEP_CHECKOUT"
+    # The trap owns BOTH halves: `git worktree remove` un-registers it, `rm -rf`
+    # takes the mktemp parent. Registered before `add` so a failed add still
+    # sweeps the scratch dir.
+    trap _gate_sweep_checkout EXIT
+    if ! git -C "$repo_root" worktree add --detach --quiet "$checkout" "$sha"; then
+        printf '[%s] could not check out %s — gate ABORTED, no marker written\n' "$gate" "$sha" >&2
+        exit 1
+    fi
+
+    printf '[%s] judging commit %s in a checkout of its own: %s\n' "$gate" "$sha" "$checkout" >&2
+    # MEASURED alongside the cwd (HATS-1664): the entry point hands the
+    # dispatcher a `PYTHON` naming the CALLER's interpreter, whose editable
+    # install points at the caller's checkout. That interpreter beats the venv
+    # this road just built, so the tests import the wrong source — the
+    # HATS-1242 guard catches it, but only after paying for the venv. An
+    # interpreter from inside the checkout is kept; anything else is not ours.
+    if [[ -n "${PYTHON:-}" && "$PYTHON" != "$checkout"/* ]]; then
+        printf '[%s] ignoring PYTHON=%s — it belongs to another checkout\n' "$gate" "$PYTHON" >&2
+        unset PYTHON
+    fi
+    # The project's own half: make the content runnable (a venv, typically). The
+    # library must not know how — D7. A non-zero rc is REPORTED and the run goes
+    # on: the stages are the verdict, and a stage failing for want of a dependency
+    # says so loudly, whereas skipping the run here would say nothing.
+    # `cd` and not just the path, for the reason `_gate_run_and_stamp_in`
+    # states at length: a dispatcher re-derives its own root from the cwd, and
+    # this one PROVISIONS that root — asked from the wrong place it would mint a
+    # venv for the checkout the agent is standing in and report it as done.
+    local dispatcher="$checkout/scripts/ci-local.sh"
+    if [[ -f "$dispatcher" ]] && ! (cd "$checkout" && bash "$dispatcher" --prepare); then
+        printf '[%s] the dispatcher could not prepare this checkout (see above) — running anyway\n' \
+               "$gate" >&2
+    fi
+
+    _gate_run_and_stamp_in "$gate" "$checkout" "$next_step"
+}
+
+# Pick the run mode from the caller's argv. Both gate scripts route through this
+# instead of parsing it twice — argv is exactly the kind of two-line detail that
+# drifted when the modes themselves were copies (HATS-1614). EXITS either way.
+gate_run_mode() {
+    local gate="$1" next_step="$2"
+    shift 2
+    local rev=''
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --rev)
+                rev="${2:-}"
+                if [[ -z "$rev" ]]; then
+                    printf '[%s] --rev names no commit\n' "$gate" >&2
+                    exit 64  # EX_USAGE, as at the top level: a typo is not a verdict
+                fi
+                shift 2
+                ;;
+            *)
+                printf '[%s] unknown argument to --run: %s\n' "$gate" "$1" >&2
+                exit 64
+                ;;
+        esac
+    done
+
+    if [[ -n "$rev" ]]; then
+        gate_run_and_stamp_rev "$gate" "$rev" "$next_step"
+    else
+        gate_run_and_stamp_here "$gate" "$next_step"
+    fi
+}
+
+# Remove the scratch checkout, both halves, without ever failing the caller: the
+# verdict is already decided by the time this runs. Reads the `_GATE_SWEEP_*`
+# globals its only caller sets — see the trap in `gate_run_and_stamp_rev`.
+_gate_sweep_checkout() {
+    [[ -n "${_GATE_SWEEP_SCRATCH:-}" ]] || return 0
+    if [[ -d "${_GATE_SWEEP_CHECKOUT:-}" ]]; then
+        git -C "$_GATE_SWEEP_REPO" worktree remove --force "$_GATE_SWEEP_CHECKOUT" 2>/dev/null \
+            || printf '[gate] could not un-register %s — `git worktree prune` will\n' \
+                      "$_GATE_SWEEP_CHECKOUT" >&2
+    fi
+    rm -rf "$_GATE_SWEEP_SCRATCH" 2>/dev/null \
+        || printf '[gate] scratch dir left behind: %s\n' "$_GATE_SWEEP_SCRATCH" >&2
+    return 0
+}
+
+# The body both run modes share: what runs, on which tree, and what it stamps.
+# `repo_root` is the checkout holding the content under judgement — this card's
+# worktree, or a scratch checkout of one commit.
+_gate_run_and_stamp_in() {
+    local gate="$1" repo_root="$2" next_step="$3"
+    # MEASURED, on the first real run of the rev road (HATS-1664): naming the
+    # dispatcher by path is not enough. A dispatcher typically re-derives its own
+    # root — `git rev-parse --show-toplevel` — from the CWD IT INHERITS, so the
+    # right file ran the right stages against the tree the agent happened to be
+    # standing in, and reported that as the verdict on the commit. Every mode
+    # here exits, so moving the shell is safe and is the whole fix.
+    cd "$repo_root" || {
+        printf '[%s] cannot enter %s — gate ABORTED, no marker written\n' "$gate" "$repo_root" >&2
+        exit 1
+    }
     local dispatcher="$repo_root/scripts/ci-local.sh" stages
     stages="$(gate_stages "$dispatcher" "$gate")"
     if [[ -z "$stages" ]]; then
