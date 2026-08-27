@@ -156,7 +156,7 @@ def _launch_wizard_session(cmd: list[str]) -> None:
     terminal cleanly — same handoff pattern as ``exec_claude_with_retro``.
     """
     console.print("[cyan]→ Launching initial-wizard session …[/]")
-    os.execvp(cmd[0], cmd)
+    os.execvp(cmd[0], cmd)  # noqa: S606
 
 
 def _build_init_pipeline_params(

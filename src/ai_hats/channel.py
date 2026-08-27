@@ -201,9 +201,9 @@ def fetch_latest_stable_version(url: str = PYPI_JSON_URL, *, timeout: int = 10) 
     """
     if not url.startswith("https://"):  # defense: only the pinned https endpoint
         raise ChannelResolveError(f"refusing non-https PyPI URL: {url!r}")
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — https-only, guarded above
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             payload = json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise ChannelResolveError(

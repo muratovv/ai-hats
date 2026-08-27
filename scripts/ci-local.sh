@@ -97,8 +97,9 @@ ci_coverage() {
 }
 
 ci_security() {
-    echo "[ci-local] security (bandit + pip-audit)" >&2
-    "$PY" -m bandit -r src/ -ll -q
+    # HATS-1591: bandit dropped — ruff's `S` family covers its inventory and
+    # already runs on every road. What is left here is the network half.
+    echo "[ci-local] security (pip-audit)" >&2
     "$PY" -m pip_audit
 }
 
@@ -118,6 +119,13 @@ ci_dependency_floor() {
 ci_test_isolation() {
     echo "[ci-local] test-isolation (patching of code under test vs the baseline)" >&2
     "$PY" scripts/check_test_isolation.py
+}
+
+# Offline and instant. HATS-1591: the one check bandit held that ruff's `S`
+# family does not, kept after bandit itself was dropped.
+ci_bidi() {
+    echo "[ci-local] bidi (bidirectional controls, invisible in review)" >&2
+    "$PY" scripts/check_bidi.py
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
@@ -193,7 +201,7 @@ gate_composition() {
     case "$1" in
         merge-gate) echo "$tier unit" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs ticket-ids e2e" ;;
+        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs ticket-ids bidi e2e" ;;
         *) return 1 ;;
     esac
 }
@@ -269,6 +277,7 @@ case "$stage" in
         ci_lint
         ci_dependency_floor
         ci_silent_fallback
+        ci_bidi
         ci_test_isolation
         ci_e2e_catalog
         ci_adr_integrity

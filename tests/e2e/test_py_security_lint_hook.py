@@ -77,6 +77,21 @@ def test_py_violation_forwards_ruff_finding(tmp_path):
 
 
 @pytest.mark.integration
+def test_a_rule_the_project_excluded_is_not_reported(tmp_path):
+    """HATS-1591: the nudge names what the gate would refuse — no more.
+
+    Forcing `--select S` reported rules this project excludes on purpose, so a
+    repo that spawns processes by profession got twenty `S603`/`S607` lines on
+    every edit and learned to scroll past the message entirely.
+    """
+    f = tmp_path / "spawns.py"
+    f.write_text('import subprocess\n\n\ndef f():\n    subprocess.run(["git", "status"])\n')
+    res = _run(f)
+    assert res.returncode == 0, res.stderr
+    assert _ctx(res) is None, f"an ignored rule was reported anyway: {res.stdout!r}"
+
+
+@pytest.mark.integration
 def test_clean_py_is_silent(tmp_path):
     f = tmp_path / "clean.py"
     f.write_text("def f(x):\n    return x + 1\n")

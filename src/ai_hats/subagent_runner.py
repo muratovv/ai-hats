@@ -173,7 +173,7 @@ class SubAgentRunner:
             if not _session_timed_out(last_session):
                 break  # success or non-timeout error — retry loop done
 
-        assert last_session is not None  # loop body always assigns
+        assert last_session is not None  # noqa: S101 — narrow for mypy; the loop body always assigns
 
         # Timeout policy: if final attempt still timed out and we had a
         # policy in place, escalate. Without a policy, preserve the
