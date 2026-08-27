@@ -25,6 +25,7 @@ from ai_hats_observe.trace import ENV_SESSION_ID
 from ..hook_channel import (
     ChainDecision,
     ChainVerdict,
+    HookCall,
     HookEvent,
     HookRow,
     matches,
@@ -371,8 +372,8 @@ def dispatch_hook(
             PROFILE,
             event=event,
             rows=rows,
-            # Always one payload: an unreadable call must still meet its gates.
-            payloads=[to_claude_payload(payload, native)],
+            # Always one call: an unreadable one must still meet its gates.
+            calls=[HookCall(to_claude_payload(payload, native), tool)],
             project_dir=project_dir_from(os.environ),
         ),
     )

@@ -385,6 +385,27 @@ def surface_timeout(environ: Mapping[str, str] | None = None) -> float:
 
 
 @dataclass(frozen=True)
+class HookCall:
+    """One call as the chain sees it — the payload, and the tool's native name.
+
+    The two carry different names on purpose: the payload spells the tool in the
+    matcher vocabulary a hook reads, while a matcher may be written in the
+    surface's own. Keeping the native name beside the payload is what makes
+    :meth:`SurfaceProfile.matcher_names` reachable rather than aspirational —
+    matching on the collapsed name alone means `Create` no longer answers to a
+    `Write` matcher on agy, though the row says it should.
+    """  # comment-length: allow — why a call carries two names is the contract
+
+    payload: dict
+    native_tool: str = ""
+
+    @property
+    def tool(self) -> str:
+        """The name to match on: the surface's own where it is known."""
+        return self.native_tool or str(self.payload.get("tool_name", ""))
+
+
+@dataclass(frozen=True)
 class HookRow:
     """One composed row of the session manifest."""
 
@@ -489,7 +510,7 @@ def run_chain(
     *,
     event: HookEvent,
     rows: Sequence[HookRow],
-    payloads: Sequence[dict],
+    calls: Sequence[HookCall],
     project_dir: Path,
     environ: Mapping[str, str] | None = None,
     log_dir: Path | None = None,
@@ -508,10 +529,10 @@ def run_chain(
     # stderr is its only trace, and the bypass journal's own failure notice
     # arrives exactly there.
     complaints: list[str] = []
-    for payload in payloads:
-        tool = str(payload.get("tool_name", ""))
+    for call in calls:
+        payload = call.payload
         for row in rows:
-            if not matches(profile, row.matcher, tool):
+            if not matches(profile, row.matcher, call.tool):
                 continue
             run = run_hook(
                 row.command,
@@ -765,6 +786,7 @@ __all__ = [
     "SURFACE_TIMEOUT_MARGIN_S",
     "ENV_HOOK_SURFACE_TIMEOUT_MS",
     "REPLY_BYTES",
+    "HookCall",
     "HookRow",
     "GATE_BROKEN_ACK_ENV",
     "HOOK_TIMEOUT_S",

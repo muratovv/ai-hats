@@ -21,6 +21,7 @@ from ai_hats_observe.trace import ENV_SESSION_ID
 from ..hook_channel import (
     ChainDecision,
     ChainVerdict,
+    HookCall,
     HookEvent,
     HookRow,
     project_dir_from,
@@ -123,7 +124,7 @@ def dispatch_hook(*, stdin=None, environ: Mapping[str, str] | None = None) -> in
                 PROFILE,
                 event=event,
                 rows=rows,
-                payloads=[_spoken(payload)],
+                calls=[HookCall(_spoken(payload), str(payload.get("tool_name", "")))],
                 project_dir=project_dir_from(env),
                 environ=env,
             ),

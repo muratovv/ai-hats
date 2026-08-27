@@ -18,6 +18,7 @@ from ai_hats.surfaces.hook_channel import (
     HOOK_TIMEOUT_ENV,
     ChainDecision,
     HookEvent,
+    HookCall,
     HookRow,
     resolve_hook_timeout,
     run_chain,
@@ -25,7 +26,7 @@ from ai_hats.surfaces.hook_channel import (
 )
 
 _PROFILE = profiles.CODEX
-_BASH = {"tool_name": "Bash", "tool_input": {"command": "true"}}
+_BASH = HookCall({"tool_name": "Bash", "tool_input": {"command": "true"}}, "exec")
 
 
 def _hook(tmp_path: Path, name: str, body: str) -> HookRow:
@@ -45,7 +46,7 @@ def _run(tmp_path: Path, *rows: HookRow, **kwargs):
         _PROFILE,
         event=HookEvent.PRE_TOOL_USE,
         rows=list(rows),
-        payloads=[_BASH],
+        calls=[_BASH],
         project_dir=tmp_path,
         **kwargs,
     )
@@ -253,7 +254,7 @@ def test_a_row_whose_matcher_misses_never_runs(tmp_path: Path) -> None:
         _PROFILE,
         event=HookEvent.PRE_TOOL_USE,
         rows=[HookRow(command=row.command, matcher="Edit|Write", tag=row.tag)],
-        payloads=[_BASH],
+        calls=[_BASH],
         project_dir=tmp_path,
     )
     assert verdict.decision is ChainDecision.ALLOW
@@ -295,7 +296,7 @@ class TestTheChannelKeepsItsOwnCounsel:
             _PROFILE,
             event=HookEvent.PRE_TOOL_USE,
             rows=[hint],
-            payloads=[_BASH, _BASH, _BASH],
+            calls=[_BASH, _BASH, _BASH],
             project_dir=tmp_path,
         )
         assert [n.text for n in verdict.nudges] == ["prefer Grep"]
@@ -321,7 +322,7 @@ class TestTheChannelKeepsItsOwnCounsel:
             _PROFILE,
             event=HookEvent.POST_TOOL_USE,
             rows=[denied],
-            payloads=[_BASH],
+            calls=[_BASH],
             project_dir=tmp_path,
         )
         assert verdict.event is HookEvent.POST_TOOL_USE
@@ -352,3 +353,30 @@ class TestTheChannelKeepsItsOwnCounsel:
         verdict = _run(tmp_path, hard)
         assert verdict.decision is ChainDecision.DENY
         assert "BLOCKED: no" in verdict.reason
+
+
+def test_a_matcher_in_the_surfaces_own_vocabulary_still_reaches_the_call(
+    tmp_path: Path,
+) -> None:
+    """`matcher_names` promises the native name stays a candidate, and matching
+    on the collapsed payload name alone made that unreachable.
+
+    agy maps `Create` onto the whole file-mutation class, so a role author
+    writing `matcher: Write` means this call — and got nothing, because the
+    payload said `Edit` by the time the chain looked.
+    """
+    ran = tmp_path / "ran"
+    row = HookRow(
+        command=_hook(tmp_path, "edits", f"cat >/dev/null; touch {ran}").command,
+        matcher="Write",
+        tag="ai-hats:edits",
+    )
+    verdict = run_chain(
+        profiles.AGY,
+        event=HookEvent.PRE_TOOL_USE,
+        rows=[row],
+        calls=[HookCall({"tool_name": "Edit", "tool_input": {}}, "Create")],
+        project_dir=tmp_path,
+    )
+    assert verdict.decision is ChainDecision.ALLOW
+    assert ran.exists(), "a matcher written in the surface's own vocabulary never fired"

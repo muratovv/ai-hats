@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from _helpers.sessions import stand_in_session
 from _helpers.hook_chain import run_codex_dispatch
 
 SESSION_ID = "sid-codex-budget"
@@ -61,9 +62,8 @@ def slow_chain(tmp_path: Path) -> SimpleNamespace:
             }
         )
     )
-    env = {
-        **os.environ,
-        "AI_HATS_SESSION_ID": SESSION_ID,
+    env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="codex")
+    env |= {
         "AI_HATS_DIR": str(hats_dir),
         "AI_HATS_SESSION_CACHE_DIR": str(cache),
         "AI_HATS_PROJECT_DIR": str(project),

@@ -22,7 +22,7 @@ from ..hook_channel import (
     undeliverable,
     worded,
 )
-from .claude_hook_adapter import to_claude_hook_payloads
+from .claude_hook_adapter import to_claude_hook_calls
 from .profile import PROFILE
 
 DISPATCHER_COMMAND = (
@@ -219,7 +219,7 @@ def dispatch_hook(*, stdin=None) -> int:
             PROFILE,
             event=event,
             rows=rows,
-            payloads=to_claude_hook_payloads(payload, native_event),
+            calls=to_claude_hook_calls(payload, native_event),
             project_dir=project_dir_from(os.environ),
         ),
     )

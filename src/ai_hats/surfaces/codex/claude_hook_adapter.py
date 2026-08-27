@@ -12,7 +12,7 @@ import os
 import re
 from pathlib import Path
 
-from ..hook_channel import matches
+from ..hook_channel import HookCall, matches
 from .profile import PROFILE
 
 _PATCH_PATH = re.compile(r"^\*\*\* (Update|Add|Delete) File: (.+)$", re.MULTILINE)
@@ -44,6 +44,16 @@ def _patch_targets(command: str, cwd: str) -> list[tuple[str, Path]]:
     return resolved
 
 
+def to_claude_hook_calls(payload: dict, event: str) -> list[HookCall]:
+    """The payloads, each still carrying the name codex gave the tool.
+
+    A matcher may be written in codex's own vocabulary; the payload spells the
+    matcher vocabulary, so the native name has to travel beside it.
+    """
+    native = str(payload.get("tool_name", ""))
+    return [HookCall(one, native) for one in to_claude_hook_payloads(payload, event)]
+
+
 def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
     """Return one or more Claude-compatible payloads for one Codex event."""
     adapted = dict(payload)
@@ -73,4 +83,4 @@ def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
     return result
 
 
-__all__ = ["matches_claude_hook", "to_claude_hook_payloads"]
+__all__ = ["matches_claude_hook", "to_claude_hook_calls", "to_claude_hook_payloads"]
