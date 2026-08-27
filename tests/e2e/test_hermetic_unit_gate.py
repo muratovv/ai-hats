@@ -30,6 +30,21 @@ TEST_ENTRY_POINT = "hats1700_test_mutation"
 pytestmark = [pytest.mark.integration, pytest.mark.install_heavy]
 
 
+def _lock_state() -> tuple[bool, int, int] | None:
+    """Identity of the project lockfile, for a before/after comparison.
+
+    HATS-1857: the claim is that the unit stage does not TOUCH ``uv.lock``, not
+    that the file is absent — ``uv sync``, which `health.py` prints as the
+    env-drift remedy, legitimately creates it. Size rides along with mtime so a
+    same-second rewrite cannot pass as untouched.
+    """
+    lock = REPO_ROOT / "uv.lock"
+    if not lock.exists():
+        return None
+    stat = lock.stat()
+    return (True, stat.st_mtime_ns, stat.st_size)
+
+
 def _write_provider_package(root: Path, distribution: str, entry_point: str) -> Path:
     module = distribution.replace("-", "_")
     package = root / distribution
@@ -168,6 +183,7 @@ def test_unit_stage_ignores_caller_provider_set_and_preserves_it(
     before = _provider_names(python)
     assert HOST_ENTRY_POINT in before
     assert TEST_ENTRY_POINT not in before
+    lock_before = _lock_state()
 
     seen_first = root / "seen-first.json"
     seen_second = root / "seen-second.json"
@@ -183,7 +199,10 @@ def test_unit_stage_ignores_caller_provider_set_and_preserves_it(
     assert HOST_ENTRY_POINT not in json.loads(seen_first.read_text(encoding="utf-8"))
     assert HOST_ENTRY_POINT not in json.loads(seen_second.read_text(encoding="utf-8"))
     assert _provider_names(python) == before
-    assert not (REPO_ROOT / "uv.lock").exists()
+    assert _lock_state() == lock_before, (
+        "the unit stage touched uv.lock — `uv run --isolated --no-project` must "
+        f"leave the project lockfile alone (before={lock_before}, after={_lock_state()})"
+    )
 
 
 def test_unit_stage_attributes_provider_mutation_to_test_nodeid(
