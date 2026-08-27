@@ -829,6 +829,8 @@ def test_the_child_runs_where_the_channel_says(tmp_path):
 
     assert Path(default.said).resolve() == tmp_path.resolve(), "unset must stay project_dir"
     assert Path(directed.said).resolve() == elsewhere.resolve()
+
+
 def test_the_call_envelope_reaches_the_child_beside_the_scalars(tmp_path):
     """HATS-1724: one versioned envelope of per-CALL facts, beside the scalars.
 
