@@ -222,7 +222,7 @@ ci_prepare() {
     # interpreter that could import one, and this repository carries the hook's
     # source anyway — so the version that runs is the one belonging to the
     # content under judgement.
-    local hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/usage/skills/worktree-venv/hooks/provision-venv.sh"
+    local hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/worktree-venv/hooks/provision-venv.sh"
     if [[ ! -f "$hook" ]]; then
         echo "[ci-local] no provision-venv hook at $hook — nothing to prepare" >&2
         return 1

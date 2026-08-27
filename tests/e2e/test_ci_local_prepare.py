@@ -25,7 +25,7 @@ pytestmark = pytest.mark.integration
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DISPATCHER = REPO_ROOT / "scripts" / "ci-local.sh"
 HOOK_REL = Path(
-    "packages/ai-hats-library/src/ai_hats_library/usage/skills/worktree-venv/hooks/provision-venv.sh"
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/worktree-venv/hooks/provision-venv.sh"
 )
 
 
