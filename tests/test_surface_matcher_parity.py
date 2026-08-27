@@ -3,8 +3,10 @@
 The suite this joins had a blind spot with a name: every dispatcher test fed its
 surface ``tool_name: "Bash"`` — a Claude-vocabulary name no surface sends — so a
 surface whose name table was empty passed every test while running none of its
-gates. This drives each surface's LIVE matching path with observed names. Each
-``LIVE`` entry collapses to ``hook_channel.matches`` as its surface migrates.
+gates. This drives each surface's LIVE matching path with observed names. The
+entries stay pointed at that live path: as a surface moves onto its profile the
+path becomes profile-backed and this file does not change, which is what makes
+a green run evidence about the surface rather than about the new table.
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ def _cline_tool(native: str) -> str:
 
 
 #: The live matching path per surface: native tool name in, verdict out.
+#: agy is the one still reading a table of its own; codex and cline read profiles.
 LIVE = {
     "agy": lambda m, native: agy_adapter.matches_claude_hook(
         m, agy_adapter.agy_tool_name({"tool_name": native})

@@ -6,34 +6,16 @@ import os
 import re
 from pathlib import Path
 
+from ..hook_channel import matches
+from .profile import PROFILE
+
 _PATCH_PATH = re.compile(r"^\*\*\* (Update|Add|Delete) File: (.+)$", re.MULTILINE)
 _PATCH_MOVE = re.compile(r"^\*\*\* Move to: (.+)$", re.MULTILINE)
 
-_TOOL_NAMES = {
-    "bash": "Bash",
-    "execute_command": "Bash",
-    "run_commands": "Bash",
-    "write_to_file": "Write",
-    "replace_in_file": "Edit",
-    "editor": "Edit",
-    "read_file": "Read",
-    "read_files": "Read",
-    "search_files": "Grep",
-    "search_codebase": "Grep",
-    "search": "Grep",
-    "list_files": "Glob",
-    "apply_patch": "Edit",
-}
-
 
 def matches_claude_hook(matcher: str, tool_name: str) -> bool:
-    """Match a composed Claude hook matcher against an adapted tool name."""
-    if not matcher or matcher == "*":
-        return True
-    try:
-        return re.fullmatch(matcher, tool_name) is not None
-    except re.error:
-        return matcher == tool_name
+    """Whether a composed row's ``matcher`` applies to this Cline tool call."""
+    return matches(PROFILE, matcher, tool_name)
 
 
 def _patch_targets(patch: str, cwd: str) -> list[tuple[str, Path]]:
@@ -79,11 +61,12 @@ def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
         if not isinstance(commands, list):
             command = parameters.get("command")
             commands = [command] if isinstance(command, str) else []
-        return [
-            adapted("Bash", {"command": str(command)})
-            for command in commands
-            if isinstance(command, str)
-        ]
+        spread = [adapted("Bash", {"command": str(c)}) for c in commands if isinstance(c, str)]
+        # Falling through on an empty spread rather than returning it: no payload
+        # means the dispatcher's loop never runs, and a terminal call reaches the
+        # agent with its terminal gates never consulted.
+        if spread:
+            return spread
 
     if tool_name == "apply_patch":
         patch = parameters.get("patch", parameters.get("command", ""))
@@ -102,7 +85,7 @@ def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
                 for kind, path in targets
             ]
 
-    return [adapted(_TOOL_NAMES.get(tool_name, tool_name), parameters)]
+    return [adapted(PROFILE.spoken_name(tool_name), parameters)]
 
 
 __all__ = ["matches_claude_hook", "to_claude_hook_payloads"]

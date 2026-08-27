@@ -134,3 +134,13 @@ class TestReduceTo:
     def test_a_refusal_is_never_softened(self) -> None:
         denied = ChainVerdict(decision=ChainDecision.DENY, reason="off limits")
         assert reduce_to(_MUTE, denied).decision is ChainDecision.DENY
+
+
+def test_the_name_a_payload_carries_is_one_its_matcher_accepts() -> None:
+    """Otherwise a hook is handed a call its own matcher would have rejected."""
+    from ai_hats.surfaces import profiles
+
+    for profile in profiles.ALL:
+        for native in profile.tool_names:
+            spoken = profile.spoken_name(native)
+            assert spoken in profile.matcher_names(native), f"{profile.label}: {native}"

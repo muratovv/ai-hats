@@ -111,6 +111,15 @@ class SurfaceProfile:
         mapped = self.tool_names.get(native_tool, ())
         return (native_tool, *mapped) if native_tool else tuple(mapped)
 
+    def spoken_name(self, native_tool: str) -> str:
+        """The single name to write into a payload for ``native_tool``.
+
+        A payload carries one name where a matcher may accept several, so this
+        picks the first — and it is always one :meth:`matcher_names` accepts, or
+        a hook would be handed a call its own matcher rejects.
+        """
+        return self.tool_names.get(native_tool, (native_tool,))[0]
+
     def manifest_path(self, cache_dir: Path) -> Path:
         return cache_dir.joinpath(*self.manifest_subpath, "hooks.json")
 

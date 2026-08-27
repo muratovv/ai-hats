@@ -440,3 +440,27 @@ def test_posttooluse_payload_preserves_tool_result(tmp_path: Path) -> None:
             "cwd": str(tmp_path),
         }
     ]
+
+
+def test_a_terminal_call_with_no_command_still_reaches_its_gates() -> None:
+    """An empty spread used to return no payload at all, and a payload-less call
+    runs the dispatcher's loop zero times — a Bash gate skipped on a Bash call."""
+    from ..claude_hook_adapter import to_claude_hook_payloads
+
+    payloads = to_claude_hook_payloads(
+        {"preToolUse": {"toolName": "bash", "parameters": {"commands": [None]}}},
+        "PreToolUse",
+    )
+    assert len(payloads) == 1
+    assert payloads[0]["tool_name"] == "Bash"
+
+
+def test_a_terminal_call_still_spreads_over_every_command() -> None:
+    """The control for the case above: a real spread is untouched."""
+    from ..claude_hook_adapter import to_claude_hook_payloads
+
+    payloads = to_claude_hook_payloads(
+        {"preToolUse": {"toolName": "bash", "parameters": {"commands": ["a", "b"]}}},
+        "PreToolUse",
+    )
+    assert [p["tool_input"]["command"] for p in payloads] == ["a", "b"]
