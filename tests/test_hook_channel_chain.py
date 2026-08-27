@@ -112,6 +112,34 @@ def test_exit_two_refuses_with_the_case_it_made_on_stderr(tmp_path: Path) -> Non
     assert "BLOCKED: shared state" in verdict.reason
 
 
+class TestStderrIsCarried:
+    """stderr is a load-bearing channel here, not a diagnostic one.
+
+    The bypass journal's own "NOT RECORDED" warning rides it, and so does every
+    fail-open note a hook makes while ALLOWING — the runs that carry no other
+    trace at all.
+    """
+
+    def test_a_hook_that_allowed_still_gets_its_say(self, tmp_path: Path) -> None:
+        noisy = _hook(tmp_path, "noisy", "cat >/dev/null; echo '[bypass-journal] NOT RECORDED' >&2")
+        verdict = _run(tmp_path, noisy)
+        assert verdict.decision is ChainDecision.ALLOW
+        assert "NOT RECORDED" in verdict.stderr
+
+    def test_what_the_hooks_before_the_decider_said_survives(self, tmp_path: Path) -> None:
+        early = _hook(tmp_path, "early", "cat >/dev/null; echo 'EARLY SAID SO' >&2")
+        denied = _hook(
+            tmp_path,
+            "deny",
+            "cat >/dev/null; echo 'DECIDER SAID SO' >&2; "
+            + _emit(permissionDecision="deny", permissionDecisionReason="no").split("; ", 1)[1],
+        )
+        verdict = _run(tmp_path, early, denied)
+        assert verdict.decision is ChainDecision.DENY
+        assert "EARLY SAID SO" in verdict.stderr
+        assert "DECIDER SAID SO" in verdict.stderr
+
+
 def test_a_missing_script_refuses_and_names_the_way_past(tmp_path: Path) -> None:
     absent = HookRow(command=tmp_path / "gone", matcher="Bash", tag="ai-hats:gone")
     verdict = _run(tmp_path, absent)

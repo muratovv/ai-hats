@@ -18,6 +18,7 @@ from ..hook_channel import (
     HookRow,
     project_dir_from,
     reduce_to,
+    relay_stderr,
     run_chain,
     undeliverable,
     worded,
@@ -130,13 +131,12 @@ def _reply(raw: ChainVerdict) -> int:
     a call that already ran used to skip it and cancel what cannot be cancelled.
     """
     verdict = reduce_to(PROFILE.speaks, raw)
+    relay_stderr(verdict)
     if verdict.decision in (ChainDecision.DENY, ChainDecision.ASK):
         said = worded(verdict)
         # Also on stderr: the agent reads errorMessage, an operator reading the
-        # session log afterwards reads this, and the bypass journal rides here.
+        # session log afterwards reads this.
         sys.stderr.write(said + "\n")
-        if verdict.stderr:
-            sys.stderr.write(verdict.stderr)
         _emit({"cancel": True, "errorMessage": said})
         return 0
     output: dict[str, object] = {"cancel": False}

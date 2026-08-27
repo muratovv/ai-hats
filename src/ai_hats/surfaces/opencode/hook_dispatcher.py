@@ -25,6 +25,7 @@ from ..hook_channel import (
     HookRow,
     project_dir_from,
     reduce_to,
+    relay_stderr,
     run_chain,
     speak_args,
     to_wire,
@@ -140,6 +141,9 @@ def _undeliverable(reason: str, event: HookEvent | None = None) -> ChainVerdict:
 
 
 def _say(verdict: ChainVerdict) -> int:
+    # The wire document carries the verdict; the hooks' own stderr has no field
+    # in it and goes to this process's stderr, which the plugin inherits.
+    relay_stderr(verdict)
     sys.stdout.write(json.dumps(to_wire(verdict)) + "\n")
     return 0
 

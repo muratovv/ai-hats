@@ -17,6 +17,7 @@ from ..hook_channel import (
     HookRow,
     project_dir_from,
     reduce_to,
+    relay_stderr,
     run_chain,
     undeliverable,
     worded,
@@ -134,6 +135,7 @@ def _rows(manifest: dict, event: HookEvent) -> list[HookRow]:
 
 
 def _emit(verdict, native_event: str) -> int:
+    relay_stderr(verdict)
     if verdict.decision is ChainDecision.ASK:
         # Codex has a prompt only where it was already asking. Elsewhere the
         # question has nowhere to go, and a question nobody sees is an allow.

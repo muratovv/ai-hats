@@ -30,6 +30,7 @@ from ..hook_channel import (
     matches,
     project_dir_from,
     reduce_to,
+    relay_stderr,
     resolve_hook_timeout,
     run_chain,
     undeliverable,
@@ -259,6 +260,7 @@ def _reply(verdict: ChainVerdict, payload: dict) -> int:
     Both take the authoritative form now; the status still carries a hook's own
     exit code, because that one IS agy's protocol for the hook's own refusal.
     """  # comment-length: allow — which form binds on this surface is the contract
+    relay_stderr(verdict)
     if verdict.decision is ChainDecision.ALLOW and not verdict.nudges:
         return 0
     spoken: dict = {"hookEventName": (verdict.event or HookEvent.PRE_TOOL_USE).value}
@@ -276,8 +278,6 @@ def _reply(verdict: ChainVerdict, payload: dict) -> int:
     sys.stdout.write(json.dumps(decision) + "\n")
     if verdict.decision is ChainDecision.DENY:
         sys.stderr.write(worded(verdict) + "\n")
-        if verdict.stderr:
-            sys.stderr.write(verdict.stderr)
         return verdict.exit_code if verdict.exit_code not in (None, 0) else 0
     return 0
 

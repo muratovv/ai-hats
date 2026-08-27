@@ -667,3 +667,34 @@ def test_real_worktree_gate_blocks_main_but_allows_the_linked_worktree(
     assert main_result[0] == 0
     assert json.loads(main_result[1])["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert linked_result == (0, "", "")
+
+
+def test_an_allowing_hooks_stderr_still_reaches_the_operator(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The audit trail rides stderr, and an ALLOW is where it rides alone.
+
+    A previous cut of this dispatcher forwarded every hook's stderr with a
+    comment saying why; losing that line took the bypass journal's own
+    "NOT RECORDED" warning off this surface entirely, with nothing left to say
+    a hatch had been used.
+    """
+    hook = _script(
+        tmp_path / "noisy.sh", "cat >/dev/null; echo '[bypass-journal] NOT RECORDED' >&2"
+    )
+    cache = tmp_path / "cache"
+    _manifest(cache, hook)
+
+    code, _stdout, stderr = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "exec",
+            "tool_input": {"command": "echo safe"},
+        },
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    assert code == 0
+    assert "NOT RECORDED" in stderr, f"the hook's only trace was dropped:\n{stderr!r}"

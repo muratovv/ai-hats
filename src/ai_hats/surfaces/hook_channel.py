@@ -498,6 +498,10 @@ def run_chain(
     budget = resolve_hook_timeout(environ)
     deadline = Deadline.without_lock(budget, why=f"{profile.label} {event.value}")
     nudges: list[Nudge] = []
+    # Every hook's, not just the decider's: an ALLOWING hook is the one whose
+    # stderr is its only trace, and the bypass journal's own failure notice
+    # arrives exactly there.
+    complaints: list[str] = []
     for payload in payloads:
         tool = str(payload.get("tool_name", ""))
         for row in rows:
@@ -515,13 +519,16 @@ def run_chain(
                     None if log_dir is None else log_dir / f"{event.value}-{row.command.name}.log"
                 ),
             )
+            if run.stderr:
+                complaints.append(run.stderr)
+            said = "".join(complaints)
             imposed = _imposed(run, row, event)
             if imposed is not None:
                 skipped = _skipped_by_hatch(run, row, env)
                 if skipped is not None:
                     record_gate_skipped(skipped, hook=row.tag, project_dir=project_dir)
                     continue
-                return replace(imposed, nudges=tuple(nudges))
+                return replace(imposed, nudges=tuple(nudges), stderr=said)
             try:
                 reply = parse_reply(
                     run.said,
@@ -537,7 +544,7 @@ def run_chain(
                     hook=row.tag,
                     nudges=tuple(nudges),
                     event=event,
-                    stderr=run.stderr,
+                    stderr=said,
                     hatch_env=GATE_BROKEN_ACK_ENV,
                 )
             if reply.nudge is not None:
@@ -550,10 +557,26 @@ def run_chain(
                     nudges=tuple(nudges),
                     updated_input=reply.updated_input,
                     event=reply.event or event,
-                    stderr=run.stderr,
+                    stderr=said,
                     exit_code=run.exit_code,
                 )
-    return ChainVerdict(decision=ChainDecision.ALLOW, nudges=tuple(nudges), event=event)
+    return ChainVerdict(
+        decision=ChainDecision.ALLOW,
+        nudges=tuple(nudges),
+        event=event,
+        stderr="".join(complaints),
+    )
+
+
+def relay_stderr(verdict: ChainVerdict) -> None:
+    """Put back what the hooks said on stderr, whatever the verdict was.
+
+    Their diagnostics are theirs to make. A surface that relays them only behind
+    a refusal loses exactly the notes an ALLOWING gate left — the bypass
+    journal's own "NOT RECORDED" among them — which have no other trace at all.
+    """
+    if verdict.stderr:
+        sys.stderr.write(verdict.stderr)
 
 
 def project_dir_from(environ: Mapping[str, str] | None = None) -> Path:
@@ -711,6 +734,7 @@ __all__ = [
     "Reduction",
     "BINDABLE_EVENTS",
     "record_gate_skipped",
+    "relay_stderr",
     "undeliverable",
     "to_wire",
     "RETIRED_TIMEOUT_ENVS",
