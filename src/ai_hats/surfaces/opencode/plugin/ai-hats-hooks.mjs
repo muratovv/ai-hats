@@ -26,26 +26,6 @@
 
 const MANIFEST_VERSION = 1;
 
-// OpenCode tool name -> Claude-dialect tool name. Matchers in SKILL.md
-// frontmatter are written against the Claude vocabulary; an unmatched native
-// tool passes through untouched because no hook can declare it.
-const TOOL_MAP = {
-  bash: "Bash",
-  read: "Read",
-  edit: "Edit",
-  write: "Write",
-  glob: "Glob",
-  grep: "Grep",
-  task: "Task",
-  webfetch: "WebFetch",
-  todowrite: "TodoWrite",
-};
-
-function claudeToolName(nativeTool) {
-  const key = String(nativeTool || "").toLowerCase();
-  return Object.prototype.hasOwnProperty.call(TOOL_MAP, key) ? TOOL_MAP[key] : null;
-}
-
 async function loadManifest(cacheDir, sessionId) {
   const fs = await import("node:fs");
   const path = await import("node:path");
@@ -76,19 +56,47 @@ async function loadManifest(cacheDir, sessionId) {
   };
 }
 
-function runHook(command, payload) {
+function judge(event, nativeTool, args) {
   const { spawnSync } = require("node:child_process");
-  try {
-    return spawnSync(command, [], {
-      input: payload,
-      encoding: "utf8",
-      timeout: 60000,
-      killSignal: "SIGKILL",
-      env: process.env,
-    });
-  } catch (error) {
-    return { status: -1, stderr: String(error), stdout: "" };
+  const python = process.env.AI_HATS_PYTHON;
+  if (!python) {
+    return {
+      decision: "deny",
+      reason:
+        "[ai-hats] AI_HATS_PYTHON is unset, so no gate can be consulted; " +
+        "this session predates the dispatcher — restart it.",
+      nudges: [],
+    };
   }
+  const request = JSON.stringify({
+    event,
+    payload: {
+      session_id: process.env.AI_HATS_SESSION_ID,
+      tool_name: nativeTool,
+      tool_input: args ?? {},
+      hook_event_name: event,
+    },
+  });
+  const run = spawnSync(python, ["-m", "ai_hats.surfaces.opencode.hook_dispatcher"], {
+    input: request,
+    encoding: "utf8",
+    timeout: 300000,
+    killSignal: "SIGKILL",
+    env: process.env,
+  });
+  try {
+    const verdict = JSON.parse(run.stdout);
+    if (verdict && typeof verdict.decision === "string") return verdict;
+  } catch {
+    // fall through to the refusal below
+  }
+  // The dispatcher answers on stdout whatever it concludes, so no answer means
+  // it never ran. Passing the call would be guessing on the gate's behalf.
+  return {
+    decision: "deny",
+    reason: `[ai-hats] the hook dispatcher did not answer: ${String(run.stderr || "").trim()}`,
+    nudges: [],
+  };
 }
 
 // A prefix rule matches when every path the request touches sits under the
@@ -151,56 +159,22 @@ export const AiHatsHooksPlugin = async ({ client }) => {
     };
   }
 
-  const entriesFor = (event) => manifest.hooks[event] || [];
   const permissionRules = manifest.state === "ready" ? manifest.permissions : [];
 
   const dispatch = async (event, nativeTool, args, canDeny) => {
-    const toolName = claudeToolName(nativeTool);
-    if (!toolName) return;
-    const payload = JSON.stringify({
-      session_id: sessionId,
-      tool_name: toolName,
-      tool_input: args ?? {},
-    });
-    for (const hook of entriesFor(event)) {
-      let matcher;
-      try {
-        matcher = new RegExp(hook.matcher || "");
-      } catch {
-        console.warn(`[ai-hats] skipping hook with invalid matcher: ${hook.tag}`);
-        continue;
-      }
-      if (!matcher.test(toolName)) continue;
-      const result = runHook(hook.command, payload);
-      if (result.status === 2) {
-        const detail = String(result.stderr || "blocked by ai-hats guard").trim();
-        if (!canDeny) {
-          console.error(`[ai-hats] ${hook.tag}: ${detail}`);
-          continue;
-        }
-        throw new Error(`[ai-hats] ${hook.tag}: ${detail}`);
-      }
-      if (result.status !== 0) {
-        console.warn(
-          `[ai-hats] hook failed open (${hook.tag}): status=${result.status} ${String(result.stderr || "").trim()}`,
-        );
-        continue;
-      }
-      let verdict = null;
-      try {
-        verdict = result.stdout ? JSON.parse(result.stdout) : null;
-      } catch {
-        verdict = null;
-      }
-      if (verdict && verdict.decision === "block") {
-        const detail = String(verdict.reason || "blocked by ai-hats guard").trim();
-        if (!canDeny) {
-          console.error(`[ai-hats] ${hook.tag}: ${detail}`);
-          continue;
-        }
-        throw new Error(`[ai-hats] ${hook.tag}: ${detail}`);
-      }
+    const verdict = judge(event, nativeTool, args);
+    for (const nudge of verdict.nudges || []) {
+      if (nudge && nudge.text) console.warn(`[ai-hats] ${nudge.hook || "guard"}: ${nudge.text}`);
     }
+    if (verdict.decision === "allow") return;
+    const detail = String(verdict.reason || "blocked by an ai-hats guard").trim();
+    if (!canDeny) {
+      // PostToolUse has no cancel channel here: the call already ran, so the
+      // refusal is reported rather than pretended.
+      console.error(`[ai-hats] ${verdict.hook || "guard"}: ${detail}`);
+      return;
+    }
+    throw new Error(`[ai-hats] ${verdict.hook || "guard"}: ${detail}`);
   };
 
   return {

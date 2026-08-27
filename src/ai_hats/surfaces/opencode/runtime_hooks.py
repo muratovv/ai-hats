@@ -10,10 +10,11 @@ codex surfaces.
 from __future__ import annotations
 
 import json
+import sys
 from importlib import resources
 from pathlib import Path
 
-from ai_hats.env import ENV_SESSION_CACHE_DIR
+from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.paths import ai_hats_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
@@ -105,6 +106,9 @@ def materialize_hook_manifest(
     artifacts.materialized.append(plugin_path)
 
     artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
+    # The plugin is JavaScript and cannot judge a call; it shells out to the
+    # dispatcher, which needs the interpreter this session was built with.
+    artifacts.extra_env[ENV_AI_HATS_PYTHON] = sys.executable
     return manifest_path, plugin_path
 
 

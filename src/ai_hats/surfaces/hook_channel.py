@@ -87,7 +87,9 @@ class Dialect:
     can_ask_with_ticket: bool
     #: Cancel a call that already ran, on PostToolUse.
     can_deny_after: bool
-    #: Carry a nudge back to the model.
+    #: Carry a nudge onward at all. Where it lands differs — the model's own
+    #: context on most surfaces, an operator's console on one — but a surface
+    #: with nowhere to put it drops the text rather than pretending.
     can_carry_nudges: bool
 
 
@@ -494,6 +496,23 @@ def worded(verdict: ChainVerdict) -> str:
     return f"{verdict.reason}\nai-hats: {way_out}"
 
 
+def to_wire(verdict: ChainVerdict) -> dict:
+    """The verdict as a document, for a channel that cannot hold the value.
+
+    THIS is the contract an out-of-process channel is given: it marshals this
+    back instead of deriving a verdict of its own from an exit code, which is
+    how a channel comes to understand only the shapes it happened to implement.
+    """
+    return {
+        "decision": verdict.decision.value,
+        "reason": worded(verdict),
+        "hook": verdict.hook,
+        "nudges": [{"text": n.text, "hook": n.hook} for n in verdict.nudges],
+        "updated_input": verdict.updated_input,
+        "hatch_env": verdict.hatch_env,
+    }
+
+
 def reduce_to(dialect: Dialect, verdict: ChainVerdict) -> ChainVerdict:
     """The same verdict, reduced to what this surface can actually utter.
 
@@ -522,6 +541,7 @@ def reduce_to(dialect: Dialect, verdict: ChainVerdict) -> ChainVerdict:
 
 
 __all__ = [
+    "to_wire",
     "RETIRED_TIMEOUT_ENVS",
     "project_dir_from",
     "worded",
