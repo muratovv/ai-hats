@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..hook_channel import FILE_MUTATION_NAMES, Dialect, SurfaceProfile
+from ..hook_channel import BINDABLE_EVENTS, FILE_MUTATION_NAMES, Dialect, SurfaceProfile
 
 PROFILE = SurfaceProfile(
     label="opencode",
@@ -20,6 +20,7 @@ PROFILE = SurfaceProfile(
         "websearch": ("WebFetch",),
         "todowrite": ("TodoWrite",),
     },
+    native_events=BINDABLE_EVENTS,
     arg_names={},
     manifest_subpath=("opencode",),
     skills_subpath=("opencode-xdg", "opencode", "skills"),

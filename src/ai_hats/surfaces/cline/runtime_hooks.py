@@ -8,11 +8,12 @@ from importlib.resources import as_file, files
 from pathlib import Path
 
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
+from .profile import PROFILE
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.paths import ai_hats_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
 
-CLINE_HOOK_EVENTS = ("PreToolUse", "PostToolUse")
+CLINE_HOOK_EVENTS: tuple[str, ...] = PROFILE.native_events
 MANIFEST_VERSION = 1
 
 

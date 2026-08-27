@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..hook_channel import FILE_MUTATION_NAMES, Dialect, SurfaceProfile
+from ..hook_channel import BINDABLE_EVENTS, FILE_MUTATION_NAMES, Dialect, SurfaceProfile
 
 PROFILE = SurfaceProfile(
     label="codex",
@@ -16,6 +16,9 @@ PROFILE = SurfaceProfile(
         "apply_patch": FILE_MUTATION_NAMES,
         "spawn_agent": ("Agent",),
     },
+    # PermissionRequest is Codex's own arrival for a call the chain judges as
+    # a PreToolUse; the dispatcher maps it before anything else sees it.
+    native_events=(*BINDABLE_EVENTS, "PermissionRequest"),
     arg_names={},
     manifest_subpath=(),
     # Codex mirrors skills outside the session cache, so only the manifest it

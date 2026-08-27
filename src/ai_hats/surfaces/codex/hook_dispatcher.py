@@ -104,7 +104,7 @@ def _emit_deny(event: str, reason: str) -> None:
     else:
         output = {
             "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
+                "hookEventName": HookEvent.PRE_TOOL_USE.value,
                 "permissionDecision": "deny",
                 "permissionDecisionReason": reason,
             }
@@ -172,8 +172,8 @@ def dispatch_hook(*, stdin=None) -> int:
     if not isinstance(payload, dict):
         sys.stderr.write("ai-hats-codex-hook: payload is not an object\n")
         return 2
-    native_event = str(payload.get("hook_event_name", "PreToolUse"))
-    if native_event not in ("PreToolUse", "PermissionRequest", "PostToolUse"):
+    native_event = str(payload.get("hook_event_name", HookEvent.PRE_TOOL_USE.value))
+    if native_event not in PROFILE.native_events:
         return 0
     # A PermissionRequest is Codex's own arrival for a call the chain judges as
     # a PreToolUse. The mapping stops here, so the channel never learns a name

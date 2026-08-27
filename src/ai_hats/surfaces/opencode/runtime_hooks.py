@@ -19,7 +19,6 @@ from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.paths import ai_hats_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
 
-OPENCODE_HOOK_EVENTS = ("PreToolUse", "PostToolUse")
 MANIFEST_VERSION = 1
 
 PLUGIN_ASSET = "ai-hats-hooks.mjs"
@@ -114,7 +113,6 @@ def materialize_hook_manifest(
 
 __all__ = [
     "MANIFEST_VERSION",
-    "OPENCODE_HOOK_EVENTS",
     "PLUGIN_ASSET",
     "materialize_hook_manifest",
     "plugin_source",

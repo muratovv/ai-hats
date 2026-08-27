@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
+from .profile import PROFILE
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.paths import ai_hats_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
@@ -20,7 +21,9 @@ from ai_hats.session_artifacts import BuiltArtifacts
 from ..hook_channel import surface_timeout
 from .hook_dispatcher import DISPATCHER_COMMAND
 
-CODEX_HOOK_EVENTS = ("PreToolUse", "PermissionRequest", "PostToolUse")
+#: Every bindable event, plus the arrival only this surface has. Derived, so a
+#: new bindable event reaches Codex without anyone remembering this line.
+CODEX_HOOK_EVENTS: tuple[str, ...] = PROFILE.native_events
 MANIFEST_VERSION = 1
 
 

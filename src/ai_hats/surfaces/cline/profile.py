@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..hook_channel import Dialect, SurfaceProfile
+from ..hook_channel import BINDABLE_EVENTS, Dialect, SurfaceProfile
 
 PROFILE = SurfaceProfile(
     label="cline",
@@ -21,6 +21,7 @@ PROFILE = SurfaceProfile(
         "search": ("Grep",),
         "list_files": ("Glob",),
     },
+    native_events=BINDABLE_EVENTS,
     arg_names={},
     manifest_subpath=(),
     skills_subpath=("skills",),

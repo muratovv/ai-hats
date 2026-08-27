@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from ai_hats_core.deadline import Deadline
 
@@ -49,6 +49,11 @@ class HookEvent(Enum):
             return cls(name)
         except ValueError:
             return None
+
+
+#: Every bindable event, as the names a manifest and a config use. Derived from
+#: the enum so a surface's own list cannot fall behind it in silence.
+BINDABLE_EVENTS: tuple[str, ...] = tuple(e.value for e in HookEvent)
 
 
 class ChainDecision(Enum):
@@ -103,6 +108,10 @@ class SurfaceProfile:
     tool_names: Mapping[str, tuple[str, ...]]
     #: Native argument name -> the matcher-vocabulary name hooks defend against.
     arg_names: Mapping[str, str]
+    #: Every event this surface will actually deliver, in its own names. Usually
+    #: :data:`BINDABLE_EVENTS`; a surface with an arrival of its own says so here
+    #: rather than spelling the whole set out again somewhere else.
+    native_events: tuple[str, ...]
     #: Where the manifest sits under the session cache dir.
     manifest_subpath: tuple[str, ...]
     #: Where the session skills mirror sits under the cache dir; ``None`` when
@@ -513,34 +522,120 @@ def to_wire(verdict: ChainVerdict) -> dict:
     }
 
 
-def reduce_to(dialect: Dialect, verdict: ChainVerdict) -> ChainVerdict:
+def _consent_cannot_follow(dialect: Dialect, verdict: ChainVerdict) -> bool:
+    """A question this surface cannot put, or cannot put WITH its ticket.
+
+    A ticketed question asked without its ticket approves the original command,
+    so the two are one capability wherever a ticket is present.
+    """
+    if verdict.decision is not ChainDecision.ASK:
+        return False
+    return not dialect.can_ask or (bool(verdict.updated_input) and not dialect.can_ask_with_ticket)
+
+
+def _refuse_instead(verdict: ChainVerdict) -> ChainVerdict:
+    return replace(
+        verdict,
+        decision=ChainDecision.DENY,
+        reason=(
+            f"{verdict.reason or 'this call needs explicit consent'}; "
+            "this surface cannot carry the consent this gate asked for, "
+            "so grant it outside this tool call and retry"
+        ),
+        # The rewrite went with the question; keeping it would hand the surface
+        # an input nobody approved.
+        updated_input=None,
+    )
+
+
+def _refusal_arrives_too_late(dialect: Dialect, verdict: ChainVerdict) -> bool:
+    """A refusal for a call that already ran, which this surface can still SAY.
+
+    Turning it into something the reader sees needs somewhere to put it. Without
+    that, the refusal stays a refusal and the surface's own reply decides what
+    becomes of it — inventing an allow here would be manufacturing the fail-open
+    this channel exists to remove.
+    """
+    return (
+        verdict.decision is ChainDecision.DENY
+        and verdict.event is HookEvent.POST_TOOL_USE
+        and not dialect.can_deny_after
+        and dialect.can_carry_nudges
+    )
+
+
+def _tell_instead(verdict: ChainVerdict) -> ChainVerdict:
+    """Say it rather than drop it: the gate looked and objected, and the reader
+    is the only one who can still act on that."""
+    return replace(
+        verdict,
+        decision=ChainDecision.ALLOW,
+        nudges=(*verdict.nudges, Nudge(verdict.reason, verdict.hook)),
+        reason="",
+    )
+
+
+def _nudge_has_nowhere_to_go(dialect: Dialect, verdict: ChainVerdict) -> bool:
+    return bool(verdict.nudges) and not dialect.can_carry_nudges
+
+
+def _drop_nudges(verdict: ChainVerdict) -> ChainVerdict:
+    return replace(verdict, nudges=())
+
+
+@dataclass(frozen=True)
+class Reduction:
+    """One thing a surface cannot utter, and what it becomes instead."""
+
+    name: str
+    needed: Callable[[Dialect, ChainVerdict], bool]
+    apply: Callable[[ChainVerdict], ChainVerdict]
+
+
+#: Applied to a fixed point, never in sequence. One reduction can produce what
+#: another must then handle — a refusal that becomes a nudge on a surface that
+#: also cannot carry nudges — and an if-chain gets that right only in the order
+#: it happens to be written, which is how a dropped nudge survived review once.
+REDUCTIONS: tuple[Reduction, ...] = (
+    Reduction("consent this surface cannot carry", _consent_cannot_follow, _refuse_instead),
+    Reduction("a refusal that arrives too late", _refusal_arrives_too_late, _tell_instead),
+    Reduction("a nudge with nowhere to go", _nudge_has_nowhere_to_go, _drop_nudges),
+)
+
+
+def reduce_to(
+    dialect: Dialect,
+    verdict: ChainVerdict,
+    *,
+    reductions: Sequence[Reduction] = REDUCTIONS,
+) -> ChainVerdict:
     """The same verdict, reduced to what this surface can actually utter.
 
-    Every reduction applies; a surface that can neither ask nor carry a nudge
-    needs both, and returning after the first would leave the second in place.
+    ``reductions`` is a parameter so the order-independence above can be checked
+    by handing in a permutation, rather than by reaching into this module and
+    swapping the tuple out underneath it.
     """
     reduced = verdict
-    if reduced.decision is ChainDecision.ASK:
-        # A ticketed question asked without its ticket approves the original
-        # command; a question this surface cannot put at all is not a question.
-        loses_ticket = bool(reduced.updated_input) and not dialect.can_ask_with_ticket
-        if loses_ticket or not dialect.can_ask:
-            reduced = replace(
-                reduced,
-                decision=ChainDecision.DENY,
-                reason=(
-                    f"{reduced.reason or 'this call needs explicit consent'}; "
-                    "this surface cannot carry the consent this gate asked for, "
-                    "so grant it outside this tool call and retry"
-                ),
-                updated_input=None,
-            )
-    if reduced.nudges and not dialect.can_carry_nudges:
-        reduced = replace(reduced, nudges=())
-    return reduced
+    # One pass per reduction is enough for any set where each removes what it
+    # matches: the bound is what makes a mutually-undoing pair loud rather than
+    # a hang.
+    for _ in range(len(reductions) + 1):
+        for reduction in reductions:
+            if reduction.needed(dialect, reduced):
+                reduced = reduction.apply(reduced)
+                break
+        else:
+            return reduced
+    raise RuntimeError(
+        f"reductions did not settle for {dialect}: {[r.name for r in reductions]} "
+        f"— two of them undo each other"
+    )
 
 
 __all__ = [
+    "REDUCTIONS",
+    "Reduction",
+    "BINDABLE_EVENTS",
     "to_wire",
     "RETIRED_TIMEOUT_ENVS",
     "project_dir_from",
