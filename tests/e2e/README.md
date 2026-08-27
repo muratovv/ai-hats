@@ -9,18 +9,18 @@ If you're adding a new e2e test, read [How to add an e2e test](#how-to-add-an-e2
 ## Cost tiers
 
 Every e2e test belongs to one of three tiers — pick the cheapest one
-that still exercises the surface under test. The full Core catalog
-with per-scenario classification lives in
-`.claude/plans/466-scenarios-catalog-v1.md`.
+that still exercises the surface under test. What the tier covers today,
+as user flows, is `CATALOG.md` — rendered from each test's docstring block
+by `scripts/gen_e2e_catalog.py` and kept current by the `e2e-catalog` stage
+of `scripts/ci-local.sh`.
 
-| Tier | Fixture                            | Wall-clock budget                          | Quota                                                         | Use for                                                                                                |
-| ---- | ---------------------------------- | ------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| free | `tmp_project`                      | <5s per test                               | $0                                                            | CLI commands that don't spawn an agent (`ai-hats list`, `config`, `task`, `attach`, …)                 |
-| venv | `tmp_venv_project`                 | <120s first test in module, <5s subsequent | $0                                                            | Launcher install, `self update`, `self init`, `self bump`, anything that needs a real installed binary |
-| live | `probe_project` + `live_session()` | <30s per test                              | budget-capped via `max_budget_usd`, typically <$0.05 per test | Agent-loop scenarios — tool use, multi-turn state, session-id stability                                |
+| Tier | Fixture                                      | Wall-clock budget                          | Quota               | Use for                                                                                                |
+| ---- | -------------------------------------------- | ------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------ |
+| free | `tmp_project`                                | <5s per test                               | $0                  | CLI commands that don't spawn an agent (`ai-hats list`, `config`, `task`, `attach`, …)                 |
+| venv | `tmp_venv_project`                           | <120s first test in the session, <5s after | $0                  | Launcher install, `self update`, `self init`, `self bump`, anything that needs a real installed binary |
+| live | `requires_claude_auth` / `requires_agy_auth` | <30s per test                              | real provider quota | Agent-loop scenarios — tool use, session artefacts, provider behaviour                                 |
 
-The 51 Core scenarios in the catalog split 32 free / 19 venv / a
-handful live. Always prefer free over venv over live.
+Always prefer free over venv over live.
 
 ## How to add an e2e test
 
@@ -52,27 +52,23 @@ handful live. Always prefer free over venv over live.
        ).expect_ok()
 
 
-   # live-tier — see tests/e2e/test_w0_pilot_session.py
-   import asyncio
-   from _helpers.live import live_session
-
-
-   def test_something(probe_project, requires_claude_auth) -> None:
-       async def _drive():
-           async with live_session(probe_project, role="probe", max_budget_usd=0.10) as s:
-               r = await s.send("Reply OK!")
-               r.expect_no_error().expect_contains_ci("ok")
-
-       asyncio.run(_drive())
+   # live-tier — see tests/e2e/test_subagent_sdk_smoke.py. There is no live
+   # project fixture: take `requires_claude_auth` (or `requires_agy_auth`)
+   # alongside whichever project fixture the test needs, and drive the real
+   # runner or binary. The gate fixture skips when nothing is authenticated.
+   def test_something(some_project, requires_claude_auth) -> None:
+       ...
    ```
 
 3. **Keep the body small.** Fluent `.expect_*` verbs from `RunResult`
-   / `TurnResult` / `LiveSession` chain — one verb = one assertion,
-   each returns self. If your test body breaks past ~10 lines, the
-   fixture probably needs to absorb more setup.
+   chain — one verb = one assertion, each returns self. If your test
+   body breaks past ~10 lines, the fixture probably needs to absorb
+   more setup.
 
-4. **Map to a Core scenario** in the docstring (e.g. "→ S-CLI-22").
-   That keeps the catalog and the test files connected.
+4. **Open the module docstring with the flow block** — `flow:` / `cmds:` /
+   `expect:` / `why:`. `CATALOG.md` is rendered from it, and the
+   `e2e-catalog` stage exits non-zero naming any file that carries none
+   (`test_e2e_catalog_uncatalogued_refusal.py`).
 
 5. **Run it.** `pytest tests/e2e/test_<your_file>.py -v`. To skip
    venv- and live-tier in fast iterations:
@@ -88,19 +84,18 @@ handful live. Always prefer free over venv over live.
 
 ## Fixtures (`conftest.py`)
 
-| Fixture                | Scope                                      | Returns   | Notes                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `repo_root`            | session                                    | `Path`    | Repo checkout root. Process-wide constant.                                                                                                                                                 |
-| `checkout_bin`         | session                                    | `Path`    | Every consent-wrapped surface (`ai-hats`, `rack`) as a shim over the interpreter under test. Lead a session `PATH` with THIS — a surface it lacks comes from the ambient PATH (HATS-1847). |
-| `requires_claude_auth` | function                                   | `None`    | Skip marker. Skips if `claude --version` doesn't exit 0.                                                                                                                                   |
-| `requires_agy_auth`    | session                                    | `None`    | Skip marker. Skips unless `agy --version` and a bounded live turn both exit 0.                                                                                                             |
-| `tmp_project`          | function                                   | `Project` | Role-less project + dev-venv binary. Free-tier.                                                                                                                                            |
-| `tmp_venv_project`     | function (on a module-scoped venv builder) | `Project` | Fresh project dir + shared launcher venv via `AI_HATS_VENV`. Venv-tier.                                                                                                                    |
-| `probe_project`        | function                                   | `Path`    | Bakes a deterministic `probe` role for live-session tests. Gated on `requires_claude_auth` at the test signature when a live SDK call follows.                                             |
+| Fixture                | Scope                                       | Returns   | Notes                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repo_root`            | session                                     | `Path`    | Repo checkout root. Process-wide constant.                                                                                                                                                 |
+| `checkout_bin`         | session                                     | `Path`    | Every consent-wrapped surface (`ai-hats`, `rack`) as a shim over the interpreter under test. Lead a session `PATH` with THIS — a surface it lacks comes from the ambient PATH (HATS-1847). |
+| `requires_claude_auth` | function                                    | `None`    | Skip marker. Skips if `claude --version` doesn't exit 0.                                                                                                                                   |
+| `requires_agy_auth`    | session                                     | `None`    | Skip marker. Skips unless `agy --version` and a bounded live turn both exit 0.                                                                                                             |
+| `tmp_project`          | function                                    | `Project` | Role-less project + dev-venv binary. Free-tier.                                                                                                                                            |
+| `tmp_venv_project`     | function (on a session-scoped venv builder) | `Project` | Fresh project dir + shared launcher venv via `AI_HATS_VENV`. Venv-tier.                                                                                                                    |
 
-`tmp_venv_project` is layered: an internal module-scoped builder
+`tmp_venv_project` is layered: an internal session-scoped builder
 (`_shared_launcher_venv`) runs `bash scripts/install-launcher.sh` +
-`ai-hats self update` once per file (~30-60s on a cold pip cache),
+`ai-hats self update` once per session (~30-60s on a cold cache, HATS-569),
 while the user-facing fixture is function-scoped and hands each test
 a fresh project directory pointing at the shared venv via
 `AI_HATS_VENV`. Tests can mutate their own project freely. **The
@@ -111,33 +106,36 @@ own function-scoped builder.
 
 ## Helper modules (`tests/e2e/_helpers/`)
 
-| File         | What it provides                                                                                                        |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `project.py` | `Project` + `RunResult` — subprocess driver for one-shot CLI invocations with fluent `.expect_*` verbs.                 |
-| `live.py`    | `live_session()` + `LiveSession` + `TurnResult` — async multi-turn driver for the Claude Agent SDK.                     |
-| `venv.py`    | `build_launcher_venv()` — installs the bash launcher and bootstraps its inner ai-hats venv. Used by `tmp_venv_project`. |
+The high-signal subset a test author actually meets — **not** the full
+listing. `ls tests/e2e/_helpers/` is the listing; reading this table as one
+is how a row for a deleted module survived here (HATS-1847).
 
-The original framework plan
-(`.claude/plans/466-framework-skeleton.md`) sketched a separate
-`assertions.py` module — the `RunResult` / `TurnResult` /
-`LiveSession` fluent verbs absorbed those, so a third module would
-be YAGNI today.
+| File            | What it provides                                                                                                                                          |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project.py`    | `Project` + `RunResult` — subprocess driver for one-shot CLI invocations with fluent `.expect_*` verbs.                                                   |
+| `venv.py`       | `build_launcher_venv()` — installs the bash launcher and bootstraps its inner ai-hats venv. Used by `tmp_venv_project`.                                   |
+| `env.py`        | `clean_env()` + `ENV_DENYLIST` — subprocess env hygiene, so a run exercises the installed artefact and not a source-tree shadow (HATS-685).               |
+| `surfaces.py`   | `SURFACES` + `write_surface_shims()` — the executables a PATH entry must carry to be the checkout under test. Behind `checkout_bin`.                      |
+| `hook_chain.py` | `run_chain()` + `Verdict` — drives the MATERIALIZED PreToolUse chain rather than a single hook, so one hook overriding another is observable (HATS-1253). |
+| `sessions.py`   | `stand_in_wrapped_session()` + `wait_for_new_session_dir()` — stand-in HITL session, and polling for session artefacts.                                   |
 
 ## When something breaks
 
 - **Free-tier tests fail with "ai-hats: command not found"** — your
-  dev venv is missing or stale. Run `pip install -e '.[dev]'`.
-- **Venv-tier tests skip with "launcher venv build failed"** — pip
-  needs network to fetch transitive deps and the cache is cold.
-  Either ensure network access or pre-warm the cache.
+  dev venv is missing or stale. Run `uv pip install -e ".[dev]"`.
+- **Venv-tier tests skip with "launcher venv build failed"** — `uv` is
+  missing from PATH, or it needs network for transitive deps against a cold
+  cache. Ensure network access or pre-warm the cache. Under
+  `AI_HATS_E2E_REQUIRE_VENV=1` (what the master gate exports) the same
+  condition FAILS instead of skipping — cannot verify ⇒ cannot push.
 - **Live-tier tests skip with "claude binary not found"** — install
-  the Claude CLI and authenticate (`claude login`).
-- **Live-tier tests fail with budget exceeded** — bump
-  `max_budget_usd=` on `live_session()`. Default per test is $0.10.
+  the Claude CLI and authenticate (`claude login`). The `agy` cohort skips
+  the same way and is excluded from the full e2e gate; run it explicitly
+  with `pytest -m live_agy tests/e2e/`.
 
 ## Adding a new fixture
 
-Before adding a fixture, ask whether `tmp_project` /
-`tmp_venv_project` / `probe_project` can be extended instead.
-Three fixtures cover the entire tier space today; a fourth needs a
-distinct cost/scope profile to justify its existence.
+Before adding a fixture, ask whether `tmp_project` or `tmp_venv_project`
+can be extended instead. Those two cover the free and venv tiers, and a
+live-tier test composes a gate fixture onto one of them — a new fixture
+needs a distinct cost/scope profile to justify its existence.
