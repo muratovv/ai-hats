@@ -1,6 +1,6 @@
 # Orchestration — session tags, JSON, exit codes
 
-When you fan out ai-hats sessions via parallel, xargs, CI, or webhook orchestrators, you need tagged metadata, machine-readable output, and stable exit codes. This guide covers all three.
+When you fan out ai-hats sessions via parallel, xargs, CI, or webhook orchestrators, you need to know what each sub-agent is handed, plus tagged metadata, machine-readable output, and stable exit codes. This guide covers all four.
 
 ## Which command: `ai-hats agent` vs `ai-hats execute`
 
@@ -21,6 +21,50 @@ ai-hats execute --role <role> --batch --prompt <injection-name>
 ```
 
 `execute --batch` without `-r/--role` is a usage error (it would build the invalid worktree branch `agent//<sid>`); the CLI redirects you to `ai-hats agent <role>`.
+
+## What a sub-agent is handed
+
+Two channels, and they answer different questions. The **role composition** —
+rules, skills, injections — says *who the agent is*, and is the same for every
+spawn of that role. The **first turn** says *what this run is about*, and is
+built per task:
+
+| Section            | Filled from                    | Present when    |
+| ------------------ | ------------------------------ | --------------- |
+| `# TICKET_CONTEXT` | the card's raw `task.yaml`     | `--ticket <id>` |
+| `# LINKED_CONTEXT` | the cards that ticket links to | `--ticket <id>` |
+| `# TASK`           | your `--task` string           | `--task "..."`  |
+
+Empty sections are omitted, so a `--task`-only spawn gets exactly one heading.
+
+**`--ticket` is not just the card.** It pulls the ticket's **direct** links —
+one level, no transitive walk — in the order `parent_task → depends_on →
+related → see_also`. Each linked card arrives trimmed (id, title, state,
+description) with **only its latest** `work_log` entry. The one exception is
+the parent epic, which carries its whole `plan.md`, **uncapped**: nothing in
+this path truncates. A 900-line epic plan is 900 lines in every child's
+prompt, so if fan-out feels expensive, look there first.
+
+Inspect the real bytes before spending a run on them:
+
+```bash
+# what this spawn WOULD send — no session, no worktree, no ownership hold
+ai-hats agent <role> --task "..." --ticket HATS-123 --dry-run
+
+# what a spawn DID send
+cat .agent/ai-hats/sessions/runs/session_<id>/meta_prompt.txt
+```
+
+Both come from the same assembly the runner uses, so the report is about the
+launch that actually happened (HATS-1552).
+
+**Two engines, one contract.** On claude the turn runs in-process through the
+Agent SDK and ends when the SDK reports the turn complete; on the CLI surfaces
+(agy, cline, codex, opencode) it is a real subprocess whose stdout is
+JSON-parsed on a best-effort basis. You do not choose, and you do not need to
+care: both land the same artifacts under `session_<id>/` — `transcript.txt`,
+`reasoning.log`, `metrics.json`, `audit.md` — and the same exit codes
+([below](#machine-readable-run)).
 
 ## Session tags & queryable history
 

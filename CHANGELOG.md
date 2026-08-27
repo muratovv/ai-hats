@@ -56,6 +56,21 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- **`build_first_user_message` no longer takes `project_state`** (HATS-1100). The
+  `# PROJECT_STATE` section — the whole-backlog `STATE.md` dump, ~5.4K tokens of
+  mostly-finished cards on every spawn — was dropped in HATS-681; its keyword
+  parameter outlived it by a year, and the docstring went on advertising a
+  channel no caller fed. Passing it now raises `TypeError`, which is what the
+  new regression test asserts: removing a guard is not the same as inverting it.
+
+- **The sub-agent prompt is documented** (HATS-1100). `docs/how-to-orchestration.md`
+  gains *What a sub-agent is handed* — the three first-turn sections, what
+  `--ticket` actually pulls in (direct links only, latest `work_log` entry only,
+  and the parent epic's whole `plan.md`, uncapped), and how to read the real
+  bytes with `--dry-run` or `meta_prompt.txt`. The glossary gains **Sub-agent
+  first turn** and **`linked_context`**, and the *Automate runner* entry now
+  names the two engines behind one `SurfaceRunResult`.
+
 - **A ticket id no longer appears in a comment or in shipped library prose.** The
   comment rule used to *prescribe* a `TICKET-NNN` pointer — it was introduced to
   displace four-line retellings of task history, so dropping it alone would have
