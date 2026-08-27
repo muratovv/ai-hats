@@ -87,6 +87,17 @@ class CheckRequest:
     force: bool
     timeout: float
     event: str = ""
+    #: WHO moved the card, verbatim from the dispatch context. The `rack:` space
+    #: is the framework's own automation (`rack:epic-automation` and friends);
+    #: `session:` / `human:` is what the CLI mints for a person or an agent. An
+    #: executor handing this to a script is the only way that script can tell an
+    #: automatic hop from a human one — the hop is an in-process nested
+    #: transition, so every ambient signal around it is identical (HATS-1724).
+    actor: str = ""
+    #: WHICH declared point matched, where ``event`` is the road actually taken:
+    #: a row bound ``->done`` fires on eight roads and answers on each. Empty
+    #: when the caller did not resolve one.
+    selector: str = ""
     #: ``time.monotonic()`` instant the enclosing task lock runs out, None when
     #: none is declared. Untyped for the same reason as on ``DispatchContext``:
     #: the rack ships a number and the executor mints the budget type from it,
@@ -323,9 +334,9 @@ class CheckSubscriber:
             return None
         runner = getattr(self._port, "run_check", None)
         if not callable(runner):
-            return self._without_executor(bound)
+            return self._without_executor(tuple(row for row, _ in bound))
         notes: list[str] = []
-        for declaration in bound:
+        for declaration, selector in bound:
             outcome = runner(
                 CheckRequest(
                     declaration=declaration,
@@ -333,6 +344,8 @@ class CheckSubscriber:
                     force=ctx.force,
                     timeout=self._timeout,
                     event=ctx.event.key,
+                    actor=ctx.actor,
+                    selector=selector,
                     lock_expires_at=ctx.lock_expires_at,
                 )
             )
@@ -347,8 +360,13 @@ class CheckSubscriber:
             raise AbortOperation(outcome.reason)
         return Delta(work_log=tuple(notes)) if notes else None
 
-    def _bound_to(self, edge: Edge) -> tuple[CheckDeclaration, ...]:
-        """The declarations this edge fires — THIS edge's rows first, then addressing.
+    def _bound_to(self, edge: Edge) -> tuple[tuple[CheckDeclaration, str], ...]:
+        """The declarations this edge fires, each with the POINT that matched.
+
+        The point travels out because ``event`` cannot stand for it once wide
+        selectors exist: a row bound ``->done`` answers on every road into the
+        state, and which row answered is a different fact from which road it
+        took (HATS-1724).
 
         Addressing is decided HERE, where the mounted names are known, which is
         what makes a typo loud without making a sibling backlog's row fatal: a
@@ -366,17 +384,23 @@ class CheckSubscriber:
         """  # comment-length: allow — which miss is loud, and WHERE, is the contract
         declared = self._declarations()
         edges = all_edges(self._topology)
-        bound: list[CheckDeclaration] = []
+        bound: list[tuple[CheckDeclaration, str]] = []
         for row in declared:
-            if not self._fires_on(row, edge, edges):
+            matched = self._fired_by(row, edge, edges)
+            if matched is None:
                 continue
             if not self._addresses_me(row):
                 continue
-            bound.append(row)
+            bound.append((row, matched))
         return tuple(bound)
 
-    def _fires_on(self, row: CheckDeclaration, edge: Edge, edges: Sequence[Edge]) -> bool:
-        """Whether ``row`` denotes THIS event, among events this topology has.
+    def _fired_by(self, row: CheckDeclaration, edge: Edge, edges: Sequence[Edge]) -> str | None:
+        """The point of ``row`` that denotes THIS event, or None — among events
+        this topology has.
+
+        Returns the point rather than a bool so the answer to "which declaration
+        called" is the one the matcher already computed; deriving it a second
+        time downstream is how the two would drift apart.
 
         Two questions in one loop, and the order matters: a selector matching
         nothing here is a SKIP (a sibling backlog's row and a typo are the same
@@ -388,8 +412,8 @@ class CheckSubscriber:
             if not _hits(selector, edges):
                 continue
             if selector.matches(edge):
-                return True
-        return False
+                return point
+        return None
 
     def _addresses_me(self, row: CheckDeclaration) -> bool:
         """Whether ``row`` is addressed to THIS backlog. Loud on a name nothing has.

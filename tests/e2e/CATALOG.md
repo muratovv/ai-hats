@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**275 of 275 files catalogued — 284 flows.**
+**276 of 276 files catalogued — 285 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1220,6 +1220,20 @@ as a claim to check, not as evidence.
 
 - **expect** — both runs detect a test-installed provider, ignore caller-only providers, and leave the caller virtual environment and checkout unchanged
 - **why** — a unit gate that reuses its caller environment can turn the same broken tree green after the first run contaminates that environment
+
+## `test_hook_call_envelope.py`
+
+*pins HATS-1724*
+
+- **flow** — a gate script asking WHO moved the card and WHICH declaration called it
+- **cmds**
+
+  ```console
+  rack create --parent / rack transition --state done --force
+  ```
+
+- **expect** — every spawned check receives AI_HATS_HOOK_CALL, so a script tells a person's forced fast-close from the epic automation's own hop
+- **why** — the automation hop is an in-process nested transition, so the session identity and every ambient signal around it are byte-identical to the human move — a gate on a wide selector otherwise runs blind on both
 
 ## `test_hook_chain_fail_open_recorded.py`
 
