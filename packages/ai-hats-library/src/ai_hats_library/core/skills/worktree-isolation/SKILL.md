@@ -54,8 +54,8 @@ Isolated development using git worktrees. Each task gets its own working copy �
    paragraph there.
 
    A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** a code/config Edit/Write in
-   the **main checkout** — interactive and headless (the old nudge was ignored,
-   PROX-375). On a deny, move into a worktree and re-apply: `ai-hats wt status` for an
+   the **main checkout** — interactive and headless (the old nudge was ignored).
+   On a deny, move into a worktree and re-apply: `ai-hats wt status` for an
    active one, else `ai-hats wt create <type>/<name>` from `master`. Don't ask to skip a
    worktree (making one is one command); ask the supervisor only for a genuine
    direct-master change. Bypass is supervisor-only (`AI_HATS_WT_GATE_OFF=1`, never
@@ -181,19 +181,9 @@ worktree's own interpreter**; the cost of not doing so is not a quiet false gree
 but a loud false red, a wall of `Test suite would test the WRONG checkout`
 tripwire errors about a mismatch you did not cause.
 
-A **PreToolUse gate** (`hooks/wt_interpreter_gate.py`) says this at the moment you
-run it, because a skill's body only reaches you when something triggers it — and
-what triggers this one is creating the worktree, hours before the first `pytest`.
-Standing in a worktree and launching a check runner whose interpreter resolves
-outside it, the gate **nudges** (it never blocks) with both resolved paths: where
-you stand, and where the interpreter actually lives. It stays silent whenever the
-mismatch is not provable — including under `PATH="<worktree>/.venv/bin:$PATH"`,
-which is a fix, not a violation. Kill switch: `AI_HATS_WT_INTERP_OFF=1`.
-
-Why a second guard, when a wrong-checkout run already fails loudly: the tripwire
-compares the *import* against the *tests*, and `wt exec` makes those two agree
-while every subprocess still resolves elsewhere. Agreement is not correctness
-there — this gate compares the *interpreter* against the *worktree* instead.
+A PreToolUse gate (`hooks/wt_interpreter_gate.py`) nudges — never blocks — when it
+can prove the interpreter resolves outside the worktree; kill switch
+`AI_HATS_WT_INTERP_OFF=1`.
 
 ```bash
 # CORRECT — pytest and anything spawning subprocesses, from inside the worktree:
