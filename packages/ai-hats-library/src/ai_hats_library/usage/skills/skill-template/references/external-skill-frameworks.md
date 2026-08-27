@@ -61,7 +61,7 @@ Both frameworks validate our approach:
 - **Iterative refinement** maps to our retro-to-framework feedback loop
 
 ### What we can adopt
-1. **evals.json format** — Structured test cases for skills (future: HATS-013 A/B testing)
+1. **evals.json format** — Structured test cases for skills (future: A/B testing)
 2. **Evolution scoring** — Timelessness rubric for skill reviews
 3. **Explicit negative triggers** — "Do NOT use for X" in descriptions
 
@@ -69,16 +69,16 @@ Both frameworks validate our approach:
 
 ## NeoLabHQ/context-engineering-kit (GPL-3.0 — ideas only, re-expressed)
 
-Source: https://github.com/NeoLabHQ/context-engineering-kit (mined under HATS-631).
+Source: https://github.com/NeoLabHQ/context-engineering-kit
 GPL-licensed: we borrow *ideas* and cite *primary* sources, never lift text.
 
 ### Evidence-backed claims worth citing (primary sources)
 - **Lost-in-the-middle / U-shaped attention** — LLMs recall start/end of context
   far better than the middle. Primary: Liu et al. 2023, *Lost in the Middle: How
   Language Models Use Long Contexts*, TACL 2024 (arXiv:2307.03172). This is the
-  rationale behind HATS-620's `## Guardrails`-placed-early convention, wired into
+  rationale behind our `## Guardrails`-placed-early convention, wired into
   `docs/how-to-extend.md`. No audit enforces the placement: the axis that named
-  it lived in `review-role`, a skeleton HATS-1825 removed.
+  it lived in `review-role`, a skeleton since removed.
 - **Persuasion → compliance** — instruction framing (Authority/Commitment/Social
   Proof) roughly doubles compliance; avoid Liking/Reciprocity (breed sycophancy).
   Primary: Meincke et al. 2025. (Candidate for a prompt-engineering skill.)
@@ -86,4 +86,3 @@ GPL-licensed: we borrow *ideas* and cite *primary* sources, never lift text.
   explain most agent-performance variance (BrowseComp). (Candidate evidence for
   reviewer-skill / eval guidance.)
 
-Full triage of all 14 borrowable patterns lives in the HATS-631 work log.

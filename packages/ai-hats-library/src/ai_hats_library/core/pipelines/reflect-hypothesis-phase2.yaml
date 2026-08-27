@@ -1,10 +1,10 @@
 name: reflect-hypothesis-phase2
-# Phase 2 of 2-phase judge split (HATS-513 / ADR-0007). HITL session
+# Phase 2 of 2-phase judge split (ADR-0007). HITL session
 # with judge role (L1 / base-judge): supervisor discusses the draft
 # inlined in the preamble, ack's mutations, judge executes CLI ops
 # and writes the final report.
 #
-# `launch_provider` is a deprecated alias for `provider` (HATS-535);
+# `launch_provider` is a deprecated alias for `provider`;
 # the explicit name signals the HITL branch even though the funnel
 # `interactive: true` is what actually selects WrapRunner.
 #

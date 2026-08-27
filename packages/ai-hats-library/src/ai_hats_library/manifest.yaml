@@ -1,4 +1,4 @@
-# ai-hats-library format-schema manifest (HATS-876 / T18).
+# ai-hats-library format-schema manifest.
 # The versioned contract between this content (skill frontmatter + composition
 # schema + resolver expectations) and the ai-hats binary that composes it.
 # ai-hats reads schema_version from the RESOLVED library root (works for an

@@ -149,6 +149,16 @@ ci_prose_refs() {
     "$PY" scripts/check_prose_refs.py
 }
 
+# Offline and instant, like the five above. Sibling of `prose-refs` aimed at what
+# prose must NOT carry rather than what it must resolve: the library installs
+# into other projects, where this repo's tracker ids are dead links. It reports
+# the ids it still finds in docs/adr and CHANGELOG, so a clean run proves the
+# pattern is alive rather than merely silent.
+ci_ticket_ids() {
+    echo "[ci-local] ticket-ids (no tracker id in shipped library prose)" >&2
+    "$PY" scripts/check_no_ticket_ids.py
+}
+
 # The full maintainer tier (the slow one). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
@@ -181,11 +191,11 @@ ci_e2e() {
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
-    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs"
+    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids"
     case "$1" in
         merge-gate) echo "$tier unit integration" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs e2e" ;;
+        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs ticket-ids e2e" ;;
         *) return 1 ;;
     esac
 }
@@ -235,6 +245,7 @@ case "$stage" in
         ci_test_isolation
         ci_e2e_catalog
         ci_adr_integrity
+    ci_ticket_ids
         ci_unit
         ci_coverage
         ci_merge_smoke

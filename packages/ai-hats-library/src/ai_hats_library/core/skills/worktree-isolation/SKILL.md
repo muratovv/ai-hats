@@ -176,8 +176,8 @@ That is enough for in-process imports and nothing else. Any subprocess that does
 not inherit `PYTHONPATH`, and any `ai-hats` binary found on `PATH`, sees the MAIN
 checkout. **So for pytest — and for anything that spawns subprocesses — use the
 worktree's own interpreter**; the cost of not doing so is not a quiet false green
-but a loud false red, a wall of HATS-1242 tripwire errors about a mismatch you
-did not cause.
+but a loud false red, a wall of `Test suite would test the WRONG checkout`
+tripwire errors about a mismatch you did not cause.
 
 ```bash
 # CORRECT — pytest and anything spawning subprocesses, from inside the worktree:

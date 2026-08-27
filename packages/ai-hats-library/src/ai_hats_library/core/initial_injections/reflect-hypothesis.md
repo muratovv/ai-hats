@@ -1,7 +1,7 @@
 # Reflect-hypothesis — Phase 1 (judge-auditor, read-only audit)
 
 You are starting **Phase 1** of a two-phase reflect-hypothesis sweep
-(HATS-513 / ADR-0007). The dynamic handoff below lists active
+(ADR-0007). The dynamic handoff below lists active
 hypotheses and the open proposal inbox.
 
 Apply **judge-auditor-protocol** end-to-end:

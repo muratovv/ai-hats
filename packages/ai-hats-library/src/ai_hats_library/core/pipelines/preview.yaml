@@ -1,13 +1,13 @@
 # Read-only "what would the agent see" pipeline.
 #
-# Renders the integrator-seeded composition (HATS-865: the caller builds
+# Renders the integrator-seeded composition (the caller builds
 # the payload via composition_seam.build_preview_payload and seeds it as
 # `composition` in the initial state) through the provider's
 # build_system_prompt, prints the result to stdout. No session created,
 # no provider spawned, no file written — pure preview.
 # Surface: `ai-hats config show-prompt`.
 #
-# HATS-452 Phase 1: this pipeline is the canonical "materialization"
+# Phase 1 of the materialization split: the canonical "materialization"
 # probe, factored out of WrapRunner's inline compose+build. Phase 2
 # (follow-up task) will rewire WrapRunner / SubAgentRunner /
 # Assembler.set_role to ALSO go through MaterializeSystemPrompt, so the

@@ -15,6 +15,45 @@ since the latest tag lives under **Unreleased** until the next release.
 - **The `role-curator` / `library-curator` trim from HATS-1825 is undone** (HATS-1843). That pass moved the engine-internals map and the worktree-verification recipe out of the trait into `docs/how-to-extend.md`, and replaced the role's five-step workflow with three bullets pointing at the trait — buying back ~870 resident tokens a turn. A pointer only pays off if the agent follows it: the session that measured this one reached for the recipe from memory instead and got `ImportError: cannot import name 'build_library_paths'`, which is precisely the bounce the still-active HYP-108 exists to count. Both files are restored byte-identical to `ac5f92a3^`; the doc stays where HATS-1825 put it, so the text now lives in two places on purpose, and whether that duplication survives is HATS-1844's call rather than this card's.
 
   Measured, not estimated: the composed `role-curator` prompt goes 53,128 → 56,665 chars, its budget 56,819 → 57,695 tokens (+876) — the original ~870 figure was accurate. `maintainer` does not move by a single token, which is the control: it composes neither component.
+### Added
+
+- **`ticket-ids`: a CI stage and a pre-commit hook that refuse a tracker id in
+  shipped library prose** (HATS-1853). `scripts/check_no_ticket_ids.py` reads
+  every `.md`/`.yaml`/`.yml` under the library except `hooks/` and `git_hooks/`,
+  and `usage/skills/ticket-id-gate` carries the same invariant into a pre-commit
+  hook over staged files. The stage runs in `all`, in the tier behind both gates,
+  and in `push-gate`.
+
+  Why a machine and not a rule: the sweep that preceded this cleaned a surface
+  the prompt does not guard. The rewritten comment rule opens with "a **comment
+  or docstring**" — it governs code — and no line of a composed role forbids an
+  id in a `SKILL.md`, while `trait-agent` tells every role to *always* name task
+  ids. Live driver, no brake; that is how 177 accumulated. A rule costs ~571
+  resident tokens in every composing role, a stage costs none.
+
+  Two design points carry the weight. **Digits are the discrimination**: the
+  pattern needs them, so `<PREFIX>-NNN` in a CLI template is not an exception to
+  maintain but not a match at all. And **the hook learns the prefix** from the
+  project's own card ids instead of carrying one — the hook is itself shipped
+  library content, so a hardcoded prefix in it would be the exact leak it
+  refuses; a project with no tracker is a loud no-op.
+
+  The gate carries its own positive control: every run reports how many ids the
+  same pattern still finds in `docs/adr/` and `CHANGELOG.md`, and it exits
+  non-zero when that reaches zero. A checker whose regex has rotted reports a
+  clean tree in precisely the words a clean tree earns.
+
+  The last 39 sites went with it — `pipelines` 20, `references` 16,
+  `initial_injections` 2, `manifest.yaml` 1 — and the fortieth was rewritten
+  rather than excused: `worktree-isolation` cited a ticket number for a message
+  the checkout guard prints, so it now quotes the message, which a reader can
+  actually grep. The library ships zero ids in prose; `tests/e2e` still pins one
+  per file on purpose, since `e2e-catalog` derives the catalog from them.
+
+  Mutation-checked in both halves, and one test did not survive: the staged-scope
+  test planted its id in an *untracked* file, invisible to a whole-tree scan too,
+  so it passed against the very mutation it existed to catch.
+
 ### Changed
 
 - **A ticket id no longer appears in a comment or in shipped library prose.** The
