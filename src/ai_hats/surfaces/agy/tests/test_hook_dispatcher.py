@@ -261,3 +261,48 @@ def test_a_rewritten_input_leaves_in_the_key_agy_speaks(
 
     said = json.loads(capsys.readouterr().out)
     assert said["hookSpecificOutput"]["updatedInput"] == {"CommandLine": ticket}
+
+
+class TestArrivalsNothingComposedCanBindTo:
+    """agy's global hook registers five events; only two are bindable.
+
+    The other three fell through to ``PreToolUse``, and a payload with no tool
+    in it makes ``matches()`` run every row — so a notification put the whole
+    gate chain through its paces. Codex has carried the guard this mirrors since
+    its own dispatcher was written.
+    """
+
+    @pytest.mark.parametrize("arrival", ["Stop", "Notification", "PostInvocation"])
+    def test_the_composed_chain_stays_out_of_it(
+        self, tmp_path: Path, monkeypatch, arrival: str
+    ) -> None:
+        cache_dir = _session(tmp_path, monkeypatch, f"sid-{arrival.lower()}")
+        seen, script = _recording_hook(tmp_path)
+        _manifest(cache_dir, script, "Bash")
+
+        assert dispatch_hook(arrival, stdin_data=_agy_payload()) == 0
+        assert not seen.exists(), f"{arrival} ran the whole PreToolUse gate chain"
+
+    @pytest.mark.parametrize("arrival", ["Stop", "Notification", "PostInvocation"])
+    def test_the_users_own_hook_for_that_arrival_still_runs(
+        self, tmp_path: Path, monkeypatch, arrival: str
+    ) -> None:
+        """Collapsing the arrival also made ``_user_hooks`` read the PreToolUse
+        row for it, so the user's own Stop hook stopped running at all."""
+        home = tmp_path / "home"
+        (home / ".gemini" / "config").mkdir(parents=True)
+        user_marker = tmp_path / "user_ran.txt"
+        user_script = tmp_path / "user_hook.sh"
+        user_script.write_text(f"#!/bin/sh\necho 'USER' > '{user_marker}'\n")
+        user_script.chmod(0o755)
+        (home / ".gemini" / "config" / "hooks.json").write_text(
+            json.dumps({arrival: [{"matcher": "*", "command": str(user_script)}]})
+        )
+        monkeypatch.setenv("HOME", str(home))
+        cache_dir = _session(tmp_path, monkeypatch, f"sid-user-{arrival.lower()}")
+        seen, script = _recording_hook(tmp_path)
+        _manifest(cache_dir, script, "Bash")
+
+        assert dispatch_hook(arrival, stdin_data=_agy_payload()) == 0
+        assert user_marker.read_text().strip() == "USER"
+        assert not seen.exists(), "the composed chain ran on an unbindable arrival"

@@ -166,12 +166,15 @@ def _session_rows(event: HookEvent) -> list[HookRow]:
     return rows
 
 
-def _user_hooks(event: HookEvent) -> list[dict]:
+def _user_hooks(event: str) -> list[dict]:
     """The user's OWN hooks, which are not an ai-hats composition.
 
     Kept off the execution primitive on purpose: these are arbitrary shell the
     user configured for their own agy, so ai-hats runs them the way agy would
     and claims no verdict of its own over them.
+
+    ``event`` is agy's NATIVE name, not a bindable one: this file is keyed by
+    what agy sends, and it has rows the composed channel cannot bind to.
     """
     user_file = Path.home() / ".gemini" / "config" / "hooks.json"
     if not user_file.is_file():
@@ -181,7 +184,7 @@ def _user_hooks(event: HookEvent) -> list[dict]:
     except (OSError, ValueError) as err:
         sys.stderr.write(f"ai-hats-hook-dispatcher: {user_file} is unreadable: {err}\n")
         return []
-    raw = data.get(event.value, []) if isinstance(data, dict) else []
+    raw = data.get(event, []) if isinstance(data, dict) else []
     if isinstance(raw, dict):
         raw = [raw]
     return [h for h in raw if isinstance(h, dict)] if isinstance(raw, list) else []
@@ -197,7 +200,7 @@ def _user_command(hook: dict) -> str:
     return command if isinstance(command, str) else ""
 
 
-def _run_user_hooks(event: HookEvent, tool: str, spoken: str, payload: dict) -> int:
+def _run_user_hooks(event: str, tool: str, spoken: str, payload: dict) -> int:
     """Run the user's own hooks, propagating whatever agy would have seen."""
     budget = resolve_hook_timeout()
     for hook in _user_hooks(event):
@@ -317,13 +320,24 @@ def dispatch_hook(
         or payload.get("event")
         or payload.get("hook")
     )
-    event = HookEvent.parse(str(named or "")) or HookEvent.PRE_TOOL_USE
+    native = str(named or HookEvent.PRE_TOOL_USE.value)
+    if native not in PROFILE.native_events:
+        # An arrival this surface does not deliver. Nothing is bound to it on
+        # either channel, so there is no gate to have missed.
+        return 0
 
     # Translated ONCE, here. Before this the scripts translated themselves —
     # four of them hand-rolled, two not at all, and those two allowed whatever
     # they could not read.
     tool = agy_tool_name(payload) or (tool_name or "")
     spoken = json.dumps(to_claude_payload(payload)) if payload else stdin_data
+
+    # The user's channel is keyed by the arrival agy sent; the composed one knows
+    # only the two bindable events. Collapsing the first onto the second ran
+    # every gate on a tool-less payload and read the wrong row of the user's file.
+    event = HookEvent.parse(native)
+    if event is None:
+        return _run_user_hooks(native, tool, spoken, payload)
 
     verdict = reduce_to(
         PROFILE.speaks,
@@ -339,7 +353,7 @@ def dispatch_hook(
     code = _reply(verdict, payload)
     if code != 0 or verdict.decision is not ChainDecision.ALLOW:
         return code
-    return _run_user_hooks(event, tool, spoken, payload)
+    return _run_user_hooks(native, tool, spoken, payload)
 
 
 def main() -> None:
