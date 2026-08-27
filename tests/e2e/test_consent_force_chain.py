@@ -67,7 +67,7 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def env(project: Path, ai_hats_shim: Path) -> dict:
+def env(project: Path, checkout_bin: Path) -> dict:
     """A session env with EVERY consent flag stripped — including the merge ack.
 
     The root conftest grants ``AI_HATS_MERGE_ACK`` to every test, and that is
@@ -82,7 +82,7 @@ def env(project: Path, ai_hats_shim: Path) -> dict:
         e.pop(flag, None)
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
-    e["PATH"] = os.pathsep.join([str(ai_hats_shim.parent), e.get("PATH", "")])
+    e["PATH"] = os.pathsep.join([str(checkout_bin), e.get("PATH", "")])
     return stand_in_wrapped_session(e, project, "e2e-consent-force")
 
 

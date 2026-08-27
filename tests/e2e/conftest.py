@@ -6,6 +6,12 @@
 * ``requires_agy_auth`` — skip-marker: ``agy`` binary on PATH +
   ``agy --version`` and a bounded live turn exit 0.
 * ``repo_root`` — single source of truth for repo path math.
+* ``checkout_bin`` — a PATH entry carrying every consent-wrapped surface
+  (``ai-hats``, ``rack``) as a shim over the interpreter under test. Lead a
+  session ``PATH`` with THIS, not with one binary's parent directory: a
+  surface the entry lacks is silently served by the ambient PATH, which in a
+  worktree is another checkout (HATS-1847). ``ai_hats_shim`` is the
+  ``ai-hats`` entry of this directory.
 * ``tmp_project`` — generic role-less project for subprocess-only
   tests against the ``ai-hats`` CLI. Function-scoped. Returns a
   :class:`tests.e2e._helpers.project.Project`.
@@ -43,8 +49,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 # HATS-790: the ``bin/ai-hats`` console-script generator was removed, so e2e
 # tests can no longer point at a ``<venv>/bin/ai-hats`` executable. The
-# ``ai_hats_shim`` session fixture (below) materialises a real shim that execs
-# the dev venv's ``python -m ai_hats`` (the editable build under test).
+# ``checkout_bin`` session fixture (below) materialises real shims that exec the
+# dev venv's ``python -m <module>`` (the editable build under test).
 
 
 @pytest.fixture(autouse=True)
@@ -393,21 +399,35 @@ def requires_agy_auth() -> None:
 
 
 @pytest.fixture(scope="session")
-def ai_hats_shim(tmp_path_factory) -> Path:
-    """A real ``ai-hats`` executable for e2e tests (HATS-790: no console script).
+def checkout_bin(tmp_path_factory) -> Path:
+    """A PATH entry where EVERY consent-wrapped surface is the checkout under test.
 
-    Execs the dev venv's ``python -m ai_hats`` — the editable build under test.
-    A real file on disk, so it works both for ``Project.run`` AND for tests that
-    read ``project.ai_hats_binary`` directly (task-worktree, reflect). Lives in a
-    pytest session tmp dir (NOT ``build/``, which wheel-building e2e tests clean).
-    Worktree-portable: ``sys.executable`` is pytest's interpreter wherever it runs.
+    Lead ``PATH`` with this directory and a bare ``ai-hats`` or ``rack`` is the
+    tree you are testing. Leading with a directory that holds only ONE of them
+    hands the rest to the ambient PATH in silence — HATS-1847, where ``rack``
+    came from the main checkout's venv while ``PYTHONPATH`` named the worktree's
+    ``src``. Which surfaces belong here is ``_helpers.surfaces``, pinned against
+    the consent registry by ``tests/e2e_harness/test_checkout_bin.py``.
+
+    Lives in a pytest session tmp dir (NOT ``build/``, which wheel-building e2e
+    tests clean). Worktree-portable: the shims exec ``sys.executable`` — pytest's
+    own interpreter, and the one the guard called here vouches for.
     """
     _guard_interpreter_matches_checkout()
 
-    shim = tmp_path_factory.mktemp("ai-hats-shim") / "ai-hats"
-    shim.write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" -m ai_hats "$@"\n')
-    shim.chmod(0o755)
-    return shim
+    from _helpers.surfaces import write_surface_shims
+
+    return write_surface_shims(tmp_path_factory.mktemp("checkout-bin"))
+
+
+@pytest.fixture(scope="session")
+def ai_hats_shim(checkout_bin: Path) -> Path:
+    """A real ``ai-hats`` executable for e2e tests (HATS-790: no console script).
+
+    A real file on disk, so it works both for ``Project.run`` AND for tests that
+    read ``project.ai_hats_binary`` directly (task-worktree, reflect).
+    """
+    return checkout_bin / "ai-hats"
 
 
 def _guard_interpreter_matches_checkout() -> None:
