@@ -286,11 +286,11 @@ def redirect_file_targets(args):
     very CLI it prescribes.
     """
     out = []
-    for i, token in enumerate(args):
-        if token not in REDIRECTS or i + 1 >= len(args):
+    for i, operator in enumerate(args):
+        if operator not in REDIRECTS or i + 1 >= len(args):
             continue
         operand = args[i + 1]
-        if token == ">&" and (operand == "-" or operand.isdigit()):
+        if operator == ">&" and (operand == "-" or operand.isdigit()):
             continue
         out.append(operand)
     return out
