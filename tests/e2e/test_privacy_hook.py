@@ -30,11 +30,11 @@ PRIVATE_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----"
 DB_URI_CREDS = "DATABASE_URL=postgres://admin:s3cr3tP4ss@db.internal:5432/app"
 GITHUB_OAUTH = "token=gho_0123456789abcdefghijklmnopqrstuvwxyz"
 GITHUB_PAT = "github_pat_11ABCDEFG0123456789abcdef_GhIjKlMnOpQrStUvWx"
-AWS_SECRET = 'aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"'
+AWS_SECRET = 'aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"'  # noqa: S105 — a decoy the hook must catch
 SLACK_WEBHOOK = "url=https://hooks.slack.com/services/T00000000/B11111111/abcdEFGH1234ijklMNOP5678"
 STRIPE_LIVE = "stripe=sk_live_4eC39HqLyjWDarjtT1zdp7dc"
 SENDGRID = "SENDGRID_API_KEY=SG.ngeVfQFYQlKU0Zcu8XPHvw.Tnl0YtBNZ7w7nP1234567890abcdefghijklmnopqrs"
-NPM_TOKEN = "//registry.npmjs.org/:_authToken=npm_0123456789abcdefghijklmnopqrstuvwxyz"
+NPM_TOKEN = "//registry.npmjs.org/:_authToken=npm_0123456789abcdefghijklmnopqrstuvwxyz"  # noqa: S105 — a decoy the hook must catch
 JWT = (
     "Authorization=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
     ".eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"

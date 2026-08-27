@@ -81,7 +81,7 @@ jobs:
           retention-days: 14
 
   security:
-    name: security (bandit + pip-audit)
+    name: security (pip-audit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -91,7 +91,7 @@ jobs:
           cache: pip
       - name: Install package + security tools
         run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
-      - name: Bandit SAST (fail on medium+ severity) + pip-audit
+      - name: pip-audit (known CVEs in the installed environment)
         run: bash scripts/ci-local.sh security
 
   install-smoke:

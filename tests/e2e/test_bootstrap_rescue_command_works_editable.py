@@ -71,9 +71,9 @@ def test_printed_rescue_command_repairs_the_venv(tmp_path: Path) -> None:
     assert match, f"no rescue command on stderr:\n{result.stderr}"
 
     rescue = match.group(1).replace("uv pip install", f"{uv} pip install", 1)
-    repair = subprocess.run(
+    repair = subprocess.run(  # noqa: S602 — running the printed command AS a user would is the test
         rescue,
-        shell=True,  # noqa: S602 - running the printed command AS a user would is the test
+        shell=True,
         cwd=str(tmp_path),  # a consumer project, NOT the ai-hats workspace: from
         # inside it uv resolves first-party names via [tool.uv.sources] and even
         # the broken by-name rescue would appear to work.
