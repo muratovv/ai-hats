@@ -18,28 +18,8 @@ surface spoke in.
 
 from __future__ import annotations
 
-import re
-
-#: agy's terminal tools ↔ Claude's. `execute` rides along because a shipped row
-#: already enumerated it by hand (`safety-guard`'s `Bash|run_command|execute`).
-_TERMINAL = ("run_command", "execute")
-_CLAUDE_TERMINAL = ("Bash",)
-
-#: agy's file-mutating tools ↔ Claude's. This IS the table that used to live in
-#: the provider as ``AGY_FILE_MUTATION_MATCHER`` — one class, not four shades:
-#: every shipped row treats the whole class alike.
-_FILE_MUTATION = ("Create", "write_to_file", "replace_file_content", "multi_replace_file_content")
-_CLAUDE_FILE_MUTATION = ("Edit", "Write", "MultiEdit")
-
-#: agy's argument names ↔ Claude's. Measured from what the hooks defend against
-#: today: `backlog_write_gate` and `wt_gate` each fan out over five spellings of
-#: the same path, and `safety_gate` over two spellings of the same command.
-_ARG_KEYS = {
-    "CommandLine": "command",
-    "TargetFile": "file_path",
-    "AbsolutePath": "file_path",
-    "target_file": "file_path",
-}
+from ..hook_channel import matches, native_arg_keys, speak_args
+from .profile import PROFILE
 
 
 def agy_tool_name(payload: dict) -> str:
@@ -64,39 +44,33 @@ def agy_tool_name(payload: dict) -> str:
 
 
 def matches_claude_hook(matcher: str, agy_tool: str) -> bool:
-    """Whether a row's Claude-vocabulary matcher applies to ``agy_tool``.
+    """Whether a row's matcher applies to ``agy_tool``.
 
-    A row declares the tool it guards in Claude's words — that is what every
-    skill in the library ships — and the surface is the one that knows its own
-    names. Asking the row's author to enumerate them is how exactly one row in
-    eight came to name `run_command` while the rest silently guarded nothing.
+    A row declares the tool it guards in the matcher vocabulary — that is what
+    every skill in the library ships — and the surface is the one that knows its
+    own names. Asking the row's author to enumerate them is how exactly one row
+    in eight came to name `run_command` while the rest silently guarded nothing.
     """
-    if not matcher or matcher == "*":
-        return True
-    aliases = [agy_tool]
-    if agy_tool in _TERMINAL:
-        aliases.extend(_CLAUDE_TERMINAL)
-    elif agy_tool in _FILE_MUTATION:
-        aliases.extend(_CLAUDE_FILE_MUTATION)
-    try:
-        return any(re.fullmatch(matcher, candidate) is not None for candidate in aliases)
-    except re.error:
-        return any(candidate in matcher.split("|") for candidate in aliases)
+    return matches(PROFILE, matcher, agy_tool)
 
 
-def to_claude_payload(payload: dict) -> dict:
-    """One agy event as the Claude-shaped payload the hook scripts consume."""
+def to_claude_payload(payload: dict, event: str = "") -> dict:
+    """One agy event as the Claude-shaped payload the hook scripts consume.
+
+    ``event`` is written in because agy sends it on argv, not in the payload,
+    and a hook reading no ``hook_event_name`` concludes the caller does not
+    speak the protocol: ``pre_bash_shared_state_guard.sh`` answers that with a
+    hard deny instead of the question it would otherwise put.
+    """
     if not isinstance(payload, dict):
         return {}
     adapted = dict(payload)
-    args = payload.get("tool_input")
-    if not isinstance(args, dict) or not args:
-        call = payload.get("toolCall")
-        args = call.get("args") if isinstance(call, dict) else None
-    adapted["tool_input"] = _claude_args(args if isinstance(args, dict) else {})
+    if event and not adapted.get("hook_event_name"):
+        adapted["hook_event_name"] = event
+    adapted["tool_input"] = speak_args(PROFILE, _args_of(payload))
     tool = agy_tool_name(payload)
     if tool:
-        adapted["tool_name"] = _claude_tool(tool)
+        adapted["tool_name"] = PROFILE.spoken_name(tool)
     return adapted
 
 
@@ -128,34 +102,20 @@ def from_claude_decision(decision: dict, payload: dict) -> dict:
     }
 
 
-def _claude_tool(agy_tool: str) -> str:
-    if agy_tool in _TERMINAL:
-        return _CLAUDE_TERMINAL[0]
-    if agy_tool in _FILE_MUTATION:
-        return _CLAUDE_FILE_MUTATION[0]
-    return agy_tool
-
-
-def _claude_args(args: dict) -> dict:
-    """Rename what has a Claude name; never overwrite a Claude key already there."""
-    renamed = dict(args)
-    for spoken, canonical in _ARG_KEYS.items():
-        if spoken in renamed and canonical not in renamed:
-            renamed[canonical] = renamed.pop(spoken)
-    return renamed
-
-
 def _spoken_keys(payload: dict) -> dict:
-    """Claude key → the key THIS payload used, for the keys it actually carried."""
+    """Vocabulary key → the key THIS payload used, for the keys it carried."""
+    return native_arg_keys(PROFILE, _args_of(payload))
+
+
+def _args_of(payload: dict) -> dict:
+    """The call's arguments, under whichever of the two keys carried them."""
     if not isinstance(payload, dict):
         return {}
     args = payload.get("tool_input")
     if not isinstance(args, dict) or not args:
         call = payload.get("toolCall")
         args = call.get("args") if isinstance(call, dict) else None
-    if not isinstance(args, dict):
-        return {}
-    return {_ARG_KEYS[key]: key for key in args if key in _ARG_KEYS}
+    return args if isinstance(args, dict) else {}
 
 
 __all__ = ["agy_tool_name", "from_claude_decision", "matches_claude_hook", "to_claude_payload"]

@@ -6,14 +6,17 @@
 // <AI_HATS_SESSION_CACHE_DIR>/opencode/hooks.json using the same manifest
 // schema (version 1) as the cline and codex surfaces.
 //
-// Tool-hook semantics mirror ai_hats.surfaces.codex.hook_dispatcher:
-//   - no AI_HATS_SESSION_CACHE_DIR pin  -> inert (by design)
-//   - manifest missing                  -> warn once, inert (nothing to run)
-//   - manifest unreadable/malformed     -> fail closed (every mapped tool blocked)
-//   - session identity mismatch         -> fail closed (stale cache protection)
-//   - hook exit 2                       -> deny: the tool call is thrown away
-//   - hook stdout {"decision":"block"}  -> deny with reason
-//   - any other hook failure            -> fail open with a warning line
+// Tool-hook semantics: this plugin does not judge. It hands the call to
+// `ai_hats.surfaces.opencode.hook_dispatcher` and marshals back the verdict
+// document it is given (`hook_channel.to_wire`), because JavaScript here cannot
+// hold a verdict and a channel that derives one from an exit code understands
+// only the shapes it happened to implement.
+//   - no AI_HATS_SESSION_CACHE_DIR pin  -> inert (by design: nothing composed)
+//   - manifest present, no rows for the event -> no spawn (nothing to miss)
+//   - anything else                     -> the dispatcher decides, including a
+//                                          missing, unreadable or foreign
+//                                          manifest, which it refuses while
+//                                          naming AI_HATS_GATE_BROKEN_ACK
 //
 // Permission semantics (HATS-1792):
 //   - native asks surface on the bus as permission.asked events; the typed
@@ -25,26 +28,6 @@
 //   - a failed reply fails open the same way (the platform channel stays in charge)
 
 const MANIFEST_VERSION = 1;
-
-// OpenCode tool name -> Claude-dialect tool name. Matchers in SKILL.md
-// frontmatter are written against the Claude vocabulary; an unmatched native
-// tool passes through untouched because no hook can declare it.
-const TOOL_MAP = {
-  bash: "Bash",
-  read: "Read",
-  edit: "Edit",
-  write: "Write",
-  glob: "Glob",
-  grep: "Grep",
-  task: "Task",
-  webfetch: "WebFetch",
-  todowrite: "TodoWrite",
-};
-
-function claudeToolName(nativeTool) {
-  const key = String(nativeTool || "").toLowerCase();
-  return Object.prototype.hasOwnProperty.call(TOOL_MAP, key) ? TOOL_MAP[key] : null;
-}
 
 async function loadManifest(cacheDir, sessionId) {
   const fs = await import("node:fs");
@@ -76,19 +59,53 @@ async function loadManifest(cacheDir, sessionId) {
   };
 }
 
-function runHook(command, payload) {
-  const { spawnSync } = require("node:child_process");
-  try {
-    return spawnSync(command, [], {
-      input: payload,
-      encoding: "utf8",
-      timeout: 60000,
-      killSignal: "SIGKILL",
-      env: process.env,
-    });
-  } catch (error) {
-    return { status: -1, stderr: String(error), stdout: "" };
+async function judge(event, nativeTool, args) {
+  // `await import`, not `require`: this is an ES module, and `require` is a
+  // ReferenceError under Node — `loadManifest` above already had it right.
+  const { spawnSync } = await import("node:child_process");
+  const python = process.env.AI_HATS_PYTHON;
+  if (!python) {
+    return {
+      decision: "deny",
+      reason:
+        "[ai-hats] AI_HATS_PYTHON is unset, so no gate can be consulted; " +
+        "this session predates the dispatcher — restart it.",
+      nudges: [],
+    };
   }
+  const request = JSON.stringify({
+    event,
+    payload: {
+      session_id: process.env.AI_HATS_SESSION_ID,
+      tool_name: nativeTool,
+      tool_input: args ?? {},
+      hook_event_name: event,
+    },
+  });
+  // Derived from the chain's own budget by the materializer, never written by
+  // hand here: an outer bound at or below the inner one kills the dispatcher
+  // before it can produce the verdict that names the way past.
+  const ceiling = Number(process.env.AI_HATS_HOOK_SURFACE_TIMEOUT_MS) || 300000;
+  const run = spawnSync(python, ["-m", "ai_hats.surfaces.opencode.hook_dispatcher"], {
+    input: request,
+    encoding: "utf8",
+    timeout: ceiling,
+    killSignal: "SIGKILL",
+    env: process.env,
+  });
+  try {
+    const verdict = JSON.parse(run.stdout);
+    if (verdict && typeof verdict.decision === "string") return verdict;
+  } catch {
+    // fall through to the refusal below
+  }
+  // The dispatcher answers on stdout whatever it concludes, so no answer means
+  // it never ran. Passing the call would be guessing on the gate's behalf.
+  return {
+    decision: "deny",
+    reason: `[ai-hats] the hook dispatcher did not answer: ${String(run.stderr || "").trim()}`,
+    nudges: [],
+  };
 }
 
 // A prefix rule matches when every path the request touches sits under the
@@ -104,6 +121,13 @@ function ruleMatches(rule, asked) {
   );
   if (candidates.length === 0) return false;
   return candidates.every((value) => value.startsWith(rule.prefix));
+}
+
+function argsOf(input, output) {
+  for (const side of [output, input]) {
+    if (side && typeof side.args === "object" && side.args !== null) return side.args;
+  }
+  return {};
 }
 
 function decide(rules, asked) {
@@ -133,74 +157,32 @@ export const AiHatsHooksPlugin = async ({ client }) => {
   }
 
   const manifest = await loadManifest(cacheDir, sessionId);
-
-  if (manifest.state === "missing") {
-    console.warn("[ai-hats] hook manifest absent under session cache; guards disabled");
-    return {};
-  }
-  if (manifest.state !== "ready") {
-    const reason =
-      manifest.state === "foreign"
-        ? `[ai-hats] hook manifest belongs to another session; refusing tool calls (${manifest.path})`
-        : `[ai-hats] hook manifest unreadable; refusing tool calls (${manifest.path})`;
-    console.error(reason);
-    return {
-      "tool.execute.before": async () => {
-        throw new Error(reason);
-      },
-    };
-  }
-
-  const entriesFor = (event) => manifest.hooks[event] || [];
   const permissionRules = manifest.state === "ready" ? manifest.permissions : [];
 
+  // Every non-ready state still registers the hooks and lets the dispatcher
+  // judge. A missing manifest used to return {} here, so a session that lost
+  // its manifest before the plugin loaded ran with every gate off for its whole
+  // life -- and the refusal the dispatcher would have produced, hatch and all,
+  // was never asked for.
+  const bound = manifest.state === "ready" ? manifest.hooks || {} : null;
+
   const dispatch = async (event, nativeTool, args, canDeny) => {
-    const toolName = claudeToolName(nativeTool);
-    if (!toolName) return;
-    const payload = JSON.stringify({
-      session_id: sessionId,
-      tool_name: toolName,
-      tool_input: args ?? {},
-    });
-    for (const hook of entriesFor(event)) {
-      let matcher;
-      try {
-        matcher = new RegExp(hook.matcher || "");
-      } catch {
-        console.warn(`[ai-hats] skipping hook with invalid matcher: ${hook.tag}`);
-        continue;
-      }
-      if (!matcher.test(toolName)) continue;
-      const result = runHook(hook.command, payload);
-      if (result.status === 2) {
-        const detail = String(result.stderr || "blocked by ai-hats guard").trim();
-        if (!canDeny) {
-          console.error(`[ai-hats] ${hook.tag}: ${detail}`);
-          continue;
-        }
-        throw new Error(`[ai-hats] ${hook.tag}: ${detail}`);
-      }
-      if (result.status !== 0) {
-        console.warn(
-          `[ai-hats] hook failed open (${hook.tag}): status=${result.status} ${String(result.stderr || "").trim()}`,
-        );
-        continue;
-      }
-      let verdict = null;
-      try {
-        verdict = result.stdout ? JSON.parse(result.stdout) : null;
-      } catch {
-        verdict = null;
-      }
-      if (verdict && verdict.decision === "block") {
-        const detail = String(verdict.reason || "blocked by ai-hats guard").trim();
-        if (!canDeny) {
-          console.error(`[ai-hats] ${hook.tag}: ${detail}`);
-          continue;
-        }
-        throw new Error(`[ai-hats] ${hook.tag}: ${detail}`);
-      }
+    // Nothing composed is bound to this event: no gate can be missed, and the
+    // interpreter this would start costs ~120 ms on the host's own event loop.
+    if (bound && !(Array.isArray(bound[event]) && bound[event].length)) return;
+    const verdict = await judge(event, nativeTool, args);
+    for (const nudge of verdict.nudges || []) {
+      if (nudge && nudge.text) console.warn(`[ai-hats] ${nudge.hook || "guard"}: ${nudge.text}`);
     }
+    if (verdict.decision === "allow") return;
+    const detail = String(verdict.reason || "blocked by an ai-hats guard").trim();
+    if (!canDeny) {
+      // PostToolUse has no cancel channel here: the call already ran, so the
+      // refusal is reported rather than pretended.
+      console.error(`[ai-hats] ${verdict.hook || "guard"}: ${detail}`);
+      return;
+    }
+    throw new Error(`[ai-hats] ${verdict.hook || "guard"}: ${detail}`);
   };
 
   return {
@@ -214,10 +196,13 @@ export const AiHatsHooksPlugin = async ({ client }) => {
       await replyPermission(client, asked.sessionID, asked.id, rule.action);
     },
     "tool.execute.before": async (input, output) => {
-      await dispatch("PreToolUse", input.tool, output.args, true);
+      await dispatch("PreToolUse", input.tool, argsOf(input, output), true);
     },
     "tool.execute.after": async (input, output) => {
-      await dispatch("PostToolUse", input.tool, output.args, false);
+      // `tool.execute.after` carries the RESULT, and the arguments are not
+      // reliably on it; whichever side holds them is where they are read from,
+      // so a PostToolUse gate is not handed an empty input by construction.
+      await dispatch("PostToolUse", input.tool, argsOf(input, output), false);
     },
   };
 };

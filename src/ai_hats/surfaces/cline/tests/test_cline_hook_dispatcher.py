@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 
 from ai_hats.surfaces.cline.claude_hook_adapter import to_claude_hook_payloads
 from ai_hats.surfaces.cline.hook_dispatcher import dispatch_hook
+from ai_hats.surfaces.hook_channel import HOOK_TIMEOUT_ENV
 
 
 def _script(path: Path, body: str) -> Path:
@@ -192,8 +194,8 @@ def test_pretooluse_ask_cancels_without_applying_updated_input(
     assert json.loads(captured.out) == {
         "cancel": True,
         "errorMessage": (
-            "consent required; Cline runtime hooks cannot ask for permission or apply "
-            "hook input rewrites; grant consent outside this tool call and retry"
+            "consent required; this surface cannot carry the consent this gate "
+            "asked for, so grant it outside this tool call and retry"
         ),
     }
 
@@ -287,28 +289,36 @@ def test_apply_patch_emits_one_file_hook_payload_per_target(tmp_path: Path) -> N
     ]
 
 
-def test_missing_manifest_reports_and_fails_open(tmp_path: Path, monkeypatch, capsys) -> None:
-    cache = tmp_path / "missing-cache"
-    _set_session_env(monkeypatch, cache)
-    payload = {
-        "hookName": "PreToolUse",
-        "preToolUse": {
-            "toolName": "run_commands",
-            "parameters": {"commands": ["echo safe"]},
-        },
-    }
+_CALL = {"preToolUse": {"toolName": "run_commands", "parameters": {"commands": ["echo safe"]}}}
 
-    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)))
+
+def _refused(capsys) -> dict:
+    """The reply, asserted to be a refusal that names a way past it.
+
+    Every case below used to answer ``{"cancel": false}`` with a line on stderr.
+    HATS-1339 chose that on purpose; HATS-1439 is what it cost — seven gates
+    vanished mid-session and the session ran on with them off.
+    """
     captured = capsys.readouterr()
+    reply = json.loads(captured.out)
+    assert reply["cancel"] is True, "a gate ai-hats could not deliver let the call through"
+    assert re.search(r"AI_HATS_[A-Z0-9_]+", reply["errorMessage"]), (
+        f"the refusal names no way past it: {reply['errorMessage']!r}"
+    )
+    return {"reply": reply, "err": captured.err}
 
-    assert code == 0
-    assert json.loads(captured.out) == {"cancel": False}
-    assert "cannot read session hook manifest" in captured.err
 
-
-def test_manifest_command_escape_reports_and_fails_open(
+def test_a_missing_manifest_refuses_instead_of_passing_the_call(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
+    _set_session_env(monkeypatch, tmp_path / "missing-cache")
+
+    assert dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(_CALL))) == 0
+    out = _refused(capsys)
+    assert "cannot read session hook manifest" in out["reply"]["errorMessage"]
+
+
+def test_a_command_outside_the_mirror_refuses(tmp_path: Path, monkeypatch, capsys) -> None:
     outside = _script(tmp_path / "outside.sh", "exit 0\n")
     cache = tmp_path / "cache"
     _manifest(cache, outside)
@@ -317,106 +327,65 @@ def test_manifest_command_escape_reports_and_fails_open(
     manifest["hooks"]["PreToolUse"][0]["command"] = str(outside)
     manifest_path.write_text(json.dumps(manifest))
     _set_session_env(monkeypatch, cache)
-    payload = {
-        "preToolUse": {
-            "toolName": "run_commands",
-            "parameters": {"commands": ["echo safe"]},
-        }
-    }
 
-    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)))
-    captured = capsys.readouterr()
-
-    assert code == 0
-    assert json.loads(captured.out) == {"cancel": False}
-    assert "escapes the session skills mirror" in captured.err
+    assert dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(_CALL))) == 0
+    out = _refused(capsys)
+    assert "escapes the session skills mirror" in out["reply"]["errorMessage"]
 
 
 @pytest.mark.parametrize(
-    ("body", "diagnostic"),
-    [
-        ("exit 7\n", "hook exited 7"),
-        ("printf '%s\\n' 'not-json'\n", "hook returned invalid JSON"),
-        ("printf '%s\\n' '[]'\n", "hook returned non-object JSON"),
-    ],
+    "body",
+    ["exit 7\n", "printf '%s\\n' 'not-json'\n", "printf '%s\\n' '[]'\n"],
 )
-def test_hook_process_failures_are_reported_and_fail_open(
-    tmp_path: Path, monkeypatch, capsys, body: str, diagnostic: str
+def test_a_hook_that_answers_unreadably_refuses(
+    tmp_path: Path, monkeypatch, capsys, body: str
 ) -> None:
     hook = _script(tmp_path / "broken.sh", body)
     cache = tmp_path / "cache"
     _manifest(cache, hook)
     _set_session_env(monkeypatch, cache)
-    payload = {
-        "preToolUse": {
-            "toolName": "run_commands",
-            "parameters": {"commands": ["echo safe"]},
-        }
-    }
 
-    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)))
-    captured = capsys.readouterr()
-
-    assert code == 0
-    assert json.loads(captured.out) == {"cancel": False}
-    assert diagnostic in captured.err
+    assert dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(_CALL))) == 0
+    _refused(capsys)
 
 
-def test_hook_timeout_is_reported_and_fails_open(tmp_path: Path, monkeypatch, capsys) -> None:
-    hook = _script(tmp_path / "slow.sh", "sleep 1\n")
+def test_a_hook_that_overruns_its_budget_refuses(tmp_path: Path, monkeypatch, capsys) -> None:
+    hook = _script(tmp_path / "slow.sh", "sleep 5\n")
     cache = tmp_path / "cache"
     _manifest(cache, hook)
     _set_session_env(monkeypatch, cache)
-    payload = {
-        "preToolUse": {
-            "toolName": "run_commands",
-            "parameters": {"commands": ["echo safe"]},
-        }
-    }
+    monkeypatch.setenv(HOOK_TIMEOUT_ENV, "0.3")
 
-    code = dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(payload)), timeout_s=0.05)
-    captured = capsys.readouterr()
-
-    assert code == 0
-    assert json.loads(captured.out) == {"cancel": False}
-    assert "hook timed out" in captured.err
+    assert dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(_CALL))) == 0
+    out = _refused(capsys)
+    assert HOOK_TIMEOUT_ENV in out["reply"]["errorMessage"], "the budget names no way to widen it"
 
 
-def test_unstartable_hook_is_reported_and_fails_open(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_a_hook_that_cannot_be_executed_refuses(tmp_path: Path, monkeypatch, capsys) -> None:
+    """Dropping the +x bit must not be a way to disarm a gate quietly."""
     hook = _script(tmp_path / "hook.sh", "exit 0\n")
     cache = tmp_path / "cache"
     _manifest(cache, hook)
     _set_session_env(monkeypatch, cache)
-
-    def refuse_start(*args, **kwargs):
-        raise OSError("cannot spawn")
-
-    payload = {
-        "preToolUse": {
-            "toolName": "run_commands",
-            "parameters": {"commands": ["echo safe"]},
-        }
-    }
-
-    code = dispatch_hook(
-        "PreToolUse",
-        stdin=io.StringIO(json.dumps(payload)),
-        popen_factory=refuse_start,
+    Path(json.loads((cache / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["command"]).chmod(
+        0o644
     )
-    captured = capsys.readouterr()
 
-    assert code == 0
-    assert json.loads(captured.out) == {"cancel": False}
-    assert "hook could not start" in captured.err
+    assert dispatch_hook("PreToolUse", stdin=io.StringIO(json.dumps(_CALL))) == 0
+    _refused(capsys)
 
 
-def test_invalid_cline_payload_is_reported_and_fails_open(capsys) -> None:
-    code = dispatch_hook("PreToolUse", stdin=io.StringIO("{broken"))
-    captured = capsys.readouterr()
+def test_an_unreadable_payload_refuses(capsys) -> None:
+    assert dispatch_hook("PreToolUse", stdin=io.StringIO("{broken")) == 0
+    out = _refused(capsys)
+    assert "invalid payload" in out["reply"]["errorMessage"]
 
-    assert code == 0
-    assert json.loads(captured.out) == {"cancel": False}
-    assert "invalid payload" in captured.err
+
+def test_an_event_nothing_can_bind_to_still_passes(capsys) -> None:
+    """The control: not every pass-through is a defect. Nothing composed can
+    bind to an unknown event, so no gate was missed."""
+    assert dispatch_hook("SessionStart", stdin=io.StringIO("{}")) == 0
+    assert json.loads(capsys.readouterr().out) == {"cancel": False}
 
 
 def test_posttooluse_payload_preserves_tool_result(tmp_path: Path) -> None:
@@ -440,3 +409,27 @@ def test_posttooluse_payload_preserves_tool_result(tmp_path: Path) -> None:
             "cwd": str(tmp_path),
         }
     ]
+
+
+def test_a_terminal_call_with_no_command_still_reaches_its_gates() -> None:
+    """An empty spread used to return no payload at all, and a payload-less call
+    runs the dispatcher's loop zero times — a Bash gate skipped on a Bash call."""
+    from ..claude_hook_adapter import to_claude_hook_payloads
+
+    payloads = to_claude_hook_payloads(
+        {"preToolUse": {"toolName": "bash", "parameters": {"commands": [None]}}},
+        "PreToolUse",
+    )
+    assert len(payloads) == 1
+    assert payloads[0]["tool_name"] == "Bash"
+
+
+def test_a_terminal_call_still_spreads_over_every_command() -> None:
+    """The control for the case above: a real spread is untouched."""
+    from ..claude_hook_adapter import to_claude_hook_payloads
+
+    payloads = to_claude_hook_payloads(
+        {"preToolUse": {"toolName": "bash", "parameters": {"commands": ["a", "b"]}}},
+        "PreToolUse",
+    )
+    assert [p["tool_input"]["command"] for p in payloads] == ["a", "b"]

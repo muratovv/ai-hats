@@ -12,23 +12,20 @@ import os
 import re
 from pathlib import Path
 
+from ..hook_channel import HookCall, matches
+from .profile import PROFILE
+
 _PATCH_PATH = re.compile(r"^\*\*\* (Update|Add|Delete) File: (.+)$", re.MULTILINE)
 _PATCH_MOVE = re.compile(r"^\*\*\* Move to: (.+)$", re.MULTILINE)
 
 
 def matches_claude_hook(matcher: str, codex_tool_name: str) -> bool:
-    """Match a Claude hook matcher against the equivalent Codex tool name."""
-    aliases = [codex_tool_name]
-    if codex_tool_name == "apply_patch":
-        aliases.extend(("Edit", "Write", "MultiEdit"))
-    elif codex_tool_name == "spawn_agent":
-        aliases.append("Agent")
-    if not matcher or matcher == "*":
-        return True
-    try:
-        return any(re.fullmatch(matcher, candidate) is not None for candidate in aliases)
-    except re.error:
-        return matcher in aliases
+    """Whether a composed row's ``matcher`` applies to this Codex tool call.
+
+    The name table it consults is data now: the terminal row used to be absent
+    here, and its absence ran no gate rather than failing anything.
+    """
+    return matches(PROFILE, matcher, codex_tool_name)
 
 
 def _patch_targets(command: str, cwd: str) -> list[tuple[str, Path]]:
@@ -45,6 +42,16 @@ def _patch_targets(command: str, cwd: str) -> list[tuple[str, Path]]:
             seen.add(path)
             resolved.append((kind, path))
     return resolved
+
+
+def to_claude_hook_calls(payload: dict, event: str) -> list[HookCall]:
+    """The payloads, each still carrying the name codex gave the tool.
+
+    A matcher may be written in codex's own vocabulary; the payload spells the
+    matcher vocabulary, so the native name has to travel beside it.
+    """
+    native = str(payload.get("tool_name", ""))
+    return [HookCall(one, native) for one in to_claude_hook_payloads(payload, event)]
 
 
 def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
@@ -76,4 +83,4 @@ def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
     return result
 
 
-__all__ = ["matches_claude_hook", "to_claude_hook_payloads"]
+__all__ = ["matches_claude_hook", "to_claude_hook_calls", "to_claude_hook_payloads"]

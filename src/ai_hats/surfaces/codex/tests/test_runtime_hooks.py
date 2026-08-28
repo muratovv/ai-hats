@@ -336,7 +336,10 @@ def test_pretooluse_ask_fails_closed_with_the_hook_recovery_reason(
     assert code == 0, stderr
     decision = json.loads(stdout)["hookSpecificOutput"]
     assert decision["permissionDecision"] == "deny"
-    assert decision["permissionDecisionReason"] == "set AI_HATS_PUSH_ACK=1"
+    # The hook's own reason, plus the channel saying why the question became a
+    # refusal — the half the surface's local branch used to leave out.
+    assert decision["permissionDecisionReason"].startswith("set AI_HATS_PUSH_ACK=1")
+    assert "cannot carry the consent" in decision["permissionDecisionReason"]
 
 
 def test_apply_patch_is_adapted_to_claude_style_file_path(
@@ -516,9 +519,13 @@ def test_torn_session_identity_fails_closed_without_running_foreign_hook(
     )
 
     assert code == 2
-    assert stdout == ""
     assert "session identity mismatch" in stderr
     assert not marker.exists()
+    # The status alone named no way past it, which is the half a delivery
+    # refusal on this channel owes the human.
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "AI_HATS_GATE_BROKEN_ACK" in spoken["permissionDecisionReason"]
 
 
 def test_manifest_command_outside_session_mirror_fails_closed(
@@ -545,9 +552,11 @@ def test_manifest_command_outside_session_mirror_fails_closed(
     )
 
     assert code == 2
-    assert stdout == ""
     assert "escapes the session skills mirror" in stderr
     assert not marker.exists()
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "AI_HATS_GATE_BROKEN_ACK" in spoken["permissionDecisionReason"]
 
 
 def test_exit_two_from_claude_hook_denies_permission_request(
@@ -663,3 +672,157 @@ def test_real_worktree_gate_blocks_main_but_allows_the_linked_worktree(
     assert main_result[0] == 0
     assert json.loads(main_result[1])["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert linked_result == (0, "", "")
+
+
+def test_an_allowing_hooks_stderr_still_reaches_the_operator(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The audit trail rides stderr, and an ALLOW is where it rides alone.
+
+    A previous cut of this dispatcher forwarded every hook's stderr with a
+    comment saying why; losing that line took the bypass journal's own
+    "NOT RECORDED" warning off this surface entirely, with nothing left to say
+    a hatch had been used.
+    """
+    hook = _script(
+        tmp_path / "noisy.sh", "cat >/dev/null; echo '[bypass-journal] NOT RECORDED' >&2"
+    )
+    cache = tmp_path / "cache"
+    _manifest(cache, hook)
+
+    code, _stdout, stderr = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "exec",
+            "tool_input": {"command": "echo safe"},
+        },
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    assert code == 0
+    assert "NOT RECORDED" in stderr, f"the hook's only trace was dropped:\n{stderr!r}"
+
+
+def test_advice_gathered_before_a_refusal_still_reaches_the_model(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """`can_carry_nudges=True` says this surface holds them, so the channel
+    stops reducing them away — and then _emit dropped them on every non-allow,
+    losing what the gates BEFORE the objector had to say."""
+    cache = tmp_path / "cache"
+    mirror = cache / "codex-home" / "skills" / "guard" / "hooks"
+    mirror.mkdir(parents=True, exist_ok=True)
+    hint = _script(
+        mirror / "hint.sh",
+        "cat >/dev/null\n"
+        'printf \'%s\' \'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"additionalContext":"prefer Grep"}}\'\n',
+    )
+    guard = _script(
+        mirror / "guard.sh",
+        "cat >/dev/null\n"
+        'printf \'%s\' \'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"permissionDecision":"deny","permissionDecisionReason":"no"}}\'\n',
+    )
+    (cache / "hooks.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "session": {"id": "sid-one", "ai_hats_dir": "/project/.agent/ai-hats"},
+                "hooks": {
+                    "PreToolUse": [
+                        {"matcher": "Bash", "command": str(hint), "tag": "ai-hats:hint"},
+                        {"matcher": "Bash", "command": str(guard), "tag": "ai-hats:guard"},
+                    ]
+                },
+            }
+        )
+    )
+
+    _code, stdout, _stderr = _run(
+        {"hook_event_name": "PreToolUse", "tool_name": "exec", "tool_input": {"command": "x"}},
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "prefer Grep" in spoken.get("additionalContext", ""), (
+        f"the advice was dropped with the refusal:\n{stdout!r}"
+    )
+
+
+def test_a_question_on_an_arrival_codex_cannot_ask_on_is_refused_by_the_channel(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """codex can put a question only where it was already asking, and _emit
+    turned an `ask` elsewhere into a bare deny of its own making.
+
+    That is a branch of policy in a surface, and it cost the reader the wording
+    the channel exists to hold in one copy — and the hatch with it.
+    """
+    cache = tmp_path / "cache"
+    asks = _script(
+        tmp_path / "ask.sh",
+        "cat >/dev/null\n"
+        'printf \'%s\' \'{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+        '"permissionDecision":"ask","permissionDecisionReason":"needs consent"}}\'\n',
+    )
+    _manifest(cache, asks)
+
+    _code, stdout, _stderr = _run(
+        {"hook_event_name": "PreToolUse", "tool_name": "exec", "tool_input": {"command": "x"}},
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    spoken = json.loads(stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "cannot carry the consent" in spoken["permissionDecisionReason"], (
+        f"the surface invented its own refusal instead of the channel's:\n{stdout!r}"
+    )
+
+
+def test_advice_is_not_silently_dropped_on_the_arrival_that_cannot_carry_it(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """codex's PermissionRequest reply has a `decision` object and no slot for
+    advice, so _emit skipped the nudges there.
+
+    The dialect said this surface carries them, so the channel had already
+    stopped reducing them away — the drop happened after everything that could
+    have accounted for it. Narrowing the capability for THIS arrival makes the
+    channel do the dropping, in the one place that knows it happened.
+    """
+    hint = _script(tmp_path / "hint.sh", "cat >/dev/null\n" + _context_reply("prefer Grep"))
+    cache = tmp_path / "cache"
+    _manifest(cache, hint)
+
+    _code, stdout, _stderr = _run(
+        {
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "exec",
+            "tool_input": {"command": "x"},
+        },
+        _session_env(cache),
+        monkeypatch,
+        capsys,
+    )
+
+    from ai_hats.surfaces.codex.hook_dispatcher import _speaks
+
+    assert not _speaks("PermissionRequest").can_carry_nudges, (
+        "the dialect still claims an arrival with nowhere to put advice can carry it"
+    )
+    assert "prefer Grep" not in stdout
+
+
+def _context_reply(text: str) -> str:
+    spoken = json.dumps(
+        {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": text}}
+    )
+    return f"printf '%s' {json.dumps(spoken)}\n"

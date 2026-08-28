@@ -10,6 +10,7 @@
     "AI_HATS_DIR",
     "AI_HATS_DOCS_INDEX_ACK",
     "AI_HATS_E2E_CATALOG_ACK",
+    "AI_HATS_GATE_BROKEN_ACK",
     "AI_HATS_GIT_GATE_BROKEN_ACK",
     "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
     "AI_HATS_PRIVACY_ACK",
@@ -71,10 +72,10 @@
     },
     {
       "detail": "+hooks",
-      "digest": "306d078e2c5cb267cd437515c853d71bbd9e695f59492e00a0450d2b50914c68",
+      "digest": "5b9ec6d1572b5e2ec71e976d9c0665efe1de662c5fd8ff8b3534344364e29f23",
       "file_count": 1,
       "kind": "merge_json",
-      "size": 1506,
+      "size": 2381,
       "source": null,
       "target": "<home>/.gemini/antigravity-cli/settings.json"
     },

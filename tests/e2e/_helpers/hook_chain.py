@@ -415,6 +415,108 @@ def run_agy_dispatch(
     )
 
 
+def run_codex_dispatch(
+    project: Path,
+    env: dict,
+    *,
+    event: str = "PreToolUse",
+    tool: str = "exec",
+    tool_input: dict | None = None,
+    timeout: int = 60,
+) -> subprocess.CompletedProcess[str]:
+    """Run one ``tool`` call through codex's whole hook chain, as codex runs it.
+
+    The production dispatcher string is what codex puts in its TOML, so driving
+    THAT through a real shell is what makes the run evidence about the surface
+    rather than about a Python entry point no host calls.
+    """
+    from ai_hats.surfaces.codex.hook_dispatcher import DISPATCHER_COMMAND
+
+    payload = json.dumps(
+        {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input or {}}
+    )
+    return subprocess.run(  # noqa: S603 - the production dispatcher string, run as codex runs it
+        ["sh", "-c", DISPATCHER_COMMAND],  # noqa: S607 - sh from PATH
+        input=payload,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+#: Stands in for the opencode host: loads the plugin the provider installs and
+#: puts one tool call through it. Only the host is faked — the plugin, its
+#: decision to spawn, and the dispatcher behind it are the real ones.
+_OPENCODE_HOST = """
+import { AiHatsHooksPlugin } from "%(plugin)s";
+
+const hooks = await AiHatsHooksPlugin({ client: {} });
+const before = hooks["tool.execute.before"];
+const after = hooks["tool.execute.after"];
+const handler = %(event)s === "PostToolUse" ? after : before;
+const out = { registered: Boolean(handler), threw: false, message: "" };
+if (handler) {
+  try {
+    await handler({ tool: %(tool)s }, { args: %(args)s });
+  } catch (err) {
+    out.threw = true;
+    out.message = String((err && err.message) || err);
+  }
+}
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def run_opencode_dispatch(
+    project: Path,
+    env: dict,
+    *,
+    event: str = "PreToolUse",
+    tool: str = "bash",
+    args: dict | None = None,
+    timeout: int = 60,
+    runtime: str = "node",
+) -> dict:
+    """Put one tool call through the REAL opencode plugin, on a real runtime.
+
+    The plugin is the half that had no test of any kind: it decides whether the
+    dispatcher is spawned at all, and it is what turns a verdict document into
+    the error the host acts on. Driving only the Python shim would measure
+    neither.
+
+    Returns the host's view — whether hooks were registered, whether the call
+    was thrown out, and with what — plus whatever the plugin put on the console.
+    """
+    from ai_hats.surfaces.opencode.runtime_hooks import PLUGIN_ASSET
+
+    plugin = Path(env["AI_HATS_SESSION_CACHE_DIR"]) / "opencode" / "plugin" / PLUGIN_ASSET
+    harness = project / "_opencode_host.mjs"
+    harness.write_text(
+        _OPENCODE_HOST
+        % {
+            "plugin": plugin.as_uri(),
+            "event": json.dumps(event),
+            "tool": json.dumps(tool),
+            "args": json.dumps(args or {}),
+        },
+        encoding="utf-8",
+    )
+    done = subprocess.run(  # noqa: S603 - a fixed runtime and our own harness file
+        [runtime, str(harness)],  # noqa: S607 - runtime from PATH, by name
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    said = json.loads(done.stdout) if done.stdout.strip() else {}
+    said["console"] = done.stderr
+    said["runtime_exit"] = done.returncode
+    return said
+
+
 _FAKE_CLINE = r"""#!/usr/bin/env python3
 import json
 import os

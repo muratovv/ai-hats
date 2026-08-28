@@ -74,7 +74,9 @@ def test_cline_hitl_runs_composed_pretooluse_chain(tmp_path: Path, shared_launch
     assert capture["manifest_session_id"] == capture["session_id"]
     assert any("safety-guard" in tag for tag in capture["pretooluse_tags"])
     assert capture["hook_output"]["cancel"] is True
-    assert "cannot ask for permission" in capture["hook_output"]["errorMessage"]
+    # The invariant, not the wording: a surface that cannot carry this gate's
+    # consent must send the user somewhere the consent can actually be given.
+    assert "grant it outside this tool call" in capture["hook_output"]["errorMessage"]
 
     safe_launched, safe_capture = run_cline_hook_session(
         launcher,

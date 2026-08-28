@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import json
 import os
-import signal
-import subprocess
 import sys
 from pathlib import Path
 from typing import Mapping
 
 from ai_hats.env import ENV_AI_HATS_DIR, ENV_SESSION_CACHE_DIR
 from ai_hats_observe.trace import ENV_SESSION_ID
-from .claude_hook_adapter import matches_claude_hook, to_claude_hook_payloads
 
-HOOK_TIMEOUT_S = 60.0
+from ..hook_channel import (
+    ChainDecision,
+    ChainVerdict,
+    HookEvent,
+    HookRow,
+    project_dir_from,
+    reduce_to,
+    relay_stderr,
+    run_chain,
+    undeliverable,
+    worded,
+)
+from .claude_hook_adapter import to_claude_hook_calls
+from .profile import PROFILE
 
 
 class _ManifestError(RuntimeError):
@@ -57,7 +67,10 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
     if not isinstance(hooks, dict):
         raise _ManifestError(f"hook manifest at {path} carries no hooks mapping")
 
-    skills_root = (_resolved(cache_dir) / "skills").resolve()
+    declared = PROFILE.skills_root(Path(cache_dir))
+    if declared is None:
+        raise _ManifestError(f"{PROFILE.label} declares no session skills mirror")
+    skills_root = _resolved(str(declared))
     for entries in hooks.values():
         if not isinstance(entries, list):
             continue
@@ -73,155 +86,98 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
     return data
 
 
-def _kill_group(running: subprocess.Popen) -> None:
-    try:
-        os.killpg(os.getpgid(running.pid), signal.SIGKILL)
-    except OSError:
-        running.kill()
-
-
-def _run(
-    command: str,
-    payload: dict,
-    *,
-    timeout_s: float,
-    popen_factory,
-) -> dict | None:
-    try:
-        with popen_factory(  # noqa: S603 - manifest pins an executable in skills_root
-            [command],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=os.environ.copy(),
-            start_new_session=True,
-        ) as running:
-            try:
-                stdout, stderr = running.communicate(input=json.dumps(payload), timeout=timeout_s)
-            except subprocess.TimeoutExpired:
-                _kill_group(running)
-                sys.stderr.write(f"ai-hats-cline-hook: hook timed out: {command}\n")
-                return None
-            code = running.returncode
-    except (OSError, ValueError) as exc:
-        sys.stderr.write(f"ai-hats-cline-hook: hook could not start: {command}: {exc}\n")
-        return None
-
-    if stderr:
-        sys.stderr.write(stderr)
-    if code != 0:
-        sys.stderr.write(f"ai-hats-cline-hook: hook exited {code}: {command}\n")
-        return None
-    output = stdout.strip()
-    if not output:
-        return None
-    try:
-        raw = json.loads(output)
-    except ValueError as exc:
-        sys.stderr.write(f"ai-hats-cline-hook: hook returned invalid JSON: {command}: {exc}\n")
-        return None
-    if not isinstance(raw, dict):
-        sys.stderr.write(f"ai-hats-cline-hook: hook returned non-object JSON: {command}\n")
-        return None
-    return raw
-
-
 def _emit(output: dict) -> None:
     sys.stdout.write(json.dumps(output) + "\n")
 
 
-def dispatch_hook(
-    event: str,
-    *,
-    stdin=None,
-    timeout_s: float = HOOK_TIMEOUT_S,
-    popen_factory=subprocess.Popen,
-) -> int:
+def _rows(manifest: dict, event: HookEvent) -> list[HookRow]:
+    """The composed rows for ``event``, or a manifest error naming what is wrong."""
+    raw = manifest["hooks"].get(event.value, [])
+    rows: list[HookRow] = []
+    for entry in raw if isinstance(raw, list) else []:
+        if not isinstance(entry, dict):
+            raise _ManifestError(f"hook entry is {type(entry).__name__}, not an object")
+        command = entry.get("command")
+        if not isinstance(command, str) or not command:
+            raise _ManifestError(f"malformed hook entry: {entry.get('tag', '<untagged>')}")
+        rows.append(
+            HookRow(
+                command=Path(command),
+                matcher=str(entry.get("matcher", "")),
+                tag=str(entry.get("tag") or command),
+            )
+        )
+    return rows
+
+
+def _undeliverable(reason: str, event: HookEvent | None = None) -> ChainVerdict:
+    """A gate ai-hats could not deliver refuses, naming a way past that works.
+
+    Every one of these used to answer ``{"cancel": false}``: the tool call went
+    through and the only trace was a line on stderr nobody reads mid-session.
+
+    ``event`` travels so a refusal for a call that ALREADY ran can still be
+    reduced to something the reader sees, rather than cancelling what cannot be
+    cancelled.
+    """
+    return undeliverable(
+        f"ai-hats-cline-hook: {reason}",
+        event=event,
+        project_dir=project_dir_from(os.environ),
+    )
+
+
+def _reply(raw: ChainVerdict) -> int:
+    """Reduce to what cline can utter, then say it.
+
+    The reduction happens HERE so every path reaches it — a delivery refusal for
+    a call that already ran used to skip it and cancel what cannot be cancelled.
+    """
+    verdict = reduce_to(PROFILE.speaks, raw)
+    relay_stderr(verdict)
+    if verdict.decision in (ChainDecision.DENY, ChainDecision.ASK):
+        said = worded(verdict)
+        # Also on stderr: the agent reads errorMessage, an operator reading the
+        # session log afterwards reads this.
+        sys.stderr.write(said + "\n")
+        _emit({"cancel": True, "errorMessage": said})
+        return 0
+    output: dict[str, object] = {"cancel": False}
+    if verdict.nudges:
+        output["contextModification"] = "\n".join(n.text for n in verdict.nudges)
+    _emit(output)
+    return 0
+
+
+def dispatch_hook(event: str, *, stdin=None) -> int:
     """Run the composed chain for one Cline event and emit Cline-native JSON."""
+    bound = HookEvent.parse(event)
+    if bound is None:
+        # Nothing composed can bind here, so there is no gate to have missed.
+        sys.stderr.write(f"ai-hats-cline-hook: unsupported event: {event}\n")
+        _emit({"cancel": False})
+        return 0
     source = stdin if stdin is not None else sys.stdin
     try:
         payload = json.loads(source.read())
     except (OSError, ValueError) as exc:
-        sys.stderr.write(f"ai-hats-cline-hook: invalid payload: {exc}\n")
-        _emit({"cancel": False})
-        return 0
+        return _reply(_undeliverable(f"invalid payload: {exc}", bound))
     if not isinstance(payload, dict):
-        sys.stderr.write("ai-hats-cline-hook: payload is not an object\n")
-        _emit({"cancel": False})
-        return 0
-    if event not in {"PreToolUse", "PostToolUse"}:
-        sys.stderr.write(f"ai-hats-cline-hook: unsupported event: {event}\n")
-        _emit({"cancel": False})
-        return 0
+        return _reply(_undeliverable("payload is not an object", bound))
     try:
-        manifest = _load_manifest(os.environ)
+        rows = _rows(_load_manifest(os.environ), bound)
     except _ManifestError as exc:
-        sys.stderr.write(f"ai-hats-cline-hook: {exc}\n")
-        _emit({"cancel": False})
-        return 0
+        return _reply(_undeliverable(str(exc), bound))
 
-    entries = manifest["hooks"].get(event, [])
-    entries = entries if isinstance(entries, list) else []
-    contexts: list[str] = []
-    for adapted in to_claude_hook_payloads(payload, event):
-        tool_name = str(adapted.get("tool_name", ""))
-        for entry in entries:
-            if not isinstance(entry, dict) or not matches_claude_hook(
-                str(entry.get("matcher", "")), tool_name
-            ):
-                continue
-            command = entry.get("command")
-            if not isinstance(command, str) or not command:
-                sys.stderr.write(
-                    f"ai-hats-cline-hook: malformed hook entry: {entry.get('tag', '<untagged>')}\n"
-                )
-                continue
-            raw = _run(
-                command,
-                adapted,
-                timeout_s=timeout_s,
-                popen_factory=popen_factory,
-            )
-            if raw is None:
-                continue
-            hook_output = raw.get("hookSpecificOutput")
-            hook_output = hook_output if isinstance(hook_output, dict) else {}
-            decision = str(hook_output.get("permissionDecision", "")).lower()
-            reason = str(hook_output.get("permissionDecisionReason", ""))
-            context = str(hook_output.get("additionalContext", ""))
-            if context and context not in contexts:
-                contexts.append(context)
-            if raw.get("decision") == "block":
-                decision = "deny"
-                reason = str(raw.get("reason", ""))
-            if decision == "deny" and event == "PreToolUse":
-                _emit(
-                    {
-                        "cancel": True,
-                        "errorMessage": reason or f"blocked by {entry.get('tag', command)}",
-                    }
-                )
-                return 0
-            if decision == "ask" and event == "PreToolUse":
-                prefix = reason or f"consent required by {entry.get('tag', command)}"
-                _emit(
-                    {
-                        "cancel": True,
-                        "errorMessage": (
-                            f"{prefix}; Cline runtime hooks cannot ask for permission or "
-                            "apply hook input rewrites; grant consent outside this tool "
-                            "call and retry"
-                        ),
-                    }
-                )
-                return 0
-
-    output: dict[str, object] = {"cancel": False}
-    if contexts:
-        output["contextModification"] = "\n".join(contexts)
-    _emit(output)
-    return 0
+    return _reply(
+        run_chain(
+            PROFILE,
+            event=bound,
+            rows=rows,
+            calls=to_claude_hook_calls(payload, event),
+            project_dir=project_dir_from(os.environ),
+        )
+    )
 
 
 def main() -> None:

@@ -10,15 +10,17 @@ codex surfaces.
 from __future__ import annotations
 
 import json
+import sys
 from importlib import resources
 from pathlib import Path
 
-from ai_hats.env import ENV_SESSION_CACHE_DIR
+from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
+
+from ..hook_channel import ENV_HOOK_SURFACE_TIMEOUT_MS, surface_timeout
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.paths import ai_hats_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
 
-OPENCODE_HOOK_EVENTS = ("PreToolUse", "PostToolUse")
 MANIFEST_VERSION = 1
 
 PLUGIN_ASSET = "ai-hats-hooks.mjs"
@@ -105,12 +107,18 @@ def materialize_hook_manifest(
     artifacts.materialized.append(plugin_path)
 
     artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
+    # The plugin is JavaScript and cannot judge a call; it shells out to the
+    # dispatcher, which needs the interpreter this session was built with.
+    artifacts.extra_env[ENV_AI_HATS_PYTHON] = sys.executable
+    # The plugin's kill bound, derived rather than written into the asset: it is
+    # copied verbatim, so a literal there could not track the chain's budget and
+    # would bound the dispatcher below it as soon as the budget was raised.
+    artifacts.extra_env[ENV_HOOK_SURFACE_TIMEOUT_MS] = str(int(surface_timeout() * 1000))
     return manifest_path, plugin_path
 
 
 __all__ = [
     "MANIFEST_VERSION",
-    "OPENCODE_HOOK_EVENTS",
     "PLUGIN_ASSET",
     "materialize_hook_manifest",
     "plugin_source",

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**279 of 279 files catalogued — 288 flows.**
+**284 of 284 files catalogued — 293 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -665,6 +665,34 @@ as a claim to check, not as evidence.
 - **expect** — Codex merges without env acks; a stale envelope refuses the grant
 - **why** — HATS-1755 exposed a nested worktree merge and Codex recovery path
 
+## `test_codex_consent_ticket_survives.py`
+
+*pins HATS-1858*
+
+- **flow** — a gate answers `ask` plus `updatedInput` in one reply on codex, which can put a question but cannot carry the rewrite that goes with it
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # PermissionRequest, the arrival codex asks on
+  ```
+
+- **expect** — the ticketed question becomes a refusal naming why, and the ticket text never reaches codex; a ticket-less question still defers to the native prompt
+- **why** — a question asked without its ticket shows the human the ORIGINAL command and approves it (HATS-1642) — so the ticket must not go missing in silence, and the rule must stay "refuse when the ticket cannot follow" rather than "refuse always"
+
+## `test_codex_hook_budget_reports.py`
+
+*pins HATS-1858*
+
+- **flow** — a composed chain of slow gates overruns the budget for one tool call, and the operator expects to be told rather than to get silence
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # with AI_HATS_HOOK_TIMEOUT_S=1
+  ```
+
+- **expect** — the dispatcher answers inside the surface's own larger bound, the refusal names the variable that widens it, and the chain stops rather than waving the remaining gates through
+- **why** — codex bounded the dispatcher and the hook at the same 60 s, so every timeout branch was unreachable: the host killed the dispatcher first and the tool call met no verdict at all
+
 ## `test_codex_native_role_skills.py`
 
 *pins HATS-1694*
@@ -721,6 +749,20 @@ as a claim to check, not as evidence.
 
 - **expect** — graceful exit canonicalizes the rollout; crash retention survives cache loss; resume and native role skills work
 - **why** — cleanup-only tests cannot prove the HATS-1801 resume invariant across process termination
+
+## `test_codex_terminal_gate_fires.py`
+
+*pins HATS-1858*
+
+- **flow** — an operator runs a codex-provider role whose composition binds a `Bash` gate, and expects that gate to fire on codex's own shell
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # the string codex puts in its own TOML
+  ```
+
+- **expect** — a composed chain of two hooks runs in order on `exec`, `shell` and `local_shell` alike, and the refusal that reaches codex is the second hook's; a permitted command passes with both hooks still having run
+- **why** — `claude_hook_adapter.py` held the string `Bash` zero times, so every shipped terminal gate compared literally against `exec` and missed — `safety_gate.py`, `pre_bash_shared_state_guard.sh` and `tool_call_hygiene_guard.sh` never fired on this surface, and all ten dispatcher tests fed it a name codex does not send
 
 ## `test_comment_length_lint_hook.py`
 
@@ -1295,6 +1337,20 @@ as a claim to check, not as evidence.
 - **expect** — missing hook scripts fail open on execution without blocking git commands and session start restores missing script files
 - **why** — corrupted or removed hook scripts must not block developer git workflow while ensuring automated recovery on session launch
 
+## `test_hook_reply_survives_large_stdout.py`
+
+*pins HATS-1858*
+
+- **flow** — a PostToolUse gate answers with ruff's whole output in `additionalContext`, which on this repo's own files runs past 11 KB
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # PostToolUse
+  ```
+
+- **expect** — the advice arrives whole, and a reply that still overruns is reported as unreadable rather than read as a hook that said nothing
+- **why** — the execution primitive returns a TAIL of stdout and a tail cuts a JSON document's head off, so a large reply did not arrive clipped, it arrived unparseable — and silence is an allow, so a lost verdict must never look like one
+
 ## `test_init_leaves_venv_alone.py`
 
 *pins HATS-1215, HATS-1250*
@@ -1719,6 +1775,20 @@ as a claim to check, not as evidence.
 
 - **expect** — pre-commit hook allows multi-line call with relocated safe-delete marker while blocking unmarked calls
 - **why** — without multi-line marker parsing, ruff formatting relocates markers and falsely blocks legitimate commits
+
+## `test_opencode_hook_chain.py`
+
+*pins HATS-1858*
+
+- **flow** — an operator runs an opencode-provider role and expects the composed gates to reach tool calls through the plugin ai-hats installs
+- **cmds**
+
+  ```console
+  node <session>/opencode/plugin/ai-hats-hooks.mjs   # via a stand-in host
+  ```
+
+- **expect** — a `permissionDecision` refusal throws the call out, a nudge reaches the console with its author, a vanished manifest refuses while naming the hatch, and that hatch lets a human past
+- **why** — the plugin read a verdict off an exit code and understood two shapes, one of which no shipped hook emits — seven of eight gates could refuse and be waved through — and it returned {} on a missing manifest, so a session that lost one ran with every gate off for its whole life
 
 ## `test_plan_canonical_home.py`
 

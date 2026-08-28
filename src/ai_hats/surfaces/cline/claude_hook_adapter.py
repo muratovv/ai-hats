@@ -6,34 +6,16 @@ import os
 import re
 from pathlib import Path
 
+from ..hook_channel import HookCall, matches
+from .profile import PROFILE
+
 _PATCH_PATH = re.compile(r"^\*\*\* (Update|Add|Delete) File: (.+)$", re.MULTILINE)
 _PATCH_MOVE = re.compile(r"^\*\*\* Move to: (.+)$", re.MULTILINE)
 
-_TOOL_NAMES = {
-    "bash": "Bash",
-    "execute_command": "Bash",
-    "run_commands": "Bash",
-    "write_to_file": "Write",
-    "replace_in_file": "Edit",
-    "editor": "Edit",
-    "read_file": "Read",
-    "read_files": "Read",
-    "search_files": "Grep",
-    "search_codebase": "Grep",
-    "search": "Grep",
-    "list_files": "Glob",
-    "apply_patch": "Edit",
-}
-
 
 def matches_claude_hook(matcher: str, tool_name: str) -> bool:
-    """Match a composed Claude hook matcher against an adapted tool name."""
-    if not matcher or matcher == "*":
-        return True
-    try:
-        return re.fullmatch(matcher, tool_name) is not None
-    except re.error:
-        return matcher == tool_name
+    """Whether a composed row's ``matcher`` applies to this Cline tool call."""
+    return matches(PROFILE, matcher, tool_name)
 
 
 def _patch_targets(patch: str, cwd: str) -> list[tuple[str, Path]]:
@@ -51,11 +33,28 @@ def _patch_targets(patch: str, cwd: str) -> list[tuple[str, Path]]:
     return result
 
 
+def native_tool(payload: dict, event: str) -> str:
+    """What cline called the tool in this event's envelope."""
+    event_payload = payload.get(event[0].lower() + event[1:])
+    event_payload = event_payload if isinstance(event_payload, dict) else {}
+    return str(event_payload.get("toolName", event_payload.get("tool", "")))
+
+
+def to_claude_hook_calls(payload: dict, event: str) -> list[HookCall]:
+    """The payloads, each still carrying the name cline gave the tool.
+
+    A matcher may be written in cline's own vocabulary; the payload spells the
+    matcher vocabulary, so the native name has to travel beside it.
+    """
+    native = native_tool(payload, event)
+    return [HookCall(one, native) for one in to_claude_hook_payloads(payload, event)]
+
+
 def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
     """Return Claude-compatible payloads for one native Cline event."""
     event_payload = payload.get(event[0].lower() + event[1:])
     event_payload = event_payload if isinstance(event_payload, dict) else {}
-    tool_name = str(event_payload.get("toolName", event_payload.get("tool", "")))
+    tool_name = native_tool(payload, event)
     parameters = event_payload.get("parameters")
     parameters = parameters if isinstance(parameters, dict) else {}
     cwd = ""
@@ -79,11 +78,12 @@ def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
         if not isinstance(commands, list):
             command = parameters.get("command")
             commands = [command] if isinstance(command, str) else []
-        return [
-            adapted("Bash", {"command": str(command)})
-            for command in commands
-            if isinstance(command, str)
-        ]
+        spread = [adapted("Bash", {"command": str(c)}) for c in commands if isinstance(c, str)]
+        # Falling through on an empty spread rather than returning it: no payload
+        # means the dispatcher's loop never runs, and a terminal call reaches the
+        # agent with its terminal gates never consulted.
+        if spread:
+            return spread
 
     if tool_name == "apply_patch":
         patch = parameters.get("patch", parameters.get("command", ""))
@@ -102,7 +102,7 @@ def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
                 for kind, path in targets
             ]
 
-    return [adapted(_TOOL_NAMES.get(tool_name, tool_name), parameters)]
+    return [adapted(PROFILE.spoken_name(tool_name), parameters)]
 
 
-__all__ = ["matches_claude_hook", "to_claude_hook_payloads"]
+__all__ = ["native_tool", "to_claude_hook_calls", "matches_claude_hook", "to_claude_hook_payloads"]

@@ -13,13 +13,17 @@ import sys
 from pathlib import Path
 
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
+from .profile import PROFILE
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.paths import ai_hats_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
 
+from ..hook_channel import surface_timeout
 from .hook_dispatcher import DISPATCHER_COMMAND
 
-CODEX_HOOK_EVENTS = ("PreToolUse", "PermissionRequest", "PostToolUse")
+#: Every bindable event, plus the arrival only this surface has. Derived, so a
+#: new bindable event reaches Codex without anyone remembering this line.
+CODEX_HOOK_EVENTS: tuple[str, ...] = PROFILE.native_events
 MANIFEST_VERSION = 1
 
 
@@ -38,9 +42,12 @@ def build_hook_cli_args() -> list[str]:
     # Omitting matcher is Codex's documented match-all form.  A literal `*`
     # looks like a glob but the matcher is regex-like and is not a valid
     # match-all expression on every CLI version.
+    # Derived, never written by hand: bounding the dispatcher and the hook at
+    # the same number is what made every timeout branch below unreachable and
+    # left a killed chain with no verdict at all.
     handler = (
         '[{ hooks = [{ type = "command", command = '
-        f"{_toml_string(DISPATCHER_COMMAND)}, timeout = 60 }}] }}]"
+        f"{_toml_string(DISPATCHER_COMMAND)}, timeout = {surface_timeout():.0f} }}] }}]"
     )
     args: list[str] = []
     for event in CODEX_HOOK_EVENTS:
