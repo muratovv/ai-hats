@@ -96,8 +96,13 @@ def _fired(chain: SimpleNamespace) -> list[str]:
 
 
 def test_the_pinned_manifest_drives_the_whole_chain(agy_chain) -> None:
-    """The control: with the manifest there, every hook on the matcher runs, in
-    order, and the user's own hook runs after the session's."""
+    """The control: with the manifest there, every hook on the matcher runs, and
+    the user's own channel runs after the session's.
+
+    Order WITHIN the session's chain is no longer observable — matched gates run
+    together. Order BETWEEN the two channels still is, and is the half this
+    pins: the user's hook is ours to run last, not to interleave.
+    """
     done = run_agy_dispatch(
         agy_chain.project,
         agy_chain.env,
@@ -106,7 +111,9 @@ def test_the_pinned_manifest_drives_the_whole_chain(agy_chain) -> None:
     )
 
     assert done.returncode == 0, done.stderr
-    assert _fired(agy_chain) == ["audit", "guard", "user"], done.stderr
+    fired = _fired(agy_chain)
+    assert sorted(fired[:2]) == ["audit", "guard"], done.stderr
+    assert fired[2:] == ["user"], f"the user's channel did not run last: {fired}"
     assert "no hooks manifest" not in done.stderr, done.stderr
 
 
@@ -122,7 +129,9 @@ def test_a_guard_further_down_the_chain_still_refuses(agy_chain) -> None:
 
     assert done.returncode == 2, f"the guard did not refuse (exit {done.returncode})"
     assert OFF_LIMITS in done.stderr, done.stderr
-    assert _fired(agy_chain) == ["audit", "guard"], "the chain did not stop at the refusal"
+    assert sorted(_fired(agy_chain)) == ["audit", "guard"], (
+        "a refusal must still close the user's channel, and only it"
+    )
 
 
 def test_a_reclaimed_cache_dir_refuses_the_call_it_can_no_longer_guard(agy_chain) -> None:
