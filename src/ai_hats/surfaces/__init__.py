@@ -52,15 +52,20 @@ _HOMES = {
 
 
 def __getattr__(name: str) -> object:
-    home = _HOMES.get(name)
-    if home is None:
-        # Not ours: let the import system try `surfaces.<name>` as a submodule.
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from importlib import import_module
 
-    value = getattr(import_module(home, __name__), _ALIASES.get(name, name))
-    globals()[name] = value  # bound once; later lookups skip __getattr__
-    return value
+    home = _HOMES.get(name)
+    if home is not None:
+        value = getattr(import_module(home, __name__), _ALIASES.get(name, name))
+        globals()[name] = value  # bound once; later lookups skip __getattr__
+        return value
+    if name.startswith("__"):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    # Eager binding used to expose the submodules this facade imported; keep it.
+    try:
+        return import_module(f"{__name__}.{name}")
+    except ModuleNotFoundError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
 
 
 def __dir__() -> list[str]:

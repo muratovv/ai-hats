@@ -57,6 +57,39 @@ def test_submodule_access_survives_the_lazy_getattr() -> None:
     assert profiles.__name__ == "ai_hats.surfaces.profiles"
 
 
+# Each was an attribute only because the eager facade imported it; going lazy
+# drops it silently, and only for a caller outside this repo.
+EAGERLY_BOUND_SUBMODULES = (
+    ("ai_hats_core", "atomic_io"),
+    ("ai_hats_core", "composition"),
+    ("ai_hats_core", "git_env"),
+    ("ai_hats_core", "locks"),
+    ("ai_hats_core", "migrations"),
+    ("ai_hats_core", "paths"),
+    ("ai_hats_core", "yaml_model"),
+    ("ai_hats.surfaces", "contract"),
+    ("ai_hats.surfaces", "managed_tags"),
+    ("ai_hats.surfaces.agy", "provider"),
+    ("ai_hats.surfaces.cline", "parser"),
+    ("ai_hats.surfaces.cline", "provider"),
+    ("ai_hats.surfaces.codex", "provider"),
+    ("ai_hats.surfaces.opencode", "provider"),
+)
+
+
+def test_bare_package_import_still_exposes_its_submodules() -> None:
+    """One fresh process per pair: an import here would set the attribute anyway."""
+    broken = []
+    for package, submodule in EAGERLY_BOUND_SUBMODULES:
+        probe = f"import {package}; {package}.{submodule}"
+        done = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, timeout=120
+        )
+        if done.returncode != 0:
+            broken.append(f"{package}.{submodule}: {done.stderr.strip().splitlines()[-1]}")
+    assert not broken, "\n".join(broken)
+
+
 def test_deprecated_provider_aliases_still_resolve() -> None:
     """HATS-1826 kept these for out-of-tree surfaces; nothing else covers them."""
     from ai_hats.surfaces import (
