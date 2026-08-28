@@ -160,6 +160,12 @@ def test_the_hatch_that_refusal_names_lets_the_human_through(agy_chain) -> None:
 
     A refusal on every tool call with no working way past it wedges the session
     exactly as HATS-1339 feared. This is the test that says it does not.
+
+    ``_fired`` is the load-bearing assertion, not the exit code: an opened hatch
+    means the call GOES AHEAD, so the user's own hooks — a channel that is not
+    ai-hats' composition — must run for it. HATS-1339's test guarded that with
+    "losing one channel must not disarm both", and the refusal path is the only
+    half of that which stopped being true.
     """
     agy_chain.manifest.unlink()
 
@@ -174,4 +180,42 @@ def test_the_hatch_that_refusal_names_lets_the_human_through(agy_chain) -> None:
     assert "permissionDecision" not in done.stdout, done.stdout
     assert "SKIPPED" in done.stderr, (
         f"the hatch was taken in silence — an unrecorded bypass:\n{done.stderr!r}"
+    )
+    assert _fired(agy_chain) == ["user"], (
+        f"the hatch let the CALL through and disarmed the user's own channel "
+        f"with it — both, where only ai-hats' own was meant to open; "
+        f"fired: {_fired(agy_chain)}"
+    )
+
+
+def test_the_hatch_on_a_single_broken_gate_leaves_both_channels_alone(agy_chain) -> None:
+    """The other level a gate can fail to be delivered: the manifest resolved
+    and one script in it did not.
+
+    Same question, and it was already answered right — the chain skips that row
+    and carries on, so the call goes ahead and the user's hooks run for it. Kept
+    because the manifest-level path got this wrong while this one did not, and
+    nothing said which was which.
+    """
+    agy_chain.manifest.write_text(
+        json.dumps(
+            {
+                "PreToolUse": [
+                    {"matcher": GUARDED_TOOL, "command": str(agy_chain.project / "gone.sh")}
+                ]
+            }
+        )
+    )
+
+    done = run_agy_dispatch(
+        agy_chain.project,
+        {**agy_chain.env, "AI_HATS_GATE_BROKEN_ACK": "1"},
+        tool=GUARDED_TOOL,
+        tool_input={"file_path": OFF_LIMITS},
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "SKIPPED" in done.stderr, done.stderr
+    assert _fired(agy_chain) == ["user"], (
+        f"the hatch opened ai-hats' gate and closed the user's; fired: {_fired(agy_chain)}"
     )

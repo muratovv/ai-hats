@@ -364,28 +364,30 @@ def dispatch_hook(
     try:
         rows = _session_rows(event)
     except _ManifestError as exc:
-        # The user's own hooks do NOT run behind this: they gate a call that is
-        # not going to happen.
-        return _reply(
-            undeliverable(
-                f"ai-hats-hook-dispatcher: {exc}",
+        verdict = undeliverable(
+            f"ai-hats-hook-dispatcher: {exc}",
+            event=event,
+            project_dir=project_dir_from(os.environ),
+        )
+    else:
+        verdict = reduce_to(
+            PROFILE.speaks,
+            run_chain(
+                PROFILE,
                 event=event,
+                rows=rows,
+                # Always one call: an unreadable one must still meet its gates.
+                calls=[HookCall(to_claude_payload(payload, native), tool)],
                 project_dir=project_dir_from(os.environ),
             ),
-            payload,
         )
 
-    verdict = reduce_to(
-        PROFILE.speaks,
-        run_chain(
-            PROFILE,
-            event=event,
-            rows=rows,
-            # Always one call: an unreadable one must still meet its gates.
-            calls=[HookCall(to_claude_payload(payload, native), tool)],
-            project_dir=project_dir_from(os.environ),
-        ),
-    )
+    # One tail for both, because the question they answer is the same one: does
+    # this tool call go ahead? A refusal stops it, and the user's own hooks gate
+    # a call that will not happen. Anything else — including a delivery failure
+    # the human opened the hatch on — means it DOES, and their channel is not
+    # ours to close along with ours (HATS-1339's "losing one channel must not
+    # disarm both", which holds on exactly this half).
     code = _reply(verdict, payload)
     if code != 0 or verdict.decision is not ChainDecision.ALLOW:
         return code
