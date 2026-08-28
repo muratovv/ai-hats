@@ -108,12 +108,32 @@ def test_dispatcher_fires_a_hook_from_the_out_of_tree_cache(agy_session) -> None
     assert marker.read_text().strip() == "FIRED"
 
 
-def test_dispatcher_without_the_pin_says_so(agy_session) -> None:
-    """A pre-move session must degrade loudly, not look like 'no hooks here'."""
+def test_dispatcher_without_the_pin_refuses_rather_than_passing_the_call(
+    agy_session,
+) -> None:
+    """A pre-move session has unreachable hooks, which is a gate ai-hats could
+    not DELIVER — so it refuses and names the way past, like every other
+    surface, instead of degrading loudly and letting the call through anyway."""
     project, env, _marker = agy_session
     env.pop("AI_HATS_SESSION_CACHE_DIR")
+    env.pop("AI_HATS_GATE_BROKEN_ACK", None)
 
     proc = _dispatch(env, project)
 
-    assert proc.returncode == 0
+    assert proc.returncode == 1, proc.stderr
     assert "AI_HATS_SESSION_CACHE_DIR unset" in proc.stderr
+    spoken = json.loads(proc.stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "AI_HATS_GATE_BROKEN_ACK" in spoken["permissionDecisionReason"]
+
+
+def test_the_hatch_lets_a_human_past_a_session_with_no_pin(agy_session) -> None:
+    """The refusal above is only defensible because this one passes."""
+    project, env, _marker = agy_session
+    env.pop("AI_HATS_SESSION_CACHE_DIR")
+    env["AI_HATS_GATE_BROKEN_ACK"] = "1"
+
+    proc = _dispatch(env, project)
+
+    assert proc.returncode == 0, proc.stderr
+    assert "permissionDecision" not in proc.stdout
