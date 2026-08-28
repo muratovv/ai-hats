@@ -24,7 +24,13 @@ from typing import Callable, Mapping, Sequence
 from ai_hats_core.deadline import Deadline
 
 from ..constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
-from ..env import AI_HATS_PROJECT_DIR_ENV
+from ..env import (
+    AI_HATS_PROJECT_DIR_ENV,
+    ENV_GATE_BROKEN_ACK,
+    ENV_HOOK_SURFACE_TIMEOUT_MS,
+    ENV_HOOK_TIMEOUT_S,
+    ENV_RETIRED_AGY_HOOK_TIMEOUT_S,
+)
 from ..hook_exec import HookOutcomeKind, HookRun, HookVerdict, run_hook
 
 #: The three matcher-vocabulary names every shipped file-mutation row treats as
@@ -317,12 +323,12 @@ class ChainVerdict:
 #: timeout: the surface's own bound is the ceiling above it, and it must be the
 #: larger of the two or the dispatcher is killed before it can say anything.
 HOOK_TIMEOUT_S: float = 60.0
-HOOK_TIMEOUT_ENV = "AI_HATS_HOOK_TIMEOUT_S"
+HOOK_TIMEOUT_ENV = ENV_HOOK_TIMEOUT_S
 
 #: The name this bound had while only one channel of four offered it. Honoured
 #: so a config that already sets it does not stop working in silence, which is
 #: the failure mode this whole channel exists to remove.
-RETIRED_TIMEOUT_ENVS = ("AI_HATS_AGY_HOOK_TIMEOUT_S",)
+RETIRED_TIMEOUT_ENVS = (ENV_RETIRED_AGY_HOOK_TIMEOUT_S,)
 
 #: Said once per process, which is once per tool call — the dispatcher is a
 #: fresh process each time. Twice a call, from both resolvers, was noise.
@@ -332,12 +338,8 @@ _RENAME_SAID: set[str] = set()
 #: everything still reports instead of dying mid-sentence.
 SURFACE_TIMEOUT_MARGIN_S: float = 30.0
 
-#: Where a surface whose config is copied verbatim reads :func:`surface_timeout`
-#: from. A number written into such an asset cannot track the chain's budget.
-ENV_HOOK_SURFACE_TIMEOUT_MS = "AI_HATS_HOOK_SURFACE_TIMEOUT_MS"
-
 #: What a hook's own gate cannot be reopened without.
-GATE_BROKEN_ACK_ENV = "AI_HATS_GATE_BROKEN_ACK"
+GATE_BROKEN_ACK_ENV = ENV_GATE_BROKEN_ACK
 
 #: A reply must parse WHOLE, and the primitive returns a tail — which cuts a
 #: JSON document's head off. Set far above the largest shipped reply measured.
