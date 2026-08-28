@@ -56,6 +56,33 @@ since the latest tag lives under **Unreleased** until the next release.
   later somewhere unrelated. `scripts/check_python_pin.py` (stage `python-pin`)
   refuses a partial bump and a pin the matrix does not run.
 
+### Fixed
+
+- **The backlog gate stopped reading a shell redirect token as a path** (HATS-1848).
+  `shlex(punctuation_chars=True)` splits `2>&1` into `['2', '>&', '1']`, and both
+  halves of `check_backlog_write` treated whatever followed a redirect operator as
+  a filename. Two faces, pointing opposite ways:
+
+  - **A false refusal.** The redirect-target reader resolved a bare `1` against the
+    cwd, so `rack transition <ID> --log '…' 2>&1` was denied as a write under the
+    tracker — but only from a cwd inside the backlog, which made it read as
+    flakiness rather than as a rule. The gate refused the very CLI it prescribes.
+  - **A silent pass, and the worse of the two.** `cp`/`ln` are judged on their last
+    path (`DESTINATION_ONLY`), and the mutator branch counted paths from the raw
+    argv — so a trailing `2>&1` put the descriptor last and the real destination was
+    never examined. Appending ` 2>&1` walked a copy into the tracker unchallenged.
+
+  `>&` still takes a filename (`>&out.log` is a real redirect), so the fix
+  discriminates on the **operand** — all-digits or `-` after `>&` is a descriptor —
+  rather than dropping the operator, which would have opened a third hole where two
+  were closed. The mutator branch now counts paths from `without_shell_redirects`,
+  the neighbour that already stripped descriptors correctly.
+
+  `tests/e2e/_helpers/hook_chain.py` gains an optional `cwd=` on
+  `run_chain` / `run_tool_chain`: the first face does not reproduce at all unless the
+  hook process stands under the backlog, and the helper hardcoded the project root.
+
+
 ### Removed
 
 - **The allow-rule lint is gone, and the consent grant works again** (HATS-1861, ADR-0031). HATS-1642 rested on one measurement: a broad `permissions.allow` rule silenced the consent gate, "the harness approved the call before any prompt could appear". Re-measured on Claude Code 2.1.247 it does not reproduce — a PreToolUse hook that returns `ask` blocks the call whatever `allow` says, in `default`, `auto`, `dontAsk` and `bypassPermissions` alike. The fixture is in the repo (`experiments/harness-permission-precedence/probe.sh`, four arms, two of them controls, verdict read from a side-effect file rather than the model's prose), because the claim is about someone else's release and nothing in CI can hold it.
