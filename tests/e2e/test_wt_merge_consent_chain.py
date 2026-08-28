@@ -45,7 +45,7 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def env(project: Path, tmp_path: Path, ai_hats_shim: Path) -> dict:
+def env(project: Path, tmp_path: Path, checkout_bin: Path) -> dict:
     """A session env with NO consent anywhere — the point of the whole file.
 
     ``tests/conftest.py`` grants both acks to every test and they ride into a
@@ -64,7 +64,7 @@ def env(project: Path, tmp_path: Path, ai_hats_shim: Path) -> dict:
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
     # The approved command line says `ai-hats`, so a real one has to be on PATH:
     # the console script is no longer built (HATS-790), the shim is it.
-    e["PATH"] = os.pathsep.join([str(ai_hats_shim.parent), e.get("PATH", "")])
+    e["PATH"] = os.pathsep.join([str(checkout_bin), e.get("PATH", "")])
     return stand_in_wrapped_session(e, project, "e2e-wt-merge-consent")
 
 

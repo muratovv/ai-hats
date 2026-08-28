@@ -325,7 +325,7 @@ class OpenCodeSurface(Surface):
     def _validate_passthrough(args: list[str]) -> None:
         for arg in args:
             token = arg.split("=", 1)[0].lower()
-            if token in _DANGEROUS_FLAGS or token == "-p":
+            if token in _DANGEROUS_FLAGS or token == "-p":  # noqa: S105 — a CLI flag, not a secret
                 raise ValueError(f"unsafe OpenCode option is not allowed by ai-hats: {arg}")
             if arg == "--agent":
                 raise ValueError(

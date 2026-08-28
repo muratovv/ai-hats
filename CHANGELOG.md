@@ -38,6 +38,87 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **What a surface IS is data now** (HATS-1858). Tool names, argument names, manifest and skills-mirror locations, and which verdicts the surface can utter live in a `SurfaceProfile` beside each surface (`src/ai_hats/surfaces/<name>/profile.py`); execution, the reply dialect and the policy live once in `src/ai_hats/surfaces/hook_channel.py`. Fixing a surface is editing a row rather than a dispatcher — the codex fix above is one line of data. Which events a surface delivers is a row too: the three per-surface event lists that looked authoritative were not (one was referenced nowhere at all), and a test now refuses a surface whose row does not cover every bindable event. What a surface cannot utter is a table applied to a fixed point rather than a chain of `if`s, because one reduction can produce what another must then handle. See `docs/glossary.md` "Tool-call hook channel".
 
+- **A refused link kind now names the backlog it was refused by** (HATS-1866).
+  `Unknown link kind 'related_tasks': configured kinds are …` listed the tasks
+  catalog's kinds without saying they were the tasks catalog's, so the set read
+  as absolute. It now reads `… 'related_tasks' on the 'tasks' backlog: …`, and
+  when a mounted sibling declares the kind, says so: `— 'related_tasks' is a kind
+  of the 'proposals' backlog, which this id does not route to`.
+
+  The cost was paid before the fix, which is why the wording counts as a defect
+  rather than a nicety. A session ran `rack transition <TASK> --link
+  related_tasks:…` — a form three shipped skills teach with a `PROP`/`HYP`
+  subject — against a task card, read the refusal as proof the shipped prose was
+  wrong, and filed a card to edit three correct CLI templates. That card is
+  cancelled; the instruction was right and the message was misleading.
+
+  Split by layer rather than by convenience: the owner is config identity, so
+  `LinksRegistry` carries it, while the sibling lookup is multi-backlog
+  semantics and lives in the verb layer — the registry's own docstring makes
+  kind-blindness a contract, and this keeps it. The hint is conditional and
+  tested in both directions: a kind belonging to no mounted backlog gets none,
+  because a hint that always fires is a false statement rather than a help.
+
+  The message had no test at all before this — `test_error_surface.py` pinned
+  the error code and payload, never the sentence a human reads.
+
+
+### Changed — BREAKING
+
+- **Python pin and floor raised to 3.13; one `--repair` needed to cross it** (HATS-1521).
+  `PINNED_PYTHON` is 3.13 (was 3.11) and `requires-python` is `>=3.13` on the
+  integrator and all five workspace members; the CI matrix is now 3.13 + 3.14.
+  The old pin sat on the floor of the support matrix, so every fresh install got
+  the version where the HATS-1519 argparse defect lives (`--` before positionals
+  is rejected on 3.11/3.12, accepted on 3.13+).
+  **Upgrading from an earlier version fails once**: `self update` builds the new
+  version's venv with the *old* code's pin (3.11), then cannot resolve a
+  distribution requiring `>=3.13`, and exits 1 with uv's
+  `does not satisfy Python>=3.13`. Nothing is damaged and the old install keeps
+  working. Recover out-of-band, once per install:
+  `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- --repair`
+  — the launcher, not the old Python, builds the replacement venv. A session
+  whose interpreter is off the pin now says so at startup instead of failing
+  later somewhere unrelated. `scripts/check_python_pin.py` (stage `python-pin`)
+  refuses a partial bump and a pin the matrix does not run.
+
+### Fixed
+
+- **The backlog gate stopped reading a shell redirect token as a path** (HATS-1848).
+  `shlex(punctuation_chars=True)` splits `2>&1` into `['2', '>&', '1']`, and both
+  halves of `check_backlog_write` treated whatever followed a redirect operator as
+  a filename. Two faces, pointing opposite ways:
+
+  - **A false refusal.** The redirect-target reader resolved a bare `1` against the
+    cwd, so `rack transition <ID> --log '…' 2>&1` was denied as a write under the
+    tracker — but only from a cwd inside the backlog, which made it read as
+    flakiness rather than as a rule. The gate refused the very CLI it prescribes.
+  - **A silent pass, and the worse of the two.** `cp`/`ln` are judged on their last
+    path (`DESTINATION_ONLY`), and the mutator branch counted paths from the raw
+    argv — so a trailing `2>&1` put the descriptor last and the real destination was
+    never examined. Appending ` 2>&1` walked a copy into the tracker unchallenged.
+
+  `>&` still takes a filename (`>&out.log` is a real redirect), so the fix
+  discriminates on the **operand** — all-digits or `-` after `>&` is a descriptor —
+  rather than dropping the operator, which would have opened a third hole where two
+  were closed. The mutator branch now counts paths from `without_shell_redirects`,
+  the neighbour that already stripped descriptors correctly.
+
+  `tests/e2e/_helpers/hook_chain.py` gains an optional `cwd=` on
+  `run_chain` / `run_tool_chain`: the first face does not reproduce at all unless the
+  hook process stands under the backlog, and the helper hardcoded the project root.
+
+
+### Removed
+
+- **The allow-rule lint is gone, and the consent grant works again** (HATS-1861, ADR-0031). HATS-1642 rested on one measurement: a broad `permissions.allow` rule silenced the consent gate, "the harness approved the call before any prompt could appear". Re-measured on Claude Code 2.1.247 it does not reproduce — a PreToolUse hook that returns `ask` blocks the call whatever `allow` says, in `default`, `auto`, `dontAsk` and `bypassPermissions` alike. The fixture is in the repo (`experiments/harness-permission-precedence/probe.sh`, four arms, two of them controls, verdict read from a side-effect file rather than the model's prose), because the claim is about someone else's release and nothing in CI can hold it.
+
+  The lint's advice — answer each finding with a matching `ask` rule — turned out to have a price nobody had priced. An `ask` rule prompts even when the hook returned `allow`, so it silently disarmed the two places the framework deliberately says nothing: a **consent grant** (`consent wt.merge 30` bought no silence at all on the operations it names) and `allow_verdict()`'s routine-`rack` auto-allow. In this project the advice had grown `permissions.ask` to 66 entries. Deleted: `consent_permission_lint.py`, `permission_warning()` in `safety_gate.py`, five tests written against the retired behaviour, and the glossary's "Allow-rule lint (two verdicts)". `consent_spellings.py` stays — the HATS-1781 D6 runtime boundary reads the same table.
+
+### Added
+
+- **`ai-hats wt discard` is a consent point** (HATS-1861, ADR-0031 D4). It tears a worktree down and can fall back to `rm -rf` (`--force-remove`), and no hook saw it: its only pause was a `permissions.ask` rule, which does not exist in a headless session. It now declares `pre-discard` under `apps.consent_gate` like `wt.merge` does, so it refuses where nobody can be asked and a grant can cover it. `ai-hats self update` deliberately stays on the permission layer alone — it rewrites a package but destroys no data.
+
 ### Reverted
 
 - **The `role-curator` / `library-curator` trim from HATS-1825 is undone** (HATS-1843). That pass moved the engine-internals map and the worktree-verification recipe out of the trait into `docs/how-to-extend.md`, and replaced the role's five-step workflow with three bullets pointing at the trait — buying back ~870 resident tokens a turn. A pointer only pays off if the agent follows it: the session that measured this one reached for the recipe from memory instead and got `ImportError: cannot import name 'build_library_paths'`, which is precisely the bounce the still-active HYP-108 exists to count. Both files are restored byte-identical to `ac5f92a3^`; the doc stays where HATS-1825 put it, so the text now lives in two places on purpose, and whether that duplication survives is HATS-1844's call rather than this card's.

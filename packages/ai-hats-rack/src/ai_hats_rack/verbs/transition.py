@@ -15,6 +15,7 @@ from ..cli_common import JSON_OPT, TASKS_DIR_OPT, actor, emit_json, handle_rack_
 from ..cli_kernel import _echo_deltas, _provider, _result_payload, _workspace
 from ..kernel import KernelResult
 from ..ops import parse_ops
+from ..registry import UnknownLinkKindError
 from . import Verb
 
 # ----- op-echo on typed rails (HATS-1033) ------------------------------------
@@ -131,6 +132,7 @@ def transition(
     """  # comment-length: allow — this docstring IS the --help contract
     caller_cwd = Path.cwd()
     provider = _provider()
+    workspace = None
     try:
         # Route by the id's prefix first so --set int coercion reads the routed
         # backlog's field types (HATS-1036); tasks-only repos resolve to the same
@@ -153,6 +155,17 @@ def transition(
         # Post-lock: mirror any changed stored-inverse link onto the target
         # backlog (HATS-1044). A tasks-only backlog declares none — a no-op.
         workspace.mirror_after(task_id, result, actor=actor(), caller_cwd=caller_cwd)
+    except UnknownLinkKindError as exc:
+        # The registry is kind-blind by contract, so only this layer can see that
+        # the kind is a sibling backlog's and say so instead of implying none.
+        if workspace is not None and not exc.elsewhere:
+            owner = workspace.backlog_declaring_kind(exc.kind)
+            if owner and owner != exc.backlog:
+                exc = UnknownLinkKindError(exc.kind, exc.configured, exc.backlog, owner)
+        if provider is not None and provider.handle_error(exc, as_json, task_id):
+            sys.exit(1)
+        handle_rack_error(exc, as_json)
+        return
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         if provider is not None and provider.handle_error(exc, as_json, task_id):
             sys.exit(1)

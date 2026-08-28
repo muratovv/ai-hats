@@ -188,7 +188,7 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
         "Walk me through the findings, then we'll decide what to fix."
     )
     console.print(f"[cyan]→ Handing off to claude with {label}: {rel}[/]")
-    os.execvp(claude_bin, [claude_bin, prompt])
+    os.execvp(claude_bin, [claude_bin, prompt])  # noqa: S606
 
 
 class DeadCwdError(click.ClickException):

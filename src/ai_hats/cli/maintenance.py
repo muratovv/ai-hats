@@ -16,7 +16,7 @@ import click
 from ai_hats_core import scrubbed_git_env
 from .. import health
 from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV
-from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT
+from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT, PINNED_PYTHON
 from ._helpers import _assembler, _project_dir, console, logger
 
 if TYPE_CHECKING:
@@ -28,9 +28,6 @@ if TYPE_CHECKING:
 # tags/branches keyed by refspec, not arbitrary commit ids — for raw SHA we
 # defer to pip's own resolution downstream).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
-
-# Lowest supported interpreter (pyproject requires-python>=3.11); uv provisions it.
-PINNED_PYTHON = "3.11"
 
 
 def _require_uv() -> None:
@@ -944,12 +941,12 @@ def _get_changelog() -> str:
     # urllib injects a default Python-urllib UA that GitHub accepts (a UA-less
     # request is 403'd); we set an explicit one anyway. URL is a pinned https
     # constant, so the B310 scheme audit is satisfied.
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310
         url,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "ai-hats"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — pinned https constant
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
             commits = json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError):
         logger.debug("changelog fetch failed", exc_info=True)

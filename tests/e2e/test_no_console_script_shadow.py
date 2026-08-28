@@ -73,7 +73,7 @@ def test_wheel_install_has_no_console_script_and_module_runs(tmp_path: Path) -> 
 
     venv = tmp_path / "venv"
     subprocess.run(
-        ["uv", "venv", "--python", "3.11", str(venv)],
+        ["uv", "venv", "--python", "3.13", str(venv)],
         check=True,
         capture_output=True,
         text=True,

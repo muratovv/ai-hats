@@ -331,7 +331,7 @@ def bootstrap_or_die() -> None:
     # Re-exec a fresh interpreter so that freshly-installed modules can be
     # imported. argv[0] becomes the interpreter; the rest is whatever the
     # user originally invoked.
-    os.execv(sys.executable, [sys.executable, "-m", "ai_hats", *sys.argv[1:]])
+    os.execv(sys.executable, [sys.executable, "-m", "ai_hats", *sys.argv[1:]])  # noqa: S606
 
 
 def _is_first_party(ep: importlib.metadata.EntryPoint) -> bool:

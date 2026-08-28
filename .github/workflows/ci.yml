@@ -37,7 +37,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        # HATS-1521: 3.13 is the pin (what self init provisions and what the
+        # floors declare); 3.14 is the upper probe, so a break on the newest
+        # stable surfaces here rather than in someone's dev venv.
+        python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -81,7 +84,7 @@ jobs:
           retention-days: 14
 
   security:
-    name: security (bandit + pip-audit)
+    name: security (pip-audit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -91,7 +94,7 @@ jobs:
           cache: pip
       - name: Install package + security tools
         run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
-      - name: Bandit SAST (fail on medium+ severity) + pip-audit
+      - name: pip-audit (known CVEs in the installed environment)
         run: bash scripts/ci-local.sh security
 
   install-smoke:
@@ -212,3 +215,8 @@ jobs:
       - name: Check the e2e flow catalog is current
         if: always()
         run: bash scripts/ci-local.sh e2e-catalog
+      # The pin is re-spelled by hand in ~40 places; this refuses a
+      # partial bump, and a pin the matrix above does not run.
+      - name: Check every copy of the Python pin agrees
+        if: always()
+        run: bash scripts/ci-local.sh python-pin

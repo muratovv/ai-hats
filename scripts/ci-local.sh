@@ -97,8 +97,9 @@ ci_coverage() {
 }
 
 ci_security() {
-    echo "[ci-local] security (bandit + pip-audit)" >&2
-    "$PY" -m bandit -r src/ -ll -q
+    # HATS-1591: bandit dropped — ruff's `S` family covers its inventory and
+    # already runs on every road. What is left here is the network half.
+    echo "[ci-local] security (pip-audit)" >&2
     "$PY" -m pip_audit
 }
 
@@ -118,6 +119,19 @@ ci_dependency_floor() {
 ci_test_isolation() {
     echo "[ci-local] test-isolation (patching of code under test vs the baseline)" >&2
     "$PY" scripts/check_test_isolation.py
+}
+
+# Offline and instant. HATS-1591: the one check bandit held that ruff's `S`
+# family does not, kept after bandit itself was dropped.
+ci_bidi() {
+    echo "[ci-local] bidi (bidirectional controls, invisible in review)" >&2
+    "$PY" scripts/check_bidi.py
+}
+
+# Offline and instant, like dependency-floor — so it belongs in `all` too.
+ci_python_pin() {
+    echo "[ci-local] python-pin (every copy of the pin agrees; CI runs it)" >&2
+    "$PY" scripts/check_python_pin.py
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
@@ -181,23 +195,45 @@ ci_e2e() {
 # — because the primitive stops at the first red and a stale CATALOG.md is the
 # structural failure worth refusing before anything else starts (HATS-1562).
 #
-# `merge-gate` carries `integration` against ADR-0023 D4, which assigns it to
-# `->done` (supervisor ruling 2026-08-13). Until `->done` can judge the result of
-# a merge (HATS-1602), the edge passes hollow on most cards — measured 8 of 9 —
-# so D4's `->merge` would be the last blocking road those 415 real-subprocess
-# tests outside tests/e2e have. Their only other road is CI's `coverage` job,
-# which runs after the push. HATS-1615 moves it back.
+# `integration` sits on `->done`, as ADR-0023 D4 assigns it. It lived on
+# `->merge` while the edge passed hollow on most cards (HATS-1614's temporary
+# ruling); HATS-1664 made the edge judge the merge result, so the 415
+# real-subprocess tests outside tests/e2e are on a blocking road again.
 #
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
     local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids"
     case "$1" in
-        merge-gate) echo "$tier unit integration" ;;
+        merge-gate) echo "$tier unit" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs ticket-ids e2e" ;;
+        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs ticket-ids bidi e2e" ;;
         *) return 1 ;;
     esac
+}
+
+# Make THIS checkout runnable, so `$PY` above resolves to an interpreter that
+# imports this tree and not another one. NOT a stage and in no gate composition:
+# it asserts nothing and can only be a precondition (HATS-1664).
+#
+# Who asks: the gate primitive, before running a gate inside a scratch checkout
+# of a merge commit — that checkout is minted by `git worktree add` and has no
+# `.venv` at all, so without this every real-subprocess test would exercise the
+# MAIN checkout's installed code while claiming to judge the commit. The hook it
+# delegates to is the same one every task worktree gets (HATS-1291); an already
+# usable `.venv` makes it a no-op.
+ci_prepare() {
+    echo "[ci-local] prepare (a venv for this checkout, if it needs one)" >&2
+    # From the TREE, not from an installed library: an unprepared checkout has no
+    # interpreter that could import one, and this repository carries the hook's
+    # source anyway — so the version that runs is the one belonging to the
+    # content under judgement.
+    local hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/worktree-venv/hooks/provision-venv.sh"
+    if [[ ! -f "$hook" ]]; then
+        echo "[ci-local] no provision-venv hook at $hook — nothing to prepare" >&2
+        return 1
+    fi
+    AI_HATS_WORKTREE_PATH="$repo_root" bash "$hook"
 }
 
 # NOTE: excluded from the local `all` bundle — it queries PyPI, so an offline
@@ -224,6 +260,11 @@ case "$stage" in
     # the primitive's job (it owns the marker). `--stages` comes FIRST so a
     # dispatcher that does not know the flag refuses instantly instead of
     # mistaking it for an argument to a gate it does know (HATS-1604).
+    # Also not a stage, and for the same reason as `--stages`: it is asked BEFORE
+    # any stage runs, and it must be its own process — `$PY` is resolved once at
+    # the top of this script, so an interpreter minted here is only seen by the
+    # next invocation (HATS-1664).
+    --prepare) ci_prepare ;;
     --stages)
         gate_composition "${1:-}" || {
             echo "[ci-local] no such gate: ${1:-<none>} (gates: merge-gate | done-gate | push-gate)" >&2
@@ -241,7 +282,9 @@ case "$stage" in
         ci_tmp_sweep
         ci_lint
         ci_dependency_floor
+        ci_python_pin
         ci_silent_fallback
+        ci_bidi
         ci_test_isolation
         ci_e2e_catalog
         ci_adr_integrity
@@ -260,6 +303,7 @@ case "$stage" in
             echo "  stages: $(known_stages | tr '\n' ' ')" >&2
             echo "  bundle: all (the local pre-push bundle, and the default)" >&2
             echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
+            echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
             exit 2
         fi
         ;;

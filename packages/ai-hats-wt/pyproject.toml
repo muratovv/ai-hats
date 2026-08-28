@@ -7,7 +7,7 @@ name = "ai-hats-wt"
 version = "0.6.1"
 description = "Hook-agnostic git-worktree engine for the ai-hats framework (WorktreeManager + the L1-L4 concurrency model)."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -19,9 +19,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Version Control :: Git",
 ]

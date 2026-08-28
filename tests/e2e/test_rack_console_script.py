@@ -59,7 +59,7 @@ def test_rack_console_script_resolves_on_path(tmp_path):
     assert sorted(wheeldir.glob("ai_hats_rack-*.whl")), "no ai-hats-rack wheel built"
 
     venv = tmp_path / "venv"
-    _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path, env=env, timeout=120)
+    _run(["uv", "venv", "--python", "3.13", str(venv)], cwd=tmp_path, env=env, timeout=120)
     _run(
         [
             "uv",

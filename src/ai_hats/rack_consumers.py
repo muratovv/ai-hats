@@ -129,6 +129,9 @@ class AiHatsCheckPort:
             task_id=request.task_id,
             worktree_path=self._worktree_path(request.task_id),
             tasks_dir=self._catalog,
+            extra_env=self._merged_env(request.task_id),
+            actor=request.actor,
+            selector=request.selector,
             log_path=self._log_path(request.task_id, check, request.event),
         )
         return CheckOutcome(
@@ -171,6 +174,33 @@ class AiHatsCheckPort:
                 f"({type(exc).__name__}): {exc} — refusing rather than gating no tree"
             ) from exc
         return path
+
+    def _merged_env(self, task_id: str) -> dict[str, str]:
+        """``AI_HATS_MERGED_SHA`` when this task's branch already reached master.
+
+        The companion of the worktree path, and only meaningful once that one is
+        absent: a torn-down worktree and a card that never had one both read as
+        "no worktree", and a gate told only that much waves the merged one
+        through (HATS-1664, measured at 13 firings of 17).
+        """
+        from ai_hats_wt import WorktreeManager
+
+        from .env import ENV_MERGED_SHA
+        from .paths import worktrees_dir
+
+        try:
+            project = self._project()
+            sha = WorktreeManager.peek_merged_sha(
+                project, task_id, state_dir=worktrees_dir(project)
+            )
+        except (OSError, ValueError) as exc:
+            # Same rule as the worktree read: "cannot tell" must not read as
+            # "nothing was merged", which is the wave-through this closes.
+            raise AbortOperation(
+                f"checks: the merge record of {task_id} could not be read "
+                f"({type(exc).__name__}): {exc} — refusing rather than gating no tree"
+            ) from exc
+        return {ENV_MERGED_SHA: sha} if sha else {}
 
     def _log_path(self, task_id: str, check: ResolvedCheck, event: str) -> Path:
         """R3.4. The dot-component keeps the log out of the document registry, so

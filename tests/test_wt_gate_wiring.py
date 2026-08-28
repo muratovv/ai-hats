@@ -21,6 +21,7 @@ SKILL_DIR = (
     REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation"
 )
 HOOK = SKILL_DIR / "hooks/wt_gate.py"
+INTERP_HOOK = SKILL_DIR / "hooks/wt_interpreter_gate.py"
 EXTS_JSON = SKILL_DIR / "hooks/code_extensions.json"
 TRAIT_CFG = (
     REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/traits/trait-agent/config.yaml"
@@ -42,9 +43,19 @@ def test_declares_pretooluse_hook():
     )
 
 
+def test_declares_the_bash_interpreter_gate():
+    """HATS-1856 — the same skill's just-in-time guard, on a different matcher."""
+    meta = SkillMetadata.from_skill_dir(SKILL_DIR)
+    pre = meta.runtime_hooks.get(HOOK_PRE_TOOL_USE, [])
+    assert RuntimeHook(matcher="Bash", script="hooks/wt_interpreter_gate.py") in pre, (
+        f"worktree-isolation must declare its Bash interpreter gate; got {pre!r}"
+    )
+
+
 def test_hook_script_present_and_executable():
-    assert HOOK.is_file()
-    assert HOOK.stat().st_mode & 0o111, "hook must be executable"
+    for hook in (HOOK, INTERP_HOOK):
+        assert hook.is_file(), hook
+        assert hook.stat().st_mode & 0o111, f"{hook.name} must be executable"
 
 
 def test_trait_agent_composes_skill():
@@ -54,7 +65,7 @@ def test_trait_agent_composes_skill():
 
 
 def test_hook_is_zero_egress():
-    src = HOOK.read_text()
+    src = HOOK.read_text() + INTERP_HOOK.read_text()
     banned = (
         "import socket",
         "import urllib",
@@ -65,7 +76,7 @@ def test_hook_is_zero_egress():
         "urllib.request",
     )
     hits = [b for b in banned if b in src]
-    assert not hits, f"zero-egress violated — network surface in hook: {hits}"
+    assert not hits, f"zero-egress violated — network surface in a hook: {hits}"
 
 
 def test_extensions_json_is_grouped_by_language():

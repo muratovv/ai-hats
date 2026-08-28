@@ -257,13 +257,15 @@ def pretooluse_hooks(settings: Path, tool: str = "Bash") -> list[str]:
     return commands
 
 
-def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
+def _run_one(
+    command: str, payload: str, project: Path, env: dict, cwd: Path | None = None
+) -> Verdict:
     # `bash -c <path>` execs the file so its shebang picks the interpreter —
     # running `bash <path>` would make bash parse a .py hook as shell.
     proc = subprocess.run(  # noqa: S603 - command comes from our own settings.json
         ["bash", "-c", command],  # noqa: S607 - bash from PATH, as the harness runs it
         input=payload,
-        cwd=str(project),
+        cwd=str(cwd or project),
         env=env,
         capture_output=True,
         text=True,
@@ -313,12 +315,21 @@ def run_tool_chain(
     settings: Path,
     env: dict | None = None,
     ack: str | None = None,
+    cwd: Path | None = None,
 ) -> Verdict:
     """Run one ``tool`` call through the project's whole PreToolUse chain.
 
     ``ack`` names a consent flag to set to ``"1"`` for this run. Every known
     ack flag is stripped first, so an ambient one in the developer's shell can
     never make a test pass by accident.
+
+    ``cwd`` runs the hooks from a subdirectory instead of the project root. A
+    gate that resolves a relative path answers differently depending on where
+    the call was made, so pinning that answer needs the shell to stand there.
+    It arrives BOTH ways Claude Code delivers it — that working directory and
+    the payload's own ``cwd`` key (HATS-1856) — because a hook reading the key
+    would otherwise pass on the fallback and never exercise the live route.
+    ``CLAUDE_PROJECT_DIR`` stays pinned to ``project``, as the harness pins it.
     """
     base_env = dict(env) if env is not None else os.environ.copy()
     for key in [k for k in base_env if ACK_FLAG_RE.fullmatch(k)]:
@@ -327,9 +338,10 @@ def run_tool_chain(
     if ack:
         base_env[ack] = "1"
 
-    payload = json.dumps(
-        {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
-    )
+    body: dict = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
+    if cwd is not None:
+        body["cwd"] = str(cwd)
+    payload = json.dumps(body)
 
     base_env.setdefault("CLAUDE_PROJECT_DIR", str(project))
 
@@ -341,7 +353,7 @@ def run_tool_chain(
     rewritten: dict | None = None
     allowed_by = ""
     for command_str in hooks:
-        verdict = _run_one(command_str, payload, project, base_env)
+        verdict = _run_one(command_str, payload, project, base_env, cwd)
         if verdict.context:
             contexts.append(verdict.context)
         if verdict.updated_input is not None:
@@ -362,10 +374,11 @@ def run_chain(
     settings: Path,
     env: dict | None = None,
     ack: str | None = None,
+    cwd: Path | None = None,
 ) -> Verdict:
     """Run a Bash ``command`` through the whole PreToolUse chain."""
     return run_tool_chain(
-        project, "Bash", {"command": command}, settings=settings, env=env, ack=ack
+        project, "Bash", {"command": command}, settings=settings, env=env, ack=ack, cwd=cwd
     )
 
 

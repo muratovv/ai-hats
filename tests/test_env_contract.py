@@ -54,8 +54,14 @@ HOOK_POINT_KEYS = {
     "ENV_IN_HOOK": "AI_HATS_IN_HOOK",
     "ENV_TASK_ID": "AI_HATS_TASK_ID",
     "ENV_WORKTREE_PATH": "AI_HATS_WORKTREE_PATH",
+    # The pair of the one above: an absent worktree means "brought no code" OR
+    # "already merged", and only this separates them (HATS-1664).
+    "ENV_MERGED_SHA": "AI_HATS_MERGED_SHA",
     "ENV_TASKS_DIR": "AI_HATS_TASKS_DIR",
     "ENV_FORCE": "AI_HATS_FORCE",
+    # The call envelope (HATS-1724): per-CALL facts beside the scalars, the
+    # same envelope-and-projections shape the session identity settled on.
+    "ENV_HOOK_CALL": "AI_HATS_HOOK_CALL",
 }
 CONTRACT_KEYS = {**IDENTITY_KEYS, **HOOK_POINT_KEYS}
 

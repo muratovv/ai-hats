@@ -90,7 +90,52 @@ fi
 
 # --- check for return code masking in test/check runners (HATS-1436) -----------
 # Detect test runner commands piped or chained in ways that mask non-zero exit codes.
-runner_rx='(^|[[:space:]|;&])(pytest|ruff|make|ci-local\.sh|go[[:space:]]+test|cargo[[:space:]]+test|npm[[:space:]]+(run[[:space:]]+)?test|yarn[[:space:]]+test|pnpm[[:space:]]+test|python[3]?[[:space:]]+-m[[:space:]]+(pytest|unittest))($|[[:space:]|;&])'
+#
+# The names come from `test_runners.json`, shared with wt_interpreter_gate.py so a
+# runner added once is known to both guards (HATS-1856). `python_interpreters` is
+# deliberately NOT read here: a bare `python foo.py` returns a status nobody
+# claimed was a check, and nudging it would cry wolf on every script.
+runners_json="$(dirname "$0")/test_runners.json"
+
+# Embedded mirror of that file's alternation — the last resort when it is
+# unreadable. Kept in sync by tests/test_shared_test_runners.py.
+runner_alt_fallback='pytest|python[[:space:]]+-m[[:space:]]+pytest|python3[[:space:]]+-m[[:space:]]+pytest|python[[:space:]]+-m[[:space:]]+unittest|python3[[:space:]]+-m[[:space:]]+unittest|ruff|make|ci-local\.sh|go[[:space:]]+test|cargo[[:space:]]+test|npm[[:space:]]+test|npm[[:space:]]+run[[:space:]]+test|yarn[[:space:]]+test|pnpm[[:space:]]+test'
+
+build_runner_alt() {
+    local raw="" name alt=""
+    if command -v jq >/dev/null 2>&1; then
+        raw="$(jq -r '[.python_runners[]?, .standalone_checkers[]?, .delegating[]?, .foreign_runners[]?] | .[]' \
+            "$runners_json" 2>/dev/null)"
+    fi
+    if [[ -z "$raw" ]] && command -v python3 >/dev/null 2>&1; then
+        raw="$(python3 -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit(0)
+for group in ("python_runners", "standalone_checkers", "delegating", "foreign_runners"):
+    for entry in data.get(group) or ():
+        if isinstance(entry, str) and entry.strip():
+            print(entry)
+' "$runners_json" 2>/dev/null)"
+    fi
+    [[ -z "$raw" ]] && return 1
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        name="${name//./\\.}"          # a literal dot in ci-local.sh
+        name="${name// /[[:space:]]+}"  # one word gap -> any run of whitespace
+        alt="${alt:+$alt|}$name"
+    done <<<"$raw"
+    [[ -z "$alt" ]] && return 1
+    printf '%s' "$alt"
+}
+
+if ! runner_alt="$(build_runner_alt)"; then
+    ai_hats_journal_bypass degraded "unreadable test_runners.json — using the embedded mirror"
+    runner_alt="$runner_alt_fallback"
+fi
+runner_rx="(^|[[:space:]|;&])($runner_alt)($|[[:space:]|;&])"
 if [[ "$cmd_bare" =~ $runner_rx ]]; then
     # HATS-1819 — the third case, and the one no masking check can see: the status
     # is the runner's, correct, and simply not depended on. `;` sequences, it does

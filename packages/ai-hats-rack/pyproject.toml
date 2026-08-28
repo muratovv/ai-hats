@@ -7,7 +7,7 @@ name = "ai-hats-rack"
 version = "0.4.0"
 description = "Minimal backlog kernel for ai-hats (epic HATS-1014): backlog.yaml topology, two-phase subscriber dispatcher, single-persist transitions, dispatch journal."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -19,9 +19,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 # Kernel stays first-party-free (import-hygiene pin, tests/test_import_hygiene.py):

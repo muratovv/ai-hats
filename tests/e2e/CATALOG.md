@@ -255,6 +255,22 @@ as a claim to check, not as evidence.
 - **expect** — provider flag -p is respected in batch mode and produces clean error for invalid providers
 - **why** — without batch provider overrides, batch commands ignore -p flags and default to configured provider
 
+## `test_bidi_stage.py`
+
+*pins HATS-1591*
+
+- **flow** — a maintainer pushes to master, and the pre-push bundle must refuse the push when a source file carries a bidirectional control — a character that changes how the line RENDERS but not how it parses, so review cannot see it
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh bidi              # exit 0 while the tree is clean
+  bash scripts/ci-local.sh --stages push-gate # the composition names `bidi`
+  bash scripts/ci-local.sh no-such-stage     # exit 2, and the usage names it
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] bidi`, exits 0 on a clean tree, exits 1 naming the file and the codepoint when one is planted, and appears in the push-gate composition
+- **why** — this is the ONE check bandit held that ruff's `S` family does not (`B613 trojansource`); bandit itself was dropped in HATS-1591 because its other three exclusive checks name django, pytorch and huggingface, none of which this repo depends on. If this stage silently stops dispatching, the trade made in that card turns into a straight loss and nothing goes red.
+
 ## `test_bootstrap_heals_underdeclared_editable.py`
 
 *pins HATS-1556*
@@ -454,6 +470,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection
 - **why** — a syntactically valid workflow can still name a missing stage or bypass the canonical dispatcher, leaving the advertised server-side gate inert
+
+## `test_ci_local_prepare.py`
+
+*pins HATS-1664*
+
+- **flow** — the gate primitive making a scratch checkout of a merge commit runnable
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh --prepare
+  ```
+
+- **expect** — the dispatcher delegates to the worktree-venv hook of the tree it is preparing, and leaves an already-usable venv untouched
+- **why** — a checkout minted by `git worktree add` has no .venv, so every real-subprocess stage would exercise the MAIN checkout's installed code while claiming to judge the commit
 
 ## `test_ci_local_prose_refs.py`
 
@@ -1248,6 +1278,20 @@ as a claim to check, not as evidence.
 
 - **expect** — both runs detect a test-installed provider, ignore caller-only providers, and leave the caller virtual environment and checkout unchanged
 - **why** — a unit gate that reuses its caller environment can turn the same broken tree green after the first run contaminates that environment
+
+## `test_hook_call_envelope.py`
+
+*pins HATS-1724*
+
+- **flow** — a gate script asking WHO moved the card and WHICH declaration called it
+- **cmds**
+
+  ```console
+  rack create --parent / rack transition --state done --force
+  ```
+
+- **expect** — every spawned check receives AI_HATS_HOOK_CALL, so a script tells a person's forced fast-close from the epic automation's own hop
+- **why** — the automation hop is an in-process nested transition, so the session identity and every ambient signal around it are byte-identical to the human move — a gate on a wide selector otherwise runs blind on both
 
 ## `test_hook_chain_fail_open_recorded.py`
 
@@ -2099,6 +2143,21 @@ as a claim to check, not as evidence.
 - **expect** — card artifacts are created inside the directory specified by AI_HATS_DIR and the current project directory remains unmodified
 - **why** — rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation without polluting project repositories
 
+## `test_rack_link_kind_refusal.py`
+
+*pins HATS-1866*
+
+- **flow** — an agent runs a documented link command against the wrong backlog and has to be able to tell "this kind does not exist" from "not on THIS backlog"
+- **cmds**
+
+  ```console
+  python -m ai_hats_rack transition HATS-1 --link orders_of:HATS-2
+  python -m ai_hats_rack transition HATS-1 --link nosuchkind:HATS-2
+  ```
+
+- **expect** — the refusal names the backlog whose kind set it lists, and adds the sibling that declares the kind — but only when a sibling really does
+- **why** — the message without an owner reads as absolute. One session took a correct instruction from a shipped skill, ran it against a task card, read this refusal as proof the instruction was wrong, and filed a card to edit three working CLI templates. The sibling backlog is mounted here so the hint has something true to say, and a kind belonging to nobody is asserted in the same run — a hint that always fires is a lie, not a help.
+
 ## `test_rack_race_condition.py`
 
 *pins HATS-1466*
@@ -2237,7 +2296,7 @@ as a claim to check, not as evidence.
 
   ```console
   uv build --wheel . -o dist          # the wheel a user would get
-  uv venv --python 3.11 venv          # a fresh interpreter, outside the repo
+  uv venv --python 3.13 venv          # a fresh interpreter, outside the repo
   uv pip install --python venv/bin/python dist/ai_hats-0.0.0-py3-none-any.whl
   ```
 
@@ -3907,6 +3966,21 @@ as a claim to check, not as evidence.
 
 - **expect** — wt_in lifecycle hook executes during worktree creation and populates initial files
 - **why** — wt_in hook must fire during worktree setup to provision required environment state
+
+## `test_wt_interpreter_gate_hook.py`
+
+*pins HATS-1856*
+
+- **flow** — an agent standing in a linked worktree launching a check runner
+- **cmds**
+
+  ```console
+  /main/.venv/bin/python -m pytest tests/
+  ./.venv/bin/python -m pytest tests/
+  ```
+
+- **expect** — the composed PreToolUse Bash chain nudges on the first (the interpreter belongs to another checkout) and stays silent on the second, never gating
+- **why** — an interpreter from the wrong checkout makes the run measure sources the agent did not write, and the two existing guards are blind to it
 
 ## `test_wt_inworktree_refused.py`
 

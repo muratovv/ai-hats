@@ -165,7 +165,7 @@ jobs:
           ok=""
           for attempt in 1 2 3 4 5; do
             rm -rf /tmp/verify-venv
-            uv venv --python 3.11 /tmp/verify-venv
+            uv venv --python 3.13 /tmp/verify-venv
             if uv pip install --python /tmp/verify-venv/bin/python --refresh \
                  "ai-hats @ git+https://github.com/${{ github.repository }}.git"; then
               ok=1; break

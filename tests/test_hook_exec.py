@@ -829,3 +829,72 @@ def test_the_child_runs_where_the_channel_says(tmp_path):
 
     assert Path(default.said).resolve() == tmp_path.resolve(), "unset must stay project_dir"
     assert Path(directed.said).resolve() == elsewhere.resolve()
+
+
+def test_the_call_envelope_reaches_the_child_beside_the_scalars(tmp_path):
+    """HATS-1724: one versioned envelope of per-CALL facts, beside the scalars.
+
+    The scalars stay because shell reads them (the HATS-1594 ruling on the
+    session envelope); the envelope answers the other question — what caused
+    THIS run — and states an inapplicable field as ``null`` rather than as an
+    absent key, which is the whole lever: a script can tell "resolved, none"
+    from "no contract" and refuse on the second.
+    """  # comment-length: allow — null-vs-absent is the contract
+    import json
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    script = _script(tmp_path / "c.sh", 'printf "%s" "$AI_HATS_HOOK_CALL"\nexit 0\n')
+
+    run = run_hook(
+        script,
+        point="review->done",
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=proj,
+        force=True,
+        task_id="HATS-1724",
+        actor="rack:epic-automation",
+        selector="->done",
+    )
+
+    call = json.loads(run.said)
+    assert call["v"] == 1
+    assert call["actor"] == "rack:epic-automation"
+    assert call["selector"] == "->done"
+    assert call["event"] == "review->done"
+    assert call["from"] == "review"
+    assert call["to"] == "done"
+    assert call["task_id"] == "HATS-1724"
+    assert call["force"] is True
+    assert Path(call["project_dir"]).resolve() == proj.resolve()
+    # Present and null — NOT absent. This is the distinction the envelope buys.
+    assert "worktree" in call and call["worktree"] is None
+    assert "tasks_dir" in call and call["tasks_dir"] is None
+
+
+def test_a_point_that_is_not_an_edge_states_its_missing_halves_as_null(tmp_path):
+    """The wt and startup channels have no from/to — and say so IN the envelope.
+
+    `null` rather than a dropped key, because a reader distinguishing "this
+    channel has no such notion" from "I am not being told" is the only reason
+    the envelope earns its place beside the scalars.
+    """
+    import json
+
+    script = _script(tmp_path / "w.sh", 'printf "%s" "$AI_HATS_HOOK_CALL"\nexit 0\n')
+
+    run = run_hook(
+        script,
+        point="wt:teardown[wt_out]",
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+    )
+
+    call = json.loads(run.said)
+    assert call["event"] == "wt:teardown[wt_out]"
+    assert call["from"] is None and call["to"] is None
+    assert call["actor"] is None
+    # A caller naming no selector is one whose declaration named the point.
+    assert call["selector"] == "wt:teardown[wt_out]"

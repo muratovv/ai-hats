@@ -21,7 +21,7 @@ from ai_hats.paths import PROJECT_CONFIG
 
 
 def md5(path: Path) -> str:
-    return hashlib.md5(path.read_bytes()).hexdigest()
+    return hashlib.md5(path.read_bytes(), usedforsecurity=False).hexdigest()
 
 
 @pytest.fixture

@@ -98,8 +98,7 @@ FLATTENED_HOOK_SIBLINGS = {
     "bypass_journal",
     "backlog_write_gate",
     "consent_ticket",
-    "consent_permission_lint",
-    # HATS-1754 — the spellings table, read by the guard AND by the lint above.
+    # HATS-1754 — the spellings table, read by the guard and by the D6 boundary.
     "consent_spellings",
     # HATS-1735 — a sibling DIRECTORY rather than a file, symlinked in the same
     # way; `copytree` dereferences it, so the guard imports a real package.

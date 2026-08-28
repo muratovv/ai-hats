@@ -64,7 +64,7 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def env(project: Path, ai_hats_shim: Path) -> dict:
+def env(project: Path, checkout_bin: Path) -> dict:
     from _helpers.env import checkout_pythonpath
     from _helpers.sessions import stand_in_wrapped_session
 
@@ -73,7 +73,7 @@ def env(project: Path, ai_hats_shim: Path) -> dict:
         e.pop(stale, None)
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
-    e["PATH"] = os.pathsep.join([str(ai_hats_shim.parent), e.get("PATH", "")])
+    e["PATH"] = os.pathsep.join([str(checkout_bin), e.get("PATH", "")])
     return stand_in_wrapped_session(e, project, SESSION_ID)
 
 

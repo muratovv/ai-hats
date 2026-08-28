@@ -12,16 +12,15 @@ license-files = ["LICENSE"]
 authors = [
     { name = "muratovv", email = "f@muratovv.me" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: POSIX",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
@@ -75,7 +74,11 @@ dev = [
     # deliberate commit; tests/test_dev_tool_pins.py holds ci.yml and the
     # installed interpreter to it.
     "ruff==0.16.2",
-    "bandit>=1.7",
+    # HATS-1591: bandit is NOT here. Its check inventory is a near-subset of
+    # ruff's `S` family (75 vs 73; the four it holds alone name django, pytorch,
+    # huggingface and trojansource), and ruff already runs on every road under an
+    # exact pin. Keeping it meant a second pin, a second `# nosec` dialect on
+    # every by-design site, and a stage whose verdict depended on the venv's age.
     "pip-audit>=2.7",
 ]
 costs = [
@@ -170,7 +173,7 @@ ai-hats-observe = { workspace = true }
 ai-hats-library = { workspace = true }
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 line-length = 100
 # HATS-1607: the gate's subject is python files — declared, not inherited from
 # whatever file types the current ruff happens to handle. 0.16.0 took markdown
@@ -179,11 +182,24 @@ line-length = 100
 extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
-# S110/S112 (try-except-pass/continue) are a strict subset of what
-# scripts/check_silent_fallback.py catches; kept as a second, independent
-# contour so the pass/continue shape stays guarded if that script regresses.
-select = ["E", "F", "S110", "S112"]
-ignore = ["E501"]
+# HATS-1591: the S family is selected WHOLE, and exceptions are justified below.
+# A guard that enumerates the bad forms is incomplete by construction — the
+# earlier `S110, S112` selection was silent on every other S rule, so a new
+# insecure-hash or shell=True site was invisible until someone ran bandit by
+# hand. Inverted: any S finding is guilty, and an intentional one carries an
+# inline `# noqa: S…` naming its reason. This is also why bandit is gone from
+# the dev extras — one tool, one dialect. S110/S112 remain a second contour
+# under scripts/check_silent_fallback.py.
+select = ["E", "F", "S"]
+# S603/S607 (subprocess without shell, partial executable path) are the working
+# contract of a tool that spawns processes by profession — 925 sites, all by
+# design. Selecting them would train the reader to ignore the whole family.
+ignore = ["E501", "S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert (S101) and name fixed /tmp paths (S108) as their normal idiom.
+# Everything else in the S family still applies to them.
+"**/tests/**" = ["S101", "S108"]
 
 [tool.pytest.ini_options]
 # ADR-0026 D5/D7: one line per area — a glob here is unreliable, so a new area's
@@ -251,6 +267,3 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
-
-[tool.bandit]
-exclude_dirs = ["tests", ".venv", "build", "dist"]
