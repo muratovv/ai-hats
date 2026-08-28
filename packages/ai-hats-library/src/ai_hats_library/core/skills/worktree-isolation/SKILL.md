@@ -6,6 +6,8 @@ ai_hats:
     PreToolUse:
       - matcher: Edit|Write|MultiEdit
         script: hooks/wt_gate.py
+      - matcher: Bash
+        script: hooks/wt_interpreter_gate.py
       # Claude-surface tool; inert where it does not exist.
       - matcher: EnterWorktree
         script: hooks/wt_entry_gate.py
@@ -52,8 +54,8 @@ Isolated development using git worktrees. Each task gets its own working copy �
    paragraph there.
 
    A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** a code/config Edit/Write in
-   the **main checkout** — interactive and headless (the old nudge was ignored,
-   PROX-375). On a deny, move into a worktree and re-apply: `ai-hats wt status` for an
+   the **main checkout** — interactive and headless (the old nudge was ignored).
+   On a deny, move into a worktree and re-apply: `ai-hats wt status` for an
    active one, else `ai-hats wt create <type>/<name>` from `master`. Don't ask to skip a
    worktree (making one is one command); ask the supervisor only for a genuine
    direct-master change. Bypass is supervisor-only (`AI_HATS_WT_GATE_OFF=1`, never
@@ -178,6 +180,10 @@ checkout. **So for pytest — and for anything that spawns subprocesses — use 
 worktree's own interpreter**; the cost of not doing so is not a quiet false green
 but a loud false red, a wall of `Test suite would test the WRONG checkout`
 tripwire errors about a mismatch you did not cause.
+
+A PreToolUse gate (`hooks/wt_interpreter_gate.py`) nudges — never blocks — when it
+can prove the interpreter resolves outside the worktree; kill switch
+`AI_HATS_WT_INTERP_OFF=1`.
 
 ```bash
 # CORRECT — pytest and anything spawning subprocesses, from inside the worktree:

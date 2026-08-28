@@ -326,6 +326,10 @@ def run_tool_chain(
     ``cwd`` runs the hooks from a subdirectory instead of the project root. A
     gate that resolves a relative path answers differently depending on where
     the call was made, so pinning that answer needs the shell to stand there.
+    It arrives BOTH ways Claude Code delivers it — that working directory and
+    the payload's own ``cwd`` key (HATS-1856) — because a hook reading the key
+    would otherwise pass on the fallback and never exercise the live route.
+    ``CLAUDE_PROJECT_DIR`` stays pinned to ``project``, as the harness pins it.
     """
     base_env = dict(env) if env is not None else os.environ.copy()
     for key in [k for k in base_env if ACK_FLAG_RE.fullmatch(k)]:
@@ -334,9 +338,10 @@ def run_tool_chain(
     if ack:
         base_env[ack] = "1"
 
-    payload = json.dumps(
-        {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
-    )
+    body: dict = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
+    if cwd is not None:
+        body["cwd"] = str(cwd)
+    payload = json.dumps(body)
 
     base_env.setdefault("CLAUDE_PROJECT_DIR", str(project))
 

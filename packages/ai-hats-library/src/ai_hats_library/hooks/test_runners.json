@@ -1,0 +1,29 @@
+{
+  "_comment": "HATS-1856 \u2014 the one source of check/test runner names for the PreToolUse Bash guards. Grouped rather than flat because the guards ask different questions of the same names: tool_call_hygiene_guard.sh asks 'did a runner run, and was its exit code masked' (every group but python_interpreters \u2014 a bare `python foo.py` returns a status nobody claimed was a check), while wt_interpreter_gate.py asks 'which checkout will this import from' (only the groups that resolve the project's Python package \u2014 ruff and the foreign runners import nothing of it). A name added here reaches both; which of them acts on it stays each guard's own policy. Entries are matched as whole words, with a space meaning one-or-more whitespace.",
+  "python_interpreters": [
+    "python",
+    "python3"
+  ],
+  "python_runners": [
+    "pytest",
+    "python -m pytest",
+    "python3 -m pytest",
+    "python -m unittest",
+    "python3 -m unittest"
+  ],
+  "standalone_checkers": [
+    "ruff"
+  ],
+  "delegating": [
+    "make",
+    "ci-local.sh"
+  ],
+  "foreign_runners": [
+    "go test",
+    "cargo test",
+    "npm test",
+    "npm run test",
+    "yarn test",
+    "pnpm test"
+  ]
+}

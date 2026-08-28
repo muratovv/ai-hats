@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**278 of 278 files catalogued — 287 flows.**
+**279 of 279 files catalogued — 288 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3896,6 +3896,21 @@ as a claim to check, not as evidence.
 
 - **expect** — wt_in lifecycle hook executes during worktree creation and populates initial files
 - **why** — wt_in hook must fire during worktree setup to provision required environment state
+
+## `test_wt_interpreter_gate_hook.py`
+
+*pins HATS-1856*
+
+- **flow** — an agent standing in a linked worktree launching a check runner
+- **cmds**
+
+  ```console
+  /main/.venv/bin/python -m pytest tests/
+  ./.venv/bin/python -m pytest tests/
+  ```
+
+- **expect** — the composed PreToolUse Bash chain nudges on the first (the interpreter belongs to another checkout) and stays silent on the second, never gating
+- **why** — an interpreter from the wrong checkout makes the run measure sources the agent did not write, and the two existing guards are blind to it
 
 ## `test_wt_inworktree_refused.py`
 
