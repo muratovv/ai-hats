@@ -253,13 +253,15 @@ def _run_user_hooks(event: str, tool: str, spoken: str, payload: dict) -> int:
 def _reply(verdict: ChainVerdict, payload: dict) -> int:
     """Say the verdict in the form agy acts on, whoever formed it.
 
-    ``permissionDecision`` is that form, and it used to be reserved for a
-    refusal a hook UTTERED, while a gate ai-hats could not deliver — the
-    stronger class — left through the exit status alone. That is the weaker
-    channel: a non-zero hook status is what agy reports and keeps going on
-    (HATS-1439), so the imposed refusal was the one that could go unheeded.
-    Both take the authoritative form now; the status still carries a hook's own
-    exit code, because that one IS agy's protocol for the hook's own refusal.
+    ``permissionDecision`` used to be reserved for a refusal a hook UTTERED,
+    while a gate ai-hats could not deliver left through the exit status alone —
+    so the stronger class arrived in the narrower form, carrying no reason the
+    model could read. Both take the JSON form now.
+
+    The status is kept ALONGSIDE it for the imposed class rather than replaced
+    by it: exit 1 is this surface's BROKE verdict by an earlier deliberate
+    choice (ADR-0020 D2, HATS-1598, pinned by its own e2e), and dropping it
+    would trade one half of the answer for the other.
     """  # comment-length: allow — which form binds on this surface is the contract
     relay_stderr(verdict)
     if verdict.decision is ChainDecision.ALLOW and not verdict.nudges:
@@ -279,7 +281,14 @@ def _reply(verdict: ChainVerdict, payload: dict) -> int:
     sys.stdout.write(json.dumps(decision) + "\n")
     if verdict.decision is ChainDecision.DENY:
         sys.stderr.write(worded(verdict) + "\n")
-        return verdict.exit_code if verdict.exit_code not in (None, 0) else 0
+        if verdict.exit_code not in (None, 0):
+            return verdict.exit_code
+        # A refusal ai-hats IMPOSED is BROKE on this surface and says so with the
+        # status too (ADR-0020 D2, HATS-1598): the gate never produced a verdict,
+        # and the status is the channel agy acts on for that. One a hook UTTERED
+        # travels as the decision above and nothing else — that form is its
+        # author's choice, and inventing a status for it would overrule them.
+        return 1 if verdict.hatch_env else 0
     return 0
 
 
