@@ -37,6 +37,18 @@ from ..hook_dispatch import Arrival, ManifestUnresolved, dispatch, manifest_rows
 from .profile import PROFILE
 
 
+#: What a `settings.json` entry runs. The guard is the point: an entry that
+#: cannot start the dispatcher must REFUSE (exit 2), because a gate the harness
+#: could not deliver is exactly what it otherwise waves through in silence.
+DISPATCHER_COMMAND = (
+    'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] '
+    '&& [ -n "$AI_HATS_SESSION_CACHE_DIR" ] && [ -x "$AI_HATS_PYTHON" ]; '
+    'then exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.claude.channel; '
+    'else printf "%s\\n" "ai-hats-claude-hook: incomplete dispatcher environment" >&2; '
+    "exit 2; fi'"
+)
+
+
 class ClaudeChannel:
     """The five things only claude can answer."""
 
@@ -127,4 +139,4 @@ if __name__ == "__main__":
     main()
 
 
-__all__ = ["ClaudeChannel", "main"]
+__all__ = ["DISPATCHER_COMMAND", "ClaudeChannel", "main"]
