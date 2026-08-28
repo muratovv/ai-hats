@@ -15,14 +15,14 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     from .contract import (
-        MetricsSink,
-        SubagentEngine,
-        Surface,
-        SurfaceHint,
-        SurfaceRunResult,
-        TranscriptResolver,
+        MetricsSink,  # noqa: F401
+        SubagentEngine,  # noqa: F401
+        Surface,  # noqa: F401
+        SurfaceHint,  # noqa: F401
+        SurfaceRunResult,  # noqa: F401
+        TranscriptResolver,  # noqa: F401
     )
-    from .managed_tags import sweep_stale_managed_tags
+    from .managed_tags import sweep_stale_managed_tags  # noqa: F401
 
 # comment-length: allow — an alias has to say what it does NOT cover
 # HATS-1826: deprecated aliases, so an out-of-tree surface written against
@@ -52,35 +52,19 @@ _HOMES = {
 
 
 def __getattr__(name: str) -> object:
+    home = _HOMES.get(name)
+    if home is None:
+        # Not ours: let the import system try `surfaces.<name>` as a submodule.
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from importlib import import_module
 
-    home = _HOMES.get(name)
-    if home is not None:
-        value = getattr(import_module(home, __name__), _ALIASES.get(name, name))
-        globals()[name] = value  # bound once; later lookups skip __getattr__
-        return value
-    if name.startswith("__"):
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    # Eager binding used to expose the submodules this facade imported; keep it.
-    try:
-        return import_module(f"{__name__}.{name}")
-    except ModuleNotFoundError:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    value = getattr(import_module(home, __name__), _ALIASES.get(name, name))
+    globals()[name] = value  # bound once; later lookups skip __getattr__
+    return value
 
 
 def __dir__() -> list[str]:
     return sorted({*globals(), *_HOMES})
 
 
-__all__ = [
-    "MetricsSink",
-    "Surface",
-    "SurfaceHint",
-    "SurfaceRunResult",
-    "SubagentEngine",
-    "TranscriptResolver",
-    "sweep_stale_managed_tags",
-    "Provider",
-    "ProviderHint",
-    "ProviderRunResult",
-]
+__all__ = sorted(_HOMES)

@@ -13,19 +13,12 @@ __all__ = ["CodexSurface"]
 # Bound lazily (PEP 562): `hook_dispatcher` next door is a fresh process per tool
 # call, and `provider` costs it the whole surface contract.
 def __getattr__(name: str) -> object:
-    from importlib import import_module
-
-    if name == "CodexSurface":
-        value = getattr(import_module(".provider", __name__), name)
-        globals()[name] = value  # bound once; later lookups skip __getattr__
-        return value
-    if name.startswith("__"):
+    if name != "CodexSurface":
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    # Eager binding used to expose the submodules this facade imported; keep it.
-    try:
-        return import_module(f"{__name__}.{name}")
-    except ModuleNotFoundError:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    from .provider import CodexSurface
+
+    globals()[name] = CodexSurface
+    return CodexSurface
 
 
 def __dir__() -> list[str]:

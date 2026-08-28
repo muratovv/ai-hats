@@ -11,7 +11,10 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
   unchanged, only the moment it loads. Importing `ai_hats_core.deadline`, which
   is stdlib-only and sits on the hook path of every tool call, no longer costs
   pydantic, filelock and asyncio through the parent `__init__` (HATS-1869; see
-  ADR-0014 Amendments).
+  ADR-0014 Amendments). A bare `import ai_hats_core` no longer exposes the submodules
+  the facade used to import for it (`locks`, `yaml_model`, …) as attributes;
+  `from ai_hats_core import locks` is unaffected, as is the documented API —
+  `__all__` plus `safe_delete`.
 
 ## [0.9.0] - 2026-08-14
 

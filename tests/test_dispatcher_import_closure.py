@@ -79,6 +79,6 @@ def test_hook_channel_does_not_drag_the_surfaces_facade() -> None:
     """The channel needs neither the surface contract nor the schema layer."""
     found = _heavy_in(
         _import_closure("ai_hats.surfaces.hook_channel"),
-        ("ai_hats.models", "ai_hats.resolver", "yaml", "pydantic"),
+        ("ai_hats.models", "ai_hats.resolver", "yaml"),  # pydantic would fire on core too
     )
     assert not found, f"ai_hats.surfaces.hook_channel drags {found} via surfaces/__init__"

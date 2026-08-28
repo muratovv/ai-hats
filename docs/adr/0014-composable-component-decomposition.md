@@ -1127,7 +1127,10 @@ component-granular)?
   the same interpreter, back to back: import ~105 ms → ~20 ms per dispatcher.
   The same treatment applies to `ai_hats.surfaces` and the four
   `ai_hats.surfaces.<surface>` packages, because all three edges reach the heavy
-  subgraph independently and cutting any two of them saves nothing.
+  subgraph independently: cutting any two still leaves over 80% of the cost, and the
+  two fixes that suggest themselves — move `Deadline` out of core, give the
+  dispatchers an entry point outside `surfaces` — are two of those three cuts, so
+  together they would not have fixed it.
   `tests/test_dispatcher_import_closure.py` holds the result; the charter phrase
   "minimal deps, each load-bearing" is unaffected.
 
