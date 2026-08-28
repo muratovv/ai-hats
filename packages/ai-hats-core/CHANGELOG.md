@@ -3,6 +3,16 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The facade binds its exports lazily (PEP 562) — the dependency set is
+  unchanged, only the moment it loads. Importing `ai_hats_core.deadline`, which
+  is stdlib-only and sits on the hook path of every tool call, no longer costs
+  pydantic, filelock and asyncio through the parent `__init__` (HATS-1869; see
+  ADR-0014 Amendments).
+
 ## [0.9.0] - 2026-08-14
 
 ### Added

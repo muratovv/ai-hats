@@ -11,24 +11,61 @@ Importing a name from under this package instead of from here is what
 
 from __future__ import annotations
 
-from .contract import (
-    MetricsSink,
-    Surface,
-    SurfaceHint,
-    SurfaceRunResult,
-    SubagentEngine,
-    TranscriptResolver,
-)
-from .managed_tags import sweep_stale_managed_tags
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
+    from .contract import (
+        MetricsSink,
+        SubagentEngine,
+        Surface,
+        SurfaceHint,
+        SurfaceRunResult,
+        TranscriptResolver,
+    )
+    from .managed_tags import sweep_stale_managed_tags
 
 # comment-length: allow — an alias has to say what it does NOT cover
 # HATS-1826: deprecated aliases, so an out-of-tree surface written against
 # `Provider` keeps importing (the `LaunchProvider` precedent). Names only — a
 # subclass overriding `provider_hints` is no longer called, which is a real
 # break the CHANGELOG names.
-Provider = Surface
-ProviderHint = SurfaceHint
-ProviderRunResult = SurfaceRunResult
+_ALIASES = {
+    "Provider": "Surface",
+    "ProviderHint": "SurfaceHint",
+    "ProviderRunResult": "SurfaceRunResult",
+}
+
+# Bound lazily (PEP 562): the hook dispatchers live under this package and are a
+# fresh process per tool call, so entering it must not cost `contract`.
+_HOMES = {
+    "MetricsSink": ".contract",
+    "Provider": ".contract",
+    "ProviderHint": ".contract",
+    "ProviderRunResult": ".contract",
+    "SubagentEngine": ".contract",
+    "Surface": ".contract",
+    "SurfaceHint": ".contract",
+    "SurfaceRunResult": ".contract",
+    "TranscriptResolver": ".contract",
+    "sweep_stale_managed_tags": ".managed_tags",
+}
+
+
+def __getattr__(name: str) -> object:
+    home = _HOMES.get(name)
+    if home is None:
+        # Not ours: let the import system try `surfaces.<name>` as a submodule.
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib import import_module
+
+    value = getattr(import_module(home, __name__), _ALIASES.get(name, name))
+    globals()[name] = value  # bound once; later lookups skip __getattr__
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_HOMES})
+
 
 __all__ = [
     "MetricsSink",
