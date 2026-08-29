@@ -55,7 +55,7 @@ gates: ## Run every stage CI runs locally (the `all` bundle in scripts/ci-local.
 coverage: ## Run the coverage stage (unit + non-e2e integration, --cov-fail-under=78)
 	$(CI_LOCAL) coverage $(ARGS)
 
-security: ## Run the security stage (bandit + pip-audit; env-scoped, CI is authoritative)
+security: ## Run the security stage (pip-audit; env-scoped, CI is authoritative)
 	$(CI_LOCAL) security $(ARGS)
 
 version-skew: ## Check workspace packages are ahead of PyPI (needs network)
