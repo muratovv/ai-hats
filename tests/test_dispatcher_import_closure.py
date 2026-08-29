@@ -26,9 +26,14 @@ HEAVY = (
     "ai_hats.models",  # the schema layer, under surfaces.contract
 )
 
-DISPATCHERS = tuple(
-    f"ai_hats.surfaces.{surface}.hook_dispatcher"
-    for surface in ("agy", "cline", "codex", "opencode")
+# Every module that is a fresh process per tool call. Claude's is spelled
+# `channel`, so a name-shaped rule would have missed the busiest surface.
+DISPATCHERS = (
+    *(
+        f"ai_hats.surfaces.{surface}.hook_dispatcher"
+        for surface in ("agy", "cline", "codex", "opencode")
+    ),
+    "ai_hats.surfaces.claude.channel",
 )
 
 

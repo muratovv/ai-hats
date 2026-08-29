@@ -1125,7 +1125,7 @@ component-granular)?
   call**, and one of them needs `ai_hats_core.deadline` — pure stdlib — which
   cost pydantic + filelock + asyncio through the parent `__init__`. Measured on
   the same interpreter, back to back: import ~105 ms → ~20 ms per dispatcher.
-  The same treatment applies to `ai_hats.surfaces` and the four
+  The same treatment applies to `ai_hats.surfaces` and all five
   `ai_hats.surfaces.<surface>` packages, because all three edges reach the heavy
   subgraph independently: cutting any two still leaves over 80% of the cost, and the
   two fixes that suggest themselves — move `Deadline` out of core, give the

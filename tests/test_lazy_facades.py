@@ -19,6 +19,7 @@ LAZY_FACADES = (
     "ai_hats_core",
     "ai_hats.surfaces",
     "ai_hats.surfaces.agy",
+    "ai_hats.surfaces.claude",
     "ai_hats.surfaces.cline",
     "ai_hats.surfaces.codex",
     "ai_hats.surfaces.opencode",
