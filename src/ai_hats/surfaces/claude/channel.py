@@ -1,17 +1,16 @@
-"""claude on the shared hook channel — the interface's first implementation.
+"""claude's four answers on the shared hook channel.
 
-Five answers and no control flow: everything between reading stdin and writing
-the reply is :func:`ai_hats.surfaces.hook_dispatch.dispatch`. A test refuses a
-call to the channel's primitives from this package, because a surface that
-reaches past `dispatch` is the fifth hand-written copy this card exists to not
-write.
+Everything between reading stdin and writing the reply is
+:func:`ai_hats.surfaces.hook_dispatch.dispatch`; this package holds only what
+claude alone can answer. A test refuses a call to the chain's primitives from
+here, so reaching past `dispatch` cannot happen quietly.
 
-Why claude joins at all, when the harness already runs these hooks: it runs them
-fail-open, by contract. A gate whose script has vanished lets the call through
-with `rc=0` and zero bytes on stderr, and one killed by its own timeout does the
-same (poc-hook-delivery.md, M4 and M7). Neither is reachable from
-`settings.json`; owning the execution is the only way to turn an undelivered
-gate into a refusal.
+Why claude runs its gates through ai-hats when the harness already runs them:
+the harness runs them fail-open by contract. A gate whose script has vanished
+lets the call through with `rc=0` and zero bytes on stderr, and one killed by
+its own timeout does the same (measured, `poc-hook-delivery.md` M4 and M7).
+Neither is reachable from `settings.json`, so owning the execution is the only
+way an undelivered gate becomes a refusal.
 """
 
 from __future__ import annotations
@@ -27,7 +26,6 @@ from ai_hats_observe.trace import ENV_SESSION_ID
 from ..hook_channel import (
     ChainDecision,
     ChainVerdict,
-    Dialect,
     HookCall,
     HookEvent,
     HookRow,
@@ -83,24 +81,19 @@ class ClaudeChannel:
         hooks are written against."""
         return [HookCall(payload, str(payload.get("tool_name", "")))]
 
-    def speaks(self, arrival: Arrival) -> Dialect:
-        """The same on every arrival — no capability of claude's is narrower on
-        one event than on another."""
-        return PROFILE.speaks
+    def emit(self, verdict: ChainVerdict, arrival: Arrival) -> None:
+        """Write the dialect `parse_reply` already reads.
 
-    def emit(self, verdict: ChainVerdict, arrival: Arrival) -> int:
-        """Answer in the dialect `parse_reply` already reads, and exit 0.
-
-        The JSON carries the refusal rather than the status: exit 2 blocks too,
-        but its reason travels on stderr alone, which drops the nudges the gates
-        before the objector left.
+        The document carries the refusal, not the status: exit 2 blocks too, but
+        its reason travels on stderr alone, which drops the ticket and the
+        advice this dialect can hold. `imposed_status` stays 0 for that reason.
         """
         if verdict.decision is ChainDecision.DENY and arrival.event is HookEvent.POST_TOOL_USE:
             # PostToolUse has no `permissionDecision`; this pair is how a refusal
             # is spelled for a call that already ran.
             _write({"decision": "block", "reason": worded(verdict)})
             _also_on_stderr(verdict)
-            return 0
+            return
         spoken: dict[str, object] = {"hookEventName": arrival.native}
         if verdict.decision is not ChainDecision.ALLOW:
             spoken["permissionDecision"] = verdict.decision.value
@@ -115,7 +108,6 @@ class ClaudeChannel:
         if len(spoken) > 1:
             _write({"hookSpecificOutput": spoken})
         _also_on_stderr(verdict)
-        return 0
 
 
 def _write(document: dict) -> None:

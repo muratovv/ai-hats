@@ -816,10 +816,13 @@ def test_advice_is_not_silently_dropped_on_the_arrival_that_cannot_carry_it(
         capsys,
     )
 
-    from ai_hats.surfaces.codex.hook_dispatcher import _speaks
+    from ai_hats.surfaces.codex.profile import PROFILE
 
-    assert not _speaks("PermissionRequest").can_carry_nudges, (
-        "the dialect still claims an arrival with nowhere to put advice can carry it"
+    assert not PROFILE.dialect("PermissionRequest").can_carry_nudges, (
+        "the row still claims an arrival with nowhere to put advice can carry it"
+    )
+    assert PROFILE.dialect("PreToolUse").can_carry_nudges, (
+        "the control: the narrowing must belong to that one arrival, not the surface"
     )
     assert "prefer Grep" not in stdout
 

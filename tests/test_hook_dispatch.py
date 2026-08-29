@@ -48,7 +48,11 @@ class Recorder:
     def __init__(self, *, rows=(), raises: str = "", speaks: Dialect | None = None):
         self._rows = list(rows)
         self._raises = raises
-        self._speaks = speaks or profiles.CLAUDE.speaks
+        # The dialect is a ROW, not an answer — a channel under test narrows it
+        # the way a real surface does, by carrying a profile that says so.
+        self.profile = (
+            profiles.CLAUDE if speaks is None else replace(profiles.CLAUDE, speaks=speaks)
+        )
         self.said: list[ChainVerdict] = []
         self.arrivals: list[Arrival] = []
         self.rows_asked = 0
@@ -67,12 +71,8 @@ class Recorder:
     def read(self, payload, arrival):
         return [HookCall(payload, str(payload.get("tool_name", "")))]
 
-    def speaks(self, arrival):
-        return self._speaks
-
     def emit(self, verdict, arrival):
         self.said.append(verdict)
-        return 0
 
 
 def _hook(tmp_path: Path, name: str, body: str) -> HookRow:
@@ -199,20 +199,40 @@ class TestTheChainIsActuallyRun:
         assert not ran.exists()
 
 
-class TestTheDialectIsAskedPerArrival:
-    """codex narrows `can_ask` to one arrival and had to say so by hand before
-    this seam existed; the seam is what makes that data rather than a branch."""
+class TestTheDialectIsARow:
+    """It is known before any hook arrives, so it is read rather than asked for.
 
-    def test_the_arrival_reaches_speaks(self) -> None:
-        asked: list[Arrival] = []
+    codex narrows `can_ask` to one arrival and wrote that as a function of the
+    event; as a row it cannot disagree with the profile that declares it.
+    """
 
-        class Narrowing(Recorder):
-            def speaks(self, arrival):
-                asked.append(arrival)
-                return profiles.CLAUDE.speaks
+    def test_the_narrowing_for_this_arrival_is_honoured(self, tmp_path: Path) -> None:
+        doc = json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": "may I",
+                }
+            }
+        )
+        row = _hook(tmp_path, "ask", f"cat >/dev/null; printf '%s' {json.dumps(doc)}")
+        channel = Recorder(rows=[row])
+        channel.profile = replace(
+            profiles.CLAUDE,
+            speaks_on={"PreToolUse": replace(profiles.CLAUDE.speaks, can_ask=False)},
+        )
+        _run(channel)
+        assert channel.said[0].decision is ChainDecision.DENY
 
-        _run(Narrowing(raises="manifest gone"))
-        assert [a.native for a in asked] == ["PreToolUse"]
+    def test_the_control_another_arrival_keeps_the_surfaces_own_dialect(self) -> None:
+        """A narrowing that leaked onto every arrival would be invisible above."""
+        narrowed = replace(
+            profiles.CLAUDE,
+            speaks_on={"PermissionRequest": replace(profiles.CLAUDE.speaks, can_ask=False)},
+        )
+        assert narrowed.dialect("PreToolUse").can_ask
+        assert not narrowed.dialect("PermissionRequest").can_ask
 
     def test_a_narrower_dialect_on_this_arrival_is_honoured(self, tmp_path: Path) -> None:
         doc = json.dumps(
@@ -347,6 +367,60 @@ class TestManifestRows:
         """No gate bound to this event is a fact, not a failure."""
         path = self._write(tmp_path / "cache", {"PostToolUse": []})
         assert self._rows(path, tmp_path) == []
+
+
+class TestTheStatusIsDerivedFromTheVerdict:
+    """Not chosen while writing the reply: the document is the answer on every
+    surface, and a status is a projection two of them additionally act on."""
+
+    def test_an_allow_exits_zero(self) -> None:
+        assert _run(Recorder()) == 0
+
+    def test_a_refusal_a_hook_uttered_exits_zero_on_a_surface_that_reads_none(
+        self, tmp_path: Path
+    ) -> None:
+        doc = json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "no",
+                }
+            }
+        )
+        row = _hook(tmp_path, "deny", f"cat >/dev/null; printf '%s' {json.dumps(doc)}")
+        assert _run(Recorder(rows=[row])) == 0
+
+    def test_a_refusal_ai_hats_imposed_carries_the_surfaces_own_status(self) -> None:
+        channel = Recorder(raises="manifest gone")
+        channel.profile = replace(profiles.CLAUDE, imposed_status=2)
+        assert _run(channel) == 2
+
+    def test_a_hooks_own_refusal_never_borrows_that_status(self, tmp_path: Path) -> None:
+        """Arguing with a gate that RAN is between its author and whoever it
+        stopped; inventing a status for it would overrule them."""
+        doc = json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "no",
+                }
+            }
+        )
+        row = _hook(tmp_path, "deny", f"cat >/dev/null; printf '%s' {json.dumps(doc)}")
+        channel = Recorder(rows=[row])
+        channel.profile = replace(profiles.CLAUDE, imposed_status=2)
+        assert _run(channel) == 0
+
+    def test_a_surface_whose_protocol_is_the_status_forwards_the_childs(
+        self, tmp_path: Path
+    ) -> None:
+        """agy's BROKE contract (HATS-1598): exit 2 from a gate travels out."""
+        row = _hook(tmp_path, "hard", "cat >/dev/null; echo 'BLOCKED' >&2; exit 2")
+        channel = Recorder(rows=[row])
+        channel.profile = replace(profiles.CLAUDE, forwards_hook_status=True)
+        assert _run(channel) == 2
 
 
 def test_the_arrival_helper_maps_only_what_binds() -> None:

@@ -22,6 +22,7 @@ from ai_hats.surfaces.hook_channel import (
     ChainVerdict,
     HookEvent,
     Nudge,
+    status_for,
 )
 from ai_hats.surfaces.hook_dispatch import Arrival, ManifestUnresolved, dispatch
 
@@ -68,10 +69,11 @@ class TestRead:
 
 class TestSpeaks:
     def test_the_dialect_does_not_narrow_by_arrival(self) -> None:
-        """codex's does; claude's does not, and saying so beats leaving a reader
-        to infer it from an absent branch."""
-        assert ClaudeChannel().speaks(_PRE) == PROFILE.speaks
-        assert ClaudeChannel().speaks(_POST) == PROFILE.speaks
+        """codex's row does; claude's does not, and saying so beats leaving a
+        reader to infer it from an absent row."""
+        assert PROFILE.speaks_on == {}
+        assert PROFILE.dialect("PreToolUse") == PROFILE.speaks
+        assert PROFILE.dialect("PostToolUse") == PROFILE.speaks
 
 
 class TestEmit:
@@ -151,12 +153,25 @@ class TestEmit:
         assert spoken["permissionDecision"] == "deny"
         assert spoken["additionalContext"] == "heads up"
 
-    def test_the_status_is_zero_because_the_verdict_rides_the_json(self, capsys) -> None:
+    def test_the_status_is_zero_because_the_verdict_rides_the_document(self) -> None:
         """Exit 2 blocks too, but its reason travels on stderr alone — which
-        drops the ticket and the advice this dialect can carry."""
-        assert (
-            ClaudeChannel().emit(ChainVerdict(decision=ChainDecision.DENY, reason="no"), _PRE) == 0
+        drops the ticket and the advice this dialect can carry. The status is
+        derived from the row, so this asserts the ROW rather than an emit."""
+        refused = ChainVerdict(
+            decision=ChainDecision.DENY, reason="no", hatch_env=GATE_BROKEN_ACK_ENV
         )
+        assert PROFILE.imposed_status == 0
+        assert status_for(PROFILE, refused) == 0
+
+    def test_the_control_a_surface_that_reads_a_status_gets_one(self) -> None:
+        """Without this, the zero above is indistinguishable from a derivation
+        that returns zero for everyone."""
+        from ai_hats.surfaces import profiles
+
+        refused = ChainVerdict(
+            decision=ChainDecision.DENY, reason="no", hatch_env=GATE_BROKEN_ACK_ENV
+        )
+        assert (status_for(profiles.CODEX, refused), status_for(profiles.AGY, refused)) == (2, 1)
 
 
 class TestRows:

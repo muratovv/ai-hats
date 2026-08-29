@@ -1,18 +1,20 @@
-"""The steps every surface's dispatcher takes, in one copy — HATS-1868.
+"""One dispatcher flow for every surface — read the call, run its gates, answer.
 
-Four dispatchers wrote the same eight steps by hand, and the copies drifted:
-HATS-1858's review found FOUR different behaviours for "the manifest is gone",
-one per copy. After the fix the drift continued — the reduction to what a
-surface can utter lived in three different places, wrapped around different
-paths, so one of the three reduced a delivery refusal and two did not.
+A surface differs from its siblings in FOUR places: how a call **arrives**,
+where its composed **rows** come from, how the stdin document **reads** as
+calls, and how a verdict is **emitted** in its own protocol. :func:`dispatch` is
+the order those four go in; everything between them — the refusal for a gate set
+that never resolved, the reduction to what the surface can utter, the chain
+itself, the stderr relay — lives here once.
 
-Here the flow exists once and a surface is what remains: a :class:`SurfaceProfile`
-of names, plus the five things only it can answer.
+What a surface can UTTER and what status it EXITS with are not among the four.
+Both are known before a hook arrives, so both are rows of
+:class:`SurfaceProfile`: ``speaks`` / ``speaks_on``, and ``imposed_status`` /
+``forwards_hook_status``.
 
-What deliberately stays per-surface: **registration** (five foreign config
-formats) and **reading the payload** (cline fans a command list into N calls,
-codex a patch into one call per file). Those are drivers and translations, not
-copies. This takes the control flow AROUND them.
+Registration stays per-surface — five foreign config formats — and so does the
+translation inside :meth:`SurfaceChannel.read`. Those are drivers, not copies of
+a flow.
 """
 
 from __future__ import annotations
@@ -27,7 +29,6 @@ from typing import Mapping, Protocol, Sequence
 from .hook_channel import (
     ChainDecision,
     ChainVerdict,
-    Dialect,
     HookCall,
     HookEvent,
     HookRow,
@@ -36,6 +37,7 @@ from .hook_channel import (
     reduce_to,
     relay_stderr,
     run_chain,
+    status_for,
     undeliverable,
 )
 
@@ -55,17 +57,18 @@ class ManifestUnresolved(RuntimeError):
 
 @dataclass(frozen=True)
 class Arrival:
-    """What the surface says this call IS: its own name, and what it binds to.
+    """What this call is: the surface's own event name, and what it binds to.
 
-    Two facts behind one seam because they are one decision. codex's
-    ``PermissionRequest`` is its own name for a call the chain judges as a
-    PreToolUse, and agy delivers three arrivals nothing composed can bind to —
-    a surface that could only report the name would leave the mapping to be
-    guessed here, which is where it was guessed wrong before.
+    One value rather than two answers, because a surface decides both at once —
+    and only it can. ``PermissionRequest`` is codex's own name for a call the
+    chain judges as a PreToolUse; three of agy's arrivals bind to nothing.
     """
 
+    #: The surface's own name for the EVENT — ``PreToolUse`` on claude,
+    #: ``PermissionRequest`` on codex. Neither a provider nor a tool name.
     native: str
-    #: ``None`` when nothing composed can bind to this arrival.
+    #: The bindable event ``native`` maps to, or ``None`` when a composed hook
+    #: cannot be bound to this arrival at all.
     event: HookEvent | None
 
     @classmethod
@@ -75,12 +78,13 @@ class Arrival:
 
 
 class SurfaceChannel(Protocol):
-    """One surface's five answers. Everything else is :func:`dispatch`.
+    """One surface's four answers. Everything else is :func:`dispatch`.
 
-    ``speaks`` takes the arrival rather than reading ``profile.speaks`` because
-    a dialect can be narrower on one arrival than on the surface as a whole:
-    codex may ask only on ``PermissionRequest``, and it had to say so by hand
-    before this existed.
+    What a surface can UTTER and what status it exits with are not among them:
+    both are known before a hook arrives, so both are rows of
+    :class:`SurfaceProfile` — ``speaks`` / ``speaks_on`` and ``imposed_status``
+    / ``forwards_hook_status``. A channel writes its document; the status is
+    derived from the verdict by :func:`status_for`.
     """
 
     profile: SurfaceProfile
@@ -99,11 +103,8 @@ class SurfaceChannel(Protocol):
         document into a call per command.
         """
 
-    def speaks(self, arrival: Arrival) -> Dialect:
-        """What this surface can utter on THIS arrival."""
-
-    def emit(self, verdict: ChainVerdict, arrival: Arrival) -> int:
-        """Say the verdict in the surface's own protocol; return its status."""
+    def emit(self, verdict: ChainVerdict, arrival: Arrival) -> None:
+        """Write the verdict as this surface's own document."""
 
 
 def dispatch(
@@ -185,9 +186,62 @@ def _refuse(
 
 
 def _say(channel: SurfaceChannel, verdict: ChainVerdict, arrival: Arrival) -> int:
-    reduced = reduce_to(channel.speaks(arrival), verdict)
+    profile = channel.profile
+    reduced = reduce_to(profile.dialect(arrival.native), verdict)
     relay_stderr(reduced)
-    return channel.emit(reduced, arrival)
+    channel.emit(reduced, arrival)
+    return status_for(profile, reduced)
+
+
+def _require(held: object, reason: str) -> None:
+    """Refuse the whole gate set unless ``held``.
+
+    One raise site, so every check reads as the thing it asserts rather than as
+    an inverted branch around a throw.
+    """
+    if not held:
+        raise ManifestUnresolved(reason)
+
+
+def _document(path: Path) -> dict:
+    """The manifest at ``path``, parsed and known to be one of ours."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ManifestUnresolved(f"cannot read session hook manifest {path}: {exc}") from exc
+    _require(
+        isinstance(data, dict) and data.get("version") == MANIFEST_VERSION,
+        f"unsupported hook manifest at {path}",
+    )
+    return data
+
+
+def _row(entry: object, skills_root: Path) -> HookRow:
+    """One manifest entry as a row, or a refusal naming what is wrong with it.
+
+    A row that cannot be read RAISES rather than being skipped: dropping it is
+    indistinguishable from never having declared the gate.
+    """
+    _require(isinstance(entry, dict), f"hook entry is {type(entry).__name__}, not an object")
+    command = entry.get("command")  # type: ignore[union-attr]
+    _require(
+        isinstance(command, str) and command,
+        f"malformed hook entry: {entry.get('tag', '<untagged>')}",  # type: ignore[union-attr]
+    )
+    resolved = Path(str(command)).expanduser().resolve()
+    _require(
+        resolved.is_relative_to(skills_root),
+        f"hook command escapes the session skills mirror: {resolved}",
+    )
+    _require(
+        resolved.is_file() and os.access(resolved, os.X_OK),
+        f"hook command is not an executable session file: {resolved}",
+    )
+    return HookRow(
+        command=resolved,
+        matcher=str(entry.get("matcher", "")),  # type: ignore[union-attr]
+        tag=str(entry.get("tag") or command),  # type: ignore[union-attr]
+    )
 
 
 def manifest_rows(
@@ -197,48 +251,25 @@ def manifest_rows(
     session_id: str,
     skills_root: Path,
 ) -> list[HookRow]:
-    """The composed rows a session manifest holds, or why they could not be read.
+    """The composed rows a session manifest holds for ``event``.
 
-    Everything here is a check three dispatchers already wrote for themselves,
-    and one of them wrote none of the last two: opencode executed whatever
-    string the manifest named until HATS-1858. Resolution of ``path`` and
-    ``skills_root`` stays with the caller — that half is where the surfaces
-    genuinely differ, and folding it in would need flags rather than data.
+    Every check here guards one way a manifest can name a gate that must not
+    run: another session's, an unreadable document, a command outside the
+    session mirror, a file without the executable bit.
+
+    Resolving ``path`` and ``skills_root`` stays with the caller — that half is
+    where surfaces genuinely differ, and folding it in would take flags.
     """
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ManifestUnresolved(f"cannot read session hook manifest {path}: {exc}") from exc
-    if not isinstance(data, dict) or data.get("version") != MANIFEST_VERSION:
-        raise ManifestUnresolved(f"unsupported hook manifest at {path}")
+    data = _document(path)
     identity = data.get("session")
-    if not isinstance(identity, dict) or identity.get("id") != session_id:
-        raise ManifestUnresolved(f"hook manifest at {path} belongs to another session")
+    _require(
+        isinstance(identity, dict) and identity.get("id") == session_id,
+        f"hook manifest at {path} belongs to another session",
+    )
     hooks = data.get("hooks")
-    if not isinstance(hooks, dict):
-        raise ManifestUnresolved(f"hook manifest at {path} carries no hooks mapping")
-
-    raw = hooks.get(event.value, [])
-    rows: list[HookRow] = []
-    for entry in raw if isinstance(raw, list) else []:
-        if not isinstance(entry, dict):
-            raise ManifestUnresolved(f"hook entry is {type(entry).__name__}, not an object")
-        command = entry.get("command")
-        if not isinstance(command, str) or not command:
-            raise ManifestUnresolved(f"malformed hook entry: {entry.get('tag', '<untagged>')}")
-        resolved = Path(command).expanduser().resolve()
-        if not resolved.is_relative_to(skills_root):
-            raise ManifestUnresolved(f"hook command escapes the session skills mirror: {resolved}")
-        if not resolved.is_file() or not os.access(resolved, os.X_OK):
-            raise ManifestUnresolved(f"hook command is not an executable session file: {resolved}")
-        rows.append(
-            HookRow(
-                command=resolved,
-                matcher=str(entry.get("matcher", "")),
-                tag=str(entry.get("tag") or command),
-            )
-        )
-    return rows
+    _require(isinstance(hooks, dict), f"hook manifest at {path} carries no hooks mapping")
+    raw = hooks.get(event.value, [])  # type: ignore[union-attr]
+    return [_row(entry, skills_root) for entry in (raw if isinstance(raw, list) else [])]
 
 
 __all__ = [

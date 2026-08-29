@@ -16,7 +16,7 @@ import os
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -125,7 +125,18 @@ class SurfaceProfile:
     #: only the manifest knows, which is the one honest answer for a surface
     #: whose mirror lives outside the cache entirely.
     skills_subpath: tuple[str, ...] | None
+    #: What this surface can utter on an ordinary arrival.
     speaks: Dialect
+    #: Arrivals whose dialect is NARROWER than the row above, by native name.
+    #: An event axis, because one surface has one: codex may put a question only
+    #: on `PermissionRequest`, and the reply there has no slot for advice.
+    speaks_on: Mapping[str, Dialect] = field(default_factory=dict)
+    #: The status a refusal ai-hats IMPOSED exits with. Zero on a surface that
+    #: acts on the document alone; codex reads 2 as its refusal, agy 1.
+    imposed_status: int = 0
+    #: Whether a refusal a HOOK uttered carries the child's own exit code out.
+    #: True on the one surface whose protocol IS the status (agy, HATS-1598).
+    forwards_hook_status: bool = False
 
     def matcher_names(self, native_tool: str) -> tuple[str, ...]:
         """Every name a matcher may use for ``native_tool`` on this surface.
@@ -144,6 +155,14 @@ class SurfaceProfile:
         a hook would be handed a call its own matcher rejects.
         """
         return self.tool_names.get(native_tool, (native_tool,))[0]
+
+    def dialect(self, native_event: str) -> Dialect:
+        """What this surface can utter on ``native_event``.
+
+        Known before any hook arrives, so it is read from the row rather than
+        decided while one is being judged.
+        """
+        return self.speaks_on.get(native_event, self.speaks)
 
     def manifest_path(self, cache_dir: Path) -> Path:
         return cache_dir.joinpath(*self.manifest_subpath, "hooks.json")
@@ -521,11 +540,20 @@ def undeliverable(
     )
 
 
-#: How many gates the chain may have in flight at once. Measured on claude
-#: 2.1.247: its own hook runner starts matched hooks together, so a chain that
-#: answers in sum-time pays the difference on EVERY tool call. Bounded because a
-#: surface fans ONE call into several payloads (cline per command, codex per
-#: patched file), so what would otherwise spawn at once is rows x payloads.
+#: How many gates may be in flight at once. The trade-off, both ways:
+#:
+#: * **Raising it** buys wall time only while jobs exceed it. A surface starts
+#:   every matched hook together (measured on claude 2.1.247), so a cap below
+#:   the job count turns max-time back into sum-time, in steps of
+#:   ``ceil(jobs / this)``.
+#: * **Lowering it** bounds the spawn. A job is a subprocess and the count is
+#:   rows x payloads, so a surface that fans one call into several (cline per
+#:   command, codex per patched file) multiplies it — unbounded, a wide fan-out
+#:   is a fork storm on every tool call.
+#:
+#: Eight clears the shipped set with room: three of the eight shipped gates
+#: match the busiest single call, so the cap binds only past a three-way
+#: fan-out. Not configurable until a surface is measured needing another number.
 HOOK_PARALLELISM = 8
 
 
@@ -687,6 +715,22 @@ def run_chain(
         log_dir=log_dir,
     )
     return _concluded(jobs, runs, event=event, environ=env, project_dir=project_dir)
+
+
+def status_for(profile: SurfaceProfile, verdict: ChainVerdict) -> int:
+    """The exit status this verdict earns on this surface.
+
+    The document is the answer on every surface; a status is a projection of it
+    that two of them additionally act on. Which status is a row of the profile,
+    so the same verdict cannot mean one thing here and another there.
+    """
+    if verdict.decision is not ChainDecision.DENY:
+        return 0
+    if profile.forwards_hook_status and verdict.exit_code not in (None, 0):
+        return verdict.exit_code or 0
+    # Only what ai-hats imposed: a refusal a hook UTTERED is its author's, and
+    # inventing a status for it would overrule them.
+    return profile.imposed_status if verdict.hatch_env else 0
 
 
 def relay_stderr(verdict: ChainVerdict) -> None:
@@ -871,6 +915,7 @@ __all__ = [
     "native_arg_keys",
     "speak_args",
     "run_chain",
+    "status_for",
     "resolve_hook_timeout",
     "SURFACE_TIMEOUT_MARGIN_S",
     "ENV_HOOK_SURFACE_TIMEOUT_MS",

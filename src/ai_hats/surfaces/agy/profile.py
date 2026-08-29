@@ -28,6 +28,10 @@ PROFILE = SurfaceProfile(
     speaks=Dialect(
         can_ask=True, can_ask_with_ticket=True, can_deny_after=True, can_carry_nudges=True
     ),
+    # BROKE is a status on this surface, by an earlier deliberate choice
+    # (ADR-0020 D2, HATS-1598), and a hook's own non-zero exit travels out.
+    imposed_status=1,
+    forwards_hook_status=True,
 )
 
 __all__ = ["PROFILE"]
