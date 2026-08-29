@@ -32,7 +32,13 @@ GUARD = (
 INCIDENT_CMD = 'until grep -qE "=+ .*(passed|failed|error)" /tmp/unit2.log 2>/dev/null; do :; done'
 
 
-def _run(command: str | None, *, background: bool = False, env: dict | None = None, raw: str | None = None):
+def _run(
+    command: str | None,
+    *,
+    background: bool = False,
+    env: dict | None = None,
+    raw: str | None = None,
+):
     if raw is not None:
         stdin = raw
     elif command is None:
@@ -119,7 +125,7 @@ def test_unbounded_loops_denied_with_or_without_sleep(cmd):
     "cmd",
     [
         "timeout 300 bash -c 'until grep -q done /tmp/run.log; do sleep 5; done'",
-        "while read -r line; do echo \"$line\"; done < /tmp/input.txt",
+        'while read -r line; do echo "$line"; done < /tmp/input.txt',
         'while IFS= read -r f; do rm "$f"; done < list.txt',
         "i=0; while [ $i -lt 10 ]; do i=$((i+1)); done",
         "for f in *.py; do ruff check $f; done",

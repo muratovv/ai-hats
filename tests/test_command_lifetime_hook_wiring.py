@@ -11,8 +11,11 @@ from pathlib import Path
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.models import RuntimeHook, SkillMetadata
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILL_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/command-lifetime"
+LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
+SKILL_DIR = LIB / "core/skills/command-lifetime"
 
 
 def test_declares_pretooluse_bash_guard():
@@ -27,3 +30,12 @@ def test_guard_script_present_and_executable():
     script = SKILL_DIR / "hooks/pre_bash_lifetime_guard.sh"
     assert script.is_file()
     assert script.stat().st_mode & 0o111, "guard script must be executable"
+
+
+def test_attached_to_a_universal_trait():
+    """A skill nothing composes is a hook nothing materializes."""
+    cfg = yaml.safe_load((LIB / "core/traits/trait-base/config.yaml").read_text())
+    skills = (cfg.get("composition") or {}).get("skills") or []
+    assert "command-lifetime" in skills, (
+        f"trait-base must compose command-lifetime; got {skills!r}"
+    )
