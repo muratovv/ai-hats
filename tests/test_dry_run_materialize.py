@@ -130,16 +130,46 @@ def test_a_second_materialize_waits_instead_of_wiping_the_first(project: Path, m
                 pass
 
 
-def test_the_materializing_entry_point_goes_through_the_lock(project: Path):
-    """Wires the unit above to the entry point, without waiting on a timeout.
+def test_a_held_lock_stalls_the_materializing_entry_point(project: Path):
+    """Wires the unit above to the entry point, by holding the lock against it.
 
-    Taking the lock creates the file beside the cache dir, so its presence after
-    a clean run is the proof that the rebuild was serialised at all.
-    """
-    dry_run_hitl(project, provider="claude", materialize=True)
+    Whether the lock file outlives its release is filelock's cleanup policy, not
+    evidence of exclusion — it flipped between two versions our pin allows, so
+    asserting on it read the environment instead of the code. Waiting is the
+    property itself. The window is cut from an unlocked run on this machine, so
+    a slow host widens it rather than passing vacuously.
+    """  # comment-length: allow — why the file's presence proves nothing
+    import threading
+    from time import perf_counter
+
+    import filelock
 
     cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
-    assert (cache_mat.parent / f"{cache_mat.name}.lock").exists()
+    lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    started = perf_counter()
+    dry_run_hitl(project, provider="claude", materialize=True)
+    window = max(0.25, 5 * (perf_counter() - started))
+
+    done = threading.Event()
+    failure: list[Exception] = []
+
+    def rebuild() -> None:
+        try:
+            dry_run_hitl(project, provider="claude", materialize=True)
+        except Exception as exc:
+            failure.append(exc)  # re-raised in the main thread, below
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=rebuild, daemon=True)
+    with filelock.FileLock(str(lock_path)):
+        worker.start()
+        assert not done.wait(window), "the rebuild ran while the lock was held"
+    assert done.wait(30), "the rebuild never finished after the lock was released"
+    if failure:
+        raise failure[0]
 
 
 def test_a_held_lock_does_not_stall_a_plain_dry_run(project: Path):
