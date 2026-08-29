@@ -127,8 +127,8 @@ def test_a_refusal_in_the_dialect_every_shipped_hook_speaks_stops_the_call(
     assert said["registered"], "the plugin bound no tool hooks at all"
     assert said["threw"], f"the call was waved through: {said}"
     assert OFF_LIMITS in said["message"]
-    assert _fired(opencode_chain) == ["audit", "guard"], (
-        f"the composed chain did not run in order; fired: {_fired(opencode_chain)}"
+    assert sorted(_fired(opencode_chain)) == ["audit", "guard"], (
+        f"a composed gate did not run at all; fired: {_fired(opencode_chain)}"
     )
 
 

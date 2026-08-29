@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**284 of 284 files catalogued — 293 flows.**
+**286 of 286 files catalogued — 295 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -517,6 +517,20 @@ as a claim to check, not as evidence.
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] ticket-ids`, reports on every run what it does NOT cover and how many ids the pattern still finds where history lives, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
 - **why** — the checker's own silence is the thing under test. 177 ids had accumulated in this library while a rule actively prescribed the form, and every gate stayed green through all of them because none read prose for what it must NOT carry. A checker that is wired but never refuses anything reproduces exactly that, and the ONE id this repo legitimately keeps is the reason a blanket "no matches ever" assertion would not do.
 
+## `test_claude_hook_chain.py`
+
+*pins HATS-1868*
+
+- **flow** — an operator runs a claude role whose skills compose several gates on one tool, and expects them to behave as ONE chain — a shared budget, joined advice, one verdict
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # the string a settings.json entry holds
+  ```
+
+- **expect** — a later gate overrides an earlier one, advice from both reaches the model, a consent ticket arrives with its rewrite attached, and a chain that overruns its budget refuses while naming the bound to raise
+- **why** — the harness runs each entry on its own — no shared deadline, no joined advice, and a gate killed by its per-hook timeout lets the call through (poc-hook-delivery.md M7). A chain is the thing owning execution buys
+
 ## `test_claude_scaffold_drop.py`
 
 *pins HATS-1170, HATS-1201*
@@ -530,6 +544,20 @@ as a claim to check, not as evidence.
 
 - **expect** — framework update removes orphan CLAUDE.md scaffold while preserving user content
 - **why** — without migration step 7, legacy root CLAUDE.md scaffolds persist after being deprecated
+
+## `test_claude_vanished_gate_refuses.py`
+
+*pins HATS-1868*
+
+- **flow** — a composed gate's script is gone mid-session and the operator expects the tool call to be stopped, not waved through
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # the string a settings.json entry holds
+  ```
+
+- **expect** — the call is refused, the refusal names the hatch that opens it, and the hatch actually opens it
+- **why** — measured on claude 2.1.247 (poc-hook-delivery.md M4): with the script gone the harness ran the call anyway — rc=0, ZERO BYTES on stderr, the only trace a `hook_non_blocking_error` line inside the transcript JSONL. That is the harness's contract, not a bug, and it is unreachable from settings.json — HATS-1439 is what it cost
 
 ## `test_clean_root_sentinel.py`
 

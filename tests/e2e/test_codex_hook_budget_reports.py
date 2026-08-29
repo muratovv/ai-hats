@@ -90,10 +90,18 @@ def test_a_chain_that_overruns_its_budget_still_answers(slow_chain) -> None:
     )
 
 
-def test_one_slow_hook_cannot_let_the_rest_pass_unexamined(slow_chain) -> None:
-    """One budget for the call, not one per hook: with nothing left the chain
-    refuses rather than waving the remaining gates through."""
-    run_codex_dispatch(
+def test_every_gate_is_started_under_the_one_budget(slow_chain) -> None:
+    """One budget for the CALL, and every matched gate starts inside it.
+
+    This test used to pin the sequential half — that the budget was spent by the
+    first gate and the second never started. Matched gates run together now, so
+    both start and both are killed by the one deadline; what had to survive is
+    that the call still meets a refusal naming the bound, which it does above.
+
+    The ledger is the positive control: an empty one would mean no gate ran and
+    the refusal below proved nothing about the budget.
+    """
+    done = run_codex_dispatch(
         slow_chain.project,
         slow_chain.env,
         tool="exec",
@@ -102,7 +110,12 @@ def test_one_slow_hook_cannot_let_the_rest_pass_unexamined(slow_chain) -> None:
     )
 
     fired = slow_chain.ledger.read_text().split() if slow_chain.ledger.is_file() else []
-    assert fired == ["first"], f"the chain kept going after its budget was gone: {fired}"
+    assert sorted(fired) == ["first", "second"], (
+        f"a matched gate never started under the shared budget: {fired}"
+    )
+    spoken = json.loads(done.stdout)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny", done.stdout
+    assert "AI_HATS_HOOK_TIMEOUT_S" in spoken["permissionDecisionReason"], done.stdout
 
 
 def test_the_surface_bound_is_always_the_larger_of_the_two() -> None:

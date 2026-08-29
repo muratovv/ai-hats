@@ -372,7 +372,10 @@ def test_apply_patch_is_adapted_to_claude_style_file_path(
 
     assert code == 0, stderr
     assert stdout == ""
-    assert marker.read_text().splitlines() == [
+    # Sorted: the two payloads are judged together now (HATS-1868), so which of
+    # them appends first is a race. WHICH files the gate was handed is the
+    # assertion — one row per patched file — and that is unchanged.
+    assert sorted(marker.read_text().splitlines()) == [
         str((tmp_path / "src" / "one.py").resolve()),
         str((tmp_path / "src" / "two.py").resolve()),
     ]
@@ -813,10 +816,13 @@ def test_advice_is_not_silently_dropped_on_the_arrival_that_cannot_carry_it(
         capsys,
     )
 
-    from ai_hats.surfaces.codex.hook_dispatcher import _speaks
+    from ai_hats.surfaces.codex.profile import PROFILE
 
-    assert not _speaks("PermissionRequest").can_carry_nudges, (
-        "the dialect still claims an arrival with nowhere to put advice can carry it"
+    assert not PROFILE.dialect("PermissionRequest").can_carry_nudges, (
+        "the row still claims an arrival with nowhere to put advice can carry it"
+    )
+    assert PROFILE.dialect("PreToolUse").can_carry_nudges, (
+        "the control: the narrowing must belong to that one arrival, not the surface"
     )
     assert "prefer Grep" not in stdout
 

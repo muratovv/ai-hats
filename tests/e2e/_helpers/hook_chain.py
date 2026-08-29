@@ -415,6 +415,38 @@ def run_agy_dispatch(
     )
 
 
+def run_claude_dispatch(
+    project: Path,
+    env: dict,
+    *,
+    event: str = "PreToolUse",
+    tool: str = "Bash",
+    tool_input: dict | None = None,
+    timeout: int = 60,
+) -> subprocess.CompletedProcess[str]:
+    """Run one ``tool`` call through claude's whole hook chain, as claude runs it.
+
+    The production dispatcher string is what a ``settings.json`` entry holds, so
+    driving THAT through a real shell is what makes the run evidence about the
+    surface rather than about a Python entry point no host calls — including its
+    guard, which refuses when the session pins are missing.
+    """
+    from ai_hats.surfaces.claude.channel import DISPATCHER_COMMAND
+
+    payload = json.dumps(
+        {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input or {}}
+    )
+    return subprocess.run(  # noqa: S603 - the production dispatcher string, run as claude runs it
+        ["sh", "-c", DISPATCHER_COMMAND],  # noqa: S607 - sh from PATH
+        input=payload,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
 def run_codex_dispatch(
     project: Path,
     env: dict,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ import pytest
 from ai_hats.surfaces import profiles
 from ai_hats.surfaces.hook_channel import (
     GATE_BROKEN_ACK_ENV,
+    HOOK_PARALLELISM,
     HOOK_TIMEOUT_ENV,
     ChainDecision,
     HookEvent,
@@ -58,7 +60,13 @@ def test_a_silent_chain_allows(tmp_path: Path) -> None:
     assert verdict.hatch_env == ""
 
 
-def test_a_refusal_ends_the_chain_and_names_its_author(tmp_path: Path) -> None:
+def test_a_refusal_names_its_author_and_the_gates_behind_it_ran_anyway(tmp_path: Path) -> None:
+    """The verdict is the sequential chain's; what changed is who RAN.
+
+    This test used to pin the opposite half — that a gate behind an objector
+    never started. Matched gates run together now, so it does; the three
+    assertions above it are the ones that had to survive that, and did.
+    """
     denied = _hook(
         tmp_path, "deny", _emit(permissionDecision="deny", permissionDecisionReason="no")
     )
@@ -67,7 +75,101 @@ def test_a_refusal_ends_the_chain_and_names_its_author(tmp_path: Path) -> None:
     assert verdict.decision is ChainDecision.DENY
     assert verdict.reason == "no"
     assert verdict.hook == "ai-hats:deny"
-    assert not (tmp_path / "ran").exists(), "the chain kept running past a refusal"
+    assert (tmp_path / "ran").exists(), "a matched gate behind the objector never ran"
+
+
+class TestMatchedGatesRunTogether:
+    """Together, and concluded afterwards in row order.
+
+    The surface runs its own matched hooks in parallel and answers in max-time.
+    A chain answering in sum-time cannot stay inside the budget that surface
+    allowed it, which is what put every one of these here.
+    """
+
+    def test_the_wall_is_the_slowest_gate_not_their_sum(self, tmp_path: Path) -> None:
+        """Positive control inside the assertion: the lower bound is what fails
+        when the gates never slept at all, so the upper bound cannot pass by a
+        chain that did nothing."""
+        rows = [_hook(tmp_path, f"slow{i}", "cat >/dev/null; sleep 0.5") for i in range(3)]
+        started = time.monotonic()
+        verdict = _run(tmp_path, *rows)
+        wall = time.monotonic() - started
+        assert verdict.decision is ChainDecision.ALLOW
+        assert wall >= 0.5, f"the gates did not run at all: {wall:.2f}s"
+        # 1.5 s is what the sequential chain took; the gap between the two is
+        # what a loaded host may spend on spawns without turning this red.
+        assert wall < 1.2, f"sum-time, not max-time: {wall:.2f}s for 3 x 0.5s"
+
+    def test_every_matched_gate_runs_even_behind_two_objectors(self, tmp_path: Path) -> None:
+        marks = [tmp_path / f"ran{i}" for i in range(3)]
+        denied = _hook(
+            tmp_path, "deny", _emit(permissionDecision="deny", permissionDecisionReason="first")
+        )
+        rows = [denied] + [
+            _hook(tmp_path, f"side{i}", f"cat >/dev/null; touch {mark}")
+            for i, mark in enumerate(marks)
+        ]
+        verdict = _run(tmp_path, *rows)
+        assert verdict.reason == "first"
+        assert [m.name for m in marks if not m.exists()] == []
+
+    def test_the_verdict_is_row_order_not_finishing_order(self, tmp_path: Path) -> None:
+        """The whole reason the conclusion is drawn after the runs, not during.
+
+        The slow objector is FIRST in row order and LAST to answer; a chain that
+        concluded on whoever finished first would report the fast one.
+        """
+        slow = _hook(
+            tmp_path,
+            "slow-deny",
+            "cat >/dev/null; sleep 0.4; "
+            + _emit(permissionDecision="deny", permissionDecisionReason="SLOW").split("; ", 1)[1],
+        )
+        quick = _hook(
+            tmp_path,
+            "quick-deny",
+            _emit(permissionDecision="deny", permissionDecisionReason="QUICK"),
+        )
+        verdict = _run(tmp_path, slow, quick)
+        assert (verdict.reason, verdict.hook) == ("SLOW", "ai-hats:slow-deny")
+
+    def test_a_gate_behind_the_decider_still_gets_its_stderr_said(self, tmp_path: Path) -> None:
+        """It ran, so its note is the only trace it leaves — the bypass journal's
+        own "NOT RECORDED" is exactly this shape."""
+        denied = _hook(
+            tmp_path, "deny", _emit(permissionDecision="deny", permissionDecisionReason="no")
+        )
+        behind = _hook(tmp_path, "behind", "cat >/dev/null; echo 'BEHIND SAID SO' >&2")
+        verdict = _run(tmp_path, denied, behind)
+        assert verdict.decision is ChainDecision.DENY
+        assert "BEHIND SAID SO" in verdict.stderr
+
+    def test_more_gates_than_workers_all_still_run(self, tmp_path: Path) -> None:
+        """The bound caps what is in flight, never what is delivered."""
+        marks = [tmp_path / f"m{i}" for i in range(HOOK_PARALLELISM + 3)]
+        rows = [
+            _hook(tmp_path, f"g{i}", f"cat >/dev/null; touch {mark}")
+            for i, mark in enumerate(marks)
+        ]
+        assert _run(tmp_path, *rows).decision is ChainDecision.ALLOW
+        assert [m.name for m in marks if not m.exists()] == []
+
+    def test_one_row_fanned_over_payloads_runs_once_per_payload(self, tmp_path: Path) -> None:
+        """rows x payloads is what the bound exists for; both axes must deliver."""
+        counted = tmp_path / "counted"
+        row = _hook(tmp_path, "count", f"cat >> {counted}")
+        calls = [
+            HookCall({"tool_name": "Bash", "tool_input": {"command": f"c{i}"}}, "exec")
+            for i in range(3)
+        ]
+        run_chain(
+            _PROFILE,
+            event=HookEvent.PRE_TOOL_USE,
+            rows=[row],
+            calls=calls,
+            project_dir=tmp_path,
+        )
+        assert counted.read_text(encoding="utf-8").count("tool_name") == 3
 
 
 def test_a_hooks_own_refusal_carries_no_hatch_of_ours(tmp_path: Path) -> None:
