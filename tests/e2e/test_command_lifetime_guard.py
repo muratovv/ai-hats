@@ -141,6 +141,52 @@ def test_a_loop_quoted_in_prose_is_not_a_loop_being_run():
     assert _run(cmd).stdout.strip() == ""
 
 
+# --- S3b: false-positive classes found by the S7 corpus replay ---------------
+
+
+#: The body carries a verbatim shell loop, so this fixture goes red the moment
+#: heredoc stripping stops working — the earlier version had no `do` in it and
+#: passed whether the pass ran or not.
+HEREDOC_SCRIPT = """cat <<'EOF' > /tmp/watch.sh
+while true; do :; done
+EOF"""
+
+
+def test_heredoc_body_is_not_shell():
+    """12 of 161 corpus refusals were python source read as a shell loop."""
+    assert _run(HEREDOC_SCRIPT).stdout.strip() == ""
+
+
+def test_heredoc_silence_is_not_a_broken_guard():
+    assert _decision(_run(INCIDENT_CMD)) == "deny"
+
+
+def test_a_real_loop_after_a_heredoc_is_still_seen():
+    """Dropping heredoc BODIES must not drop the commands around them."""
+    cmd = HEREDOC_SCRIPT + "\nwhile true; do :; done"
+    assert _decision(_run(cmd)) == "deny"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    ["sleep 600; echo waited", "sleep 45; cat /tmp/run.rc 2>/dev/null || echo pending"],
+    ids=["sleep-echo", "sleep-poll"],
+)
+def test_leading_sleep_is_already_the_bound(cmd):
+    """`sleep N` in the background ends in N seconds by construction."""
+    assert _run(cmd, background=True).stdout.strip() == ""
+
+
+def test_sleep_inside_a_loop_body_is_not_a_bound():
+    assert _decision(_run("while true; do sleep 1; done")) == "deny"
+
+
+def test_do_is_matched_as_a_word_not_a_substring():
+    """`docs`, `done` and `download` are not the `do` of a shell loop."""
+    assert _run("ls docs/ && echo done && echo download").stdout.strip() == ""
+    assert _run("while pgrep -q x; do sleep 1; done").stdout.strip() != ""
+
+
 # --- S4: the unbounded background launch is refused --------------------------
 
 

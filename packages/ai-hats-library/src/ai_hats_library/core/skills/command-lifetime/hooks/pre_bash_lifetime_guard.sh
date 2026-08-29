@@ -46,11 +46,19 @@ fi
 payload="$(cat || true)"
 [[ -z "$payload" ]] && exit 0
 
-# One parser pass for both fields, tab-separated: a second pass over the same
-# payload is a second chance for the two to disagree about which call they read.
+# One parser pass for both fields: a second pass over the same payload is a
+# second chance for the two to disagree about which call they read.
+#
+# The flag goes on line 1 and the command takes every line after it, because the
+# command is the field that can be MULTI-LINE and a heredoc is exactly the shape
+# that matters here. The tab-separated spelling this replaces used `@tsv`, which
+# escapes a newline to a literal backslash-n — every heredoc arrived as one long
+# line, the awk pass below had nothing to split on, and a test asserting heredoc
+# bodies are ignored passed because `while` happened to sit after the `n` of a
+# `\n` rather than after a space. Silent, and green.
 extract_fields() {
     if command -v jq >/dev/null 2>&1; then
-        jq -r '[(.tool_input.command // ""), ((.tool_input.run_in_background // false) | tostring)] | @tsv' <<<"$payload" 2>/dev/null
+        jq -r '((.tool_input.run_in_background // false) | tostring), (.tool_input.command // "")' <<<"$payload" 2>/dev/null
         return
     fi
     if command -v python3 >/dev/null 2>&1; then
@@ -61,7 +69,8 @@ try:
 except Exception:
     sys.exit(0)
 ti = d.get("tool_input") or {}
-print("%s\t%s" % (ti.get("command") or "", "true" if ti.get("run_in_background") else "false"))
+print("true" if ti.get("run_in_background") else "false")
+print(ti.get("command") or "")
 ' <<<"$payload" 2>/dev/null
         return
     fi
@@ -77,24 +86,57 @@ if ! fields="$(extract_fields)" || [[ -z "$fields" ]]; then
     exit 0
 fi
 
-cmd="${fields%%$'\t'*}"
-background="${fields##*$'\t'}"
-[[ -z "$cmd" ]] && exit 0
+# `$(…)` strips trailing newlines, so an empty command leaves the flag alone on
+# the only line. Without this test `${fields#*\n}` would hand back the flag
+# itself and the guard would go on to judge the string "false" as a command.
+[[ "$fields" != *$'\n'* ]] && exit 0
+background="${fields%%$'\n'*}"
+cmd="${fields#*$'\n'}"
+[[ -z "${cmd//[[:space:]]/}" ]] && exit 0
 
-# A loop NAME inside a quoted argument is not a loop being RUN (HATS-1819).
-# Every structural test below reads cmd_bare, never the raw line, so a work-log
-# entry quoting `until …; do :; done` does not read as running one. Two passes,
-# and the order is the point:
-#   1. UNWRAP a `-c` body — `bash -c 'until …; do :; done'` really does run it.
-#   2. DELETE every remaining quoted span, which is argument text.
-if command -v sed >/dev/null 2>&1; then
-    cmd_bare="$(printf '%s' "$cmd" \
-        | sed -E "s/-c[[:space:]]+'([^']*)'/-c \1/g; s/-c[[:space:]]+\"([^\"]*)\"/-c \1/g" 2>/dev/null \
-        | sed -E "s/'[^']*'|\"[^\"]*\"//g" 2>/dev/null)"
-else
-    ai_hats_journal_bypass fail-open "sed absent — command-lifetime checks skipped"
+# A loop NAME inside an argument is not a loop being RUN (HATS-1819). Every
+# structural test below reads cmd_bare, never the raw line. Three passes, and
+# the order is the point:
+#   1. DROP heredoc BODIES — `python3 - <<'PY' … while x: … PY` is a program for
+#      another interpreter, and its `while` is not a shell loop. Measured on the
+#      corpus: 12 of 161 refusals were python source read as shell. The command
+#      LINE is kept, so `python3 -` itself still sees every other check.
+#   2. UNWRAP a `-c` body — `bash -c 'until …; do :; done'` really does run it.
+#   3. DELETE every remaining quoted span, which is argument text.
+# Pass 1 runs first because a heredoc body's own quotes would otherwise pair
+# with the script's and swallow real commands around them.
+if ! command -v sed >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1; then
+    ai_hats_journal_bypass fail-open "sed or awk absent — command-lifetime checks skipped"
     exit 0
 fi
+
+# A heredoc body ends at a line that is exactly its delimiter. A `bash <<EOF`
+# body IS shell and is dropped here too — a deliberate false negative, matching
+# this file's standing bias: a missed refusal costs one runaway a person can
+# kill, a wrong one costs every session that writes a heredoc.
+cmd_bare="$(printf '%s' "$cmd" | awk '
+    BEGIN { tag = "" }
+    tag != "" {
+        line = $0
+        sub(/[[:space:]]+$/, "", line)
+        sub(/^[[:space:]]+/, "", line)
+        if (line == tag) { tag = "" }
+        next
+    }
+    {
+        if (match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*["'"'"']?/)) {
+            t = substr($0, RSTART, RLENGTH)
+            sub(/^<<-?[[:space:]]*/, "", t)
+            gsub(/["'"'"']/, "", t)
+            tag = t
+        }
+        print
+    }
+' 2>/dev/null)"
+
+cmd_bare="$(printf '%s' "$cmd_bare" \
+    | sed -E "s/-c[[:space:]]+'([^']*)'/-c \1/g; s/-c[[:space:]]+\"([^\"]*)\"/-c \1/g" 2>/dev/null \
+    | sed -E "s/'[^']*'|\"[^\"]*\"//g" 2>/dev/null)"
 
 emit_deny() {
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
@@ -106,15 +148,26 @@ emit_nudge() {
     exit 0
 }
 
-# A `timeout` that is a COMMAND, not the word inside someone's prose.
+# An explicit wall-clock bound the author already wrote. Two spellings:
+# `timeout N …` as a command, and a LEADING `sleep N`, which is not a command
+# that might hang but a timer that is already the bound — `sleep 600; echo done`
+# in the background ends in ten minutes by construction. Measured: 12 of 161
+# corpus refusals were exactly that. A `sleep` inside a loop body is not leading
+# and does not count, so `while true; do sleep 1; done` stays refused.
 bounded_by_timeout() {
-    [[ "$cmd_bare" =~ (^|[[:space:]|\;\&\(])timeout[[:space:]] ]]
+    [[ "$cmd_bare" =~ (^|[[:space:]|\;\&\(])timeout[[:space:]] ]] && return 0
+    [[ "$cmd_bare" =~ ^[[:space:]]*sleep[[:space:]]+[0-9] ]] && return 0
+    return 1
 }
 
 # --- A: a loop with nothing to stop it ---------------------------------------
 # Only `while` / `until`: a `for … in <list>` is bounded by the list it walks,
 # so it is not a lifetime question at all.
-if [[ "$cmd_bare" =~ (^|[[:space:]\;\&\(])(while|until)[[:space:]] ]] && [[ "$cmd_bare" == *do* ]]; then
+# `do` as a WORD. The substring spelling (`== *do*`) matched `docs`, `done`,
+# `download` and `shadow`, which is how a python heredoc mentioning a docs path
+# read as a shell loop.
+if [[ "$cmd_bare" =~ (^|[[:space:]\;\&\(])(while|until)[[:space:]] ]] \
+    && [[ "$cmd_bare" =~ (^|[[:space:]\;\&])do([[:space:]\;\&]|$) ]]; then
     bounded=""
     # Three ways an author can already have bounded it. Each is a FALSE-NEGATIVE
     # bias on purpose: a loop wrongly allowed costs one runaway a person can
