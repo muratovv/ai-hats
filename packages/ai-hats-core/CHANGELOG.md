@@ -5,6 +5,13 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `ai_hats_core.lazy.lazy_facade` — the `__getattr__`/`__dir__` pair for a package
+  that binds its exports on first use. Written by hand in six `__init__` first
+  (HATS-1869), which grew two conventions for the same table and a `__dir__`
+  missing from four of them.
+
 ### Changed
 
 - The facade binds its exports lazily (PEP 562) — the dependency set is

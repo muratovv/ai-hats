@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ai_hats_core.lazy import lazy_facade
+
 if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     from .contract import (
         MetricsSink,  # noqa: F401
@@ -51,20 +53,5 @@ _HOMES = {
 }
 
 
-def __getattr__(name: str) -> object:
-    home = _HOMES.get(name)
-    if home is None:
-        # Not ours: let the import system try `surfaces.<name>` as a submodule.
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    from importlib import import_module
-
-    value = getattr(import_module(home, __name__), _ALIASES.get(name, name))
-    globals()[name] = value  # bound once; later lookups skip __getattr__
-    return value
-
-
-def __dir__() -> list[str]:
-    return sorted({*globals(), *_HOMES})
-
-
 __all__ = sorted(_HOMES)
+__getattr__, __dir__ = lazy_facade(globals(), _HOMES, aliases=_ALIASES)
