@@ -1,6 +1,21 @@
-"""Centralized environment variable access and public contract across ai-hats (HATS-1414).
+"""The home for an environment variable name the ``ai_hats`` package reads (HATS-1414).
 
-Single source of truth for reading all ``os.environ`` variables.
+A name spelled here and imported is a name a reader can find: one edit renames
+it, and this file is the register to scan. It is the first place a new one goes.
+
+The claim used to be "all ``os.environ`` variables", which no edit could have
+made true — so it said nothing, and a plan item asking where to register
+``AI_HATS_HOOK_TIMEOUT_S`` was closed as having no answer while this file sat
+here (HATS-1858 §23, HATS-1868). What holds instead:
+
+* A **sibling distribution** — ``ai-hats-rack``, ``ai-hats-core``,
+  ``ai-hats-observe``, ``ai-hats-library`` — does not depend on ``ai_hats`` and
+  cannot import this module. Its names live with it, and no rule here reaches
+  them.
+* Inside this package, what is spelled **elsewhere** is a closed list, held by
+  ``tests/test_env_homes.py``: it refuses a literal in any module the list does
+  not already name. Growing the sprawl is now an edit somebody reviews.
+
 Dependencies are restricted to standard library (``os``) to maintain absolute
 leaf module purity (contract guarded by ``test_import_hygiene.py``).
 """
@@ -40,6 +55,23 @@ ENV_MERGED_SHA = "AI_HATS_MERGED_SHA"
 #: The call envelope — per-CALL facts as one versioned JSON object,
 #: BESIDE the scalars above, which shell keeps reading.
 ENV_HOOK_CALL = "AI_HATS_HOOK_CALL"
+
+# A budget and a hatch per gate channel — the tool-call one, then git's. Side by
+# side because they ARE one pair spelled twice, and a reader comparing them had
+# to open two dispatchers to see that.
+ENV_HOOK_TIMEOUT_S = "AI_HATS_HOOK_TIMEOUT_S"
+ENV_GATE_BROKEN_ACK = "AI_HATS_GATE_BROKEN_ACK"
+ENV_GIT_HOOK_TIMEOUT_S = "AI_HATS_GIT_HOOK_TIMEOUT_S"
+ENV_GIT_GATE_BROKEN_ACK = "AI_HATS_GIT_GATE_BROKEN_ACK"
+
+#: The event a hook was called for, handed to the child.
+ENV_HOOK_EVENT = "AI_HATS_HOOK_EVENT"
+#: Handed to a surface whose config asset is copied verbatim, so the number in
+#: it can still track the tool-call budget above.
+ENV_HOOK_SURFACE_TIMEOUT_MS = "AI_HATS_HOOK_SURFACE_TIMEOUT_MS"
+#: What the tool-call budget was called while only one surface offered it. Still
+#: honoured, and saying so needs the old name to survive somewhere.
+ENV_RETIRED_AGY_HOOK_TIMEOUT_S = "AI_HATS_AGY_HOOK_TIMEOUT_S"
 
 
 def _read(name: str) -> str | None:
@@ -146,6 +178,13 @@ __all__ = [
     "ENV_TASKS_DIR",
     "ENV_MERGED_SHA",
     "ENV_HOOK_CALL",
+    "ENV_HOOK_TIMEOUT_S",
+    "ENV_GATE_BROKEN_ACK",
+    "ENV_GIT_HOOK_TIMEOUT_S",
+    "ENV_GIT_GATE_BROKEN_ACK",
+    "ENV_HOOK_EVENT",
+    "ENV_HOOK_SURFACE_TIMEOUT_MS",
+    "ENV_RETIRED_AGY_HOOK_TIMEOUT_S",
     "user_home_override",
     "ai_hats_dir_override",
     "project_dir_pin",

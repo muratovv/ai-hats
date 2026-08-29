@@ -45,6 +45,12 @@ def _shipped_matchers() -> dict[str, list[str]]:
     return found
 
 
+def _claude_call(native: str) -> HookCall:
+    """No adapter: the harness already speaks the vocabulary hooks are written
+    in, which is why claude's own table is empty."""
+    return HookCall({"tool_name": native, "tool_input": {"command": "true"}}, native)
+
+
 def _agy_call(native: str) -> HookCall:
     payload = {"toolCall": {"name": native, "args": {}}}
     return HookCall(agy_adapter.to_claude_payload(payload, "PreToolUse"), native)
@@ -74,6 +80,7 @@ def _opencode_call(native: str) -> HookCall:
 #: evidence about the surface rather than about the profile table.
 LIVE = {
     "agy": _agy_call,
+    "claude": _claude_call,
     "cline": _cline_call,
     "codex": _codex_call,
     "opencode": _opencode_call,
@@ -83,6 +90,7 @@ LIVE = {
 #: codex's is from its own rollout logs; opencode's from its installed binary.
 TERMINAL = {
     "agy": ("run_command", "execute"),
+    "claude": ("Bash",),
     "cline": ("bash", "execute_command", "run_commands"),
     "codex": ("exec", "shell", "local_shell"),
     "opencode": ("bash",),
@@ -91,6 +99,7 @@ TERMINAL = {
 #: What each surface calls the tools an `Edit|Write|MultiEdit` matcher guards.
 FILE_MUTATION = {
     "agy": ("Create", "write_to_file", "replace_file_content", "multi_replace_file_content"),
+    "claude": ("Edit", "Write", "MultiEdit"),
     "cline": ("write_to_file", "replace_in_file", "editor", "apply_patch"),
     "codex": ("apply_patch",),
     "opencode": ("edit", "write", "patch"),
@@ -155,6 +164,44 @@ def test_positive_control_a_matcher_matches_its_own_literal_name(
 def test_negative_control_an_unrelated_tool_does_not_match(surface: str) -> None:
     """The other control: these matchers are not simply matching everything."""
     assert not _fires(surface, "Bash", "read_file_contents_somehow")
+
+
+class TestAnEmptyToolTableIsRightByCheck:
+    """claude's ``tool_names`` is empty, and the tests above cannot see it.
+
+    Every one of them iterates a surface's own row, so on an empty row they
+    iterate nothing and pass by not looking — which is exactly how opencode's
+    missing argument row survived until HATS-1858. These drive the two readers
+    directly instead.
+    """
+
+    def test_the_row_is_empty_on_purpose(self) -> None:
+        """Not an oversight to be filled in later: the matcher vocabulary IS
+        claude's vocabulary, so a table here would map names onto themselves."""
+        assert profiles.CLAUDE.tool_names == {}
+        assert profiles.CLAUDE.arg_names == {}
+
+    def test_the_matcher_reader_falls_back_to_the_native_name(self) -> None:
+        assert profiles.CLAUDE.matcher_names("Bash") == ("Bash",)
+        assert profiles.CLAUDE.matcher_names("EnterWorktree") == ("EnterWorktree",)
+
+    def test_the_payload_reader_falls_back_to_the_same_name(self) -> None:
+        """The pair that must agree: a payload spelling a name the matcher would
+        reject hands the hook a call its own row said it wanted."""
+        for native in ("Bash", "Edit", "EnterWorktree"):
+            assert profiles.CLAUDE.spoken_name(native) in profiles.CLAUDE.matcher_names(native)
+
+    def test_the_claude_only_matcher_still_reaches_its_tool(self) -> None:
+        """`EnterWorktree` is deliverable on this surface alone, and the harness
+        matched it until now. Under one dispatcher entry the matching moves
+        here, and `worktree-isolation` is what rides on it."""
+        assert matches(profiles.CLAUDE, "EnterWorktree", "EnterWorktree")
+
+    def test_the_negative_control_an_empty_row_does_not_match_everything(self) -> None:
+        """An empty table must not become a matcher that says yes to all — the
+        fallback is a NAME, not a wildcard."""
+        assert not matches(profiles.CLAUDE, "Edit|Write|MultiEdit", "Bash")
+        assert not matches(profiles.CLAUDE, "EnterWorktree", "Bash")
 
 
 def test_every_shipped_matcher_is_covered_by_this_test() -> None:

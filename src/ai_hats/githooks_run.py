@@ -17,7 +17,14 @@ from pathlib import Path
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
 
-from .env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
+from .env import (
+    AI_HATS_PROJECT_DIR_ENV,
+    ENV_AI_HATS_DIR,
+    ENV_AI_HATS_VENV,
+    ENV_GIT_GATE_BROKEN_ACK,
+    ENV_HOOK_EVENT,
+    ENV_GIT_HOOK_TIMEOUT_S,
+)
 from .hook_exec import HookOutcomeKind, HookRun, run_hook
 from .session_identity import IDENTITY_ENV_KEYS, drop_identity
 
@@ -42,12 +49,12 @@ GIT_POINT_PREFIX = "git:"
 #: the bound exists for the caller who cannot press Ctrl-C — CI, cron, an agent
 #: session. Overridable per project.
 GIT_HOOK_TIMEOUT_S: float = 900.0
-GIT_HOOK_TIMEOUT_ENV = "AI_HATS_GIT_HOOK_TIMEOUT_S"
+GIT_HOOK_TIMEOUT_ENV = ENV_GIT_HOOK_TIMEOUT_S
 
 #: Opens a materialization refusal. Named to match the established flag shape
 #: (`ACK_FLAG_RE` in tests/e2e/_helpers/hook_chain.py) so the deny-names-its-hatch
 #: invariant recognises it.
-GATE_BROKEN_ACK_ENV = "AI_HATS_GIT_GATE_BROKEN_ACK"
+GATE_BROKEN_ACK_ENV = ENV_GIT_GATE_BROKEN_ACK
 
 #: What a refusal with no exit status of its own returns to git.
 GATE_BROKEN_EXIT = 1
@@ -196,7 +203,7 @@ def record_fail_open(
                 "--hook",
                 hook,
             ],
-            env={**os.environ, "AI_HATS_HOOK_EVENT": event},
+            env={**os.environ, ENV_HOOK_EVENT: event},
             # The writer resolves `--git-common-dir` from where it stands, so the
             # project must be TOLD, not inferred: inferring put a test's synthetic
             # skips in the maintainer's own audit journal (HATS-1686).
@@ -283,7 +290,7 @@ def run_chain(
         return 0
 
     # A gate's own $0 is its library path, so it cannot recover the event from it.
-    extra = {"AI_HATS_HOOK_EVENT": event}
+    extra = {ENV_HOOK_EVENT: event}
     if journal is not None:
         # The gates' relative fallback is only correct inside the builtin
         # library; the resolved path is what makes it work everywhere.

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Mapping
 
@@ -14,7 +13,6 @@ from ai_hats_observe.trace import ENV_SESSION_ID
 
 from ..hook_channel import (
     ChainDecision,
-    Dialect,
     HookEvent,
     HookRow,
     project_dir_from,
@@ -139,24 +137,6 @@ def _rows(manifest: dict, event: HookEvent) -> list[HookRow]:
     return rows
 
 
-def _speaks(native_event: str) -> Dialect:
-    """What codex can utter on THIS arrival.
-
-    ``can_ask`` is true of the surface only where it was already asking; the
-    dialect has no event axis, so the narrowing happens here — as data handed to
-    the reduction, rather than as a branch of policy inside the emit, which is
-    where it lived while the reader lost both the channel's wording and its
-    hatch.
-    """  # comment-length: allow — where an event-shaped capability is narrowed
-    if native_event == "PermissionRequest":
-        # It is the one arrival codex asks on, and the one whose reply is a
-        # `decision` object with no slot for advice — so the same narrowing runs
-        # both ways, and the channel drops the nudges where that is accounted
-        # for rather than the emit dropping them where nothing is.
-        return replace(PROFILE.speaks, can_carry_nudges=False)
-    return replace(PROFILE.speaks, can_ask=False, can_ask_with_ticket=False)
-
-
 def _emit(verdict, native_event: str) -> int:
     relay_stderr(verdict)
     advice = "\n".join(n.text for n in verdict.nudges)
@@ -231,7 +211,7 @@ def dispatch_hook(*, stdin=None) -> int:
         return _undeliverable(str(exc), native_event, event)
 
     verdict = reduce_to(
-        _speaks(native_event),
+        PROFILE.dialect(native_event),
         run_chain(
             PROFILE,
             event=event,

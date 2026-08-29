@@ -15,7 +15,8 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass, replace
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -23,7 +24,13 @@ from typing import Callable, Mapping, Sequence
 from ai_hats_core.deadline import Deadline
 
 from ..constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
-from ..env import AI_HATS_PROJECT_DIR_ENV
+from ..env import (
+    AI_HATS_PROJECT_DIR_ENV,
+    ENV_GATE_BROKEN_ACK,
+    ENV_HOOK_SURFACE_TIMEOUT_MS,
+    ENV_HOOK_TIMEOUT_S,
+    ENV_RETIRED_AGY_HOOK_TIMEOUT_S,
+)
 from ..hook_exec import HookOutcomeKind, HookRun, HookVerdict, run_hook
 
 #: The three matcher-vocabulary names every shipped file-mutation row treats as
@@ -118,7 +125,18 @@ class SurfaceProfile:
     #: only the manifest knows, which is the one honest answer for a surface
     #: whose mirror lives outside the cache entirely.
     skills_subpath: tuple[str, ...] | None
+    #: What this surface can utter on an ordinary arrival.
     speaks: Dialect
+    #: Arrivals whose dialect is NARROWER than the row above, by native name.
+    #: An event axis, because one surface has one: codex may put a question only
+    #: on `PermissionRequest`, and the reply there has no slot for advice.
+    speaks_on: Mapping[str, Dialect] = field(default_factory=dict)
+    #: The status a refusal ai-hats IMPOSED exits with. Zero on a surface that
+    #: acts on the document alone; codex reads 2 as its refusal, agy 1.
+    imposed_status: int = 0
+    #: Whether a refusal a HOOK uttered carries the child's own exit code out.
+    #: True on the one surface whose protocol IS the status (agy, HATS-1598).
+    forwards_hook_status: bool = False
 
     def matcher_names(self, native_tool: str) -> tuple[str, ...]:
         """Every name a matcher may use for ``native_tool`` on this surface.
@@ -137,6 +155,14 @@ class SurfaceProfile:
         a hook would be handed a call its own matcher rejects.
         """
         return self.tool_names.get(native_tool, (native_tool,))[0]
+
+    def dialect(self, native_event: str) -> Dialect:
+        """What this surface can utter on ``native_event``.
+
+        Known before any hook arrives, so it is read from the row rather than
+        decided while one is being judged.
+        """
+        return self.speaks_on.get(native_event, self.speaks)
 
     def manifest_path(self, cache_dir: Path) -> Path:
         return cache_dir.joinpath(*self.manifest_subpath, "hooks.json")
@@ -316,12 +342,12 @@ class ChainVerdict:
 #: timeout: the surface's own bound is the ceiling above it, and it must be the
 #: larger of the two or the dispatcher is killed before it can say anything.
 HOOK_TIMEOUT_S: float = 60.0
-HOOK_TIMEOUT_ENV = "AI_HATS_HOOK_TIMEOUT_S"
+HOOK_TIMEOUT_ENV = ENV_HOOK_TIMEOUT_S
 
 #: The name this bound had while only one channel of four offered it. Honoured
 #: so a config that already sets it does not stop working in silence, which is
 #: the failure mode this whole channel exists to remove.
-RETIRED_TIMEOUT_ENVS = ("AI_HATS_AGY_HOOK_TIMEOUT_S",)
+RETIRED_TIMEOUT_ENVS = (ENV_RETIRED_AGY_HOOK_TIMEOUT_S,)
 
 #: Said once per process, which is once per tool call — the dispatcher is a
 #: fresh process each time. Twice a call, from both resolvers, was noise.
@@ -331,12 +357,8 @@ _RENAME_SAID: set[str] = set()
 #: everything still reports instead of dying mid-sentence.
 SURFACE_TIMEOUT_MARGIN_S: float = 30.0
 
-#: Where a surface whose config is copied verbatim reads :func:`surface_timeout`
-#: from. A number written into such an asset cannot track the chain's budget.
-ENV_HOOK_SURFACE_TIMEOUT_MS = "AI_HATS_HOOK_SURFACE_TIMEOUT_MS"
-
 #: What a hook's own gate cannot be reopened without.
-GATE_BROKEN_ACK_ENV = "AI_HATS_GATE_BROKEN_ACK"
+GATE_BROKEN_ACK_ENV = ENV_GATE_BROKEN_ACK
 
 #: A reply must parse WHOLE, and the primitive returns a tail — which cuts a
 #: JSON document's head off. Set far above the largest shipped reply measured.
@@ -518,6 +540,144 @@ def undeliverable(
     )
 
 
+#: How many gates may be in flight at once. The trade-off, both ways:
+#:
+#: * **Raising it** buys wall time only while jobs exceed it. A surface starts
+#:   every matched hook together (measured on claude 2.1.247), so a cap below
+#:   the job count turns max-time back into sum-time, in steps of
+#:   ``ceil(jobs / this)``.
+#: * **Lowering it** bounds the spawn. A job is a subprocess and the count is
+#:   rows x payloads, so a surface that fans one call into several (cline per
+#:   command, codex per patched file) multiplies it — unbounded, a wide fan-out
+#:   is a fork storm on every tool call.
+#:
+#: Eight clears the shipped set with room: three of the eight shipped gates
+#: match the busiest single call, so the cap binds only past a three-way
+#: fan-out. Not configurable until a surface is measured needing another number.
+HOOK_PARALLELISM = 8
+
+
+def _matched(
+    profile: SurfaceProfile, rows: Sequence[HookRow], calls: Sequence[HookCall]
+) -> list[tuple[HookCall, HookRow]]:
+    """Every (call, row) pair this chain owes a run, in the order it reports them."""
+    return [
+        (call, row) for call in calls for row in rows if matches(profile, row.matcher, call.tool)
+    ]
+
+
+def _run_matched(
+    jobs: Sequence[tuple[HookCall, HookRow]],
+    *,
+    profile: SurfaceProfile,
+    event: HookEvent,
+    budget: float,
+    deadline: Deadline,
+    project_dir: Path,
+    log_dir: Path | None,
+) -> list[HookRun]:
+    """Run every matched gate, together, and return their outcomes in job order.
+
+    Order is the reporting order, not the finishing order: what the chain
+    CONCLUDES must not depend on which gate happened to answer first.
+    """
+
+    def one(indexed: tuple[int, tuple[HookCall, HookRow]]) -> HookRun:
+        position, (call, row) = indexed
+        return run_hook(
+            row.command,
+            point=f"{profile.label}:{event.value}",
+            budget=budget,
+            deadline=deadline,
+            project_dir=project_dir,
+            stdin_payload=json.dumps(call.payload).encode("utf-8"),
+            tail_bytes=REPLY_BYTES,
+            log_path=(
+                None
+                if log_dir is None
+                # Position, not just the command: one row runs once per payload,
+                # and a shared path is two writers truncating each other.
+                else log_dir / f"{event.value}-{position}-{row.command.name}.log"
+            ),
+        )
+
+    if len(jobs) < 2:
+        return [one(job) for job in enumerate(jobs)]
+    with ThreadPoolExecutor(max_workers=min(len(jobs), HOOK_PARALLELISM)) as pool:
+        return list(pool.map(one, enumerate(jobs)))
+
+
+def _concluded(
+    jobs: Sequence[tuple[HookCall, HookRow]],
+    runs: Sequence[HookRun],
+    *,
+    event: HookEvent,
+    environ: Mapping[str, str],
+    project_dir: Path,
+) -> ChainVerdict:
+    """What the chain concluded, walked in row order over gates that ALL ran.
+
+    The walk stops at the first gate that objected, so the verdict is the one
+    the sequential chain reported. What it does NOT undo is that the gates
+    behind it ran: their side effects happened, and their stderr is carried.
+    """
+    # Every gate's, decider's and the ones behind it included: they ran, and an
+    # allowing gate's note — the bypass journal's own "NOT RECORDED" among them —
+    # has no other trace at all.
+    said = "".join(run.stderr for run in runs)
+    nudges: list[Nudge] = []
+    for (_, row), run in zip(jobs, runs):
+        imposed = _imposed(run, row, event)
+        if imposed is not None:
+            skipped = _skipped_by_hatch(run, row, environ)
+            if skipped is not None:
+                record_gate_skipped(skipped, hook=row.tag, project_dir=project_dir)
+                continue
+            return replace(imposed, nudges=tuple(nudges), stderr=said)
+        try:
+            reply = parse_reply(
+                run.said,
+                exit_code=run.exit_code if run.exit_code is not None else 0,
+                hook=row.tag,
+                stderr=run.stderr,
+                truncated=run.truncated,
+            )
+        except ReplyUnreadable as exc:
+            return ChainVerdict(
+                decision=ChainDecision.DENY,
+                reason=f"{row.tag}: {exc}",
+                hook=row.tag,
+                nudges=tuple(nudges),
+                event=event,
+                stderr=said,
+                hatch_env=GATE_BROKEN_ACK_ENV,
+            )
+        if reply.nudge is not None and reply.nudge not in nudges:
+            # A surface fans one call into several payloads (cline per
+            # command, codex per patched file); the hook still said it once.
+            nudges.append(reply.nudge)
+        if reply.decision in (ChainDecision.DENY, ChainDecision.ASK):
+            return ChainVerdict(
+                decision=reply.decision,
+                reason=reply.reason or f"blocked by {row.tag}",
+                hook=row.tag,
+                nudges=tuple(nudges),
+                updated_input=reply.updated_input,
+                # The dispatcher's, never the child's: four shipped scripts
+                # hardcode `PreToolUse` in their reply, and letting that
+                # rename the event steers the reductions below it.
+                event=event,
+                stderr=said,
+                exit_code=run.exit_code,
+            )
+    return ChainVerdict(
+        decision=ChainDecision.ALLOW,
+        nudges=tuple(nudges),
+        event=event,
+        stderr=said,
+    )
+
+
 def run_chain(
     profile: SurfaceProfile,
     *,
@@ -530,87 +690,47 @@ def run_chain(
 ) -> ChainVerdict:
     """Run every row this call matches and return what the chain concluded.
 
+    The matched gates run TOGETHER and the conclusion is drawn afterwards, in
+    row order: the surface runs its own hooks that way, and a chain answering in
+    sum-time cannot stay inside the budget the surface allowed it. What changes
+    is which gates RUN — every matched one now does, so a gate with a side
+    effect behind an objector fires where it used to be skipped — not what the
+    chain says, which is still the first objector in row order.
+
     One deadline covers the whole call, so a chain cannot outlive the bound its
     surface gave the dispatcher; each hook draws its budget through it and a
     chain with nothing left refuses, naming the variable that widens it.
-    """
+    """  # comment-length: allow — what parallelism changes and what it does not is the contract
     env = environ if environ is not None else os.environ
     budget = resolve_hook_timeout(environ)
     deadline = Deadline.without_lock(budget, why=f"{profile.label} {event.value}")
-    nudges: list[Nudge] = []
-    # Every hook's, not just the decider's: an ALLOWING hook is the one whose
-    # stderr is its only trace, and the bypass journal's own failure notice
-    # arrives exactly there.
-    complaints: list[str] = []
-    for call in calls:
-        payload = call.payload
-        for row in rows:
-            if not matches(profile, row.matcher, call.tool):
-                continue
-            run = run_hook(
-                row.command,
-                point=f"{profile.label}:{event.value}",
-                budget=budget,
-                deadline=deadline,
-                project_dir=project_dir,
-                stdin_payload=json.dumps(payload).encode("utf-8"),
-                tail_bytes=REPLY_BYTES,
-                log_path=(
-                    None if log_dir is None else log_dir / f"{event.value}-{row.command.name}.log"
-                ),
-            )
-            if run.stderr:
-                complaints.append(run.stderr)
-            said = "".join(complaints)
-            imposed = _imposed(run, row, event)
-            if imposed is not None:
-                skipped = _skipped_by_hatch(run, row, env)
-                if skipped is not None:
-                    record_gate_skipped(skipped, hook=row.tag, project_dir=project_dir)
-                    continue
-                return replace(imposed, nudges=tuple(nudges), stderr=said)
-            try:
-                reply = parse_reply(
-                    run.said,
-                    exit_code=run.exit_code if run.exit_code is not None else 0,
-                    hook=row.tag,
-                    stderr=run.stderr,
-                    truncated=run.truncated,
-                )
-            except ReplyUnreadable as exc:
-                return ChainVerdict(
-                    decision=ChainDecision.DENY,
-                    reason=f"{row.tag}: {exc}",
-                    hook=row.tag,
-                    nudges=tuple(nudges),
-                    event=event,
-                    stderr=said,
-                    hatch_env=GATE_BROKEN_ACK_ENV,
-                )
-            if reply.nudge is not None and reply.nudge not in nudges:
-                # A surface fans one call into several payloads (cline per
-                # command, codex per patched file); the hook still said it once.
-                nudges.append(reply.nudge)
-            if reply.decision in (ChainDecision.DENY, ChainDecision.ASK):
-                return ChainVerdict(
-                    decision=reply.decision,
-                    reason=reply.reason or f"blocked by {row.tag}",
-                    hook=row.tag,
-                    nudges=tuple(nudges),
-                    updated_input=reply.updated_input,
-                    # The dispatcher's, never the child's: four shipped scripts
-                    # hardcode `PreToolUse` in their reply, and letting that
-                    # rename the event steers the reductions below it.
-                    event=event,
-                    stderr=said,
-                    exit_code=run.exit_code,
-                )
-    return ChainVerdict(
-        decision=ChainDecision.ALLOW,
-        nudges=tuple(nudges),
+    jobs = _matched(profile, rows, calls)
+    runs = _run_matched(
+        jobs,
+        profile=profile,
         event=event,
-        stderr="".join(complaints),
+        budget=budget,
+        deadline=deadline,
+        project_dir=project_dir,
+        log_dir=log_dir,
     )
+    return _concluded(jobs, runs, event=event, environ=env, project_dir=project_dir)
+
+
+def status_for(profile: SurfaceProfile, verdict: ChainVerdict) -> int:
+    """The exit status this verdict earns on this surface.
+
+    The document is the answer on every surface; a status is a projection of it
+    that two of them additionally act on. Which status is a row of the profile,
+    so the same verdict cannot mean one thing here and another there.
+    """
+    if verdict.decision is not ChainDecision.DENY:
+        return 0
+    if profile.forwards_hook_status and verdict.exit_code not in (None, 0):
+        return verdict.exit_code or 0
+    # Only what ai-hats imposed: a refusal a hook UTTERED is its author's, and
+    # inventing a status for it would overrule them.
+    return profile.imposed_status if verdict.hatch_env else 0
 
 
 def relay_stderr(verdict: ChainVerdict) -> None:
@@ -795,6 +915,7 @@ __all__ = [
     "native_arg_keys",
     "speak_args",
     "run_chain",
+    "status_for",
     "resolve_hook_timeout",
     "SURFACE_TIMEOUT_MARGIN_S",
     "ENV_HOOK_SURFACE_TIMEOUT_MS",
@@ -802,6 +923,7 @@ __all__ = [
     "HookCall",
     "HookRow",
     "GATE_BROKEN_ACK_ENV",
+    "HOOK_PARALLELISM",
     "HOOK_TIMEOUT_S",
     "HOOK_TIMEOUT_ENV",
     "FILE_MUTATION_NAMES",

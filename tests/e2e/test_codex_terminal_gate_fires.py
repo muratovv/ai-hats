@@ -112,21 +112,26 @@ def test_a_bash_matcher_reaches_the_name_codex_actually_sends(codex_chain, nativ
     spoken = json.loads(done.stdout)["hookSpecificOutput"]
     assert spoken["permissionDecision"] == "deny", done.stdout
     assert OFF_LIMITS in spoken["permissionDecisionReason"]
-    assert _fired(codex_chain) == ["audit", "guard"], (
-        f"the composed chain did not run in order; fired: {_fired(codex_chain)}"
+    assert sorted(_fired(codex_chain)) == ["audit", "guard"], (
+        f"a composed gate did not run at all; fired: {_fired(codex_chain)}"
     )
 
 
 def test_the_second_hook_overrides_the_first(codex_chain) -> None:
     """The whole reason this drives a chain: the audit allowed, and the verdict
     that reached codex is still the guard's."""
-    run_codex_dispatch(
+    done = run_codex_dispatch(
         codex_chain.project,
         codex_chain.env,
         tool="exec",
         tool_input={"command": OFF_LIMITS},
     )
-    assert _fired(codex_chain) == ["audit", "guard"]
+    assert sorted(_fired(codex_chain)) == ["audit", "guard"]
+    # Which of the two DECIDED is the assertion that survived parallelism —
+    # they run together now, so the ledger's order stopped being evidence.
+    assert (
+        OFF_LIMITS in json.loads(done.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    ), done.stdout
 
 
 def test_the_negative_control_an_allowed_command_passes(codex_chain) -> None:
@@ -140,4 +145,4 @@ def test_the_negative_control_an_allowed_command_passes(codex_chain) -> None:
     )
 
     assert "permissionDecision" not in done.stdout, done.stdout
-    assert _fired(codex_chain) == ["audit", "guard"]
+    assert sorted(_fired(codex_chain)) == ["audit", "guard"]
