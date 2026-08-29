@@ -32,11 +32,11 @@ Lifecycle diagram — see [2].
 
 One of the three tiers the shipped library is split into. All three load at every session, lowest priority first — `core` → `usage` → `ai-hats-dev` — and a later layer wins a name it shares with an earlier one; your own roots (`~/.ai-hats/`, `<project>/libraries/`) sit above all three by the same rule.
 
-| Layer          | Holds                                                                             | Required for a library root |
-| -------------- | --------------------------------------------------------------------------------- | --------------------------- |
-| `core`         | engine fundament — without it `init` / `self init` / reflect pipelines do not run | yes                         |
-| `usage`        | the opinionated catalog a consuming project picks from                            | yes                         |
-| `ai-hats-dev`  | what the ai-hats repo wears to develop itself; no use to a consumer               | no (HATS-1834)              |
+| Layer         | Holds                                                                             | Required for a library root |
+| ------------- | --------------------------------------------------------------------------------- | --------------------------- |
+| `core`        | engine fundament — without it `init` / `self init` / reflect pipelines do not run | yes                         |
+| `usage`       | the opinionated catalog a consuming project picks from                            | yes                         |
+| `ai-hats-dev` | what the ai-hats repo wears to develop itself; no use to a consumer               | no (HATS-1834)              |
 
 The layer is a property of the **component**, not of the bundle composing it: resolution is name-based across all roots, so a trait in one layer composing a skill in another is ordinary. The decision tree for a new component lives in `CONTRIBUTING.md`; the engine's own list is `LIBRARY_LAYERS` in `src/ai_hats/paths/constants.py`. Override precedence — see [9].
 
@@ -334,6 +334,16 @@ How a composed runtime hook reaches an agent's tool call. The sibling of the git
 - **Delivery refusal** — a gate ai-hats could not DELIVER refuses the call and names the way past it, rather than passing it with a line on stderr. What unites the cases is not one verdict class but the fact behind it: no verdict was ever formed. It happens at two levels — one hook that would not start, and a manifest that never resolved — and both go through one constructor so all four surfaces answer the same way. A gate that DID run and refused is its author's verdict and carries no hatch of ours.
 - **`AI_HATS_HOOK_TIMEOUT_S`** — the budget for the whole chain of one tool call, default 60 s, drawn through one deadline so a slow gate cannot quietly starve the ones behind it. Where a surface imposes an outer bound on the dispatcher at all, it is derived from this with a margin rather than written by hand: bounding both at the same number is what made codex's every timeout branch unreachable and left a killed chain with no verdict. Two surfaces have one — codex writes it into its TOML, opencode is handed it through `AI_HATS_HOOK_SURFACE_TIMEOUT_MS` because its plugin is copied verbatim; agy and cline impose none, so their dispatcher is bounded from the inside only, which is the direction that leaves it alive to answer. `AI_HATS_AGY_HOOK_TIMEOUT_S` was this bound while only one surface of four offered it; it is still honoured and says so once per process.
 - **`AI_HATS_GATE_BROKEN_ACK`** — the delivery hatch for this channel, the sibling of `AI_HATS_GIT_GATE_BROKEN_ACK` and read the same way: beside the refusal it opens, so a deny always names a flag that works (HATS-1253 P4). It covers a gate that could not be MATERIALIZED — one hook that would not start, or a manifest that never resolved — and never a timeout, which has its own bound to raise, nor a refusal a hook itself uttered. Taking it is recorded on stderr and in the bypass journal; passing a gate is allowed, passing one silently is not. Withheld from sub-agents by shape: the hatch is a person's, not an agent's.
+
+## Command lifetime
+
+Nothing bounds how long a shell command launched on an agent's behalf stays alive (HATS-1873). The harness's own budget does not close the hole: a foreground Bash call that exceeds its timeout is *moved to the background*, not stopped, and `bounded_proc_shutdown` (`src/ai_hats/pty_shutdown.py`) reaps the provider's process group only when the session ENDS. Both are correct and neither fires in a long-lived session — which is the session a person is sitting in front of. Field evidence: three wait-loops, 21 h 25 m alive, 83 min of CPU between them, found by hand in `ps`.
+
+- **`command-lifetime`** — the core skill carrying the gate, and the reason it is not folded into `tool-call-hygiene`: that guard's contract states it never emits a `permissionDecision`, so a refusal cannot live there without contradicting the file's own header.
+- **Unbounded loop** — a `while` / `until` whose exit is not bounded by anything the guard can see: no `timeout` wrapper, no iteration counter. The predicate is structural, not lexical, and that is the point — `run_in_background` cannot stand in for it, because the flag describes what the agent ASKED for while auto-backgrounding happens after the hook has already answered. A guard built on the flag alone would pass its tests and still miss the incident that opened the card.
+- **`pre_bash_lifetime_guard.sh`** — the PreToolUse Bash hook. Refuses an unbounded loop and an unbounded background launch; NUDGES, never refuses, on a merely long-running command, because a deny that cries wolf on routine work gets switched off and a switched-off gate is worth less than the nudge it replaced.
+- **`AI_HATS_LIFETIME_ACK`** — the hatch for a deliberately long-lived process, spelled `_ACK` rather than `_OFF` by the same split the rest of the library keeps: `_OFF` silences advice (`AI_HATS_TOOL_HYGIENE_OFF`), `_ACK` answers a refusal (`AI_HATS_DESTRUCTIVE_ACK`). Like every PreToolUse hatch it must be in the environment that LAUNCHED the agent — the guard runs before the command it judges is a process, so a per-command prefix never reaches it.
+- **Why the guard does not supply the bound** — it could: `updatedInput` is a real capability here, and the consent ticket above already answers `ask` plus a rewrite in one reply. The guard still refuses instead of wrapping, so the number in `timeout N` is one the agent chose and exit 124 means a budget somebody set. A bound the agent never picked produces a 124 nobody can interpret.
 
 ## Safe-delete trash bin
 
