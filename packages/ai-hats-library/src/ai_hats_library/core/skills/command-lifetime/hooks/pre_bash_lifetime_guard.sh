@@ -148,14 +148,23 @@ emit_nudge() {
     exit 0
 }
 
-# An explicit wall-clock bound the author already wrote. Two spellings:
-# `timeout N …` as a command, and a LEADING `sleep N`, which is not a command
-# that might hang but a timer that is already the bound — `sleep 600; echo done`
-# in the background ends in ten minutes by construction. Measured: 12 of 161
-# corpus refusals were exactly that. A `sleep` inside a loop body is not leading
-# and does not count, so `while true; do sleep 1; done` stays refused.
-bounded_by_timeout() {
-    [[ "$cmd_bare" =~ (^|[[:space:]|\;\&\(])timeout[[:space:]] ]] && return 0
+# `timeout N …` as a command. The ONLY thing that bounds a loop: a loop's life
+# is decided by its own exit condition, and no other token in the line speaks to
+# that.
+has_timeout_wrapper() {
+    [[ "$cmd_bare" =~ (^|[[:space:]|\;\&\(])timeout[[:space:]] ]]
+}
+
+# What bounds a BACKGROUND launch — the wrapper above, or a LEADING `sleep N`,
+# which is not a command that might hang but a timer that is already the bound:
+# `sleep 600; echo done` ends in ten minutes by construction. Measured: 12 of
+# 161 corpus refusals were exactly that shape.
+#
+# Deliberately NOT reused by the loop check. `sleep 1; while true; do :; done`
+# has a leading sleep and no bound whatsoever; sharing one predicate between the
+# two checks let that through, silently.
+bounded_for_background() {
+    has_timeout_wrapper && return 0
     [[ "$cmd_bare" =~ ^[[:space:]]*sleep[[:space:]]+[0-9] ]] && return 0
     return 1
 }
@@ -173,7 +182,7 @@ if [[ "$cmd_bare" =~ (^|[[:space:]\;\&\(])(while|until)[[:space:]] ]] \
     # bias on purpose: a loop wrongly allowed costs one runaway a person can
     # kill, a loop wrongly refused costs every session that writes a legitimate
     # one, and the second is how a gate gets switched off.
-    if bounded_by_timeout; then
+    if has_timeout_wrapper; then
         bounded=1
     elif [[ "$cmd_bare" =~ (^|[[:space:]\;\&\(])(while|until)[[:space:]][^\;]*read([[:space:]]|$) ]]; then
         # `while read -r line; do … done < file` terminates at EOF. The most
@@ -194,7 +203,7 @@ fi
 # harness also backgrounds a foreground call that outlives its budget — after
 # this hook has already answered. So the flag catches the deliberate case and
 # check A catches the one that made the incident.
-if [[ "$background" == "true" ]] && ! bounded_by_timeout; then
+if [[ "$background" == "true" ]] && ! bounded_for_background; then
     emit_deny "unbounded background launch refused (command-lifetime): a background process is not bounded by the Bash tool's timeout — that budget bounds the CALL, and a foreground command which exceeds it is moved to the background rather than stopped. Nothing then reaps this until the session ends. Wrap it: 'timeout <seconds> <command>'. If it is meant to outlive the turn (a dev server you will stop yourself), ask the supervisor to set AI_HATS_LIFETIME_ACK=1 in the launching environment — a prefix on this command cannot reach the guard, which runs before the command is a process."
 fi
 
@@ -203,7 +212,7 @@ fi
 # that surface, and two nudges about one pytest run is how a channel gets
 # tuned out. Installs, fetches and image pulls are the ones that hang on a
 # network nobody is watching.
-if ! bounded_by_timeout; then
+if ! has_timeout_wrapper; then
     long_rx='(^|[[:space:]|\;\&\(])(pip[3]?[[:space:]]+install|uv[[:space:]]+pip[[:space:]]+install|npm[[:space:]]+(install|ci)|yarn[[:space:]]+install|pnpm[[:space:]]+install|brew[[:space:]]+(install|upgrade|update)|apt-get[[:space:]]+install|curl|wget|git[[:space:]]+clone|docker[[:space:]]+(build|pull))([[:space:]]|$)'
     if [[ "$cmd_bare" =~ $long_rx ]]; then
         emit_nudge "long-running command with no time bound (command-lifetime): installs and network fetches hang on a remote nobody is watching, and the Bash tool's budget backgrounds them rather than stopping them. Prefer 'timeout <seconds> <command>' — exit 124 then tells you the bound was hit instead of a stall you have to notice yourself. Advice only; nothing is blocked."

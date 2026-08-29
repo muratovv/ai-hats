@@ -183,6 +183,11 @@ def test_leading_sleep_is_already_the_bound(cmd):
     assert _run(cmd, background=True).stdout.strip() == ""
 
 
+def test_a_leading_sleep_does_not_excuse_a_following_loop():
+    """One predicate for both checks let this through: the sleep bounds nothing."""
+    assert _decision(_run("sleep 1; while true; do :; done")) == "deny"
+
+
 def test_sleep_inside_a_loop_body_is_not_a_bound():
     assert _decision(_run("while true; do sleep 1; done")) == "deny"
 
@@ -259,10 +264,34 @@ def test_hatch_relaxes_the_refusal():
     assert res.stdout.strip() == ""
 
 
-def test_taking_the_hatch_is_recorded():
-    """dev_rule_silent_fallback — passing a gate is allowed, passing it silently is not."""
-    res = _run(INCIDENT_CMD, env={"AI_HATS_LIFETIME_ACK": "1"})
-    assert "AI_HATS_LIFETIME_ACK" in res.stderr
+def test_taking_the_hatch_is_recorded(tmp_path):
+    """dev_rule_silent_fallback — passing a gate is allowed, passing it silently is not.
+
+    Asserts the journal FILE, not stderr: the stderr spelling is what the helper
+    prints when it cannot record, so asserting on it passes loudest exactly when
+    the journalling is broken.
+    """
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    journal = tmp_path / ".git" / "ai-hats" / "bypasses.jsonl"
+    res = subprocess.run(
+        ["bash", str(GUARD)],
+        input=json.dumps(
+            {
+                "hook_event_name": HOOK_PRE_TOOL_USE,
+                "tool_name": "Bash",
+                "tool_input": {"command": INCIDENT_CMD, "run_in_background": False},
+            }
+        ),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        cwd=tmp_path,
+        env={**os.environ, "AI_HATS_LIFETIME_ACK": "1"},
+    )
+    assert res.returncode == 0
+    assert res.stdout.strip() == "", "the hatch must relax the refusal"
+    assert journal.is_file(), f"no bypass journal written; stderr={res.stderr!r}"
+    assert "AI_HATS_LIFETIME_ACK" in journal.read_text()
 
 
 # --- ordinary commands stay silent -------------------------------------------
