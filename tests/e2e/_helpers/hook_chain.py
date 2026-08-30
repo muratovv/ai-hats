@@ -235,26 +235,56 @@ def build_session_settings(
     return session_cache_dir(project, session_id) / "settings.json"
 
 
-def pretooluse_hooks(settings: Path, tool: str = "Bash") -> list[str]:
-    """Hook commands wired onto ``tool`` in ``settings``, in recorded order.
+def composed_rows(settings: Path, event: str = "PreToolUse") -> list[dict]:
+    """The composed gate rows for ``event``, from the manifest beside ``settings``.
 
-    Returned verbatim, ``$CLAUDE_PROJECT_DIR`` unexpanded — the shell resolves
-    it exactly as the harness does, so a wiring regression surfaces here.
+    Since HATS-1874 `settings.json` holds one dispatcher entry per event and the
+    rows — command, matcher, tag — live here.
+    """
+    manifest = settings.parent / "hooks.json"
+    if not manifest.is_file():
+        raise AssertionError(f"no session hook manifest beside {settings}")
+    return json.loads(manifest.read_text()).get("hooks", {}).get(event, []) or []
+
+
+def composed_row(settings: Path, tag: str) -> dict:
+    """The one row carrying ``tag``, whichever event it is bound to."""
+    manifest = settings.parent / "hooks.json"
+    if not manifest.is_file():
+        raise AssertionError(f"no session hook manifest beside {settings}")
+    rows = [
+        row
+        for event_rows in json.loads(manifest.read_text()).get("hooks", {}).values()
+        for row in event_rows
+        if row.get("tag") == tag
+    ]
+    if len(rows) != 1:
+        raise AssertionError(f"expected one row tagged {tag}, got {rows}")
+    return rows[0]
+
+
+def pretooluse_hooks(settings: Path, tool: str = "Bash") -> list[str]:
+    """The composed gate commands applicable to ``tool``, in recorded order.
+
+    Read from the session hook manifest beside ``settings``: that is where the
+    composed rows live, while ``settings.json`` holds the dispatcher entry that
+    executes them (HATS-1874). Commands come back verbatim, so a wiring
+    regression still surfaces here.
     """
     if not settings.is_file():
         raise AssertionError(f"no materialized settings.json at {settings}")
+    manifest = settings.parent / "hooks.json"
+    if not manifest.is_file():
+        raise AssertionError(f"no session hook manifest beside {settings}")
 
-    data = json.loads(settings.read_text())
-    commands: list[str] = []
-    for entry in data.get("hooks", {}).get("PreToolUse", []) or []:
-        if not isinstance(entry, dict) or not _matches_tool(
-            str(entry.get("matcher", "") or ""), tool
-        ):
-            continue
-        for hook in entry.get("hooks", []) or []:
-            if isinstance(hook, dict) and hook.get("command"):
-                commands.append(str(hook["command"]))
-    return commands
+    rows = json.loads(manifest.read_text()).get("hooks", {}).get("PreToolUse", []) or []
+    return [
+        str(row["command"])
+        for row in rows
+        if isinstance(row, dict)
+        and row.get("command")
+        and _matches_tool(str(row.get("matcher", "") or ""), tool)
+    ]
 
 
 def _run_one(

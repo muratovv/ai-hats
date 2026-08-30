@@ -35,16 +35,40 @@ from ..hook_dispatch import Arrival, ManifestUnresolved, dispatch, manifest_rows
 from .profile import PROFILE
 
 
-#: What a `settings.json` entry runs. The guard is the point: an entry that
-#: cannot start the dispatcher must REFUSE (exit 2), because a gate the harness
-#: could not deliver is exactly what it otherwise waves through in silence.
-DISPATCHER_COMMAND = (
-    'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] '
+#: The tag that marks a settings entry as ours, per event.
+DISPATCHER_TAG = "ai-hats:claude-dispatcher"
+
+#: What an entry runs when there is no resident dispatcher to ask. Starting one
+#: is not optional: an entry that cannot must REFUSE (exit 2) and name the hatch
+#: — python honours the hatch everywhere else, and this branch never reaches it.
+_SPAWN = (
+    'if [ -n "$AI_HATS_SESSION_ID" ] '
     '&& [ -n "$AI_HATS_SESSION_CACHE_DIR" ] && [ -x "$AI_HATS_PYTHON" ]; '
-    'then exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.claude.channel; '
-    'else printf "%s\\n" "ai-hats-claude-hook: incomplete dispatcher environment" >&2; '
-    "exit 2; fi'"
+    'then printf "%s" "$p" | "$AI_HATS_PYTHON" -m ai_hats.surfaces.claude.channel; '
+    'elif [ -n "$AI_HATS_GATE_BROKEN_ACK" ]; '
+    'then printf "%s\\n" "ai-hats-claude-hook: AI_HATS_GATE_BROKEN_ACK set, '
+    'SKIPPED: incomplete dispatcher environment" >&2; '
+    'else printf "%s\\n" "ai-hats-claude-hook: incomplete dispatcher environment '
+    '- set AI_HATS_GATE_BROKEN_ACK=1 to run past it" >&2; '
+    "exit 2; fi"
 )
+
+#: Ask the session's resident dispatcher, and spawn one only if that fails. The
+#: reply is a status line, the verdict as its single line, then stderr to the
+#: end. Every way the fast path can fail — no socket, no `nc`, a socket left by
+#: a dead session — falls through to `_SPAWN`, which is the same dispatcher
+#: doing the same work, so correctness never rides on the fast path being there.
+_ASK = (
+    'p=$(cat); s="$AI_HATS_HOOK_SOCK"; '
+    'if [ -n "$s" ] && [ -S "$s" ]; then '
+    'r=$(printf "%s\\n" "$p" | nc -w 5 -U "$s" 2>/dev/null); '
+    'if [ -n "$r" ]; then printf "%s\\n" "$r" | { IFS= read -r st; IFS= read -r out; '
+    'case "$st" in ""|*[!0-9]*) st=2;; esac; '
+    '[ -n "$out" ] && printf "%s\\n" "$out"; cat >&2; exit "$st"; }; '
+    "exit $?; fi; fi; "
+)
+
+DISPATCHER_COMMAND = "sh -c '" + _ASK + _SPAWN + "'"
 
 
 class ClaudeChannel:

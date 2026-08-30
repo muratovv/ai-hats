@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.hook_chain import composed_rows
+
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
 
@@ -77,11 +79,6 @@ def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:
     )
 
 
-def _managed_entries(settings: dict) -> dict[str, list[dict]]:
-    hooks = settings.get("hooks", {})
-    return {event: entries for event, entries in hooks.items() if isinstance(entries, list)}
-
-
 # ---------------------- A + B: wiring + materialization ----------------------
 
 
@@ -103,30 +100,32 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
         project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
     )
     cache_settings = session_cache_dir(project, SESSION_ID) / "settings.json"
-    settings = json.loads(cache_settings.read_text())
-    by_event = _managed_entries(settings)
 
-    # A. PreToolUse managed entry for the skill, tagged with the matcher.
-    pre = by_event.get(HOOK_PRE_TOOL_USE, [])
-    sp = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:e2e-rthook:PreToolUse:Bash"]
-    assert len(sp) == 1, f"missing PreToolUse skill entry in {pre}"
-    assert sp[0]["matcher"] == "Bash"
-    assert sp[0]["hooks"] == [{"type": "command", "command": _expected_command(project)}]
-    # No guard entry here, and that is the contract: this fixture role composes
-    # `e2e-rthook` alone, and since HATS-1268 every entry is skill-declared —
+    # A. The composed row for the skill, tagged with the matcher it was declared
+    # under. Since HATS-1874 the rows live in the manifest and settings.json
+    # holds the dispatcher entry that runs them.
+    pre = composed_rows(cache_settings, HOOK_PRE_TOOL_USE)
+    assert [row for row in pre if row["tag"] == "ai-hats:e2e-rthook:PreToolUse:Bash"] == [
+        {
+            "matcher": "Bash",
+            "command": _expected_command(project),
+            "tag": "ai-hats:e2e-rthook:PreToolUse:Bash",
+        }
+    ], f"missing PreToolUse skill row in {pre}"
+    # No guard row here, and that is the contract: this fixture role composes
+    # `e2e-rthook` alone, and since HATS-1268 every row is skill-declared —
     # nothing is wired unconditionally any more.
-    assert not [
-        e for e in pre if str(e.get("_ai_hats_managed", "")).startswith("ai-hats:safety-guard")
-    ]
+    assert not [row for row in pre if str(row.get("tag", "")).startswith("ai-hats:safety-guard")]
 
-    # A. PostToolUse managed entry under its own event.
-    post = by_event.get(HOOK_POST_TOOL_USE, [])
-    pe = [
-        e for e in post if e.get("_ai_hats_managed") == "ai-hats:e2e-rthook:PostToolUse:Edit|Write"
-    ]
-    assert len(pe) == 1, f"missing PostToolUse skill entry in {post}"
-    assert pe[0]["matcher"] == "Edit|Write"
-    assert pe[0]["hooks"] == [{"type": "command", "command": _expected_command(project)}]
+    # A. PostToolUse row under its own event.
+    post = composed_rows(cache_settings, HOOK_POST_TOOL_USE)
+    assert [row for row in post if row["tag"] == "ai-hats:e2e-rthook:PostToolUse:Edit|Write"] == [
+        {
+            "matcher": "Edit|Write",
+            "command": _expected_command(project),
+            "tag": "ai-hats:e2e-rthook:PostToolUse:Edit|Write",
+        }
+    ], f"missing PostToolUse skill row in {post}"
 
     # B. The script settings.json points at exists and is executable — the
     # command is the on-disk path now, absolute into the session mirror.

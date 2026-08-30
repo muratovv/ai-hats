@@ -4,6 +4,7 @@ Extracted from runtime.py (HATS-715); shared helpers live in runtime_common."""
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import select
@@ -383,6 +384,29 @@ class WrapRunner:
         if findings:
             session.log_sys(f"env-drift lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
+
+    @contextlib.contextmanager
+    def _serving_hooks(self, provider, session: "Session", env: dict[str, str]):
+        """Hold this session's resident hook dispatcher, if its surface has one.
+
+        Fail-open on PURPOSE, and only about speed: every way this can fail
+        leaves the settings entry spawning a dispatcher per call, which is the
+        same gate reaching the same verdict.
+        """
+        server = None
+        try:
+            server = provider.serve_hooks(self.project_dir, session.session_id, env)
+        except Exception as exc:
+            logger.warning("resident hook dispatcher did not start", exc_info=True)
+            session.log_sys(f"resident hook dispatcher FAILED, spawning per call — {exc!r}")
+        if server is None:
+            yield
+            return
+        session.log_sys(f"resident hook dispatcher listening at {server.path}")
+        try:
+            yield
+        finally:
+            server.close()
 
     def _check_broken_hook_refs(self, session: "Session") -> list[StartupNotice]:
         """HATS-1509: WARN per settings hook ref pointing at a missing script —
@@ -795,7 +819,10 @@ class WrapRunner:
             # fail-open startup warning are readable before the TUI clobbers
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
             self._hold_before_launch(startup_notices, env=env)
-            with provider.execution_context(self.project_dir):
+            with (
+                provider.execution_context(self.project_dir),
+                self._serving_hooks(provider, session, env),
+            ):
                 # HATS-1339: the anchor names the cache's real READER. Redundant
                 # here (the pty hangup already ties the child to us), but it makes
                 # "keep while EITHER owner lives" hold on every runner.

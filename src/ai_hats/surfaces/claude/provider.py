@@ -30,8 +30,9 @@ from .sdk_options import (
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
+from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG
+from .runtime_hooks import composed_rows, materialize_hook_manifest
 
-from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
     AI_HATS_PROJECT_DIR_ENV,
@@ -50,6 +51,20 @@ from ai_hats.constants import (
     INJECTION_END,
     PROVIDER_CLAUDE,
 )
+
+
+def _entry_matcher(rows: list[dict[str, str]]) -> str:
+    """One matcher covering every row's, in the alternation the entries already
+    shipped (`Bash|run_command|execute`).
+
+    `*` would be one character and costs ~45 ms on every call no gate wants —
+    a dispatcher spawned to find that nothing matched, where the harness spawns
+    nothing at all (measured on `Read`, HATS-1874).
+    """
+    alternatives = [name for row in rows for name in row["matcher"].split("|")]
+    if any(name in ("", "*") for name in alternatives):
+        return "*"
+    return "|".join(dict.fromkeys(alternatives))
 
 
 @dataclass(frozen=True)
@@ -262,6 +277,13 @@ class ClaudeSurface(Surface):
         # SKILLS precedes HOOKS in ArtifactCategory, so the mirror this points
         # into is already written (scripts before wiring, HATS-1123).
         skills_dir = claude_plugin_skills_dir(cache_dir / "plugin")
+        materialize_hook_manifest(
+            result,
+            artifacts,
+            cache_dir=cache_dir,
+            session_id=session_id,
+            skills_dir=skills_dir,
+        )
         artifacts.port.write_text(
             cache_settings,
             json.dumps(
@@ -392,6 +414,16 @@ class ClaudeSurface(Surface):
         extra = ["--model", model] if model else []
         return cmd + extra + ["--print", "-p", meta_prompt]
 
+    def serve_hooks(self, project_dir: Path, session_id: str, environ: dict[str, str]):
+        """One warm dispatcher for the session instead of one per tool call.
+
+        Measured on a composed maintainer session: 125 ms per gated call spawned,
+        94 ms asked — against 72 ms for the gates alone (HATS-1874).
+        """
+        from .hook_server import HookServer
+
+        return HookServer(session_cache_dir(project_dir, session_id), dict(environ)).start()
+
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         # HATS-819: hand every runtime hook a clean writable anchor so it need
         # not derive WRITE paths from ``__file__`` depth — materialization
@@ -442,31 +474,22 @@ class ClaudeSurface(Surface):
     def _desired_runtime_entries(
         self, result: CompositionResult | None, skills_dir: Path
     ) -> dict[str, list[dict]]:
-        """``{event: [managed entry, ...]}`` the composition should produce.
+        """``{event: [the dispatcher entry]}`` the composition should produce.
 
-        Commands point into the session's own skill mirror, so each hook runs
-        beside the files its skill ships (HATS-1268). Every entry is
-        skill-declared, the shared-state guard included, so a composition-less
-        build wires nothing. Paths are absolute — the mirror is out of tree, and
-        HATS-615 asked for cwd-independence, not project-relativity.
+        One entry per event: WHICH gates a call matched is the dispatcher's to
+        answer from the manifest, and the harness only has to deliver the call.
+        An event the composition binds nothing to gets no entry (HATS-1874).
         """
-        desired: dict[str, list[dict]] = {}
-        if result is None:
-            return desired
-
-        for event, entries in collect_runtime_hooks(result).items():
-            for skill_name, hook in entries:
-                if resolve_skill_script(result, skill_name, hook.script) is None:
-                    continue
-                command = str(skills_dir / skill_name / hook.script)
-                desired.setdefault(event, []).append(
-                    {
-                        "matcher": hook.matcher,
-                        "_ai_hats_managed": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
-                        self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": command}],
-                    }
-                )
-        return desired
+        return {
+            event: [
+                {
+                    "matcher": _entry_matcher(rows),
+                    "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
+                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
+                }
+            ]
+            for event, rows in composed_rows(result, skills_dir).items()
+        }
 
     @staticmethod
     def _upsert_managed_entry(event_list: list, want: dict) -> bool:
