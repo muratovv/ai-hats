@@ -36,8 +36,14 @@ SOCKET_ROOT = Path("/tmp")  # noqa: S108 - short by requirement; sockets_dir own
 
 
 def sockets_dir() -> Path:
-    """Our socket directory, created 0700, or a refusal if someone else owns it."""
-    home = SOCKET_ROOT / f"ai-hats-{os.getuid()}"
+    """Where the sockets go. Pure: a dry-run asks for the path and must not
+    leave a directory behind for having asked (HATS-1552)."""
+    return SOCKET_ROOT / f"ai-hats-{os.getuid()}"
+
+
+def make_sockets_dir() -> Path:
+    """The directory, created 0700, or a refusal if it is not ours alone."""
+    home = sockets_dir()
     home.mkdir(mode=0o700, exist_ok=True)
     info = home.stat()
     if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
@@ -102,6 +108,7 @@ class HookServer:
         self._err: _Fanout | None = None
 
     def start(self) -> "HookServer":
+        make_sockets_dir()
         self.path.unlink(missing_ok=True)  # safe-delete: ok ephemeral socket
         # Bound BEFORE the streams are proxied: a bind that raises must not
         # leave the session writing through a proxy with nothing behind it.
