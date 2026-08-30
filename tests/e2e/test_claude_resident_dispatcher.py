@@ -99,7 +99,7 @@ def test_the_resident_answer_is_the_spawned_one_byte_for_byte(tmp_path: Path) ->
         resident = _call(entry, project, env)
 
     assert "the gate itself spoke" in spawned[2], f"the control never ran the gate: {spawned}"
-    assert resident == spawned
+    assert resident == spawned, "HATS-1874: the resident answer is not a second implementation"
 
 
 @pytest.mark.integration

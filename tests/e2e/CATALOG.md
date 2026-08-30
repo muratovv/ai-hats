@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**288 of 288 files catalogued — 297 flows.**
+**291 of 291 files catalogued — 300 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -517,6 +517,20 @@ as a claim to check, not as evidence.
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] ticket-ids`, reports on every run what it does NOT cover and how many ids the pattern still finds where history lives, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
 - **why** — the checker's own silence is the thing under test. 177 ids had accumulated in this library while a rule actively prescribed the form, and every gate stayed green through all of them because none read prose for what it must NOT carry. A checker that is wired but never refuses anything reproduces exactly that, and the ONE id this repo legitimately keeps is the reason a blanket "no matches ever" assertion would not do.
 
+## `test_claude_dispatcher_entry_is_live.py`
+
+*pins HATS-1874*
+
+- **flow** — a composed claude session, its own settings.json entry run the way the harness runs it
+- **cmds**
+
+  ```console
+  sh -c "<the command settings.json holds>"
+  ```
+
+- **expect** — the entry starts the installed dispatcher module, which reads the session manifest and lets the composed gate judge the call
+- **why** — every hook-chain test now reads the composed rows from the manifest, so all of them could stay green while settings.json wires a dispatcher nothing executes. This is the test that refuses that world
+
 ## `test_claude_hook_chain.py`
 
 *pins HATS-1868*
@@ -531,6 +545,20 @@ as a claim to check, not as evidence.
 - **expect** — a later gate overrides an earlier one, advice from both reaches the model, a consent ticket arrives with its rewrite attached, and a chain that overruns its budget refuses while naming the bound to raise
 - **why** — the harness runs each entry on its own — no shared deadline, no joined advice, and a gate killed by its per-hook timeout lets the call through (poc-hook-delivery.md M7). A chain is the thing owning execution buys
 
+## `test_claude_resident_dispatcher.py`
+
+*pins HATS-1874*
+
+- **flow** — a composed claude session whose wrapper holds a dispatcher open, and the same session's settings entry run the way the harness runs it
+- **cmds**
+
+  ```console
+  sh -c "<the command settings.json holds>"
+  ```
+
+- **expect** — the verdict is byte-identical to the one a spawned dispatcher gives, and it arrives even when no dispatcher COULD be spawned
+- **why** — the resident path exists only to drop ~43 ms of interpreter and imports per tool call. The moment it answers differently from the spawn path it is a second gate implementation, which is the drift HATS-1858 spent a card removing
+
 ## `test_claude_scaffold_drop.py`
 
 *pins HATS-1170, HATS-1201*
@@ -544,6 +572,20 @@ as a claim to check, not as evidence.
 
 - **expect** — framework update removes orphan CLAUDE.md scaffold while preserving user content
 - **why** — without migration step 7, legacy root CLAUDE.md scaffolds persist after being deprecated
+
+## `test_claude_user_hooks_untouched.py`
+
+*pins HATS-1874*
+
+- **flow** — a project whose own `.claude/settings.json` wires the developer's hooks, and an ai-hats session built on top of it
+- **cmds**
+
+  ```console
+  ClaudeSurface().build_session_artifacts(...)   # what `ai-hats session` runs
+  ```
+
+- **expect** — the developer's file is byte-identical afterwards, and the session file handed over with `--settings` carries only ai-hats entries
+- **why** — `--settings` is additive — measured on claude 2.1.247 for PreToolUse (poc-hook-delivery.md M8), which is the whole reason ai-hats may collapse its own entries to one without touching anyone else's. A migration that started writing the root file, or swept a user entry out of it, would break a contract no unit test watches end to end
 
 ## `test_claude_vanished_gate_refuses.py`
 

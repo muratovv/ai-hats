@@ -97,7 +97,7 @@ def session(tmp_path: Path, request):
 def _entry_command(project: Path) -> str:
     settings = json.loads((session_cache_dir(project, SESSION_ID) / "settings.json").read_text())
     entries = settings["hooks"]["PreToolUse"]
-    assert len(entries) == 1, f"one entry per event is the whole point: {entries}"
+    assert len(entries) == 1, f"one entry per event is what HATS-1874 delivers; got: {entries}"
     return entries[0]["hooks"][0]["command"]
 
 

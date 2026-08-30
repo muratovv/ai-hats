@@ -54,7 +54,9 @@ def test_a_session_build_leaves_the_developers_own_hooks_alone(tmp_path: Path) -
         artifacts=BuiltArtifacts(),
     )
 
-    assert root_settings.read_bytes() == before, "ai-hats rewrote the developer's own settings"
+    assert root_settings.read_bytes() == before, (
+        "ai-hats rewrote the developer's own settings — HATS-1874 collapses ITS entries only"
+    )
     handed_over = artifacts.cli_args[artifacts.cli_args.index("--settings") + 1]
     assert Path(handed_over) == session_cache_dir(project, SESSION_ID) / "settings.json"
     assert "my_own_guard.sh" not in Path(handed_over).read_text(), (
