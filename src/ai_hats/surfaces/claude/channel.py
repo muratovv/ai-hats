@@ -38,6 +38,9 @@ from .profile import PROFILE
 #: What a `settings.json` entry runs. An entry that cannot start the dispatcher
 #: must REFUSE (exit 2) and name the hatch — python honours the hatch everywhere
 #: else, and this branch is precisely the one that never reaches python.
+#: The tag that marks the entry as ours, per event.
+DISPATCHER_TAG = "ai-hats:claude-dispatcher"
+
 DISPATCHER_COMMAND = (
     'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] '
     '&& [ -n "$AI_HATS_SESSION_CACHE_DIR" ] && [ -x "$AI_HATS_PYTHON" ]; '

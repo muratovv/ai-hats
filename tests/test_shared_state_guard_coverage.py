@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.paths import claude_plugin_skills_dir
-from ai_hats.surfaces.claude.provider import ClaudeSurface
+from ai_hats.surfaces.claude.runtime_hooks import composed_rows
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
@@ -32,14 +32,9 @@ def _builtin_roles() -> list[str]:
 
 def _guard_wired(role: str) -> bool:
     result = Assembler(REPO_ROOT).composer.compose(role)
-    entries = ClaudeSurface()._desired_runtime_entries(
-        result, claude_plugin_skills_dir(Path("/probe/plugin"))
-    )
+    rows = composed_rows(result, claude_plugin_skills_dir(Path("/probe/plugin")))
     return any(
-        GUARD_BASENAME in hook.get("command", "")
-        for matchers in entries.values()
-        for matcher in matchers
-        for hook in matcher.get("hooks", [])
+        GUARD_BASENAME in row["command"] for event_rows in rows.values() for row in event_rows
     )
 
 

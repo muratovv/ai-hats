@@ -15,6 +15,7 @@ import pytest
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import claude_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
+from ai_hats.surfaces.claude.channel import DISPATCHER_COMMAND, DISPATCHER_TAG
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
@@ -100,7 +101,8 @@ def test_command_is_absolute_into_the_session_skill_mirror(tmp_path: Path) -> No
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
-    cmd = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
+    _settings(proj, _result([skill]))
+    cmd = _manifest(proj)["hooks"][HOOK_PRE_TOOL_USE][0]["command"]
     assert Path(cmd).is_absolute()
     assert "$CLAUDE_PROJECT_DIR" not in cmd
     assert cmd == _managed_command(proj, "skill-x", "hooks/pre.sh")
@@ -120,7 +122,8 @@ def test_a_leaked_ai_hats_dir_cannot_redirect_the_command(tmp_path: Path, monkey
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
-    cmd = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
+    _settings(proj, _result([skill]))
+    cmd = _manifest(proj)["hooks"][HOOK_PRE_TOOL_USE][0]["command"]
     assert "elsewhere" not in cmd
     assert cmd.startswith(str(session_cache_dir(proj, SESSION_ID)))
 
@@ -134,8 +137,8 @@ def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monk
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
-    data = _settings(victim, _result([skill]))
-    cmd = data["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
+    _settings(victim, _result([skill]))
+    cmd = _manifest(victim)["hooks"][HOOK_PRE_TOOL_USE][0]["command"]
     assert cmd == _managed_command(victim, "skill-x", "hooks/pre.sh")
     assert str(dev_repo) not in cmd
 
@@ -154,8 +157,10 @@ def test_agy_provider_does_not_touch_settings(tmp_path: Path) -> None:
 # ----- HATS-597: skill-declared runtime hooks -----
 
 
-def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> None:
-    """One managed entry per (event, skill, matcher), tagged distinctly."""
+def test_each_bound_event_gets_one_dispatcher_entry(tmp_path: Path) -> None:
+    """HATS-1874: the harness delivers the call, the dispatcher decides which
+    gates it matched. Which gates those are lives in the manifest — asserted by
+    test_the_manifest_names_exactly_the_composed_gates."""
     proj = tmp_path / "proj"
     proj.mkdir()
     skill = _skill_with_runtime_hooks(
@@ -166,26 +171,28 @@ def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> No
             HOOK_POST_TOOL_USE: [("Edit|Write", "hooks/post.sh")],
         },
     )
-    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
-    data = _settings(proj, _result([skill]))
+    hooks = _settings(proj, _result([skill]))["hooks"]
 
-    # Skill PreToolUse entry.
-    pre = data["hooks"][HOOK_PRE_TOOL_USE]
-    sp = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:skill-x:PreToolUse:Bash"]
-    assert len(sp) == 1
-    assert sp[0]["matcher"] == "Bash"
-    assert sp[0]["hooks"] == [
-        {"type": "command", "command": _managed_command(proj, "skill-x", "hooks/pre.sh")}
-    ]
+    assert set(hooks) == {HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE}
+    for event, matcher in ((HOOK_PRE_TOOL_USE, "Bash"), (HOOK_POST_TOOL_USE, "Edit|Write")):
+        assert hooks[event] == [
+            {
+                "matcher": matcher,
+                "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
+                "hooks": [{"type": "command", "command": DISPATCHER_COMMAND}],
+            }
+        ]
 
-    # Skill PostToolUse entry under the PostToolUse event.
-    post = data["hooks"][HOOK_POST_TOOL_USE]
-    pe = [e for e in post if e.get("_ai_hats_managed") == "ai-hats:skill-x:PostToolUse:Edit|Write"]
-    assert len(pe) == 1
-    assert pe[0]["matcher"] == "Edit|Write"
-    assert pe[0]["hooks"] == [
-        {"type": "command", "command": _managed_command(proj, "skill-x", "hooks/post.sh")}
-    ]
+
+def test_an_event_no_gate_binds_to_gets_no_entry(tmp_path: Path) -> None:
+    """A dispatcher spawned to find nothing is ~40 ms of nothing, per call."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+
+    assert set(_settings(proj, _result([skill]))["hooks"]) == {HOOK_PRE_TOOL_USE}
 
 
 def test_claude_skill_hooks_idempotent(tmp_path: Path) -> None:
@@ -251,12 +258,8 @@ def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None
         {HOOK_PRE_TOOL_USE: [("Bash", "hooks/a.sh"), ("Edit", "hooks/b.sh")]},
     )
     ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
-    pre = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE]
-    skill_tags = {
-        e["_ai_hats_managed"]
-        for e in pre
-        if e.get("_ai_hats_managed", "").startswith("ai-hats:skill-x")
-    }
+    _settings(proj, _result([skill]))
+    skill_tags = {row["tag"] for row in _manifest(proj)["hooks"][HOOK_PRE_TOOL_USE]}
     assert skill_tags == {
         "ai-hats:skill-x:PreToolUse:Bash",
         "ai-hats:skill-x:PreToolUse:Edit",
@@ -467,3 +470,35 @@ def test_the_pins_the_dispatcher_needs_reach_the_launch(tmp_path: Path, run_mode
 
     assert env["AI_HATS_SESSION_CACHE_DIR"] == str(session_cache_dir(proj, SESSION_ID))
     assert Path(env["AI_HATS_PYTHON"]).exists()
+
+
+def test_the_entry_matcher_is_the_union_of_its_rows(tmp_path: Path) -> None:
+    """Under `*` a dispatcher spawns on every Read and Grep to find that nothing
+    matched — ~45 ms of nothing, where the harness spawns nothing at all."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills",
+        "skill-x",
+        {HOOK_PRE_TOOL_USE: [("Bash|execute", "hooks/a.sh"), ("Bash", "hooks/b.sh")]},
+    )
+
+    entries = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE]
+
+    assert entries[0]["matcher"] == "Bash|execute", "duplicates repeated, or the union lost a name"
+
+
+def test_a_gate_bound_to_everything_keeps_the_entry_open(tmp_path: Path) -> None:
+    """The union may only ever widen: a row nothing narrows must not be narrowed
+    by the entry above it, or that gate stops running."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills",
+        "skill-x",
+        {HOOK_PRE_TOOL_USE: [('"*"', "hooks/a.sh"), ("Bash", "hooks/b.sh")]},
+    )
+
+    entries = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE]
+
+    assert entries[0]["matcher"] == "*"

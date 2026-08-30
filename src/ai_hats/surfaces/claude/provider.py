@@ -30,6 +30,7 @@ from .sdk_options import (
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
+from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG
 from .runtime_hooks import composed_rows, materialize_hook_manifest
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
@@ -50,6 +51,20 @@ from ai_hats.constants import (
     INJECTION_END,
     PROVIDER_CLAUDE,
 )
+
+
+def _entry_matcher(rows: list[dict[str, str]]) -> str:
+    """One matcher covering every row's, in the alternation the entries already
+    shipped (`Bash|run_command|execute`).
+
+    `*` would be one character and costs ~45 ms on every call no gate wants —
+    a dispatcher spawned to find that nothing matched, where the harness spawns
+    nothing at all (measured on `Read`, HATS-1874).
+    """
+    alternatives = [name for row in rows for name in row["matcher"].split("|")]
+    if any(name in ("", "*") for name in alternatives):
+        return "*"
+    return "|".join(dict.fromkeys(alternatives))
 
 
 @dataclass(frozen=True)
@@ -449,19 +464,19 @@ class ClaudeSurface(Surface):
     def _desired_runtime_entries(
         self, result: CompositionResult | None, skills_dir: Path
     ) -> dict[str, list[dict]]:
-        """``{event: [managed entry, ...]}`` the composition should produce.
+        """``{event: [the dispatcher entry]}`` the composition should produce.
 
-        From the same producer the manifest is written from, so the wiring and
-        what the dispatcher reads cannot name different gates.
+        One entry per event: WHICH gates a call matched is the dispatcher's to
+        answer from the manifest, and the harness only has to deliver the call.
+        An event the composition binds nothing to gets no entry (HATS-1874).
         """
         return {
             event: [
                 {
-                    "matcher": row["matcher"],
-                    "_ai_hats_managed": row["tag"],
-                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": row["command"]}],
+                    "matcher": _entry_matcher(rows),
+                    "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
+                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
                 }
-                for row in rows
             ]
             for event, rows in composed_rows(result, skills_dir).items()
         }
