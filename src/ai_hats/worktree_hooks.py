@@ -10,19 +10,19 @@ fail-closed vs ``wt_in`` warn-continue — remains the worktree manager's.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_core.deadline import Deadline
 
+from .env import WT_HOOK_TIMEOUT, read_budget
 from .hook_exec import HookOutcomeKind, HookRun, run_hook
 
 # What this channel ASKS for. HATS-1593: it is a request, not the timeout — the
 # lock the caller holds mints the ceiling and `run_hook` takes the smaller of
 # the two. A constant here cannot know which of four locks is held above it.
-WT_HOOK_TIMEOUT_S: float = 45.0
-_TIMEOUT_ENV = "AI_HATS_WT_HOOK_TIMEOUT_S"
+WT_HOOK_TIMEOUT_S: float = WT_HOOK_TIMEOUT.default
+_TIMEOUT_ENV = WT_HOOK_TIMEOUT.name
 
 
 def resolve_hook_timeout() -> float:
@@ -31,14 +31,7 @@ def resolve_hook_timeout() -> float:
     A missing / non-numeric / non-positive override falls back to the default
     (fail-safe — a typo must not disable the bound).
     """
-    raw = os.environ.get(_TIMEOUT_ENV)
-    if not raw:
-        return WT_HOOK_TIMEOUT_S
-    try:
-        val = float(raw)
-    except ValueError:
-        return WT_HOOK_TIMEOUT_S
-    return val if val > 0 else WT_HOOK_TIMEOUT_S
+    return read_budget(WT_HOOK_TIMEOUT)
 
 
 @dataclass(frozen=True)

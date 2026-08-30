@@ -19,7 +19,6 @@ import time
 
 from ai_hats import pty_shutdown
 from ai_hats.pty_shutdown import (
-    _env_float,
     bounded_proc_shutdown,
     emit_terminal_reset,
 )
@@ -58,44 +57,6 @@ class FakeProc:
         self.terminate_force = force
         if self._terminate_kills:
             self._alive = []
-
-
-# ---------- _env_float ---------------------------------------------------
-
-
-def test_env_float_returns_default_when_unset(monkeypatch):
-    monkeypatch.delenv("AI_HATS_TEST_VAR", raising=False)
-    assert _env_float("AI_HATS_TEST_VAR", 5.0) == 5.0
-
-
-def test_env_float_parses_valid(monkeypatch):
-    monkeypatch.setenv("AI_HATS_TEST_VAR", "1.25")
-    assert _env_float("AI_HATS_TEST_VAR", 5.0) == 1.25
-
-
-def test_env_float_falls_back_on_garbage(monkeypatch):
-    monkeypatch.setenv("AI_HATS_TEST_VAR", "not-a-number")
-    assert _env_float("AI_HATS_TEST_VAR", 5.0) == 5.0
-
-
-def test_env_float_falls_back_on_negative(monkeypatch):
-    monkeypatch.setenv("AI_HATS_TEST_VAR", "-1.0")
-    assert _env_float("AI_HATS_TEST_VAR", 5.0) == 5.0
-
-
-def test_env_float_falls_back_on_zero(monkeypatch):
-    monkeypatch.setenv("AI_HATS_TEST_VAR", "0")
-    assert _env_float("AI_HATS_TEST_VAR", 5.0) == 5.0
-
-
-def test_env_float_falls_back_on_empty(monkeypatch):
-    monkeypatch.setenv("AI_HATS_TEST_VAR", "")
-    assert _env_float("AI_HATS_TEST_VAR", 5.0) == 5.0
-
-
-def test_env_float_falls_back_on_inf(monkeypatch):
-    monkeypatch.setenv("AI_HATS_TEST_VAR", "inf")
-    assert _env_float("AI_HATS_TEST_VAR", 5.0) == 5.0
 
 
 # ---------- bounded_proc_shutdown — escalation contract -----------------

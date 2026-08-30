@@ -29,7 +29,10 @@ from ..env import (
     ENV_GATE_BROKEN_ACK,
     ENV_HOOK_SURFACE_TIMEOUT_MS,
     ENV_HOOK_TIMEOUT_S,
+    HOOK_TIMEOUT,
     ENV_RETIRED_AGY_HOOK_TIMEOUT_S,
+    Budget,
+    read_budget,
 )
 from ..hook_exec import HookOutcomeKind, HookRun, HookVerdict, run_hook
 
@@ -341,13 +344,18 @@ class ChainVerdict:
 #: What the whole chain for one tool call may spend. A request, not the
 #: timeout: the surface's own bound is the ceiling above it, and it must be the
 #: larger of the two or the dispatcher is killed before it can say anything.
-HOOK_TIMEOUT_S: float = 60.0
+HOOK_TIMEOUT_S: float = HOOK_TIMEOUT.default
 HOOK_TIMEOUT_ENV = ENV_HOOK_TIMEOUT_S
 
 #: The name this bound had while only one channel of four offered it. Honoured
 #: so a config that already sets it does not stop working in silence, which is
 #: the failure mode this whole channel exists to remove.
 RETIRED_TIMEOUT_ENVS = (ENV_RETIRED_AGY_HOOK_TIMEOUT_S,)
+
+#: The retired spellings, read under the live budget's own default and doc.
+_RETIRED_BUDGETS = tuple(
+    Budget(name, HOOK_TIMEOUT.default, HOOK_TIMEOUT.doc) for name in RETIRED_TIMEOUT_ENVS
+)
 
 #: Said once per process, which is once per tool call — the dispatcher is a
 #: fresh process each time. Twice a call, from both resolvers, was noise.
@@ -381,25 +389,19 @@ def resolve_hook_timeout(environ: Mapping[str, str] | None = None) -> float:
     Anything unusable falls back — a typo must not disarm the bound.
     """
     env = environ if environ is not None else os.environ
-    raw = env.get(HOOK_TIMEOUT_ENV)
-    if not raw:
-        for retired in RETIRED_TIMEOUT_ENVS:
-            raw = env.get(retired)
-            if raw:
-                if retired not in _RENAME_SAID:
-                    _RENAME_SAID.add(retired)
-                    sys.stderr.write(
-                        f"ai-hats: {retired} is now {HOOK_TIMEOUT_ENV} and bounds every "
-                        f"surface, not one — honouring it this run; rename it.\n"
-                    )
-                break
-    if not raw:
-        return HOOK_TIMEOUT_S
-    try:
-        asked = float(raw)
-    except ValueError:
-        return HOOK_TIMEOUT_S
-    return asked if asked > 0 else HOOK_TIMEOUT_S
+    if env.get(HOOK_TIMEOUT_ENV):
+        return read_budget(HOOK_TIMEOUT, env)
+    for retired in _RETIRED_BUDGETS:
+        if not env.get(retired.name):
+            continue
+        if retired.name not in _RENAME_SAID:
+            _RENAME_SAID.add(retired.name)
+            sys.stderr.write(
+                f"ai-hats: {retired.name} is now {HOOK_TIMEOUT_ENV} and bounds every "
+                f"surface, not one — honouring it this run; rename it.\n"
+            )
+        return read_budget(retired, env)
+    return HOOK_TIMEOUT.default
 
 
 def surface_timeout(environ: Mapping[str, str] | None = None) -> float:

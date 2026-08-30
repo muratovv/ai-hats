@@ -42,7 +42,6 @@ ELSEWHERE = {
     "surfaces/codex/provider.py": "that surface's own XDG home override",
     "surfaces/opencode/provider.py": "that surface's own XDG home override",
     "surfaces/agy/hook_dispatcher.py": "runs on every tool call and must not import ai_hats",
-    "pty_shutdown.py": "the PTY teardown's own two bounds",
     "pipeline/harness.py": "the pipeline's own trace knobs",
     "startup_notices.py": "the startup notice's own two switches",
     "wt_lifecycle.py": "the branch name handed to a wt hook",

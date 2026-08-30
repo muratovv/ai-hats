@@ -25,13 +25,9 @@ import os
 import signal
 import time
 
-logger = logging.getLogger(__name__)
+from .env import PTY_GRACE, PTY_TERM, read_budget
 
-# Defaults. SIGTERM gives libuv a window to flush handles; SIGKILL is
-# the final escape hatch. Total worst-case wall-clock cost: grace + term
-# + one polling tick (~50 ms) before the WNOHANG reap.
-_DEFAULT_GRACE_S = 5.0
-_DEFAULT_TERM_S = 2.0
+logger = logging.getLogger(__name__)
 
 # Polling cadence inside bounded_proc_shutdown. Small enough that the
 # escalation feels snappy when the child does exit, large enough not to
@@ -50,27 +46,6 @@ _POLL_INTERVAL_S = 0.05
 #   ?1006l  — SGR extended mouse mode off
 #   ?1015l  — urxvt extended mouse mode off
 _DECRST_MOUSE_RESET = "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
-
-
-def _env_float(name: str, default: float) -> float:
-    """Read a float env var with safe fallback.
-
-    Non-positive, non-finite, or unparseable values fall back to *default*
-    — never raise. This is configuration, not user input that should fail
-    a session.
-    """
-    raw = os.environ.get(name)
-    if not raw:
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        logger.debug("ignoring non-float %s=%r (using default %s)", name, raw, default)
-        return default
-    if value <= 0 or value != value or value == float("inf"):
-        logger.debug("ignoring out-of-range %s=%r (using default %s)", name, raw, default)
-        return default
-    return value
 
 
 def _poll_until_dead(proc, deadline: float) -> bool:
@@ -153,10 +128,10 @@ def bounded_proc_shutdown(
         ``exitstatus``, ``signalstatus``.
     grace_s
         Seconds to wait for natural exit before sending SIGTERM-pgroup.
-        ``None`` reads ``AI_HATS_PTY_GRACE_S`` env (default 5.0).
+        ``None`` reads ``AI_HATS_PTY_GRACE_S``; the number is ``env.PTY_GRACE``.
     term_s
         Seconds to wait between SIGTERM-pgroup and SIGKILL.
-        ``None`` reads ``AI_HATS_PTY_TERM_S`` env (default 2.0).
+        ``None`` reads ``AI_HATS_PTY_TERM_S``; the number is ``env.PTY_TERM``.
 
     Returns
     -------
@@ -166,9 +141,9 @@ def bounded_proc_shutdown(
         re-check inside :func:`_poll_until_dead`.
     """
     if grace_s is None:
-        grace_s = _env_float("AI_HATS_PTY_GRACE_S", _DEFAULT_GRACE_S)
+        grace_s = read_budget(PTY_GRACE)
     if term_s is None:
-        term_s = _env_float("AI_HATS_PTY_TERM_S", _DEFAULT_TERM_S)
+        term_s = read_budget(PTY_TERM)
 
     # Stage 1: grace.
     if _poll_until_dead(proc, time.monotonic() + grace_s):
