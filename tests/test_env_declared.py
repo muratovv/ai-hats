@@ -59,6 +59,7 @@ UNDECLARED: dict[str, frozenset[str]] = {
             "AI_HATS_E2E_CLEAN_TMP",
             "AI_HATS_GATE_BROKEN_ACK",
             "AI_HATS_GIT_GATE_BROKEN_ACK",
+            "AI_HATS_LIFETIME_ACK",
             "AI_HATS_MERGE_ACK",
             "AI_HATS_NON_INTERACTIVE",
             "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
