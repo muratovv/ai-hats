@@ -372,6 +372,34 @@ def _isolate_installed_launcher(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _consent_wrapper_surfaces_resolve(tmp_path_factory, monkeypatch):
+    """Guarantee the wrapped binaries resolve for EVERY test (HATS-1876).
+
+    ``build_consent_wrapper`` raises ``cannot wrap <surface>: executable not
+    found on PATH`` when a role declares a consent operation whose surface is
+    missing. The surfaces are ``rack`` and ``ai-hats``; ``rack`` is a console
+    script, but ``ai-hats`` deliberately is NOT (HATS-790) — it exists only
+    where the launcher was installed. So 28 HITL/session tests passed on a
+    maintainer's machine and failed in CI, which installs the package and no
+    launcher. A stub is planted only for a name PATH cannot already resolve, so
+    a host with the real binary is left exactly as it was.
+    """
+    stubs = tmp_path_factory.getbasetemp() / "consent-surface-stubs"
+    stubs.mkdir(exist_ok=True)
+    planted = False
+    for surface in ("ai-hats", "rack"):
+        if shutil.which(surface):
+            continue
+        stub = stubs / surface
+        stub.write_text("#!/bin/sh\nexit 0\n")
+        stub.chmod(0o755)
+        planted = True
+    if planted:
+        monkeypatch.setenv("PATH", f"{stubs}{os.pathsep}{os.environ['PATH']}")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _scrub_legacy_authorization_flags(monkeypatch):
     """Tests opt into wrapper authorization explicitly."""
     for leaked in ("AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK", "AI_HATS_CONSENT_ACK"):
