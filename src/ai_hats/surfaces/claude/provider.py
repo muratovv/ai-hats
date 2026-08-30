@@ -417,8 +417,8 @@ class ClaudeSurface(Surface):
     def serve_hooks(self, project_dir: Path, session_id: str, environ: dict[str, str]):
         """One warm dispatcher for the session instead of one per tool call.
 
-        Measured on a composed maintainer session: 123 ms per gated call spawned,
-        91 ms asked — against 70 ms for the gates alone (HATS-1874).
+        Measured on a composed maintainer session: 125 ms per gated call spawned,
+        94 ms asked — against 72 ms for the gates alone (HATS-1874).
         """
         from .hook_server import HookServer
 
