@@ -1,7 +1,7 @@
 """Every declared path override, against the resolver that actually answers it.
 
 Each declaration's LAST chain link is rendered and compared with what the
-resolver returns in a process where none of the sixteen names is set.
+resolver returns in a process where none of these names is set.
 
 Two links are prose, not path expressions, and get their own test instead of the
 renderer: ``AI_HATS_LIBRARY_ROOT`` falls to wherever the library package is
@@ -51,6 +51,9 @@ ROSTER = {
     "XDG_CONFIG_HOME",
     "CODEX_HOME",
     "CODEX_SQLITE_HOME",
+    "CLAUDE_CONFIG_DIR",
+    "CLINE_DATA_DIR",
+    "GEMINI_CONFIG_DIR",
 }
 
 #: The constant its reader spells, for every name whose reader is not an import
@@ -94,7 +97,7 @@ _CHAIN_SEP = ", else "
 
 @pytest.fixture
 def clean_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A process with none of the sixteen set, a private ``HOME``, and a project.
+    """A process with none of them set, a private ``HOME``, and a project.
 
     ``~/.codex`` is created because the codex resolver refuses a base home that
     is not an existing directory — the fixture supplies the world, never the
@@ -139,7 +142,7 @@ def _mismatch(override: Any, project_dir: Path) -> tuple[Path, Path] | None:
     return None if resolved == stated.resolve() else (stated, resolved)
 
 
-def test_the_sixteen_configurable_paths_are_each_declared_once() -> None:
+def test_every_configurable_path_is_declared_exactly_once() -> None:
     """A name a generator cannot see is a name the reference page will not hold."""
     assert set(DECLARED) == ROSTER
     declared_count = sum(

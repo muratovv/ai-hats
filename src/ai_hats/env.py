@@ -77,6 +77,7 @@ ENV_WT_HOOK_TIMEOUT_S = "AI_HATS_WT_HOOK_TIMEOUT_S"
 ENV_PTY_GRACE_S = "AI_HATS_PTY_GRACE_S"
 ENV_PTY_TERM_S = "AI_HATS_PTY_TERM_S"
 ENV_PIPELINE_KEEP_N = "AI_HATS_PIPELINE_KEEP_N"
+ENV_STARTUP_HOLD = "AI_HATS_STARTUP_HOLD"
 
 
 def _read(name: str) -> str | None:
@@ -156,9 +157,22 @@ BUDGETS: tuple[Budget, ...] = (
         10,
         "Sibling pipeline-run directories kept before the oldest are pruned.",
     ),
+    Budget(
+        ENV_STARTUP_HOLD,
+        10.0,
+        "Seconds a startup warning is held on screen; 0 disables the hold.",
+    ),
 )
 
-HOOK_TIMEOUT, GIT_HOOK_TIMEOUT, WT_HOOK_TIMEOUT, PTY_GRACE, PTY_TERM, PIPELINE_KEEP_N = BUDGETS
+(
+    HOOK_TIMEOUT,
+    GIT_HOOK_TIMEOUT,
+    WT_HOOK_TIMEOUT,
+    PTY_GRACE,
+    PTY_TERM,
+    PIPELINE_KEEP_N,
+    STARTUP_HOLD,
+) = BUDGETS
 
 
 class Override:
@@ -274,6 +288,29 @@ OVERRIDES: tuple[Override, ...] = (
         "",
         "Codex's rollout database. Unset, the codex base home serves; "
         "the codex child is given a session-scoped one instead.",
+        foreign=True,
+    ),
+    # The three below reach the same `tool_home()` helper as CODEX_HOME above, so
+    # listing that one and not these would have been an accident of prefix.
+    Override(
+        "CLAUDE_CONFIG_DIR",
+        "",
+        "Claude Code's own home, where its settings and transcripts are read from. "
+        "Unset, `~/.claude` serves.",
+        foreign=True,
+    ),
+    Override(
+        "CLINE_DATA_DIR",
+        "",
+        "Cline's own home, where its session transcripts are read from. "
+        "Unset, `~/.cline` serves; the cline child is given one explicitly.",
+        foreign=True,
+    ),
+    Override(
+        "GEMINI_CONFIG_DIR",
+        "",
+        "The agy/gemini home, where that surface's settings and brain dir are read from. "
+        "Unset, `~/.gemini` serves.",
         foreign=True,
     ),
 )

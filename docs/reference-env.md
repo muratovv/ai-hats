@@ -21,9 +21,9 @@ the sentence as a claim. It is equally silent about a knob the code reads that
 nobody declared: keeping the list COMPLETE is a separate guard's job, not this
 page's.
 
-**26 names: 10 budgets, 12 paths of ours, 4 honoured from other tools.**
+**30 names: 11 budgets, 12 paths of ours, 7 honoured from other tools.**
 
-## Budgets (10)
+## Budgets (11)
 
 Numeric knobs. Unset, empty, unparsable, zero or negative all mean the default:
 a typo in a budget must never disarm the bound nor fail a session.
@@ -36,6 +36,7 @@ a typo in a budget must never disarm the bound nor fail a session.
 | `AI_HATS_PTY_GRACE_S` | float | 5.0 | Seconds a PTY child is given to exit before it is signalled. |
 | `AI_HATS_PTY_TERM_S` | float | 2.0 | Seconds between SIGTERM and SIGKILL during PTY teardown. |
 | `AI_HATS_PIPELINE_KEEP_N` | int | 10 | Sibling pipeline-run directories kept before the oldest are pruned. |
+| `AI_HATS_STARTUP_HOLD` | float | 10.0 | Seconds a startup warning is held on screen; 0 disables the hold. |
 | `AI_HATS_COMMENT_MAX_LINES` | int | 3 | Consecutive standalone `#` comment lines allowed before the edit-time lint speaks up. |
 | `AI_HATS_DOCSTRING_MAX_LINES` | int | 10 | Lines a docstring may run to before that same lint flags it. |
 | `AI_HATS_DOCSTRING_MAX_CHARS` | int | 700 | Characters a docstring may run to before that same lint flags it. |
@@ -67,7 +68,7 @@ set can be present. What it means there —
 - `AI_HATS_DIR` — the session's base dir, written at spawn; `paths` honours it as an override only while `AI_HATS_PROJECT_DIR` names this project, and drops the pair when it names another
 - `AI_HATS_PROJECT_DIR` — the project the session was launched for; it is what decides whether the `AI_HATS_DIR` / `AI_HATS_VENV` beside it are this project's override or a leaked pin
 
-## Honoured from other tools (4)
+## Honoured from other tools (7)
 
 **Not ours.** We neither define these nor get to give them a default, so the
 default column stays empty — the only thing this project decides is where each
@@ -80,11 +81,14 @@ owns them; ai-hats reads whatever it finds.
 | `XDG_CONFIG_HOME` | path | — | Platform config base. Ranks under `AI_HATS_OPENCODE_CONFIG_HOME`, over `~/.config`; the opencode child is given a session-scoped one instead. |
 | `CODEX_HOME` | path | — | Codex's own home. Ranks under `AI_HATS_CODEX_BASE_HOME`, over `~/.codex`; the codex child is given the session home instead. |
 | `CODEX_SQLITE_HOME` | path | — | Codex's rollout database. Unset, the codex base home serves; the codex child is given a session-scoped one instead. |
+| `CLAUDE_CONFIG_DIR` | path | — | Claude Code's own home, where its settings and transcripts are read from. Unset, `~/.claude` serves. |
+| `CLINE_DATA_DIR` | path | — | Cline's own home, where its session transcripts are read from. Unset, `~/.cline` serves; the cline child is given one explicitly. |
+| `GEMINI_CONFIG_DIR` | path | — | The agy/gemini home, where that surface's settings and brain dir are read from. Unset, `~/.gemini` serves. |
 
 ## What is deliberately not on this page
 
 Three families of names are read by this code and still absent here, so this
-page's 26 is not the whole vocabulary. **Bypass hatches** are recognised
+page's 30 is not the whole vocabulary. **Bypass hatches** are recognised
 by the SHAPE of the name rather than by a table — see `withheld_from_subagent`
 in `src/ai_hats/constants.py` — because a table of them would fail open the way
 the roster beside it already did; the gate that refuses names the hatch that
