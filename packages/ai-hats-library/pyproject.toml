@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-library"
-version = "0.6.0"
+version = "0.6.1"
 description = "The ai-hats agent library — portable skills, roles, traits, and rules as a data-only package. Drop-in for any Claude Code user; the versioned content dependency of the ai-hats integrator."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -46,3 +46,12 @@ Changelog = "https://github.com/muratovv/ai-hats/blob/master/packages/ai-hats-li
 # ``files("ai_hats_library")`` resolves to; T18/HATS-876 repointed the resolver
 # here from the integrator's old ``ai_hats.library`` force-include graft.
 packages = ["src/ai_hats_library"]
+
+# `core/skills/safety-guard/hooks/consent_gate` is a SYMLINK to
+# `hooks/consent_gate`; the sdist build records the files once, under the
+# symlink, and drops the real directory — so the wheel built from that sdist
+# had no `ai_hats_library.hooks.consent_gate`, which `ai_hats.consent_wrapper`
+# imports at module level. Naming it here restores the real path; the wheel
+# then picks it up on its own, which is why only the sdist declares it.
+[tool.hatch.build.targets.sdist.force-include]
+"src/ai_hats_library/hooks/consent_gate" = "src/ai_hats_library/hooks/consent_gate"
