@@ -230,9 +230,14 @@ def stand_in_session(
     correct for a sandbox that binds no check. A test whose bindings must
     resolve passes the root it actually planted into.
     """  # comment-length: allow — why setting the id alone stopped working
+    from ai_hats.env import ENV_HOOK_SOCKET
     from ai_hats.paths import session_cache_dir
     from ai_hats.session_identity import SessionIdentity
 
+    # A stand-in session inherits no OTHER session's resident dispatcher: in
+    # production the address is derived from the session's own cache dir, so an
+    # ambient one aims the fixture's gates at the live session that launched it.
+    env.pop(ENV_HOOK_SOCKET, None)
     session_dir = project / ".agent" / "ai-hats" / "sessions" / "runs" / session_id
     identity = SessionIdentity(
         id=session_id,
