@@ -34,8 +34,8 @@ def test_guard_script_present_and_executable():
 
 def test_attached_to_a_universal_trait():
     """A skill nothing composes is a hook nothing materializes."""
-    cfg = yaml.safe_load((LIB / "core/traits/trait-base/config.yaml").read_text())
+    cfg = yaml.safe_load((LIB / "core/traits/trait-agent/config.yaml").read_text())
     skills = (cfg.get("composition") or {}).get("skills") or []
     assert "command-lifetime" in skills, (
-        f"trait-base must compose command-lifetime; got {skills!r}"
+        f"trait-agent must compose command-lifetime; got {skills!r}"
     )

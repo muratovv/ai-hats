@@ -24,6 +24,10 @@ composition:
     - context-handoff
     - task-summary
     - tool-call-hygiene
+    # the automation half of global_rule_resource_hygiene: a process the agent
+    # launched and left behind. The prose half did not hold — a trait already
+    # said "bound hang-prone commands" while three wait-loops ran for 21 hours.
+    - command-lifetime
     - positive-control
     - design-minimalism
   # external session middleware owns consent. The operation type is

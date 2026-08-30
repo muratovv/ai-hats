@@ -10,12 +10,6 @@ composition:
     # hooks. Their wiring became composition-gated when they stopped being
     # package-copied, so universal coverage needs a universal trait.
     - safety-guard
-    # carries the PreToolUse guard for command lifetime — the automation half of
-    # global_rule_resource_hygiene above, which the prose half did not hold: a
-    # trait already said "bound hang-prone commands" while three wait-loops ran
-    # for 21 hours. Universal for the same reason safety-guard is: every role
-    # that runs shell can leave a process behind.
-    - command-lifetime
 injection: |
   ## BASE BEHAVIOR
 
