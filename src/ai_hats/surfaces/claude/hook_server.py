@@ -17,6 +17,7 @@ import io
 import json
 import os
 import socketserver
+import logging
 import stat
 import sys
 import threading
@@ -24,6 +25,8 @@ from pathlib import Path
 
 from ..hook_dispatch import dispatch
 from .channel import ClaudeChannel
+
+logger = logging.getLogger(__name__)
 
 #: Sockets live here, not in the session cache: a cache path is 87 bytes for a
 #: plain checkout and 106 for a worktree, against AF_UNIX's 104 — measured, and
@@ -100,11 +103,13 @@ class HookServer:
 
     def start(self) -> "HookServer":
         self.path.unlink(missing_ok=True)  # safe-delete: ok ephemeral socket
-        self._out, self._err = _Fanout(sys.stdout), _Fanout(sys.stderr)
-        sys.stdout, sys.stderr = self._out, self._err
+        # Bound BEFORE the streams are proxied: a bind that raises must not
+        # leave the session writing through a proxy with nothing behind it.
         server = _Server(str(self.path), _handler(self))
         # The socket answers for this session's gates; nobody else may ask.
         os.chmod(self.path, 0o600)
+        self._out, self._err = _Fanout(sys.stdout), _Fanout(sys.stderr)
+        sys.stdout, sys.stderr = self._out, self._err
         self._server = server
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return self
@@ -114,10 +119,13 @@ class HookServer:
             self._server.shutdown()
             self._server.server_close()
             self._server = None
-        if isinstance(sys.stdout, _Fanout):
-            sys.stdout = sys.stdout._real
-        if isinstance(sys.stderr, _Fanout):
-            sys.stderr = sys.stderr._real
+        # Only OUR proxy is unwound, and only while it is the one installed —
+        # restoring someone else's would hand them a stream they never took.
+        if self._out is not None and sys.stdout is self._out:
+            sys.stdout = self._out._real
+        if self._err is not None and sys.stderr is self._err:
+            sys.stderr = self._err._real
+        self._out = self._err = None
         self.path.unlink(missing_ok=True)  # safe-delete: ok ephemeral socket
 
     def __enter__(self) -> "HookServer":

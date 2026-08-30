@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -160,3 +161,28 @@ def test_the_socket_is_private_and_leaves_nothing_behind(tmp_path: Path) -> None
         assert oct(path.parent.stat().st_mode)[-3:] == "700"
 
     assert not path.exists(), "a socket outlived the session that owned it"
+
+
+@pytest.mark.integration
+def test_a_request_that_never_finishes_does_not_wedge_the_session(tmp_path: Path) -> None:
+    """The server lives inside the process that owns the terminal, so a client
+    that connects and says nothing must be dropped rather than held — and the
+    drop must not print a traceback into that terminal."""
+    project, env, cache, _ = _session(tmp_path)
+
+    with HookServer(cache, env) as server:
+        server._server.RequestHandlerClass.timeout = 0.2
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as mute:
+            mute.connect(str(server.path))
+            mute.settimeout(5)
+            assert mute.recv(4096) == b"", "a silent client was answered anyway"
+
+        status, out, err = _call(_session_entry(cache), project, env)
+
+    assert "the gate itself spoke" in err, "the server stopped answering after a mute client"
+
+
+def _session_entry(cache: Path) -> str:
+    return json.loads((cache / "settings.json").read_text())["hooks"]["PreToolUse"][0]["hooks"][0][
+        "command"
+    ]
