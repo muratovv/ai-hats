@@ -9,10 +9,12 @@ that is the shape the residue it hunts was written with.
 import json
 from pathlib import Path
 
+import pytest
+
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import claude_dir, session_cache_dir
-from ai_hats.session_artifacts import BuiltArtifacts
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
@@ -378,3 +380,90 @@ def test_leak_detector_catches_session_tree_leaked_hooks(tmp_path: Path) -> None
     )
     res = ClaudeSurface().leaked_user_global_project_hooks(home)
     assert leaked_cmd in res
+
+
+def _manifest(project: Path) -> dict:
+    return json.loads((session_cache_dir(project, SESSION_ID) / "hooks.json").read_text())
+
+
+def _hook_skills(base: Path) -> list[ResolvedComponent]:
+    return [
+        _skill_with_runtime_hooks(base, "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}),
+        _skill_with_runtime_hooks(
+            base, "skill-y", {HOOK_POST_TOOL_USE: [("Edit|Write", "hooks/post.sh")]}
+        ),
+    ]
+
+
+def test_the_manifest_names_exactly_the_composed_gates(tmp_path: Path) -> None:
+    """HATS-1874: what the dispatcher reads, spelled out rather than imported —
+    a manifest that names a gate the composition does not is a gate nobody
+    declared, and one it omits is a gate that stops running."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+
+    _settings(proj, _result(_hook_skills(tmp_path / "skills")))
+    manifest = _manifest(proj)["hooks"]
+
+    assert manifest == {
+        HOOK_PRE_TOOL_USE: [
+            {
+                "matcher": "Bash",
+                "command": _managed_command(proj, "skill-x", "hooks/pre.sh"),
+                "tag": f"ai-hats:skill-x:{HOOK_PRE_TOOL_USE}:Bash",
+            }
+        ],
+        HOOK_POST_TOOL_USE: [
+            {
+                "matcher": "Edit|Write",
+                "command": _managed_command(proj, "skill-y", "hooks/post.sh"),
+                "tag": f"ai-hats:skill-y:{HOOK_POST_TOOL_USE}:Edit|Write",
+            }
+        ],
+    }
+
+
+def test_a_gate_whose_script_is_gone_is_missing_from_both(tmp_path: Path) -> None:
+    """The drop stays silent — HATS-1862 owns making it loud. What must not
+    differ is WHERE it drops."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+    (skill.source_path / "hooks" / "pre.sh").unlink()
+
+    assert _settings(proj, _result([skill]))["hooks"] == {}
+    assert _manifest(proj)["hooks"] == {}
+
+
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_the_pins_the_dispatcher_needs_reach_the_launch(tmp_path: Path, run_mode) -> None:
+    """The dispatcher's settings entry is a shell guard, and without these two
+    it refuses — a refusal AI_HATS_GATE_BROKEN_ACK cannot open, because the
+    shell never reaches the python that honours it."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    provider = ClaudeSurface()
+    artifacts = provider.build_session_artifacts(
+        proj,
+        _result(_hook_skills(tmp_path / "skills")),
+        SESSION_ID,
+        run_mode=run_mode,
+        artifacts=BuiltArtifacts(),
+    )
+
+    env = assemble_launch_env(
+        provider,
+        proj,
+        tmp_path / "session",
+        session_id=SESSION_ID,
+        trace_path=str(tmp_path / "trace.jsonl"),
+        role="role-x",
+        root_pid="1",
+        extra_env=artifacts.extra_env,
+        run_mode=run_mode,
+    )
+
+    assert env["AI_HATS_SESSION_CACHE_DIR"] == str(session_cache_dir(proj, SESSION_ID))
+    assert Path(env["AI_HATS_PYTHON"]).exists()

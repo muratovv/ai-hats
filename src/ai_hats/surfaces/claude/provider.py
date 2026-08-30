@@ -30,8 +30,8 @@ from .sdk_options import (
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
+from .runtime_hooks import composed_rows, materialize_hook_manifest
 
-from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
     AI_HATS_PROJECT_DIR_ENV,
@@ -262,6 +262,13 @@ class ClaudeSurface(Surface):
         # SKILLS precedes HOOKS in ArtifactCategory, so the mirror this points
         # into is already written (scripts before wiring, HATS-1123).
         skills_dir = claude_plugin_skills_dir(cache_dir / "plugin")
+        materialize_hook_manifest(
+            result,
+            artifacts,
+            cache_dir=cache_dir,
+            session_id=session_id,
+            skills_dir=skills_dir,
+        )
         artifacts.port.write_text(
             cache_settings,
             json.dumps(
@@ -444,29 +451,20 @@ class ClaudeSurface(Surface):
     ) -> dict[str, list[dict]]:
         """``{event: [managed entry, ...]}`` the composition should produce.
 
-        Commands point into the session's own skill mirror, so each hook runs
-        beside the files its skill ships (HATS-1268). Every entry is
-        skill-declared, the shared-state guard included, so a composition-less
-        build wires nothing. Paths are absolute — the mirror is out of tree, and
-        HATS-615 asked for cwd-independence, not project-relativity.
+        From the same producer the manifest is written from, so the wiring and
+        what the dispatcher reads cannot name different gates.
         """
-        desired: dict[str, list[dict]] = {}
-        if result is None:
-            return desired
-
-        for event, entries in collect_runtime_hooks(result).items():
-            for skill_name, hook in entries:
-                if resolve_skill_script(result, skill_name, hook.script) is None:
-                    continue
-                command = str(skills_dir / skill_name / hook.script)
-                desired.setdefault(event, []).append(
-                    {
-                        "matcher": hook.matcher,
-                        "_ai_hats_managed": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
-                        self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": command}],
-                    }
-                )
-        return desired
+        return {
+            event: [
+                {
+                    "matcher": row["matcher"],
+                    "_ai_hats_managed": row["tag"],
+                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": row["command"]}],
+                }
+                for row in rows
+            ]
+            for event, rows in composed_rows(result, skills_dir).items()
+        }
 
     @staticmethod
     def _upsert_managed_entry(event_list: list, want: dict) -> bool:
