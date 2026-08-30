@@ -3,6 +3,26 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `ai_hats_core.lazy.lazy_facade` — the `__getattr__`/`__dir__` pair for a package
+  that binds its exports on first use. Written by hand in six `__init__` first
+  (HATS-1869), which grew two conventions for the same table and a `__dir__`
+  missing from four of them.
+
+### Changed
+
+- The facade binds its exports lazily (PEP 562) — the dependency set is
+  unchanged, only the moment it loads. Importing `ai_hats_core.deadline`, which
+  is stdlib-only and sits on the hook path of every tool call, no longer costs
+  pydantic, filelock and asyncio through the parent `__init__` (HATS-1869; see
+  ADR-0014 Amendments). A bare `import ai_hats_core` no longer exposes the submodules
+  the facade used to import for it (`locks`, `yaml_model`, …) as attributes;
+  `from ai_hats_core import locks` is unaffected, as is the documented API —
+  `__all__` plus `safe_delete`.
+
 ## [0.9.0] - 2026-08-14
 
 ### Added

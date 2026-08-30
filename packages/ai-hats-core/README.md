@@ -52,7 +52,9 @@ subprocess.run(["git", "status"], cwd=Path("."), env=scrubbed_git_env())
 - `YamlModel`
 - `scrubbed_git_env()`
 
-plus the `ai_hats_core.safe_delete` module namespace.
+plus the `ai_hats_core.safe_delete` and `ai_hats_core.lazy` module namespaces.
+`lazy.lazy_facade` builds the `__getattr__`/`__dir__` pair a package needs to bind
+its exports on first use.
 
 ## Dependencies
 
@@ -61,7 +63,7 @@ plus the `ai_hats_core.safe_delete` module namespace.
 ## Versioning
 
 [SemVer](https://semver.org/). The public API is `ai_hats_core.__all__` +
-`ai_hats_core.safe_delete`.
+`ai_hats_core.safe_delete` + `ai_hats_core.lazy`.
 
 ## License
 

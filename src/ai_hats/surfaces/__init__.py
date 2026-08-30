@@ -11,34 +11,47 @@ Importing a name from under this package instead of from here is what
 
 from __future__ import annotations
 
-from .contract import (
-    MetricsSink,
-    Surface,
-    SurfaceHint,
-    SurfaceRunResult,
-    SubagentEngine,
-    TranscriptResolver,
-)
-from .managed_tags import sweep_stale_managed_tags
+from typing import TYPE_CHECKING
+
+from ai_hats_core.lazy import lazy_facade
+
+if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
+    from .contract import (
+        MetricsSink,  # noqa: F401
+        SubagentEngine,  # noqa: F401
+        Surface,  # noqa: F401
+        SurfaceHint,  # noqa: F401
+        SurfaceRunResult,  # noqa: F401
+        TranscriptResolver,  # noqa: F401
+    )
+    from .managed_tags import sweep_stale_managed_tags  # noqa: F401
 
 # comment-length: allow — an alias has to say what it does NOT cover
 # HATS-1826: deprecated aliases, so an out-of-tree surface written against
 # `Provider` keeps importing (the `LaunchProvider` precedent). Names only — a
 # subclass overriding `provider_hints` is no longer called, which is a real
 # break the CHANGELOG names.
-Provider = Surface
-ProviderHint = SurfaceHint
-ProviderRunResult = SurfaceRunResult
+_ALIASES = {
+    "Provider": "Surface",
+    "ProviderHint": "SurfaceHint",
+    "ProviderRunResult": "SurfaceRunResult",
+}
 
-__all__ = [
-    "MetricsSink",
-    "Surface",
-    "SurfaceHint",
-    "SurfaceRunResult",
-    "SubagentEngine",
-    "TranscriptResolver",
-    "sweep_stale_managed_tags",
-    "Provider",
-    "ProviderHint",
-    "ProviderRunResult",
-]
+# Bound lazily (PEP 562): the hook dispatchers live under this package and are a
+# fresh process per tool call, so entering it must not cost `contract`.
+_HOMES = {
+    "MetricsSink": ".contract",
+    "Provider": ".contract",
+    "ProviderHint": ".contract",
+    "ProviderRunResult": ".contract",
+    "SubagentEngine": ".contract",
+    "Surface": ".contract",
+    "SurfaceHint": ".contract",
+    "SurfaceRunResult": ".contract",
+    "TranscriptResolver": ".contract",
+    "sweep_stale_managed_tags": ".managed_tags",
+}
+
+
+__all__ = sorted(_HOMES)
+__getattr__, __dir__ = lazy_facade(globals(), _HOMES, aliases=_ALIASES)

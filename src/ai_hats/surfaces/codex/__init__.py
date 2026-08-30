@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
-from .provider import CodexSurface
+from typing import TYPE_CHECKING
 
-__all__ = ["CodexSurface"]
+from ai_hats_core.lazy import lazy_facade
+
+if TYPE_CHECKING:
+    from .provider import CodexSurface  # noqa: F401
+
+_HOMES = {
+    "CodexSurface": ".provider",
+}
+
+__all__ = sorted(_HOMES)
+__getattr__, __dir__ = lazy_facade(globals(), _HOMES)

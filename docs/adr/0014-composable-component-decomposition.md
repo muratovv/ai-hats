@@ -1116,6 +1116,24 @@ component-granular)?
     any more: every workspace member is a module again, and the surface → surface
     prohibition it also carried is now an intra-package concern.
 
+- **2026-08-28 (HATS-1869) — the core facade binds lazily.** The 2026-07-03
+  amendment above admitted pydantic into core, and HATS-526 filelock. Neither
+  choice is revisited here: the dependency set is unchanged, only the moment it
+  loads. `ai_hats_core/__init__` now binds its exports through PEP 562
+  `__getattr__`, so reaching a submodule no longer runs the facade's imports.
+  What forced it: the four hook dispatchers are a fresh process on **every tool
+  call**, and one of them needs `ai_hats_core.deadline` — pure stdlib — which
+  cost pydantic + filelock + asyncio through the parent `__init__`. Measured on
+  the same interpreter, back to back: import ~105 ms → ~20 ms per dispatcher.
+  The same treatment applies to `ai_hats.surfaces` and all five
+  `ai_hats.surfaces.<surface>` packages, because all three edges reach the heavy
+  subgraph independently: cutting any two still leaves over 80% of the cost, and the
+  two fixes that suggest themselves — move `Deadline` out of core, give the
+  dispatchers an entry point outside `surfaces` — are two of those three cuts, so
+  together they would not have fixed it.
+  `tests/test_dispatcher_import_closure.py` holds the result; the charter phrase
+  "minimal deps, each load-bearing" is unaffected.
+
 ## References
 
 - [ADR-0013](0013-wt-core-extraction-boundary.md) — the worktree engine (the first
