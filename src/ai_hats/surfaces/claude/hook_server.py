@@ -35,10 +35,10 @@ logger = logging.getLogger(__name__)
 SOCKET_ROOT = Path("/tmp")  # noqa: S108 - short by requirement; sockets_dir owns the safety
 
 
-def sockets_dir() -> Path:
-    """Where the sockets go. Pure: a dry-run asks for the path and must not
-    leave a directory behind for having asked (HATS-1552)."""
-    return SOCKET_ROOT / f"ai-hats-{os.getuid()}"
+def sockets_dir(root: Path | None = None) -> Path:
+    """Where the sockets go. Pure: a dry-run resolves the pin, and a report that
+    writes to disk is not a dry-run (HATS-1552). `make_sockets_dir` creates."""
+    return (root or SOCKET_ROOT) / f"ai-hats-{os.getuid()}"
 
 
 def make_sockets_dir() -> Path:

@@ -12,7 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.surfaces.claude.hook_server import _Fanout, make_sockets_dir, socket_path
+from ai_hats.surfaces.claude.hook_server import (
+    _Fanout,
+    make_sockets_dir,
+    socket_path,
+    sockets_dir,
+)
 
 
 class _Terminal:
@@ -83,10 +88,8 @@ def test_the_socket_path_fits_what_bind_accepts(cache_len: int) -> None:
             path.unlink(missing_ok=True)  # safe-delete: ok ephemeral socket
 
 
-def test_asking_where_the_socket_goes_creates_nothing(monkeypatch, tmp_path: Path) -> None:
-    """A dry-run asks for the path. HATS-1552: a report that writes is not one."""
-    monkeypatch.setattr("ai_hats.surfaces.claude.hook_server.SOCKET_ROOT", tmp_path)
+def test_asking_where_the_sockets_go_creates_nothing(tmp_path: Path) -> None:
+    """A dry-run resolves this pin, and a report that writes is not a dry-run."""
+    home = sockets_dir(tmp_path)
 
-    path = socket_path(Path("/some/session/cache"))
-
-    assert not path.parent.exists(), "asking for the path built the directory"
+    assert not home.exists(), "asking for the directory built it"
