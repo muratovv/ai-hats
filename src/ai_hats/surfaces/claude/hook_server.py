@@ -48,12 +48,16 @@ def socket_path(cache_dir: Path) -> Path:
     return sockets_dir() / f"{digest}.sock"
 
 
-class _Fanout(io.TextIOBase):
+class _Fanout:
     """One process, several calls at once: a thread that claimed a buffer writes
     into it, every other thread reaches the real stream untouched.
 
     Needed because a verdict is written to `sys.stdout` — process-global state
     that `redirect_stdout` would hand to whichever call finished last.
+
+    Deliberately not an `io.TextIOBase`: the base class ANSWERS `isatty` and
+    `fileno` (False, and a raise), so a terminal this stands in front of would
+    stop looking like one. Everything but the two writing methods is delegated.
     """
 
     def __init__(self, real) -> None:
