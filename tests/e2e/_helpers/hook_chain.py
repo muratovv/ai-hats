@@ -235,6 +235,34 @@ def build_session_settings(
     return session_cache_dir(project, session_id) / "settings.json"
 
 
+def composed_rows(settings: Path, event: str = "PreToolUse") -> list[dict]:
+    """The composed gate rows for ``event``, from the manifest beside ``settings``.
+
+    Since HATS-1874 `settings.json` holds one dispatcher entry per event and the
+    rows — command, matcher, tag — live here.
+    """
+    manifest = settings.parent / "hooks.json"
+    if not manifest.is_file():
+        raise AssertionError(f"no session hook manifest beside {settings}")
+    return json.loads(manifest.read_text()).get("hooks", {}).get(event, []) or []
+
+
+def composed_row(settings: Path, tag: str) -> dict:
+    """The one row carrying ``tag``, whichever event it is bound to."""
+    manifest = settings.parent / "hooks.json"
+    if not manifest.is_file():
+        raise AssertionError(f"no session hook manifest beside {settings}")
+    rows = [
+        row
+        for event_rows in json.loads(manifest.read_text()).get("hooks", {}).values()
+        for row in event_rows
+        if row.get("tag") == tag
+    ]
+    if len(rows) != 1:
+        raise AssertionError(f"expected one row tagged {tag}, got {rows}")
+    return rows[0]
+
+
 def pretooluse_hooks(settings: Path, tool: str = "Bash") -> list[str]:
     """The composed gate commands applicable to ``tool``, in recorded order.
 

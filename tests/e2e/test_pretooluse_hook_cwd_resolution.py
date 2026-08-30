@@ -17,7 +17,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from ai_hats.constants import HOOK_PRE_TOOL_USE
+
+from _helpers.hook_chain import composed_row
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -65,11 +66,7 @@ def _managed_guard_command(project: Path) -> str:
         project, result, "sid-cwd-res", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
     )
     cache_settings = session_cache_dir(project, "sid-cwd-res") / "settings.json"
-    data = json.loads(cache_settings.read_text())
-    pre = data["hooks"][HOOK_PRE_TOOL_USE]
-    guard = [e for e in pre if e.get("_ai_hats_managed") == GUARD_TAG]
-    assert len(guard) == 1, f"expected one managed guard entry, got: {pre}"
-    return guard[0]["hooks"][0]["command"]
+    return composed_row(cache_settings, GUARD_TAG)["command"]
 
 
 @pytest.mark.integration

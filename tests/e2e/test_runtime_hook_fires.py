@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.hook_chain import composed_row
+
 from ai_hats.paths import strip_claude_project_dir
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
@@ -54,17 +56,6 @@ def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:
     )
 
 
-def _managed_command(settings: dict, tag: str) -> str:
-    """The materialized-script command of the managed entry carrying ``tag``."""
-    for entries in settings.get("hooks", {}).values():
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if isinstance(entry, dict) and entry.get("_ai_hats_managed") == tag:
-                return entry["hooks"][0]["command"]
-    raise AssertionError(f"no managed entry tagged {tag} in {settings.get('hooks')}")
-
-
 @pytest.mark.integration
 def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path):
     launcher, env, _venv = installed_launcher
@@ -83,9 +74,8 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
         project, result, "sid-rthook-fires", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
     )
     cache_settings = session_cache_dir(project, "sid-rthook-fires") / "settings.json"
-    settings = json.loads(cache_settings.read_text())
-    pre_cmd = _managed_command(settings, "ai-hats:e2e-rthook:PreToolUse:Bash")
-    post_cmd = _managed_command(settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write")
+    pre_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PreToolUse:Bash")["command"]
+    post_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write")["command"]
     # Both events route to the same materialized script (one declared script).
     assert pre_cmd == post_cmd
     # The command carries the $CLAUDE_PROJECT_DIR/ runtime placeholder (HATS-615);
