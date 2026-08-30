@@ -146,3 +146,20 @@ def test_an_incomplete_dispatcher_environment_refuses_rather_than_passing(vanish
 
     assert done.returncode == 2, done.stdout
     assert "incomplete dispatcher environment" in done.stderr
+    assert "AI_HATS_GATE_BROKEN_ACK" in done.stderr, (
+        f"a refusal ai-hats imposes must name the way past it: {done.stderr!r}"
+    )
+
+
+def test_the_guard_honours_the_hatch_it_names(vanished) -> None:
+    """The one refusal python never gets to honour: the guard lives in `sh` and
+    the hatch it names must therefore be spelled there too. Reachable without
+    any bug of ours — a venv rebuilt mid-session (`uv sync`, `wt create`) is
+    enough to un-execute `AI_HATS_PYTHON` under a running session."""
+    blind = dict(vanished.env) | {"AI_HATS_GATE_BROKEN_ACK": "1"}
+    blind.pop("AI_HATS_SESSION_CACHE_DIR")
+
+    done = run_claude_dispatch(vanished.project, blind, tool="Bash", tool_input={"command": "hi"})
+
+    assert done.returncode == 0, done.stderr
+    assert "SKIPPED" in done.stderr, f"a skipped gate must not be skipped in silence: {done.stderr}"

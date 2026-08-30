@@ -35,14 +35,18 @@ from ..hook_dispatch import Arrival, ManifestUnresolved, dispatch, manifest_rows
 from .profile import PROFILE
 
 
-#: What a `settings.json` entry runs. The guard is the point: an entry that
-#: cannot start the dispatcher must REFUSE (exit 2), because a gate the harness
-#: could not deliver is exactly what it otherwise waves through in silence.
+#: What a `settings.json` entry runs. An entry that cannot start the dispatcher
+#: must REFUSE (exit 2) and name the hatch — python honours the hatch everywhere
+#: else, and this branch is precisely the one that never reaches python.
 DISPATCHER_COMMAND = (
     'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] '
     '&& [ -n "$AI_HATS_SESSION_CACHE_DIR" ] && [ -x "$AI_HATS_PYTHON" ]; '
     'then exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.claude.channel; '
-    'else printf "%s\\n" "ai-hats-claude-hook: incomplete dispatcher environment" >&2; '
+    'elif [ -n "$AI_HATS_GATE_BROKEN_ACK" ]; '
+    'then printf "%s\\n" "ai-hats-claude-hook: AI_HATS_GATE_BROKEN_ACK set, '
+    'SKIPPED: incomplete dispatcher environment" >&2; '
+    'else printf "%s\\n" "ai-hats-claude-hook: incomplete dispatcher environment '
+    '- set AI_HATS_GATE_BROKEN_ACK=1 to run past it" >&2; '
     "exit 2; fi'"
 )
 
