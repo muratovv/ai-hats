@@ -385,6 +385,17 @@ class Surface(abc.ABC):
         the side effect while reporting a value the launch will not use.
         """
 
+    def serve_hooks(self, project_dir: Path, session_id: str, environ: dict[str, str]):
+        """A dispatcher held open for the whole session, or ``None`` for a
+        surface that spawns one per hook — which every surface still does when
+        this returns ``None`` or the one it returns cannot be reached.
+
+        The object must carry ``path`` and ``close()``; the runner logs the
+        first and calls the second.
+        """
+        del project_dir, session_id, environ
+        return None
+
     def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         """Env values a launch must claim for real — ``{}`` for most surfaces.
 

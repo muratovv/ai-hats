@@ -42,6 +42,9 @@ ENV_ROOT_PID = "AI_HATS_ROOT_PID"
 #: because the agy global hook is invoked by the surface, not by our launcher.
 ENV_AI_HATS_PYTHON = "AI_HATS_PYTHON"
 
+#: Where this session's resident hook dispatcher listens.
+ENV_HOOK_SOCKET = "AI_HATS_HOOK_SOCK"
+
 # Hook-point vocabulary, owned by ADR-0020 D2; named here so it has one home.
 ENV_HOOK_POINT = "AI_HATS_HOOK_POINT"
 ENV_IN_HOOK = "AI_HATS_IN_HOOK"
@@ -398,6 +401,7 @@ __all__ = [
     "ENV_ROLE",
     "ENV_ROOT_PID",
     "ENV_AI_HATS_PYTHON",
+    "ENV_HOOK_SOCKET",
     "ENV_HOOK_POINT",
     "ENV_IN_HOOK",
     "ENV_FORCE",

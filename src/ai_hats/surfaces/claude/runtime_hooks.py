@@ -13,11 +13,12 @@ import json
 import sys
 from pathlib import Path
 
-from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
+from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_HOOK_SOCKET, ENV_SESSION_CACHE_DIR
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.session_artifacts import BuiltArtifacts
 
 from ..hook_dispatch import MANIFEST_VERSION
+from .hook_server import socket_path
 from .profile import PROFILE
 
 
@@ -79,6 +80,9 @@ def materialize_hook_manifest(
     artifacts.materialized.append(path)
     artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
     artifacts.extra_env[ENV_AI_HATS_PYTHON] = sys.executable
+    # Published by the writer so the server and the entry cannot disagree about
+    # where to listen; absent or stale, the entry spawns instead.
+    artifacts.extra_env[ENV_HOOK_SOCKET] = str(socket_path(cache_dir))
     return path
 
 

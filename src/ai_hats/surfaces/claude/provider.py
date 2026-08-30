@@ -414,6 +414,16 @@ class ClaudeSurface(Surface):
         extra = ["--model", model] if model else []
         return cmd + extra + ["--print", "-p", meta_prompt]
 
+    def serve_hooks(self, project_dir: Path, session_id: str, environ: dict[str, str]):
+        """One warm dispatcher for the session instead of one per tool call.
+
+        Measured on a composed maintainer session: 123 ms per gated call spawned,
+        91 ms asked — against 70 ms for the gates alone (HATS-1874).
+        """
+        from .hook_server import HookServer
+
+        return HookServer(session_cache_dir(project_dir, session_id), dict(environ)).start()
+
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         # HATS-819: hand every runtime hook a clean writable anchor so it need
         # not derive WRITE paths from ``__file__`` depth — materialization
