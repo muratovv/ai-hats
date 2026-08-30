@@ -73,10 +73,92 @@ ENV_HOOK_SURFACE_TIMEOUT_MS = "AI_HATS_HOOK_SURFACE_TIMEOUT_MS"
 #: honoured, and saying so needs the old name to survive somewhere.
 ENV_RETIRED_AGY_HOOK_TIMEOUT_S = "AI_HATS_AGY_HOOK_TIMEOUT_S"
 
+ENV_WT_HOOK_TIMEOUT_S = "AI_HATS_WT_HOOK_TIMEOUT_S"
+ENV_PTY_GRACE_S = "AI_HATS_PTY_GRACE_S"
+ENV_PTY_TERM_S = "AI_HATS_PTY_TERM_S"
+ENV_PIPELINE_KEEP_N = "AI_HATS_PIPELINE_KEEP_N"
+
 
 def _read(name: str) -> str | None:
     """Read environment variable; empty string is treated as unset (None)."""
     return os.environ.get(name) or None
+
+
+class Budget:
+    """A numeric knob: its name, its default, and the line a reader needs.
+
+    Hand-written rather than a dataclass because this leaf is imported by every
+    hook dispatcher and `dataclasses` costs ~7 ms alone; the dispatchers happen
+    to pay it on another edge today, and that is a debt to borrow, not to owe.
+    """
+
+    __slots__ = ("name", "default", "doc")
+
+    def __init__(self, name: str, default: float, doc: str) -> None:
+        self.name = name
+        self.default = default
+        self.doc = doc
+
+
+def read_budget(budget: Budget, environ: dict[str, str] | None = None) -> float:
+    """``budget.default`` unless the environment holds a usable value.
+
+    Usable means: parses as the default's own type, positive, and finite.
+    Anything else falls back — a typo must never disarm a bound nor raise, which
+    is the contract five of the six readers this replaces already kept.
+
+    ``environ`` is typed as ``dict`` for the builtin alone: naming ``Mapping``
+    here would import ``collections.abc``, 818 µs on a path measured in hundreds.
+    """
+    raw = (os.environ if environ is None else environ).get(budget.name)
+    if not raw or not raw.strip():
+        return budget.default
+    try:
+        value = type(budget.default)(raw)
+    except (TypeError, ValueError):
+        return budget.default
+    if value <= 0 or value != value or value == float("inf"):
+        return budget.default
+    return value
+
+
+#: Every numeric knob this package reads, each with the ONE copy of its default.
+#: A call site takes the number from here rather than agreeing with it: agreement
+#: is what drifts, and for a number a stale doc page is worse than none.
+BUDGETS: tuple[Budget, ...] = (
+    Budget(
+        ENV_HOOK_TIMEOUT_S,
+        60.0,
+        "Seconds the whole hook chain for one tool call may spend.",
+    ),
+    Budget(
+        ENV_GIT_HOOK_TIMEOUT_S,
+        900.0,
+        "Seconds one git-hook gate script may spend.",
+    ),
+    Budget(
+        ENV_WT_HOOK_TIMEOUT_S,
+        45.0,
+        "Seconds one worktree lifecycle hook may ask for; the caller's lock caps it.",
+    ),
+    Budget(
+        ENV_PTY_GRACE_S,
+        5.0,
+        "Seconds a PTY child is given to exit before it is signalled.",
+    ),
+    Budget(
+        ENV_PTY_TERM_S,
+        2.0,
+        "Seconds between SIGTERM and SIGKILL during PTY teardown.",
+    ),
+    Budget(
+        ENV_PIPELINE_KEEP_N,
+        10,
+        "Sibling pipeline-run directories kept before the oldest are pruned.",
+    ),
+)
+
+HOOK_TIMEOUT, GIT_HOOK_TIMEOUT, WT_HOOK_TIMEOUT, PTY_GRACE, PTY_TERM, PIPELINE_KEEP_N = BUDGETS
 
 
 def user_home_override() -> str | None:
@@ -185,6 +267,8 @@ __all__ = [
     "ENV_HOOK_EVENT",
     "ENV_HOOK_SURFACE_TIMEOUT_MS",
     "ENV_RETIRED_AGY_HOOK_TIMEOUT_S",
+    "Budget",
+    "read_budget",
     "user_home_override",
     "ai_hats_dir_override",
     "project_dir_pin",
