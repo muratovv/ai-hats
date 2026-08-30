@@ -33,7 +33,8 @@ from pathlib import Path
 from typing import Literal
 
 #: Env var that disables the guard outright (escape hatch). When set to "1"
-#: :func:`classify_invocation` always returns ``"sanctioned"``.
+#: :func:`classify_invocation` always returns ``"sanctioned"``. An operator's hatch,
+#: not an agent's — blanked for a sub-agent by ``constants.withheld_from_subagent``.
 SKIP_ENV_VAR = "AI_HATS_SKIP_SELF_LOCATION_GUARD"
 
 Verdict = Literal["sanctioned", "foreign"]
