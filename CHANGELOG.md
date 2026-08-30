@@ -8,11 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Versions are produced from git tags via `setuptools-scm`; everything
 since the latest tag lives under **Unreleased** until the next release.
 
+## [Unreleased]
+
+## [0.15.0] - 2026-08-31
+
 ### Added
 
 - **A knob you could only learn about by reading the function that reads it** (HATS-1872). `docs/how-to-configure.md`, the page a person configures a project from, named exactly one of the thirty configurable environment variables, and fourteen of them appeared nowhere in `docs/` at all. `docs/reference-env.md` now carries all thirty — budgets, our own path overrides, and the seven homes we honour but do not define — each with its type, its default and a line saying what it does. The page is rendered from the declarations rather than written beside them, and a CI stage refuses it once it falls behind, the way `tests/e2e/CATALOG.md` already worked. What that precedent cannot do, and this one must: for a number, a page that merely *agrees* with the code is a second home that drifts, so the declaration **is** the default and the reader takes it from there. The four budgets belonging to hooks the library delivers into a consuming project keep no declaration — those hooks run where `ai_hats` is not importable — so the generator reads their defaults out of the call site itself. A companion guard refuses any name shipped code reads that nothing declares, across both languages and every distribution.
-
-## [Unreleased]
 
 ### Fixed
 
@@ -97,7 +99,7 @@ since the latest tag lives under **Unreleased** until the next release.
   — the launcher, not the old Python, builds the replacement venv. A session
   whose interpreter is off the pin now says so at startup instead of failing
   later somewhere unrelated. `scripts/check_python_pin.py` (stage `python-pin`)
-  refuses a partial bump and a pin the matrix does not run.
+  refuses a partial bump and a pin the matrix does not run. Migration: `docs/migration-v0.15.0.md` §1.
 
 ### Fixed
 
@@ -129,7 +131,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **The allow-rule lint is gone, and the consent grant works again** (HATS-1861, ADR-0031). HATS-1642 rested on one measurement: a broad `permissions.allow` rule silenced the consent gate, "the harness approved the call before any prompt could appear". Re-measured on Claude Code 2.1.247 it does not reproduce — a PreToolUse hook that returns `ask` blocks the call whatever `allow` says, in `default`, `auto`, `dontAsk` and `bypassPermissions` alike. The fixture is in the repo (`experiments/harness-permission-precedence/probe.sh`, four arms, two of them controls, verdict read from a side-effect file rather than the model's prose), because the claim is about someone else's release and nothing in CI can hold it.
 
-  The lint's advice — answer each finding with a matching `ask` rule — turned out to have a price nobody had priced. An `ask` rule prompts even when the hook returned `allow`, so it silently disarmed the two places the framework deliberately says nothing: a **consent grant** (`consent wt.merge 30` bought no silence at all on the operations it names) and `allow_verdict()`'s routine-`rack` auto-allow. In this project the advice had grown `permissions.ask` to 66 entries. Deleted: `consent_permission_lint.py`, `permission_warning()` in `safety_gate.py`, five tests written against the retired behaviour, and the glossary's "Allow-rule lint (two verdicts)". `consent_spellings.py` stays — the HATS-1781 D6 runtime boundary reads the same table.
+  The lint's advice — answer each finding with a matching `ask` rule — turned out to have a price nobody had priced. An `ask` rule prompts even when the hook returned `allow`, so it silently disarmed the two places the framework deliberately says nothing: a **consent grant** (`consent wt.merge 30` bought no silence at all on the operations it names) and `allow_verdict()`'s routine-`rack` auto-allow. In this project the advice had grown `permissions.ask` to 66 entries. Deleted: `consent_permission_lint.py`, `permission_warning()` in `safety_gate.py`, five tests written against the retired behaviour, and the glossary's "Allow-rule lint (two verdicts)". `consent_spellings.py` stays — the HATS-1781 D6 runtime boundary reads the same table. Migration: `docs/migration-v0.15.0.md` §5.
 
 ### Added
 
@@ -255,7 +257,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
   The `delivery` field went with it, finishing what HATS-1515 started: it had been kept as a tripwire against a stale `delivery: summarized`, and its population is now zero.
 
-  **For external libraries:** nothing to migrate. A leftover `rules/<name>/metadata.yaml` is simply never read — rule discovery has always been marked by `rule.md`, so the sidecar can stay or go without effect.
+  **For external libraries:** nothing to migrate. A leftover `rules/<name>/metadata.yaml` is simply never read — rule discovery has always been marked by `rule.md`, so the sidecar can stay or go without effect. Migration: `docs/migration-v0.15.0.md` §4.
 
 ### Fixed
 
@@ -286,7 +288,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
   **Unchanged, on purpose:** the `ai_hats.providers` entry-point group, `-p/--provider`, `ai-hats list providers`, the `provider:` key in `ai-hats.yaml`, and the `provider` marker in session artifacts. Renaming those would break installed third-party surfaces and existing sessions and buys nothing; `docs/glossary.md` records the boundary so neither side gets "fixed" to match the other.
 
-  **What actually breaks for an out-of-tree surface:** `Provider` / `ProviderHint` / `ProviderRunResult` survive as deprecated aliases on `ai_hats.surfaces`, so `class MySurface(Provider)` still imports. The **method rename does not alias** — a surface overriding `provider_hints` is silently never called again; rename the override to `surface_hints`.
+  **What actually breaks for an out-of-tree surface:** `Provider` / `ProviderHint` / `ProviderRunResult` survive as deprecated aliases on `ai_hats.surfaces`, so `class MySurface(Provider)` still imports. The **method rename does not alias** — a surface overriding `provider_hints` is silently never called again; rename the override to `surface_hints`. Migration: `docs/migration-v0.15.0.md` §6a.
 
 - **A rack lifecycle point is now an arrow, and it denotes a SET** (HATS-1719). `at: [edge:<from>--<to>]` is replaced by `at: ['<from>-><to>']`, and the new `at: ['-><to>']` binds **every** road into a state. The retired spelling is **removed, not aliased**: a role still carrying it is refused at composition, naming the row. Grammar and legality: ADR-0017 §3.
 
@@ -302,7 +304,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
   Consent deliberately did **not** widen: it migrates one-to-one and stays on the edges the trait already named. A wide question without a batch is click-spam (HATS-1728). That split the `maintainer` role's single row in two — the "run + consent on one row" form ties the gate's reach to the question's, and here they differ.
 
-  Not yet legal, each refused by name of the card that opens it: `NONE->` / `->NONE` (HATS-1703). `<from>->` and `ANY->ANY` arrived in HATS-1720, below.
+  Not yet legal, each refused by name of the card that opens it: `NONE->` / `->NONE` (HATS-1703). `<from>->` and `ANY->ANY` arrived in HATS-1720, below. Migration: `docs/migration-v0.15.0.md` §7.
 
 - **A rack selector may now leave the TARGET open — `<from>->` and `ANY->ANY`** (HATS-1720). Every road OUT of a state, and every move of a backlog, said in one arrow. This is what the code channel had been writing by hand: three helpers in the integrator and four subscribers inside the package each rebuilt the topology's state product to say what one selector says, which is why `FrozenIntegrityExtension` had to be handed a topology at all.
 
@@ -312,11 +314,11 @@ since the latest tag lives under **Unreleased** until the next release.
   - **A subscriber runs at most once per event and phase.** Wide selectors let a subscriber's own bindings overlap — `ownership-release` holds `execute->` and `->done`, and `execute->done` matches both — and measured, the dispatcher used to hand it the event twice.
   - **`FrozenIntegrityExtension(tasks_dir, topology=…)` no longer takes `topology`** — it says `ANY->ANY` and no longer needs one. Same for the integrator's ownership/worktree/consent adapters.
   - **`ANY` on ONE side is refused** as a second spelling of the empty side: write `->done`, `execute->`, or `ANY->ANY` for everywhere.
-  - **A card sitting in a state the topology no longer has now reaches the subscribers.** A wide selector matches a PAIR; the enumeration it replaced was drawn from `topology.states`, and the kernel validates only a transition's target. So after a state is renamed or dropped in `backlog.yaml`, `rack transition <id> --state done --force` on a card left behind used to write the state and run nothing at all — no gate, no consent, no worktree teardown, no ownership release. Now it runs them, like every other road into `done`.
+  - **A card sitting in a state the topology no longer has now reaches the subscribers.** A wide selector matches a PAIR; the enumeration it replaced was drawn from `topology.states`, and the kernel validates only a transition's target. So after a state is renamed or dropped in `backlog.yaml`, `rack transition <id> --state done --force` on a card left behind used to write the state and run nothing at all — no gate, no consent, no worktree teardown, no ownership release. Now it runs them, like every other road into `done`. Migration: `docs/migration-v0.15.0.md` §7.
 
 - **Four surfaces stopped being distributions of their own** (HATS-1826). `agy`, `cline`, `codex` and `opencode` shipped as packages under `packages/surfaces/<name>/` — four PyPI projects, four publish jobs, four trusted-publisher environments — for a tier ADR-0014 created to state a dependency rule, not to ship wheels. Each is now a folder in the `ai_hats.surfaces` area (`src/ai_hats/surfaces/<name>/`), declared next to `claude` under `[project.entry-points."ai_hats.providers"]` in the root `pyproject.toml`, so it installs, versions and releases with `ai-hats` and nothing resolves it separately. The seam is untouched: providers keep their names, discovery is still the `ai_hats.providers` entry point, and an out-of-tree package can still register a surface. What is gone is the claim that being a surface means being a distribution — ADR-0026 D10 asks for a real consumer outside ai-hats, an entry point a human types or a documented API someone imports, and an owner of the release cycle; none of the four had one. Selecting a surface no longer installs anything either: ai-hats never runs an installer for a provider it already ships.
 
-  **The upgrade prunes what it replaced.** `ai-hats-agy` (0.2.0) and `ai-hats-cline` (0.5.0) had reached PyPI, and `self update` installs rather than synchronizes — both would have stayed in the venv shadowing the folded code, with agy's `ai-hats-hook-dispatcher` console script still on `PATH`. They join `retired_dists` (HATS-1280), which uninstalls a retired distribution during the upgrade to the release that retires it; no user action. `ai-hats-codex` and `ai-hats-opencode` need no prune — their publish jobs were gated behind an `ai-hats>=0.15.0` floor that no tag has ever met, so no venv can be carrying them.
+  **The upgrade prunes what it replaced.** `ai-hats-agy` (0.2.0) and `ai-hats-cline` (0.5.0) had reached PyPI, and `self update` installs rather than synchronizes — both would have stayed in the venv shadowing the folded code, with agy's `ai-hats-hook-dispatcher` console script still on `PATH`. They join `retired_dists` (HATS-1280), which uninstalls a retired distribution during the upgrade to the release that retires it; no user action. `ai-hats-codex` and `ai-hats-opencode` need no prune — their publish jobs were gated behind an `ai-hats>=0.15.0` floor that no tag has ever met, so no venv can be carrying them. Migration: `docs/migration-v0.15.0.md` §6b.
 
 ### Added
 
@@ -354,10 +356,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed — BREAKING
 
-- **Inverted rule-delivery default: every composed rule body is delivered in full** (HATS-1515). Every rule in `composition.rules` delivers its `rule.md` body into system prompt `## RULES`. Removed `ALWAYS_ON_RULES` and `SUMMARIZED_IN_INJECTION` sets; `rule-delivery-gate` checks that all rule pointers name existing rules in the library.
+- **Inverted rule-delivery default: every composed rule body is delivered in full** (HATS-1515). Every rule in `composition.rules` delivers its `rule.md` body into system prompt `## RULES`. Removed `ALWAYS_ON_RULES` and `SUMMARIZED_IN_INJECTION` sets; `rule-delivery-gate` checks that all rule pointers name existing rules in the library. Migration: `docs/migration-v0.15.0.md` §3.
 
 - **`AI_HATS_DIR` + foreign `AI_HATS_PROJECT_DIR` pin raises exit code 1 (`foreign_project_pin`)** (HATS-1471).
-  When `AI_HATS_DIR` is set to a sandbox directory and `AI_HATS_PROJECT_DIR` is set to a foreign project path, `rack` commands and `ai-hats wait` now refuse execution with exit code 1 and typed error `foreign_project_pin` detailing both paths and `ai_hats_dir`. Previously, `rack` ignored `AI_HATS_DIR` on CLI resolution and wrote to the live project root.
+  When `AI_HATS_DIR` is set to a sandbox directory and `AI_HATS_PROJECT_DIR` is set to a foreign project path, `rack` commands and `ai-hats wait` now refuse execution with exit code 1 and typed error `foreign_project_pin` detailing both paths and `ai_hats_dir`. Previously, `rack` ignored `AI_HATS_DIR` on CLI resolution and wrote to the live project root. Migration: `docs/migration-v0.15.0.md` §8.
 
 - **The two role-audit roles were renamed** (HATS-1425): `auditor-for-role` →
   `role-auditor`, `judge-for-role` → `role-judge`. The system carries two
@@ -367,7 +369,7 @@ since the latest tag lives under **Unreleased** until the next release.
   role's composition, protocol, or contract changed. **If a customization
   block, project `ai-hats.yaml`, or script names either old role, update it:
   `ComponentConfig` is declared `extra="ignore"`, so a stale role key is
-  dropped silently — the customization simply stops applying, with no error.**
+  dropped silently — the customization simply stops applying, with no error.** Migration: `docs/migration-v0.15.0.md` §2.
 
 ### Fixed
 
@@ -2756,7 +2758,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/muratovv/ai-hats/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/muratovv/ai-hats/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/muratovv/ai-hats/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/muratovv/ai-hats/compare/v0.13.0...v0.13.1
