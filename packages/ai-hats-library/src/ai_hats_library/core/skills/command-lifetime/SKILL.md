@@ -1,6 +1,6 @@
 ---
 name: command-lifetime
-description: PreToolUse hook refusing shell commands with no upper bound on their lifetime — unbounded while/until loops and unbounded background launches — and nudging on long-running ones. Infrastructure; read it to diagnose a refusal, not to invoke it.
+description: Diagnose a shell command refused or flagged for having no bound on its lifetime — an unbounded while/until loop, an unbounded background launch, or a long-running command with no timeout.
 ai_hats:
   runtime_hooks:
     PreToolUse:
