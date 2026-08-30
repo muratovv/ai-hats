@@ -15,6 +15,11 @@ import yaml
 
 from .resolver import find_project_root
 
+ENV_ROOTS_FILE = "RACK_ROOTS_FILE"
+#: One spelling of the fallback, read by the resolver below and stated by the
+#: declaration in ``cli_common`` — a doc page and the code cannot drift apart.
+DEFAULT_ROOTS_FILE = "~/.ai-hats/roots.yaml"
+
 
 class NotAProjectError(ValueError):
     """`rack root add <path>` was given a path that is not (and has no ancestor
@@ -27,8 +32,8 @@ class NotAProjectError(ValueError):
 
 def registry_path() -> Path:
     """`~/.ai-hats/roots.yaml`, or the ``RACK_ROOTS_FILE`` override."""
-    override = os.environ.get("RACK_ROOTS_FILE")
-    return Path(override) if override else Path.home() / ".ai-hats" / "roots.yaml"
+    override = os.environ.get(ENV_ROOTS_FILE)
+    return Path(override) if override else Path(DEFAULT_ROOTS_FILE).expanduser()
 
 
 def load_registered_roots() -> list[Path]:

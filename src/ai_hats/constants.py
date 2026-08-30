@@ -67,16 +67,26 @@ CONSENT_OWNED_KEYS = frozenset(
 #: repo script reads (HATS-1743 review).
 BYPASS_FLAG_SUFFIXES = ("_ACK", "_OFF", "_SKIP")
 
+#: A register of the convention's EXCEPTIONS, never a second opinion on it: `YOLO`
+#: carries no verb, the self-location hatch carries it at the FRONT — and matching a
+#: verb anywhere was measured and rejected (tests/test_bypass_withholding_shape.py).
+BYPASS_FLAGS_OFF_CONVENTION = frozenset(
+    {
+        "AI_HATS_SKIP_SELF_LOCATION_GUARD",
+        "AI_HATS_YOLO",
+    }
+)
+
 
 def withheld_from_subagent(name: str) -> bool:
     """Is ``name`` an approval the parent holds that its sub-agent must not?"""
     if not name.startswith("AI_HATS_") or name in CONSENT_OWNED_KEYS:
         return False
-    return name == "AI_HATS_YOLO" or name.endswith(BYPASS_FLAG_SUFFIXES)
+    return name in BYPASS_FLAGS_OFF_CONVENTION or name.endswith(BYPASS_FLAG_SUFFIXES)
 
 
-# The flags this repo KNOWS are withheld — every one of them also answers the shape
-# test above, which is what actually holds the line. Naming them keeps the launch
+# The flags this repo KNOWS are withheld — every one of them also answers the
+# predicate above, which is what actually holds the line. Naming them keeps the launch
 # record identical on every machine (the dry-run-equals-the-launch invariant) and
 # gives the reader the roster; forgetting one now costs a line in that record, not
 # the withholding itself.
@@ -96,6 +106,7 @@ BYPASS_FLAGS_NOT_INHERITED = frozenset(
         "AI_HATS_SECURITY_LINT_OFF",
         "AI_HATS_SHARED_STATE_ACK",
         "AI_HATS_SKILL_LINT_ACK",
+        "AI_HATS_SKIP_SELF_LOCATION_GUARD",
         "AI_HATS_SMOKE_SKIP",
         "AI_HATS_TICKET_IDS_ACK",
         "AI_HATS_TOOL_HYGIENE_OFF",

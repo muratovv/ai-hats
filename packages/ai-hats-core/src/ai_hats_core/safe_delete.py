@@ -46,6 +46,7 @@ __all__ = [
     "TrashFullError",
     "ENV_TRASH_DIR",
     "HARD_DELETE_SENTINEL",
+    "OVERRIDES",
 ]
 
 
@@ -54,6 +55,22 @@ HARD_DELETE_SENTINEL = "-"
 SESSION_PREFIX = "trash-"
 MANIFEST_NAME = "MANIFEST.md"
 NAMESPACE = "ai-hats"
+
+
+# Copied from ``ai_hats.env``, not imported: this distribution does not depend
+# on ``ai_hats``, and that boundary is what keeps it installable on its own.
+#: Every configurable path this distribution resolves through the environment.
+OVERRIDES: tuple[dict, ...] = (
+    {
+        "name": ENV_TRASH_DIR,
+        "default": f"`$TMPDIR`/{NAMESPACE}",
+        "doc": "Base of the per-process trash session every destructive op snapshots into.",
+        "sentinel": (
+            HARD_DELETE_SENTINEL,
+            "hard-delete instead — no snapshot, one stderr WARN per op",
+        ),
+    },
+)
 
 
 class TrashFullError(OSError):

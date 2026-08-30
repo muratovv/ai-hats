@@ -24,6 +24,8 @@ from .env import (
     ENV_GIT_GATE_BROKEN_ACK,
     ENV_HOOK_EVENT,
     ENV_GIT_HOOK_TIMEOUT_S,
+    GIT_HOOK_TIMEOUT,
+    read_budget,
 )
 from .hook_exec import HookOutcomeKind, HookRun, run_hook
 from .session_identity import IDENTITY_ENV_KEYS, drop_identity
@@ -48,7 +50,7 @@ GIT_POINT_PREFIX = "git:"
 #: Generous on purpose: a `pre-commit` that runs a test suite is not a hang, and
 #: the bound exists for the caller who cannot press Ctrl-C — CI, cron, an agent
 #: session. Overridable per project.
-GIT_HOOK_TIMEOUT_S: float = 900.0
+GIT_HOOK_TIMEOUT_S: float = GIT_HOOK_TIMEOUT.default
 GIT_HOOK_TIMEOUT_ENV = ENV_GIT_HOOK_TIMEOUT_S
 
 #: Opens a materialization refusal. Named to match the established flag shape
@@ -78,14 +80,7 @@ _MATERIALIZATION_KINDS = frozenset(
 def resolve_git_hook_timeout() -> float:
     """The effective per-script budget. A typo must not disable the bound, so a
     non-numeric or non-positive override falls back to the default."""
-    raw = os.environ.get(GIT_HOOK_TIMEOUT_ENV)
-    if not raw:
-        return GIT_HOOK_TIMEOUT_S
-    try:
-        value = float(raw)
-    except ValueError:
-        return GIT_HOOK_TIMEOUT_S
-    return value if value > 0 else GIT_HOOK_TIMEOUT_S
+    return read_budget(GIT_HOOK_TIMEOUT)
 
 
 def _log_dir(project_dir: Path) -> Path | None:

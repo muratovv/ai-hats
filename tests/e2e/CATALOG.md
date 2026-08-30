@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**287 of 287 files catalogued — 296 flows.**
+**288 of 288 files catalogued — 297 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1141,6 +1141,21 @@ as a claim to check, not as evidence.
 
 - **expect** — a pre-launch warning naming stale environment packages appears on stdout when drift is detected, and is suppressed when packages match
 - **why** — unnoticed environment drift leads to subtle runtime failures when active CLI tools conflict with project specification
+
+## `test_env_reference_gate.py`
+
+*pins HATS-1872*
+
+- **flow** — a maintainer runs the pre-push gate, which must route the env-reference check through the `ci-local.sh` dispatcher rather than leave it unreachable
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh env-reference    # announces the stage it dispatched to
+  bash scripts/ci-local.sh no-such-stage    # exit 2, and the usage names the stage
+  ```
+
+- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] env-reference`; an unknown stage exits 2 and lists `env-reference` among the stages it knows — one list, derived from the `ci_*` functions, so both answers die together
+- **why** — a generated page only stays current if something refuses it once it is not, and the refusal is only a gate if `ci-local.sh` dispatches to it. Whether the page is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
 
 ## `test_epic_auto_transition_e2e.py`
 

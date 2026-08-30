@@ -23,17 +23,17 @@ import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "ai_hats"
 
-#: An env-var name as this package spells one. Deliberately wider than
-#: ``AI_HATS_*``: the borrowed names (``XDG_*``) are names too, and a rule that
-#: could not see them would miss the ones most easily duplicated.
-ENV_NAME = re.compile(r"^(AI_HATS|AGY|CODEX|CLAUDE|RACK|XDG)_[A-Z0-9_]+$")
+#: An env-var name as this package spells one. Wider than ``AI_HATS_*`` on
+#: purpose: the borrowed names (``XDG_*``) are names too, and so is the
+#: prefix-less ``HATS_SKIP_RETRO``, which this rule could not see until now.
+ENV_NAME = re.compile(r"^(AI_HATS|AGY|CODEX|CLAUDE|RACK|XDG|HATS)_[A-Z0-9_]+$")
 
 #: Modules that hold a name of their own, and why the name stays there. Each is
 #: a deliberate exception to "env.py is the home" — not a backlog.
 ELSEWHERE = {
     "constants.py": "install-time, PTY and verbosity knobs, a second home by HATS-1868 decision",
     "consent_wrapper.py": "the consent channel's own protocol, ADR-0029/0030",
-    "worktree_hooks.py": "the wt channel's own budget",
+    "worktree_hooks.py": "the env the wt channel hands a hook; its budget came home",
     "session_identity.py": "the identity envelope names itself, ADR-0025 D1",
     "self_location.py": "a guard's own escape hatch",
     "retired_dists.py": "a one-shot prune's escape hatch",
@@ -42,9 +42,8 @@ ELSEWHERE = {
     "surfaces/codex/provider.py": "that surface's own XDG home override",
     "surfaces/opencode/provider.py": "that surface's own XDG home override",
     "surfaces/agy/hook_dispatcher.py": "runs on every tool call and must not import ai_hats",
-    "pty_shutdown.py": "the PTY teardown's own two bounds",
     "pipeline/harness.py": "the pipeline's own trace knobs",
-    "startup_notices.py": "the startup notice's own two switches",
+    "startup_notices.py": "the startup notice's own switch and its hold in seconds",
     "wt_lifecycle.py": "the branch name handed to a wt hook",
     "cli/maintenance.py": "a test-only pause switch",
 }

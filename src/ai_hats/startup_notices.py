@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
+from .env import ENV_STARTUP_HOLD, STARTUP_HOLD
+
 logger = logging.getLogger(__name__)
 
 _ANSI_REGEX = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])|\r")
@@ -32,7 +34,7 @@ def strip_ansi_and_control_codes(text: str) -> str:
     return _ANSI_REGEX.sub("", text)
 
 
-STARTUP_WARN_HOLD_SECONDS = 10.0
+STARTUP_WARN_HOLD_SECONDS = STARTUP_HOLD.default
 
 
 def _startup_hold_seconds(
@@ -55,7 +57,9 @@ def _startup_hold_seconds(
     non_interactive = env.get("AI_HATS_NON_INTERACTIVE", "").strip().lower()
     if non_interactive in ("1", "true", "yes", "on"):
         return 0.0
-    override = env.get("AI_HATS_STARTUP_HOLD")
+    # Not `read_budget`: 0 disables the hold on purpose, and that reader treats
+    # a non-positive value as unusable.
+    override = env.get(ENV_STARTUP_HOLD)
     if override is not None:
         try:
             return max(0.0, float(override))

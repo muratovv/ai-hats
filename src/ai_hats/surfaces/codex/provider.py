@@ -55,6 +55,9 @@ _HOOK_POLICY_KEYS = {
 }
 _HOOK_FEATURE_NAMES = {"codex_hooks", "hooks"}
 _ENV_CODEX_BASE_HOME = "AI_HATS_CODEX_BASE_HOME"
+# Codex's own two names: honoured on the way in, rewritten on the way out.
+_ENV_CODEX_HOME = "CODEX_HOME"
+_ENV_CODEX_SQLITE_HOME = "CODEX_SQLITE_HOME"
 _AI_HATS_HOME_DIR = ".ai-hats"
 _SESSION_HOMES_DIR = "session-homes"
 _SQLITE_ARTIFACT_SUFFIXES = (".sqlite", ".sqlite-shm", ".sqlite-wal", ".sqlite-journal")
@@ -220,7 +223,7 @@ class CodexSurface(Surface):
     def _configured_base_home() -> Path:
         from ai_hats.paths import cache_home
 
-        configured = os.environ.get(_ENV_CODEX_BASE_HOME) or os.environ.get("CODEX_HOME")
+        configured = os.environ.get(_ENV_CODEX_BASE_HOME) or os.environ.get(_ENV_CODEX_HOME)
         candidate = Path(configured).expanduser() if configured else Path.home() / ".codex"
         if not candidate.is_absolute() or not candidate.is_dir():
             raise RuntimeError("Codex base home must be an existing absolute directory")
@@ -256,7 +259,7 @@ class CodexSurface(Surface):
 
     @classmethod
     def _configured_sqlite_home(cls, base_home: Path) -> Path:
-        configured = os.environ.get("CODEX_SQLITE_HOME")
+        configured = os.environ.get(_ENV_CODEX_SQLITE_HOME)
         sqlite_home = Path(configured).expanduser() if configured else base_home
         if not sqlite_home.is_absolute():
             raise RuntimeError("Codex SQLite home must be an absolute directory")
@@ -382,8 +385,8 @@ class CodexSurface(Surface):
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_root)
         artifacts.extra_env.update(
             {
-                "CODEX_HOME": str(session_home),
-                "CODEX_SQLITE_HOME": str(sqlite_home),
+                _ENV_CODEX_HOME: str(session_home),
+                _ENV_CODEX_SQLITE_HOME: str(sqlite_home),
                 _ENV_CODEX_BASE_HOME: str(base_home),
             }
         )

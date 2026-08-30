@@ -73,10 +73,238 @@ ENV_HOOK_SURFACE_TIMEOUT_MS = "AI_HATS_HOOK_SURFACE_TIMEOUT_MS"
 #: honoured, and saying so needs the old name to survive somewhere.
 ENV_RETIRED_AGY_HOOK_TIMEOUT_S = "AI_HATS_AGY_HOOK_TIMEOUT_S"
 
+ENV_WT_HOOK_TIMEOUT_S = "AI_HATS_WT_HOOK_TIMEOUT_S"
+ENV_PTY_GRACE_S = "AI_HATS_PTY_GRACE_S"
+ENV_PTY_TERM_S = "AI_HATS_PTY_TERM_S"
+ENV_PIPELINE_KEEP_N = "AI_HATS_PIPELINE_KEEP_N"
+ENV_STARTUP_HOLD = "AI_HATS_STARTUP_HOLD"
+
 
 def _read(name: str) -> str | None:
     """Read environment variable; empty string is treated as unset (None)."""
     return os.environ.get(name) or None
+
+
+class Budget:
+    """A numeric knob: its name, its default, and the line a reader needs.
+
+    Hand-written rather than a dataclass because this leaf is imported by every
+    hook dispatcher and `dataclasses` costs ~7 ms alone; the dispatchers happen
+    to pay it on another edge today, and that is a debt to borrow, not to owe.
+    """
+
+    __slots__ = ("name", "default", "doc")
+
+    def __init__(self, name: str, default: float, doc: str) -> None:
+        self.name = name
+        self.default = default
+        self.doc = doc
+
+
+def read_budget(budget: Budget, environ: dict[str, str] | None = None) -> float:
+    """``budget.default`` unless the environment holds a usable value.
+
+    Usable means: parses as the default's own type, positive, and finite.
+    Anything else falls back — a typo must never disarm a bound nor raise, which
+    is the contract five of the six readers this replaces already kept.
+
+    ``environ`` is typed as ``dict`` for the builtin alone: naming ``Mapping``
+    here would import ``collections.abc``, 818 µs on a path measured in hundreds.
+    """
+    raw = (os.environ if environ is None else environ).get(budget.name)
+    if not raw or not raw.strip():
+        return budget.default
+    try:
+        value = type(budget.default)(raw)
+    except (TypeError, ValueError):
+        return budget.default
+    if value <= 0 or value != value or value == float("inf"):
+        return budget.default
+    return value
+
+
+#: Every numeric knob this package reads, each with the ONE copy of its default.
+#: A call site takes the number from here rather than agreeing with it: agreement
+#: is what drifts, and for a number a stale doc page is worse than none.
+BUDGETS: tuple[Budget, ...] = (
+    Budget(
+        ENV_HOOK_TIMEOUT_S,
+        60.0,
+        "Seconds the whole hook chain for one tool call may spend.",
+    ),
+    Budget(
+        ENV_GIT_HOOK_TIMEOUT_S,
+        900.0,
+        "Seconds one git-hook gate script may spend.",
+    ),
+    Budget(
+        ENV_WT_HOOK_TIMEOUT_S,
+        45.0,
+        "Seconds one worktree lifecycle hook may ask for; the caller's lock caps it.",
+    ),
+    Budget(
+        ENV_PTY_GRACE_S,
+        5.0,
+        "Seconds a PTY child is given to exit before it is signalled.",
+    ),
+    Budget(
+        ENV_PTY_TERM_S,
+        2.0,
+        "Seconds between SIGTERM and SIGKILL during PTY teardown.",
+    ),
+    Budget(
+        ENV_PIPELINE_KEEP_N,
+        10,
+        "Sibling pipeline-run directories kept before the oldest are pruned.",
+    ),
+    Budget(
+        ENV_STARTUP_HOLD,
+        10.0,
+        "Seconds a startup warning is held on screen; 0 disables the hold.",
+    ),
+)
+
+(
+    HOOK_TIMEOUT,
+    GIT_HOOK_TIMEOUT,
+    WT_HOOK_TIMEOUT,
+    PTY_GRACE,
+    PTY_TERM,
+    PIPELINE_KEEP_N,
+    STARTUP_HOLD,
+) = BUDGETS
+
+
+#: Every configurable path this package resolves through the environment, plus
+#: the foreign names it honours, each with the ONE description of how it falls
+#: back. Names read by a sibling distribution are declared there, not here.
+OVERRIDES: tuple[dict, ...] = (
+    {
+        "name": ENV_AI_HATS_USER_HOME,
+        "default": "`~`",
+        "doc": (
+            "Home for ai-hats-managed global state; `HOME` stays intact, so tool auth still "
+            "resolves."
+        ),
+    },
+    {
+        "name": ENV_AI_HATS_DIR,
+        "default": "yaml `ai_hats_dir`, else `<project_dir>/.agent/ai-hats`",
+        "doc": "The base dir holding the tracker, the library mirror and session state.",
+        "pin": "the session's base dir, written at spawn; `paths` honours it as an override only while `AI_HATS_PROJECT_DIR` names this project, and drops the pair when it names another",
+    },
+    {
+        "name": AI_HATS_PROJECT_DIR_ENV,
+        "default": "`<cwd>`",
+        "doc": "Which project a gate subprocess must inspect.",
+        "pin": "the project the session was launched for; it is what decides whether the `AI_HATS_DIR` / `AI_HATS_VENV` beside it are this project's override or a leaked pin",
+    },
+    {
+        "name": ENV_AI_HATS_VENV,
+        "default": "yaml `venv_path`, else the managed `versions/<sha>`, else `<ai_hats_dir>/.venv`",
+        "doc": (
+            "The interpreter ai-hats runs itself and its hooks with; pair-scoped like "
+            "`AI_HATS_DIR`."
+        ),
+    },
+    {
+        "name": ENV_LIBRARY_ROOT,
+        "default": (
+            "a source checkout above `<project_dir>` or `<cwd>`, else the installed library package"
+        ),
+        "doc": (
+            "Where the builtin library is composed FROM — not the materialized mirror under "
+            "`.agent`."
+        ),
+    },
+    {
+        "name": ENV_AI_HATS_CACHE_HOME,
+        "default": "`$XDG_CACHE_HOME`/ai-hats, else `~/.cache/ai-hats`",
+        "doc": (
+            "The BASE of the machine-only cache class; the per-project key is always appended to "
+            "it."
+        ),
+    },
+    {
+        "name": "AI_HATS_BUMP_BACKUP_DIR",
+        "default": "`$TMPDIR`/ai-hats/bump-backups",
+        "doc": "Where the pre-bump snapshot of the ai-hats-managed surface is written.",
+        "sentinel": ("-", "take no snapshot at all — one stderr WARN per call"),
+    },
+    {
+        "name": "AI_HATS_CODEX_BASE_HOME",
+        "default": "`$CODEX_HOME`, else `~/.codex`",
+        "doc": "The user's real codex home, projected into each session home.",
+    },
+    {
+        "name": "AI_HATS_OPENCODE_CONFIG_HOME",
+        "default": "`$XDG_CONFIG_HOME`, else `~/.config`",
+        "doc": "The user's real config BASE — not the `opencode/` dir inside it.",
+    },
+    {
+        "name": ENV_XDG_CACHE_HOME,
+        "default": "",
+        "doc": (
+            "Platform cache base. Ranks under `AI_HATS_CACHE_HOME`, over `~/.cache`; we append "
+            "`ai-hats/`."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "XDG_CONFIG_HOME",
+        "default": "",
+        "doc": (
+            "Platform config base. Ranks under `AI_HATS_OPENCODE_CONFIG_HOME`, over `~/.config`; "
+            "the opencode child is given a session-scoped one instead."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CODEX_HOME",
+        "default": "",
+        "doc": (
+            "Codex's own home. Ranks under `AI_HATS_CODEX_BASE_HOME`, over `~/.codex`; the codex "
+            "child is given the session home instead."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CODEX_SQLITE_HOME",
+        "default": "",
+        "doc": (
+            "Codex's rollout database. Unset, the codex base home serves; the codex child is "
+            "given a session-scoped one instead."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CLAUDE_CONFIG_DIR",
+        "default": "",
+        "doc": (
+            "Claude Code's own home, where its settings and transcripts are read from. Unset, "
+            "`~/.claude` serves."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CLINE_DATA_DIR",
+        "default": "",
+        "doc": (
+            "Cline's own home, where its session transcripts are read from. Unset, `~/.cline` "
+            "serves; the cline child is given one explicitly."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "GEMINI_CONFIG_DIR",
+        "default": "",
+        "doc": (
+            "The agy/gemini home, where that surface's settings and brain dir are read from. "
+            "Unset, `~/.gemini` serves."
+        ),
+        "foreign": True,
+    },
+)
 
 
 def user_home_override() -> str | None:
@@ -185,6 +413,9 @@ __all__ = [
     "ENV_HOOK_EVENT",
     "ENV_HOOK_SURFACE_TIMEOUT_MS",
     "ENV_RETIRED_AGY_HOOK_TIMEOUT_S",
+    "Budget",
+    "read_budget",
+    "OVERRIDES",
     "user_home_override",
     "ai_hats_dir_override",
     "project_dir_pin",

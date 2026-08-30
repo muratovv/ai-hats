@@ -43,21 +43,44 @@ from .models import CardLoadError, UnreadableWriteError
 from .ops import AttachSourceError, OpParseError
 from .registry import DerivedLinkKindError, UnknownLinkKindError
 from .resolver import NoProjectRootError, RackRoot, resolve_root
-from .roots_registry import load_registered_roots
+from .roots_registry import DEFAULT_ROOTS_FILE, ENV_ROOTS_FILE, load_registered_roots
 from .workspace import UnknownBacklogError
 
 # Same env contract as the tracker (string value is the shared contract).
 ENV_SESSION_ID = "AI_HATS_SESSION_ID"
 ENV_TASKS_DIR = "RACK_TASKS_DIR"
 
+#: Stated once, then rendered into both the ``--help`` line and the declaration
+#: below, so the option and the reference page cannot say different things.
+_TASKS_DIR_DEFAULT = "walk-up project resolution"
+
 TASKS_DIR_OPT = click.option(
     "--tasks-dir",
     envvar=ENV_TASKS_DIR,
     default=None,
     type=click.Path(path_type=Path),
-    help="Explicit override of the card-dirs root; default: walk-up project resolution.",
+    help=f"Explicit override of the card-dirs root; default: {_TASKS_DIR_DEFAULT}.",
 )
 JSON_OPT = click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+
+
+# Copied from ``ai_hats.env``, not imported: this distribution does not depend
+# on ``ai_hats``, and that boundary is what keeps the rack installable on its own.
+#: Every configurable path this distribution resolves through the environment.
+#: ``RACK_TASKS_DIR`` reaches the resolver as ``--tasks-dir``'s ``envvar``; the
+#: declaration adds nothing to that, it only makes the pair readable as data.
+OVERRIDES: tuple[dict, ...] = (
+    {
+        "name": ENV_TASKS_DIR,
+        "default": _TASKS_DIR_DEFAULT,
+        "doc": "The card-dirs root every rack verb reads and writes.",
+    },
+    {
+        "name": ENV_ROOTS_FILE,
+        "default": f"`{DEFAULT_ROOTS_FILE}`",
+        "doc": "The cross-project roots registry behind `--projects all`.",
+    },
+)
 
 
 def actor() -> str:

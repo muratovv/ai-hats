@@ -10,7 +10,8 @@ subdir. Concurrent invocations of the same pipeline name are safe — they
 get disjoint namespaces.
 
 Retention: at most N most-recent sessions per pipeline are kept on disk.
-Configurable via ``AI_HATS_PIPELINE_KEEP_N`` (default: 10). Older sibling
+Configurable via ``AI_HATS_PIPELINE_KEEP_N``; the number lives in
+``env.PIPELINE_KEEP_N``. Older sibling
 sessions are ``rmtree``'d on next ``__enter__`` of any harness for the
 same pipeline name. ``ignore_errors=True`` makes concurrent GC of the
 same oldest dir benign.
@@ -39,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..env import PIPELINE_KEEP_N, read_budget
 from ..paths import core_pipeline_path, runs_dir, traces_dir
 from .loader import load_pipeline
 from .pipeline import run as run_pipeline
@@ -135,7 +137,7 @@ class PipelineHarness:
         oldest dir; failure to rmtree it is benign.
         """
         if keep_n is None:
-            keep_n = int(os.environ.get("AI_HATS_PIPELINE_KEEP_N", "10"))
+            keep_n = read_budget(PIPELINE_KEEP_N)
         if not self._pipeline_root.exists():
             return
         siblings = sorted(
