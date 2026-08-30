@@ -1,0 +1,1 @@
+../../../../hooks/bypass_journal.sh

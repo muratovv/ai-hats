@@ -24,6 +24,7 @@ composition:
     - context-handoff
     - task-summary
     - tool-call-hygiene
+    - command-lifetime
     - positive-control
     - design-minimalism
   # external session middleware owns consent. The operation type is

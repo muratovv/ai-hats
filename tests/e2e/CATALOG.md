@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**286 of 286 files catalogued — 295 flows.**
+**287 of 287 files catalogued — 296 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -791,6 +791,20 @@ as a claim to check, not as evidence.
 
 - **expect** — a composed chain of two hooks runs in order on `exec`, `shell` and `local_shell` alike, and the refusal that reaches codex is the second hook's; a permitted command passes with both hooks still having run
 - **why** — `claude_hook_adapter.py` held the string `Bash` zero times, so every shipped terminal gate compared literally against `exec` and missed — `safety_gate.py`, `pre_bash_shared_state_guard.sh` and `tool_call_hygiene_guard.sh` never fired on this surface, and all ten dispatcher tests fed it a name codex does not send
+
+## `test_command_lifetime_guard.py`
+
+*pins HATS-1873*
+
+- **flow** — an agent launching a shell command with no upper bound on its lifetime
+- **cmds**
+
+  ```console
+  until grep -qE "=+ .*(passed|failed|error)" /tmp/unit2.log 2>/dev/null; do :; done
+  ```
+
+- **expect** — the PreToolUse guard denies unbounded loops and background launches, nudges on unbounded installs, stays silent on commands that end
+- **why** — the harness bounds the CALL, not the process, and the session-end reaper never runs in a session that stays open
 
 ## `test_comment_length_lint_hook.py`
 

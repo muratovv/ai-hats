@@ -1,0 +1,41 @@
+"""HATS-1873 — the command-lifetime skill declares its PreToolUse Bash guard.
+
+Fail-under-revert wiring proof: remove the ``runtime_hooks`` block from SKILL.md
+and ``from_skill_dir`` yields no PreToolUse hook, turning this test red. The
+materialization + settings.json wiring itself is covered generically by
+``test_assembler_runtime_hooks.py``; here we pin the real skill's declaration.
+"""
+
+from pathlib import Path
+
+from ai_hats.constants import HOOK_PRE_TOOL_USE
+from ai_hats.models import RuntimeHook, SkillMetadata
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
+SKILL_DIR = LIB / "core/skills/command-lifetime"
+
+
+def test_declares_pretooluse_bash_guard():
+    meta = SkillMetadata.from_skill_dir(SKILL_DIR)
+    pre = meta.runtime_hooks.get(HOOK_PRE_TOOL_USE, [])
+    assert RuntimeHook(matcher="Bash", script="hooks/pre_bash_lifetime_guard.sh") in pre, (
+        f"command-lifetime must declare its PreToolUse Bash guard; got {pre!r}"
+    )
+
+
+def test_guard_script_present_and_executable():
+    script = SKILL_DIR / "hooks/pre_bash_lifetime_guard.sh"
+    assert script.is_file()
+    assert script.stat().st_mode & 0o111, "guard script must be executable"
+
+
+def test_attached_to_a_universal_trait():
+    """A skill nothing composes is a hook nothing materializes."""
+    cfg = yaml.safe_load((LIB / "core/traits/trait-agent/config.yaml").read_text())
+    skills = (cfg.get("composition") or {}).get("skills") or []
+    assert "command-lifetime" in skills, (
+        f"trait-agent must compose command-lifetime; got {skills!r}"
+    )
