@@ -173,6 +173,15 @@ ci_ticket_ids() {
     "$PY" scripts/check_no_ticket_ids.py
 }
 
+# Offline and instant, like the six above. HATS-1872: sibling of `e2e-catalog` —
+# the env reference page is rendered from the declarations the code itself reads,
+# so it goes stale the moment a default is edited without regenerating. A stale
+# NUMBER is worse than no page: prose invites a check, a number invites trust.
+ci_env_reference() {
+    echo "[ci-local] env-reference (docs/reference-env.md vs the env declarations)" >&2
+    "$PY" scripts/gen_env_reference.py --check
+}
+
 # The full maintainer tier (the slow one). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
@@ -203,11 +212,11 @@ ci_e2e() {
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
-    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids"
+    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
     case "$1" in
         merge-gate) echo "$tier unit" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog adr-integrity prose-refs ticket-ids bidi e2e" ;;
+        push-gate) echo "lint unit e2e-catalog env-reference adr-integrity prose-refs ticket-ids bidi e2e" ;;
         *) return 1 ;;
     esac
 }
@@ -287,6 +296,7 @@ case "$stage" in
         ci_bidi
         ci_test_isolation
         ci_e2e_catalog
+        ci_env_reference
         ci_adr_integrity
     ci_ticket_ids
         ci_unit
