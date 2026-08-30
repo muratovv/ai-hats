@@ -36,14 +36,6 @@ class Budget:
 
     def __init__(self, name, default, doc):
         self.name, self.default, self.doc = name, default, doc
-
-
-class Override:
-    __slots__ = ("name", "default", "doc", "foreign", "pin", "sentinel")
-
-    def __init__(self, name, default, doc, foreign=False, pin=None, sentinel=None):
-        self.name, self.default, self.doc = name, default, doc
-        self.foreign, self.pin, self.sentinel = foreign, pin, sentinel
 '''
 
 MAIN_DECL = (
@@ -56,11 +48,13 @@ BUDGETS = (
 )
 
 OVERRIDES = (
-    Override("AI_HATS_DIR", "`<project>/.agent/ai-hats`", "The framework base dir.",
-             pin="the session's base dir, written at spawn"),
-    Override("AI_HATS_TRASH_DIR", "`$TMPDIR`/ai-hats", "Where destructive ops snapshot.",
-             sentinel=("-", "hard-delete instead")),
-    Override("XDG_CACHE_HOME", "", "Ranks under `AI_HATS_CACHE_HOME`.", True),
+    {"name": "AI_HATS_DIR", "default": "`<project>/.agent/ai-hats`",
+     "doc": "The framework base dir.",
+     "pin": "the session's base dir, written at spawn"},
+    {"name": "AI_HATS_TRASH_DIR", "default": "`$TMPDIR`/ai-hats",
+     "doc": "Where destructive ops snapshot.", "sentinel": ("-", "hard-delete instead")},
+    {"name": "XDG_CACHE_HOME", "default": "",
+     "doc": "Ranks under `AI_HATS_CACHE_HOME`.", "foreign": True},
 )
 """
 )
@@ -70,7 +64,8 @@ SIBLING_DECL = (
     + """
 
 OVERRIDES = (
-    Override("RACK_ROOTS_FILE", "`~/.ai-hats/roots.yaml`", "The cross-project roots registry."),
+    {"name": "RACK_ROOTS_FILE", "default": "`~/.ai-hats/roots.yaml`",
+     "doc": "The cross-project roots registry."},
 )
 """
 )

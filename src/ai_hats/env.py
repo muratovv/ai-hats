@@ -175,144 +175,135 @@ BUDGETS: tuple[Budget, ...] = (
 ) = BUDGETS
 
 
-class Override:
-    """A non-numeric knob: its name, how its default resolves, and one line of doc.
-
-    ``default`` is prose, not a value: a path resolves through a CHAIN whose
-    links are separated by ``", else "`` and whose LAST link is what a clean
-    environment answers. What a chain cannot carry gets a field of its own:
-    ``pin`` — what the spawner writes under a name that is user override AND
-    session pin at once; ``sentinel`` — ``(literal, effect)`` for a value
-    accepted BESIDE a path, making the type ``Path | Literal[<literal>]``;
-    ``foreign`` — a name we honour but do not define, which states no default.
-    """
-
-    __slots__ = ("name", "default", "doc", "foreign", "pin", "sentinel")
-
-    def __init__(
-        self,
-        name: str,
-        default: str,
-        doc: str,
-        foreign: bool = False,
-        pin: str | None = None,
-        sentinel: tuple[str, str] | None = None,
-    ) -> None:
-        self.name = name
-        self.default = default
-        self.doc = doc
-        self.foreign = foreign
-        self.pin = pin
-        self.sentinel = sentinel
-
-
 #: Every configurable path this package resolves through the environment, plus
 #: the foreign names it honours, each with the ONE description of how it falls
 #: back. Names read by a sibling distribution are declared there, not here.
-OVERRIDES: tuple[Override, ...] = (
-    Override(
-        ENV_AI_HATS_USER_HOME,
-        "`~`",
-        "Home for ai-hats-managed global state; `HOME` stays intact, so tool auth still resolves.",
-    ),
-    Override(
-        ENV_AI_HATS_DIR,
-        "yaml `ai_hats_dir`, else `<project_dir>/.agent/ai-hats`",
-        "The base dir holding the tracker, the library mirror and session state.",
-        pin="the session's base dir, written at spawn; `paths` honours it as an override only "
-        "while `AI_HATS_PROJECT_DIR` names this project, and drops the pair when it names another",
-    ),
-    Override(
-        AI_HATS_PROJECT_DIR_ENV,
-        "`<cwd>`",
-        "Which project a gate subprocess must inspect.",
-        pin="the project the session was launched for; it is what decides whether the "
-        "`AI_HATS_DIR` / `AI_HATS_VENV` beside it are this project's override or a leaked pin",
-    ),
-    Override(
-        ENV_AI_HATS_VENV,
-        "yaml `venv_path`, else the managed `versions/<sha>`, else `<ai_hats_dir>/.venv`",
-        "The interpreter ai-hats runs itself and its hooks with; pair-scoped like `AI_HATS_DIR`.",
-    ),
-    Override(
-        ENV_LIBRARY_ROOT,
-        "a source checkout above `<project_dir>` or `<cwd>`, else the installed library package",
-        "Where the builtin library is composed FROM — not the materialized mirror under `.agent`.",
-    ),
-    Override(
-        ENV_AI_HATS_CACHE_HOME,
-        "`$XDG_CACHE_HOME`/ai-hats, else `~/.cache/ai-hats`",
-        "The BASE of the machine-only cache class; the per-project key is always appended to it.",
-    ),
-    # The four below are read by modules that are not import leaves, so the name
-    # is spelled twice by construction; the test pins each to its reader's own
-    # constant rather than trusting the two spellings to stay equal.
-    Override(
-        "AI_HATS_BUMP_BACKUP_DIR",
-        "`$TMPDIR`/ai-hats/bump-backups",
-        "Where the pre-bump snapshot of the ai-hats-managed surface is written.",
-        sentinel=("-", "take no snapshot at all — one stderr WARN per call"),
-    ),
-    Override(
-        "AI_HATS_CODEX_BASE_HOME",
-        "`$CODEX_HOME`, else `~/.codex`",
-        "The user's real codex home, projected into each session home.",
-    ),
-    Override(
-        "AI_HATS_OPENCODE_CONFIG_HOME",
-        "`$XDG_CONFIG_HOME`, else `~/.config`",
-        "The user's real config BASE — not the `opencode/` dir inside it.",
-    ),
-    Override(
-        ENV_XDG_CACHE_HOME,
-        "",
-        "Platform cache base. Ranks under `AI_HATS_CACHE_HOME`, over `~/.cache`; we append `ai-hats/`.",
-        foreign=True,
-    ),
-    Override(
-        "XDG_CONFIG_HOME",
-        "",
-        "Platform config base. Ranks under `AI_HATS_OPENCODE_CONFIG_HOME`, over `~/.config`; "
-        "the opencode child is given a session-scoped one instead.",
-        foreign=True,
-    ),
-    Override(
-        "CODEX_HOME",
-        "",
-        "Codex's own home. Ranks under `AI_HATS_CODEX_BASE_HOME`, over `~/.codex`; "
-        "the codex child is given the session home instead.",
-        foreign=True,
-    ),
-    Override(
-        "CODEX_SQLITE_HOME",
-        "",
-        "Codex's rollout database. Unset, the codex base home serves; "
-        "the codex child is given a session-scoped one instead.",
-        foreign=True,
-    ),
-    # The three below reach the same `tool_home()` helper as CODEX_HOME above, so
-    # listing that one and not these would have been an accident of prefix.
-    Override(
-        "CLAUDE_CONFIG_DIR",
-        "",
-        "Claude Code's own home, where its settings and transcripts are read from. "
-        "Unset, `~/.claude` serves.",
-        foreign=True,
-    ),
-    Override(
-        "CLINE_DATA_DIR",
-        "",
-        "Cline's own home, where its session transcripts are read from. "
-        "Unset, `~/.cline` serves; the cline child is given one explicitly.",
-        foreign=True,
-    ),
-    Override(
-        "GEMINI_CONFIG_DIR",
-        "",
-        "The agy/gemini home, where that surface's settings and brain dir are read from. "
-        "Unset, `~/.gemini` serves.",
-        foreign=True,
-    ),
+OVERRIDES: tuple[dict, ...] = (
+    {
+        "name": ENV_AI_HATS_USER_HOME,
+        "default": "`~`",
+        "doc": (
+            "Home for ai-hats-managed global state; `HOME` stays intact, so tool auth still "
+            "resolves."
+        ),
+    },
+    {
+        "name": ENV_AI_HATS_DIR,
+        "default": "yaml `ai_hats_dir`, else `<project_dir>/.agent/ai-hats`",
+        "doc": "The base dir holding the tracker, the library mirror and session state.",
+        "pin": "the session's base dir, written at spawn; `paths` honours it as an override only while `AI_HATS_PROJECT_DIR` names this project, and drops the pair when it names another",
+    },
+    {
+        "name": AI_HATS_PROJECT_DIR_ENV,
+        "default": "`<cwd>`",
+        "doc": "Which project a gate subprocess must inspect.",
+        "pin": "the project the session was launched for; it is what decides whether the `AI_HATS_DIR` / `AI_HATS_VENV` beside it are this project's override or a leaked pin",
+    },
+    {
+        "name": ENV_AI_HATS_VENV,
+        "default": "yaml `venv_path`, else the managed `versions/<sha>`, else `<ai_hats_dir>/.venv`",
+        "doc": (
+            "The interpreter ai-hats runs itself and its hooks with; pair-scoped like "
+            "`AI_HATS_DIR`."
+        ),
+    },
+    {
+        "name": ENV_LIBRARY_ROOT,
+        "default": (
+            "a source checkout above `<project_dir>` or `<cwd>`, else the installed library package"
+        ),
+        "doc": (
+            "Where the builtin library is composed FROM — not the materialized mirror under "
+            "`.agent`."
+        ),
+    },
+    {
+        "name": ENV_AI_HATS_CACHE_HOME,
+        "default": "`$XDG_CACHE_HOME`/ai-hats, else `~/.cache/ai-hats`",
+        "doc": (
+            "The BASE of the machine-only cache class; the per-project key is always appended to "
+            "it."
+        ),
+    },
+    {
+        "name": "AI_HATS_BUMP_BACKUP_DIR",
+        "default": "`$TMPDIR`/ai-hats/bump-backups",
+        "doc": "Where the pre-bump snapshot of the ai-hats-managed surface is written.",
+        "sentinel": ("-", "take no snapshot at all — one stderr WARN per call"),
+    },
+    {
+        "name": "AI_HATS_CODEX_BASE_HOME",
+        "default": "`$CODEX_HOME`, else `~/.codex`",
+        "doc": "The user's real codex home, projected into each session home.",
+    },
+    {
+        "name": "AI_HATS_OPENCODE_CONFIG_HOME",
+        "default": "`$XDG_CONFIG_HOME`, else `~/.config`",
+        "doc": "The user's real config BASE — not the `opencode/` dir inside it.",
+    },
+    {
+        "name": ENV_XDG_CACHE_HOME,
+        "default": "",
+        "doc": (
+            "Platform cache base. Ranks under `AI_HATS_CACHE_HOME`, over `~/.cache`; we append "
+            "`ai-hats/`."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "XDG_CONFIG_HOME",
+        "default": "",
+        "doc": (
+            "Platform config base. Ranks under `AI_HATS_OPENCODE_CONFIG_HOME`, over `~/.config`; "
+            "the opencode child is given a session-scoped one instead."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CODEX_HOME",
+        "default": "",
+        "doc": (
+            "Codex's own home. Ranks under `AI_HATS_CODEX_BASE_HOME`, over `~/.codex`; the codex "
+            "child is given the session home instead."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CODEX_SQLITE_HOME",
+        "default": "",
+        "doc": (
+            "Codex's rollout database. Unset, the codex base home serves; the codex child is "
+            "given a session-scoped one instead."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CLAUDE_CONFIG_DIR",
+        "default": "",
+        "doc": (
+            "Claude Code's own home, where its settings and transcripts are read from. Unset, "
+            "`~/.claude` serves."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "CLINE_DATA_DIR",
+        "default": "",
+        "doc": (
+            "Cline's own home, where its session transcripts are read from. Unset, `~/.cline` "
+            "serves; the cline child is given one explicitly."
+        ),
+        "foreign": True,
+    },
+    {
+        "name": "GEMINI_CONFIG_DIR",
+        "default": "",
+        "doc": (
+            "The agy/gemini home, where that surface's settings and brain dir are read from. "
+            "Unset, `~/.gemini` serves."
+        ),
+        "foreign": True,
+    },
 )
 
 
@@ -424,7 +415,6 @@ __all__ = [
     "ENV_RETIRED_AGY_HOOK_TIMEOUT_S",
     "Budget",
     "read_budget",
-    "Override",
     "OVERRIDES",
     "user_home_override",
     "ai_hats_dir_override",

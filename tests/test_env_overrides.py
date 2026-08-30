@@ -29,7 +29,7 @@ from ai_hats_rack.resolver import resolve_root
 #: One declaration home per distribution — ai-hats-rack and ai-hats-core cannot
 #: import ``ai_hats``, so a single tuple was never available to them.
 DECLARED: dict[str, Any] = {
-    override.name: override
+    override["name"]: override
     for home in (env.OVERRIDES, safe_delete.OVERRIDES, cli_common.OVERRIDES)
     for override in home
 }
@@ -125,7 +125,7 @@ def _render(default: str, project_dir: Path) -> Path | None:
         "<cwd>": Path.cwd,
         # Composed from the other declaration rather than restated, so the two
         # cannot drift: <ai_hats_dir> IS whatever AI_HATS_DIR falls back to.
-        "<ai_hats_dir>": lambda: _render(DECLARED["AI_HATS_DIR"].default, project_dir),
+        "<ai_hats_dir>": lambda: _render(DECLARED["AI_HATS_DIR"]["default"], project_dir),
     }
     if head not in roots:
         return None
@@ -136,9 +136,9 @@ def _render(default: str, project_dir: Path) -> Path | None:
 def _mismatch(override: Any, project_dir: Path) -> tuple[Path, Path] | None:
     """``(stated, resolved)`` when a declaration's default is not what the
     resolver answers, else ``None``."""
-    stated = _render(override.default, project_dir)
-    assert stated is not None, f"{override.name}: default is prose, not checkable here"
-    resolved = PROBES[override.name](project_dir).resolve()
+    stated = _render(override["default"], project_dir)
+    assert stated is not None, f"{override['name']}: default is prose, not checkable here"
+    resolved = PROBES[override["name"]](project_dir).resolve()
     return None if resolved == stated.resolve() else (stated, resolved)
 
 
@@ -156,11 +156,12 @@ def test_a_declared_name_is_the_one_its_reader_spells(name: str) -> None:
     """These names live in two modules by construction — the declaration home is
     an import leaf and their readers are not. A rename that reaches only one of
     the two spellings turns this red instead of silently declaring a dead name."""
-    assert DECLARED[name].name == READER_CONSTANTS[name]
+    assert DECLARED[name]["name"] == READER_CONSTANTS[name]
 
 
 @pytest.mark.parametrize(
-    "name", sorted(name for name, override in DECLARED.items() if not override.foreign)
+    "name",
+    sorted(name for name, override in DECLARED.items() if not override.get("foreign", False)),
 )
 def test_the_stated_default_is_what_a_clean_environment_answers(name: str, clean_env: Path) -> None:
     if name in NOT_A_PATH_EXPRESSION:
@@ -172,7 +173,11 @@ def test_the_stated_default_is_what_a_clean_environment_answers(name: str, clean
 def test_the_positive_control_a_wrong_default_is_actually_caught(clean_env: Path) -> None:
     """Without this, a green run above is indistinguishable from a comparison
     that never happened."""
-    wrong = env.Override("AI_HATS_CACHE_HOME", "`~/.cache/not-ai-hats`", "deliberately wrong")
+    wrong = {
+        "name": "AI_HATS_CACHE_HOME",
+        "default": "`~/.cache/not-ai-hats`",
+        "doc": "deliberately wrong",
+    }
     assert _mismatch(wrong, clean_env) is not None
     assert _mismatch(DECLARED["AI_HATS_CACHE_HOME"], clean_env) is None
 
@@ -181,7 +186,7 @@ def test_every_declaration_is_checked_or_says_why_not() -> None:
     """The classification has to stay total: a new declaration lands in a probe,
     in the prose list with the test that covers it, or turns this red."""
     for name, override in DECLARED.items():
-        if override.foreign:
+        if override.get("foreign", False):
             continue
         assert name in PROBES or name in NOT_A_PATH_EXPRESSION, f"{name} is checked by nothing"
 
@@ -191,9 +196,9 @@ def test_a_foreign_name_states_no_default() -> None:
     default for one would put our word on somebody else's contract, so the form
     refuses it — the doc line says where the name sits in our chain instead."""
     for name, override in DECLARED.items():
-        assert override.foreign == (override.default == ""), name
-        if override.foreign:
-            assert override.doc, name
+        assert override.get("foreign", False) == (override["default"] == ""), name
+        if override.get("foreign", False):
+            assert override["doc"], name
 
 
 def test_the_library_root_falls_to_the_installed_package(clean_env: Path) -> None:
@@ -248,7 +253,7 @@ def test_a_declared_sentinel_is_the_switch_its_reader_obeys(
 ) -> None:
     """``Path | Literal["-"]`` is the real type: set to the declared literal, the
     reader turns the behaviour OFF rather than treating it as a directory name."""
-    sentinel = DECLARED[name].sentinel
+    sentinel = DECLARED[name].get("sentinel")
     assert sentinel is not None and sentinel[0] == reader_sentinel
     monkeypatch.setenv(name, sentinel[0])
     assert resolve() == (None, True)
@@ -257,7 +262,7 @@ def test_a_declared_sentinel_is_the_switch_its_reader_obeys(
 def test_only_the_two_dual_role_names_declare_a_pin() -> None:
     """``AI_HATS_DIR`` and ``AI_HATS_PROJECT_DIR`` are a user override AND what a
     spawner writes into a child, so they carry two defaults; the rest carry one."""
-    assert sorted(name for name, o in DECLARED.items() if o.pin) == [
+    assert sorted(name for name, o in DECLARED.items() if o.get("pin")) == [
         "AI_HATS_DIR",
         "AI_HATS_PROJECT_DIR",
     ]
@@ -272,7 +277,7 @@ def test_the_pin_decides_which_of_the_two_defaults_is_in_force(
     elsewhere = clean_env.parent / "other"
     elsewhere.mkdir()
     monkeypatch.setenv("AI_HATS_DIR", str(elsewhere / "base"))
-    stated = _render(DECLARED["AI_HATS_DIR"].default, clean_env)
+    stated = _render(DECLARED["AI_HATS_DIR"]["default"], clean_env)
 
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(clean_env))
     assert paths.ai_hats_dir(clean_env) == elsewhere / "base"

@@ -46,7 +46,6 @@ __all__ = [
     "TrashFullError",
     "ENV_TRASH_DIR",
     "HARD_DELETE_SENTINEL",
-    "Override",
     "OVERRIDES",
 ]
 
@@ -60,45 +59,17 @@ NAMESPACE = "ai-hats"
 
 # Copied from ``ai_hats.env``, not imported: this distribution does not depend
 # on ``ai_hats``, and that boundary is what keeps it installable on its own.
-class Override:
-    """A non-numeric knob: its name, how its default resolves, and one line of doc.
-
-    ``default`` is prose, not a value: the links of a resolution chain separated
-    by ``", else "``, the LAST of which is what a clean environment answers.
-    ``sentinel`` is ``(literal, effect)`` for a value accepted BESIDE a path,
-    making the type ``Path | Literal[<literal>]``.
-    """
-
-    __slots__ = ("name", "default", "doc", "foreign", "pin", "sentinel")
-
-    def __init__(
-        self,
-        name: str,
-        default: str,
-        doc: str,
-        foreign: bool = False,
-        pin: str | None = None,
-        sentinel: tuple[str, str] | None = None,
-    ) -> None:
-        self.name = name
-        self.default = default
-        self.doc = doc
-        self.foreign = foreign
-        self.pin = pin
-        self.sentinel = sentinel
-
-
 #: Every configurable path this distribution resolves through the environment.
-OVERRIDES: tuple[Override, ...] = (
-    Override(
-        ENV_TRASH_DIR,
-        f"`$TMPDIR`/{NAMESPACE}",
-        "Base of the per-process trash session every destructive op snapshots into.",
-        sentinel=(
+OVERRIDES: tuple[dict, ...] = (
+    {
+        "name": ENV_TRASH_DIR,
+        "default": f"`$TMPDIR`/{NAMESPACE}",
+        "doc": "Base of the per-process trash session every destructive op snapshots into.",
+        "sentinel": (
             HARD_DELETE_SENTINEL,
             "hard-delete instead — no snapshot, one stderr WARN per op",
         ),
-    ),
+    },
 )
 
 

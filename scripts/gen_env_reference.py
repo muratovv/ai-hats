@@ -191,20 +191,19 @@ def _cell(value: object) -> str:
     return text.replace("|", "\\|").replace("\n", " ").strip()
 
 
-def _override_row(declaration: object) -> Row:
+def _override_row(declaration: dict) -> Row:
     """One declared path. A sentinel is part of the TYPE — `-` is a switch, not a path."""
-    kind, doc = "path", _cell(declaration.doc)
-    sentinel = getattr(declaration, "sentinel", None)
-    if sentinel:
+    kind, doc = "path", _cell(declaration["doc"])
+    if sentinel := declaration.get("sentinel"):
         literal, effect = sentinel
         kind = f"path \\| `{literal}`"
         doc = f"{doc} Set to `{literal}` to {_cell(effect)}."
     return Row(
-        _cell(declaration.name),
+        _cell(declaration["name"]),
         kind,
-        _cell(declaration.default) or "—",
+        _cell(declaration["default"]) or "—",
         doc,
-        _cell(getattr(declaration, "pin", None) or ""),
+        _cell(declaration.get("pin") or ""),
     )
 
 
@@ -240,7 +239,7 @@ def collect(root: Path) -> tuple[list[Row], list[Row], list[Row]]:
         ]
         for declared in getattr(module, "OVERRIDES", ()):
             row = _override_row(declared)
-            (foreign if getattr(declared, "foreign", False) else ours).append(row)
+            (foreign if declared.get("foreign") else ours).append(row)
     return budgets + _hook_budget_rows(root), ours, foreign
 
 

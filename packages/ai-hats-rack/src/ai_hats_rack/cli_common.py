@@ -66,46 +66,20 @@ JSON_OPT = click.option("--json", "as_json", is_flag=True, help="Machine-readabl
 
 # Copied from ``ai_hats.env``, not imported: this distribution does not depend
 # on ``ai_hats``, and that boundary is what keeps the rack installable on its own.
-class Override:
-    """A non-numeric knob: its name, how its default resolves, and one line of doc.
-
-    ``default`` is prose, not a value: the links of a resolution chain separated
-    by ``", else "``, the LAST of which is what a clean environment answers.
-    """
-
-    __slots__ = ("name", "default", "doc", "foreign", "pin", "sentinel")
-
-    def __init__(
-        self,
-        name: str,
-        default: str,
-        doc: str,
-        foreign: bool = False,
-        pin: str | None = None,
-        sentinel: tuple[str, str] | None = None,
-    ) -> None:
-        self.name = name
-        self.default = default
-        self.doc = doc
-        self.foreign = foreign
-        self.pin = pin
-        self.sentinel = sentinel
-
-
 #: Every configurable path this distribution resolves through the environment.
 #: ``RACK_TASKS_DIR`` reaches the resolver as ``--tasks-dir``'s ``envvar``; the
 #: declaration adds nothing to that, it only makes the pair readable as data.
-OVERRIDES: tuple[Override, ...] = (
-    Override(
-        ENV_TASKS_DIR,
-        _TASKS_DIR_DEFAULT,
-        "The card-dirs root every rack verb reads and writes.",
-    ),
-    Override(
-        ENV_ROOTS_FILE,
-        f"`{DEFAULT_ROOTS_FILE}`",
-        "The cross-project roots registry behind `--projects all`.",
-    ),
+OVERRIDES: tuple[dict, ...] = (
+    {
+        "name": ENV_TASKS_DIR,
+        "default": _TASKS_DIR_DEFAULT,
+        "doc": "The card-dirs root every rack verb reads and writes.",
+    },
+    {
+        "name": ENV_ROOTS_FILE,
+        "default": f"`{DEFAULT_ROOTS_FILE}`",
+        "doc": "The cross-project roots registry behind `--projects all`.",
+    },
 )
 
 

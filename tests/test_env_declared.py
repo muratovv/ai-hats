@@ -434,17 +434,29 @@ def _declared(repo: Path) -> set[str]:
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             if not any(isinstance(t, ast.Name) and t.id in DECLARATION_TABLES for t in targets):
                 continue
-            # The FIRST argument of each entry, by position — inside a declaration
-            # table a name is a name by construction. Filtering these by prefix is
-            # how CLINE_DATA_DIR read as undeclared while sitting in the tuple.
+            # By POSITION in the entry, never by the shape of the name: filtering
+            # these by prefix is how CLINE_DATA_DIR read as undeclared while
+            # sitting in the very tuple that declares it. `Budget` is a call
+            # because a reader consults it at runtime; an override is a plain
+            # dict because nothing does.
             for sub in ast.walk(node.value):
-                if not isinstance(sub, ast.Call) or not sub.args:
+                if isinstance(sub, ast.Call) and sub.args:
+                    named = sub.args[0]
+                elif isinstance(sub, ast.Dict):
+                    named = next(
+                        (
+                            value
+                            for key, value in zip(sub.keys, sub.values)
+                            if isinstance(key, ast.Constant) and key.value == "name"
+                        ),
+                        None,
+                    )
+                else:
                     continue
-                first = sub.args[0]
-                if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                    declared.add(first.value)
-                elif isinstance(first, ast.Name):
-                    if resolved := _resolve(modules, module.name, first.id):
+                if isinstance(named, ast.Constant) and isinstance(named.value, str):
+                    declared.add(named.value)
+                elif isinstance(named, ast.Name):
+                    if resolved := _resolve(modules, module.name, named.id):
                         declared.add(resolved)
     return declared
 
