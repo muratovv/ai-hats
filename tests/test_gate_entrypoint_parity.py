@@ -202,10 +202,11 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     """
     merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
 
-    assert done - merge == {"integration", "merge-smoke"}, (
+    assert done - merge == {"integration", "master-ci", "merge-smoke"}, (
         "`->done` asks whether master is green after this card; `integration` and "
-        "`merge-smoke` are the stages that answer it. Actual extra: "
-        f"{sorted(done - merge)}"
+        "`merge-smoke` are the stages that answer it, and `master-ci` (HATS-1877) "
+        "asks the same question of the base the card is about to land on. Actual "
+        f"extra: {sorted(done - merge)}"
     )
 
 

@@ -244,7 +244,7 @@ gate_composition() {
     local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
     case "$1" in
         merge-gate) echo "$tier unit" ;;
-        done-gate) echo "$tier unit integration merge-smoke" ;;
+        done-gate) echo "$tier master-ci unit integration merge-smoke" ;;
         push-gate) echo "lint unit e2e-catalog env-reference adr-integrity prose-refs ticket-ids bidi e2e" ;;
         *) return 1 ;;
     esac
@@ -280,6 +280,15 @@ ci_prepare() {
 ci_version_skew() {
     echo "[ci-local] version-skew (workspace pkgs ahead of PyPI)" >&2
     run_py scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
+}
+
+# HATS-1877: NETWORK — like `version-skew`, so it is excluded from the local
+# `all` bundle and from CI (where master's own verdict is circular). It sits on
+# `->done` alone: the month of red that hid seven of v0.15.0's nine defects was
+# a signal nobody read, and the close is the moment a human is looking.
+ci_master_ci() {
+    echo "[ci-local] master-ci (master's last CI verdict)" >&2
+    run_py scripts/check_master_ci.py
 }
 
 # The stage set IS the set of `ci_*` functions defined above: the dispatch and

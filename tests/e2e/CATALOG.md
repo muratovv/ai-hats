@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**292 of 292 files catalogued — 301 flows.**
+**293 of 293 files catalogued — 302 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1775,6 +1775,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the rule is listed by name and nothing from the sidecar reaches stdout
 - **why** — rules are catalogued by name alone since HATS-1836 — a sidecar description was a second copy of the rule's meaning that drifted (5 of 14 had), and an external library's leftover sidecar must now be inert rather than half-read
+
+## `test_master_ci_gate.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer closes a card while master's own CI has been failing
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh master-ci
+  bash scripts/ci-local.sh --stages done-gate
+  ```
+
+- **expect** — a green master passes; a red one refuses with exit 1, names the conclusion and the run url, and points at the one override; the override lets the card that fixes master through; and every reason the check cannot answer (no gh, gh refusing, a run still going) is ANNOUNCED, never silent
+- **why** — CI had been red since before 2026-07-28 for an unrelated reason, so the one arm that could see seven of v0.15.0's nine defects went unread for a month. A skip nobody is told about is that same defect wearing the gate's own colours
 
 ## `test_migration_no_replay_without_config.py`
 
