@@ -8,6 +8,8 @@ run stops testing the packaged artefact; ``GIT_*`` leaks the outer repo.
 
 from __future__ import annotations
 
+import os
+
 from _helpers.env import ENV_DENYLIST, clean_env, launcher_subprocess_env
 from _helpers.hitl import DEFAULT_ENV_ALLOWLIST, _build_env
 from ai_hats.paths import ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
@@ -117,7 +119,10 @@ def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
     assert out[ENV_AI_HATS_VENV] == "/venv"
     # HOME (and other innocuous vars) ride through untouched.
     assert out["HOME"] == "/home/me"
-    assert out["PATH"] == "/usr/bin"
+    # PATH rides through too, but led by the tier's own bin: the consent wrapper
+    # shims the binaries it protects by NAME, so a bare `ai-hats` has to resolve
+    # to THIS venv rather than to whatever the host happens to carry.
+    assert out["PATH"] == f"/venv/bin{os.pathsep}/usr/bin"
     # Pure: the input dict is not mutated.
     assert base["PYTHONPATH"] == "/repo/src"
     assert base["AI_HATS_USER_HOME"] == "/dev/.config"

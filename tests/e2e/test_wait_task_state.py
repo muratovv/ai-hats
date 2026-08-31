@@ -53,7 +53,12 @@ def _flip_state_after(card: Path, state: str, delay: float) -> subprocess.Popen:
     return subprocess.Popen([sys.executable, "-c", code])
 
 
-_FLIP_DELAY = 1.0
+# The flipper's clock starts when it is SPAWNED; `wait`'s starts once its
+# interpreter has booted, so the delay has to outlast that boot or the card is
+# already in the target state at the first poll and the test reads a wait that
+# never waited. Boot is ~0.2s here and exceeded 1.0s on a loaded CI runner,
+# which is what made these three green locally and red there.
+_FLIP_DELAY = 5.0
 
 
 def test_waits_until_card_reaches_state(tmp_project) -> None:

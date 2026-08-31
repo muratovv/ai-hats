@@ -166,6 +166,13 @@ def launcher_subprocess_env(
     env = clean_env(base)
     env[ENV_REPO_URL] = str(repo_url)
     env[ENV_AI_HATS_VENV] = str(venv)
+    # Lead PATH with the tier's own bin, where its real `ai-hats` lives. The
+    # consent wrapper shims the binaries it protects by NAME, so a bare
+    # `ai-hats` has to resolve; inheriting PATH alone found the developer's
+    # `~/.local/bin/ai-hats` and found nothing on a runner, which is one half of
+    # why this tier was green here and red in CI.
+    bin_dir = Path(venv) / "bin"
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
     env["AI_HATS_USER_HOME"] = str(Path(user_home))
     env.pop(ENV_LAUNCHER_DEST, None)
     env.pop("AI_HATS_MERGE_ACK", None)
