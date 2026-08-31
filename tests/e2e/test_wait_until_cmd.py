@@ -26,7 +26,10 @@ pytestmark = pytest.mark.integration
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_TOUCH_DELAY = 1.0
+# Same race as test_wait_task_state._FLIP_DELAY: the toucher's clock starts at
+# spawn, `wait`'s only once its interpreter is up, so a delay under that boot
+# leaves the marker already there at the first poll.
+_TOUCH_DELAY = 5.0
 
 
 def _env() -> dict[str, str]:

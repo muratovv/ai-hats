@@ -107,7 +107,9 @@ def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
         "PATH": "/usr/bin",
         "HOME": "/home/me",
     }
-    out = launcher_subprocess_env(base, repo_url="/clone", venv="/venv", user_home=user_home)
+    out = launcher_subprocess_env(
+        base, repo_url="/clone", venv="/venv", user_home=user_home, launcher="/opt/bin/ai-hats"
+    )
 
     # The leak is gone.
     assert "PYTHONPATH" not in out
@@ -122,7 +124,7 @@ def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
     # PATH rides through too, but led by the tier's own bin: the consent wrapper
     # shims the binaries it protects by NAME, so a bare `ai-hats` has to resolve
     # to THIS venv rather than to whatever the host happens to carry.
-    assert out["PATH"] == f"/venv/bin{os.pathsep}/usr/bin"
+    assert out["PATH"] == os.pathsep.join(("/opt/bin", "/venv/bin", "/usr/bin"))
     # Pure: the input dict is not mutated.
     assert base["PYTHONPATH"] == "/repo/src"
     assert base["AI_HATS_USER_HOME"] == "/dev/.config"

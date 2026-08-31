@@ -125,6 +125,7 @@ def launcher_subprocess_env(
     repo_url: str | os.PathLike[str],
     venv: str | os.PathLike[str],
     user_home: str | os.PathLike[str],
+    launcher: str | os.PathLike[str] | None = None,
     merge_ack: bool = False,
 ) -> dict[str, str]:
     """Build a hermetic env for a real-launcher e2e subprocess (HATS-828).
@@ -166,13 +167,16 @@ def launcher_subprocess_env(
     env = clean_env(base)
     env[ENV_REPO_URL] = str(repo_url)
     env[ENV_AI_HATS_VENV] = str(venv)
-    # Lead PATH with the tier's own bin, where its real `ai-hats` lives. The
-    # consent wrapper shims the binaries it protects by NAME, so a bare
-    # `ai-hats` has to resolve; inheriting PATH alone found the developer's
-    # `~/.local/bin/ai-hats` and found nothing on a runner, which is one half of
-    # why this tier was green here and red in CI.
-    bin_dir = Path(venv) / "bin"
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    # Lead PATH with the tier's own binaries. The consent wrapper shims what it
+    # protects by NAME, so a bare `ai-hats` and `rack` both have to resolve;
+    # inheriting PATH alone found the developer's ~/.local/bin and nothing at
+    # all on a runner. They live in two places: `rack` is a console script in
+    # the venv, while `ai-hats` is NOT (HATS-790) and exists only where the
+    # launcher was installed, so the launcher's own directory leads.
+    leading = [str(Path(venv) / "bin")]
+    if launcher is not None:
+        leading.insert(0, str(Path(launcher).parent))
+    env["PATH"] = os.pathsep.join([*leading, env.get("PATH", "")]).rstrip(os.pathsep)
     env["AI_HATS_USER_HOME"] = str(Path(user_home))
     env.pop(ENV_LAUNCHER_DEST, None)
     env.pop("AI_HATS_MERGE_ACK", None)

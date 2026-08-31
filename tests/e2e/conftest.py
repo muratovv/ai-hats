@@ -656,6 +656,7 @@ def shared_launcher(_shared_launcher_venv, repo_root: Path, tmp_path_factory):
         # HATS-589: per-worker private build source (no-op on serial).
         repo_url=build_src(repo_root),
         venv=shared_venv,
+        launcher=launcher,
         user_home=tmp_path_factory.mktemp("shared-launcher-user-home"),
         # HATS-1682 T4: the grant is no longer a helper default, but ~16 raw
         # consumers (the `wt_merge_*` / `transition done` families) still merge
