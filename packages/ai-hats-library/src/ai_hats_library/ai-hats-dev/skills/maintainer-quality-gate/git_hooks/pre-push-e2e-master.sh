@@ -84,9 +84,11 @@ check_mode() {
     # Collect master-targeting, non-deletion local_shas from the pre-push
     # protocol on stdin. Newline-accumulator instead of an array so the
     # empty case is safe under bash 3.2 + `set -u` (macOS system bash).
-    local local_ref local_sha remote_ref remote_sha
+    local local_ref local_sha remote_ref _remote_sha
     local need=""
-    while read -r local_ref local_sha remote_ref remote_sha; do
+    # The fourth field is read because the protocol sends four per line, not
+    # because anything here wants it.
+    while read -r local_ref local_sha remote_ref _remote_sha; do
         [[ -z "${local_ref:-}" ]] && continue
         [[ "$remote_ref" != "refs/heads/master" ]] && continue
         [[ "$local_sha" == "$zero" ]] && continue

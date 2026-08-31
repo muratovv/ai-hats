@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**294 of 294 files catalogued — 303 flows.**
+**295 of 295 files catalogued — 304 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3091,6 +3091,21 @@ as a claim to check, not as evidence.
 
 - **expect** — a fast-forward, a branch deletion, a brand-new branch and an empty stdin all pass; a non-fast-forward exits 1, and the refusal names `rule_pause_before_shared_state_write` and says "Do NOT retry" rather than failing bare; the env ack overrides the block
 - **why** — the hook is pure bash driven by git over stdin, so nothing in-process reaches it — and a hook that blocks a legal fast-forward is as broken as one that waves a force-push through. The PreToolUse half is unit-tested in tests/test_shared_state_guard.py; only this half needs a real repo.
+
+## `test_shellcheck_stage.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer edits shell this repo SHIPS — a git hook or a skill's hook, which runs in someone else's project
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh shellcheck
+  bash scripts/ci-local.sh --stages merge-gate
+  ```
+
+- **expect** — the stage is green on this tree and says how many files it read; a script with a real warning is refused at severity `warning`; and when shellcheck is not installed the stage ANNOUNCES the skip instead of passing quietly
+- **why** — the python linters never saw the shell half, and shipped shell fails differently: `git_hooks/**` and the skills' `hooks/**` run in a consuming project, where a portability bug shows up as a step that silently did nothing. HATS-1877 measured the debt at five findings, so this stage starts clean rather than with a ratchet
 
 ## `test_sibling_backlog_check_gate.py`
 

@@ -95,6 +95,8 @@ ci_lint() {
     run_py -m ruff format --check .
 }
 
+# Argv arrives through the dispatcher's indirect call, invisible to the linter.
+# shellcheck disable=SC2120
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
     env \
@@ -115,6 +117,8 @@ ci_integration() {
     "$PY" -B -m pytest --ignore=tests/e2e -m integration -q ${@+"$@"}
 }
 
+# Argv arrives through the dispatcher's indirect call, invisible to the linter.
+# shellcheck disable=SC2120
 ci_coverage() {
     echo "[ci-local] coverage (unit + real-git integration, --cov-fail-under=78)" >&2
     "$PY" -B -m pytest --ignore=tests/e2e/ \
@@ -132,6 +136,8 @@ ci_security() {
     run_py -m pip_audit
 }
 
+# Argv arrives through the dispatcher's indirect call, invisible to the linter.
+# shellcheck disable=SC2120
 ci_merge_smoke() {
     echo "[ci-local] merge-smoke (curated e2e subset)" >&2
     "$PY" -B -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
@@ -241,7 +247,7 @@ ci_e2e() {
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
-    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
+    local tier="e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
     case "$1" in
         merge-gate) echo "$tier wheel-contents unit" ;;
         done-gate) echo "$tier wheel-contents master-ci unit integration merge-smoke" ;;
@@ -280,6 +286,29 @@ ci_prepare() {
 ci_version_skew() {
     echo "[ci-local] version-skew (workspace pkgs ahead of PyPI)" >&2
     run_py scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
+}
+
+# Offline and instant, like the seven above. HATS-1877: the shell this repo
+# SHIPS is the half no python linter ever saw — `git_hooks/**` and the skills'
+# `hooks/**` run in a consuming project, where a portability bug is a silent
+# skip rather than a crash. Severity is capped at `warning` on purpose: `info`
+# and below is 41 findings, twenty of them SC1091 on dynamically sourced libs.
+ci_shellcheck() {
+    echo "[ci-local] shellcheck (tracked *.sh, severity >= warning)" >&2
+    if ! command -v shellcheck >/dev/null 2>&1; then
+        echo "[shellcheck] SKIPPED: not installed — no shell script was checked." >&2
+        return 0
+    fi
+    local count
+    count="$(git ls-files -- '*.sh' | wc -l | tr -d ' ')"
+    # xargs with no input still runs the utility once, and shellcheck with no
+    # file exits on its usage — a red stage for an empty set.
+    if [[ "$count" -eq 0 ]]; then
+        echo "[shellcheck] no tracked *.sh — nothing was checked." >&2
+        return 0
+    fi
+    git ls-files -z -- '*.sh' | xargs -0 shellcheck -S warning
+    echo "[shellcheck] ok: $count file(s) clean" >&2
 }
 
 # HATS-1877: offline given a warm uv cache, and ~3s for all five packages, so it
@@ -336,6 +365,7 @@ case "$stage" in
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_tmp_sweep
         ci_lint
+        ci_shellcheck
         ci_dependency_floor
         ci_python_pin
         ci_silent_fallback

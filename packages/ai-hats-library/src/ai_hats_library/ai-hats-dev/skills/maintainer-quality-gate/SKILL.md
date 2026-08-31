@@ -128,6 +128,29 @@ and the pack is never sent.
 **Do not re-attempt:** client-side `ServerAliveInterval` at 60 **and** 15 did not
 fix it, and the 2022 community keepalive workaround no longer works (paid for twice).
 
+## Green here is not green anywhere
+
+This gate has ONE environment arm and it is your machine. Five of the nine
+defects v0.15.0 shipped were host-dependence — a fixture inheriting the live
+session's hook socket, a `~/.codex` only you have, `ai-hats` on a `PATH` where
+it is deliberately not a console script, a `mktemp -t` template BSD accepts and
+GNU refuses. Not one of them **can** fail here.
+
+The second arm is CI, and it is an arm only while somebody reads it. It had been
+red for a month when those nine shipped. That is why `master-ci` refuses a close
+over a red base, and why `AI_HATS_RED_MASTER_ACK` exists for the one card that
+is the fix for the redness.
+
+Two rules follow, and they bind new checks as much as the ones already here:
+
+- **A check that did not run is not a pass.** A stage that exits on a missing
+  import fails as BROKEN with exit 3, naming the module — not as its own
+  subject. Every skip any stage takes is announced out loud for the same reason.
+- **Judge the artefact, not the tree.** `uv build <pkg>` builds the wheel from
+  the sdist, and that is what every release here publishes; `uv build --wheel`
+  builds something else, which is why the whole suite could pass while no
+  published wheel carried a module the code imports.
+
 ## No bypass
 
 There is no `AI_HATS_E2E_SKIP` and no `--ack`. `git push --no-verify` and forging
