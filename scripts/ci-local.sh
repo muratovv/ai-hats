@@ -44,6 +44,35 @@ else
     PY="${PYTHON:-python}"
 fi
 
+# HATS-1877: a stage that could NOT RUN is not a stage that refused. Python
+# exits 1 on an uncaught ModuleNotFoundError exactly as a check exits 1 on a
+# finding, so the code alone cannot tell the two apart — and the CI job that
+# hosted `e2e-catalog` and `python-pin` without their imports reported each as
+# its own subject for as long as neither had ever run.
+#
+# Only the fast checkers route through here. Their stderr is small enough to
+# hold to the end of the stage; the pytest tiers stream for minutes, and a
+# missing pytest is not a silent failure mode.
+run_py() {
+    local err rc=0 missing
+    err="$(mktemp "${TMPDIR:-/tmp}/ci-local-stage.XXXXXX")" || err=''
+    # No temp file, no detection — run plainly rather than lose the stage.
+    if [[ -z "$err" ]]; then
+        "$PY" "$@"
+        return
+    fi
+    "$PY" "$@" 2>"$err" || rc=$?
+    cat "$err" >&2
+    missing="$(sed -n "s/^ModuleNotFoundError: No module named '\([^']*\)'.*/\1/p" "$err" | tail -1)"
+    rm -f "$err"
+    if [[ $rc -ne 0 && -n "$missing" ]]; then
+        echo "[ci-local] BROKEN: this stage never ran — no module named '$missing'" >&2
+        echo "  Nothing above is a finding. Install '$missing' for $PY, then re-run." >&2
+        return 3
+    fi
+    return $rc
+}
+
 ci_tmp_sweep() {
     # HATS-1624: reap what killed runs leave in TMPDIR. Housekeeping, not a
     # check — it is in the `all` bundle and in NO gate composition, because a
@@ -58,12 +87,12 @@ ci_tmp_sweep() {
 
 ci_lint() {
     echo "[ci-local] lint (ruff check + format)" >&2
-    "$PY" -m ruff check .
+    run_py -m ruff check .
     # HATS-1372: the formatter check lived only in `make lint`, behind a failing
     # `ruff check` — so 20 unformatted files sat on master unseen for weeks.
     # HATS-1651: the same `.` as the line above. Two scopes could not stay equal
     # by convention, and ruff's own extend-exclude is the one that should decide.
-    "$PY" -m ruff format --check .
+    run_py -m ruff format --check .
 }
 
 ci_unit() {
@@ -100,7 +129,7 @@ ci_security() {
     # HATS-1591: bandit dropped — ruff's `S` family covers its inventory and
     # already runs on every road. What is left here is the network half.
     echo "[ci-local] security (pip-audit)" >&2
-    "$PY" -m pip_audit
+    run_py -m pip_audit
 }
 
 ci_merge_smoke() {
@@ -111,33 +140,33 @@ ci_merge_smoke() {
 # Offline and instant, so unlike version-skew it belongs in the `all` bundle.
 ci_dependency_floor() {
     echo "[ci-local] dependency-floor (pins vs workspace versions)" >&2
-    "$PY" scripts/check_dependency_floor.py
+    run_py scripts/check_dependency_floor.py
 }
 
 # Offline and instant, like the others. HATS-1599: a ratchet, so it is green
 # only while the tree patches its own units no more than the recorded baseline.
 ci_test_isolation() {
     echo "[ci-local] test-isolation (patching of code under test vs the baseline)" >&2
-    "$PY" scripts/check_test_isolation.py
+    run_py scripts/check_test_isolation.py
 }
 
 # Offline and instant. HATS-1591: the one check bandit held that ruff's `S`
 # family does not, kept after bandit itself was dropped.
 ci_bidi() {
     echo "[ci-local] bidi (bidirectional controls, invisible in review)" >&2
-    "$PY" scripts/check_bidi.py
+    run_py scripts/check_bidi.py
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_python_pin() {
     echo "[ci-local] python-pin (every copy of the pin agrees; CI runs it)" >&2
-    "$PY" scripts/check_python_pin.py
+    run_py scripts/check_python_pin.py
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_silent_fallback() {
     echo "[ci-local] silent-fallback (broad handlers nothing can escape from)" >&2
-    "$PY" scripts/check_silent_fallback.py
+    run_py scripts/check_silent_fallback.py
 }
 
 # Offline and instant, like the two above. HATS-1498: the flow catalog is
@@ -145,14 +174,14 @@ ci_silent_fallback() {
 # edited without regenerating.
 ci_e2e_catalog() {
     echo "[ci-local] e2e-catalog (tests/e2e/CATALOG.md vs the flow blocks)" >&2
-    "$PY" scripts/gen_e2e_catalog.py --check
+    run_py scripts/gen_e2e_catalog.py --check
 }
 
 # Offline and instant, like the three above. HATS-1646: prose carries no assert,
 # so a citation into an ADR rots green — two such defects lived for months.
 ci_adr_integrity() {
     echo "[ci-local] adr-integrity (ADR citations resolve; a number names one file)" >&2
-    "$PY" scripts/check_adr_integrity.py
+    run_py scripts/check_adr_integrity.py
 }
 
 # Offline and instant, like the four above. HATS-1825: `adr-integrity` proved a
@@ -160,7 +189,7 @@ ci_adr_integrity() {
 # same gate aimed at the library's own references, where 21 had already rotted.
 ci_prose_refs() {
     echo "[ci-local] prose-refs (paths, library prefixes, sections and symbols in library prose)" >&2
-    "$PY" scripts/check_prose_refs.py
+    run_py scripts/check_prose_refs.py
 }
 
 # Offline and instant, like the five above. Sibling of `prose-refs` aimed at what
@@ -170,7 +199,7 @@ ci_prose_refs() {
 # pattern is alive rather than merely silent.
 ci_ticket_ids() {
     echo "[ci-local] ticket-ids (no tracker id in shipped library prose)" >&2
-    "$PY" scripts/check_no_ticket_ids.py
+    run_py scripts/check_no_ticket_ids.py
 }
 
 # Offline and instant, like the six above. HATS-1872: sibling of `e2e-catalog` —
@@ -179,7 +208,7 @@ ci_ticket_ids() {
 # NUMBER is worse than no page: prose invites a check, a number invites trust.
 ci_env_reference() {
     echo "[ci-local] env-reference (docs/reference-env.md vs the env declarations)" >&2
-    "$PY" scripts/gen_env_reference.py --check
+    run_py scripts/gen_env_reference.py --check
 }
 
 # The full maintainer tier (the slow one). Excluded from `all`; this is the selection
@@ -250,7 +279,7 @@ ci_prepare() {
 # (optionally SKEW_BASE=<sha>) to reproduce.
 ci_version_skew() {
     echo "[ci-local] version-skew (workspace pkgs ahead of PyPI)" >&2
-    "$PY" scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
+    run_py scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
 }
 
 # The stage set IS the set of `ci_*` functions defined above: the dispatch and

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**291 of 291 files catalogued — 300 flows.**
+**292 of 292 files catalogued — 301 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3148,6 +3148,21 @@ as a claim to check, not as evidence.
 
 - **expect** — self update resolves latest tagged stable release and installs versioned release venv
 - **why** — without stable channel support, production users cannot pin update checks to verified releases
+
+## `test_stage_liveness.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer wires a new check into a CI job and forgets its dependency, so the stage exits on an import it never had
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh e2e-catalog   # under an interpreter with no click
+  bash scripts/ci-local.sh bidi          # under the real one
+  ```
+
+- **expect** — a stage that could not import is reported as BROKEN with exit 3, naming the missing module and saying nothing above it is a finding; a stage that ran and found something keeps exit 1; a green stage is untouched
+- **why** — python exits 1 on an uncaught ModuleNotFoundError exactly as a check exits 1 on a finding, so the exit code alone cannot tell them apart. The `version-skew-guard` job hosted `e2e-catalog` and `python-pin` without their imports and reported each as its own subject for as long as neither had ever run — a check that did not run is not a pass
 
 ## `test_step_entry_point_resolution.py`
 
