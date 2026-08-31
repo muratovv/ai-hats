@@ -243,8 +243,8 @@ ci_e2e() {
 gate_composition() {
     local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
     case "$1" in
-        merge-gate) echo "$tier unit" ;;
-        done-gate) echo "$tier master-ci unit integration merge-smoke" ;;
+        merge-gate) echo "$tier wheel-contents unit" ;;
+        done-gate) echo "$tier wheel-contents master-ci unit integration merge-smoke" ;;
         push-gate) echo "lint unit e2e-catalog env-reference adr-integrity prose-refs ticket-ids bidi e2e" ;;
         *) return 1 ;;
     esac
@@ -280,6 +280,14 @@ ci_prepare() {
 ci_version_skew() {
     echo "[ci-local] version-skew (workspace pkgs ahead of PyPI)" >&2
     run_py scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
+}
+
+# HATS-1877: offline given a warm uv cache, and ~3s for all five packages, so it
+# sits on `->merge` — the last edge before a version can be published. It is the
+# only check here that judges the ARTEFACT rather than the tree.
+ci_wheel_contents() {
+    echo "[ci-local] wheel-contents (tracked src files vs the sdist-chained wheel)" >&2
+    run_py scripts/check_wheel_contents.py
 }
 
 # HATS-1877: NETWORK — like `version-skew`, so it is excluded from the local

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**293 of 293 files catalogued — 302 flows.**
+**294 of 294 files catalogued — 303 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3652,6 +3652,21 @@ as a claim to check, not as evidence.
 
 - **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
 - **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
+
+## `test_wheel_contents_gate.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer publishes a package whose sdist silently dropped a file
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh wheel-contents
+  bash scripts/ci-local.sh --stages merge-gate
+  ```
+
+- **expect** — the stage is green on this tree; with the library's sdist `force-include` removed it names the six `hooks/consent_gate` files that no published wheel ever carried; and `merge-gate` names the stage
+- **why** — `uv build <pkg>` builds the sdist and then the wheel FROM it, which is what every release workflow here does. `uv build --wheel` builds from the tree instead and carries those six files ONLY under the symlink that reaches them — on a healthy tree as much as a broken one. So the chain is not an optimisation to undo: a `--wheel` build makes the check red on a tree that is fine, which the green case below pins
 
 ## `test_wheel_excludes_area_tests.py`
 
