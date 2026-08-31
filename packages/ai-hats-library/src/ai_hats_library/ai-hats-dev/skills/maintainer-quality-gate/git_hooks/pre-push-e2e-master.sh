@@ -200,7 +200,10 @@ EOF
     export AI_HATS_E2E_REQUIRE_VENV=1
 
     local log rc
-    log="$(mktemp -t e2e-gate)" || log=''
+    # Not `mktemp -t e2e-gate`: BSD appends its own X's, GNU refuses the
+    # template outright ("too few X's"), and the failure is silent — `log` goes
+    # empty and the explanation below is skipped on every Linux host.
+    log="$(mktemp "${TMPDIR:-/tmp}/e2e-gate.XXXXXX")" || log=''
     gate_run "$dispatcher" "$COMPOSITION" "$log"
     rc=$?
 
