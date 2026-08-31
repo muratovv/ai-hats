@@ -182,8 +182,14 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - name: Install packaging
-        run: pip install "packaging>=23.0"
+      # `version-skew` alone needs only `packaging`, but two stages below are
+      # hosted here for their independence, not their weight: `e2e-catalog`
+      # imports `ai_hats.cli` and `ai_hats_rack.cli` to walk the real command
+      # tree, and `python-pin` reads YAML. Both were added without their
+      # dependencies and had never run — each exited `ModuleNotFoundError`
+      # while the job reported the stage as its failure.
+      - name: Install the checkers' dependencies
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: Resolve diff base
         id: base
         run: |

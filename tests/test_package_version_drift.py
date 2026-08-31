@@ -64,7 +64,11 @@ def test_published_version_matches_source(pyproject: Path) -> None:
     ]
     local = {
         f"{src_pkg.name}/{p.relative_to(src_pkg).as_posix()}": p.read_bytes()
-        for p in src_pkg.rglob("*.py")
+        # recurse_symlinks: a layer dir can be a symlink to another (the
+        # safety-guard skill's consent_gate points at hooks/consent_gate), and
+        # the wheel carries the dereferenced copy. Without this the symlinked
+        # half reads as published-but-not-local and the diff is never empty.
+        for p in src_pkg.rglob("*.py", recurse_symlinks=True)
     }
     published = {
         n: wheel.read(n)

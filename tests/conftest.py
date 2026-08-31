@@ -371,6 +371,32 @@ def _isolate_installed_launcher(tmp_path_factory, monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _codex_base_home_exists(tmp_path_factory):
+    """Give the codex surface a base home when the host has none (HATS-1876).
+
+    ``CodexSurface._configured_base_home`` falls back to ``~/.codex`` and raises
+    when it is not a directory. A maintainer has one, a CI runner does not, so
+    six e2e flows that only touch codex through the surfaces mirror — agy,
+    cline and claude among them — died on someone else's surface. Tests that
+    drive codex directly set ``CODEX_HOME`` in the child env themselves; this
+    fills in the same variable, so theirs still wins.
+    """
+    configured = os.environ.get("AI_HATS_CODEX_BASE_HOME") or os.environ.get("CODEX_HOME")
+    candidate = Path(configured).expanduser() if configured else Path.home() / ".codex"
+    if candidate.is_absolute() and candidate.is_dir():
+        yield
+        return
+    home = tmp_path_factory.getbasetemp() / "codex-base-home"
+    home.mkdir(exist_ok=True)
+    # Session scope, because the e2e launcher fixtures are session-scoped and
+    # would otherwise build their venvs and probe the surfaces before a
+    # function-scoped fixture had set anything.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("CODEX_HOME", str(home))
+        yield
+
+
 @pytest.fixture(autouse=True)
 def _consent_wrapper_surfaces_resolve(tmp_path_factory, monkeypatch):
     """Guarantee the wrapped binaries resolve for EVERY test (HATS-1876).
