@@ -386,6 +386,80 @@ def test_a_swept_worktree_with_a_merge_behind_it_is_judged_not_waved_through(rep
     assert merge_sha in checked.stdout, "and it names the merge commit as the subject"
 
 
+# ---------------------------------------------------------------------------
+# the ->review gate: the hand-off to a human
+# ---------------------------------------------------------------------------
+
+
+def _ci_local_stub(repo: Path, stages: str) -> None:
+    """A stand-in for `scripts/ci-local.sh` where the gate looks for one."""
+    path = repo / "scripts" / "ci-local.sh"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "#!/usr/bin/env bash\n"
+        f'if [[ "$1" == "--stages" ]]; then echo "{stages}"; exit 0; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def _review_check(repo: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(SKILL_SRC / "hooks" / "review-gate.sh"), "--check"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "AI_HATS_PROJECT_DIR": str(repo),
+            "AI_HATS_TASK_ID": "HATS-999",
+            "AI_HATS_WORKTREE_PATH": str(repo),
+        },
+    )
+
+
+def test_the_review_gate_refuses_a_hand_off_no_marker_covers(repo: Path):
+    """The edge a human is on the other side of. Before this gate it asked
+    nothing, so a card arrived on the agent's word that the suite was green —
+    and the refusal is what replaces that word with a remedy."""
+    _ci_local_stub(repo, "lint unit")
+
+    checked = _review_check(repo)
+
+    assert checked.returncode == 2, f"a refusal on the checks channel, not {checked.returncode}"
+    assert "make review-gate" in checked.stdout, "and it says how to earn the marker"
+    assert "lint unit" in checked.stdout, "and which stages that run would record"
+
+
+def test_a_marker_for_the_tree_lets_the_hand_off_through(repo: Path):
+    """The other direction, so the refusal above is not merely a gate that
+    always refuses."""
+    _ci_local_stub(repo, "lint unit")
+    tree = _tree(repo)
+    written = _bash(f'gate_marker_write review-gate . "{tree}" "lint unit"', repo)
+    assert written.returncode == 0, written.stdout + written.stderr
+
+    checked = _review_check(repo)
+
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+def test_a_done_gate_run_carries_the_hand_off_it_contains(repo: Path):
+    """Absorption across gates, on the edge that gains most from it: a card
+    closed in one sitting must pay for one run, not three."""
+    _ci_local_stub(repo, "lint unit")
+    tree = _tree(repo)
+    written = _bash(f'gate_marker_write done-gate . "{tree}" "lint unit integration"', repo)
+    assert written.returncode == 0, written.stdout + written.stderr
+
+    checked = _review_check(repo)
+
+    assert checked.returncode == 0, (
+        "a fuller gate's marker on the same tree already covers this one"
+    )
+
+
 def test_a_marker_naming_another_tree_contributes_nothing_to_the_union(repo: Path):
     """A marker whose filename and recorded `tree=` disagree certifies content it
     does not name. It drops out of the union rather than failing the whole read:
