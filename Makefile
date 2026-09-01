@@ -4,7 +4,7 @@
 # commands CI runs (HATS-922/725). Spelling a command out here instead forks the
 # definition of the gate — tests/test_gate_entrypoint_parity.py refuses that.
 
-.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor python-pin silent-fallback test-isolation merge-gate done-gate relay-server relay-client
+.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor python-pin silent-fallback test-isolation review-gate merge-gate done-gate relay-server relay-client
 
 .DEFAULT_GOAL := help
 
@@ -76,7 +76,7 @@ test-isolation: ## Check the suite patches its units no more than the baseline
 e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 	$(call timed_stage,e2e,$(TIMEOUT_E2E))
 
-# The gates the two roads into master demand. Run one in the TASK WORKTREE: the
+# The gates the road to master demands. Run one in the TASK WORKTREE: the
 # marker is keyed to the tree you run it on, which is the content the check looks
 # up. `ci-local.sh --stages <gate>` names what each runs.
 #
@@ -95,6 +95,9 @@ if [ -z "$$libroot" ] || [ ! -f "$$hook" ]; then \
 fi; \
 env PYTHON="$$py" bash "$$hook" --run $(if $(REV),--rev $(REV),)
 endef
+
+review-gate: ## Run the ->review gate here (or on REV=<sha>) and mark that tree green (HATS-1877)
+	$(call run_gate,review-gate)
 
 merge-gate: ## Run the ->merge gate here (or on REV=<sha>) and mark that tree green (HATS-1614)
 	$(call run_gate,merge-gate)

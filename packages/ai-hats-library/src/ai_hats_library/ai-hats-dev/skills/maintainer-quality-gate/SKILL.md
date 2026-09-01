@@ -87,14 +87,30 @@ beside the change rather than exercising it, and the card returns to `execute`.
 Origin: PROP-031 — two production bugs shipped past `done` because the unit
 suite stubbed the very contracts the change broke.
 
+## Handing a card over
+
+    cd <task worktree>
+    make review-gate                            # earns the marker
+    scripts/ci-local.sh --stages review-gate    # prints what that marker covers
+
+`->review` refuses without it. That edge used to ask nothing, so a card reached
+a reviewer on the agent's word that the suite was green — and an agent reading a
+verdict is the unreliable part: a pipeline eats the runner's status, a stray `cd`
+moves the run into another checkout, a planted fixture is never scanned. A marker
+removes the reading. The composition stops at the first red and writes nothing;
+there is no number to misread and no way to hand over anyway.
+
+`review-gate` and `merge-gate` name the same set, so one run clears both edges,
+and a `done-gate` run clears all three.
+
 ## Closing a card
 
     cd <task worktree>
     make done-gate                              # earns the marker
     scripts/ci-local.sh --stages done-gate      # prints what that marker covers
 
-Run both. The first clears **both** card edges — `done-gate` is the superset, so
-its marker absorbs `->merge`. The second is the check on the first: a green gate
+Run both. The first clears **every** card edge — `done-gate` is the superset, so
+its marker absorbs `->review` and `->merge`. The second is the check on the first: a green gate
 is a **narrow** claim, and this is the only way to see how narrow.
 
 Neither card gate runs the e2e tier. If `--stages` does not name what your change

@@ -249,12 +249,23 @@ ci_e2e() {
 gate_composition() {
     local tier="e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
     case "$1" in
-        merge-gate) echo "$tier wheel-contents unit" ;;
+        # HATS-1877: `review-gate` and `merge-gate` name the SAME set on purpose.
+        # They differ in the edge they sit on, not in what they demand, and the
+        # marker is read across gates by stage subset — so one run satisfies
+        # both. `tests/test_gate_entrypoint_parity.py` refuses a drift here.
+        review-gate | merge-gate) echo "$tier wheel-contents unit" ;;
         done-gate) echo "$tier wheel-contents master-ci unit integration merge-smoke" ;;
         push-gate) echo "lint unit e2e-catalog env-reference adr-integrity prose-refs ticket-ids bidi e2e" ;;
         *) return 1 ;;
     esac
 }
+
+# HATS-1877: the gate names, in ONE place. `gate_composition` above is the
+# authority on what each RUNS; this is the roster the three messages below read,
+# which until now was three hand-kept copies that a new gate had to find.
+# `tests/test_gate_entrypoint_parity.py` refuses a name here that `--stages`
+# cannot resolve.
+known_gates() { echo "review-gate merge-gate done-gate push-gate"; }
 
 # Make THIS checkout runnable, so `$PY` above resolves to an interpreter that
 # imports this tree and not another one. NOT a stage and in no gate composition:
@@ -351,14 +362,14 @@ case "$stage" in
     --prepare) ci_prepare ;;
     --stages)
         gate_composition "${1:-}" || {
-            echo "[ci-local] no such gate: ${1:-<none>} (gates: merge-gate | done-gate | push-gate)" >&2
+            echo "[ci-local] no such gate: ${1:-<none>} (gates: $(known_gates))" >&2
             exit 2
         }
         ;;
-    merge-gate|done-gate|push-gate)
+    review-gate|merge-gate|done-gate|push-gate)
         echo "[ci-local] '$stage' is a gate, not a stage — it names: $(gate_composition "$stage")" >&2
         echo "  its composition:  scripts/ci-local.sh --stages $stage" >&2
-        echo "  run it (marks the tree on green):  make merge-gate | make done-gate | scripts/run-e2e-gate.sh" >&2
+        echo "  run it (marks the tree on green):  make review-gate | make merge-gate | make done-gate | scripts/run-e2e-gate.sh" >&2
         exit 2
         ;;
     all)
@@ -388,7 +399,7 @@ case "$stage" in
             echo "[ci-local] unknown stage: $stage" >&2
             echo "  stages: $(known_stages | tr '\n' ' ')" >&2
             echo "  bundle: all (the local pre-push bundle, and the default)" >&2
-            echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
+            echo "  gates (--stages prints their composition): $(known_gates)" >&2
             echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
             exit 2
         fi
