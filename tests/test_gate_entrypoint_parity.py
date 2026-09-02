@@ -202,10 +202,68 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     """
     merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
 
-    assert done - merge == {"integration", "merge-smoke"}, (
+    assert done - merge == {"integration", "master-ci", "merge-smoke"}, (
         "`->done` asks whether master is green after this card; `integration` and "
-        "`merge-smoke` are the stages that answer it. Actual extra: "
-        f"{sorted(done - merge)}"
+        "`merge-smoke` are the stages that answer it, and `master-ci` (HATS-1877) "
+        "asks the same question of the base the card is about to land on. Actual "
+        f"extra: {sorted(done - merge)}"
+    )
+
+
+def _gate_roster() -> list[str]:
+    """The roster the dispatcher prints when it refuses an unknown gate."""
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "--stages", "no-such-gate"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    text = out.stdout + out.stderr
+    assert "(gates:" in text, text
+    return text.split("(gates:", 1)[1].split(")", 1)[0].split()
+
+
+def test_every_gate_the_roster_names_can_be_resolved():
+    """The roster is what a lost reader is handed. A name on it that `--stages`
+    cannot resolve sends them to a gate that does not exist — which is what three
+    hand-kept copies of the list invited before HATS-1877 made it one."""
+    roster = _gate_roster()
+    assert roster, "the dispatcher named no gates at all"
+    for gate in roster:
+        assert _composition(gate), f"the roster names `{gate}`, which resolves to nothing"
+
+
+def test_the_review_gate_demands_exactly_what_the_merge_gate_does():
+    """HATS-1877 put a gate on the hand-off, and made it name `merge-gate`'s set
+    rather than a lighter one of its own.
+
+    Two reasons, and both break if these drift apart. The marker is read across
+    gates by stage SUBSET, so equality is what lets one run satisfy both edges
+    instead of the agent paying twice. And the objection that created this gate
+    was that tests had not necessarily run — a review composition that dropped
+    `unit` to stay fast would answer the wrong question.
+    """
+    review, merge = set(_composition("review-gate")), set(_composition("merge-gate"))
+
+    assert review == merge, (
+        "`review-gate` and `merge-gate` must name the same set — one run pays "
+        f"for both only while they do. Only in review: {sorted(review - merge)}; "
+        f"only in merge: {sorted(merge - review)}"
+    )
+    assert "unit" in review, (
+        "the ->review gate exists because the suite had not necessarily run; "
+        "a composition without `unit` cannot ask that"
+    )
+
+
+def test_the_review_gate_is_a_subset_of_the_done_gate():
+    """Absorption again (ADR-0023 D5): a `done-gate` run must cover the hand-off
+    it already contains, or closing a card in one sitting pays three times."""
+    review, done = set(_composition("review-gate")), set(_composition("done-gate"))
+
+    assert review <= done, (
+        "review-gate must stay a subset of done-gate — stages only review-gate "
+        f"demands: {sorted(review - done)}"
     )
 
 

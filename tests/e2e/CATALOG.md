@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**291 of 291 files catalogued — 300 flows.**
+**295 of 295 files catalogued — 304 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1776,6 +1776,21 @@ as a claim to check, not as evidence.
 - **expect** — the rule is listed by name and nothing from the sidecar reaches stdout
 - **why** — rules are catalogued by name alone since HATS-1836 — a sidecar description was a second copy of the rule's meaning that drifted (5 of 14 had), and an external library's leftover sidecar must now be inert rather than half-read
 
+## `test_master_ci_gate.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer closes a card while master's own CI has been failing
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh master-ci
+  bash scripts/ci-local.sh --stages done-gate
+  ```
+
+- **expect** — a green master passes; a red one refuses with exit 1, names the conclusion and the run url, and points at the one override; the override lets the card that fixes master through; and every reason the check cannot answer (no gh, gh refusing, a run still going) is ANNOUNCED, never silent
+- **why** — CI had been red since before 2026-07-28 for an unrelated reason, so the one arm that could see seven of v0.15.0's nine defects went unread for a month. A skip nobody is told about is that same defect wearing the gate's own colours
+
 ## `test_migration_no_replay_without_config.py`
 
 *pins HATS-1123*
@@ -3077,6 +3092,21 @@ as a claim to check, not as evidence.
 - **expect** — a fast-forward, a branch deletion, a brand-new branch and an empty stdin all pass; a non-fast-forward exits 1, and the refusal names `rule_pause_before_shared_state_write` and says "Do NOT retry" rather than failing bare; the env ack overrides the block
 - **why** — the hook is pure bash driven by git over stdin, so nothing in-process reaches it — and a hook that blocks a legal fast-forward is as broken as one that waves a force-push through. The PreToolUse half is unit-tested in tests/test_shared_state_guard.py; only this half needs a real repo.
 
+## `test_shellcheck_stage.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer edits shell this repo SHIPS — a git hook or a skill's hook, which runs in someone else's project
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh shellcheck
+  bash scripts/ci-local.sh --stages merge-gate
+  ```
+
+- **expect** — the stage is green on this tree and says how many files it read; a script with a real warning is refused at severity `warning`; and when shellcheck is not installed the stage ANNOUNCES the skip instead of passing quietly
+- **why** — the python linters never saw the shell half, and shipped shell fails differently: `git_hooks/**` and the skills' `hooks/**` run in a consuming project, where a portability bug shows up as a step that silently did nothing. HATS-1877 measured the debt at five findings, so this stage starts clean rather than with a ratchet
+
 ## `test_sibling_backlog_check_gate.py`
 
 *pins HATS-1575*
@@ -3148,6 +3178,21 @@ as a claim to check, not as evidence.
 
 - **expect** — self update resolves latest tagged stable release and installs versioned release venv
 - **why** — without stable channel support, production users cannot pin update checks to verified releases
+
+## `test_stage_liveness.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer wires a new check into a CI job and forgets its dependency, so the stage exits on an import it never had
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh e2e-catalog   # under an interpreter with no click
+  bash scripts/ci-local.sh bidi          # under the real one
+  ```
+
+- **expect** — a stage that could not import is reported as BROKEN with exit 3, naming the missing module and saying nothing above it is a finding; a stage that ran and found something keeps exit 1; a green stage is untouched
+- **why** — python exits 1 on an uncaught ModuleNotFoundError exactly as a check exits 1 on a finding, so the exit code alone cannot tell them apart. The `version-skew-guard` job hosted `e2e-catalog` and `python-pin` without their imports and reported each as its own subject for as long as neither had ever run — a check that did not run is not a pass
 
 ## `test_step_entry_point_resolution.py`
 
@@ -3622,6 +3667,21 @@ as a claim to check, not as evidence.
 
 - **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
 - **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
+
+## `test_wheel_contents_gate.py`
+
+*pins HATS-1877*
+
+- **flow** — a maintainer publishes a package whose sdist silently dropped a file
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh wheel-contents
+  bash scripts/ci-local.sh --stages merge-gate
+  ```
+
+- **expect** — the stage is green on this tree; with the library's sdist `force-include` removed it names the six `hooks/consent_gate` files that no published wheel ever carried; and `merge-gate` names the stage
+- **why** — `uv build <pkg>` builds the sdist and then the wheel FROM it, which is what every release workflow here does. `uv build --wheel` builds from the tree instead and carries those six files ONLY under the symlink that reaches them — on a healthy tree as much as a broken one. So the chain is not an optimisation to undo: a `--wheel` build makes the check red on a tree that is fine, which the green case below pins
 
 ## `test_wheel_excludes_area_tests.py`
 

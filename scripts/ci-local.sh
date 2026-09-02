@@ -44,6 +44,35 @@ else
     PY="${PYTHON:-python}"
 fi
 
+# HATS-1877: a stage that could NOT RUN is not a stage that refused. Python
+# exits 1 on an uncaught ModuleNotFoundError exactly as a check exits 1 on a
+# finding, so the code alone cannot tell the two apart — and the CI job that
+# hosted `e2e-catalog` and `python-pin` without their imports reported each as
+# its own subject for as long as neither had ever run.
+#
+# Only the fast checkers route through here. Their stderr is small enough to
+# hold to the end of the stage; the pytest tiers stream for minutes, and a
+# missing pytest is not a silent failure mode.
+run_py() {
+    local err rc=0 missing
+    err="$(mktemp "${TMPDIR:-/tmp}/ci-local-stage.XXXXXX")" || err=''
+    # No temp file, no detection — run plainly rather than lose the stage.
+    if [[ -z "$err" ]]; then
+        "$PY" "$@"
+        return
+    fi
+    "$PY" "$@" 2>"$err" || rc=$?
+    cat "$err" >&2
+    missing="$(sed -n "s/^ModuleNotFoundError: No module named '\([^']*\)'.*/\1/p" "$err" | tail -1)"
+    rm -f "$err"
+    if [[ $rc -ne 0 && -n "$missing" ]]; then
+        echo "[ci-local] BROKEN: this stage never ran — no module named '$missing'" >&2
+        echo "  Nothing above is a finding. Install '$missing' for $PY, then re-run." >&2
+        return 3
+    fi
+    return $rc
+}
+
 ci_tmp_sweep() {
     # HATS-1624: reap what killed runs leave in TMPDIR. Housekeeping, not a
     # check — it is in the `all` bundle and in NO gate composition, because a
@@ -58,14 +87,16 @@ ci_tmp_sweep() {
 
 ci_lint() {
     echo "[ci-local] lint (ruff check + format)" >&2
-    "$PY" -m ruff check .
+    run_py -m ruff check .
     # HATS-1372: the formatter check lived only in `make lint`, behind a failing
     # `ruff check` — so 20 unformatted files sat on master unseen for weeks.
     # HATS-1651: the same `.` as the line above. Two scopes could not stay equal
     # by convention, and ruff's own extend-exclude is the one that should decide.
-    "$PY" -m ruff format --check .
+    run_py -m ruff format --check .
 }
 
+# Argv arrives through the dispatcher's indirect call, invisible to the linter.
+# shellcheck disable=SC2120
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
     env \
@@ -86,6 +117,8 @@ ci_integration() {
     "$PY" -B -m pytest --ignore=tests/e2e -m integration -q ${@+"$@"}
 }
 
+# Argv arrives through the dispatcher's indirect call, invisible to the linter.
+# shellcheck disable=SC2120
 ci_coverage() {
     echo "[ci-local] coverage (unit + real-git integration, --cov-fail-under=78)" >&2
     "$PY" -B -m pytest --ignore=tests/e2e/ \
@@ -100,9 +133,11 @@ ci_security() {
     # HATS-1591: bandit dropped — ruff's `S` family covers its inventory and
     # already runs on every road. What is left here is the network half.
     echo "[ci-local] security (pip-audit)" >&2
-    "$PY" -m pip_audit
+    run_py -m pip_audit
 }
 
+# Argv arrives through the dispatcher's indirect call, invisible to the linter.
+# shellcheck disable=SC2120
 ci_merge_smoke() {
     echo "[ci-local] merge-smoke (curated e2e subset)" >&2
     "$PY" -B -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
@@ -111,33 +146,33 @@ ci_merge_smoke() {
 # Offline and instant, so unlike version-skew it belongs in the `all` bundle.
 ci_dependency_floor() {
     echo "[ci-local] dependency-floor (pins vs workspace versions)" >&2
-    "$PY" scripts/check_dependency_floor.py
+    run_py scripts/check_dependency_floor.py
 }
 
 # Offline and instant, like the others. HATS-1599: a ratchet, so it is green
 # only while the tree patches its own units no more than the recorded baseline.
 ci_test_isolation() {
     echo "[ci-local] test-isolation (patching of code under test vs the baseline)" >&2
-    "$PY" scripts/check_test_isolation.py
+    run_py scripts/check_test_isolation.py
 }
 
 # Offline and instant. HATS-1591: the one check bandit held that ruff's `S`
 # family does not, kept after bandit itself was dropped.
 ci_bidi() {
     echo "[ci-local] bidi (bidirectional controls, invisible in review)" >&2
-    "$PY" scripts/check_bidi.py
+    run_py scripts/check_bidi.py
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_python_pin() {
     echo "[ci-local] python-pin (every copy of the pin agrees; CI runs it)" >&2
-    "$PY" scripts/check_python_pin.py
+    run_py scripts/check_python_pin.py
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_silent_fallback() {
     echo "[ci-local] silent-fallback (broad handlers nothing can escape from)" >&2
-    "$PY" scripts/check_silent_fallback.py
+    run_py scripts/check_silent_fallback.py
 }
 
 # Offline and instant, like the two above. HATS-1498: the flow catalog is
@@ -145,14 +180,14 @@ ci_silent_fallback() {
 # edited without regenerating.
 ci_e2e_catalog() {
     echo "[ci-local] e2e-catalog (tests/e2e/CATALOG.md vs the flow blocks)" >&2
-    "$PY" scripts/gen_e2e_catalog.py --check
+    run_py scripts/gen_e2e_catalog.py --check
 }
 
 # Offline and instant, like the three above. HATS-1646: prose carries no assert,
 # so a citation into an ADR rots green — two such defects lived for months.
 ci_adr_integrity() {
     echo "[ci-local] adr-integrity (ADR citations resolve; a number names one file)" >&2
-    "$PY" scripts/check_adr_integrity.py
+    run_py scripts/check_adr_integrity.py
 }
 
 # Offline and instant, like the four above. HATS-1825: `adr-integrity` proved a
@@ -160,7 +195,7 @@ ci_adr_integrity() {
 # same gate aimed at the library's own references, where 21 had already rotted.
 ci_prose_refs() {
     echo "[ci-local] prose-refs (paths, library prefixes, sections and symbols in library prose)" >&2
-    "$PY" scripts/check_prose_refs.py
+    run_py scripts/check_prose_refs.py
 }
 
 # Offline and instant, like the five above. Sibling of `prose-refs` aimed at what
@@ -170,7 +205,7 @@ ci_prose_refs() {
 # pattern is alive rather than merely silent.
 ci_ticket_ids() {
     echo "[ci-local] ticket-ids (no tracker id in shipped library prose)" >&2
-    "$PY" scripts/check_no_ticket_ids.py
+    run_py scripts/check_no_ticket_ids.py
 }
 
 # Offline and instant, like the six above. HATS-1872: sibling of `e2e-catalog` —
@@ -179,7 +214,7 @@ ci_ticket_ids() {
 # NUMBER is worse than no page: prose invites a check, a number invites trust.
 ci_env_reference() {
     echo "[ci-local] env-reference (docs/reference-env.md vs the env declarations)" >&2
-    "$PY" scripts/gen_env_reference.py --check
+    run_py scripts/gen_env_reference.py --check
 }
 
 # The full maintainer tier (the slow one). Excluded from `all`; this is the selection
@@ -212,14 +247,25 @@ ci_e2e() {
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
-    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
+    local tier="e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
     case "$1" in
-        merge-gate) echo "$tier unit" ;;
-        done-gate) echo "$tier unit integration merge-smoke" ;;
+        # HATS-1877: `review-gate` and `merge-gate` name the SAME set on purpose.
+        # They differ in the edge they sit on, not in what they demand, and the
+        # marker is read across gates by stage subset — so one run satisfies
+        # both. `tests/test_gate_entrypoint_parity.py` refuses a drift here.
+        review-gate | merge-gate) echo "$tier wheel-contents unit" ;;
+        done-gate) echo "$tier wheel-contents master-ci unit integration merge-smoke" ;;
         push-gate) echo "lint unit e2e-catalog env-reference adr-integrity prose-refs ticket-ids bidi e2e" ;;
         *) return 1 ;;
     esac
 }
+
+# HATS-1877: the gate names, in ONE place. `gate_composition` above is the
+# authority on what each RUNS; this is the roster the three messages below read,
+# which until now was three hand-kept copies that a new gate had to find.
+# `tests/test_gate_entrypoint_parity.py` refuses a name here that `--stages`
+# cannot resolve.
+known_gates() { echo "review-gate merge-gate done-gate push-gate"; }
 
 # Make THIS checkout runnable, so `$PY` above resolves to an interpreter that
 # imports this tree and not another one. NOT a stage and in no gate composition:
@@ -250,7 +296,47 @@ ci_prepare() {
 # (optionally SKEW_BASE=<sha>) to reproduce.
 ci_version_skew() {
     echo "[ci-local] version-skew (workspace pkgs ahead of PyPI)" >&2
-    "$PY" scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
+    run_py scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
+}
+
+# Offline and instant, like the seven above. HATS-1877: the shell this repo
+# SHIPS is the half no python linter ever saw — `git_hooks/**` and the skills'
+# `hooks/**` run in a consuming project, where a portability bug is a silent
+# skip rather than a crash. Severity is capped at `warning` on purpose: `info`
+# and below is 41 findings, twenty of them SC1091 on dynamically sourced libs.
+ci_shellcheck() {
+    echo "[ci-local] shellcheck (tracked *.sh, severity >= warning)" >&2
+    if ! command -v shellcheck >/dev/null 2>&1; then
+        echo "[shellcheck] SKIPPED: not installed — no shell script was checked." >&2
+        return 0
+    fi
+    local count
+    count="$(git ls-files -- '*.sh' | wc -l | tr -d ' ')"
+    # xargs with no input still runs the utility once, and shellcheck with no
+    # file exits on its usage — a red stage for an empty set.
+    if [[ "$count" -eq 0 ]]; then
+        echo "[shellcheck] no tracked *.sh — nothing was checked." >&2
+        return 0
+    fi
+    git ls-files -z -- '*.sh' | xargs -0 shellcheck -S warning
+    echo "[shellcheck] ok: $count file(s) clean" >&2
+}
+
+# HATS-1877: offline given a warm uv cache, and ~3s for all five packages, so it
+# sits on `->merge` — the last edge before a version can be published. It is the
+# only check here that judges the ARTEFACT rather than the tree.
+ci_wheel_contents() {
+    echo "[ci-local] wheel-contents (tracked src files vs the sdist-chained wheel)" >&2
+    run_py scripts/check_wheel_contents.py
+}
+
+# HATS-1877: NETWORK — like `version-skew`, so it is excluded from the local
+# `all` bundle and from CI (where master's own verdict is circular). It sits on
+# `->done` alone: the month of red that hid seven of v0.15.0's nine defects was
+# a signal nobody read, and the close is the moment a human is looking.
+ci_master_ci() {
+    echo "[ci-local] master-ci (master's last CI verdict)" >&2
+    run_py scripts/check_master_ci.py
 }
 
 # The stage set IS the set of `ci_*` functions defined above: the dispatch and
@@ -276,20 +362,21 @@ case "$stage" in
     --prepare) ci_prepare ;;
     --stages)
         gate_composition "${1:-}" || {
-            echo "[ci-local] no such gate: ${1:-<none>} (gates: merge-gate | done-gate | push-gate)" >&2
+            echo "[ci-local] no such gate: ${1:-<none>} (gates: $(known_gates))" >&2
             exit 2
         }
         ;;
-    merge-gate|done-gate|push-gate)
+    review-gate|merge-gate|done-gate|push-gate)
         echo "[ci-local] '$stage' is a gate, not a stage — it names: $(gate_composition "$stage")" >&2
         echo "  its composition:  scripts/ci-local.sh --stages $stage" >&2
-        echo "  run it (marks the tree on green):  make merge-gate | make done-gate | scripts/run-e2e-gate.sh" >&2
+        echo "  run it (marks the tree on green):  make review-gate | make merge-gate | make done-gate | scripts/run-e2e-gate.sh" >&2
         exit 2
         ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_tmp_sweep
         ci_lint
+        ci_shellcheck
         ci_dependency_floor
         ci_python_pin
         ci_silent_fallback
@@ -312,7 +399,7 @@ case "$stage" in
             echo "[ci-local] unknown stage: $stage" >&2
             echo "  stages: $(known_stages | tr '\n' ' ')" >&2
             echo "  bundle: all (the local pre-push bundle, and the default)" >&2
-            echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
+            echo "  gates (--stages prints their composition): $(known_gates)" >&2
             echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
             exit 2
         fi

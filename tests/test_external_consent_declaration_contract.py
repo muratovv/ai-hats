@@ -121,11 +121,15 @@ def test_the_maintainer_gate_does_not_own_consent():
     config = yaml.safe_load(
         (_LIBRARY / "ai-hats-dev/roles/maintainer/config.yaml").read_text(encoding="utf-8")
     )
-    (gate,) = config["composition"]["apps"]["rack"]["tasks"]
+    rows = config["composition"]["apps"]["rack"]["tasks"]
 
-    assert gate["at"] == ["->done"]
-    assert gate["on_error"] == "refuse"
-    assert "consent" not in gate
+    assert rows, "the role binds no gate at all"
+    for gate in rows:
+        assert gate["on_error"] == "refuse", gate
+        assert "consent" not in gate, (
+            f"{gate['run']} declares consent; consent is session middleware "
+            "(ADR-0030 D1/D3), never a gate's own business"
+        )
 
 
 def test_the_shipped_question_rides_every_road_into_done():
@@ -156,9 +160,12 @@ def test_the_shipped_question_rides_every_road_into_done():
     gate = yaml.safe_load(
         (_LIBRARY / "ai-hats-dev/roles/maintainer/config.yaml").read_text(encoding="utf-8")
     )
-    (gate_row,) = gate["composition"]["apps"]["rack"]["tasks"]
-    assert gate_row["at"] == ["->done"], "the gate and the question must cover one set"
-    assert gate_row["run"].endswith("done-gate.sh")
+    # By NAME, never by being the only row: the role binds a gate per edge, and
+    # the one this pairs with is the `->done` gate specifically.
+    rows = gate["composition"]["apps"]["rack"]["tasks"]
+    done_rows = [row for row in rows if row["run"].endswith("done-gate.sh")]
+    assert len(done_rows) == 1, f"exactly one ->done gate, found: {[r['run'] for r in rows]}"
+    assert done_rows[0]["at"] == ["->done"], "the gate and the question must cover one set"
 
 
 def test_the_shipped_declaration_compiles_to_a_policy_that_protects_done():

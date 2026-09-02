@@ -66,6 +66,7 @@ UNDECLARED: dict[str, frozenset[str]] = {
             "AI_HATS_NO_UPDATE_CHECK",
             "AI_HATS_PLAN_ACK",
             "AI_HATS_PRIVACY_ACK",
+            "AI_HATS_RED_MASTER_ACK",
             "AI_HATS_RULE_DELIVERY_ACK",
             "AI_HATS_SECURITY_LINT_OFF",
             "AI_HATS_SHARED_STATE_ACK",

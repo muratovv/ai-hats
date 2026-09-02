@@ -50,7 +50,8 @@ is_allowlisted() {
         if [[ "$path" == $line ]]; then
             return 0
         fi
-        # Match basename too.
+        # Match basename too — $line is a glob here as well.
+        # shellcheck disable=SC2053
         if [[ "$(basename "$path")" == $line ]]; then
             return 0
         fi

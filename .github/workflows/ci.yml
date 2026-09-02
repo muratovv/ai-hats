@@ -226,3 +226,21 @@ jobs:
       - name: Check every copy of the Python pin agrees
         if: always()
         run: bash scripts/ci-local.sh python-pin
+      # HATS-1877: the shell this repo SHIPS, on a Linux host. The maintainer's
+      # gate runs the same stage, but a shell defect is exactly the class that
+      # only one of the two arms can see (`mktemp -t` is BSD-only, and passed
+      # locally for as long as nobody ran it here).
+      - name: Check the shell this repo ships
+        if: always()
+        # The stage announces a skip when shellcheck is absent, which is right
+        # on a contributor's box and wrong here: this arm exists to run. Prove
+        # the runner image still carries it before trusting a green.
+        run: |
+          command -v shellcheck
+          bash scripts/ci-local.sh shellcheck
+      # HATS-1877: builds each package through the sdist, as the release does,
+      # and refuses a wheel that lost a tracked file on the way. Offline apart
+      # from the build backend, which the uv cache above already holds.
+      - name: Check every tracked src file reaches its wheel
+        if: always()
+        run: bash scripts/ci-local.sh wheel-contents

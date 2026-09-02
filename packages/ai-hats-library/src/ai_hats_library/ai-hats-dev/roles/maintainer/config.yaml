@@ -30,13 +30,16 @@ composition:
   # that started this epic. Each check is a marker lookup; the suites
   # run out of band via `make merge-gate` / `make done-gate`.
   #
-  # TWO GATES, one per edge, because the two edges ask different
-  # questions (ADR-0023 D3/D4). `->merge`: is this branch fit to enter master —
-  # the agent is alone at that refusal. `->done`: is master green after this card,
-  # judged on the MERGE RESULT — the worktree while it lives, the merge commit
-  # once it does not — which is why the edge stopped passing hollow.
-  # `merge-gate`'s composition stays a subset of `done-gate`'s, so one run pays
-  # for both (D5).
+  # THREE GATES, one per edge, because the edges ask different
+  # questions (ADR-0023 D3/D4). `->review`: is this work fit for a human to spend
+  # time on — that edge asked nothing for a long time, so a card reached a
+  # reviewer on the agent's word that the suite was green. `->merge`:
+  # is this branch fit to enter master — the agent is alone at that refusal.
+  # `->done`: is master green after this card, judged on the MERGE RESULT — the
+  # worktree while it lives, the merge commit once it does not — which is why the
+  # edge stopped passing hollow. `review-gate` and `merge-gate` name the same
+  # composition and both stay a subset of `done-gate`'s, so one run pays for all
+  # three (D5).
   #
   # Two rows rather than one list of points: the app owns the
   # grammar above `run:`, so a row belongs to exactly one app. `apps.rack.tasks`
@@ -68,6 +71,12 @@ composition:
         # this role used to carry is gone rather than merely moved. Consent itself is
         # session middleware now, declared by trait-agent under `apps.consent_gate`
         # and read by nothing in rack (ADR-0030 D1/D3).
+        # `at` is EVERY road into the state here too, for the reason measured
+        # on `->done`: a gate bound to the single expected edge covered 1 of its
+        # 8 roads, so the question went unasked wherever the card took another.
+        - run: maintainer-quality-gate/hooks/review-gate.sh
+          at: ['->review']
+          on_error: refuse
         - run: maintainer-quality-gate/hooks/done-gate.sh
           at: ['->done']
           on_error: refuse
