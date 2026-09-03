@@ -65,7 +65,8 @@ from ..session_policy import (
     SessionRunParams,
 )
 from ..retro.session_review_runner import SessionReviewError
-from ._helpers import _project_dir, console
+from ._entry import resolve_project
+from ._helpers import console
 
 
 @click.group("reflect")
@@ -105,7 +106,7 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         _spawn_detached(session_id, max_retries)
         return
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     try:
         result = run_pipeline(
             REFLECT_SESSION,
@@ -133,7 +134,7 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
 
     from ..paths import runs_dir
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     log_path = runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a") as f:
@@ -168,7 +169,7 @@ def reflect_all_cmd(dry_run: bool):
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     handoff_path = _build_handoff(project_dir)
     console.print(f"[green]✓[/green] Handoff written: {handoff_path}")
     if dry_run:
@@ -239,7 +240,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     handoff_path = _build_handoff(project_dir)
     console.print(f"[green]✓[/green] Handoff written: {handoff_path}")
     if dry_run:
@@ -343,7 +344,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
 @click.argument("name")
 def reflect_role_cmd(name: str):
     """Audit a single role against the project context for coherence."""
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     sys.exit(_run_role_audit(project_dir, name).exit_code_or(1))
 
 
@@ -353,7 +354,7 @@ def reflect_roles_cmd():
     from ..assembler import Assembler
     from ..models import ComponentType
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     resolver = Assembler(project_dir).resolver
     names = resolver.list_components(ComponentType.ROLE)
     if not names:
@@ -697,7 +698,7 @@ def _spawn_intake_detached(
 
     from ..paths import runs_dir
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     log_dir = runs_dir(project_dir) / REFLECT_ISSUE.name
     log_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -786,7 +787,7 @@ def reflect_issue_cmd(
         console.print(f"[dim]reflect issue spawned (pid={pid}, bg) → {log_path}[/dim]")
         return
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     # reflect issue creates an HYP; mount its backlog on a project that never had one.
     ensure_backlog(project_dir, "hypotheses")
     ws = rack_workspace(project_dir)
@@ -874,7 +875,7 @@ def reflect_issue_cmd(
 )
 def reflect_commit_cmd(accept, reject, defer, duplicate):
     """Bulk-update proposal statuses (called at end of interactive chat)."""
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     ws = rack_workspace(project_dir)
     changes = 0
     for pid, to_state in (

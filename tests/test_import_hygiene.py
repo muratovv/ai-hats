@@ -381,21 +381,12 @@ def _resolution_offenders() -> dict[str, tuple[str, ...]]:
     return offenders
 
 
-# Pinned 2026-09-03. Two sites no prior measurement had named:
-# rack_cli_provider (find_project_root) and relocation (raw config peek).
+# Pinned 2026-09-04 after the step-6 drain (21 -> 8 modules). What remains is
+# the owners, the two rack-sanctioned copies, and the step-7/8 death row.
 EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
-    "ai_hats.cli": ("_project_dir",),
     "ai_hats.cli._entry": ("resolve_root",),  # THE sanctioned factory (composition root)
-    "ai_hats.cli._helpers": ("_project_dir",),
-    "ai_hats.cli.agent": ("_project_dir",),
-    "ai_hats.cli.assembly": ("_project_dir",),
-    "ai_hats.cli.config": ("_project_dir",),
-    "ai_hats.cli.execute": ("_project_dir",),
-    "ai_hats.cli.maintenance": ("_project_dir",),
-    "ai_hats.cli.reflect": ("_project_dir",),
-    "ai_hats.cli.wait": ("resolve_root",),  # rack's resolver inside our CLI — counter 1
-    "ai_hats.cli.worktree": ("_project_dir",),
-    "ai_hats.composition_seam": ("_project_dir",),  # a DEEP module resolving — R5's evidence
+    "ai_hats.cli._helpers": ("_project_dir",),  # zero callers left — deleted in step 8
+    "ai_hats.cli.wait": ("resolve_root",),  # rack's copy; semantics now match core, parity by conformance
     "ai_hats.paths._dirs": (
         "_is_ai_hats_project",
         "_read_ai_hats_dir_from_yaml",
@@ -404,7 +395,7 @@ EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
     "ai_hats.paths.constants": ("ai-hats.yaml",),  # the literal's one legitimate home
     "ai_hats.rack_cli_provider": ("find_project_root",),
     "ai_hats.relocation": ("_read_ai_hats_dir_from_yaml",),
-    "ai_hats_core.layout": ("ai-hats.yaml", "resolve_root"),  # the future owner
+    "ai_hats_core.layout": ("ai-hats.yaml", "resolve_root"),  # the owner
 }
 
 

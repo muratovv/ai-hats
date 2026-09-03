@@ -34,7 +34,7 @@ from ..session_policy import (
     SessionRunParams,
 )
 from ..pipeline_catalog import EXECUTE
-from ._helpers import _project_dir
+from ._entry import resolve_project
 
 
 def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
@@ -196,7 +196,7 @@ def execute_cmd(
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
     if not interactive:

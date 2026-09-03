@@ -93,6 +93,17 @@ def _handle_missing_provider(exc: "MissingProviderError") -> NoReturn:
     sys.exit(2)
 
 
+def _handle_no_project(exc: Exception) -> NoReturn:
+    """Render a ``ProjectNotFoundError`` as a friendly message + exit 2.
+
+    The resolver no longer falls back to cwd (the stray-ancestor bug), so an
+    un-onboarded directory is an ANSWER — point at init instead of a traceback.
+    """
+    console.print(f"[red]Error[/]: {exc}")
+    console.print("cd to your project root, or run [bold]ai-hats init[/] to onboard this one.")
+    raise SystemExit(2)
+
+
 def _handle_not_a_project(exc: "NotAnAiHatsProjectError") -> NoReturn:
     """Render a ``NotAnAiHatsProjectError`` as a friendly message + exit 2.
 
@@ -128,6 +139,8 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
     with catch_broken_install():
         from ..composition_seam import MissingProviderError, RoleNotFoundError
         from ..libraries.models import CheckBindingError, ComponentKeyError
+        from ai_hats_core.layout import ProjectNotFoundError
+
         from ..paths import NotAnAiHatsProjectError
         from ..surface_registry import UnknownSurfaceError
         from ..role_spec import RoleSpecError
@@ -138,6 +151,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         (UnknownSurfaceError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),
+        (ProjectNotFoundError, _handle_no_project),
         (CheckBindingError, _handle_check_binding_error),
         # HATS-1545 F7: a key defect is the same class of message as a binding
         # defect — both are a declared gate that cannot install, and a traceback
@@ -328,11 +342,12 @@ def _project_dir(*, start: Path | None = None) -> Path:
     return cwd
 
 
-def _assembler(project_dir: Path | None = None):
+def _assembler(project_dir: Path):
+    """The caller resolves the project; this helper only survives the import guard."""
     with catch_broken_install():
         from ..assembler import Assembler
 
-    return Assembler(project_dir or _project_dir())
+    return Assembler(project_dir)
 
 
 def _guard_not_inside_linked_worktree() -> None:

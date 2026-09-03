@@ -17,7 +17,7 @@ from ai_hats_core import scrubbed_git_env
 from .. import health
 from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV
 from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT, PINNED_PYTHON
-from ._helpers import _assembler, _project_dir, console, logger
+from ._helpers import _assembler, console, logger
 
 if TYPE_CHECKING:
     from ..channel import ChannelResolution
@@ -806,7 +806,9 @@ def _resolved_via_heuristic(venv: Path) -> str:
 
     # ai-hats.yaml venv_path (relative to project_dir, expanded by paths.py).
     try:
-        project_dir = _project_dir()
+        from ._entry import resolve_project
+
+        project_dir = resolve_project().layout.root
         yaml_path = project_dir / PROJECT_CONFIG
         if yaml_path.is_file():
             # Lightweight grep — matches the launcher's bash-side scan
@@ -1457,7 +1459,9 @@ def update(
     if "/.venv/bin/python" in sys.executable or "/versions/" in sys.executable:
         console.print(f"[dim]Target venv:[/] {sys.executable}")
 
-    project_dir = _project_dir()
+    from ._entry import resolve_project
+
+    project_dir = resolve_project().layout.root
 
     # HATS-595: triage before any write, so --check can short-circuit here.
     reports = health.triage(project_dir)

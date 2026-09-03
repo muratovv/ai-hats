@@ -95,7 +95,15 @@ class _PassthroughGroup(click.Group):
         if not provider_name and not role_name:
             return
 
-        provider = resolve_provider_for_help(provider_name, role_name)
+        root = None
+        if role_name:
+            try:
+                from ._entry import resolve_project
+
+                root = resolve_project().layout.root
+            except Exception:  # silent-ok: --help renders without a project
+                root = None
+        provider = resolve_provider_for_help(provider_name, role_name, project_dir=root)
         if not provider:
             return
 
@@ -249,12 +257,12 @@ def _dry_run_session(
     import json as _json
 
     from ..dry_run import dry_run_hitl
-    from ._helpers import _project_dir
+    from ._entry import resolve_project
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     report = dry_run_hitl(
-        _project_dir(),
+        resolve_project().layout.root,
         role=role,
         provider=provider,
         extra_args=list(extra_args or []),
@@ -285,9 +293,9 @@ def _launch_session(
         SessionRecording,
         SessionRunParams,
     )
-    from ._helpers import _project_dir
+    from ._entry import resolve_project
 
-    project_dir = _project_dir()
+    project_dir = resolve_project().layout.root
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
@@ -540,9 +548,11 @@ def _guard_self_location() -> None:
     resolved_venv: str | None = None
     is_editable = False
     try:
-        from ._helpers import _project_dir
+        from ._entry import resolve_project
 
-        resolved_venv = _resolve_guard_target(_project_dir())
+        project = resolve_project()
+        # Only a venv that ACTUALLY EXISTS can be shadowed (HATS-791).
+        resolved_venv = str(project.venv) if project.venv.exists() else None
     except Exception:  # silent-ok: fail open on ANY resolution error, per docstring
         resolved_venv = None
     try:

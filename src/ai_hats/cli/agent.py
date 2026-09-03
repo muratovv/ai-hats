@@ -80,7 +80,7 @@ def run_subagent(
     """
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
-    from ._helpers import _project_dir
+    from ._entry import resolve_project
 
     if dry_run or materialize:
         import json as _json
@@ -90,7 +90,7 @@ def run_subagent(
         # HATS-1228: the seam's typed errors render at the root group —
         # cli/_helpers.dispatch_friendly_error.
         report = dry_run_automate(
-            _project_dir(),
+            resolve_project().layout.root,
             role=role,
             task=task or "",
             ticket_id=ticket or "",
@@ -110,7 +110,7 @@ def run_subagent(
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
     run_batch(
-        _project_dir(),
+        resolve_project().layout.root,
         role=role,
         task=task,
         provider=provider,

@@ -43,6 +43,8 @@ def master_project(tmp_path: Path) -> Path:
     """Repo on a fresh ``master`` branch with one commit."""
     project = tmp_path / "project"
     project.mkdir()
+    # Onboarded: a bare .git is no longer a project marker (HATS-1606).
+    (project / ".agent").mkdir()
     _git(project, "init", "-b", "master")
     _git(project, "config", "user.email", "test@test.com")
     _git(project, "config", "user.name", "Test")
@@ -221,7 +223,6 @@ class TestCliWtCreate:
         from ai_hats_wt import WorktreeManager
 
         _git(master_project, "checkout", "-b", "feat/foo")
-        # `_project_dir()` walks up from cwd looking for `.git` — chdir works.
         monkeypatch.chdir(master_project)
 
         result = CliRunner().invoke(cli_main, ["wt", "create", "task/probe"])

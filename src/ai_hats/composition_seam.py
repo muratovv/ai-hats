@@ -474,10 +474,15 @@ def _static_cost_analyzer(project_dir: Path):
     return analyze
 
 
-def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
-    """Best-effort provider resolution for CLI help (e.g., ai-hats --help)."""
+def resolve_provider_for_help(
+    provider_name: str | None, role_name: str | None, *, project_dir: Path | None = None
+):
+    """Best-effort provider resolution for CLI help (e.g., ai-hats --help).
+
+    ``project_dir`` comes from the caller — this module receives the project,
+    it never resolves one (R5); ``None`` means no project, so no role lookup.
+    """
     from .surface_registry import get_surface
-    from .cli._helpers import _project_dir
 
     if provider_name:
         try:
@@ -485,9 +490,9 @@ def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
         except Exception:  # silent-ok: best-effort provider resolution for --help
             return None
 
-    if role_name:
+    if role_name and project_dir is not None:
         try:
-            asm, cfg, effective_role, _runtime, _spec = _project_context(_project_dir(), role_name)
+            asm, cfg, effective_role, _runtime, _spec = _project_context(project_dir, role_name)
             eff = cfg.provider
             if eff:
                 return get_surface(eff)
