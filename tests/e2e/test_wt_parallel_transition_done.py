@@ -1,13 +1,15 @@
 """e2e (HATS-481)
 
 flow:   two developer processes concurrently running transition done on tasks sharing
-        base branch
+        base branch; the one that lost the base lock takes the new base and retries
 cmds:
     rack transition TST-001 done
-expect: base branch lock serializes merges and both transitions succeed without data
-        loss
-why:    concurrent task finalization must synchronize base branch merges to prevent lock
-        contention"""
+    git rebase main
+    rack transition TST-002 done
+expect: base branch lock serializes merges; the second merge refuses on drift with the
+        rebase recipe and loses nothing, and the retry after the rebase lands it
+why:    concurrent task finalization must synchronize base branch merges and never land
+        a branch whose verification did not see the peer's commits"""
 
 from __future__ import annotations
 from _helpers.env import consented
@@ -50,6 +52,19 @@ def _task_state(project: Path, task_id: str) -> str:
     raise AssertionError(f"no state field in {yaml_path}:\n{text}")
 
 
+def _worktree_of(project: Path, task_id: str) -> Path | None:
+    listing = _git(project, "worktree", "list", "--porcelain").stdout
+    branch_ref = f"task/{task_id.lower()}"
+    current: Path | None = None
+    for line in listing.splitlines():
+        if line.startswith("worktree "):
+            current = Path(line[len("worktree ") :].strip())
+        elif line.startswith("branch ") and current is not None:
+            if line[len("branch ") :].strip().endswith(f"/{branch_ref}"):
+                return current
+    return None
+
+
 def _walk_task_to_review(
     rack,
     project: Path,
@@ -74,22 +89,8 @@ def _walk_task_to_review(
     )
     rack("transition", task_id, "execute")
 
-    # Locate the worktree.
-    listing = _git(project, "worktree", "list", "--porcelain").stdout
-    wt_path: Path | None = None
-    current: Path | None = None
-    branch_ref = f"task/{task_id.lower()}"
-    for line in listing.splitlines():
-        if line.startswith("worktree "):
-            current = Path(line[len("worktree ") :].strip())
-        elif line.startswith("branch ") and current is not None:
-            ref = line[len("branch ") :].strip()
-            if ref.endswith(f"/{branch_ref}"):
-                wt_path = current
-                break
-    assert wt_path is not None and wt_path.is_dir(), (
-        f"no worktree found for {branch_ref}:\n{listing}"
-    )
+    wt_path = _worktree_of(project, task_id)
+    assert wt_path is not None and wt_path.is_dir(), f"no worktree found for {task_id}"
 
     _git(wt_path, "config", "user.email", "e2e@test")
     _git(wt_path, "config", "user.name", "E2E")
@@ -117,8 +118,9 @@ def _walk_task_to_review(
 
 @pytest.mark.integration
 def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
-    """Two `transition done` on tasks sharing a base ref both succeed
-    cleanly under L1' + L3' — no silent data loss, no flake."""
+    """Two `transition done` on tasks sharing a base ref, under L1' + L3':
+    one lands, the other refuses on drift and lands after the rebase the
+    recipe names. No silent data loss, no flake, on a fast box and a slow one."""
     launcher_dest, base_env, venv = shared_launcher
     rack_bin = venv / "bin" / "rack"
     # plan → execute is consent-gated; the gate is not this test's subject.
@@ -165,10 +167,11 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
 
     # ---- two tasks, both rooted in `main` ----
     task_a, task_b = "TST-001", "TST-002"
+    payload = {task_a: "file-a.txt", task_b: "file-b.txt"}
     rack("create", "Task A", "--description", "First", "--id", task_a)
     rack("create", "Task B", "--description", "Second", "--id", task_b)
-    _walk_task_to_review(rack, project, task_a, "file-a.txt", "alpha\n")
-    _walk_task_to_review(rack, project, task_b, "file-b.txt", "beta\n")
+    _walk_task_to_review(rack, project, task_a, payload[task_a], "alpha\n")
+    _walk_task_to_review(rack, project, task_b, payload[task_b], "beta\n")
 
     # Capture HEAD before the race for the merge-count assertion.
     head_before = _git(project, "rev-parse", "HEAD").stdout.strip()
@@ -178,31 +181,51 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     # carry the answer — the subject is the base-ref lock, and an edge that
     # refuses for want of a click never reaches it.
     done_env = consented(env)
-    cmd_a = [str(rack_bin), "transition", task_a, "done"]
-    cmd_b = [str(rack_bin), "transition", task_b, "done"]
-    p1 = subprocess.Popen(
-        cmd_a,
-        cwd=str(project),
-        env=done_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    procs = {
+        task_id: subprocess.Popen(
+            [str(rack_bin), "transition", task_id, "done"],
+            cwd=str(project),
+            env=done_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for task_id in (task_a, task_b)
+    }
+    outcome = {}
+    for task_id, proc in procs.items():
+        out, err = proc.communicate(timeout=90)
+        outcome[task_id] = (proc.returncode, out, err)
+    report = "\n".join(
+        f"{task_id} exit={rc}\nstdout:{out}\nstderr:{err}"
+        for task_id, (rc, out, err) in outcome.items()
     )
-    p2 = subprocess.Popen(
-        cmd_b,
-        cwd=str(project),
-        env=done_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    out1, err1 = p1.communicate(timeout=90)
-    out2, err2 = p2.communicate(timeout=90)
 
-    assert p1.returncode == 0 and p2.returncode == 0, (
-        f"parallel transition done failed under L1'+L3':\n"
-        f"task_a exit={p1.returncode}\nstdout:{out1}\nstderr:{err1}\n"
-        f"task_b exit={p2.returncode}\nstdout:{out2}\nstderr:{err2}"
+    # ---- exactly one racer took the base; the other saw it move ----
+    winners = [task_id for task_id, (rc, _, _) in outcome.items() if rc == 0]
+    assert len(winners) == 1, f"expected one winner under L1'+L3', got {winners}:\n{report}"
+    winner = winners[0]
+    loser = task_b if winner == task_a else task_a
+    loser_rc, _, loser_err = outcome[loser]
+    assert loser_rc == 1, report
+    assert "drifted" in loser_err and "git rebase main" in loser_err, report
+
+    # The refusal loses nothing: the winner's file is on base, the loser's is
+    # not, and the loser keeps its card, branch and worktree for the rebase.
+    assert (project / payload[winner]).exists(), report
+    assert not (project / payload[loser]).exists(), "loser's commit landed unverified"
+    assert _task_state(project, winner) == "done"
+    assert _task_state(project, loser) == "review"
+    loser_wt = _worktree_of(project, loser)
+    assert loser_wt is not None and loser_wt.is_dir(), report
+
+    # ---- the recipe: take the new base into the branch, retry ----
+    _git(loser_wt, "-c", "core.hooksPath=/dev/null", "rebase", "main")
+    _run(
+        [str(rack_bin), "transition", loser, "done"],
+        cwd=project,
+        env=done_env,
+        timeout=180,
     )
 
     # ---- both unique files must be in the base branch ----
