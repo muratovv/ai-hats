@@ -133,6 +133,7 @@ class AiHatsCheckPort:
             actor=request.actor,
             selector=request.selector,
             log_path=self._log_path(request.task_id, check, request.event),
+            cargo=check.cargo,
         )
         return CheckOutcome(
             ok=run.ok,

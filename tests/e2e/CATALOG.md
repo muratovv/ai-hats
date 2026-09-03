@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**296 of 296 files catalogued — 305 flows.**
+**297 of 297 files catalogued — 306 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1407,6 +1407,20 @@ as a claim to check, not as evidence.
 
 - **expect** — every spawned check receives AI_HATS_HOOK_CALL, so a script tells a person's forced fast-close from the epic automation's own hop
 - **why** — the automation hop is an in-process nested transition, so the session identity and every ambient signal around it are byte-identical to the human move — a gate on a wide selector otherwise runs blind on both
+
+## `test_hook_cargo.py`
+
+*pins HATS-1878*
+
+- **flow** — a gate script learning WHICH gate its binding row declared it to be
+- **cmds**
+
+  ```console
+  rack transition --state done --force   (a row carrying `gate:` and `weight:`)
+  ```
+
+- **expect** — the row's cargo reaches the spawned check as AI_HATS_CARGO_GATE and AI_HATS_CARGO_WEIGHT, so one script serves every gate and the usage site names the gate
+- **why** — `run:` carries no argv, so a gate per edge used to be a FILE per edge — three near-identical scripts differing in two strings
 
 ## `test_hook_chain_fail_open_recorded.py`
 
