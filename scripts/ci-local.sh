@@ -246,26 +246,15 @@ ci_e2e() {
 #
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
+#
+# HATS-1878: the table itself moved to `scripts/gates.sh` — this dispatcher runs
+# STAGES and knows no gate; these two are shims kept while the library hooks
+# still ask `--stages` here.
 gate_composition() {
-    local tier="e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference"
-    case "$1" in
-        # HATS-1877: `review-gate` and `merge-gate` name the SAME set on purpose.
-        # They differ in the edge they sit on, not in what they demand, and the
-        # marker is read across gates by stage subset — so one run satisfies
-        # both. `tests/test_gate_entrypoint_parity.py` refuses a drift here.
-        review-gate | merge-gate) echo "$tier wheel-contents unit" ;;
-        done-gate) echo "$tier wheel-contents master-ci unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog env-reference adr-integrity prose-refs ticket-ids bidi e2e" ;;
-        *) return 1 ;;
-    esac
+    bash "$repo_root/scripts/gates.sh" stages "$1" 2>/dev/null
 }
 
-# HATS-1877: the gate names, in ONE place. `gate_composition` above is the
-# authority on what each RUNS; this is the roster the three messages below read,
-# which until now was three hand-kept copies that a new gate had to find.
-# `tests/test_gate_entrypoint_parity.py` refuses a name here that `--stages`
-# cannot resolve.
-known_gates() { echo "review-gate merge-gate done-gate push-gate"; }
+known_gates() { bash "$repo_root/scripts/gates.sh" list 2>/dev/null; }
 
 # Make THIS checkout runnable, so `$PY` above resolves to an interpreter that
 # imports this tree and not another one. NOT a stage and in no gate composition:
@@ -366,12 +355,6 @@ case "$stage" in
             exit 2
         }
         ;;
-    review-gate|merge-gate|done-gate|push-gate)
-        echo "[ci-local] '$stage' is a gate, not a stage — it names: $(gate_composition "$stage")" >&2
-        echo "  its composition:  scripts/ci-local.sh --stages $stage" >&2
-        echo "  run it (marks the tree on green):  make review-gate | make merge-gate | make done-gate | scripts/run-e2e-gate.sh" >&2
-        exit 2
-        ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_tmp_sweep
@@ -395,6 +378,13 @@ case "$stage" in
         fn="ci_$(printf '%s' "$stage" | tr '-' '_')"
         if declare -F "$fn" >/dev/null 2>&1; then
             "$fn" ${@+"$@"}
+        elif composition="$(gate_composition "$stage")"; then
+            # A gate is not a stage: it is a NAME for a set of them, and running
+            # it is the primitive's job (it owns the markers).
+            echo "[ci-local] '$stage' is a gate, not a stage — it names: $composition" >&2
+            echo "  its composition:  scripts/gates.sh stages $stage" >&2
+            echo "  run it (stamps each green stage):  scripts/gates.sh run $stage" >&2
+            exit 2
         else
             echo "[ci-local] unknown stage: $stage" >&2
             echo "  stages: $(known_stages | tr '\n' ' ')" >&2
