@@ -210,7 +210,7 @@ flowchart TD
 | гейт          | где применяется          | стадии                                                                                                                                                                           |
 | ------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit                                   |
-| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents master-ci unit integration merge-smoke |
+| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit integration merge-smoke master-ci |
 | `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit                                   |
 | `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e                                                                                      |
 
