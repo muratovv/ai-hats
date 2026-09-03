@@ -4,9 +4,9 @@ HATS-1613 / ADR-0025 D2. ``subagent_runner`` hands the child ``AI_HATS_PROJECT_D
 = the MAIN checkout while the child executes in a worktree, so ``cwd != pin`` is
 designed and permanent. What reconciles them is the worktree-hop — and *because*
 the contract makes the hop load-bearing, these tests exercise the real one rather
-than monkeypatching it (`test_cli_helpers.py` already covers the branching with a
-stub; a stubbed hop cannot catch a broken hop). The worktree is handed in via
-``_project_dir(start=…)`` rather than by `chdir`-ing the process — exit 1 of
+than monkeypatching it (core's `test_layout.py` covers the branching with a
+fixture gitlink; a stubbed hop cannot catch a broken hop). The worktree is handed in via
+``resolve_root(start, …)`` rather than by `chdir`-ing the process — exit 1 of
 `scripts/check_test_isolation.py`.
 
 Net for the trust-policy work in the same task: if resolution stops hopping, a
@@ -20,7 +20,7 @@ import subprocess
 import warnings
 from pathlib import Path
 
-from ai_hats.cli._helpers import _project_dir
+from ai_hats_core.layout import ForeignPinPolicy, resolve_root
 from ai_hats.env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from ai_hats.paths import ai_hats_dir
 
@@ -54,7 +54,9 @@ def test_worktree_cwd_with_main_checkout_pin_resolves_to_main(tmp_path, monkeypa
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        resolved = _project_dir(start=wt)
+        resolved = resolve_root(
+            wt, dict(__import__("os").environ), on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE
+        )
         base = ai_hats_dir(resolved)
 
     assert resolved.resolve() == main.resolve(), (
@@ -77,7 +79,10 @@ def test_worktree_cwd_with_a_genuinely_foreign_pin_still_warns(tmp_path, monkeyp
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        base = ai_hats_dir(_project_dir(start=wt))
+        resolved = resolve_root(
+            wt, dict(__import__("os").environ), on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE
+        )
+        base = ai_hats_dir(resolved)
 
     assert [w for w in caught if "foreign" in str(w.message)], (
         "a pin naming an unrelated project must warn"
@@ -87,15 +92,14 @@ def test_worktree_cwd_with_a_genuinely_foreign_pin_still_warns(tmp_path, monkeyp
     )
 
 
-def test_worktree_carrying_its_own_agent_dir_resolves_to_itself(tmp_path, monkeypatch):
-    """Characterization, not endorsement — pins today's answer for the fragile case.
+def test_worktree_carrying_its_own_agent_dir_still_hops(tmp_path, monkeypatch):
+    """The fragile case of the OLD resolver is fixed by construction.
 
-    ``_project_dir`` checks ``.agent/`` BEFORE the hop, and its docstring justifies
-    that with "a worktree carries neither the gitignored .agent/ nor the untracked
-    ai-hats.yaml". Nothing enforces that premise. Should a worktree ever acquire
-    ``.agent/``, resolution stops hopping and the session's own pin reads as
-    foreign. The behaviour is at least loud (the guard warns); this test exists so
-    a change to either half is a deliberate edit rather than a silent drift.
+    The old walk-up checked ``.agent/`` BEFORE the hop, so a worktree that ever
+    acquired ``.agent/`` stopped hopping and the session's own pin read as
+    foreign (the old characterization test pinned that drift loudly). The one
+    resolver hops FIRST: a stray marker copy inside the worktree changes
+    nothing, and the pin stays legitimate — silently.
     """
     main = _project(tmp_path / "main")
     wt = tmp_path / "linked"
@@ -105,11 +109,13 @@ def test_worktree_carrying_its_own_agent_dir_resolves_to_itself(tmp_path, monkey
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        resolved = _project_dir(start=wt)
+        resolved = resolve_root(
+            wt, dict(__import__("os").environ), on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE
+        )
         base = ai_hats_dir(resolved)
 
-    assert resolved.resolve() == wt.resolve()
-    assert [w for w in caught if "foreign" in str(w.message)], (
-        "silence here would be the defect: the session's pin is being discarded"
+    assert resolved.resolve() == main.resolve()
+    assert not [w for w in caught if "foreign" in str(w.message)], (
+        "a same-project pin must stay legitimate when the worktree carries a stray marker"
     )
-    assert base.resolve() == (wt / ".agent" / "ai-hats").resolve()
+    assert base.resolve() == (main / ".agent" / "ai-hats").resolve()

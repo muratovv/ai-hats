@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.git import git
+
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -66,25 +68,19 @@ def test_yaml_only_project_agrees(tmp_path: Path) -> None:
     assert _launcher_resolved_root(proj) == _python_resolved_root(proj)
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(  # noqa: S603 — fixed argv
-        ["git", *args], cwd=str(cwd), check=True, capture_output=True, timeout=60
-    )
-
-
 def test_worktree_hop_agrees(tmp_path: Path) -> None:
     """1a: onboarded main → both hop; the case no prior fixture reached."""
     main = tmp_path / "main"
     main.mkdir()
-    _git(main, "init", "-b", "master")
-    _git(main, "config", "user.email", "t@t")
-    _git(main, "config", "user.name", "t")
+    git(main, "init", "-b", "master")
+    git(main, "config", "user.email", "t@t")
+    git(main, "config", "user.name", "t")
     (main / "README").write_text("x")
-    _git(main, "add", ".")
-    _git(main, "commit", "-m", "seed")
+    git(main, "add", ".")
+    git(main, "commit", "-m", "seed")
     (main / ".agent").mkdir()
     wt = tmp_path / "wt"
-    _git(main, "worktree", "add", str(wt))
+    git(main, "worktree", "add", str(wt))
     (wt / ".agent").mkdir()  # the stray copy a task branch would carry
 
     assert _launcher_resolved_root(wt) == _python_resolved_root(wt) == str(main.resolve())

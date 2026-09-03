@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 
-
 @pytest.fixture
 def repo_with_agent(tmp_path: Path) -> Path:
     """Project root with `.agent/` already initialized."""

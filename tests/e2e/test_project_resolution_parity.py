@@ -25,13 +25,14 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.git import git
+
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _INTEGRATOR_PROBE = (
-    "from ai_hats.cli._entry import resolve_project;"
-    "print(resolve_project().layout.root)"
+    "from ai_hats.cli._entry import resolve_project;print(resolve_project().layout.root)"
 )
 _RACK_PROBE = (
     "import pathlib;"
@@ -45,7 +46,12 @@ def _probe(code: str, cwd: Path) -> str:
 
     env = dict(os.environ)
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
-    for leak in ("AI_HATS_PROJECT_DIR", "AI_HATS_DIR", "AI_HATS_SESSION_IDENTITY", "AI_HATS_SESSION_ID"):
+    for leak in (
+        "AI_HATS_PROJECT_DIR",
+        "AI_HATS_DIR",
+        "AI_HATS_SESSION_IDENTITY",
+        "AI_HATS_SESSION_ID",
+    ):
         env.pop(leak, None)
     res = subprocess.run(  # noqa: S603 — fixed argv, our own interpreter
         [sys.executable, "-c", code],
@@ -90,26 +96,20 @@ def test_stray_ancestor_does_not_capture(tmp_path: Path) -> None:
     assert ours == rack == str(proj.resolve())
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(  # noqa: S603 — fixed argv
-        ["git", *args], cwd=str(cwd), check=True, capture_output=True, timeout=60
-    )
-
-
 def test_linked_worktree_with_unonboarded_main(tmp_path: Path) -> None:
     """R8/1a: the hop is CONDITIONAL — a main checkout with no markers means
     the worktree's own markers answer, identically on both stacks. This exact
     case was unreachable in every prior fixture (ADR-0025 D2)."""
     main = tmp_path / "main"
     main.mkdir()
-    _git(main, "init", "-b", "master")
-    _git(main, "config", "user.email", "t@t")
-    _git(main, "config", "user.name", "t")
+    git(main, "init", "-b", "master")
+    git(main, "config", "user.email", "t@t")
+    git(main, "config", "user.name", "t")
     (main / "ai-hats.yaml").write_text("schema_version: 4\nai_hats_dir: .agent/ai-hats\n")
-    _git(main, "add", ".")
-    _git(main, "commit", "-m", "seed")
+    git(main, "add", ".")
+    git(main, "commit", "-m", "seed")
     wt = tmp_path / "wt"
-    _git(main, "worktree", "add", str(wt))
+    git(main, "worktree", "add", str(wt))
     # the main checkout is NOT onboarded beyond the tracked yaml… strip it:
     (main / "ai-hats.yaml").unlink()  # markers now live ONLY in the worktree
 
@@ -122,15 +122,15 @@ def test_linked_worktree_with_onboarded_main_hops(tmp_path: Path) -> None:
     tracked marker copy — on both stacks."""
     main = tmp_path / "main"
     main.mkdir()
-    _git(main, "init", "-b", "master")
-    _git(main, "config", "user.email", "t@t")
-    _git(main, "config", "user.name", "t")
+    git(main, "init", "-b", "master")
+    git(main, "config", "user.email", "t@t")
+    git(main, "config", "user.name", "t")
     (main / "ai-hats.yaml").write_text("schema_version: 4\nai_hats_dir: .agent/ai-hats\n")
-    _git(main, "add", ".")
-    _git(main, "commit", "-m", "seed")
+    git(main, "add", ".")
+    git(main, "commit", "-m", "seed")
     (main / ".agent").mkdir()
     wt = tmp_path / "wt"
-    _git(main, "worktree", "add", str(wt))
+    git(main, "worktree", "add", str(wt))
 
     ours, rack = _parity(wt)
     assert ours == rack == str(main.resolve())

@@ -61,7 +61,7 @@
   "tests/test_cli_config_set_advanced.py": 1,
   "tests/test_cli_customize_global.py": 4,
   "tests/test_cli_execute.py": 4,
-  "tests/test_cli_helpers.py": 18,
+  "tests/test_cli_helpers.py": 4,
   "tests/test_cli_human_through_pipeline.py": 4,
   "tests/test_cli_init_flow.py": 13,
   "tests/test_cli_init_wizard.py": 24,
