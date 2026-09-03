@@ -76,33 +76,28 @@ test-isolation: ## Check the suite patches its units no more than the baseline
 e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 	$(call timed_stage,e2e,$(TIMEOUT_E2E))
 
-# The gates the road to master demands. Run one in the TASK WORKTREE: the
-# marker is keyed to the tree you run it on, which is the content the check looks
-# up. `ci-local.sh --stages <gate>` names what each runs.
+# The gates the road to master demands, one target per gate; `scripts/gates.sh
+# list` is the roster and `scripts/gates.sh stages <gate>` what each requires.
+# A run stamps each green STAGE for the tree it judged, so a later, wider gate
+# re-runs nothing already green, and a refusal names only what is missing.
 #
-# `REV=<sha>` judges ONE COMMIT instead of this checkout, in a scratch worktree
-# of its own — what a card whose worktree is already merged away needs, and what
-# the gate's own refusal hands you when that is the case (HATS-1664).
+# The subject is a commit: `REV=<sha>` names one, HEAD otherwise. The run happens
+# here only when this checkout is clean AND at that commit; otherwise in a
+# one-shot scratch checkout — which is what a card whose worktree is already
+# merged away needs, and what the gate's own refusal hands you.
 #
-# $(1) = gate name, which is also its script's basename
+# $(1) = gate name
 define run_gate
-@py="$(PYTHON)"; [ -x "$(CURDIR)/.venv/bin/python3" ] && py="$(CURDIR)/.venv/bin/python3"; \
-libroot="$$("$$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"; \
-hook="$$libroot/ai-hats-dev/skills/maintainer-quality-gate/hooks/$(1).sh"; \
-if [ -z "$$libroot" ] || [ ! -f "$$hook" ]; then \
-	printf "cannot resolve the $(1) in the ai-hats library — install it here first: ai-hats self init\n" >&2; \
-	exit 1; \
-fi; \
-env PYTHON="$$py" bash "$$hook" --run $(if $(REV),--rev $(REV),)
+@bash scripts/gates.sh run $(1) $(if $(REV),--rev $(REV),)
 endef
 
-review-gate: ## Run the ->review gate here (or on REV=<sha>) and mark that tree green (HATS-1877)
+review-gate: ## Earn the ->review gate for HEAD (or REV=<sha>): run what is missing, stamp each stage
 	$(call run_gate,review-gate)
 
-merge-gate: ## Run the ->merge gate here (or on REV=<sha>) and mark that tree green (HATS-1614)
+merge-gate: ## Earn the ->merge gate for HEAD (or REV=<sha>): run what is missing, stamp each stage
 	$(call run_gate,merge-gate)
 
-done-gate: ## Run the ->done gate here (or on REV=<sha>) and mark that tree green (HATS-1137)
+done-gate: ## Earn the ->done gate for HEAD (or REV=<sha>): run what is missing, stamp each stage
 	$(call run_gate,done-gate)
 
 relay-server: ## Run local hats-relay server (delegates to relay/Makefile)

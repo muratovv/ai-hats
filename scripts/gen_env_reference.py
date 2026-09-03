@@ -80,8 +80,8 @@ HOOK_BUDGETS: tuple[HookBudget, ...] = (
     ),
     HookBudget(
         "AI_HATS_GATE_MARKER_KEEP_DAYS",
-        f"{LIBRARY_SRC}/ai-hats-dev/skills/maintainer-quality-gate/lib/gate-marker.sh",
-        "Days a quality-gate marker survives the sweep before it is deleted.",
+        "scripts/ci-gate.sh",
+        "Days a stage marker survives the sweep before it is deleted.",
     ),
 )
 

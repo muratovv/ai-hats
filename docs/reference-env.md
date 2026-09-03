@@ -40,7 +40,7 @@ a typo in a budget must never disarm the bound nor fail a session.
 | `AI_HATS_COMMENT_MAX_LINES` | int | 3 | Consecutive standalone `#` comment lines allowed before the edit-time lint speaks up. |
 | `AI_HATS_DOCSTRING_MAX_LINES` | int | 10 | Lines a docstring may run to before that same lint flags it. |
 | `AI_HATS_DOCSTRING_MAX_CHARS` | int | 700 | Characters a docstring may run to before that same lint flags it. |
-| `AI_HATS_GATE_MARKER_KEEP_DAYS` | int | 30 | Days a quality-gate marker survives the sweep before it is deleted. |
+| `AI_HATS_GATE_MARKER_KEEP_DAYS` | int | 30 | Days a stage marker survives the sweep before it is deleted. |
 
 ## Paths — ours (12)
 
