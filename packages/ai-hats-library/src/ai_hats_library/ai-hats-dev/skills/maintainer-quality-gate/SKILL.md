@@ -14,18 +14,15 @@ license: MIT
 
 # maintainer-quality-gate
 
-**This directory is machinery, not prose.** It carries the channel side of the
-gates that guard the ai-hats codebase — one hook for the checks channel
-(`hooks/gate.sh`) and one for git (`git_hooks/pre-push-e2e-master.sh`) — and the
-role binds the first by path, once per edge, naming the gate in the row
-(`ai-hats-dev/roles/maintainer/config.yaml`). Delete it and the gates stop being
-installed.
+**This directory is machinery, not prose.** It carries the gates that guard the
+ai-hats codebase — one thin script per edge in `hooks/`, and the git one in
+`git_hooks/` — and the role binds each by path (`ai-hats-dev/roles/maintainer/config.yaml`).
+Delete it and the gates stop being installed.
 
-What a gate REQUIRES is not here. A gate is a name for a set of stages, and the
-project declares that set in `scripts/gates.sh`; `scripts/ci-gate.sh` checks the
-markers and runs what is missing. This skill only says which tree a transition
-puts into master and asks that table about it (ADR-0023 D7). Nothing in this
-directory names a stage.
+**A gate is a few lines: the stages it requires, and a call into `lib/gate.sh`.**
+`hooks/done-gate.sh --stages` prints the list. How a stage runs, and how a marker
+is earned for it, is the project's `scripts/gates.sh` — the gate only hands the
+list over. Nothing here runs a stage itself (ADR-0023 D6/D7).
 
 | gate          | where it fires           | who is at the refusal | asks                            |
 | ------------- | ------------------------ | --------------------- | ------------------------------- |
@@ -99,11 +96,11 @@ suite stubbed the very contracts the change broke.
 ## Earning a gate
 
     cd <task worktree>
-    make review-gate        # or merge-gate / done-gate
-    scripts/gates.sh stages review-gate    # what that gate requires
+    make review-gate            # or merge-gate / done-gate
+    hooks/done-gate.sh --stages # what a gate requires
 
 A gate is earned per STAGE: the run skips every stage already marked green for
-this tree, runs the rest in the table's order, stops at the first red, and
+this tree, runs the rest in the declared order, stops at the first red, and
 stamps each green one. A refusal on the edge names exactly the stages still
 missing and the command above. So a card that ran `make review-gate` and later
 `make done-gate` pays for the difference, not twice.
@@ -113,9 +110,10 @@ checkout only when it is clean and at that commit; otherwise in a one-shot
 scratch checkout of the commit. A dirty desk therefore never taints a marker
 and never blocks one either.
 
-Neither card gate runs the e2e tier. If `stages` does not name what your change
-touched, run it yourself and say so — e.g. `pytest -m integration tests/e2e/`.
-Nothing refuses here, which is why the second command is not optional.
+Neither card gate runs the e2e tier. If `--stages` does not name what your
+change touched, run it yourself and say so — e.g. `pytest -m integration
+tests/e2e/`. Nothing refuses here, which is why the second command is not
+optional.
 
 ## Pushing master
 
@@ -129,7 +127,7 @@ said.** Every branch narrates itself with a reason and a remedy — the refusals
 the green, and every quiet pass-through alike. The one thing it never prints is
 the transcript, which lands beside the card; glob it, never hand-build the name:
 
-    <tasks_dir>/<ID>/.checks/*gate.sh*.log
+    <tasks_dir>/<ID>/.checks/*done-gate.sh*.log
 
 ## Why the push gate runs out of band
 

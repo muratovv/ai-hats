@@ -119,8 +119,9 @@ is not a stage keeps a different prefix.
   edges demand, earned per stage: each run skips what is already marked green
   for the tree, runs the rest, and stamps each green stage, so the wider gate
   pays only for the difference (ADR-0023 D4/D5). Run one in the **task
-  worktree**, or name a commit with `REV=<sha>`. `scripts/gates.sh stages <gate>`
-  prints what each requires; `scripts/gates.sh list` names the gates.
+  worktree**, or name a commit with `REV=<sha>`. Each gate is a few-line script
+  in the quality-gate skill's `hooks/`; `hooks/<gate>.sh --stages` prints what it
+  requires, and `scripts/gates.sh list` names every stage there is.
 - `make help` — display available Makefile targets.
 
 Options:
