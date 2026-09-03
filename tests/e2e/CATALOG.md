@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**295 of 295 files catalogued — 304 flows.**
+**296 of 296 files catalogued — 305 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -470,6 +470,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection
 - **why** — a syntactically valid workflow can still name a missing stage or bypass the canonical dispatcher, leaving the advertised server-side gate inert
+
+## `test_ci_gate.py`
+
+*pins HATS-1878*
+
+- **flow** — the gate primitive — a requirement over stages, and the run that meets it
+- **cmds**
+
+  ```console
+  scripts/ci-gate.sh check [--rev <commit>] <stage>...
+  scripts/ci-gate.sh run [--rev <commit>] [--fresh] <stage>...
+  scripts/ci-gate.sh subject [--rev <commit>]
+  ```
+
+- **expect** — `check` lists what lacks a marker and never calls the runner; `run` runs only the unmarked, stamps each green stage for the SUBJECT tree, and judges a commit in a one-shot scratch worktree when the checkout is dirty or its HEAD is not the subject
+- **why** — a per-GATE, all-or-nothing marker made a wider gate re-run what a narrower one had earned; a run "here" judged whatever the desk held
 
 ## `test_ci_local_prepare.py`
 
