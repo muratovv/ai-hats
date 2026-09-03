@@ -465,7 +465,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup --collect-only
+  PYTEST_ADDOPTS="-n 8 --dist=loadgroup --collect-only" bash scripts/ci-local.sh e2e
   ```
 
 - **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection

@@ -115,15 +115,18 @@ is not a stage keeps a different prefix.
 - `make e2e` — the maintainer tier, and the very stage the master pre-push gate
   runs (HATS-1604 — one selection, not a copy), bounded by timeout (default 3600s).
 - `make coverage` / `make security` / `make version-skew` — the remaining CI stages.
-- `make merge-gate` / `make done-gate` — the gates the two roads into master
-  demand of a card. Run one in the **task worktree**: the marker is keyed to the
-  tree you run it on. `make done-gate` is the superset and clears both
-  (ADR-0023 D4/D5); `scripts/ci-local.sh --stages <gate>` prints what each runs.
+- `make review-gate` / `make merge-gate` / `make done-gate` — the gates a card's
+  edges demand, earned per stage: each run skips what is already marked green
+  for the tree, runs the rest, and stamps each green stage, so the wider gate
+  pays only for the difference (ADR-0023 D4/D5). Run one in the **task
+  worktree**, or name a commit with `REV=<sha>`. `scripts/gates.sh stages <gate>`
+  prints what each requires; `scripts/gates.sh list` names the gates.
 - `make help` — display available Makefile targets.
 
 Options:
 
-- Pass custom pytest flags via `ARGS`: `make tests ARGS="-k test_something"`
+- A stage runs bare — no pytest flags pass through. To filter or parallelise,
+  call `pytest` directly, or set `PYTEST_ADDOPTS` (what CI does).
 - Override timeout via `TIMEOUT_TESTS` or `TIMEOUT_E2E`: `make e2e TIMEOUT_E2E=1200`
 - Point the stages at a specific interpreter via `PYTHON`: `make check PYTHON=.venv/bin/python`
 
@@ -330,14 +333,14 @@ dependency rather than as an example**. A guarded fast path is not a dependency:
 because the hard-code is an `if [[ -d … ]]` branch with a package-resolve
 fallback, so it works in any project.
 
-| Component                                                    | Layer         | Why                                              |
-| ------------------------------------------------------------ | ------------- | ------------------------------------------------ |
-| `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                    |
-| `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them     |
-| `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path                 |
-| `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs              |
-| `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`         |
-| `skill-engineer` trait                                       | `ai-hats-dev` | its injection is about *this* library            |
+| Component                                                    | Layer         | Why                                          |
+| ------------------------------------------------------------ | ------------- | -------------------------------------------- |
+| `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                |
+| `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them |
+| `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path             |
+| `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs          |
+| `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`     |
+| `skill-engineer` trait                                       | `ai-hats-dev` | its injection is about *this* library        |
 
 The failure to avoid: a component in `core` whose body names `src/ai_hats/`.
 Every consumer then pays always-on tokens for ai-hats internals — which is how

@@ -17,10 +17,11 @@ TIMEOUT_BIN   := $(shell command -v timeout 2>/dev/null || echo "$$HOME/.local/b
 PYTHON        ?= python
 CI_LOCAL      := env PYTHON=$(PYTHON) bash scripts/ci-local.sh
 
-# $(1) = ci-local stage, $(2) = timeout budget in seconds
+# $(1) = ci-local stage, $(2) = timeout budget in seconds. A stage runs bare:
+# to filter tests, call pytest yourself (CONTRIBUTING.md).
 define timed_stage
 @if [ -x "$(TIMEOUT_BIN)" ]; then \
-	$(TIMEOUT_BIN) $(2) $(CI_LOCAL) $(1) $(ARGS); \
+	$(TIMEOUT_BIN) $(2) $(CI_LOCAL) $(1); \
 	status=$$?; \
 	if [ $$status -eq 124 ]; then \
 		printf "\n%s stage exceeded %ss timeout — raise the budget or investigate a hang\n" "$(1)" "$(2)" >&2; \
@@ -29,7 +30,7 @@ define timed_stage
 		exit $$status; \
 	fi; \
 else \
-	$(CI_LOCAL) $(1) $(ARGS); \
+	$(CI_LOCAL) $(1); \
 fi
 endef
 
@@ -53,13 +54,13 @@ gates: ## Run every stage CI runs locally (the `all` bundle in scripts/ci-local.
 	$(CI_LOCAL) all
 
 coverage: ## Run the coverage stage (unit + non-e2e integration, --cov-fail-under=78)
-	$(CI_LOCAL) coverage $(ARGS)
+	$(CI_LOCAL) coverage
 
 security: ## Run the security stage (pip-audit; env-scoped, CI is authoritative)
-	$(CI_LOCAL) security $(ARGS)
+	$(CI_LOCAL) security
 
 version-skew: ## Check workspace packages are ahead of PyPI (needs network)
-	$(CI_LOCAL) version-skew $(ARGS)
+	$(CI_LOCAL) version-skew
 
 dependency-floor: ## Check every pin on a workspace package tracks its version
 	$(CI_LOCAL) dependency-floor

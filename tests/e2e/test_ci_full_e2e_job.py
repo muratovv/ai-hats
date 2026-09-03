@@ -2,7 +2,7 @@
 
 flow:   a GitHub Actions runner executes the full e2e job declared in ci.yml
 cmds:
-    bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup --collect-only
+    PYTEST_ADDOPTS="-n 8 --dist=loadgroup --collect-only" bash scripts/ci-local.sh e2e
 expect: the versioned workflow command reaches the canonical dispatcher and
         successfully collects the full e2e selection
 why:    a syntactically valid workflow can still name a missing stage or bypass
@@ -38,8 +38,11 @@ def test_full_e2e_job_drives_the_canonical_dispatcher():
     env = os.environ.copy()
     env.pop("PYTEST_ADDOPTS", None)
     env.update({key: str(value) for key, value in step.get("env", {}).items()})
+    # A stage runs bare (HATS-1878): the collect-only switch rides the same
+    # pytest variable the workflow uses for its parallelism.
+    env["PYTEST_ADDOPTS"] = f"{env.get('PYTEST_ADDOPTS', '')} --collect-only".strip()
     result = subprocess.run(  # noqa: S603 — argv comes from the versioned workflow contract
-        [*argv, "--collect-only"],
+        argv,
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,

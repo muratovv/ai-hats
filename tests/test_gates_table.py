@@ -136,13 +136,14 @@ def test_a_precondition_is_never_part_of_a_verdict():
         assert "prepare" not in _stages(gate), f"{gate} names a precondition as a stage"
 
 
-def test_the_dispatcher_shim_answers_with_the_table():
-    """`ci-local.sh --stages <gate>` is kept for the library hooks that still
-    ask it; it must say exactly what the table says."""
+def test_the_dispatcher_knows_no_gate():
+    """A gate is not a stage, and the dispatcher no longer keeps a shim for the
+    hooks — asked about one, it points at the table instead of answering."""
     for gate in _roster():
-        shim = _run(CI_LOCAL, "--stages", gate)
-        assert shim.returncode == 0, shim.stderr
-        assert shim.stdout.split() == _stages(gate)
+        asked = _run(CI_LOCAL, gate)
+        assert asked.returncode == 2, asked.stderr
+        assert "is a gate, not a stage" in asked.stderr
+        assert f"scripts/gates.sh stages {gate}" in asked.stderr
 
 
 @pytest.mark.parametrize(

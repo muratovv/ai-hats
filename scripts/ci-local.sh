@@ -17,8 +17,13 @@
 #   scripts/ci-local.sh lint              # one stage (used by the matching CI job)
 #   scripts/ci-local.sh coverage          # the stage that was the sole failing executor
 #   scripts/ci-local.sh security          # CI-only stage; env-scoped (see NOTE below)
-#   scripts/ci-local.sh --stages done-gate  # what review->done demands (HATS-1137)
 #   scripts/ci-local.sh no-such-stage     # exit 2, listing every stage there is
+#
+# A stage runs BARE — nothing after its name reaches pytest. A marker earned for
+# `unit -k foo` would be a lie, so the primitive refuses the form and this
+# dispatcher does not offer it; CI's parallelism rides PYTEST_ADDOPTS. This file
+# knows stages and nothing else: which stages a GATE requires is
+# `scripts/gates.sh`, and earning them is `scripts/ci-gate.sh`.
 #
 # NOTE: the `install-smoke` CI job is deliberately NOT a stage here — it runs
 # install-launcher.sh which writes ~/.local/bin/ai-hats, an unwanted side effect
@@ -95,8 +100,6 @@ ci_lint() {
     run_py -m ruff format --check .
 }
 
-# Argv arrives through the dispatcher's indirect call, invisible to the linter.
-# shellcheck disable=SC2120
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
     env \
@@ -106,7 +109,7 @@ ci_unit() {
         -u PYTHONHOME \
         -u PYTHONUSERBASE \
         uv run --isolated --no-project --python "$PY" --with-editable ".[dev]" \
-        python -B -m pytest -m "not integration" -q ${@+"$@"}
+        python -B -m pytest -m "not integration" -q
 }
 
 # HATS-1137: the integration tier OUTSIDE tests/e2e — the half `unit` excludes
@@ -114,11 +117,9 @@ ci_unit() {
 # would call itself green while skipping every real-subprocess test in tests/.
 ci_integration() {
     echo "[ci-local] integration (pytest --ignore=tests/e2e -m integration)" >&2
-    "$PY" -B -m pytest --ignore=tests/e2e -m integration -q ${@+"$@"}
+    "$PY" -B -m pytest --ignore=tests/e2e -m integration -q
 }
 
-# Argv arrives through the dispatcher's indirect call, invisible to the linter.
-# shellcheck disable=SC2120
 ci_coverage() {
     echo "[ci-local] coverage (unit + real-git integration, --cov-fail-under=78)" >&2
     "$PY" -B -m pytest --ignore=tests/e2e/ \
@@ -126,7 +127,7 @@ ci_coverage() {
         --cov-report=term-missing \
         --cov-report=xml \
         --cov-fail-under=78 \
-        -q ${@+"$@"}
+        -q
 }
 
 ci_security() {
@@ -136,11 +137,9 @@ ci_security() {
     run_py -m pip_audit
 }
 
-# Argv arrives through the dispatcher's indirect call, invisible to the linter.
-# shellcheck disable=SC2120
 ci_merge_smoke() {
     echo "[ci-local] merge-smoke (curated e2e subset)" >&2
-    "$PY" -B -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
+    "$PY" -B -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q
 }
 
 # Offline and instant, so unlike version-skew it belongs in the `all` bundle.
@@ -222,39 +221,8 @@ ci_env_reference() {
 # narrower than the gate that guards the push (HATS-1372).
 ci_e2e() {
     echo "[ci-local] e2e (integration + smoke, quarantine and live agy excluded)" >&2
-    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine and not live_agy" tests/e2e/ tests/smoke/ -q ${@+"$@"}
+    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine and not live_agy" tests/e2e/ tests/smoke/ -q
 }
-
-# HATS-1137/HATS-1604/HATS-1614 — what each gate is made of, and the ONE place
-# it is configured. A gate script asks with `--stages <gate>` and runs them
-# through the shared primitive, so "green enough to merge" is an edit HERE and
-# the library never restates it (ADR-0023 D7).
-#
-# `merge-gate` MUST stay a subset of `done-gate`. That is what lets one run pay
-# for both (absorption, ADR-0023 D5) — `tests/test_gate_entrypoint_parity.py`
-# refuses a composition that breaks it.
-#
-# `tier` is the linting tier: offline, under eight seconds together. It leads
-# with `e2e-catalog` — the slowest of the five at 7s against under a second each
-# — because the primitive stops at the first red and a stale CATALOG.md is the
-# structural failure worth refusing before anything else starts (HATS-1562).
-#
-# `integration` sits on `->done`, as ADR-0023 D4 assigns it. It lived on
-# `->merge` while the edge passed hollow on most cards (HATS-1614's temporary
-# ruling); HATS-1664 made the edge judge the merge result, so the 415
-# real-subprocess tests outside tests/e2e are on a blocking road again.
-#
-# No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
-# which collects the same non-e2e integration tests unfiltered.
-#
-# HATS-1878: the table itself moved to `scripts/gates.sh` — this dispatcher runs
-# STAGES and knows no gate; these two are shims kept while the library hooks
-# still ask `--stages` here.
-gate_composition() {
-    bash "$repo_root/scripts/gates.sh" stages "$1" 2>/dev/null
-}
-
-known_gates() { bash "$repo_root/scripts/gates.sh" list 2>/dev/null; }
 
 # Make THIS checkout runnable, so `$PY` above resolves to an interpreter that
 # imports this tree and not another one. NOT a stage and in no gate composition:
@@ -332,29 +300,22 @@ ci_master_ci() {
 # the usage line below both read it, so a stage can no longer be reachable and
 # unlisted (`tmp-sweep` was, HATS-1716) or listed and unreachable. The other
 # side of the convention: a helper that is not a stage does not take the `ci_`
-# prefix — `gate_composition` is one.
+# prefix — `run_py` is one.
 known_stages() {
     declare -F | sed -n 's/^declare -f ci_//p' | tr '_' '-' | sort
 }
 
 stage="${1:-all}"
-shift 2>/dev/null || true   # remaining argv is passed through to the pytest stages
+if [[ $# -gt 1 ]]; then
+    echo "[ci-local] a stage runs bare: '${*:2}' after '$stage' is not accepted" >&2
+    echo "  filter or parallelise through pytest itself, or PYTEST_ADDOPTS" >&2
+    exit 64
+fi
 case "$stage" in
-    # A gate is not a stage: it is a NAME for a set of them, and running it is
-    # the primitive's job (it owns the marker). `--stages` comes FIRST so a
-    # dispatcher that does not know the flag refuses instantly instead of
-    # mistaking it for an argument to a gate it does know (HATS-1604).
-    # Also not a stage, and for the same reason as `--stages`: it is asked BEFORE
-    # any stage runs, and it must be its own process — `$PY` is resolved once at
-    # the top of this script, so an interpreter minted here is only seen by the
-    # next invocation (HATS-1664).
+    # Not a stage: it is asked BEFORE any stage runs, and it must be its own
+    # process — `$PY` is resolved once at the top of this script, so an
+    # interpreter minted here is only seen by the next invocation (HATS-1664).
     --prepare) ci_prepare ;;
-    --stages)
-        gate_composition "${1:-}" || {
-            echo "[ci-local] no such gate: ${1:-<none>} (gates: $(known_gates))" >&2
-            exit 2
-        }
-        ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_tmp_sweep
@@ -377,8 +338,8 @@ case "$stage" in
     *)
         fn="ci_$(printf '%s' "$stage" | tr '-' '_')"
         if declare -F "$fn" >/dev/null 2>&1; then
-            "$fn" ${@+"$@"}
-        elif composition="$(gate_composition "$stage")"; then
+            "$fn"
+        elif composition="$(bash "$repo_root/scripts/gates.sh" stages "$stage" 2>/dev/null)"; then
             # A gate is not a stage: it is a NAME for a set of them, and running
             # it is the primitive's job (it owns the markers).
             echo "[ci-local] '$stage' is a gate, not a stage — it names: $composition" >&2
@@ -389,7 +350,7 @@ case "$stage" in
             echo "[ci-local] unknown stage: $stage" >&2
             echo "  stages: $(known_stages | tr '\n' ' ')" >&2
             echo "  bundle: all (the local pre-push bundle, and the default)" >&2
-            echo "  gates (--stages prints their composition): $(known_gates)" >&2
+            echo "  gates (a NAME for a set of stages): scripts/gates.sh list" >&2
             echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
             exit 2
         fi

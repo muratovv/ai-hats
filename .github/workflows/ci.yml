@@ -166,7 +166,9 @@ jobs:
       - name: Run full e2e tier
         env:
           AI_HATS_E2E_REQUIRE_VENV: "1"
-        run: bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup
+          # A stage runs bare; parallelism is pytest's own variable to read.
+          PYTEST_ADDOPTS: "-n 8 --dist=loadgroup"
+        run: bash scripts/ci-local.sh e2e
 
   version-skew-guard:
     # HATS-943: block the HATS-923/937 skew class — a `packages/<pkg>/src/**`

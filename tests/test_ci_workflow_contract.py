@@ -30,6 +30,10 @@ def test_full_e2e_job_uses_the_merge_smoke_environment_and_canonical_stage():
     )
 
     run = _step(e2e, "Run full e2e tier")
-    assert run["env"] == {"AI_HATS_E2E_REQUIRE_VENV": "1"}
-    assert run["run"] == "bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup"
-    assert "PYTEST_ADDOPTS" not in str(e2e)
+    # A stage runs bare (HATS-1878): the parallelism CI wants is pytest's own
+    # environment variable, not argv the dispatcher would have to forward.
+    assert run["env"] == {
+        "AI_HATS_E2E_REQUIRE_VENV": "1",
+        "PYTEST_ADDOPTS": "-n 8 --dist=loadgroup",
+    }
+    assert run["run"] == "bash scripts/ci-local.sh e2e"
