@@ -398,15 +398,13 @@ main.add_command(wait_mod.wait_cmd)
 # `ai-hats session` keeps its exact paths + tag semantics.
 from ai_hats_core.layout import ProjectLayout  # noqa: E402
 from ai_hats_observe.cli import _seam as _observe_seam  # noqa: E402
-from ..paths import ai_hats_dir  # noqa: E402
 from ..tags import parse_tag_filters  # noqa: E402
-from ._helpers import _project_dir  # noqa: E402
 
 
 def _integrator_layout() -> ProjectLayout:
-    # TODO(HATS-1606): step 6 replaces this with resolve_project().layout
-    root = _project_dir()
-    return ProjectLayout(root=root, base=ai_hats_dir(root))
+    from ._entry import resolve_project  # lazy: keeps config/pydantic off the CLI start path
+
+    return resolve_project().layout
 
 
 _observe_seam._LAYOUT = _integrator_layout
