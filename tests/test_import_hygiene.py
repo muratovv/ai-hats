@@ -325,7 +325,7 @@ def test_detector_flags_a_synthetic_cycle():
 
 RESOLUTION_NAMES = (
     "_project_dir",  # cli/_helpers walk-up (falls back to cwd)
-    "default_project_dir",  # ai_hats_core.paths walk-up (no hop)
+    "default_project_dir",  # retired in step 4 — a revival trips here
     "_is_ai_hats_project",  # paths/_dirs marker check
     "_read_ai_hats_dir_from_yaml",  # raw config peek — bypasses fail-loud
     "_read_venv_path_from_yaml",  # raw config peek — bypasses fail-loud
@@ -399,9 +399,7 @@ EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
     "ai_hats.paths.constants": ("ai-hats.yaml",),  # the literal's one legitimate home
     "ai_hats.rack_cli_provider": ("find_project_root",),
     "ai_hats.relocation": ("_read_ai_hats_dir_from_yaml",),
-    "ai_hats_core": ("default_project_dir",),
     "ai_hats_core.layout": ("ai-hats.yaml", "resolve_root"),  # the future owner
-    "ai_hats_core.paths": ("default_project_dir",),
 }
 
 

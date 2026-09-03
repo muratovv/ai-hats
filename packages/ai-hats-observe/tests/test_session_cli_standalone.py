@@ -30,8 +30,7 @@ def _pin_wt_free_seam(monkeypatch) -> None:
     process, so an earlier test that imported ``ai_hats.cli`` would otherwise
     leave the integrator resolvers in place. Pin the standalone defaults here.
     """
-    monkeypatch.setattr(_seam, "_PROJECT_DIR", _seam._default_project_dir)
-    monkeypatch.setattr(_seam, "_RUNS_DIR", _seam._default_runs_dir)
+    monkeypatch.setattr(_seam, "_LAYOUT", _seam._default_layout)
     monkeypatch.setattr(_seam, "_TAG_FILTER_PARSER", _seam._default_tag_filter_parser)
 
 

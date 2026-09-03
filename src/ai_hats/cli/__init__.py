@@ -396,13 +396,20 @@ main.add_command(wait_mod.wait_cmd)
 # HATS-952: observe session-browse CLI (list/show/audit) defaults to wt-free
 # resolvers; inject the integrator's AI_HATS_DIR/yaml-aware layout so
 # `ai-hats session` keeps its exact paths + tag semantics.
+from ai_hats_core.layout import ProjectLayout  # noqa: E402
 from ai_hats_observe.cli import _seam as _observe_seam  # noqa: E402
-from ..paths import runs_dir  # noqa: E402
+from ..paths import ai_hats_dir  # noqa: E402
 from ..tags import parse_tag_filters  # noqa: E402
 from ._helpers import _project_dir  # noqa: E402
 
-_observe_seam._PROJECT_DIR = _project_dir
-_observe_seam._RUNS_DIR = runs_dir
+
+def _integrator_layout() -> ProjectLayout:
+    # TODO(HATS-1606): step 6 replaces this with resolve_project().layout
+    root = _project_dir()
+    return ProjectLayout(root=root, base=ai_hats_dir(root))
+
+
+_observe_seam._LAYOUT = _integrator_layout
 _observe_seam._TAG_FILTER_PARSER = parse_tag_filters
 _observe_seam._CONSOLE = console
 
