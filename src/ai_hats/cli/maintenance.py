@@ -17,6 +17,8 @@ from ai_hats_core import scrubbed_git_env
 from .. import health
 from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV
 from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT, PINNED_PYTHON
+from ai_hats_core.layout import ProjectLayout
+
 from ._helpers import _assembler, console, logger
 
 if TYPE_CHECKING:
@@ -213,7 +215,7 @@ def _active_venv_root() -> Path:
     return Path(sys.prefix)
 
 
-def _is_managed_install(project_dir: Path) -> bool:
+def _is_managed_install(layout: ProjectLayout) -> bool:
     """True when the active install is the ai-hats-managed default venv and is
     therefore eligible for blue-green versioning (HATS-647).
 
@@ -226,12 +228,10 @@ def _is_managed_install(project_dir: Path) -> bool:
     is_editable, _ = _is_editable_install()
     if is_editable:
         return False
-    from ..paths import ai_hats_dir, versions_root
-
     try:
         venv_root = _active_venv_root().resolve()
-        default_venv = (ai_hats_dir(project_dir) / ".venv").resolve()
-        vroot = versions_root(project_dir).resolve()
+        default_venv = layout.default_venv.resolve()
+        vroot = layout.versions.resolve()
     except OSError:
         return False
     return venv_root == default_venv or venv_root.parent == vroot
@@ -1461,7 +1461,8 @@ def update(
 
     from ._entry import resolve_project
 
-    project_dir = resolve_project().layout.root
+    layout = resolve_project().layout
+    project_dir = layout.root
 
     # HATS-595: triage before any write, so --check can short-circuit here.
     reports = health.triage(project_dir)
@@ -1645,7 +1646,7 @@ def update(
     # versioned install into versions/<version_id>/ (never the live venv) +
     # atomic current flip, so a concurrently-live run survives. Editable /
     # override venvs fall through to the legacy in-place install path below.
-    if _is_managed_install(project_dir):
+    if _is_managed_install(layout):
         from ..version_lock import VersionLockError
 
         resolution = _build_managed_resolution(

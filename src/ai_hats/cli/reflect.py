@@ -65,6 +65,8 @@ from ..session_policy import (
     SessionRunParams,
 )
 from ..retro.session_review_runner import SessionReviewError
+from ai_hats_core.layout import ProjectLayout
+
 from ._entry import resolve_project
 from ._helpers import console
 
@@ -132,10 +134,9 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
     """Re-invoke ourselves in a new process group, return immediately."""
     import subprocess
 
-    from ..paths import runs_dir
-
-    project_dir = resolve_project().layout.root
-    log_path = runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
+    layout = resolve_project().layout
+    project_dir = layout.root
+    log_path = layout.sessions.runs / session_dirname(session_id) / RETRO_LOG
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a") as f:
         proc = subprocess.Popen(
@@ -169,8 +170,9 @@ def reflect_all_cmd(dry_run: bool):
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
 
-    project_dir = resolve_project().layout.root
-    handoff_path = _build_handoff(project_dir)
+    layout = resolve_project().layout
+    project_dir = layout.root
+    handoff_path = _build_handoff(layout)
     console.print(f"[green]✓[/green] Handoff written: {handoff_path}")
     if dry_run:
         return
@@ -240,8 +242,9 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
 
-    project_dir = resolve_project().layout.root
-    handoff_path = _build_handoff(project_dir)
+    layout = resolve_project().layout
+    project_dir = layout.root
+    handoff_path = _build_handoff(layout)
     console.print(f"[green]✓[/green] Handoff written: {handoff_path}")
     if dry_run:
         return
@@ -344,8 +347,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
 @click.argument("name")
 def reflect_role_cmd(name: str):
     """Audit a single role against the project context for coherence."""
-    project_dir = resolve_project().layout.root
-    sys.exit(_run_role_audit(project_dir, name).exit_code_or(1))
+    sys.exit(_run_role_audit(resolve_project().layout, name).exit_code_or(1))
 
 
 @reflect.command("roles")
@@ -354,7 +356,8 @@ def reflect_roles_cmd():
     from ..assembler import Assembler
     from ..models import ComponentType
 
-    project_dir = resolve_project().layout.root
+    layout = resolve_project().layout
+    project_dir = layout.root
     resolver = Assembler(project_dir).resolver
     names = resolver.list_components(ComponentType.ROLE)
     if not names:
@@ -365,13 +368,13 @@ def reflect_roles_cmd():
     worst_exit = 0
     for n in names:
         console.print(f"\n[bold cyan]── reflect role {n} ──[/]")
-        ec = _run_role_audit(project_dir, n).exit_code_or(1)
+        ec = _run_role_audit(layout, n).exit_code_or(1)
         if ec != 0 and worst_exit == 0:
             worst_exit = ec
     sys.exit(worst_exit)
 
 
-def _run_role_audit(project_dir: Path, target_role: str) -> SessionOutcome:
+def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
     """Materialize the target role's layered breakdown and run reflect-role.
 
     The reviewer reads the composed files (and ./CLAUDE.md, user-rules)
@@ -381,8 +384,8 @@ def _run_role_audit(project_dir: Path, target_role: str) -> SessionOutcome:
     from ..assembler import Assembler
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
-    from ..paths import retros_dir
 
+    project_dir = layout.root
     assembler = Assembler(project_dir)
     composer = assembler.composer
     # HATS-505: deliberately no ``overlays=`` — ``reflect`` shows the
@@ -444,7 +447,9 @@ def _run_role_audit(project_dir: Path, target_role: str) -> SessionOutcome:
     outcome = SessionOutcome.of(result)
     if outcome.exit_code_or(1) == 0:
         # Not the file: role-judge names it with a timestamp of its own at Write time.
-        console.print(f"[green]✓[/green] report under {retros_dir(project_dir) / 'role-coherence'}")
+        console.print(
+            f"[green]✓[/green] report under {layout.sessions.retros / 'role-coherence'}"
+        )
     return outcome
 
 
@@ -696,10 +701,9 @@ def _spawn_intake_detached(
     import subprocess
     from datetime import datetime, timezone
 
-    from ..paths import runs_dir
-
-    project_dir = resolve_project().layout.root
-    log_dir = runs_dir(project_dir) / REFLECT_ISSUE.name
+    layout = resolve_project().layout
+    project_dir = layout.root
+    log_dir = layout.sessions.runs / REFLECT_ISSUE.name
     log_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = log_dir / f"{ts}-bg.log"
@@ -893,19 +897,17 @@ def reflect_commit_cmd(accept, reject, defer, duplicate):
 # ---- pre-flight handoff (used by `reflect all`) ----
 
 
-def _handoff_dir(project_dir: Path) -> Path:
-    from ..paths import retros_dir
-
-    return retros_dir(project_dir) / REFLECT_ALL.name
+def _handoff_dir(retros: Path) -> Path:
+    return retros / REFLECT_ALL.name
 
 
-def _build_handoff(project_dir: Path) -> Path:
+def _build_handoff(layout: ProjectLayout) -> Path:
     """Collect active HYP + open PROP into a single markdown handoff file."""
-    ws = rack_workspace(project_dir)
+    ws = rack_workspace(layout.root)
     active = active_hypotheses(ws)
     open_props = open_proposals(ws)
 
-    out_dir = _handoff_dir(project_dir)
+    out_dir = _handoff_dir(layout.sessions.retros)
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
     path = out_dir / f"{ts}-handoff.md"

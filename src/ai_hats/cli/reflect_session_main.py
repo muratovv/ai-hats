@@ -46,12 +46,14 @@ def main() -> int:
     session_id = sys.argv[1]
     max_retries = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-    project_dir = Path.cwd()
+    from ._entry import resolve_project
 
-    return run_session_review(session_id, max_retries, project_dir)
+    layout = resolve_project().layout
+
+    return run_session_review(session_id, max_retries, layout.root, retros=layout.sessions.retros)
 
 
-def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> int:
+def run_session_review(session_id: str, max_retries: int, project_dir: Path, *, retros: Path) -> int:
     """Run the session-reviewer pipeline in-process; return an exit code.
 
     Extracted from ``main()`` (HATS-1402) so a caller like
@@ -88,7 +90,7 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
 
     # HATS-1369 / HATS-1422: parse the doc ONCE — shared by the harvest below and
     # _harness_check, instead of each re-reading/re-parsing it independently.
-    raw, parse_issues = _load_review_doc(_review_doc_path(project_dir, session_id))
+    raw, parse_issues = _load_review_doc(_review_doc_path(retros, session_id))
 
     # Harvest whatever verdicts the doc carries into validation_log,
     # independent of _harness_check's full-active-coverage gate below or
@@ -129,10 +131,8 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
 _MISSING_ISSUE = "output file missing or empty"
 
 
-def _review_doc_path(project_dir: Path, session_id: str) -> Path:
-    from ..paths import retros_dir
-
-    return retros_dir(project_dir) / "sessions" / f"{session_id}.md"
+def _review_doc_path(retros: Path, session_id: str) -> Path:
+    return retros / "sessions" / f"{session_id}.md"
 
 
 def _load_review_doc(out_path: Path) -> tuple[dict | None, list[str]]:

@@ -24,6 +24,22 @@ from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG
 from ai_hats.paths import PROJECT_CONFIG
 
 
+def _pin_project(monkeypatch, root):
+    """The sync branch deserializes the session's project — pin the factory to the fixture."""
+    from ai_hats.config.project import ProjectConfig
+    from ai_hats.project import Project
+    from ai_hats_core.layout import ProjectLayout
+
+    layout = ProjectLayout.at(root)
+    monkeypatch.setattr(
+        "ai_hats.cli._entry.resolve_project",
+        lambda *a, **k: Project(
+            layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=()
+        ),
+    )
+
+
+
 def _make_session(tmp_path: Path) -> Session:
     session_dir = tmp_path / "session_test"
     session_dir.mkdir()
@@ -128,8 +144,9 @@ def test_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
     sync_calls: list[tuple] = []
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
-        lambda sid, max_retries, pd: sync_calls.append((sid, max_retries, pd)),
+        lambda sid, max_retries, pd, **kw: sync_calls.append((sid, max_retries, pd)),
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -165,8 +182,9 @@ def test_background_false_runs_sync_in_process(tmp_path, monkeypatch):
     sync_calls: list[tuple] = []
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
-        lambda sid, max_retries, pd: sync_calls.append((sid, max_retries, pd)),
+        lambda sid, max_retries, pd, **kw: sync_calls.append((sid, max_retries, pd)),
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -191,13 +209,14 @@ def test_background_false_sets_and_clears_recursion_guard(tmp_path, monkeypatch)
 
     seen_during_call: list[str | None] = []
 
-    def _fake_run_session_review(sid, max_retries, pd):
+    def _fake_run_session_review(sid, max_retries, pd, **kw):
         seen_during_call.append(os.environ.get(ENV_SKIP_RETRO))
 
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
         _fake_run_session_review,
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -218,13 +237,14 @@ def test_background_false_sync_failure_does_not_raise(tmp_path, monkeypatch):
     metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
     metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
 
-    def _boom(sid, max_retries, pd):
+    def _boom(sid, max_retries, pd, **kw):
         raise RuntimeError("sync boom")
 
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
         _boom,
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -286,6 +306,7 @@ def test_does_not_raise_when_spawn_fails(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         _boom,
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -311,6 +332,7 @@ def test_does_not_raise_when_spawn_keyboard_interrupt(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         _interrupt,
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -416,6 +438,7 @@ def test_outcome_spawn_bg_is_journalled(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: None,
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -431,8 +454,9 @@ def test_outcome_sync_done_carries_the_return_code(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
-        lambda sid, max_retries, pd: 0,
+        lambda sid, max_retries, pd, **kw: 0,
     )
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
@@ -449,10 +473,11 @@ def test_outcome_sync_failed_is_journalled(tmp_path, monkeypatch):
     metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
     metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
 
-    def _boom(sid, max_retries, pd):
+    def _boom(sid, max_retries, pd, **kw):
         raise RuntimeError("sync boom")
 
     monkeypatch.setattr("ai_hats.cli.reflect_session_main.run_session_review", _boom)
+    _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()

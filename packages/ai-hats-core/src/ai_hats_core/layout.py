@@ -251,3 +251,7 @@ class ProjectLayout:
     @property
     def default_venv(self) -> Path:
         return self.base / ".venv"
+
+    @property
+    def versions(self) -> Path:  # blue-green versioned venvs
+        return self.base / "versions"

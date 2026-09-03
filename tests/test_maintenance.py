@@ -20,6 +20,8 @@ from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from ai_hats_core.layout import ProjectLayout
+
 import pytest
 from click.testing import CliRunner
 
@@ -757,7 +759,7 @@ def _edge_res(url: str, sha: str):
 def test_is_managed_editable_is_false(tmp_path, monkeypatch):
     """Editable dev checkout never gets versioned."""
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (True, "file:///src"))
-    assert _is_managed_install(tmp_path) is False
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is False
 
 
 def test_active_venv_root_uses_prefix_not_resolved_symlink(tmp_path, monkeypatch):
@@ -790,7 +792,7 @@ def test_is_managed_default_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / ".agent" / "ai-hats" / ".venv"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
-    assert _is_managed_install(tmp_path) is True
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is True
 
 
 def test_is_managed_versioned_venv(tmp_path, monkeypatch):
@@ -799,7 +801,7 @@ def test_is_managed_versioned_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
-    assert _is_managed_install(tmp_path) is True
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is True
 
 
 def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
@@ -808,7 +810,7 @@ def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / "user-owned"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
-    assert _is_managed_install(tmp_path) is False
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is False
 
 
 # HATS-1617 replaced the HATS-655 dormant-versioned-layout advisory with a

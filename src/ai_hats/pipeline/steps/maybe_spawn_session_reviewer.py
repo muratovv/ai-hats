@@ -94,7 +94,15 @@ class MaybeSpawnSessionReviewer(Step):
                 _write_outcome(project_dir, session_id, f"sync-start ({observed})")
                 try:
                     os.environ[ENV_SKIP_RETRO] = "1"
-                    rc = reflect_session_main.run_session_review(session_id, 1, project_dir)
+                    # Boundary adapter: the sync branch mirrors what the
+                    # subprocess main would do — deserialize the session's own
+                    # project (R6) instead of re-deriving retros from a Path.
+                    from ai_hats.cli._entry import resolve_project
+
+                    layout = resolve_project().layout
+                    rc = reflect_session_main.run_session_review(
+                        session_id, 1, layout.root, retros=layout.sessions.retros
+                    )
                     _write_outcome(project_dir, session_id, f"sync-done (rc={rc})")
                 except (Exception, KeyboardInterrupt) as exc:
                     logger.warning(
