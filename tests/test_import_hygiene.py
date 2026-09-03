@@ -312,3 +312,110 @@ def test_detector_flags_a_synthetic_cycle():
     one — so a green gate above means 'no cycle', not 'detector broken'."""
     assert _find_cycle({"a": {"b"}, "b": {"a"}}) is not None
     assert _find_cycle({"a": {"b"}, "b": {"c"}, "c": set()}) is None
+
+
+# ---------------------------------------------------------------------------
+# HATS-1606 slice 1: project/config resolution is deny-by-default.
+#
+# The names below are the acquisition sites — everyone referencing one is
+# re-deriving the project instead of receiving it. The pinned offender map is
+# the slice's work list: step 7 drains it to the entry points, and the pin
+# then holds the door (a new acquisition site = a red test; a drained one =
+# a deliberate repin).
+
+RESOLUTION_NAMES = (
+    "_project_dir",  # cli/_helpers walk-up (falls back to cwd)
+    "default_project_dir",  # ai_hats_core.paths walk-up (no hop)
+    "_is_ai_hats_project",  # paths/_dirs marker check
+    "_read_ai_hats_dir_from_yaml",  # raw config peek — bypasses fail-loud
+    "_read_venv_path_from_yaml",  # raw config peek — bypasses fail-loud
+    "resolve_root",  # rack's resolver (wait.py) / core's future one
+    "find_project_root",  # rack's walk-up
+)
+CONFIG_FILE_LITERAL = "ai-hats.yaml"
+
+_CORE_SRC = Path(__file__).resolve().parent.parent / "packages" / "ai-hats-core" / "src" / "ai_hats_core"
+
+
+def _resolution_cone() -> list[tuple[str, Path]]:
+    """The ai-hats + ai-hats-core cone, module name -> file (tests excluded)."""
+    cone = [(name, path) for name, path in _modules().items()]
+    for path in sorted(_CORE_SRC.rglob("*.py")):
+        if "tests" in path.parts:
+            continue
+        rel = path.relative_to(_CORE_SRC.parent).with_suffix("")
+        name = ".".join(rel.parts).removesuffix(".__init__")
+        cone.append((name, path))
+    return cone
+
+
+def _resolution_offenders() -> dict[str, tuple[str, ...]]:
+    """Modules referencing an acquisition name or the raw config filename.
+
+    Function-level, not module-level: the names live in modules that also hold
+    sanctioned code. A module DEFINING a name is listed too — when the slice
+    deletes the definition, the module leaves the pin and that is the point.
+    """
+    offenders: dict[str, set[str]] = {}
+    for name, path in _resolution_cone():
+        tree = ast.parse(path.read_text(), filename=str(path))
+        hits: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in RESOLUTION_NAMES:
+                hits.add(node.id)
+            elif isinstance(node, ast.Attribute) and node.attr in RESOLUTION_NAMES:
+                hits.add(node.attr)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in RESOLUTION_NAMES:
+                hits.add(node.name)
+            elif isinstance(node, ast.ImportFrom):
+                hits.update(a.name for a in node.names if a.name in RESOLUTION_NAMES)
+            elif isinstance(node, ast.Constant) and node.value == CONFIG_FILE_LITERAL:
+                hits.add(CONFIG_FILE_LITERAL)
+        if hits:
+            offenders[name] = tuple(sorted(hits))
+    return offenders
+
+
+# Pinned 2026-09-03. Two sites no prior measurement had named:
+# rack_cli_provider (find_project_root) and relocation (raw config peek).
+EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
+    "ai_hats.cli": ("_project_dir",),
+    "ai_hats.cli._helpers": ("_project_dir",),
+    "ai_hats.cli.agent": ("_project_dir",),
+    "ai_hats.cli.assembly": ("_project_dir",),
+    "ai_hats.cli.config": ("_project_dir",),
+    "ai_hats.cli.execute": ("_project_dir",),
+    "ai_hats.cli.maintenance": ("_project_dir",),
+    "ai_hats.cli.reflect": ("_project_dir",),
+    "ai_hats.cli.session": ("_project_dir",),
+    "ai_hats.cli.wait": ("resolve_root",),  # rack's resolver inside our CLI — counter 1
+    "ai_hats.cli.worktree": ("_project_dir",),
+    "ai_hats.composition_seam": ("_project_dir",),  # a DEEP module resolving — R5's evidence
+    "ai_hats.paths._dirs": (
+        "_is_ai_hats_project",
+        "_read_ai_hats_dir_from_yaml",
+        "_read_venv_path_from_yaml",
+    ),
+    "ai_hats.paths.constants": ("ai-hats.yaml",),  # the literal's one legitimate home
+    "ai_hats.rack_cli_provider": ("find_project_root",),
+    "ai_hats.relocation": ("_read_ai_hats_dir_from_yaml",),
+    "ai_hats_core": ("default_project_dir",),
+    "ai_hats_core.layout": ("ai-hats.yaml", "resolve_root"),  # the future owner
+    "ai_hats_core.paths": ("default_project_dir",),
+}
+
+
+def test_project_resolution_is_deny_by_default():
+    """No module acquires the project outside the pinned list (HATS-1606).
+
+    Shrinking the pin is progress; growing it is a new re-derivation site and
+    needs this test edited in review — that friction is the mechanism.
+    """
+    actual = _resolution_offenders()
+    expected = EXPECTED_RESOLUTION_OFFENDERS
+    grown = {m: n for m, n in actual.items() if m not in expected or set(n) - set(expected[m])}
+    drained = {m: n for m, n in expected.items() if m not in actual or set(n) - set(actual.get(m, ()))}
+    assert actual == expected, (
+        f"project-resolution pin drifted.\nNEW acquisition sites (deny-by-default): {grown}\n"
+        f"DRAINED (update the pin, keep the ratchet tight): {drained}"
+    )
