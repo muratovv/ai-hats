@@ -117,10 +117,14 @@ _require_gate() {
 _delegate() {
     local verb="$1" gate="$2"
     shift 2
-    local arg stages
-    for arg in "$@"; do
+    local stages
+    set -- "$@"
+    local i=1 arg
+    while [[ $i -le $# ]]; do
+        arg="${!i}"
         case "$arg" in
-            -*) : ;;
+            --rev) i=$((i + 2)) ;;
+            --fresh) i=$((i + 1)) ;;
             *) _die 64 "'$arg': a gate's stages come from the table, not the command line" ;;
         esac
     done

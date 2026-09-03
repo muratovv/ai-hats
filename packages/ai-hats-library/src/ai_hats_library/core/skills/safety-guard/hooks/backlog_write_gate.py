@@ -103,7 +103,7 @@ def _configured_ai_hats_dir(project: Path) -> Path:
 
     Read from `ai-hats.yaml` with the documented `.agent/ai-hats` default —
     deliberately NOT from $AI_HATS_DIR, which leaks between checkouts and would
-    aim the gate at another tracker (same reasoning as done-gate.sh)."""
+    aim the gate at another tracker (same reasoning as the quality gate's lib/gate.sh)."""
     try:
         text = (project / _CONFIG_NAME).read_text(encoding="utf-8")
     except (OSError, ValueError):  # unreadable, or not text at all

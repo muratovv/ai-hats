@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**297 of 297 files catalogued — 306 flows.**
+**297 of 297 files catalogued — 305 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1260,18 +1260,18 @@ as a claim to check, not as evidence.
 
 ## `test_gate_primitive.py`
 
-*pins HATS-1604, HATS-1601*
+*pins HATS-1604, HATS-1878*
 
-- **flow** — a gate script asking whether this tree already earned a marker
+- **flow** — the one checks-channel gate hook, told which gate it is by its row's cargo
 - **cmds**
 
   ```console
-  bash -c '. lib/gate-marker.sh; gate_marker_write done-gate . <tree> ...'
+  AI_HATS_CARGO_GATE=<gate> AI_HATS_WORKTREE_PATH=<wt> hooks/gate.sh
   bash -c '. lib/gate.sh; gate_exit checks refuse'
   ```
 
-- **expect** — the marker keys on the TREE, carries the composition it certifies, and one primitive maps an outcome onto each channel's exit codes
-- **why** — the discipline was hand-written twice with a diverging exit contract, and a commit-keyed marker made every --no-ff merge pay twice
+- **expect** — no cargo refuses; a card with no code passes; a live worktree is judged by ITS scripts/gates.sh and refused with the missing stages and the command that earns them; a merged card is judged by its merge commit
+- **why** — a gate per edge used to be a file per edge, and the library file named the project's gate — one hook selected at the usage site names nothing
 
 ## `test_githooks_argv_contract.py`
 
@@ -2020,27 +2020,18 @@ as a claim to check, not as evidence.
 
 ## `test_prepush_e2e_master_gate.py`
 
-*pins HATS-550, HATS-686*
+*pins HATS-550, HATS-686, HATS-1878*
 
-- **flow** — a maintainer pushes to master, and the pre-push hook decides from a stored marker whether the e2e tier has already passed for this content
+- **flow** — a maintainer pushing to master, gated by git's pre-push hook
 - **cmds**
 
   ```console
-  git push origin master    # allowed only with a green marker for the pushed tree
+  git push origin master           # allowed only with every push-gate stage marked for the tree
+  scripts/run-e2e-gate.sh          # earns the markers out of band, one per stage
   ```
 
-- **expect** — a non-master target, a branch deletion and an empty stdin are all no-ops; a master push is allowed only when a pass-marker keyed to the TREE of the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is blocked when that marker is absent, keyed to another tree, or carries a body `tree=` disagreeing with its own filename; in a mixed payload the master line still needs its own marker
-- **why** — the marker is the only evidence the tier ever ran — honour one written for different content and the gate certifies code nobody tested; keyed by tree since HATS-1601, so a commit that only re-parents an already-judged tree is not re-judged
-
-- **flow** — the same maintainer runs the gate itself, which must clear the cheap stages of the push-gate composition before spending the tier's runtime, then record the marker
-- **cmds**
-
-  ```console
-  bash scripts/run-e2e-gate.sh    # thin wrapper over the hook's --run mode
-  ```
-
-- **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep reaps provably-dead cruft by default and escalates to `--force` only when opted into; and the wrapper errors when the hook is absent
-- **why** — pre-push runs while git holds the GitHub SSH connection and is killed at ~30s, so the tier cannot run there — splitting check from run is what makes the gate possible at all, and a marker written from a dirty tree or a failed run certifies something that was never green
+- **expect** — check mode reads the pre-push protocol, ignores non-master lines, and asks the project's own `gates.sh check push-gate` about each pushed commit's TREE; run mode runs only the unmarked stages, stops at the first red, and stamps each green one for the commit it judged
+- **why** — GitHub closes the push connection ~30s in, so the tier runs out of band and the per-stage markers are the only evidence it ran
 
 ## `test_pretooluse_hook_cwd_resolution.py`
 

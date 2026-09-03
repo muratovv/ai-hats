@@ -1,6 +1,6 @@
 ---
 name: maintainer-quality-gate
-description: When a change owes an e2e test, and the gates that enforce it — pre-push e2e+smoke to master plus the ->merge and ->done gates. Use when changing the CLI, a shell script, the install flow or any installed hook, and when closing or merging a card.
+description: When a change owes an e2e test, and the gates that enforce it — pre-push e2e+smoke to master plus the ->review, ->merge and ->done gates. Use when changing the CLI, a shell script, the install flow or any installed hook, and when handing over, merging or closing a card.
 ai_hats:
   # hook-carrier skill. `ai-hats self init` installs one
   # dispatcher per event in `.githooks/`; the script below is resolved from this
@@ -14,16 +14,25 @@ license: MIT
 
 # maintainer-quality-gate
 
-**This directory is machinery, not prose.** It carries the three gates that
-guard the ai-hats codebase, and the role binds them by path
+**This directory is machinery, not prose.** It carries the channel side of the
+gates that guard the ai-hats codebase — one hook for the checks channel
+(`hooks/gate.sh`) and one for git (`git_hooks/pre-push-e2e-master.sh`) — and the
+role binds the first by path, once per edge, naming the gate in the row
 (`ai-hats-dev/roles/maintainer/config.yaml`). Delete it and the gates stop being
 installed.
 
-| gate      | where it fires         | who is at the refusal | asks                            |
-| --------- | ---------------------- | --------------------- | ------------------------------- |
-| `->merge` | `wt:pre-merge`         | the agent, alone      | is this branch fit for master   |
-| `->done`  | every road into `done` | the supervisor        | is master green after this card |
-| pre-push  | `git push` to master   | a human               | is the pushed tree green        |
+What a gate REQUIRES is not here. A gate is a name for a set of stages, and the
+project declares that set in `scripts/gates.sh`; `scripts/ci-gate.sh` checks the
+markers and runs what is missing. This skill only says which tree a transition
+puts into master and asks that table about it (ADR-0023 D7). Nothing in this
+directory names a stage.
+
+| gate          | where it fires           | who is at the refusal | asks                            |
+| ------------- | ------------------------ | --------------------- | ------------------------------- |
+| `review-gate` | every road into `review` | the agent, alone      | is this work fit for a reviewer |
+| `merge-gate`  | `wt:pre-merge`           | the agent, alone      | is this branch fit for master   |
+| `done-gate`   | every road into `done`   | the supervisor        | is master green after this card |
+| `push-gate`   | `git push` to master     | a human               | is the pushed tree green        |
 
 Below the gates sits the policy they enforce: **which changes owe an e2e test at
 all.** That half was a standing rule until it folded in here — one home for
@@ -87,37 +96,26 @@ beside the change rather than exercising it, and the card returns to `execute`.
 Origin: PROP-031 — two production bugs shipped past `done` because the unit
 suite stubbed the very contracts the change broke.
 
-## Handing a card over
+## Earning a gate
 
     cd <task worktree>
-    make review-gate                            # earns the marker
-    scripts/ci-local.sh --stages review-gate    # prints what that marker covers
+    make review-gate        # or merge-gate / done-gate
+    scripts/gates.sh stages review-gate    # what that gate requires
 
-`->review` refuses without it. That edge used to ask nothing, so a card reached
-a reviewer on the agent's word that the suite was green — and an agent reading a
-verdict is the unreliable part: a pipeline eats the runner's status, a stray `cd`
-moves the run into another checkout, a planted fixture is never scanned. A marker
-removes the reading. The composition stops at the first red and writes nothing;
-there is no number to misread and no way to hand over anyway.
+A gate is earned per STAGE: the run skips every stage already marked green for
+this tree, runs the rest in the table's order, stops at the first red, and
+stamps each green one. A refusal on the edge names exactly the stages still
+missing and the command above. So a card that ran `make review-gate` and later
+`make done-gate` pays for the difference, not twice.
 
-`review-gate` and `merge-gate` name the same set, so one run clears both edges,
-and a `done-gate` run clears all three.
+The subject is always a commit — `HEAD`, or `REV=<sha>`. The run happens in the
+checkout only when it is clean and at that commit; otherwise in a one-shot
+scratch checkout of the commit. A dirty desk therefore never taints a marker
+and never blocks one either.
 
-## Closing a card
-
-    cd <task worktree>
-    make done-gate                              # earns the marker
-    scripts/ci-local.sh --stages done-gate      # prints what that marker covers
-
-Run both. The first clears **every** card edge — `done-gate` is the superset, so
-its marker absorbs `->review` and `->merge`. The second is the check on the first: a green gate
-is a **narrow** claim, and this is the only way to see how narrow.
-
-Neither card gate runs the e2e tier. If `--stages` does not name what your change
+Neither card gate runs the e2e tier. If `stages` does not name what your change
 touched, run it yourself and say so — e.g. `pytest -m integration tests/e2e/`.
 Nothing refuses here, which is why the second command is not optional.
-
-Use `make merge-gate` only to merge now and close later.
 
 ## Pushing master
 
@@ -131,7 +129,7 @@ said.** Every branch narrates itself with a reason and a remedy — the refusals
 the green, and every quiet pass-through alike. The one thing it never prints is
 the transcript, which lands beside the card; glob it, never hand-build the name:
 
-    <tasks_dir>/<ID>/.checks/*done-gate*.log
+    <tasks_dir>/<ID>/.checks/*gate.sh*.log
 
 ## Why the push gate runs out of band
 

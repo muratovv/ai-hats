@@ -188,11 +188,27 @@ _runner_in() {
     fi
 }
 
+# The pytest the stages will run: the checkout's own venv first, then PYTHON,
+# then whatever PATH offers. Probing another interpreter than the one that runs
+# would answer the xdist question for the wrong pytest.
+_pytest_probe() {
+    local checkout="$1"
+    if [[ -x "$checkout/.venv/bin/python" ]]; then
+        "$checkout/.venv/bin/python" -m pytest -VV 2>/dev/null
+    elif [[ -n "${PYTHON:-}" ]]; then
+        "$PYTHON" -m pytest -VV 2>/dev/null
+    elif command -v pytest >/dev/null 2>&1; then
+        pytest -VV 2>/dev/null
+    else
+        return 1
+    fi
+}
+
 # Keep direct dispatcher and CI stage invocations serial; here, use the cores.
 _export_pytest_addopts() {
-    local py="${PYTHON:-python}"
+    local checkout="$1"
     local addopts='--tb=line --no-header -p no:cacheprovider'
-    if "$py" -m pytest -VV 2>/dev/null | grep -qi xdist; then
+    if _pytest_probe "$checkout" | grep -qi xdist; then
         local cores ceiling n
         cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
                  || nproc 2>/dev/null \
@@ -314,7 +330,7 @@ cmd_run() {
         fi
     fi
 
-    _export_pytest_addopts
+    _export_pytest_addopts "$checkout"
     for stage in "${STAGES[@]}"; do
         if [[ -z "$FRESH" ]] && _marked "$store" "$tree" "$stage"; then
             printf '[ci-gate] %s: already green for tree %s — skipping\n' "$stage" "$tree" >&2
