@@ -40,8 +40,6 @@ _DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset(
 )
 
 
-
-
 class ProjectConfig(_YamlModel):
     """ai-hats.yaml — unified project configuration.
 

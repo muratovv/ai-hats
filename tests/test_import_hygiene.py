@@ -334,7 +334,9 @@ RESOLUTION_NAMES = (
 )
 CONFIG_FILE_LITERAL = "ai-hats.yaml"
 
-_CORE_SRC = Path(__file__).resolve().parent.parent / "packages" / "ai-hats-core" / "src" / "ai_hats_core"
+_CORE_SRC = (
+    Path(__file__).resolve().parent.parent / "packages" / "ai-hats-core" / "src" / "ai_hats_core"
+)
 
 
 def _resolution_cone() -> list[tuple[str, Path]]:
@@ -365,7 +367,10 @@ def _resolution_offenders() -> dict[str, tuple[str, ...]]:
                 hits.add(node.id)
             elif isinstance(node, ast.Attribute) and node.attr in RESOLUTION_NAMES:
                 hits.add(node.attr)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in RESOLUTION_NAMES:
+            elif (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in RESOLUTION_NAMES
+            ):
                 hits.add(node.name)
             elif isinstance(node, ast.ImportFrom):
                 hits.update(a.name for a in node.names if a.name in RESOLUTION_NAMES)
@@ -412,7 +417,9 @@ def test_project_resolution_is_deny_by_default():
     actual = _resolution_offenders()
     expected = EXPECTED_RESOLUTION_OFFENDERS
     grown = {m: n for m, n in actual.items() if m not in expected or set(n) - set(expected[m])}
-    drained = {m: n for m, n in expected.items() if m not in actual or set(n) - set(actual.get(m, ()))}
+    drained = {
+        m: n for m, n in expected.items() if m not in actual or set(n) - set(actual.get(m, ()))
+    }
     assert actual == expected, (
         f"project-resolution pin drifted.\nNEW acquisition sites (deny-by-default): {grown}\n"
         f"DRAINED (update the pin, keep the ratchet tight): {drained}"

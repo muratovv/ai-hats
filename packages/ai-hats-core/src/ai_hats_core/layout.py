@@ -198,7 +198,8 @@ class ProjectLayout:
         root: Path,
         environ: Mapping[str, str],
         *,
-        ai_hats_dir: str | None = None,  # the config's say, passed as DATA — layout never reads yaml
+        ai_hats_dir: str
+        | None = None,  # the config's say, passed as DATA — layout never reads yaml
     ) -> ProjectLayout:
         """``base``: trusted AI_HATS_DIR env > ``ai_hats_dir`` > default.
 
