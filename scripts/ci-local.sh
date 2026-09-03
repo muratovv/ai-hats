@@ -216,6 +216,15 @@ ci_env_reference() {
     run_py scripts/gen_env_reference.py --check
 }
 
+# Offline and instant, like the seven above. The ADR's inventory of stages and
+# gates is rendered from `scripts/gates.sh` and the role's bindings, so it goes
+# stale the moment a row is added without regenerating — which is how seven of
+# twenty-three stages came to be named nowhere in it.
+ci_gate_table() {
+    echo "[ci-local] gate-table (ADR-0023's stage and gate tables vs scripts/gates.sh)" >&2
+    run_py scripts/gen_gate_table.py --check
+}
+
 # The full maintainer tier (the slow one). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
@@ -328,6 +337,7 @@ case "$stage" in
         ci_test_isolation
         ci_e2e_catalog
         ci_env_reference
+        ci_gate_table
         ci_adr_integrity
     ci_ticket_ids
         ci_unit

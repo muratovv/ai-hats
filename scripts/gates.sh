@@ -42,6 +42,7 @@ test-isolation   | review-gate merge-gate done-gate           | the suite patche
 prose-refs       | review-gate merge-gate done-gate push-gate | paths, library prefixes, sections and symbols named in library prose resolve
 ticket-ids       | review-gate merge-gate done-gate push-gate | no tracker id in shipped library prose
 env-reference    | review-gate merge-gate done-gate push-gate | docs/reference-env.md matches the env declarations the code reads
+gate-table       | review-gate merge-gate done-gate push-gate | ADR-0023's stage and gate tables match this table and the role's bindings
 adr-integrity    | push-gate                                  | every ADR citation resolves and a number names exactly one file
 bidi             | push-gate                                  | no bidirectional control characters, which are invisible in review
 wheel-contents   | review-gate merge-gate done-gate           | every tracked src file reaches the wheel built through the sdist

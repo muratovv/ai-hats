@@ -223,6 +223,11 @@ jobs:
       - name: Check the e2e flow catalog is current
         if: always()
         run: bash scripts/ci-local.sh e2e-catalog
+      # Same shape: ADR-0023's stage and gate tables render from scripts/gates.sh
+      # and the role's bindings, and a row added without regenerating is red here.
+      - name: Check the gate tables in ADR-0023 are current
+        if: always()
+        run: bash scripts/ci-local.sh gate-table
       # The pin is re-spelled by hand in ~40 places; this refuses a
       # partial bump, and a pin the matrix above does not run.
       - name: Check every copy of the Python pin agrees
