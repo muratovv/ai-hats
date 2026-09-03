@@ -43,7 +43,7 @@ _RUNNERS_FILENAME = "test_runners.json"
 #: the last resort when the file shipped beside this script is unreadable. Kept
 #: in sync by tests/test_shared_test_runners.py.
 _DEFAULT_INTERPRETERS = ("python", "python3", "pytest")
-_DEFAULT_DELEGATES = ("make", "ci-local.sh")
+_DEFAULT_DELEGATES = ("make", "ci-local.sh", "gates.sh")
 
 #: What a delegating runner really resolves to: `make test` names no interpreter,
 #: so the recipe's would-be `pytest` is the one whose checkout decides.
@@ -52,7 +52,7 @@ _DELEGATE_PROXY = "pytest"
 #: `make` is only a check run when the TARGET says so. `make lint` resolves no
 #: project import, and nudging it would make the guard cry wolf on every build —
 #: the one thing that would teach the agent to stop reading it. A delegate that
-#: is itself a script (`ci-local.sh`) names its purpose already, so it needs no
+#: is itself a script (`gates.sh`) names its purpose already, so it needs no
 #: target.
 _TEST_TARGET_RE = re.compile(r"test|check|\bci\b|e2e|integration|coverage")
 
@@ -201,7 +201,7 @@ def _deciding_executable(segment: list[str]) -> str | None:
     venv at all, so it is not this guard's business and returns None."""
     head = segment[0]
     name = Path(head).name
-    # `bash scripts/ci-local.sh` runs the script as surely as naming it does.
+    # `bash scripts/gates.sh` runs the script as surely as naming it does.
     # Not for `-c`: what a body runs is a second command line, and reading one
     # word of it would be a guess rather than a resolution.
     if name in ("bash", "sh", "zsh") and len(segment) > 1 and not segment[1].startswith("-"):

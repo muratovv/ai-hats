@@ -4,14 +4,14 @@ flow:   a maintainer runs the pre-push bundle, which must refuse the push when a
         citation into an ADR no longer resolves, or when one ADR number names
         two files
 cmds:
-    bash scripts/ci-local.sh adr-integrity   # announces the stage it dispatched to
-    bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
+    bash scripts/gates.sh adr-integrity   # announces the stage it dispatched to
+    bash scripts/gates.sh no-such-stage   # exit 2, and the usage names the stage
 expect: the stage is reachable through the dispatcher, announces itself as
-        `[ci-local] adr-integrity` and states on every run what it does NOT
+        `[gates] adr-integrity` and states on every run what it does NOT
         cover; an unknown stage exits 2 and lists `adr-integrity` among the
         stages it knows. Whether the corpus is INTACT belongs to the stage, not
         here: this runs against the live checkout (HATS-1714/1716)
-why:    a checker is only a gate if `ci-local.sh` actually dispatches to it —
+why:    a checker is only a gate if `gates.sh` actually dispatches to it —
         `check_dependency_floor.py` sat outside this same ratchet from HATS-1399
         to HATS-1373, silently gating nothing. HATS-1646 adds a checker whose
         absence is equally invisible: its defects (a citation into a section
@@ -32,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _stage(name: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", name],
+        ["bash", "scripts/gates.sh", name],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -49,7 +49,7 @@ def test_gate_dispatches_to_the_adr_check():
     """
     done = _stage("adr-integrity")
     combined = done.stdout + done.stderr
-    assert "[ci-local] adr-integrity" in combined, combined
+    assert "[gates] adr-integrity" in combined, combined
     assert done.returncode != 2, combined
 
 

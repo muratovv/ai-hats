@@ -54,7 +54,7 @@ except Exception as exc:      # binding a name you never read reports nothing
 
 ## What the gate does and does not prove
 
-`scripts/ci-local.sh silent-fallback` (`scripts/check_silent_fallback.py`)
+`scripts/gates.sh silent-fallback` (`scripts/check_silent_fallback.py`)
 refuses a broad handler whose body holds no call, no `raise`, and no use of the
 bound exception, unless the site carries `# silent-ok:`. Ruff `S110`/`S112` hold
 the narrower `pass`/`continue` shape as a second contour.

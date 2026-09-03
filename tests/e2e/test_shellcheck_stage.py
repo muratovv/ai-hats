@@ -3,8 +3,8 @@
 flow:   a maintainer edits shell this repo SHIPS — a git hook or a skill's
         hook, which runs in someone else's project
 cmds:
-    bash scripts/ci-local.sh shellcheck
-    bash scripts/ci-local.sh --stages merge-gate
+    bash scripts/gates.sh shellcheck
+    hooks/merge-gate.sh --stages
 expect: the stage is green on this tree and says how many files it read; a
         script with a real warning is refused at severity `warning`; and when
         shellcheck is not installed the stage ANNOUNCES the skip instead of
@@ -34,7 +34,7 @@ STAGE_TIMEOUT_S = 300
 
 def _stage(env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", "shellcheck"],
+        ["bash", "scripts/gates.sh", "shellcheck"],
         cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,
@@ -49,7 +49,7 @@ def test_the_stage_is_green_on_this_tree():
     run = _stage()
     combined = run.stdout + run.stderr
     assert run.returncode == 0, combined
-    assert "[ci-local] shellcheck" in combined, combined
+    assert "[gates] shellcheck" in combined, combined
     assert "file(s) clean" in combined, combined
 
 
@@ -92,9 +92,13 @@ def test_a_missing_shellcheck_is_announced_not_silent(tmp_path: Path):
 
 
 def test_the_merge_gate_names_the_stage():
-    """The gate runs what `--stages` names, so dropping it here disarms it."""
+    """The gate runs what its `--stages` names, so dropping it here disarms it."""
+    hook = (
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        "/hooks/merge-gate.sh"
+    )
     listed = subprocess.run(
-        ["bash", "scripts/ci-local.sh", "--stages", "merge-gate"],
+        ["bash", hook, "--stages"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,

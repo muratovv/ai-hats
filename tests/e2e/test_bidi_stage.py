@@ -5,11 +5,11 @@ flow:   a maintainer pushes to master, and the pre-push bundle must refuse the
         that changes how the line RENDERS but not how it parses, so review
         cannot see it
 cmds:
-    bash scripts/ci-local.sh bidi              # exit 0 while the tree is clean
-    bash scripts/ci-local.sh --stages push-gate # the composition names `bidi`
-    bash scripts/ci-local.sh no-such-stage     # exit 2, and the usage names it
+    bash scripts/gates.sh bidi              # exit 0 while the tree is clean
+    git_hooks/pre-push-e2e-master.sh --stages # the push gate names `bidi`
+    bash scripts/gates.sh no-such-stage     # exit 2, and the usage names it
 expect: the stage is reachable through the dispatcher, announces itself as
-        `[ci-local] bidi`, exits 0 on a clean tree, exits 1 naming the file and
+        `[gates] bidi`, exits 0 on a clean tree, exits 1 naming the file and
         the codepoint when one is planted, and appears in the push-gate
         composition
 why:    this is the ONE check bandit held that ruff's `S` family does not
@@ -38,7 +38,7 @@ RLO = "\u202e"
 
 def _stage(name: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", name],
+        ["bash", "scripts/gates.sh", name],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -50,7 +50,7 @@ def test_gate_dispatches_to_the_bidi_check():
     run = _stage("bidi")
     combined = run.stdout + run.stderr
     assert run.returncode == 0, combined
-    assert "[ci-local] bidi" in combined, combined
+    assert "[gates] bidi" in combined, combined
     assert "[bidi] ok:" in combined, combined
 
 
@@ -73,9 +73,13 @@ def test_a_planted_override_is_refused(tmp_path: Path):
 
 
 def test_push_gate_composition_names_the_stage():
-    """The gate runs what `--stages` names, so dropping it here disarms it."""
+    """The gate runs what its `--stages` names, so dropping it here disarms it."""
+    hook = (
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        "/git_hooks/pre-push-e2e-master.sh"
+    )
     listed = subprocess.run(
-        ["bash", "scripts/ci-local.sh", "--stages", "push-gate"],
+        ["bash", hook, "--stages"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,

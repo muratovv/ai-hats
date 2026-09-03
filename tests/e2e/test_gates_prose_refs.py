@@ -4,11 +4,11 @@ flow:   a maintainer runs the pre-push bundle, which must refuse the push when a
         path, a library prefix, a section or a code symbol named in library prose
         no longer resolves
 cmds:
-    bash scripts/ci-local.sh prose-refs      # announces the stage it dispatched to
-    bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
-    bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
+    bash scripts/gates.sh prose-refs      # announces the stage it dispatched to
+    bash scripts/gates.sh no-such-stage   # exit 2, and the usage names the stage
+    hooks/merge-gate.sh --stages              # the stage is part of a gate
 expect: the stage is reachable through the dispatcher, announces itself as
-        `[ci-local] prose-refs`, states on every run what it does NOT cover, and
+        `[gates] prose-refs`, states on every run what it does NOT cover, and
         is named in the merge-gate composition. Whether the live corpus is INTACT
         belongs to the stage, not here (HATS-1714/1716) — the refusal is proved
         instead against a planted tree, which no sibling session can change
@@ -34,7 +34,7 @@ LIB_RELPATH = "packages/ai-hats-library/src/ai_hats_library"
 
 def _stage(name: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", name, *args],
+        ["bash", "scripts/gates.sh", name, *args],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -46,7 +46,7 @@ def test_gate_dispatches_to_the_prose_check():
     """The announce IS the dispatch proof: an unwired stage exits 2 without it."""
     done = _stage("prose-refs")
     combined = done.stdout + done.stderr
-    assert "[ci-local] prose-refs" in combined, combined
+    assert "[gates] prose-refs" in combined, combined
     assert done.returncode != 2, combined
 
 
@@ -79,9 +79,15 @@ def test_unknown_stage_lists_the_prose_stage():
 def test_the_stage_is_part_of_the_merge_gate():
     """Wired but ungated is the `check_dependency_floor.py` failure (HATS-1373):
     a stage nothing runs gates nothing."""
-    composition = _stage("--stages", "merge-gate")
-    combined = composition.stdout + composition.stderr
-    assert "prose-refs" in combined, combined
+    gate = (
+        Path(__file__).resolve().parents[2]
+        / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        / "hooks/merge-gate.sh"
+    )
+    composition = subprocess.run(
+        ["bash", str(gate), "--stages"], capture_output=True, text=True, check=True
+    )
+    assert "prose-refs" in composition.stdout.split(), composition.stdout
 
 
 def test_the_checker_refuses_a_planted_dead_reference(tmp_path: Path):

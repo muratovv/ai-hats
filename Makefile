@@ -1,6 +1,6 @@
 # Makefile for ai-hats
 #
-# Every target delegates to scripts/ci-local.sh, the single source of the check
+# Every target delegates to scripts/gates.sh, the single source of the check
 # commands CI runs (HATS-922/725). Spelling a command out here instead forks the
 # definition of the gate — tests/test_gate_entrypoint_parity.py refuses that.
 
@@ -15,12 +15,13 @@ TIMEOUT_TESTS ?= 300
 TIMEOUT_E2E   ?= 3600
 TIMEOUT_BIN   := $(shell command -v timeout 2>/dev/null || echo "$$HOME/.local/bin/timeout")
 PYTHON        ?= python
-CI_LOCAL      := env PYTHON=$(PYTHON) bash scripts/ci-local.sh
+CI_LOCAL      := env PYTHON=$(PYTHON) bash scripts/gates.sh
 
-# $(1) = ci-local stage, $(2) = timeout budget in seconds
+# $(1) = gates.sh stage, $(2) = timeout budget in seconds. A stage runs bare:
+# to filter tests, call pytest yourself (CONTRIBUTING.md).
 define timed_stage
 @if [ -x "$(TIMEOUT_BIN)" ]; then \
-	$(TIMEOUT_BIN) $(2) $(CI_LOCAL) $(1) $(ARGS); \
+	$(TIMEOUT_BIN) $(2) $(CI_LOCAL) $(1); \
 	status=$$?; \
 	if [ $$status -eq 124 ]; then \
 		printf "\n%s stage exceeded %ss timeout — raise the budget or investigate a hang\n" "$(1)" "$(2)" >&2; \
@@ -29,7 +30,7 @@ define timed_stage
 		exit $$status; \
 	fi; \
 else \
-	$(CI_LOCAL) $(1) $(ARGS); \
+	$(CI_LOCAL) $(1); \
 fi
 endef
 
@@ -49,17 +50,17 @@ lint: ## Run the lint stage (ruff check + formatter check)
 
 check: lint unit ## Fast inner loop: lint + unit only — full parity gate is `make gates`
 
-gates: ## Run every stage CI runs locally (the `all` bundle in scripts/ci-local.sh)
+gates: ## Run every stage CI runs locally (the `all` bundle in scripts/gates.sh)
 	$(CI_LOCAL) all
 
 coverage: ## Run the coverage stage (unit + non-e2e integration, --cov-fail-under=78)
-	$(CI_LOCAL) coverage $(ARGS)
+	$(CI_LOCAL) coverage
 
 security: ## Run the security stage (pip-audit; env-scoped, CI is authoritative)
-	$(CI_LOCAL) security $(ARGS)
+	$(CI_LOCAL) security
 
 version-skew: ## Check workspace packages are ahead of PyPI (needs network)
-	$(CI_LOCAL) version-skew $(ARGS)
+	$(CI_LOCAL) version-skew
 
 dependency-floor: ## Check every pin on a workspace package tracks its version
 	$(CI_LOCAL) dependency-floor
@@ -76,33 +77,30 @@ test-isolation: ## Check the suite patches its units no more than the baseline
 e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 	$(call timed_stage,e2e,$(TIMEOUT_E2E))
 
-# The gates the road to master demands. Run one in the TASK WORKTREE: the
-# marker is keyed to the tree you run it on, which is the content the check looks
-# up. `ci-local.sh --stages <gate>` names what each runs.
+# The gates the road to master demands, one target per gate. Each gate is a
+# few-line script in the quality-gate skill declaring the stages it requires
+# (`<gate>.sh --stages` prints them) and handing them to `scripts/gates.sh run`.
+# A run stamps each green STAGE for the tree it judged, so a later, wider gate
+# re-runs nothing already green, and a refusal names only what is missing.
 #
-# `REV=<sha>` judges ONE COMMIT instead of this checkout, in a scratch worktree
-# of its own — what a card whose worktree is already merged away needs, and what
-# the gate's own refusal hands you when that is the case (HATS-1664).
-#
-# $(1) = gate name, which is also its script's basename
+# The subject is a commit: `REV=<sha>` names one, HEAD otherwise. The run happens
+# here only when this checkout is clean AND at that commit; otherwise in a
+# one-shot scratch checkout — which is what a card whose worktree is already
+# merged away needs, and what the gate's own refusal hands you.
+GATE_HOOKS := packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/hooks
+
+# $(1) = gate name, which is its script's basename
 define run_gate
-@py="$(PYTHON)"; [ -x "$(CURDIR)/.venv/bin/python3" ] && py="$(CURDIR)/.venv/bin/python3"; \
-libroot="$$("$$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"; \
-hook="$$libroot/ai-hats-dev/skills/maintainer-quality-gate/hooks/$(1).sh"; \
-if [ -z "$$libroot" ] || [ ! -f "$$hook" ]; then \
-	printf "cannot resolve the $(1) in the ai-hats library — install it here first: ai-hats self init\n" >&2; \
-	exit 1; \
-fi; \
-env PYTHON="$$py" bash "$$hook" --run $(if $(REV),--rev $(REV),)
+@bash $(GATE_HOOKS)/$(1).sh --run $(if $(REV),--rev $(REV),)
 endef
 
-review-gate: ## Run the ->review gate here (or on REV=<sha>) and mark that tree green (HATS-1877)
+review-gate: ## Earn the ->review gate for HEAD (or REV=<sha>): run what is missing, stamp each stage
 	$(call run_gate,review-gate)
 
-merge-gate: ## Run the ->merge gate here (or on REV=<sha>) and mark that tree green (HATS-1614)
+merge-gate: ## Earn the ->merge gate for HEAD (or REV=<sha>): run what is missing, stamp each stage
 	$(call run_gate,merge-gate)
 
-done-gate: ## Run the ->done gate here (or on REV=<sha>) and mark that tree green (HATS-1137)
+done-gate: ## Earn the ->done gate for HEAD (or REV=<sha>): run what is missing, stamp each stage
 	$(call run_gate,done-gate)
 
 relay-server: ## Run local hats-relay server (delegates to relay/Makefile)

@@ -1,0 +1,298 @@
+"""e2e (HATS-1878)
+
+flow:   the gate primitive — a requirement over stages, and the run that meets it
+cmds:
+    scripts/gates.sh check [--rev <commit>] <stage>...
+    scripts/gates.sh run [--rev <commit>] [--fresh] <stage>...
+    scripts/gates.sh subject [--rev <commit>]
+expect: `check` lists what lacks a marker and never calls the runner; `run`
+        runs only the unmarked, stamps each green stage for the SUBJECT tree,
+        and judges a commit in a one-shot scratch worktree when the checkout is
+        dirty or its HEAD is not the subject
+why:    a per-GATE, all-or-nothing marker made a wider gate re-run what a
+        narrower one had earned; a run "here" judged whatever the desk held
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from _helpers.git import commit_file, git, init_repo
+
+pytestmark = pytest.mark.integration
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+GATES = REPO_ROOT / "scripts" / "gates.sh"
+
+
+@pytest.fixture()
+def repo(tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    init_repo(project)
+    commit_file(project, "README.md", "hello\n", "init")
+    return project
+
+
+@pytest.fixture()
+def runner(tmp_path: Path) -> Path:
+    """A stage runner OUTSIDE the repo that records every call and exits as told.
+
+    Outside, so the repo stays clean without committing it; the log too, so a
+    stage cannot dirty the tree by being recorded. Per-stage exit codes come
+    from `GATES_TEST_RC_<STAGE>`; unset means green. `--prepare` is the one
+    non-stage verb the primitive asks of a runner, and it is a no-op here.
+    """
+    log = tmp_path / "calls.log"
+    script = tmp_path / "runner.sh"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
+        f'printf "%s|%s\\n" "$1" "$PWD" >> "{log}"\n'
+        'name="GATES_TEST_RC_$(printf "%s" "$1" | tr "a-z-" "A-Z_")"\n'
+        'exit "${!name:-0}"\n'
+    )
+    script.chmod(0o755)
+    return script
+
+
+def _calls(runner: Path) -> list[tuple[str, str]]:
+    log = runner.parent / "calls.log"
+    if not log.exists():
+        return []
+    return [tuple(line.split("|", 1)) for line in log.read_text().splitlines()]  # type: ignore[misc]
+
+
+def _gate(
+    repo: Path, runner: Path, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    child = {k: v for k, v in os.environ.items() if not k.startswith("GATES_TEST_RC_")}
+    child["GATES_STAGE_RUNNER"] = str(runner)
+    child.pop("PYTEST_ADDOPTS", None)
+    child.update(env or {})
+    return subprocess.run(
+        ["bash", str(GATES), *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=child,
+        check=False,
+    )
+
+
+def _tree(repo: Path, rev: str = "HEAD") -> str:
+    return git(repo, "rev-parse", f"{rev}^{{tree}}").stdout.strip()
+
+
+def _store(repo: Path) -> Path:
+    common = git(repo, "rev-parse", "--git-common-dir").stdout.strip()
+    return (repo / common).resolve() / "ai-hats" / "stages"
+
+
+def _marked(repo: Path, tree: str) -> set[str]:
+    where = _store(repo) / tree
+    return {p.name for p in where.iterdir()} if where.is_dir() else set()
+
+
+# ---------------------------------------------------------------------------
+# check is a requirement, never an execution
+# ---------------------------------------------------------------------------
+
+
+def test_check_lists_every_unmarked_stage_and_never_calls_the_runner(repo: Path, runner: Path):
+    """The positive control lives in the same fixture: `run` below DOES reach
+    this runner, so an empty call log here is absence, not a broken runner."""
+    out = _gate(repo, runner, "check", "lint", "unit", env={"GATES_TEST_RC_LINT": "99"})
+
+    assert out.returncode == 1, out.stderr
+    assert out.stdout.split() == ["lint", "unit"]
+    assert _calls(runner) == []
+
+    ran = _gate(repo, runner, "run", "lint", env={"GATES_TEST_RC_LINT": "99"})
+    assert ran.returncode == 99
+    assert [c[0] for c in _calls(runner)] == ["lint"], "the same runner IS reachable by run"
+
+
+def test_check_passes_with_empty_stdout_once_every_stage_is_marked(repo: Path, runner: Path):
+    assert _gate(repo, runner, "run", "lint", "unit").returncode == 0
+
+    out = _gate(repo, runner, "check", "lint", "unit")
+
+    assert out.returncode == 0, out.stderr
+    assert out.stdout == ""
+
+
+def test_a_marker_whose_tree_line_disagrees_with_its_path_certifies_nothing(
+    repo: Path, runner: Path
+):
+    tree = _tree(repo)
+    forged = _store(repo) / tree / "lint"
+    forged.parent.mkdir(parents=True)
+    forged.write_text("tree=0000000000000000000000000000000000000000\nstage=lint\n")
+
+    out = _gate(repo, runner, "check", "lint")
+
+    assert out.returncode == 1
+    assert out.stdout.split() == ["lint"]
+
+
+# ---------------------------------------------------------------------------
+# run is incremental: markers are per stage and are read across runs
+# ---------------------------------------------------------------------------
+
+
+def test_a_wider_run_skips_what_a_narrower_one_already_earned(repo: Path, runner: Path):
+    """HATS-1878's motivating case: review's set, then done's superset, on one
+    tree — every stage of the review set runs exactly once."""
+    assert _gate(repo, runner, "run", "lint", "unit").returncode == 0
+    assert _gate(repo, runner, "run", "lint", "unit", "integration", "merge-smoke").returncode == 0
+
+    stages = [c[0] for c in _calls(runner)]
+    assert stages == ["lint", "unit", "integration", "merge-smoke"]
+    assert _marked(repo, _tree(repo)) == {"lint", "unit", "integration", "merge-smoke"}
+
+
+def test_fresh_reruns_a_marked_stage(repo: Path, runner: Path):
+    assert _gate(repo, runner, "run", "lint").returncode == 0
+    assert _gate(repo, runner, "run", "--fresh", "lint").returncode == 0
+
+    assert [c[0] for c in _calls(runner)] == ["lint", "lint"]
+
+
+def test_a_red_stage_stops_the_run_and_keeps_the_stamps_earned_before_it(repo: Path, runner: Path):
+    out = _gate(repo, runner, "run", "lint", "unit", "integration", env={"GATES_TEST_RC_UNIT": "7"})
+
+    assert out.returncode == 7
+    assert "stage 'unit' FAILED (rc=7)" in out.stderr
+    assert [c[0] for c in _calls(runner)] == ["lint", "unit"], "nothing after the red one ran"
+    assert _marked(repo, _tree(repo)) == {"lint"}, "lint's stamp survives unit's red"
+
+
+def test_a_new_commit_is_a_new_tree_and_earns_its_own_markers(repo: Path, runner: Path):
+    assert _gate(repo, runner, "run", "lint").returncode == 0
+    first = _tree(repo)
+    commit_file(repo, "b.txt", "b\n", "second")
+
+    out = _gate(repo, runner, "check", "lint")
+
+    assert out.returncode == 1 and out.stdout.split() == ["lint"]
+    assert _marked(repo, first) == {"lint"}, "the old tree's marker is untouched"
+
+
+# ---------------------------------------------------------------------------
+# the subject is a commit; where it runs follows from clean ∧ HEAD == subject
+# ---------------------------------------------------------------------------
+
+
+def test_a_clean_checkout_of_the_subject_runs_in_place(repo: Path, runner: Path):
+    assert "where=in-place" in _gate(repo, runner, "subject").stdout
+    assert _gate(repo, runner, "run", "lint").returncode == 0
+
+    assert _calls(runner) == [("lint", str(repo))]
+
+
+def test_a_dirty_checkout_judges_head_in_a_one_shot_scratch_worktree(repo: Path, runner: Path):
+    (repo / "scratch.txt").write_text("untracked\n")
+    before = git(repo, "status", "--porcelain").stdout
+
+    assert "where=scratch" in _gate(repo, runner, "subject").stdout
+    out = _gate(repo, runner, "run", "lint")
+
+    assert out.returncode == 0, out.stderr
+    ((stage, ran_in),) = _calls(runner)
+    assert stage == "lint"
+    assert ran_in != str(repo), "the stage ran somewhere other than the dirty desk"
+    assert not Path(ran_in).exists(), "the scratch checkout is gone after the run"
+    assert "scratch" not in git(repo, "worktree", "list").stdout, "and un-registered"
+    assert _marked(repo, _tree(repo)) == {"lint"}, "stamped for HEAD's tree, readable from here"
+    assert git(repo, "status", "--porcelain").stdout == before, "the desk is untouched"
+
+
+def test_rev_naming_another_commit_is_judged_in_a_scratch_worktree_of_that_commit(
+    repo: Path, runner: Path
+):
+    first = git(repo, "rev-parse", "HEAD").stdout.strip()
+    first_tree = _tree(repo)
+    commit_file(repo, "b.txt", "b\n", "second")
+
+    assert "where=scratch" in _gate(repo, runner, "subject", "--rev", first).stdout
+    out = _gate(repo, runner, "run", "--rev", first, "lint")
+
+    assert out.returncode == 0, out.stderr
+    ((_, ran_in),) = _calls(runner)
+    assert ran_in != str(repo)
+    assert _marked(repo, first_tree) == {"lint"}
+    assert _marked(repo, _tree(repo)) == set(), "HEAD's tree earned nothing — it was not judged"
+
+
+def test_a_stage_that_dirties_the_tree_earns_no_marker(repo: Path, runner: Path, tmp_path: Path):
+    """A stage changing tracked content means the next stages would run on
+    something other than the subject; the primitive refuses to certify that."""
+    dirtying = tmp_path / "dirtying.sh"
+    dirtying.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
+        '[[ "$1" == "lint" ]] && echo changed >> README.md\n'
+        "exit 0\n"
+    )
+    dirtying.chmod(0o755)
+
+    out = _gate(repo, dirtying, "run", "lint", "unit")
+
+    assert out.returncode == 1
+    assert "left the tree dirty" in out.stderr
+    assert _marked(repo, _tree(repo)) == set()
+
+
+# ---------------------------------------------------------------------------
+# argv discipline: a stage runs bare, a typo is not a verdict
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("check",),
+        ("run",),
+        ("check", "unit", "-k", "foo"),
+        ("run", "unit", "--", "x"),
+        ("check", "--fresh", "unit"),
+        ("subject", "unit"),
+        ("run", "--rev"),
+    ],
+)
+def test_usage_errors_exit_64_and_run_nothing(repo: Path, runner: Path, argv: tuple[str, ...]):
+    out = _gate(repo, runner, *argv)
+
+    assert out.returncode == 64, (argv, out.stderr)
+    assert _calls(runner) == []
+
+
+def test_outside_a_repository_is_not_a_verdict(tmp_path: Path, runner: Path):
+    bare = tmp_path / "nowhere"
+    bare.mkdir()
+
+    out = _gate(bare, runner, "check", "lint")
+
+    assert out.returncode == 70
+    assert "not inside a git repository" in out.stderr
+
+
+def test_the_real_repository_wires_up_without_side_effects():
+    """`check` against THIS checkout: the real runner path resolves and the
+    verdict is one of the two legal ones. `run` is not exercised here — it
+    would stamp the developer's own git dir."""
+    out = subprocess.run(
+        ["bash", str(GATES), "check", "python-pin"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert out.returncode in (0, 1), out.stderr
+    assert out.stdout.split() in ([], ["python-pin"])

@@ -6,13 +6,13 @@ Every test in `tests/e2e/` as the user flow it pins, in the commands a
 user would actually type. Source of truth is the structured block in each
 test's module docstring; this file is rendered from it by
 `scripts/gen_e2e_catalog.py` and kept current by the `e2e-catalog` stage of
-`scripts/ci-local.sh`.
+`scripts/gates.sh`.
 
 That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**295 of 295 files catalogued — 304 flows.**
+**296 of 296 files catalogued — 304 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -22,12 +22,12 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh adr-integrity   # announces the stage it dispatched to
-  bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
+  bash scripts/gates.sh adr-integrity   # announces the stage it dispatched to
+  bash scripts/gates.sh no-such-stage   # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] adr-integrity` and states on every run what it does NOT cover; an unknown stage exits 2 and lists `adr-integrity` among the stages it knows. Whether the corpus is INTACT belongs to the stage, not here: this runs against the live checkout (HATS-1714/1716)
-- **why** — a checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, silently gating nothing. HATS-1646 adds a checker whose absence is equally invisible: its defects (a citation into a section that does not exist, one ADR number naming two files) rot green.
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] adr-integrity` and states on every run what it does NOT cover; an unknown stage exits 2 and lists `adr-integrity` among the stages it knows. Whether the corpus is INTACT belongs to the stage, not here: this runs against the live checkout (HATS-1714/1716)
+- **why** — a checker is only a gate if `gates.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, silently gating nothing. HATS-1646 adds a checker whose absence is equally invisible: its defects (a citation into a section that does not exist, one ADR number naming two files) rot green.
 
 ## `test_agent_orchestration.py`
 
@@ -263,12 +263,12 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh bidi              # exit 0 while the tree is clean
-  bash scripts/ci-local.sh --stages push-gate # the composition names `bidi`
-  bash scripts/ci-local.sh no-such-stage     # exit 2, and the usage names it
+  bash scripts/gates.sh bidi              # exit 0 while the tree is clean
+  git_hooks/pre-push-e2e-master.sh --stages # the push gate names `bidi`
+  bash scripts/gates.sh no-such-stage     # exit 2, and the usage names it
   ```
 
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] bidi`, exits 0 on a clean tree, exits 1 naming the file and the codepoint when one is planted, and appears in the push-gate composition
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] bidi`, exits 0 on a clean tree, exits 1 naming the file and the codepoint when one is planted, and appears in the push-gate composition
 - **why** — this is the ONE check bandit held that ruff's `S` family does not (`B613 trojansource`); bandit itself was dropped in HATS-1591 because its other three exclusive checks name django, pytorch and huggingface, none of which this repo depends on. If this stage silently stops dispatching, the trade made in that card turns into a straight loss and nothing goes red.
 
 ## `test_bootstrap_heals_underdeclared_editable.py`
@@ -465,57 +465,11 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup --collect-only
+  PYTEST_ADDOPTS="-n 8 --dist=loadgroup --collect-only" bash scripts/gates.sh e2e
   ```
 
 - **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection
 - **why** — a syntactically valid workflow can still name a missing stage or bypass the canonical dispatcher, leaving the advertised server-side gate inert
-
-## `test_ci_local_prepare.py`
-
-*pins HATS-1664*
-
-- **flow** — the gate primitive making a scratch checkout of a merge commit runnable
-- **cmds**
-
-  ```console
-  bash scripts/ci-local.sh --prepare
-  ```
-
-- **expect** — the dispatcher delegates to the worktree-venv hook of the tree it is preparing, and leaves an already-usable venv untouched
-- **why** — a checkout minted by `git worktree add` has no .venv, so every real-subprocess stage would exercise the MAIN checkout's installed code while claiming to judge the commit
-
-## `test_ci_local_prose_refs.py`
-
-*pins HATS-1825*
-
-- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a path, a library prefix, a section or a code symbol named in library prose no longer resolves
-- **cmds**
-
-  ```console
-  bash scripts/ci-local.sh prose-refs      # announces the stage it dispatched to
-  bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
-  bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
-  ```
-
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] prose-refs`, states on every run what it does NOT cover, and is named in the merge-gate composition. Whether the live corpus is INTACT belongs to the stage, not here (HATS-1714/1716) — the refusal is proved instead against a planted tree, which no sibling session can change
-- **why** — the checker's own silence is the thing under test. HATS-1823 measured 21 references in this library that did not resolve, and every gate in the repo stayed green through all of them, because none reads prose. A checker that is wired but never refuses anything reproduces exactly that.
-
-## `test_ci_local_ticket_ids.py`
-
-*pins HATS-1853*
-
-- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a tracker id has crept back into prose the library ships to other projects
-- **cmds**
-
-  ```console
-  bash scripts/ci-local.sh ticket-ids           # announces the stage it dispatched to
-  bash scripts/ci-local.sh no-such-stage        # exit 2, and the usage names the stage
-  bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
-  ```
-
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] ticket-ids`, reports on every run what it does NOT cover and how many ids the pattern still finds where history lives, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
-- **why** — the checker's own silence is the thing under test. 177 ids had accumulated in this library while a rule actively prescribed the form, and every gate stayed green through all of them because none read prose for what it must NOT carry. A checker that is wired but never refuses anything reproduces exactly that, and the ONE id this repo legitimately keeps is the reason a blanket "no matches ever" assertion would not do.
 
 ## `test_claude_dispatcher_entry_is_live.py`
 
@@ -1117,16 +1071,16 @@ as a claim to check, not as evidence.
 
 *pins HATS-1498*
 
-- **flow** — a maintainer runs the pre-push gate, which must route the catalog check through the `ci-local.sh` dispatcher rather than leave it unreachable
+- **flow** — a maintainer runs the pre-push gate, which must route the catalog check through the `gates.sh` dispatcher rather than leave it unreachable
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh e2e-catalog     # announces the stage it dispatched to
-  bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
+  bash scripts/gates.sh e2e-catalog     # announces the stage it dispatched to
+  bash scripts/gates.sh no-such-stage   # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] e2e-catalog`; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows — one list, derived from the `ci_*` functions, so both answers die together (HATS-1716)
-- **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing. Whether the catalog is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
+- **expect** — the stage is reachable through the dispatcher and announces itself as `[gates] e2e-catalog`; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows — one list, derived from the `ci_*` functions, so both answers die together (HATS-1716)
+- **why** — the checker is only a gate if `gates.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing. Whether the catalog is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
 
 ## `test_e2e_catalog_soundness.py`
 
@@ -1150,7 +1104,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh e2e-catalog
+  bash scripts/gates.sh e2e-catalog
   ```
 
 - **expect** — gen_e2e_catalog.py exits non-zero naming uncatalogued files and remedy guidance
@@ -1188,16 +1142,16 @@ as a claim to check, not as evidence.
 
 *pins HATS-1872*
 
-- **flow** — a maintainer runs the pre-push gate, which must route the env-reference check through the `ci-local.sh` dispatcher rather than leave it unreachable
+- **flow** — a maintainer runs the pre-push gate, which must route the env-reference check through the `gates.sh` dispatcher rather than leave it unreachable
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh env-reference    # announces the stage it dispatched to
-  bash scripts/ci-local.sh no-such-stage    # exit 2, and the usage names the stage
+  bash scripts/gates.sh env-reference    # announces the stage it dispatched to
+  bash scripts/gates.sh no-such-stage    # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] env-reference`; an unknown stage exits 2 and lists `env-reference` among the stages it knows — one list, derived from the `ci_*` functions, so both answers die together
-- **why** — a generated page only stays current if something refuses it once it is not, and the refusal is only a gate if `ci-local.sh` dispatches to it. Whether the page is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
+- **expect** — the stage is reachable through the dispatcher and announces itself as `[gates] env-reference`; an unknown stage exits 2 and lists `env-reference` among the stages it knows — one list, derived from the `ci_*` functions, so both answers die together
+- **why** — a generated page only stays current if something refuses it once it is not, and the refusal is only a gate if `gates.sh` dispatches to it. Whether the page is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
 
 ## `test_epic_auto_transition_e2e.py`
 
@@ -1244,18 +1198,81 @@ as a claim to check, not as evidence.
 
 ## `test_gate_primitive.py`
 
-*pins HATS-1604, HATS-1601*
+*pins HATS-1604, HATS-1878*
 
-- **flow** — a gate script asking whether this tree already earned a marker
+- **flow** — a thin gate script on the checks channel, judging the tree a card puts into master
 - **cmds**
 
   ```console
-  bash -c '. lib/gate-marker.sh; gate_marker_write done-gate . <tree> ...'
+  AI_HATS_WORKTREE_PATH=<wt> hooks/done-gate.sh
+  hooks/done-gate.sh --stages
   bash -c '. lib/gate.sh; gate_exit checks refuse'
   ```
 
-- **expect** — the marker keys on the TREE, carries the composition it certifies, and one primitive maps an outcome onto each channel's exit codes
-- **why** — the discipline was hand-written twice with a diverging exit contract, and a commit-keyed marker made every --no-ff merge pay twice
+- **expect** — a card with no code passes; a live worktree is judged by ITS scripts/gates.sh against the stages the gate declares, and refused with the missing ones and the command that earns them; a merged card is judged by its merge commit
+- **why** — a gate used to be sixty lines that differed from its siblings in two strings; a few-line declaration over one primitive cannot drift
+
+## `test_gates_check_run.py`
+
+*pins HATS-1878*
+
+- **flow** — the gate primitive — a requirement over stages, and the run that meets it
+- **cmds**
+
+  ```console
+  scripts/gates.sh check [--rev <commit>] <stage>...
+  scripts/gates.sh run [--rev <commit>] [--fresh] <stage>...
+  scripts/gates.sh subject [--rev <commit>]
+  ```
+
+- **expect** — `check` lists what lacks a marker and never calls the runner; `run` runs only the unmarked, stamps each green stage for the SUBJECT tree, and judges a commit in a one-shot scratch worktree when the checkout is dirty or its HEAD is not the subject
+- **why** — a per-GATE, all-or-nothing marker made a wider gate re-run what a narrower one had earned; a run "here" judged whatever the desk held
+
+## `test_gates_prepare.py`
+
+*pins HATS-1664*
+
+- **flow** — the gate primitive making a scratch checkout of a merge commit runnable
+- **cmds**
+
+  ```console
+  bash scripts/gates.sh --prepare
+  ```
+
+- **expect** — the dispatcher delegates to the worktree-venv hook of the tree it is preparing, and leaves an already-usable venv untouched
+- **why** — a checkout minted by `git worktree add` has no .venv, so every real-subprocess stage would exercise the MAIN checkout's installed code while claiming to judge the commit
+
+## `test_gates_prose_refs.py`
+
+*pins HATS-1825*
+
+- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a path, a library prefix, a section or a code symbol named in library prose no longer resolves
+- **cmds**
+
+  ```console
+  bash scripts/gates.sh prose-refs      # announces the stage it dispatched to
+  bash scripts/gates.sh no-such-stage   # exit 2, and the usage names the stage
+  hooks/merge-gate.sh --stages              # the stage is part of a gate
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] prose-refs`, states on every run what it does NOT cover, and is named in the merge-gate composition. Whether the live corpus is INTACT belongs to the stage, not here (HATS-1714/1716) — the refusal is proved instead against a planted tree, which no sibling session can change
+- **why** — the checker's own silence is the thing under test. HATS-1823 measured 21 references in this library that did not resolve, and every gate in the repo stayed green through all of them, because none reads prose. A checker that is wired but never refuses anything reproduces exactly that.
+
+## `test_gates_ticket_ids.py`
+
+*pins HATS-1853*
+
+- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a tracker id has crept back into prose the library ships to other projects
+- **cmds**
+
+  ```console
+  bash scripts/gates.sh ticket-ids           # announces the stage it dispatched to
+  bash scripts/gates.sh no-such-stage        # exit 2, and the usage names the stage
+  hooks/merge-gate.sh --stages              # the stage is part of a gate
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] ticket-ids`, reports on every run what it does NOT cover and how many ids the pattern still finds where history lives, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
+- **why** — the checker's own silence is the thing under test. 177 ids had accumulated in this library while a rule actively prescribed the form, and every gate stayed green through all of them because none read prose for what it must NOT carry. A checker that is wired but never refuses anything reproduces exactly that, and the ONE id this repo legitimately keeps is the reason a blanket "no matches ever" assertion would not do.
 
 ## `test_githooks_argv_contract.py`
 
@@ -1371,8 +1388,8 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh unit
-  bash scripts/ci-local.sh unit
+  bash scripts/gates.sh unit
+  bash scripts/gates.sh unit
   ```
 
 - **expect** — both runs detect a test-installed provider, ignore caller-only providers, and leave the caller virtual environment and checkout unchanged
@@ -1756,7 +1773,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh lint
+  bash scripts/gates.sh lint
   ```
 
 - **expect** — the gate exits non-zero and names that file, instead of reporting green
@@ -1784,8 +1801,8 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh master-ci
-  bash scripts/ci-local.sh --stages done-gate
+  bash scripts/gates.sh master-ci
+  hooks/done-gate.sh --stages
   ```
 
 - **expect** — a green master passes; a red one refuses with exit 1, names the conclusion and the run url, and points at the one override; the override lets the card that fixes master through; and every reason the check cannot answer (no gh, gh refusing, a run still going) is ANNOUNCED, never silent
@@ -1990,27 +2007,18 @@ as a claim to check, not as evidence.
 
 ## `test_prepush_e2e_master_gate.py`
 
-*pins HATS-550, HATS-686*
+*pins HATS-550, HATS-686, HATS-1878*
 
-- **flow** — a maintainer pushes to master, and the pre-push hook decides from a stored marker whether the e2e tier has already passed for this content
+- **flow** — a maintainer pushing to master, gated by git's pre-push hook
 - **cmds**
 
   ```console
-  git push origin master    # allowed only with a green marker for the pushed tree
+  git push origin master           # allowed only with every stage the hook declares marked
+  scripts/run-e2e-gate.sh          # earns the markers out of band, one per stage
   ```
 
-- **expect** — a non-master target, a branch deletion and an empty stdin are all no-ops; a master push is allowed only when a pass-marker keyed to the TREE of the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is blocked when that marker is absent, keyed to another tree, or carries a body `tree=` disagreeing with its own filename; in a mixed payload the master line still needs its own marker
-- **why** — the marker is the only evidence the tier ever ran — honour one written for different content and the gate certifies code nobody tested; keyed by tree since HATS-1601, so a commit that only re-parents an already-judged tree is not re-judged
-
-- **flow** — the same maintainer runs the gate itself, which must clear the cheap stages of the push-gate composition before spending the tier's runtime, then record the marker
-- **cmds**
-
-  ```console
-  bash scripts/run-e2e-gate.sh    # thin wrapper over the hook's --run mode
-  ```
-
-- **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep reaps provably-dead cruft by default and escalates to `--force` only when opted into; and the wrapper errors when the hook is absent
-- **why** — pre-push runs while git holds the GitHub SSH connection and is killed at ~30s, so the tier cannot run there — splitting check from run is what makes the gate possible at all, and a marker written from a dirty tree or a failed run certifies something that was never green
+- **expect** — check mode reads the pre-push protocol, ignores non-master lines, and asks the project's own `gates.sh check` about each pushed commit's TREE; run mode runs only the unmarked stages, stops at the first red, and stamps each green one for the commit it judged
+- **why** — GitHub closes the push connection ~30s in, so the tier runs out of band and the per-stage markers are the only evidence it ran
 
 ## `test_pretooluse_hook_cwd_resolution.py`
 
@@ -3100,8 +3108,8 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh shellcheck
-  bash scripts/ci-local.sh --stages merge-gate
+  bash scripts/gates.sh shellcheck
+  hooks/merge-gate.sh --stages
   ```
 
 - **expect** — the stage is green on this tree and says how many files it read; a script with a real warning is refused at severity `warning`; and when shellcheck is not installed the stage ANNOUNCES the skip instead of passing quietly
@@ -3187,8 +3195,8 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh e2e-catalog   # under an interpreter with no click
-  bash scripts/ci-local.sh bidi          # under the real one
+  bash scripts/gates.sh e2e-catalog   # under an interpreter with no click
+  bash scripts/gates.sh bidi          # under the real one
   ```
 
 - **expect** — a stage that could not import is reported as BROKEN with exit 3, naming the missing module and saying nothing above it is a finding; a stage that ran and found something keeps exit 1; a green stage is untouched
@@ -3676,8 +3684,8 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh wheel-contents
-  bash scripts/ci-local.sh --stages merge-gate
+  bash scripts/gates.sh wheel-contents
+  hooks/merge-gate.sh --stages
   ```
 
 - **expect** — the stage is green on this tree; with the library's sdist `force-include` removed it names the six `hooks/consent_gate` files that no published wheel ever carried; and `merge-gate` names the stage

@@ -3,11 +3,11 @@
 flow:   a maintainer runs the pre-push bundle, which must refuse the push when a
         tracker id has crept back into prose the library ships to other projects
 cmds:
-    bash scripts/ci-local.sh ticket-ids           # announces the stage it dispatched to
-    bash scripts/ci-local.sh no-such-stage        # exit 2, and the usage names the stage
-    bash scripts/ci-local.sh --stages merge-gate  # the stage is part of a gate
+    bash scripts/gates.sh ticket-ids           # announces the stage it dispatched to
+    bash scripts/gates.sh no-such-stage        # exit 2, and the usage names the stage
+    hooks/merge-gate.sh --stages              # the stage is part of a gate
 expect: the stage is reachable through the dispatcher, announces itself as
-        `[ci-local] ticket-ids`, reports on every run what it does NOT cover and
+        `[gates] ticket-ids`, reports on every run what it does NOT cover and
         how many ids the pattern still finds where history lives, and is named in
         the merge-gate composition. Whether the live corpus is clean belongs to
         the stage; the refusal is proved against a planted tree instead, which no
@@ -36,7 +36,7 @@ LIB_RELPATH = "packages/ai-hats-library/src/ai_hats_library"
 
 def _stage(name: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603
-        ["bash", "scripts/ci-local.sh", name, *args],  # noqa: S607
+        ["bash", "scripts/gates.sh", name, *args],  # noqa: S607
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -66,10 +66,11 @@ def _plant(tmp_path: Path, body: str) -> Path:
 
 
 def test_the_gate_dispatches_to_the_ticket_check():
-    """The announce IS the dispatch proof: an unwired stage exits 2 without it."""
+    """HATS-1853: the announce IS the dispatch proof — an unwired stage exits 2
+    without it."""
     done = _stage("ticket-ids")
     combined = done.stdout + done.stderr
-    assert "[ci-local] ticket-ids" in combined, combined
+    assert "[gates] ticket-ids" in combined, combined
     assert done.returncode != 2, combined
 
 
@@ -101,9 +102,15 @@ def test_unknown_stage_lists_the_ticket_stage():
 
 def test_the_stage_is_part_of_the_merge_gate():
     """Wired but ungated gates nothing."""
-    composition = _stage("--stages", "merge-gate")
-    combined = composition.stdout + composition.stderr
-    assert "ticket-ids" in combined, combined
+    gate = (
+        Path(__file__).resolve().parents[2]
+        / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        / "hooks/merge-gate.sh"
+    )
+    composition = subprocess.run(
+        ["bash", str(gate), "--stages"], capture_output=True, text=True, check=True
+    )
+    assert "ticket-ids" in composition.stdout.split(), composition.stdout
 
 
 def test_the_checker_refuses_a_planted_id_and_spares_the_placeholder(tmp_path: Path):

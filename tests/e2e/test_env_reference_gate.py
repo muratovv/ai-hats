@@ -1,16 +1,16 @@
 """e2e (HATS-1872)
 
 flow:   a maintainer runs the pre-push gate, which must route the env-reference
-        check through the `ci-local.sh` dispatcher rather than leave it unreachable
+        check through the `gates.sh` dispatcher rather than leave it unreachable
 cmds:
-    bash scripts/ci-local.sh env-reference    # announces the stage it dispatched to
-    bash scripts/ci-local.sh no-such-stage    # exit 2, and the usage names the stage
+    bash scripts/gates.sh env-reference    # announces the stage it dispatched to
+    bash scripts/gates.sh no-such-stage    # exit 2, and the usage names the stage
 expect: the stage is reachable through the dispatcher and announces itself as
-        `[ci-local] env-reference`; an unknown stage exits 2 and lists
+        `[gates] env-reference`; an unknown stage exits 2 and lists
         `env-reference` among the stages it knows — one list, derived from the
         `ci_*` functions, so both answers die together
 why:    a generated page only stays current if something refuses it once it is
-        not, and the refusal is only a gate if `ci-local.sh` dispatches to it.
+        not, and the refusal is only a gate if `gates.sh` dispatches to it.
         Whether the page is CURRENT belongs to the stage, not here: this runs
         against the live checkout while sibling workers write it (HATS-1714)
 """
@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _stage(name: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", name],
+        ["bash", "scripts/gates.sh", name],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -45,7 +45,7 @@ def test_gate_dispatches_to_the_env_reference_check():
     """
     done = _stage("env-reference")
     combined = done.stdout + done.stderr
-    assert "[ci-local] env-reference" in combined, combined
+    assert "[gates] env-reference" in combined, combined
     assert done.returncode != 2, combined
 
 

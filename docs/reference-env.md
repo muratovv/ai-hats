@@ -5,7 +5,7 @@
 Every environment variable you may SET to configure ai-hats, with its type, its
 default and one line on what it does. Rendered from the declarations the code
 itself reads by `scripts/gen_env_reference.py`, kept current by the `env-reference`
-stage of `scripts/ci-local.sh`.
+stage of `scripts/gates.sh`.
 
 No value here is a copy. A budget's default is the very object its reader
 consults (`BUDGETS`, declared in the distribution that reads it), and a path's
@@ -40,7 +40,7 @@ a typo in a budget must never disarm the bound nor fail a session.
 | `AI_HATS_COMMENT_MAX_LINES` | int | 3 | Consecutive standalone `#` comment lines allowed before the edit-time lint speaks up. |
 | `AI_HATS_DOCSTRING_MAX_LINES` | int | 10 | Lines a docstring may run to before that same lint flags it. |
 | `AI_HATS_DOCSTRING_MAX_CHARS` | int | 700 | Characters a docstring may run to before that same lint flags it. |
-| `AI_HATS_GATE_MARKER_KEEP_DAYS` | int | 30 | Days a quality-gate marker survives the sweep before it is deleted. |
+| `AI_HATS_GATE_MARKER_KEEP_DAYS` | int | 30 | Days a stage marker survives the sweep before it is deleted. |
 
 ## Paths — ours (12)
 

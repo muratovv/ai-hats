@@ -148,5 +148,5 @@ def test_a_gate_that_cannot_find_the_pin_must_not_pass(tree: Path):
 
 
 def test_the_real_repo_is_self_consistent():
-    """The gate runs against this checkout in ci-local; keep it honest here too."""
+    """The gate runs against this checkout in gates.sh; keep it honest here too."""
     assert mod.violations(REPO_ROOT, mod.read_pin(REPO_ROOT)) == []

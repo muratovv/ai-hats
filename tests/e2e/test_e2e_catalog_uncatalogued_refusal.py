@@ -2,7 +2,7 @@
 
 flow:   the e2e catalog generator refuses an uncatalogued test file unless bypassed
 cmds:
-    bash scripts/ci-local.sh e2e-catalog
+    bash scripts/gates.sh e2e-catalog
 expect: gen_e2e_catalog.py exits non-zero naming uncatalogued files and remedy guidance
 why:    without uncatalogued file refusal, new tests added without docstrings bypass
         the catalog check silently

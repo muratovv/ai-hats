@@ -12,7 +12,7 @@ Every e2e test belongs to one of three tiers — pick the cheapest one
 that still exercises the surface under test. What the tier covers today,
 as user flows, is `CATALOG.md` — rendered from each test's docstring block
 by `scripts/gen_e2e_catalog.py` and kept current by the `e2e-catalog` stage
-of `scripts/ci-local.sh`.
+of `scripts/gates.sh`.
 
 | Tier | Fixture                                      | Wall-clock budget                          | Quota               | Use for                                                                                                |
 | ---- | -------------------------------------------- | ------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------ |

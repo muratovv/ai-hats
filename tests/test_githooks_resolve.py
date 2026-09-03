@@ -353,7 +353,7 @@ def _captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Record what `main` forwards as the chain's argv, running no gate.
 
     Deliberately subprocess-free so these carry NO `integration` marker: the
-    defect is version-dependent, and `ci-local.sh unit` — the only stage running
+    defect is version-dependent, and `gates.sh unit` — the only stage running
     3.11/3.12 — deselects `-m integration`. Marked, they would exercise the bug
     on no CI leg at all (HATS-1519 rework).
     """

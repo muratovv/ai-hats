@@ -3,7 +3,7 @@
 flow:   a maintainer running the local lint gate over a tree whose one
         unformatted file sits outside src/ and tests/
 cmds:
-    bash scripts/ci-local.sh lint
+    bash scripts/gates.sh lint
 expect: the gate exits non-zero and names that file, instead of reporting green
 why:    `ruff check` walked the whole tree while `ruff format --check` walked
         only src/ and tests/, so a file under packages/ earned a green gate
@@ -32,7 +32,7 @@ FORMATTED = "z = [1, 2]\n"
 
 
 def _tree(root: Path, dirty_at: str) -> None:
-    """A minimal repo the real `ci-local.sh lint` can run against.
+    """A minimal repo the real `gates.sh lint` can run against.
 
     Carries the project's own `pyproject.toml`, so the ruff configuration under
     test is the shipped one, and the real dispatcher — nothing about the stage
@@ -40,7 +40,7 @@ def _tree(root: Path, dirty_at: str) -> None:
     narrow scope must be GREEN, or a failure would prove nothing about scope.
     """
     (root / "scripts").mkdir(parents=True)
-    shutil.copy2(REPO_ROOT / "scripts" / "ci-local.sh", root / "scripts" / "ci-local.sh")
+    shutil.copy2(REPO_ROOT / "scripts" / "gates.sh", root / "scripts" / "gates.sh")
     shutil.copy2(REPO_ROOT / "pyproject.toml", root / "pyproject.toml")
     for clean in ("src/ok.py", "tests/ok.py"):
         (root / clean).parent.mkdir(parents=True, exist_ok=True)
@@ -53,7 +53,7 @@ def _tree(root: Path, dirty_at: str) -> None:
 def _lint(root: Path) -> subprocess.CompletedProcess[str]:
     """Run the lint stage exactly as the gate does, on this interpreter."""
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", "lint"],
+        ["bash", "scripts/gates.sh", "lint"],
         cwd=root,
         env={"PATH": "/usr/bin:/bin", "PYTHON": sys.executable},
         capture_output=True,

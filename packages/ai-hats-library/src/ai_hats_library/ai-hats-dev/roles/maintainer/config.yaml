@@ -28,20 +28,18 @@ composition:
   # master: `apps.rack.tasks` is the FSM automerge and `apps.wt` is a direct
   # `ai-hats wt merge`, and a gate that holds only one of them is the asymmetry
   # that started this epic. Each check is a marker lookup; the suites
-  # run out of band via `make merge-gate` / `make done-gate`.
+  # run out of band via `make <gate>`.
   #
-  # THREE GATES, one per edge, because the edges ask different
-  # questions (ADR-0023 D3/D4). `->review`: is this work fit for a human to spend
-  # time on — that edge asked nothing for a long time, so a card reached a
-  # reviewer on the agent's word that the suite was green. `->merge`:
-  # is this branch fit to enter master — the agent is alone at that refusal.
-  # `->done`: is master green after this card, judged on the MERGE RESULT — the
-  # worktree while it lives, the merge commit once it does not — which is why the
-  # edge stopped passing hollow. `review-gate` and `merge-gate` name the same
-  # composition and both stay a subset of `done-gate`'s, so one run pays for all
-  # three (D5).
+  # A GATE PER EDGE, each a few-line script declaring the stages it requires
+  # and handing them to the project's `scripts/gates.sh` (ADR-0023 D6). This
+  # is the only place that says where a gate applies. `->review`: is this work
+  # fit for a human to spend time on. `->merge`: is this branch fit to enter
+  # master — the agent is alone at that refusal. `->done`: is master green after
+  # this card, judged on the MERGE RESULT — the worktree while it lives, the
+  # merge commit once it does not. Markers are per stage, so a wider gate
+  # re-runs nothing a narrower one already earned (D5).
   #
-  # Two rows rather than one list of points: the app owns the
+  # Two apps rather than one list of points: the app owns the
   # grammar above `run:`, so a row belongs to exactly one app. `apps.rack.tasks`
   # names the backlog it gates, which is what keeps it off a sibling backlog.
   #
@@ -52,13 +50,13 @@ composition:
   #
   # An earlier pass shipped the edge half and withdrew it an hour later for
   # two reasons, both now closed: the gate fired on every backlog the rack CLI
-  # touched (the script decides that itself now — AI_HATS_TASKS_DIR, see
-  # done-gate.sh), and a session predating the binding had no snapshot to
+  # touched (the hook decides that itself now — AI_HATS_TASKS_DIR, see
+  # lib/gate.sh), and a session predating the binding had no snapshot to
   # resolve from (there is no separate snapshot any more).
   #
-  # Role-scoped on purpose (ADR-0019 D7): each gate demands a composition of its
-  # own name from scripts/ci-local.sh and refuses a project that names none, so
-  # they belong to a role only this codebase wears — never to a base trait.
+  # Role-scoped on purpose (ADR-0019 D7): each gate demands its row in the
+  # project's scripts/gates.sh and refuses a project that has none, so they
+  # belong to a role only this codebase wears — never to a base trait.
   #
   # `at: ['->done']` is EVERY road into the state, not just the review one
   # Measured: the worktree teardown-merge fires on 8 of the 8 edges

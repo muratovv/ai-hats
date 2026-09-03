@@ -2,8 +2,8 @@
 
 flow:   a maintainer publishes a package whose sdist silently dropped a file
 cmds:
-    bash scripts/ci-local.sh wheel-contents
-    bash scripts/ci-local.sh --stages merge-gate
+    bash scripts/gates.sh wheel-contents
+    hooks/merge-gate.sh --stages
 expect: the stage is green on this tree; with the library's sdist
         `force-include` removed it names the six `hooks/consent_gate` files
         that no published wheel ever carried; and `merge-gate` names the stage
@@ -60,7 +60,7 @@ def test_the_stage_is_green_on_this_tree():
     this green case red."""
     _require_uv()
     run = subprocess.run(
-        ["bash", "scripts/ci-local.sh", "wheel-contents"],
+        ["bash", "scripts/gates.sh", "wheel-contents"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -68,7 +68,7 @@ def test_the_stage_is_green_on_this_tree():
     )
     combined = run.stdout + run.stderr
     assert run.returncode == 0, combined
-    assert "[ci-local] wheel-contents" in combined, combined
+    assert "[gates] wheel-contents" in combined, combined
     assert "ai-hats-library" in combined, combined
 
 
@@ -108,9 +108,13 @@ def test_the_release_blocker_is_named_when_the_fix_is_reverted():
 
 
 def test_the_merge_gate_names_the_stage():
-    """The gate runs what `--stages` names, so dropping it here disarms it."""
+    """The gate runs what its `--stages` names, so dropping it here disarms it."""
+    hook = (
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        "/hooks/merge-gate.sh"
+    )
     listed = subprocess.run(
-        ["bash", "scripts/ci-local.sh", "--stages", "merge-gate"],
+        ["bash", hook, "--stages"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,

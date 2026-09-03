@@ -239,11 +239,11 @@ def test_a_make_test_target_resolves_its_recipes_runner(chain):
 
 @pytest.mark.integration
 def test_a_script_named_through_bash_is_still_the_script(chain):
-    """`bash scripts/ci-local.sh` runs it as surely as naming it does."""
+    """`bash scripts/gates.sh` runs it as surely as naming it does."""
     project, worktree, settings, env = chain
     verdict = run_chain(
         project,
-        "bash scripts/ci-local.sh",
+        "bash scripts/gates.sh",
         settings=settings,
         env={**env, "PATH": f"{project}/.venv/bin:{env.get('PATH', '')}"},
         cwd=worktree,

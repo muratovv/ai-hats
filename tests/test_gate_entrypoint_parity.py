@@ -1,6 +1,6 @@
 """Every gate runs through one entry point, so local and CI cannot drift apart.
 
-HATS-725/1372: `scripts/ci-local.sh` is the single source of the check commands.
+HATS-725/1372: `scripts/gates.sh` is the single source of the check commands.
 A Makefile target or CI job that spells out `ruff`/`pytest`/`bandit` itself is
 free to disagree with it — which is how `make lint` came to check a narrower
 path set than CI, and how the formatter check ended up running in neither.
@@ -17,7 +17,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Commands that decide pass/fail for a gate. Spelling one of these out anywhere
-# but ci-local.sh forks the definition of "the gate".
+# but gates.sh forks the definition of "the gate".
 _RUNNERS = (
     "ruff",
     "pytest",
@@ -36,17 +36,17 @@ _RUNNERS = (
 
 # The two sanctioned entry points: the CI stage dispatcher and the thin e2e
 # wrapper that delegates to the pre-push gate's run mode.
-_ENTRY_POINTS = ("scripts/ci-local.sh", "scripts/run-e2e-gate.sh")
+_ENTRY_POINTS = ("scripts/gates.sh", "scripts/run-e2e-gate.sh")
 
 _RUNNER_RE = re.compile(
     r"(?:^|[\s;&|(=/])(?:python[\d.]*\s+-m\s+)?(" + "|".join(map(re.escape, _RUNNERS)) + r")\b"
 )
 _INSTALL_RE = re.compile(r"\b(?:pip[\d.]*|uv)\s+(?:pip\s+)?install\b")
 
-# A stage named by a caller: `bash scripts/ci-local.sh <stage>` in ci.yml, or the
+# A stage named by a caller: `bash scripts/gates.sh <stage>` in ci.yml, or the
 # Makefile's `$(CI_LOCAL) <stage>`. `--stages <gate>` asks a different question.
 _STAGE_CALL_RE = re.compile(
-    r"(?:bash\s+scripts/ci-local\.sh|\$\(CI_LOCAL\))\s+(?!--)([a-z0-9][a-z0-9-]*)"
+    r"(?:bash\s+scripts/gates\.sh|\$\(CI_LOCAL\))\s+(?!--)([a-z0-9][a-z0-9-]*)"
 )
 
 
@@ -96,7 +96,7 @@ def test_python_dash_m_form_is_flagged():
 
 
 def test_delegation_to_the_dispatcher_passes():
-    assert raw_gate_invocations("bash scripts/ci-local.sh lint\n") == []
+    assert raw_gate_invocations("bash scripts/gates.sh lint\n") == []
 
 
 def test_installing_a_runner_is_not_invoking_it():
@@ -118,16 +118,16 @@ jobs:
   lint:
     steps:
       - name: ruff check
-        run: bash scripts/ci-local.sh lint
+        run: bash scripts/gates.sh lint
 """
-    assert workflow_run_steps(workflow) == "bash scripts/ci-local.sh lint"
+    assert workflow_run_steps(workflow) == "bash scripts/gates.sh lint"
 
 
 def test_makefile_delegates_every_gate():
     offenders = raw_gate_invocations(makefile_recipes((REPO_ROOT / "Makefile").read_text()))
     assert not offenders, (
         "Makefile spells out gate commands instead of delegating to "
-        f"scripts/ci-local.sh — they will drift from CI: {offenders}"
+        f"scripts/gates.sh — they will drift from CI: {offenders}"
     )
 
 
@@ -136,14 +136,14 @@ def test_ci_workflow_delegates_every_gate():
     offenders = raw_gate_invocations(workflow_run_steps(workflow))
     assert not offenders, (
         "ci.yml runs a gate command directly instead of calling a "
-        f"scripts/ci-local.sh stage: {offenders}"
+        f"scripts/gates.sh stage: {offenders}"
     )
 
 
 def _known_stages() -> set[str]:
     """The dispatcher's own answer: it prints every stage it knows on an unknown one."""
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "no-such-stage"],
+        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "no-such-stage"],
         capture_output=True,
         text=True,
     )
@@ -164,15 +164,22 @@ def test_every_caller_names_a_stage_the_dispatcher_knows():
     )
     unknown = sorted(called - _known_stages() - {"all"})
     assert not unknown, (
-        "ci.yml / Makefile call a ci-local.sh stage the dispatcher does not "
+        "ci.yml / Makefile call a gates.sh stage the dispatcher does not "
         f"know — that job runs nothing and exits 2: {unknown}"
     )
 
 
+_GATE_HOOKS = (
+    REPO_ROOT
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+    / "hooks"
+)
+
+
 def _composition(gate: str) -> list[str]:
-    """What the dispatcher itself says the gate runs — never a literal here."""
+    """What the gate script itself says it requires — never a literal here."""
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "--stages", gate],
+        ["bash", str(_GATE_HOOKS / f"{gate}.sh"), "--stages"],
         capture_output=True,
         text=True,
         check=True,
@@ -180,26 +187,11 @@ def _composition(gate: str) -> list[str]:
     return out.stdout.split()
 
 
-def test_the_merge_gate_is_a_subset_of_the_done_gate():
-    """Absorption (ADR-0023 D5) is what makes a typical card cost one run and not
-    two: `->done` includes `->merge`, so the fuller run stamps both. Nothing else
-    enforces the nesting — the two compositions are separate lines, and an edit
-    to either can break it in silence."""
-    merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
-
-    assert merge <= done, (
-        "merge-gate must stay a subset of done-gate or one run stops paying for "
-        f"both — stages only merge-gate demands: {sorted(merge - done)}"
-    )
-
-
 def test_the_done_gate_demands_what_only_it_can_ask():
-    """ADR-0023 D4 splits the two edges by question, and the split is REAL only
-    while `->done` carries stages `->merge` does not.
-
-    Shrinking a composition is the silent direction: markers already on disk stay
-    valid, so the gate keeps passing and nothing turns red (HATS-1601).
-    """
+    """ADR-0023 D4 splits the edges by question, and the split is REAL only
+    while `->done` carries stages `->merge` does not. Shrinking a set is the
+    silent direction: markers already on disk stay valid (HATS-1601). The
+    nesting itself is `tests/test_gates_table.py`'s."""
     merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
 
     assert done - merge == {"integration", "master-ci", "merge-smoke"}, (
@@ -210,66 +202,17 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     )
 
 
-def _gate_roster() -> list[str]:
-    """The roster the dispatcher prints when it refuses an unknown gate."""
-    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "--stages", "no-such-gate"],
-        capture_output=True,
-        text=True,
-        check=False,
+def test_every_gate_the_makefile_earns_is_a_gate_script_and_vice_versa():
+    """`make <gate>` runs `hooks/<gate>.sh --run`; a target with no script is a
+    door to nowhere, and a script with no target cannot be earned by hand. The
+    roster is the hooks directory, so nothing here is a hand-kept list."""
+    roster = {p.stem for p in _GATE_HOOKS.glob("*-gate.sh")}
+    assert roster, "the skill ships no gate script at all"
+    targets = set(
+        re.findall(r"^\s*\$\(call run_gate,([a-z-]+)\)", (REPO_ROOT / "Makefile").read_text(), re.M)
     )
-    text = out.stdout + out.stderr
-    assert "(gates:" in text, text
-    return text.split("(gates:", 1)[1].split(")", 1)[0].split()
-
-
-def test_every_gate_the_roster_names_can_be_resolved():
-    """The roster is what a lost reader is handed. A name on it that `--stages`
-    cannot resolve sends them to a gate that does not exist — which is what three
-    hand-kept copies of the list invited before HATS-1877 made it one."""
-    roster = _gate_roster()
-    assert roster, "the dispatcher named no gates at all"
-    for gate in roster:
-        assert _composition(gate), f"the roster names `{gate}`, which resolves to nothing"
-
-
-def test_the_review_gate_demands_exactly_what_the_merge_gate_does():
-    """HATS-1877 put a gate on the hand-off, and made it name `merge-gate`'s set
-    rather than a lighter one of its own.
-
-    Two reasons, and both break if these drift apart. The marker is read across
-    gates by stage SUBSET, so equality is what lets one run satisfy both edges
-    instead of the agent paying twice. And the objection that created this gate
-    was that tests had not necessarily run — a review composition that dropped
-    `unit` to stay fast would answer the wrong question.
-    """
-    review, merge = set(_composition("review-gate")), set(_composition("merge-gate"))
-
-    assert review == merge, (
-        "`review-gate` and `merge-gate` must name the same set — one run pays "
-        f"for both only while they do. Only in review: {sorted(review - merge)}; "
-        f"only in merge: {sorted(merge - review)}"
-    )
-    assert "unit" in review, (
-        "the ->review gate exists because the suite had not necessarily run; "
-        "a composition without `unit` cannot ask that"
-    )
-
-
-def test_the_review_gate_is_a_subset_of_the_done_gate():
-    """Absorption again (ADR-0023 D5): a `done-gate` run must cover the hand-off
-    it already contains, or closing a card in one sitting pays three times."""
-    review, done = set(_composition("review-gate")), set(_composition("done-gate"))
-
-    assert review <= done, (
-        "review-gate must stay a subset of done-gate — stages only review-gate "
-        f"demands: {sorted(review - done)}"
-    )
-
-
-def test_preparing_a_checkout_is_never_part_of_a_verdict():
-    """`--prepare` mints a venv so the stages run against THIS tree (HATS-1664).
-    It asserts nothing, so a gate naming it would be counting a precondition as
-    evidence — and a marker would then certify that a venv got built."""
-    for gate in ("merge-gate", "done-gate", "push-gate"):
-        assert "prepare" not in _composition(gate), f"{gate} names a precondition as a stage"
+    assert targets, "the Makefile earns no gate at all"
+    assert targets == roster, {
+        "make target without a gate script": sorted(targets - roster),
+        "gate script without a make target": sorted(roster - targets),
+    }

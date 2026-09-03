@@ -510,7 +510,7 @@ def render(rows: list[Row], pending: list[str]) -> str:
         "user would actually type. Source of truth is the structured block in each",
         "test's module docstring; this file is rendered from it by",
         "`scripts/gen_e2e_catalog.py` and kept current by the `e2e-catalog` stage of",
-        "`scripts/ci-local.sh`.",
+        "`scripts/gates.sh`.",
         "",
         "That gate proves this view matches the docstrings. It cannot prove a",
         "docstring still matches its own test — both go stale together. Treat a row",

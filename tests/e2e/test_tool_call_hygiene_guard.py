@@ -147,7 +147,7 @@ def test_noncovered_command_forms_get_no_nudge(command):
         "pytest tests/ || true",
         "ruff check src/ | tail",
         "make test | grep Error",
-        "ci-local.sh | tail",
+        "gates.sh | tail",
         "npm test | head",
         'python -m pytest tests/ > /tmp/gate.log 2>&1; echo "EXIT=$?"',
         # bash-only spelling with no bash in sight: in the tool's zsh this is

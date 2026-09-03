@@ -1,50 +1,27 @@
-"""e2e (HATS-550, HATS-686)
+"""e2e (HATS-550, HATS-686, HATS-1878)
 
-flow:   a maintainer pushes to master, and the pre-push hook decides from a
-        stored marker whether the e2e tier has already passed for this content
+flow:   a maintainer pushing to master, gated by git's pre-push hook
 cmds:
-    git push origin master    # allowed only with a green marker for the pushed tree
-expect: a non-master target, a branch deletion and an empty stdin are all
-        no-ops; a master push is allowed only when a pass-marker keyed to the
-        TREE of the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/,
-        and is blocked when that marker is absent, keyed to another tree, or
-        carries a body `tree=` disagreeing with its own filename; in a mixed
-        payload the master line still needs its own marker
-why:    the marker is the only evidence the tier ever ran — honour one written
-        for different content and the gate certifies code nobody tested; keyed
-        by tree since HATS-1601, so a commit that only re-parents an
-        already-judged tree is not re-judged
-
-flow:   the same maintainer runs the gate itself, which must clear the cheap
-        stages of the push-gate composition before spending the tier's runtime,
-        then record the marker
-cmds:
-    bash scripts/run-e2e-gate.sh    # thin wrapper over the hook's --run mode
-expect: a lint failure blocks before the tier is reached and a unit failure
-        names the stage; a green preamble runs both stages and then the suite;
-        the marker is written on pass and on rc 5 (nothing selected), but never
-        on failure and never from a dirty tree; a missing pytest blocks; the
-        argv carries the tier's markers and folders, deselects quarantined
-        tests, and arms fail-closed venv strict mode, explaining a venv skip
-        only when that is actually the cause; xdist is used when available and
-        capped at a worker ceiling, falling back to serial without it; the tmp
-        sweep reaps provably-dead cruft by default and escalates to `--force`
-        only when opted into; and the wrapper errors when the hook is absent
-why:    pre-push runs while git holds the GitHub SSH connection and is killed
-        at ~30s, so the tier cannot run there — splitting check from run is what
-        makes the gate possible at all, and a marker written from a dirty tree
-        or a failed run certifies something that was never green
+    git push origin master           # allowed only with every stage the hook declares marked
+    scripts/run-e2e-gate.sh          # earns the markers out of band, one per stage
+expect: check mode reads the pre-push protocol, ignores non-master lines, and
+        asks the project's own `gates.sh check` about each pushed commit's TREE;
+        run mode runs only the unmarked stages, stops at the first red, and
+        stamps each green one for the commit it judged
+why:    GitHub closes the push connection ~30s in, so the tier runs out of band
+        and the per-stage markers are the only evidence it ran
 """
 
 from __future__ import annotations
 
 import os
-import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
@@ -52,27 +29,145 @@ HOOK = (
     / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
     / "git_hooks/pre-push-e2e-master.sh"
 )
-WRAPPER = REPO_ROOT / "scripts" / "run-e2e-gate.sh"
 ZERO = "0" * 40
-NEW_SHA = "1" * 40
 OLD_SHA = "2" * 40
 OTHER_SHA = "3" * 40
 
 
-# --- pytest stubs ----------------------------------------------------------
+def _push_gate_stages() -> list[str]:
+    out = subprocess.run(
+        ["bash", str(HOOK), "--stages"], capture_output=True, text=True, check=True
+    )
+    return out.stdout.split()
 
 
-def _make_pytest_stub(bindir: Path, exit_code: int) -> Path:
-    """Write a fake ``pytest`` on PATH that records argv and exits with ``exit_code``.
+# --- the sandbox -------------------------------------------------------------
 
-    The stub writes its argv to ``bindir/last_argv`` (so cases can assert
-    whether pytest was invoked at all) and the value of
-    ``AI_HATS_E2E_REQUIRE_VENV`` to ``bindir/last_require_venv`` (HATS-645).
-    """
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    env["GIT_CONFIG_SYSTEM"] = "/dev/null"
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True, env=env
+    )
+
+
+def _write_runner(where: Path, rcs: dict[str, int] | None = None) -> Path:
+    """A fake stage runner OUTSIDE the repo: every stage records itself and exits
+    as told (unset → green); `e2e` hands over to whatever `pytest` is on PATH,
+    so the tier's own invocation stays observable."""
+    arms = "".join(f"  {stage}) exit {rc} ;;\n" for stage, rc in (rcs or {}).items())
+    runner = where / "runner.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
+        f'printf "%s\\n" "$1" >> "{where / "stages_run"}"\n'
+        'case "$1" in\n'
+        f"{arms}"
+        '  e2e) exec pytest -m "(integration or smoke) and not quarantine and not live_agy" '
+        "tests/e2e/ tests/smoke/ -q ;;\n"
+        "esac\n"
+        "exit 0\n"
+    )
+    runner.chmod(0o755)
+    return runner
+
+
+def _git_repo(tmp_path: Path, rcs: dict[str, int] | None = None) -> Path:
+    """One commit holding the real `scripts/gates.sh`; the fake stage runner sits
+    beside the repo and reaches it through GATES_STAGE_RUNNER."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    (repo / "f").write_text("x")
+    (repo / "scripts").mkdir()
+    shutil.copy(REPO_ROOT / "scripts" / "gates.sh", repo / "scripts" / "gates.sh")
+    _write_runner(tmp_path, rcs)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "init")
+    return repo
+
+
+def _stages_run(repo: Path) -> list[str]:
+    log = repo.parent / "stages_run"
+    return log.read_text().split() if log.exists() else []
+
+
+def _store(repo: Path) -> Path:
+    return repo / ".git" / "ai-hats" / "stages"
+
+
+def _marked(repo: Path, tree: str) -> set[str]:
+    where = _store(repo) / tree
+    return {p.name for p in where.iterdir()} if where.is_dir() else set()
+
+
+def _write_markers(repo: Path, tree: str, stages: list[str] | None = None) -> None:
+    """Plant markers the way the primitive writes them: one file per stage."""
+    where = _store(repo) / tree
+    where.mkdir(parents=True, exist_ok=True)
+    for stage in _push_gate_stages() if stages is None else stages:
+        (where / stage).write_text(f"tree={tree}\nstage={stage}\n")
+
+
+def _tree(repo: Path, rev: str = "HEAD") -> str:
+    return _git(repo, "rev-parse", f"{rev}^{{tree}}").stdout.strip()
+
+
+def _head(repo: Path) -> str:
+    return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def _env(repo: Path, bindir: Path | None) -> dict[str, str]:
+    """A bare PATH: system bash 3.2 on macOS, and no `python` — so the xdist
+    probe falls through to the `pytest` a case puts in `bindir`."""
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "GATES_STAGE_RUNNER": str(repo.parent / "runner.sh"),
+    }
+    if bindir is not None:
+        env["PATH"] = f"{bindir}:{env['PATH']}"
+    return env
+
+
+def _check(stdin: str, *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """The hook in CHECK mode: git's pre-push protocol on stdin."""
+    return subprocess.run(
+        ["bash", str(HOOK)],
+        input=stdin,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_env(cwd, None),
+    )
+
+
+def _run(bindir: Path | None, *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """The hook in RUN mode."""
+    return subprocess.run(
+        ["bash", str(HOOK), "--run"],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=_env(cwd, bindir),
+    )
+
+
+def _make_pytest_stub(bindir: Path, exit_code: int, *, xdist: bool = False) -> Path:
+    """A fake `pytest` on PATH: answers the `-VV` probe (with or without xdist),
+    records the tier's argv plus PYTEST_ADDOPTS and the venv switch, exits."""
     bindir.mkdir(parents=True, exist_ok=True)
+    banner = "plugins: xdist-3.8.0, cov-4.0" if xdist else "plugins: cov-4.0"
     stub = bindir / "pytest"
     stub.write_text(
         "#!/usr/bin/env bash\n"
+        f'if [[ "$1" == "-VV" ]]; then printf "%s\\n" "{banner}"; exit 0; fi\n'
         f'printf "%s\\n" "$@" ${{PYTEST_ADDOPTS:-}} > "{bindir}/last_argv"\n'
         f'printf "%s" "${{AI_HATS_E2E_REQUIRE_VENV:-<unset>}}" > "{bindir}/last_require_venv"\n'
         f"exit {exit_code}\n"
@@ -81,57 +176,12 @@ def _make_pytest_stub(bindir: Path, exit_code: int) -> Path:
     return stub
 
 
-def _make_pytest_stub_emitting(bindir: Path, exit_code: int, message: str) -> Path:
-    """Like :func:`_make_pytest_stub` but also prints ``message`` to stdout.
-
-    Lets a case feed the gate a controlled ``$output`` so the HATS-645
-    fail-closed conditional can be exercised without a real venv-tier failure.
-    """
-    bindir.mkdir(parents=True, exist_ok=True)
-    stub = bindir / "pytest"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        f'printf "%s\\n" "$@" ${{PYTEST_ADDOPTS:-}} > "{bindir}/last_argv"\n'
-        f"printf '%s\\n' {shlex.quote(message)}\n"
-        f"exit {exit_code}\n"
-    )
-    stub.chmod(0o755)
-    return stub
-
-
-def _make_xdist_aware_stub(bindir: Path, *, has_xdist: bool) -> Path:
-    """Fake ``pytest`` whose ``-VV`` banner advertises (or hides) xdist.
-
-    The hook probes ``pytest -VV | grep -qi xdist`` to decide whether to add
-    ``-n<N> --dist=loadgroup``. This stub answers that probe, and on the real
-    run records argv to ``bindir/last_argv`` and exits 0.
-    """
-    bindir.mkdir(parents=True, exist_ok=True)
-    stub = bindir / "pytest"
-    banner = "plugins: xdist-3.8.0, cov-4.0\n" if has_xdist else "plugins: cov-4.0\n"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        'if [[ "$1" == "-VV" ]]; then\n'
-        f'  printf "%s" "{banner}"\n'
-        "  exit 0\n"
-        "fi\n"
-        f'printf "%s\\n" "$@" ${{PYTEST_ADDOPTS:-}} > "{bindir}/last_argv"\n'
-        "exit 0\n"
-    )
-    stub.chmod(0o755)
-    return stub
-
-
 def _make_getconf_stub(bindir: Path, count: int) -> Path:
-    """Shim ``getconf`` so ``_NPROCESSORS_ONLN`` reports a fixed core count."""
     bindir.mkdir(parents=True, exist_ok=True)
     stub = bindir / "getconf"
     stub.write_text(
         "#!/usr/bin/env bash\n"
-        'if [[ "$1" == "_NPROCESSORS_ONLN" ]]; then\n'
-        f"  echo {count}\n"
-        "  exit 0\n"
-        "fi\n"
+        f'if [[ "$1" == "_NPROCESSORS_ONLN" ]]; then echo {count}; exit 0; fi\n'
         'exec /usr/bin/getconf "$@"\n'
     )
     stub.chmod(0o755)
@@ -139,344 +189,137 @@ def _make_getconf_stub(bindir: Path, count: int) -> Path:
 
 
 def _tier_ran(bindir: Path) -> bool:
-    """Did the e2e TIER run? The gate also probes `pytest -VV` for xdist before
-    the stages, so the mere existence of a recorded argv no longer answers it."""
     argv = bindir / "last_argv"
     return argv.exists() and "tests/e2e/" in argv.read_text()
 
 
 def _xdist_n(argv: str) -> int | None:
-    """Return N from the ``-nN`` worker-count flag in recorded argv, or None."""
-    for line in argv.splitlines():
-        if line.startswith("-n") and line[2:].isdigit():
-            return int(line[2:])
+    for token in argv.split():
+        if token.startswith("-n") and token[2:].isdigit():
+            return int(token[2:])
     return None
 
 
-# --- temp git repo + marker helpers (HATS-686) -----------------------------
-
-
-def _git_repo(tmp_path: Path) -> Path:
-    """Create a throwaway git repo with one commit (controlled HEAD + tree)."""
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    # HATS-887: strip GIT_* (plumbing) then re-pin config isolation only.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
-    env["GIT_CONFIG_SYSTEM"] = "/dev/null"
-    run = lambda *a: subprocess.run(  # noqa: E731
-        ["git", *a], cwd=repo, check=True, capture_output=True, text=True, env=env
-    )
-    run("init", "-q")
-    run("config", "user.email", "t@t")
-    run("config", "user.name", "t")
-    (repo / "f").write_text("x")
-    _write_dispatcher(repo)
-    run("add", "-A")
-    run("commit", "-qm", "init")
-    return repo
-
-
-def _write_dispatcher(repo: Path, *, stages: str = "e2e") -> Path:
-    """The gate asks the project what to run and runs it stage by stage, so the
-    sandbox needs a dispatcher that answers `push-gate --stages` (HATS-1604)."""
-    path = repo / "scripts" / "ci-local.sh"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "#!/usr/bin/env bash\n"
-        f'if [[ "$1" == "--stages" ]]; then echo "{stages}"; exit 0; fi\n'
-        'if [[ "$1" == "e2e" ]]; then\n'
-        '  exec pytest -m "(integration or smoke) and not quarantine and not live_agy" '
-        "tests/e2e/ tests/smoke/ -q\n"
-        "fi\n"
-        "exit 0\n"
-    )
-    path.chmod(0o755)
-    return path
-
-
-def _marker_dir(repo: Path) -> Path:
-    return repo / ".git" / "ai-hats" / "e2e-gate"
-
-
-def _write_marker(repo: Path, tree: str, stages: str = "e2e") -> Path:
-    """Keyed by TREE and carrying its composition, the way the gate writes it."""
-    md = _marker_dir(repo)
-    md.mkdir(parents=True, exist_ok=True)
-    p = md / tree
-    p.write_text(f"tree={tree}\ntimestamp=2026-01-01T00:00:00Z\nstages={stages}\npytest_rc=0\n")
-    return p
-
-
-def _tree(repo: Path, rev: str = "HEAD") -> str:
-    return subprocess.run(
-        ["git", "rev-parse", f"{rev}^{{tree}}"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-
-
-def _head(repo: Path) -> str:
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-    ).stdout.strip()
-
-
-def _env(bindir: Path | None) -> dict[str, str]:
-    env = {
-        "PATH": "/usr/bin:/bin",  # baseline so `git` / `getconf` / `date` work
-        "HOME": os.environ.get("HOME", "/tmp"),
-    }
-    if bindir is not None:
-        env["PATH"] = f"{bindir}:{env['PATH']}"
-    return env
-
-
-def _check(stdin: str, bindir: Path | None, *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Run the hook in CHECK mode (git pre-push protocol on stdin)."""
-    return subprocess.run(
-        ["bash", str(HOOK)],
-        input=stdin,
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        env=_env(bindir),
-    )
-
-
-def _run(
-    bindir: Path | None,
-    *,
-    cwd: Path,
-    extra: tuple[str, ...] = (),
-    env_extra: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run the hook in RUN mode (``--run``)."""
-    env = _env(bindir)
-    if env_extra:
-        env.update(env_extra)
-    return subprocess.run(
-        ["bash", str(HOOK), "--run", *extra],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env=env,
-    )
-
-
 # ===========================================================================
-# CHECK MODE — fast-path no-ops (unchanged contract, no marker, no pytest)
+# CHECK MODE — fast-path no-ops
 # ===========================================================================
 
 
-@pytest.mark.integration
 def test_non_master_target_is_noop(tmp_path: Path):
-    """Push to a feature branch must not read markers nor invoke pytest."""
     repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=99)  # would fail loudly if called
-    stdin = f"refs/heads/feature/foo {NEW_SHA} refs/heads/feature/foo {OLD_SHA}\n"
-
-    res = _check(stdin, bindir, cwd=repo)
+    res = _check(f"refs/heads/feature/x {_head(repo)} refs/heads/feature/x {OLD_SHA}\n", cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert not (bindir / "last_argv").exists(), "pytest must not be invoked"
+    assert _stages_run(repo) == []
 
 
-@pytest.mark.integration
 def test_master_deletion_is_noop(tmp_path: Path):
-    """Deleting master (local_sha = 0*40) must not block on a marker."""
     repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=99)
-    stdin = f"refs/heads/master {ZERO} refs/heads/master {OLD_SHA}\n"
-
-    res = _check(stdin, bindir, cwd=repo)
+    res = _check(f"(delete) {ZERO} refs/heads/master {OLD_SHA}\n", cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert not (bindir / "last_argv").exists(), "pytest must not be invoked"
 
 
-@pytest.mark.integration
 def test_empty_stdin_is_noop(tmp_path: Path):
-    """Empty pre-push payload (rare but possible) must exit 0."""
+    """The check runner hands its children stdin=DEVNULL — which is exactly why
+    this hook is NOT a checks-channel gate (ADR-0023 D9)."""
     repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=99)
-
-    res = _check("", bindir, cwd=repo)
+    res = _check("", cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert not (bindir / "last_argv").exists(), "pytest must not be invoked"
 
 
 # ===========================================================================
-# CHECK MODE — marker lookup (HATS-686 core)
+# CHECK MODE — the marker lookup
 # ===========================================================================
 
 
-@pytest.mark.integration
-def test_master_push_allowed_with_valid_marker(tmp_path: Path):
-    """A green marker for the pushed local_sha → allow, pytest NOT invoked.
-
-    Fail-under-revert: if the hook reverted to running pytest in-line (the
-    old HATS-550 behaviour), the tripwire stub (exit 99) would be invoked
-    and ``last_argv`` would exist → this assertion fails.
-    """
+def test_master_push_allowed_with_every_stage_marked(tmp_path: Path):
     repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=99)  # tripwire: must NOT run
-    pushed = _head(repo)
-    _write_marker(repo, _tree(repo))
-    stdin = f"refs/heads/master {pushed} refs/heads/master {OLD_SHA}\n"
+    _write_markers(repo, _tree(repo))
 
-    res = _check(stdin, bindir, cwd=repo)
+    res = _check(f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n", cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert not (bindir / "last_argv").exists(), "pytest must not be invoked in check mode"
+    assert "push allowed" in res.stderr
+    assert _stages_run(repo) == [], "a check runs no stage"
 
 
-@pytest.mark.integration
-def test_master_push_blocked_without_marker(tmp_path: Path):
-    """No marker for the pushed tree → BLOCK with the run command, no pytest.
-
-    Fail-under-revert: drop the "block when marker absent" branch → exit 0.
-    """
+def test_master_push_blocked_without_markers_and_names_what_is_missing(tmp_path: Path):
+    """Fail-under-revert: drop the block → exit 0 with no marker at all."""
     repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=99)
-    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
 
-    res = _check(stdin, bindir, cwd=repo)
+    res = _check(f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n", cwd=repo)
 
     assert res.returncode == 1
     assert "BLOCKED" in res.stderr
-    assert "run-e2e-gate.sh" in res.stderr
-    assert not (bindir / "last_argv").exists(), "pytest must not be invoked in check mode"
+    assert "run-e2e-gate.sh" in res.stderr, "the refusal hands over the command that earns it"
+    for stage in _push_gate_stages():
+        assert stage in res.stderr, f"the refusal must name the missing stage {stage}"
+    assert _stages_run(repo) == [], "a refusal runs no stage"
 
 
-@pytest.mark.integration
-def test_master_push_blocked_with_marker_for_other_tree(tmp_path: Path):
-    """A marker exists, but for DIFFERENT content → BLOCK. Pins tree-keying."""
+def test_master_push_blocked_when_one_demanded_stage_is_unmarked(tmp_path: Path):
+    """Grow the gate a stage and every marker set on disk stops applying —
+    before HATS-1601, all of them kept clearing the push."""
     repo = _git_repo(tmp_path)
-    _write_marker(repo, OTHER_SHA)  # a marker for content this repo never held
-    stdin = f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n"
+    stages = _push_gate_stages()
+    _write_markers(repo, _tree(repo), stages[:-1])
 
-    res = _check(stdin, bindir=None, cwd=repo)
+    res = _check(f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n", cwd=repo)
 
     assert res.returncode == 1
-    assert "BLOCKED" in res.stderr
+    missing = res.stderr.split("Missing:", 1)[1].split("Run the gate", 1)[0].split()
+    assert missing == [stages[-1]]
 
 
-@pytest.mark.integration
-def test_master_push_blocked_when_marker_body_tree_mismatches(tmp_path: Path):
-    """A marker file named <tree> whose body records different content → BLOCK.
-
-    Pins the defensive ``grep -qx "tree=$tree"`` body check (a stray/forged file
-    named like a tree but lacking the matching ``tree=`` line is rejected).
-    """
+def test_master_push_blocked_with_markers_for_another_tree(tmp_path: Path):
+    """Pins tree-keying: content this repo never held clears nothing."""
     repo = _git_repo(tmp_path)
-    md = _marker_dir(repo)
-    md.mkdir(parents=True, exist_ok=True)
-    (md / _tree(repo)).write_text(f"tree={OTHER_SHA}\nstages=e2e\n")  # name != body
-    stdin = f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n"
+    _write_markers(repo, OTHER_SHA)
 
-    res = _check(stdin, bindir=None, cwd=repo)
+    res = _check(f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n", cwd=repo)
 
     assert res.returncode == 1
     assert "BLOCKED" in res.stderr
 
 
-@pytest.mark.integration
-def test_master_push_blocked_when_the_marker_never_ran_a_demanded_stage(tmp_path: Path):
-    """HATS-1601: grow the gate a stage and the markers already on disk stop
-    applying — before this, every one of them kept clearing the push."""
+def test_mixed_payload_requires_markers_for_the_master_line_only(tmp_path: Path):
     repo = _git_repo(tmp_path)
-    _write_dispatcher(repo, stages="lint e2e")
-    _write_marker(repo, _tree(repo), stages="e2e")
-    stdin = f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n"
-
-    res = _check(stdin, bindir=None, cwd=repo)
-
-    assert res.returncode == 1
-    assert "BLOCKED" in res.stderr
-
-
-@pytest.mark.integration
-def test_mixed_payload_requires_marker_for_master_line(tmp_path: Path):
-    """If ANY line targets master, that line's marker is required (others N/A)."""
-    repo = _git_repo(tmp_path)
-    pushed = _head(repo)
-    _write_marker(repo, _tree(repo))
+    _write_markers(repo, _tree(repo))
     stdin = (
         f"refs/heads/feature/foo {OTHER_SHA} refs/heads/feature/foo {OLD_SHA}\n"
-        f"refs/heads/master {pushed} refs/heads/master {OLD_SHA}\n"
+        f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n"
     )
 
-    res = _check(stdin, bindir=None, cwd=repo)
+    res = _check(stdin, cwd=repo)
 
     assert res.returncode == 0, res.stderr
 
 
-# ===========================================================================
-# RUN MODE — the ci-local preamble (HATS-726)
-# ===========================================================================
-
-
-def _commit_dispatcher(
-    repo: Path, *, lint_rc: int = 0, unit_rc: int = 0, e2e_catalog_rc: int = 0
-) -> Path:
-    """Commit a fake ``scripts/ci-local.sh`` with controlled per-stage exit codes.
-
-    It must be committed, not merely written: the gate refuses to write a
-    marker for a dirty tree, which would mask what these cases assert.
-    """
-    scripts = repo / "scripts"
-    scripts.mkdir(exist_ok=True)
-    dispatcher = scripts / "ci-local.sh"
-    # The log lands OUTSIDE the repo: a stray file would dirty the tree and the
-    # gate withholds the marker on a dirty tree, masking what these cases assert.
-    dispatcher.write_text(
-        "#!/usr/bin/env bash\n"
-        'if [[ "$1" == "--stages" ]]; then echo "lint unit e2e-catalog e2e"; exit 0; fi\n'
-        f'printf "%s\\n" "$1" >> "{repo.parent / "stages_run"}"\n'
-        'case "$1" in\n'
-        f"  lint) exit {lint_rc} ;;\n"
-        f"  unit) exit {unit_rc} ;;\n"
-        f"  e2e-catalog) exit {e2e_catalog_rc} ;;\n"
-        '  e2e) exec pytest -m "(integration or smoke) and not quarantine and not live_agy" '
-        "tests/e2e/ tests/smoke/ -q ;;\n"
-        "esac\n"
-        "exit 0\n"
-    )
-    dispatcher.chmod(0o755)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
-    env["GIT_CONFIG_SYSTEM"] = "/dev/null"
-    for args in (("add", "-A"), ("commit", "-qm", "add dispatcher")):
-        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env=env)
-    return dispatcher
-
-
-def _stages_run(repo: Path) -> list[str]:
-    log = repo.parent / "stages_run"
-    return log.read_text().split() if log.exists() else []
-
-
-@pytest.mark.integration
-def test_run_mode_lint_failure_blocks_before_the_e2e_tier(tmp_path: Path):
-    """A red lint stage aborts the gate without starting the e2e tier.
-
-    This is the case that reached master on 2026-07-29: 66 ruff errors passed
-    the gate untouched because it ran only e2e+smoke.
-    Fail-under-revert: drop the preamble → pytest runs and a marker appears.
-    """
+def test_a_project_without_gates_sh_cannot_push_to_master(tmp_path: Path):
+    """Nothing could have earned a marker, so nothing lets the push through —
+    the library never runs a stage itself (D7)."""
     repo = _git_repo(tmp_path)
-    _commit_dispatcher(repo, lint_rc=1, unit_rc=0)
+    (repo / "scripts" / "gates.sh").unlink()
+    _git(repo, "commit", "-qam", "drop the runner")
+
+    res = _check(f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n", cwd=repo)
+
+    assert res.returncode == 1
+    assert "no scripts/gates.sh" in res.stderr
+
+
+# ===========================================================================
+# RUN MODE — stage by stage, through the project's own primitive
+# ===========================================================================
+
+
+def test_run_mode_stops_at_the_first_red_and_the_tier_never_starts(tmp_path: Path):
+    """The case that reached master on 2026-07-29: 66 ruff errors passed a gate
+    that ran only e2e+smoke. The list leads with the cheap stages, and a red
+    one stops the run before the tier."""
+    repo = _git_repo(tmp_path, rcs={"lint": 1})
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=0)
 
@@ -484,100 +327,14 @@ def test_run_mode_lint_failure_blocks_before_the_e2e_tier(tmp_path: Path):
 
     assert res.returncode == 1, res.stderr
     assert "stage 'lint' FAILED" in res.stderr
-    assert "NO marker written" in res.stderr
-    assert not _tier_ran(bindir), "e2e tier ran despite a red preamble"
-    assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
+    stages = _push_gate_stages()
+    assert _stages_run(repo) == stages[: stages.index("lint") + 1]
+    assert not _tier_ran(bindir), "the e2e tier ran despite a red cheap stage"
+    assert "lint" not in _marked(repo, _tree(repo))
+    assert "e2e" not in _marked(repo, _tree(repo))
 
 
-@pytest.mark.integration
-def test_run_mode_unit_failure_blocks_and_names_the_stage(tmp_path: Path):
-    """A green lint but red unit stage still aborts, naming `unit`."""
-    repo = _git_repo(tmp_path)
-    _commit_dispatcher(repo, lint_rc=0, unit_rc=1)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 1, res.stderr
-    assert "stage 'unit' FAILED" in res.stderr
-    assert _stages_run(repo) == ["lint", "unit"]
-    assert not _tier_ran(bindir)
-
-
-@pytest.mark.integration
-def test_run_mode_e2e_catalog_failure_blocks_and_names_the_stage(tmp_path: Path):
-    """HATS-1562: A red e2e-catalog stage in pre-push preamble aborts the gate.
-
-    Fail-under-revert: revert git_hooks/pre-push-e2e-master.sh preamble stage loop ->
-    e2e-catalog is not run in preamble, e2e tier runs and writes marker.
-    """
-    repo = _git_repo(tmp_path)
-    _commit_dispatcher(repo, lint_rc=0, unit_rc=0, e2e_catalog_rc=1)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 1, res.stderr
-    assert "stage 'e2e-catalog' FAILED" in res.stderr
-    assert "NO marker written" in res.stderr
-    assert _stages_run(repo) == ["lint", "unit", "e2e-catalog"], "stops at the first red"
-    assert not _tier_ran(bindir), "e2e tier ran despite a red e2e-catalog stage"
-    assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
-
-
-@pytest.mark.integration
-def test_run_mode_green_preamble_runs_both_stages_then_the_suite(tmp_path: Path):
-    """Green lint + unit + e2e-catalog → all stages ran, the suite ran, the marker is written."""
-    repo = _git_repo(tmp_path)
-    _commit_dispatcher(repo, lint_rc=0, unit_rc=0, e2e_catalog_rc=0)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 0, res.stderr
-    # HATS-1604: the tier is a STAGE now, so the selection has one home and the
-    # `pytest`-outside-the-dispatcher ratchet finally covers it.
-    assert _stages_run(repo) == ["lint", "unit", "e2e-catalog", "e2e"]
-    assert (bindir / "last_argv").exists(), "e2e tier did not run"
-    assert (_marker_dir(repo) / _tree(repo)).exists()
-
-
-@pytest.mark.integration
-def test_run_mode_without_a_dispatcher_earns_no_marker(tmp_path: Path):
-    """HATS-1604: a project that names no composition gets no marker.
-
-    The gate used to fall back to a tier it named itself, which is the library
-    stating project content (ADR-0023 D7). With the literal gone there is
-    nothing to fall back TO — and a marker for an unnamed composition would
-    certify whatever the gate happened to run that day.
-    """
-    repo = _git_repo(tmp_path)
-    (repo / "scripts" / "ci-local.sh").unlink()
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 1, res.stderr
-    assert "names no push-gate composition" in res.stderr
-    assert not _tier_ran(bindir), "nothing may run without a composition"
-    assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
-
-
-# ===========================================================================
-# RUN MODE — suite + marker side effects (HATS-686 core)
-# ===========================================================================
-
-
-@pytest.mark.integration
-def test_run_mode_writes_marker_on_pass(tmp_path: Path):
-    """`--run` + pytest exit 0 + clean tree → marker keyed to HEAD, exit 0.
-
-    Fail-under-revert: drop the marker write → no file under e2e-gate/ → red.
-    """
+def test_run_mode_green_run_marks_every_stage_and_runs_the_tier(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=0)
@@ -585,16 +342,14 @@ def test_run_mode_writes_marker_on_pass(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    marker = _marker_dir(repo) / _tree(repo)
-    assert marker.exists(), f"marker not written; stderr:\n{res.stderr}"
-    body = marker.read_text()
-    assert f"tree={_tree(repo)}" in body
-    assert "stages=e2e" in body, "a marker states the composition it certifies (HATS-1601)"
+    assert _stages_run(repo) == _push_gate_stages()
+    assert _tier_ran(bindir)
+    assert _marked(repo, _tree(repo)) == set(_push_gate_stages())
+    marker = _store(repo) / _tree(repo) / "e2e"
+    assert f"tree={_tree(repo)}" in marker.read_text()
 
 
-@pytest.mark.integration
-def test_run_mode_no_marker_on_failure(tmp_path: Path):
-    """`--run` + pytest exit 1 → NO marker, exit 1 with failure tail."""
+def test_run_mode_a_red_tier_earns_no_marker_for_it(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=1)
@@ -602,338 +357,109 @@ def test_run_mode_no_marker_on_failure(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 1
-    assert "FAILED" in res.stderr
-    assert "rc=1" in res.stderr
-    assert "NO marker" in res.stderr
-    assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
+    assert "stage 'e2e' FAILED" in res.stderr
+    marked = _marked(repo, _tree(repo))
+    assert "e2e" not in marked
+    assert marked == set(_push_gate_stages()) - {"e2e"}, "the green cheap stages keep their stamps"
 
 
-@pytest.mark.integration
-def test_run_mode_rc5_writes_marker(tmp_path: Path):
-    """`--run` + pytest rc=5 (no tests collected) → marker written, exit 0.
-
-    Preserves the HATS-550 defensive allow (renamed marker / empty folder must
-    not permanently brick master pushes).
-    """
+def test_run_mode_a_second_run_pays_only_for_what_is_missing(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=5)
+    _make_pytest_stub(bindir, exit_code=1)
+    assert _run(bindir, cwd=repo).returncode == 1
+    _make_pytest_stub(bindir, exit_code=0)
 
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert "nothing collected" in res.stderr
-    assert (_marker_dir(repo) / _tree(repo)).exists()
+    assert _stages_run(repo) == [*_push_gate_stages(), "e2e"], "only the tier ran the second time"
 
 
-@pytest.mark.integration
-def test_run_mode_dirty_tree_writes_no_marker(tmp_path: Path):
-    """`--run` + pytest exit 0 but a DIRTY tree → suite runs, NO marker.
-
-    Pins the R2 clean-tree invariant: the marker must reflect the exact
-    committed content that will be pushed. Fail-under-revert: drop the
-    ``git status --porcelain`` guard → a marker is written for a dirty tree.
-    """
+def test_run_mode_dirty_tree_is_judged_in_a_scratch_checkout(tmp_path: Path):
+    """The contract flipped with HATS-1878: a dirty desk no longer means "run,
+    but no marker" — the commit is judged in a checkout of its own, so HEAD's
+    tree earns its markers and the desk is left alone."""
     repo = _git_repo(tmp_path)
-    (repo / "dirty").write_text("uncommitted")  # untracked → dirty tree
+    (repo / "dirty").write_text("uncommitted")
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=0)
 
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert "dirty" in res.stderr.lower()
-    assert "NO marker" in res.stderr
-    assert not (_marker_dir(repo) / _tree(repo)).exists()
-    # HATS-1819: this promise used to print right after "NO marker written".
-    assert "pass instantly" not in res.stderr, f"contradicts NO marker: {res.stderr}"
+    assert "checkout of its own" in res.stderr
+    assert _marked(repo, _tree(repo)) == set(_push_gate_stages())
+    assert (repo / "dirty").exists(), "the desk is untouched"
+    assert "scratch" not in _git(repo, "worktree", "list").stdout
 
 
-@pytest.mark.integration
-def test_run_mode_blocks_when_pytest_missing(tmp_path: Path):
-    """`--run` with pytest absent from PATH → ABORT, no marker.
-
-    Preserves the HATS-550 guard (``pip uninstall pytest`` must not yield a
-    silent green), now enforced in run mode where the suite actually runs.
-    """
+def test_run_mode_without_pytest_the_tier_is_red_and_unmarked(tmp_path: Path):
+    """`pip uninstall pytest` must not yield a silent green."""
     repo = _git_repo(tmp_path)
 
-    res = _run(bindir=None, cwd=repo)  # PATH lacks pytest
+    res = _run(bindir=None, cwd=repo)
 
-    assert res.returncode == 1
-    assert "pytest not found" in res.stderr
-    assert "ABORTED" in res.stderr
-    assert not (_marker_dir(repo) / _tree(repo)).exists()
+    assert res.returncode != 0
+    assert "stage 'e2e' FAILED" in res.stderr
+    assert "e2e" not in _marked(repo, _tree(repo))
 
 
 # ===========================================================================
-# RUN MODE — argv contract carried over from earlier tickets
+# RUN MODE — parallelism follows the pytest that will run
 # ===========================================================================
 
 
-@pytest.mark.integration
-def test_run_mode_argv_has_markers_and_folders(tmp_path: Path):
-    """Run mode invokes pytest with both markers and both folders."""
+def test_run_mode_adds_xdist_flags_capped_at_eight_when_xdist_is_present(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
+    _make_pytest_stub(bindir, exit_code=0, xdist=True)
+    _make_getconf_stub(bindir, count=14)
 
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
     argv = (bindir / "last_argv").read_text()
-    assert "integration or smoke" in argv
-    assert "tests/e2e/" in argv
-    assert "tests/smoke/" in argv
+    assert _xdist_n(argv) == 8
+    assert "--dist=loadgroup" in argv
 
 
-@pytest.mark.integration
-def test_run_mode_deselects_quarantined_and_live_agy_tests(tmp_path: Path):
-    """The gate subtracts quarantined tests and external agy sessions.
-
-    Fail-under-revert: drop either exclusion from the dispatcher → red.
-    """
+def test_run_mode_uses_every_core_below_the_cap(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
+    _make_pytest_stub(bindir, exit_code=0, xdist=True)
+    _make_getconf_stub(bindir, count=4)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 0, res.stderr
+    assert _xdist_n((bindir / "last_argv").read_text()) == 4
+
+
+def test_run_mode_runs_serial_without_xdist(tmp_path: Path):
+    repo = _git_repo(tmp_path)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0, xdist=False)
 
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
     argv = (bindir / "last_argv").read_text()
-    assert "not quarantine" in argv, argv
-    assert "not live_agy" in argv, argv
-    assert "integration or smoke" in argv, argv
-
-
-@pytest.mark.integration
-def test_run_mode_arms_require_venv_strict_mode(tmp_path: Path):
-    """HATS-645: run mode exports ``AI_HATS_E2E_REQUIRE_VENV=1`` to pytest.
-
-    Fail-under-revert: drop the ``export`` → the stub records ``<unset>`` → red.
-    """
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 0, res.stderr
-    captured = (bindir / "last_require_venv").read_text()
-    assert captured == "1", f"stub saw {captured!r}"
-
-
-@pytest.mark.integration
-def test_run_mode_explains_fail_closed_venv_skip(tmp_path: Path):
-    """HATS-645: when the failure output mentions AI_HATS_E2E_REQUIRE_VENV, the
-    gate prints the explicit FAIL-CLOSED explanation."""
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub_emitting(
-        bindir,
-        exit_code=1,
-        message="E venv-tier required (AI_HATS_E2E_REQUIRE_VENV=1) but unavailable",
-    )
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 1
-    assert "FAIL-CLOSED venv-tier skip (HATS-645)" in res.stderr, res.stderr
-    assert not (_marker_dir(repo) / _tree(repo)).exists()
-
-
-@pytest.mark.integration
-def test_run_mode_generic_failure_omits_fail_closed_explanation(tmp_path: Path):
-    """A generic failure (no env-var marker) blocks but omits the venv note."""
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub_emitting(
-        bindir,
-        exit_code=1,
-        message="E   assert 1 == 2  # an unrelated test bug",
-    )
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 1
-    assert "FAIL-CLOSED venv-tier skip" not in res.stderr, res.stderr
-    assert "git push --no-verify" in res.stderr
-
-
-@pytest.mark.integration
-def test_run_mode_uses_xdist_when_available(tmp_path: Path):
-    """xdist present → run mode adds ``-n<N> --dist=loadgroup`` (HATS-589/592)."""
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_xdist_aware_stub(bindir, has_xdist=True)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 0, res.stderr
-    argv = (bindir / "last_argv").read_text()
-    n = _xdist_n(argv)
-    assert n is not None and n >= 1, argv
-    assert "--dist=loadgroup" in argv, argv
-
-
-@pytest.mark.integration
-def test_run_mode_caps_worker_count_to_ceiling(tmp_path: Path):
-    """A many-core host is capped at the ceiling (8), not -n<cores> (HATS-592)."""
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_xdist_aware_stub(bindir, has_xdist=True)
-    _make_getconf_stub(bindir, count=64)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 0, res.stderr
-    argv = (bindir / "last_argv").read_text()
-    assert _xdist_n(argv) == 8, argv
-    assert "--dist=loadgroup" in argv, argv
-
-
-@pytest.mark.integration
-def test_run_mode_falls_back_to_serial_without_xdist(tmp_path: Path):
-    """xdist absent → run mode is serial (no ``-n`` flag), still green (HATS-589)."""
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_xdist_aware_stub(bindir, has_xdist=False)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 0, res.stderr
-    argv = (bindir / "last_argv").read_text()
-    assert _xdist_n(argv) is None, argv
-    assert "--dist" not in argv, argv
+    assert _xdist_n(argv) is None
+    assert "--dist=loadgroup" not in argv
 
 
 # ===========================================================================
-# Run mode — tmp-cruft sweep preamble (HATS-731)
+# the wrapper
 # ===========================================================================
 
 
-def _seed_sweep_recorder(repo: Path) -> Path:
-    """Stub ``scripts/clean-tmp-cruft.sh`` that records the argv it was called with.
+def test_the_wrapper_arms_the_venv_switch_and_hands_over_to_the_hook():
+    """`scripts/run-e2e-gate.sh` is the maintainer's spelling: housekeeping, the
+    fail-closed venv switch, then the hook's own run mode. Probed for its shape,
+    not run — running it here would judge this very checkout."""
+    text = (REPO_ROOT / "scripts" / "run-e2e-gate.sh").read_text(encoding="utf-8")
 
-    Stands in for the real sweeper so the gate test asserts *whether and how*
-    the hook invokes it, without touching the host's TMPDIR.
-    """
-    scripts = repo / "scripts"
-    scripts.mkdir(parents=True, exist_ok=True)
-    sweep = scripts / "clean-tmp-cruft.sh"
-    sweep.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{repo}/sweep_argv"\n')
-    sweep.chmod(0o755)
-    return sweep
-
-
-@pytest.mark.integration
-def test_run_mode_tmp_sweep_reaps_by_default(tmp_path: Path):
-    """`--run` invokes scripts/clean-tmp-cruft.sh bare — which now DELETES.
-
-    Same argv as the old dry-run preview, opposite meaning (HATS-1624): the
-    sweeper reaps only on proof of death, so the gate no longer has to choose
-    between deleting a live worktree and freeing nothing. Fail-under-revert:
-    drop the sweep block → the recorder is never written → red.
-    """
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-    _seed_sweep_recorder(repo)
-
-    res = _run(bindir, cwd=repo)
-
-    assert res.returncode == 0, res.stderr
-    recorded = repo / "sweep_argv"
-    assert recorded.exists(), f"sweeper not invoked; stderr:\n{res.stderr}"
-    # No args → reap-on-proof. --dry-run here would restore the silent gate.
-    assert recorded.read_text().strip() == "", "the gate must not preview-only"
-
-
-@pytest.mark.integration
-def test_run_mode_tmp_sweep_force_when_opted_in(tmp_path: Path):
-    """``AI_HATS_E2E_CLEAN_TMP=1`` → the sweeper is invoked with ``--force``.
-
-    The escalation, not the on-switch: --force additionally takes the unlocked
-    run dirs pytest keeps for triage. Fail-under-revert: drop the opt-in branch
-    → no ``--force`` recorded → red.
-    """
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-    _seed_sweep_recorder(repo)
-
-    res = _run(bindir, cwd=repo, env_extra={"AI_HATS_E2E_CLEAN_TMP": "1"})
-
-    assert res.returncode == 0, res.stderr
-    recorded = repo / "sweep_argv"
-    assert recorded.exists(), f"sweeper not invoked; stderr:\n{res.stderr}"
-    assert recorded.read_text().strip() == "--force"
-
-
-# ===========================================================================
-# Wrapper — scripts/run-e2e-gate.sh delegates to the hook's --run mode
-# ===========================================================================
-
-
-@pytest.mark.integration
-def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
-    """scripts/run-e2e-gate.sh execs the installed hook with ``--run``.
-
-    Builds a fake repo whose installed hook is a recorder, so the test pins
-    the delegation contract without running the real suite. Fail-under-revert:
-    change the wrapper to not pass ``--run`` → recorder sees no ``--run`` → red.
-    """
-    repo = _git_repo(tmp_path)
-    # HATS-1337: the wrapper resolves the gate out of the ai-hats library rather
-    # than a retired `.githooks/pre-push.d/` copy. Stub the interpreter it asks,
-    # so this pins the delegation contract without touching the real library —
-    # and without any chance of launching the real suite.
-    libroot = tmp_path / "lib"
-    recorder = (
-        libroot / "ai-hats-dev/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
-    )
-    recorder.parent.mkdir(parents=True)
-    recorder.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{repo}/hook_argv"\nexit 0\n')
-    recorder.chmod(0o755)
-
-    fake_python = tmp_path / "python3"
-    fake_python.write_text(f'#!/usr/bin/env bash\necho "{libroot}"\n')
-    fake_python.chmod(0o755)
-
-    res = subprocess.run(
-        ["bash", str(WRAPPER)],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        env={**os.environ, "PYTHON": str(fake_python)},
-    )
-
-    assert res.returncode == 0, res.stderr
-    assert (repo / "hook_argv").read_text().strip() == "--run"
-
-
-@pytest.mark.integration
-def test_run_wrapper_errors_when_hook_absent(tmp_path: Path):
-    """The wrapper fails loudly (not silently) when ai-hats is not installed here.
-
-    The interpreter is pinned to one that cannot import the library. Left to
-    PATH's python3 the test would resolve the REAL gate and run it for real —
-    which is what it did before this pin.
-    """
-    repo = _git_repo(tmp_path)
-    blind_python = tmp_path / "python3"
-    blind_python.write_text("#!/usr/bin/env bash\nexit 1\n")
-    blind_python.chmod(0o755)
-
-    res = subprocess.run(
-        ["bash", str(WRAPPER)],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        env={**os.environ, "PYTHON": str(blind_python)},
-    )
-
-    assert res.returncode == 1
-    assert "cannot resolve the e2e-master gate" in res.stderr
+    assert "export AI_HATS_E2E_REQUIRE_VENV=1" in text
+    assert 'exec bash "$hook" --run "$@"' in text
+    assert "pre-push-e2e-master.sh" in text

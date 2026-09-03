@@ -96,7 +96,7 @@ confirming which mode you're in.
 
 ## Testing
 
-Every `make` target delegates to a `scripts/ci-local.sh` stage, so a target and
+Every `make` target delegates to a `scripts/gates.sh` stage, so a target and
 the CI job of the same name cannot disagree — `tests/test_gate_entrypoint_parity.py`
 fails the build if either spells a check command out itself.
 
@@ -108,22 +108,26 @@ is not a stage keeps a different prefix.
 
 - `make check` — the fast inner loop: `lint` + `unit` only.
 - `make gates` — everything CI runs locally, the `all` bundle in
-  `scripts/ci-local.sh`. This is the parity gate; `check` is a subset of it.
+  `scripts/gates.sh`. This is the parity gate; `check` is a subset of it.
 - `make unit` (or `make tests`) — the unit stage, bounded by timeout (default 300s).
 - `make lint` — `ruff check .` plus `ruff format --check` over that same `.`
   (HATS-1651: two scopes could not stay equal by convention).
 - `make e2e` — the maintainer tier, and the very stage the master pre-push gate
   runs (HATS-1604 — one selection, not a copy), bounded by timeout (default 3600s).
 - `make coverage` / `make security` / `make version-skew` — the remaining CI stages.
-- `make merge-gate` / `make done-gate` — the gates the two roads into master
-  demand of a card. Run one in the **task worktree**: the marker is keyed to the
-  tree you run it on. `make done-gate` is the superset and clears both
-  (ADR-0023 D4/D5); `scripts/ci-local.sh --stages <gate>` prints what each runs.
+- `make review-gate` / `make merge-gate` / `make done-gate` — the gates a card's
+  edges demand, earned per stage: each run skips what is already marked green
+  for the tree, runs the rest, and stamps each green stage, so the wider gate
+  pays only for the difference (ADR-0023 D4/D5). Run one in the **task
+  worktree**, or name a commit with `REV=<sha>`. Each gate is a few-line script
+  in the quality-gate skill's `hooks/`; `hooks/<gate>.sh --stages` prints what it
+  requires, and `scripts/gates.sh list` names every stage there is.
 - `make help` — display available Makefile targets.
 
 Options:
 
-- Pass custom pytest flags via `ARGS`: `make tests ARGS="-k test_something"`
+- A stage runs bare — no pytest flags pass through. To filter or parallelise,
+  call `pytest` directly, or set `PYTEST_ADDOPTS` (what CI does).
 - Override timeout via `TIMEOUT_TESTS` or `TIMEOUT_E2E`: `make e2e TIMEOUT_E2E=1200`
 - Point the stages at a specific interpreter via `PYTHON`: `make check PYTHON=.venv/bin/python`
 
@@ -324,20 +328,20 @@ next to its composer.
 component that says "ai-hats" in prose but fires on any project is `usage`; one
 that never says it but only ever fires here is `ai-hats-dev`. Step 4 is `yes`
 when the component names `src/ai_hats/…`, `packages/ai-hats-library/…`, this
-repo's `CONTRIBUTING.md`, `docs/adr/…` or `scripts/ci-local.sh` **as a
+repo's `CONTRIBUTING.md`, `docs/adr/…` or `scripts/gates.sh` **as a
 dependency rather than as an example**. A guarded fast path is not a dependency:
 `rule-delivery-gate` hard-codes the library path and still lives in `usage`,
 because the hard-code is an `if [[ -d … ]]` branch with a package-resolve
 fallback, so it works in any project.
 
-| Component                                                    | Layer         | Why                                              |
-| ------------------------------------------------------------ | ------------- | ------------------------------------------------ |
-| `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                    |
-| `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them     |
-| `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path                 |
-| `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs              |
-| `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`         |
-| `skill-engineer` trait                                       | `ai-hats-dev` | its injection is about *this* library            |
+| Component                                                    | Layer         | Why                                          |
+| ------------------------------------------------------------ | ------------- | -------------------------------------------- |
+| `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                |
+| `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them |
+| `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path             |
+| `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs          |
+| `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`     |
+| `skill-engineer` trait                                       | `ai-hats-dev` | its injection is about *this* library        |
 
 The failure to avoid: a component in `core` whose body names `src/ai_hats/`.
 Every consumer then pays always-on tokens for ai-hats internals — which is how
@@ -405,7 +409,7 @@ filter-repo procedure for purging the history.
 
 ### ADR numbers and decision markers
 
-Two invariants over `docs/adr/`, enforced by `bash scripts/ci-local.sh adr-integrity`
+Two invariants over `docs/adr/`, enforced by `bash scripts/gates.sh adr-integrity`
 (in the `all` bundle and in the master push-gate):
 
 - **A number names exactly one file.** `0023` once named two live ADRs, and the

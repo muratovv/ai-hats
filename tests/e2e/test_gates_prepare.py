@@ -2,7 +2,7 @@
 
 flow:   the gate primitive making a scratch checkout of a merge commit runnable
 cmds:
-    bash scripts/ci-local.sh --prepare
+    bash scripts/gates.sh --prepare
 expect: the dispatcher delegates to the worktree-venv hook of the tree it is
         preparing, and leaves an already-usable venv untouched
 why:    a checkout minted by `git worktree add` has no .venv, so every
@@ -23,7 +23,7 @@ from _helpers.git import git, init_repo
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DISPATCHER = REPO_ROOT / "scripts" / "ci-local.sh"
+DISPATCHER = REPO_ROOT / "scripts" / "gates.sh"
 HOOK_REL = Path(
     "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/worktree-venv/hooks/provision-venv.sh"
 )
@@ -50,7 +50,7 @@ def checkout(tmp_path: Path) -> Path:
     root = tmp_path / "checkout"
     (root / "scripts").mkdir(parents=True)
     init_repo(root)
-    shutil.copy(DISPATCHER, root / "scripts" / "ci-local.sh")
+    shutil.copy(DISPATCHER, root / "scripts" / "gates.sh")
     (root / HOOK_REL).parent.mkdir(parents=True)
     shutil.copy(REPO_ROOT / HOOK_REL, root / HOOK_REL)
     (root / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
@@ -61,7 +61,7 @@ def checkout(tmp_path: Path) -> Path:
 
 def _prepare(root: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", "scripts/ci-local.sh", "--prepare"],
+        ["bash", "scripts/gates.sh", "--prepare"],
         cwd=root,
         capture_output=True,
         text=True,
