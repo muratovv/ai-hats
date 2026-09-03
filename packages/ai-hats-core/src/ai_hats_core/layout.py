@@ -24,6 +24,12 @@ def _is_onboarded(candidate: Path) -> bool:
     return (candidate / ".agent").is_dir() or (candidate / CONFIG_NAME).is_file()
 
 
+def pin_is_foreign(pin: str | None, root: Path) -> bool:
+    """The one trust comparison of ADR-0025 D3 — every consumer calls this,
+    none re-derives it: same ~-expansion, same physical normalization."""
+    return bool(pin) and Path(pin).expanduser().resolve() != root.expanduser().resolve()
+
+
 class ForeignPinPolicy(Enum):
     """Reaction to a pin naming another project — the caller's parameter, not a hardcode (ADR-0025 D3)."""
 
@@ -79,7 +85,7 @@ def resolve_root(
             raise ProjectNotFoundError(start)
 
     pin = environ.get(ENV_PROJECT_DIR)
-    if pin and Path(pin).expanduser().resolve() != root:
+    if pin_is_foreign(pin, root):
         if on_foreign_pin is ForeignPinPolicy.REFUSE:
             raise ForeignProjectPinError(
                 f"{ENV_PROJECT_DIR}={pin!r} names another project — structural root is {root}"
@@ -204,7 +210,7 @@ class ProjectLayout:
         override = environ.get(ENV_AI_HATS_DIR)
         if override:
             pin = environ.get(ENV_PROJECT_DIR)
-            if pin and Path(pin).expanduser().resolve() != root.expanduser().resolve():
+            if pin_is_foreign(pin, root):
                 warnings.warn(
                     f"{ENV_AI_HATS_DIR}={override!r} is pinned to project {pin!r} — foreign "
                     f"to {root}; ignoring the leaked session pin.",

@@ -17,6 +17,7 @@ from pathlib import Path
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
 
+from ai_hats_core.layout import pin_is_foreign
 from .env import (
     AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR,
@@ -223,7 +224,7 @@ def foreign_pin_drops(env: Mapping[str, str], project_dir: Path) -> list[str]:
     two must never diverge on what "foreign" means.
     """
     pin = env.get(AI_HATS_PROJECT_DIR_ENV)
-    if not pin or Path(pin).expanduser().resolve() == project_dir.resolve():
+    if not pin_is_foreign(pin, project_dir):
         return []
     return [
         *(name for name in (ENV_AI_HATS_VENV, ENV_AI_HATS_DIR) if name in env),
@@ -241,7 +242,7 @@ def _drop_foreign_pin(env: MutableMapping[str, str], project_dir: Path) -> None:
     ``self …`` runs — so that window announces itself.
     """  # comment-length: allow — the branch only fires in a window worth naming
     pin = env.get(AI_HATS_PROJECT_DIR_ENV)
-    if not pin or Path(pin).expanduser().resolve() == project_dir.resolve():
+    if not pin_is_foreign(pin, project_dir):
         return
     dropped = [name for name in (ENV_AI_HATS_VENV, ENV_AI_HATS_DIR) if env.pop(name, None)]
     # The identity names the OTHER project, so re-pinning around it would leave a

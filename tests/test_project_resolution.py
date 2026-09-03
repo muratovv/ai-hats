@@ -29,13 +29,10 @@ def test_sanctioned_reader_refuses_future_schema(future_project: Path) -> None:
         ProjectConfig.from_yaml(future_project / "ai-hats.yaml")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="HATS-1606 step 5: the raw peek bypasses fail-loud until the one reader owns it",
-)
 def test_raw_config_peek_refuses_future_schema_too(future_project: Path) -> None:
-    """The bypass: the tracker path is taken from a config the system just
-    declared unreadable — ai_hats_dir() must refuse exactly like from_yaml."""
+    """The closed bypass: the tracker path can no longer be taken from a config
+    the system just declared unreadable — ai_hats_dir() refuses with the SAME
+    family as from_yaml (the class now lives in the paths leaf)."""
     from ai_hats.paths import ai_hats_dir
 
     with pytest.raises(ProjectConfigError):

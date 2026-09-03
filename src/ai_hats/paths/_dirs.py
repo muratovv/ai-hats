@@ -48,6 +48,7 @@ from .constants import (
     ENV_AI_HATS_DIR as ENV_AI_HATS_DIR,
     ENV_AI_HATS_VENV as ENV_AI_HATS_VENV,
     PROJECT_CONFIG,
+    KNOWN_SCHEMA_VERSION,
 )
 
 LegacyClass = Literal["sessions", "tracker", "library", "root"]
@@ -55,12 +56,21 @@ LegacyClass = Literal["sessions", "tracker", "library", "root"]
 # ---------- Base resolver ----------
 
 
-def _read_ai_hats_dir_from_yaml(project_dir: Path) -> str | None:
-    """Read raw ``ai_hats_dir`` field from ``ai-hats.yaml``.
+class ProjectConfigError(ValueError):
+    """ai-hats.yaml cannot be honoured — one family for EVERY reader.
 
-    Bootstrap helper used by :func:`ai_hats_dir`. Does NOT trigger schema
-    migration — that lives in ``ProjectConfig.from_yaml``. Returns ``None``
-    if the file is missing, unreadable, or the field is absent/empty.
+    Lives in the paths leaf so the bootstrap raw readers refuse with the same
+    type the full pydantic reader raises (``config.project`` imports it from
+    here); a config rejected by one reader can no longer be obeyed by another.
+    """
+
+
+def _raw_config_data(project_dir: Path) -> dict | None:
+    """Bootstrap yaml load shared by the raw field readers.
+
+    No schema migration — that stays in ``ProjectConfig.from_yaml`` — but the
+    fail-loud-on-newer guard is the SAME: a config from a future ai-hats must
+    not quietly feed the tracker path.
     """
     yaml_path = project_dir / PROJECT_CONFIG
     if not yaml_path.exists():
@@ -69,26 +79,30 @@ def _read_ai_hats_dir_from_yaml(project_dir: Path) -> str | None:
         data = yaml.safe_load(yaml_path.read_text()) or {}
     except (yaml.YAMLError, OSError):
         return None
-    val = data.get("ai_hats_dir")
+    version = data.get("schema_version", 1)
+    if isinstance(version, int) and version > KNOWN_SCHEMA_VERSION:
+        raise ProjectConfigError(
+            f"{yaml_path}: schema_version {version} is newer than this "
+            f"ai-hats (knows <={KNOWN_SCHEMA_VERSION}) — run 'ai-hats self update'."
+        )
+    return data
+
+
+def _read_ai_hats_dir_from_yaml(project_dir: Path) -> str | None:
+    """Raw ``ai_hats_dir`` field; ``None`` when missing/unreadable/absent."""
+    data = _raw_config_data(project_dir)
+    val = data.get("ai_hats_dir") if data else None
     return val if isinstance(val, str) and val else None
 
 
 def _read_venv_path_from_yaml(project_dir: Path) -> str | None:
-    """Read raw ``venv_path`` field from ``ai-hats.yaml`` (HATS-334).
+    """Raw ``venv_path`` field (HATS-334); ``None`` when missing/unreadable/absent.
 
-    Low-level reader mirroring :func:`_read_ai_hats_dir_from_yaml`. Avoids
-    pydantic so the bash launcher (HATS-339) and any hot-path callers have a
-    consistent precedence spec to mirror. Returns ``None`` if file missing,
-    unreadable, or field absent/empty.
+    Avoids pydantic so the bash launcher (HATS-339) has a consistent precedence
+    spec to mirror.
     """
-    yaml_path = project_dir / PROJECT_CONFIG
-    if not yaml_path.exists():
-        return None
-    try:
-        data = yaml.safe_load(yaml_path.read_text()) or {}
-    except (yaml.YAMLError, OSError):
-        return None
-    val = data.get("venv_path")
+    data = _raw_config_data(project_dir)
+    val = data.get("venv_path") if data else None
     return val if isinstance(val, str) and val else None
 
 
@@ -714,6 +728,7 @@ __all__ = [
     "AI_HATS_PROJECT_DIR_ENV",
     "_read_ai_hats_dir_from_yaml",
     "_read_venv_path_from_yaml",
+    "ProjectConfigError",
     "_is_safe_sha_component",
     "user_home",
     "ai_hats_dir",

@@ -380,6 +380,7 @@ def _resolution_offenders() -> dict[str, tuple[str, ...]]:
 # rack_cli_provider (find_project_root) and relocation (raw config peek).
 EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
     "ai_hats.cli": ("_project_dir",),
+    "ai_hats.cli._entry": ("resolve_root",),  # THE sanctioned factory (composition root)
     "ai_hats.cli._helpers": ("_project_dir",),
     "ai_hats.cli.agent": ("_project_dir",),
     "ai_hats.cli.assembly": ("_project_dir",),
@@ -387,7 +388,6 @@ EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
     "ai_hats.cli.execute": ("_project_dir",),
     "ai_hats.cli.maintenance": ("_project_dir",),
     "ai_hats.cli.reflect": ("_project_dir",),
-    "ai_hats.cli.session": ("_project_dir",),
     "ai_hats.cli.wait": ("resolve_root",),  # rack's resolver inside our CLI — counter 1
     "ai_hats.cli.worktree": ("_project_dir",),
     "ai_hats.composition_seam": ("_project_dir",),  # a DEEP module resolving — R5's evidence
