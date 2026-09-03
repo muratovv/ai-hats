@@ -42,6 +42,7 @@ SCRIPT = "hooks/done-gate.sh"
 #: The `->merge` gate, on the other road since HATS-1614. Two edges, two
 #: questions, two compositions (ADR-0023 D3/D4).
 MERGE_SCRIPT = "hooks/merge-gate.sh"
+REVIEW_SCRIPT = "hooks/review-gate.sh"
 #: ``<event>~<skill>~<script>.log`` — one file per (task, edge, binding), the
 #: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
 #: One log per (task, point, row). The row identity carries the app and the
@@ -270,9 +271,17 @@ def _to_review(
     git(wt, "add", "-A")
     git(wt, "commit", "-m", "work")
 
-    for state in ("document", "review"):
-        moved = _rack(rack, "transition", task_id, state, cwd=project, env=env)
-        assert moved.returncode == 0, moved.stdout + moved.stderr
+    documented = _rack(rack, "transition", task_id, "document", cwd=project, env=env)
+    assert documented.returncode == 0, documented.stdout + documented.stderr
+
+    # `->review` carries a gate of its own now, and that gate is not this file's
+    # subject. Clear it with a marker for the branch tip, then take the marker
+    # away again, so every test below starts from an UNMARKED card — which is
+    # what their positive controls assert before planting one of their own.
+    hand_off = _write_marker(project, _tree(wt))
+    reviewed = _rack(rack, "transition", task_id, "review", cwd=project, env=env)
+    hand_off.unlink()
+    assert reviewed.returncode == 0, reviewed.stdout + reviewed.stderr
     return task_id, str(wt)
 
 
@@ -317,7 +326,11 @@ def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
     # click per move (HATS-1728). The grant window closed that gap, the trait's
     # question widened to `->done`, and this role's second row stopped saying
     # anything the trait does not.
+    # A second row on the rack road again since HATS-1877 — a GATE this time,
+    # not a question: `->review` asked nothing, so a card reached a reviewer on
+    # the agent's word that the suite was green.
     assert apps["rack"]["tasks"] == [
+        {"run": f"{SKILL}/{REVIEW_SCRIPT}", "at": ["->review"], "on_error": "refuse"},
         {"run": f"{SKILL}/{SCRIPT}", "at": ["->done"], "on_error": "refuse"},
     ], "the FSM automerge road, qualified by the backlog it gates"
     assert apps["wt"] == [
