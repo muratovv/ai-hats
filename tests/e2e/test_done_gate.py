@@ -278,6 +278,11 @@ def _to_review(
     git(wt, "add", "-A")
     git(wt, "commit", "-m", "work")
 
+    # The hand-off is gated too: `->review` demands `review-gate`'s set, a strict
+    # subset of `done-gate`'s, so earning it here leaves every case below its
+    # own question — what `->done` and `->merge` add on top.
+    _write_marker(project, _tree(wt), stages=gate_stages("review-gate"))
+
     for state in ("document", "review"):
         moved = _rack(rack, "transition", task_id, state, cwd=project, env=env)
         assert moved.returncode == 0, moved.stdout + moved.stderr
@@ -383,8 +388,10 @@ def test_a_branch_with_no_marker_cannot_reach_done(gate_project, rack_bin):
     # ADR-0023 D7: the refusal RENDERS what is missing from the project's own
     # table. A library file that restated it drifted within days.
     assert "Missing:" in reason
-    for stage in gate_stages("done-gate"):
-        assert stage in reason, f"the refusal names the missing stage {stage}"
+    missing = reason.split("Missing:", 1)[1].split("Run the gate", 1)[0].split()
+    assert set(missing) == set(gate_stages("done-gate")) - set(gate_stages("review-gate")), (
+        "exactly what ->done adds over the hand-off already earned"
+    )
     assert _card(project, task_id).read_bytes() == before
 
     # The merge never happened: no work.txt on master.
@@ -675,6 +682,11 @@ def test_a_direct_wt_merge_is_refused_before_it_mutates_anything(
     project, env = gate_project("gated")
     task_id, worktree = _to_review(rack_bin, project, env, worktree=True)
     branch = f"task/{task_id.lower()}"
+    # `merge-gate` and `review-gate` name one set, so the hand-off's markers
+    # would clear this road too; the branch moves on, and the new tree has none.
+    (Path(worktree) / "late.txt").write_text("after the hand-off", encoding="utf-8")
+    git(Path(worktree), "add", "-A")
+    git(Path(worktree), "commit", "-m", "late work")
     master_before = git(project, "rev-parse", "master").stdout.strip()
 
     merged = _ai_hats(
