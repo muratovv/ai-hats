@@ -63,7 +63,7 @@ def session_retro(
             sys.exit(1)
         session_id = sessions[0].session_id
 
-    runner = SessionReviewRunner(project.layout.root)
+    runner = SessionReviewRunner(project.layout)
 
     try:
         with console.status(

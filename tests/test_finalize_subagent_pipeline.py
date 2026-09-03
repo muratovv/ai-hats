@@ -149,7 +149,7 @@ def test_pipeline_run_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
         },
     )
 
-    assert spawned == [(tmp_path, "test")], (
+    assert spawned == [(ProjectLayout.at(tmp_path), "test")], (
         f"finalize-subagent did not spawn reviewer; spawned={spawned}"
     )
     # retro_decision lands in the funnel for any future downstream step.

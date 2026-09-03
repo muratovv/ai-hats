@@ -112,7 +112,7 @@ def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout)
             print(f"harvested {len(persisted)} verdict(s): {persisted}")
         return 2
 
-    issues = _harness_check(project_dir, session_id, runner_error, raw, parse_issues)
+    issues = _harness_check(layout, session_id, runner_error, raw, parse_issues)
     if issues:
         _file_meta_proposal(
             project_dir,
@@ -164,7 +164,7 @@ def _load_review_doc(out_path: Path) -> tuple[dict | None, list[str]]:
 
 
 def _harness_check(
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
     runner_error: str | None,
     raw: dict | None,
@@ -192,7 +192,7 @@ def _harness_check(
         verdicts = []
 
     try:
-        active_ids = _load_active_hyp_ids(project_dir, session_id)
+        active_ids = _load_active_hyp_ids(layout, session_id)
     except Exception as e:  # noqa: BLE001 — observability over correctness
         issues.append(f"could not enumerate active HYPs: {e}")
         active_ids = set()
@@ -222,13 +222,13 @@ def _extract_frontmatter(text: str) -> str:
     return rest[:end]
 
 
-def _load_active_hyp_ids(project_dir: Path, session_id: str) -> set[str]:
+def _load_active_hyp_ids(layout: ProjectLayout, session_id: str) -> set[str]:
     from ..rack_workspace import active_hypotheses, created_at_or_before, rack_workspace
     from ..retro.window import session_cut
 
-    ws = rack_workspace(project_dir)
+    ws = rack_workspace(layout.root)
     every = active_hypotheses(ws)
-    kept = created_at_or_before(every, session_cut(project_dir, session_id))
+    kept = created_at_or_before(every, session_cut(layout, session_id))
     return {h.id for h in kept}
 
 

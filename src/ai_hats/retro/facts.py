@@ -11,6 +11,8 @@ to ``[session_start, session_end]`` — are preserved here.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import re
 import subprocess
@@ -53,15 +55,15 @@ class SessionFacts:
     composition: dict | None = None
 
 
-def compute_facts(project_dir: Path, session_id: str) -> SessionFacts:
+def compute_facts(layout: ProjectLayout, session_id: str) -> SessionFacts:
+    project_dir = layout.root
     """Compute SessionFacts from <runs_dir>/<session> + git log + backlog.
 
     Raises FileNotFoundError if the session directory does not exist.
     """
-    from ..paths import runs_dir
 
     sid = _normalize(session_id)
-    session_dir = runs_dir(project_dir) / session_dirname(sid)
+    session_dir = layout.sessions.runs / session_dirname(sid)
     if not session_dir.exists():
         raise FileNotFoundError(f"Session not found: {sid}")
 

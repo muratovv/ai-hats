@@ -7,6 +7,8 @@ in lockstep by living in one place.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -93,14 +95,13 @@ def parse_task_timestamp(value: str) -> datetime | None:
         return None
 
 
-def session_cut(project_dir: Path, session_id: str) -> datetime:
+def session_cut(layout: ProjectLayout, session_id: str) -> datetime:
     """Upper bound of what existed for a session: start + duration_s, or end of start day when duration_s is absent.
 
     Distinct from ``compute_session_end``: its fallback is ``now()``, which (a) fails to truncate on historic runs
     and (b) gives runner and inbox-validator different candidate sets (HATS-1445).
     Unparseable session IDs return datetime.max (fail-open: retain all cards).
     """
-    from ..paths import runs_dir
 
     sid = strip_session_prefix(session_id)
     try:
@@ -109,7 +110,7 @@ def session_cut(project_dir: Path, session_id: str) -> datetime:
         logger.info("session_cut: unparseable session start for %s (%s)", session_id, e)
         return datetime.max.replace(tzinfo=timezone.utc)
 
-    metrics_path = runs_dir(project_dir) / session_dirname(sid) / METRICS_JSON
+    metrics_path = layout.sessions.runs / session_dirname(sid) / METRICS_JSON
     if metrics_path.exists():
         try:
             data = json.loads(metrics_path.read_text())

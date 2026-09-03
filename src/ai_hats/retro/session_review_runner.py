@@ -12,6 +12,8 @@ Failure-proposal filing lives in the harness layer
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import logging
 import re
@@ -80,16 +82,15 @@ class SessionReviewRunner:
 
     def __init__(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         *,
         subagent_runner: "SubAgentRunner | None" = None,
     ) -> None:
-        from ..paths import retros_dir, runs_dir
-
-        self.project_dir = project_dir
-        self.out_dir = retros_dir(project_dir) / "sessions"
-        self.gitlog_dir = runs_dir(project_dir)
-        self._ws = rack_workspace(project_dir)
+        self.layout = layout
+        self.project_dir = layout.root
+        self.out_dir = layout.sessions.retros / "sessions"
+        self.gitlog_dir = layout.sessions.runs
+        self._ws = rack_workspace(layout.root)
         self._subagent_runner = subagent_runner
 
     # ---- public API ----
@@ -110,7 +111,7 @@ class SessionReviewRunner:
         ``target=harness-incident``.
         """
         try:
-            facts = compute_facts(self.project_dir, session_id)
+            facts = compute_facts(self.layout, session_id)
             prompt = self._build_prompt(facts)
             analysis = self._run_and_validate(
                 prompt,
@@ -140,13 +141,13 @@ class SessionReviewRunner:
     def _hyps(self, session_id: str) -> tuple[list[HypView], int]:
         """Кандидаты сессии и число скрытых как более поздних."""
         every = active_hypotheses(self._ws)
-        kept = created_at_or_before(every, session_cut(self.project_dir, session_id))
+        kept = created_at_or_before(every, session_cut(self.layout, session_id))
         return kept, len(every) - len(kept)
 
     def _props(self, session_id: str) -> tuple[list[PropView], int]:
         """Кандидаты сессии и число скрытых как более поздних."""
         every = open_proposals(self._ws)
-        kept = created_at_or_before(every, session_cut(self.project_dir, session_id))
+        kept = created_at_or_before(every, session_cut(self.layout, session_id))
         return kept, len(every) - len(kept)
 
     def _build_prompt(self, facts) -> str:
@@ -378,7 +379,7 @@ class SessionReviewRunner:
             strict=False,
         )
         return SubAgentRunner(
-            self.project_dir,
+            self.layout,
             payload,
             session_mgr=make_session_manager(self.project_dir),
         )

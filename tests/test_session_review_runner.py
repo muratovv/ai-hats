@@ -7,6 +7,8 @@ SubAgentRunner.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,7 +69,7 @@ def _add_active_hyp(
 
 
 def test_check_allowed_keys_accepts_canonical(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     runner._check_allowed_keys(
         {
             "summary": "x",
@@ -81,7 +83,7 @@ def test_check_allowed_keys_accepts_canonical(tmp_path: Path) -> None:
 
 def test_check_allowed_keys_rejects_facts(tmp_path: Path) -> None:
     """LLM is forbidden from emitting runner-injected fields."""
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     with pytest.raises(ValueError, match="forbidden"):
         runner._check_allowed_keys({"summary": "x", "metrics": {}})
 
@@ -104,7 +106,7 @@ def _wrap_in_delims(body: str) -> str:
 
 
 def test_extract_yaml_passes_bare_yaml_unchanged(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     body = "summary: hi\nobservations: []\n"
     transcript = _wrap_in_delims(body)
     out = runner._extract_yaml(transcript)
@@ -113,7 +115,7 @@ def test_extract_yaml_passes_bare_yaml_unchanged(tmp_path: Path) -> None:
 
 
 def test_extract_yaml_strips_fenced_with_yaml_lang_tag(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     body = "```yaml\nsummary: hi\nobservations: []\n```"
     transcript = _wrap_in_delims(body)
     out = runner._extract_yaml(transcript)
@@ -122,7 +124,7 @@ def test_extract_yaml_strips_fenced_with_yaml_lang_tag(tmp_path: Path) -> None:
 
 
 def test_extract_yaml_strips_fence_without_lang_tag(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     body = "```\nsummary: hi\nobservations: []\n```"
     transcript = _wrap_in_delims(body)
     out = runner._extract_yaml(transcript)
@@ -132,14 +134,14 @@ def test_extract_yaml_strips_fence_without_lang_tag(tmp_path: Path) -> None:
 
 def test_strip_code_fence_handles_trailing_blank_lines(tmp_path: Path) -> None:
     """Defensive: model may emit trailing whitespace after closing fence."""
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     body = "```yaml\nsummary: hi\n```\n\n"
     out = runner._strip_code_fence(body)
     assert yaml.safe_load(out) == {"summary": "hi"}
 
 
 def test_strip_code_fence_no_fence_returns_input(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     body = "summary: hi\nobservations: []\n"
     assert runner._strip_code_fence(body) == body
 
@@ -235,14 +237,14 @@ def test_truncate_audit_safety_valve_preserves_head_and_tail() -> None:
 
 
 def test_validate_analysis_shape_requires_summary(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     with pytest.raises(ValueError, match="summary"):
         runner._validate_analysis_shape({"summary": ""}, SID)
 
 
 def test_validate_analysis_shape_requires_active_hyp_coverage(tmp_path: Path) -> None:
     _add_active_hyp(tmp_path, "HYP-042")
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     with pytest.raises(ValueError, match="HYP-042"):
         runner._validate_analysis_shape(
             {"summary": "ok", "hypothesis_verdicts": []},
@@ -252,7 +254,7 @@ def test_validate_analysis_shape_requires_active_hyp_coverage(tmp_path: Path) ->
 
 def test_validate_analysis_shape_passes_with_full_coverage(tmp_path: Path) -> None:
     _add_active_hyp(tmp_path, "HYP-042")
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     runner._validate_analysis_shape(
         {
             "summary": "ok",
@@ -314,7 +316,7 @@ def test_coerce_observations_empty_and_none_return_empty_list() -> None:
 
 
 def test_merge_produces_valid_review(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     review = runner._merge(
         _facts(),
         {
@@ -332,7 +334,7 @@ def test_merge_produces_valid_review(tmp_path: Path) -> None:
 
 
 def test_save_round_trips_through_loader(tmp_path: Path) -> None:
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     review = runner._merge(_facts(), {"summary": "s"})
     path = runner._save(review)
     loaded, _body = load(path)
@@ -419,7 +421,7 @@ def test_run_writes_artifact_and_round_trips(tmp_path: Path, monkeypatch) -> Non
     )
     fake_runner = _FakeSubAgentRunner(transcript, tmp_path)
 
-    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path), subagent_runner=fake_runner)
     path = runner.run(SID)
 
     loaded, _body = load(path)
@@ -455,7 +457,7 @@ def test_run_coerces_dict_observation_instead_of_crashing(
         + "\nEND_REFLECT_SESSION_RETRO\n"
     )
     fake_runner = _FakeSubAgentRunner(transcript, tmp_path)
-    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path), subagent_runner=fake_runner)
     # max_retries=0 — the coercion fix must succeed on the FIRST attempt,
     # proving the failure mode is gone (it was never retry-recoverable).
     path = runner.run(SID, max_retries=0)
@@ -479,7 +481,7 @@ def test_run_raises_session_review_error_on_invalid_llm_output(
         + "\nEND_REFLECT_SESSION_RETRO\n"
     )
     fake_runner = _FakeSubAgentRunner(transcript, tmp_path)
-    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path), subagent_runner=fake_runner)
     with pytest.raises(SessionReviewError):
         runner.run(SID, max_retries=0)
 
@@ -502,7 +504,7 @@ def test_run_surfaces_subagent_failure_when_transcript_missing(
         metrics={"exit_code": 124, "timed_out": True},
         reasoning="claude: request timed out\n",
     )
-    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path), subagent_runner=fake_runner)
     with pytest.raises(SessionReviewError) as excinfo:
         runner.run(SID, max_retries=2)
 
@@ -529,7 +531,7 @@ def test_run_surfaces_subagent_failure_when_transcript_blank(
         write_transcript=True,
         metrics={"exit_code": 1},
     )
-    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path), subagent_runner=fake_runner)
     with pytest.raises(SessionReviewError) as excinfo:
         runner.run(SID, max_retries=3)
 
@@ -654,7 +656,7 @@ def test_render_active_hypotheses_surfaces_verification_protocol(tmp_path: Path)
     )
     _write_hyp_with_extras(tmp_path, "HYP-501", verification_protocol=protocol)
 
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     out = runner._render_active_hypotheses(SID)
 
     assert "verification_protocol: |" in out, (
@@ -676,7 +678,7 @@ def test_render_active_hypotheses_omits_verification_protocol_when_absent(
 
     _write_hyp_with_extras(tmp_path, "HYP-502")  # no verification_protocol
 
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     out = runner._render_active_hypotheses(SID)
 
     assert "HYP-502" in out
@@ -690,7 +692,7 @@ def test_render_active_hypotheses_filters_future_and_adds_note(tmp_path: Path):
     _write_hyp_with_extras(tmp_path, "HYP-101", created="2026-05-01")
     _write_hyp_with_extras(tmp_path, "HYP-102", created="2099-01-01")
 
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     out = runner._render_active_hypotheses(SID)
 
     assert "HYP-101" in out
@@ -704,7 +706,7 @@ def test_render_active_hypotheses_all_filtered_shows_none_and_note(tmp_path: Pat
 
     _write_hyp_with_extras(tmp_path, "HYP-102", created="2099-01-01")
 
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     out = runner._render_active_hypotheses(SID)
 
     assert "(none — emit empty hypothesis_verdicts list)" in out
@@ -748,7 +750,7 @@ def test_render_open_proposals_filters_future_and_adds_note(tmp_path: Path):
     data2["created"] = "2099-01-01"
     p2_path.write_text(yaml.safe_dump(data2))
 
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     out = runner._render_open_proposals(SID)
 
     assert p1 in out
@@ -763,7 +765,7 @@ def test_validation_alignment_ignores_future_active_hypotheses(tmp_path: Path):
     _add_active_hyp(tmp_path, "HYP-101", created="2026-05-01")
     _add_active_hyp(tmp_path, "HYP-102", created="2099-01-01")
 
-    runner = SessionReviewRunner(tmp_path)
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
     raw = {
         "summary": "all good",
         "hypothesis_verdicts": [
@@ -791,7 +793,7 @@ def test_build_prompt_states_verdict_semantics(tmp_path: Path):
     from ai_hats.retro.session_review_runner import SessionReviewRunner
 
     _add_active_hyp(tmp_path, "HYP-601")
-    out = SessionReviewRunner(tmp_path)._build_prompt(_facts())
+    out = SessionReviewRunner(ProjectLayout.at(tmp_path))._build_prompt(_facts())
 
     for value in ("confirmed", "refuted", "inconclusive", "n/a"):
         assert f"      {value}" in out, f"verdict {value!r} is listed but never defined"
@@ -809,7 +811,7 @@ def test_build_prompt_states_the_two_easy_to_confuse_bars(tmp_path: Path):
     from ai_hats.retro.session_review_runner import SessionReviewRunner
 
     _add_active_hyp(tmp_path, "HYP-602")
-    out = SessionReviewRunner(tmp_path)._build_prompt(_facts())
+    out = SessionReviewRunner(ProjectLayout.at(tmp_path))._build_prompt(_facts())
 
     assert "`inconclusive`, never `n/a`" in out, "unsure-is-not-n/a bar missing"
     assert "Absence of the failure a guard prevents is NOT evidence" in out, (

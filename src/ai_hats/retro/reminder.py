@@ -6,8 +6,9 @@ session-end banner.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
-from pathlib import Path
 from typing import TypedDict
 
 from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
@@ -30,7 +31,7 @@ _WRAP_TASKS_THRESHOLD = 2
 _WRAP_DURATION_MIN = 60
 
 
-def evaluate_wrap_up(project_dir: Path, session_id: str) -> WrapUpInfo | None:
+def evaluate_wrap_up(layout: ProjectLayout, session_id: str) -> WrapUpInfo | None:
     """Wrap-up nudge: fire when tasks_closed_in_window >= 2 AND duration > 60min.
 
     HATS-214. Source data:
@@ -41,9 +42,9 @@ def evaluate_wrap_up(project_dir: Path, session_id: str) -> WrapUpInfo | None:
     nudge degrades at the UX boundary (``auto_retro.make_decision``), not via a
     second ``except`` down here that would turn a bug into "0 tasks" (HATS-1259).
     """
-    from ..paths import runs_dir
+    project_dir = layout.root
 
-    sdir = runs_dir(project_dir) / session_dirname(session_id)
+    sdir = layout.sessions.runs / session_dirname(session_id)
     metrics_path = sdir / METRICS_JSON
     if not metrics_path.exists():
         return None

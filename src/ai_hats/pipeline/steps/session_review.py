@@ -39,13 +39,12 @@ class RunSessionReview(Step):
         max_retries: int | None = None,
         **_: Any,
     ) -> dict[str, Any]:
-        project_dir = layout.root
         from ...retro.session_review_runner import SessionReviewRunner
 
         # State override > YAML param default. Lets harness propagate
         # CLI flags (--max-retries) without YAML-level reconfiguration.
         retries = max_retries if max_retries is not None else self.max_retries
-        runner = SessionReviewRunner(project_dir)
+        runner = SessionReviewRunner(layout)
         review_path = runner.run(
             session_id,
             max_retries=retries,

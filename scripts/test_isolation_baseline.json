@@ -49,7 +49,7 @@
   "tests/smoke/test_session_retro_pipeline.py": 4,
   "tests/test_assembler.py": 12,
   "tests/test_assembler_sweep.py": 7,
-  "tests/test_auto_retro.py": 9,
+  "tests/test_auto_retro.py": 8,
   "tests/test_bootstrap.py": 50,
   "tests/test_bump_internal_prune.py": 6,
   "tests/test_channel.py": 5,

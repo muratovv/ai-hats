@@ -156,7 +156,7 @@ def test_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
         layout=ProjectLayout.at(tmp_path),
     )
 
-    assert spawned == [(tmp_path, "test")]
+    assert spawned == [(ProjectLayout.at(tmp_path), "test")]
     assert sync_calls == [], "background=True must use the detached Popen path, not sync"
     assert delta["retro_decision"]["action"] == "run"
     assert delta["retro_decision"]["background"] is True
