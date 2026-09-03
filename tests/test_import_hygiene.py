@@ -385,7 +385,6 @@ def _resolution_offenders() -> dict[str, tuple[str, ...]]:
 # the owners, the two rack-sanctioned copies, and the step-7/8 death row.
 EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
     "ai_hats.cli._entry": ("resolve_root",),  # THE sanctioned factory (composition root)
-    "ai_hats.cli._helpers": ("_project_dir",),  # zero callers left — deleted in step 8
     "ai_hats.cli.wait": (
         "resolve_root",
     ),  # rack's copy; semantics now match core, parity by conformance

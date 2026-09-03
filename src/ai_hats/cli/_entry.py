@@ -46,8 +46,16 @@ def resolve_project(
     if identity is not None:
         root = Path(identity.project_dir)
     else:
+        if start is None:
+            try:
+                start = Path.cwd()
+                start.stat()
+            except OSError as exc:  # the worktree under our feet was torn down
+                from ._helpers import DeadCwdError
+
+                raise DeadCwdError() from exc
         root = resolve_root(
-            start if start is not None else Path.cwd(),
+            start,
             env,
             on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE,
         )
