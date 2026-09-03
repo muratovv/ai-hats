@@ -99,7 +99,7 @@ runners_json="$(dirname "$0")/test_runners.json"
 
 # Embedded mirror of that file's alternation — the last resort when it is
 # unreadable. Kept in sync by tests/test_shared_test_runners.py.
-runner_alt_fallback='pytest|python[[:space:]]+-m[[:space:]]+pytest|python3[[:space:]]+-m[[:space:]]+pytest|python[[:space:]]+-m[[:space:]]+unittest|python3[[:space:]]+-m[[:space:]]+unittest|ruff|make|ci-local\.sh|go[[:space:]]+test|cargo[[:space:]]+test|npm[[:space:]]+test|npm[[:space:]]+run[[:space:]]+test|yarn[[:space:]]+test|pnpm[[:space:]]+test'
+runner_alt_fallback='pytest|python[[:space:]]+-m[[:space:]]+pytest|python3[[:space:]]+-m[[:space:]]+pytest|python[[:space:]]+-m[[:space:]]+unittest|python3[[:space:]]+-m[[:space:]]+unittest|ruff|make|ci-local\.sh|gates\.sh|go[[:space:]]+test|cargo[[:space:]]+test|npm[[:space:]]+test|npm[[:space:]]+run[[:space:]]+test|yarn[[:space:]]+test|pnpm[[:space:]]+test'
 
 build_runner_alt() {
     local raw="" name alt=""
@@ -123,7 +123,7 @@ for group in ("python_runners", "standalone_checkers", "delegating", "foreign_ru
     [[ -z "$raw" ]] && return 1
     while IFS= read -r name; do
         [[ -z "$name" ]] && continue
-        name="${name//./\\.}"          # a literal dot in ci-local.sh
+        name="${name//./\\.}"          # a literal dot in gates.sh
         name="${name// /[[:space:]]+}"  # one word gap -> any run of whitespace
         alt="${alt:+$alt|}$name"
     done <<<"$raw"

@@ -2,8 +2,8 @@
 
 flow:   a maintainer closes a card while master's own CI has been failing
 cmds:
-    bash scripts/ci-local.sh master-ci
-    bash scripts/ci-local.sh --stages done-gate
+    bash scripts/gates.sh master-ci
+    hooks/done-gate.sh --stages
 expect: a green master passes; a red one refuses with exit 1, names the
         conclusion and the run url, and points at the one override; the
         override lets the card that fixes master through; and every reason the
@@ -135,10 +135,15 @@ def test_unreadable_output_is_announced_not_silent(tmp_path: Path):
     assert "cannot read" in combined, combined
 
 
+_GATE_HOOKS = (
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/hooks"
+)
+
+
 def test_the_done_gate_composition_names_the_stage():
-    """The gate runs what `--stages` names, so dropping it here disarms it."""
+    """The gate runs what its `--stages` names, so dropping it here disarms it."""
     listed = subprocess.run(
-        ["bash", "scripts/ci-local.sh", "--stages", "done-gate"],
+        ["bash", f"{_GATE_HOOKS}/done-gate.sh", "--stages"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -151,7 +156,7 @@ def test_the_done_gate_composition_names_the_stage():
 def test_the_merge_gate_stays_offline():
     """`merge-gate` must remain runnable without network — it is the fast edge."""
     listed = subprocess.run(
-        ["bash", "scripts/ci-local.sh", "--stages", "merge-gate"],
+        ["bash", f"{_GATE_HOOKS}/merge-gate.sh", "--stages"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,

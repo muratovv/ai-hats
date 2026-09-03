@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# pre-push: the master push gate, on git's channel.
+# pre-push: the master push gate, on git's channel. It asks: is the tree that is
+# about to reach origin/master green through the full tier.
 #
 # Check mode (DEFAULT, what git runs): read git's pre-push protocol from stdin
 # and, for every local_sha aimed at refs/heads/master, ask the project's own
-# `scripts/gates.sh check push-gate --rev <sha>` whether that commit's TREE has
-# earned every stage the gate requires. Allow on yes; block with the missing
-# stages and the command that earns them on no. Never runs a suite: GitHub
-# closes the push connection ~30s in, so the tier runs OUT OF BAND —
-# `scripts/run-e2e-gate.sh` — and the marker is the only evidence it ran.
+# `scripts/gates.sh check --rev <sha>` about the stages below. Allow on yes;
+# block naming the missing stages and the command that earns them on no. Never
+# runs a suite: GitHub closes the push connection ~30s in, so the tier runs OUT
+# OF BAND — `scripts/run-e2e-gate.sh` — and the markers are the only evidence.
 #
 #   git push origin feature   # no master target -> no-op
 #   git push origin :master   # deletion -> no-op
-#   git push origin master    # allowed only with every push-gate stage marked
+#   git push origin master    # allowed only with every stage below marked
 #
-# Run mode (`--run`): kept as a spelling of `scripts/run-e2e-gate.sh`.
+# Run mode (`--run [--rev <sha>]`): `scripts/gates.sh run` of the stages below.
+# `--stages`: print them.
 #
-# A SEPARATE script from the checks-channel hook on purpose: this one's default
+# A SEPARATE script from the checks-channel gates on purpose: this one's default
 # mode reads git's protocol from stdin, and the check runner gives its children
 # stdin=DEVNULL — empty stdin hits the "no master target" fast path and exits 0.
-# Reusing it there would have produced a gate that is silently always green.
+# Reusing it there would produce a gate that is silently always green.
 #
 # Exit contract, git's: 0 allow, 1 block. Hence `set -uo pipefail` and no `-e`.
 
@@ -27,11 +28,10 @@ set -uo pipefail
 zero='0000000000000000000000000000000000000000'
 
 GATE='push-gate'
+STAGES='e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e'
 CHANNEL='githook'
 RUN_CMD='scripts/run-e2e-gate.sh'
 
-# Gates run in place from the library rather than copied into `.githooks/`, so
-# the sibling lib is reachable from $0's own directory.
 _self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 if ! . "$_self_dir/../lib/gate.sh"; then
     echo "[push-gate] cannot load $_self_dir/../lib/gate.sh — push to master BLOCKED" >&2
@@ -76,7 +76,8 @@ check_mode() {
             echo "[push-gate] $sha names no tree here — push to master BLOCKED" >&2
             exit 1
         fi
-        missing="$(cd "$repo_root" && bash "$gates" check "$GATE" --rev "$sha")"
+        # shellcheck disable=SC2086
+        missing="$(cd "$repo_root" && bash "$gates" check --rev "$sha" $STAGES)"
         rc=$?
         case "$rc" in
             0) continue ;;
@@ -88,7 +89,7 @@ check_mode() {
                 gate_exit "$CHANNEL" refuse
                 ;;
             *)
-                echo "[push-gate] \`$gates check $GATE\` failed with rc=$rc — the gate could not" >&2
+                echo "[push-gate] \`$gates check\` failed with rc=$rc — the gate could not" >&2
                 echo "[push-gate] tell, so the push to master is BLOCKED" >&2
                 exit 1
                 ;;
@@ -99,13 +100,11 @@ check_mode() {
     gate_exit "$CHANNEL" pass
 }
 
-if [[ "${1:-}" == "--run" ]]; then
-    shift
-    repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-        echo "[push-gate] could not resolve the repository root — gate ABORTED" >&2
-        exit 1
-    }
-    exec bash "$repo_root/scripts/run-e2e-gate.sh" "$@"
-else
-    check_mode
-fi
+case "${1:-}" in
+    --run)
+        shift
+        gate_run "$GATE" "$STAGES" "$@"
+        ;;
+    --stages) printf '%s\n' "$STAGES" ;;
+    *) check_mode ;;
+esac

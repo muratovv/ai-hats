@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
-# The channel side of a gate — what the library still owns once the stages,
-# the marker and the run moved into the project (ADR-0023 D7).
-#
-# A gate is a NAME for a set of stages; the project declares the set in
-# `scripts/gates.sh` and earns markers for it with `scripts/ci-gate.sh`. What is
-# left for a hook to do is: say WHICH tree this transition puts into master,
-# ask the project whether that tree has earned the gate, and speak the answer
-# in its own channel's exit codes. Nothing here names a stage or a gate.
+# What every thin gate shares. A gate is a few lines: the stages it requires and
+# a call to `gate_main`; this file is everything that call does.
 #
 # Sourced, never executed; callers keep their own `set` options.
 #
-#   gate_tree                <in_dir> <rev>    -> prints the tree of <rev>
-#   gate_check_task_worktree <gate>            -> EXITS in the checks channel
-#   gate_refusal             <gate> <tree> <label> <cmd> <missing>
-#   gate_exit                <channel> pass|refuse
+#   gate_main <gate> "<stages>" [--check | --run [--rev <sha>] | --stages]
+#       --check (DEFAULT, what a bare spawn from the checks channel gets):
+#           say which tree this transition puts into master, ask that tree's
+#           `scripts/gates.sh check` about the stages, exit 0 pass / 2 refuse.
+#       --run: `scripts/gates.sh run <stages>` — earn them, in place when this
+#           checkout is clean and at the subject, in a scratch checkout otherwise.
+#       --stages: print the list, for a reader or a renderer.
+#
+#   gate_tree <in_dir> <rev>            -> the tree of <rev>
+#   gate_refusal <gate> <tree> <label> <cmd> <missing>
+#   gate_exit <channel> pass|refuse     -> exits with that channel's code
+#
+# Nothing here names a stage: what a gate requires is the gate's own line, and
+# how a stage runs is `scripts/gates.sh`'s.
 
-# The tree of a revision. The unit of judgement is CONTENT, so a --no-ff merge
-# over an unchanged tree is the same subject as the branch tip.
 gate_tree() {
     (cd "$1" 2>/dev/null && git rev-parse "$2^{tree}" 2>/dev/null) || return 1
 }
@@ -35,16 +37,12 @@ gate_refusal() {
     done
     printf '\nRun the gate on that exact content, then retry:\n\n    %s\n\n' "$cmd"
     printf 'It runs only what is missing and stamps each green stage for the tree, so\n'
-    printf 'the retry is instant, and any wider gate whose set includes these stages\n'
-    printf 'stamps them too (`scripts/gates.sh list` names the gates).\n'
+    printf 'the retry is instant, and a wider gate whose set includes these stages\n'
+    printf 'stamps them too.\n'
 }
 
-# --- whose backlog is this? ------------------------------------------------
-#
 # This project's OWN tasks dir, from `ai-hats.yaml` and the documented default —
-# deliberately NOT from AI_HATS_DIR. That variable is the leaky one: a value
-# inherited from another checkout points at a tracker of its own, and the whole
-# question is which tracker this transition belongs to.
+# deliberately NOT from AI_HATS_DIR, which leaks between checkouts.
 _gate_own_tasks_dir() {
     local project_dir="$1" configured
     configured="$(sed -n "s/^ai_hats_dir:[[:space:]]*[\"']\{0,1\}\([^\"'[:space:]]*\).*/\1/p" \
@@ -57,32 +55,24 @@ _gate_own_tasks_dir() {
     printf '%s/tracker/backlog/tasks' "$configured"
 }
 
-# A path with symlinks resolved, so /tmp and /private/tmp compare equal on macOS.
-# A dir that does not exist answers with itself — it cannot be this project's own
-# tasks dir either way, and the comparison is what decides.
+# Symlinks resolved, so /tmp and /private/tmp compare equal on macOS.
 _gate_realdir() {
     if [[ -d "$1" ]]; then (cd -- "$1" && pwd -P); else printf '%s' "$1"; fi
 }
 
-# --- check mode, whole ------------------------------------------------------
-
 # Require every stage of <gate> to be marked for the tree this card puts into
 # master. EXITS. Instant by construction — a few `git rev-parse` and a marker
-# lookup — because it runs INSIDE the per-task rack lock. The suite can never
-# run here: that is `scripts/gates.sh run <gate>`'s job, out of band.
-#
-# Role-owned rather than engine-owned: the backlog-scope policy below is this
-# repository's, and it stays where its author can see and test it.
+# lookup — because it runs INSIDE the per-task rack lock. The suite never runs
+# here: that is `--run`, out of band.
 gate_check_task_worktree() {
-    local gate="$1"
+    local gate="$1" stages="$2"
     local project_dir="${AI_HATS_PROJECT_DIR:-$PWD}"
     local task_id="${AI_HATS_TASK_ID:-<unnamed>}"
 
     # DECLARED FAIL-OPEN, and the price is named out loud: a card outside this
-    # project's own tracker is not this gate's business, so it passes. A
-    # role-scoped binding fires on EVERY backlog the rack CLI touches — the
-    # scratch --tasks-dir this repo's own rack tests build included. Absent at
-    # `wt:pre-merge`, which is not a backlog operation at all.
+    # project's own tracker is not this gate's business. A role-scoped binding
+    # fires on EVERY backlog the rack CLI touches — the scratch --tasks-dir this
+    # repo's own rack tests build included. Absent at `wt:pre-merge`.
     local tasks_dir="${AI_HATS_TASKS_DIR:-}" own
     own="$(_gate_own_tasks_dir "$project_dir")"
     if [[ -n "$tasks_dir" ]] && [[ "$(_gate_realdir "$tasks_dir")" != "$(_gate_realdir "$own")" ]]; then
@@ -101,14 +91,11 @@ gate_check_task_worktree() {
     # Set only once the worktree is gone AND its branch reached the base branch,
     # which is what separates "brought no code" from "already merged".
     merged="${AI_HATS_MERGED_SHA:-}"
-    # Named only at `wt:pre-merge`, where the wt engine owns the branch; on an
-    # FSM edge the branch is rack's own convention. For messages only.
     branch="${AI_HATS_BRANCH_NAME:-task/$(printf '%s' "$task_id" | tr '[:upper:]' '[:lower:]')}"
 
     if [[ -z "$wt" && -z "$merged" ]]; then
-        # The subject is the code entering master through this card. No worktree
-        # AND nothing merged means no commits of its own. The runner refuses on
-        # its own if it could not TELL, so absent here means absent, never unknown.
+        # No worktree AND nothing merged means no commits of its own. The runner
+        # refuses on its own if it could not TELL, so absent means absent.
         printf '%s: %s has no worktree — it contributes no commits, so there is\n' \
                "$gate" "$task_id"
         printf 'nothing to gate. Passing.\n'
@@ -116,11 +103,9 @@ gate_check_task_worktree() {
     fi
 
     if [[ -n "$wt" && ! -d "$wt" && -z "$merged" ]]; then
-        # The record survived its worktree and NOTHING was merged. Not a hole:
-        # rack's own teardown either finalizes an already-merged branch — nothing
-        # new enters master — or refuses the transition. `-z "$merged"` is
-        # load-bearing: with a merge record in hand this pass would be the very
-        # hole the second name exists to close.
+        # The record survived its worktree and NOTHING was merged: rack's own
+        # teardown either finalizes an already-merged branch or refuses the
+        # transition. `-z "$merged"` is load-bearing.
         printf '%s: %s recorded a worktree at %s, which no longer exists — no live\n' \
                "$gate" "$task_id" "$wt"
         printf 'branch content to gate (rack refuses the merge itself if that branch is\n'
@@ -128,22 +113,18 @@ gate_check_task_worktree() {
         gate_exit checks pass
     fi
 
-    # Two ways to name the content this card puts into master, and the tree is
-    # the subject either way. A LIVE directory picks the road: a record whose
-    # worktree is gone but whose branch reached the base belongs to the second.
+    # Two ways to name the content this card puts into master; a LIVE directory
+    # picks the road.
     local run_in rev subject run_cmd
     if [[ -d "$wt" ]]; then
-        # The TASK BRANCH's tree, never the main checkout's: the merge has not
-        # happened yet, so what the branch holds IS what lands.
         run_in="$wt"
         rev='HEAD'
         subject="branch $branch"
         run_cmd="cd $wt && make $gate"
     else
         # The worktree is gone because the branch already reached the base
-        # branch, so what this card put into master is that merge commit. The
-        # main checkout's own `scripts/gates.sh` answers for it; the RUN judges
-        # the commit in a checkout of its own, which `REV=` names.
+        # branch, so what this card put into master is that merge commit; the
+        # RUN judges it in a checkout of its own, which `REV=` names.
         run_in="$project_dir"
         rev="$merged"
         subject="merge commit $merged"
@@ -159,22 +140,21 @@ gate_check_task_worktree() {
     fi
 
     # The project under judgement answers for itself: its own `scripts/gates.sh`
-    # says what the gate requires and reads the markers. A tree that names no
-    # such file cannot earn a marker honestly, and a gate that cannot verify
-    # must not pass.
+    # runs the stages and reads the markers. A tree that has none cannot earn a
+    # marker honestly, and a gate that cannot verify must not pass.
     local gates="$run_in/scripts/gates.sh"
     if [[ ! -f "$gates" ]]; then
         printf '%s: %s has no scripts/gates.sh, so no marker could ever be earned\n' \
                "$gate" "$run_in"
-        printf 'honestly. Fix one of the two:\n\n'
-        printf '  * give the project a scripts/gates.sh whose table names %s, or\n' "$gate"
-        printf "  * unbind the gate: drop the row carrying 'gate: %s' from\n" "$gate"
-        printf "    'composition.apps' in the role that composes this skill.\n"
+        printf 'honestly. Give the project one, or unbind the gate: drop the\n'
+        printf "maintainer-quality-gate/hooks/%s.sh row from 'composition.apps' in the\n" "$gate"
+        printf 'role that composes this skill.\n'
         gate_exit checks refuse
     fi
 
     local missing rc
-    missing="$(cd "$run_in" && bash "$gates" check "$gate" --rev "$rev")"
+    # shellcheck disable=SC2086
+    missing="$(cd "$run_in" && bash "$gates" check --rev "$rev" $stages)"
     rc=$?
     case "$rc" in
         0)
@@ -186,19 +166,55 @@ gate_check_task_worktree() {
             gate_refusal "$gate" "$tree" "$subject" "$run_cmd" "$missing"
             gate_exit checks refuse
             ;;
-        64)
-            printf '%s: %s knows no gate named %s (see its `list`). A gate that\n' \
-                   "$gate" "$gates" "$gate"
-            printf 'cannot verify must not pass — add the row to its table, or unbind it.\n'
-            gate_exit checks refuse
-            ;;
         *)
             # Not a verdict: the primitive could not tell. Exit 1 is "the gate
             # broke" in this channel (ADR-0020 D2) — never a pass, and never
             # spelled 2, which would claim a refusal nobody made.
-            printf '%s: `%s check %s` failed with rc=%s — the gate could not tell.\n' \
-                   "$gate" "$gates" "$gate" "$rc"
+            printf '%s: `%s check` failed with rc=%s — the gate could not tell.\n' \
+                   "$gate" "$gates" "$rc"
             exit 1
+            ;;
+    esac
+}
+
+# Earn the stages: `scripts/gates.sh run` of the checkout the caller stands in.
+# EXITS with the run's rc.
+gate_run() {
+    local gate="$1" stages="$2"
+    shift 2
+    local repo_root
+    repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+        printf '[%s] not inside a git repository — nothing to run\n' "$gate" >&2
+        exit 70
+    }
+    local gates="$repo_root/scripts/gates.sh"
+    if [[ ! -f "$gates" ]]; then
+        printf '[%s] %s has no scripts/gates.sh — nothing can earn this gate here\n' \
+               "$gate" "$repo_root" >&2
+        exit 70
+    fi
+    printf '[%s] earning: %s\n' "$gate" "$stages" >&2
+    # shellcheck disable=SC2086
+    exec bash "$gates" run "$@" $stages
+}
+
+# The thin gate's whole body. The check runner spawns a gate with no argv at
+# all, so --check is the default.
+gate_main() {
+    local gate="$1" stages="$2"
+    shift 2
+    case "${1:---check}" in
+        --check) gate_check_task_worktree "$gate" "$stages" ;;
+        --run)
+            shift
+            gate_run "$gate" "$stages" "$@"
+            ;;
+        --stages) printf '%s\n' "$stages" ;;
+        *)
+            echo "usage: $gate.sh [--check | --run [--rev <sha>] | --stages]" >&2
+            # 64 = EX_USAGE. Never 1 and never 2: a typo at the command line is
+            # neither a refusal nor a verdict of any kind.
+            exit 64
             ;;
     esac
 }

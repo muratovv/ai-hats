@@ -3,8 +3,8 @@
 flow:   a developer runs the local unit gate repeatedly after using extra provider
         surfaces in the caller virtual environment
 cmds:
-    bash scripts/ci-local.sh unit
-    bash scripts/ci-local.sh unit
+    bash scripts/gates.sh unit
+    bash scripts/gates.sh unit
 expect: both runs detect a test-installed provider, ignore caller-only providers, and
         leave the caller virtual environment and checkout unchanged
 why: a unit gate that reuses its caller environment can turn the same broken tree green
@@ -162,10 +162,13 @@ def _run_unit(
             "PYTHONPATH": str(REPO_ROOT / "src"),
             "HATS1700_MUTATION_PACKAGE": str(mutation_package),
             "HATS1700_SEEN_PROVIDERS": str(seen_providers),
+            # A stage runs bare (HATS-1878): the one file to collect rides
+            # pytest's own variable, not argv the runner would have to forward.
+            "PYTEST_ADDOPTS": str(test_file),
         }
     )
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", "unit", str(test_file)],
+        ["bash", "scripts/gates.sh", "unit"],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,

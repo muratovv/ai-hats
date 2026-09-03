@@ -3,8 +3,8 @@
 flow:   a maintainer wires a new check into a CI job and forgets its
         dependency, so the stage exits on an import it never had
 cmds:
-    bash scripts/ci-local.sh e2e-catalog   # under an interpreter with no click
-    bash scripts/ci-local.sh bidi          # under the real one
+    bash scripts/gates.sh e2e-catalog   # under an interpreter with no click
+    bash scripts/gates.sh bidi          # under the real one
 expect: a stage that could not import is reported as BROKEN with exit 3, naming
         the missing module and saying nothing above it is a finding; a stage
         that ran and found something keeps exit 1; a green stage is untouched
@@ -40,7 +40,7 @@ BROKEN = 3
 
 def _stage(name: str, *, python: str, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "scripts/ci-local.sh", name],
+        ["bash", "scripts/gates.sh", name],
         cwd=str(cwd),
         env={**os.environ, "PYTHON": python},
         capture_output=True,

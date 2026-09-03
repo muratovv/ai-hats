@@ -56,15 +56,27 @@ def maintainer_project(shared_launcher, tmp_path: Path, monkeypatch):
     assert initialized.returncode == 0, initialized.stdout + initialized.stderr
 
     shutil.copy2(REPO_ROOT / "Makefile", project / "Makefile")
+    # `make <gate>` runs the gate script at the in-repo library path, and the
+    # gate hands its stages to the project's `scripts/gates.sh`; the sandbox
+    # carries the real one and a stage runner beside it that records the flags.
     scripts = project / "scripts"
     scripts.mkdir(exist_ok=True)
-    (scripts / "ci-local.sh").write_text(
+    shutil.copy2(REPO_ROOT / "scripts" / "gates.sh", scripts / "gates.sh")
+    hooks = (
+        project
+        / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+    )
+    shutil.copytree(REPO_ROOT / hooks.relative_to(project), hooks)
+    runner = tmp_path / "runner.sh"
+    runner.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'if [[ "$1" == "--stages" ]]; then echo "probe"; exit 0; fi\n'
+        'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
         'printf "%s" "${PYTEST_ADDOPTS:-}" > "${AI_HATS_TEST_CAPTURE:?}"\n',
         encoding="utf-8",
     )
+    runner.chmod(0o755)
+    env["GATES_STAGE_RUNNER"] = str(runner)
     git(project, "add", "-A")
     git(project, "commit", "-m", "seed gate project")
 

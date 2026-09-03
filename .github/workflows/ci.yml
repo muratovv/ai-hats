@@ -29,7 +29,7 @@ jobs:
       - name: Install ruff
         run: pip install "ruff==0.16.2"
       - name: ruff check
-        run: bash scripts/ci-local.sh lint
+        run: bash scripts/gates.sh lint
 
   test:
     name: test (py${{ matrix.python-version }})
@@ -50,7 +50,7 @@ jobs:
       - name: Install package + dev deps
         run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: Run unit suite across versions
-        run: bash scripts/ci-local.sh unit
+        run: bash scripts/gates.sh unit
 
   coverage:
     # Authoritative coverage gate. Runs the unit suite PLUS the real-git
@@ -74,7 +74,7 @@ jobs:
           git config --global user.name "ai-hats CI"
           git config --global init.defaultBranch main
       - name: Run unit + non-e2e integration with coverage gate
-        run: bash scripts/ci-local.sh coverage
+        run: bash scripts/gates.sh coverage
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
         with:
@@ -95,7 +95,7 @@ jobs:
       - name: Install package + security tools
         run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
       - name: pip-audit (known CVEs in the installed environment)
-        run: bash scripts/ci-local.sh security
+        run: bash scripts/gates.sh security
 
   install-smoke:
     name: install-smoke (launcher)
@@ -143,7 +143,7 @@ jobs:
           git config --global user.name "ai-hats CI"
           git config --global init.defaultBranch main
       - name: Run curated e2e smoke subset
-        run: bash scripts/ci-local.sh merge-smoke
+        run: bash scripts/gates.sh merge-smoke
 
   e2e:
     name: e2e (full tier)
@@ -168,7 +168,7 @@ jobs:
           AI_HATS_E2E_REQUIRE_VENV: "1"
           # A stage runs bare; parallelism is pytest's own variable to read.
           PYTEST_ADDOPTS: "-n 8 --dist=loadgroup"
-        run: bash scripts/ci-local.sh e2e
+        run: bash scripts/gates.sh e2e
 
   version-skew-guard:
     # HATS-943: block the HATS-923/937 skew class — a `packages/<pkg>/src/**`
@@ -203,36 +203,36 @@ jobs:
       - name: Check workspace packages are ahead of PyPI
         env:
           SKEW_BASE: ${{ steps.base.outputs.sha }}
-        run: bash scripts/ci-local.sh version-skew
+        run: bash scripts/gates.sh version-skew
       # The consumer side of the same skew (HATS-1399): offline, so it runs
       # regardless of whether the PyPI query above succeeded.
       - name: Check dependency floors track workspace versions
         if: always()
-        run: bash scripts/ci-local.sh dependency-floor
+        run: bash scripts/gates.sh dependency-floor
       # Offline too, and independent of both checks above (HATS-1373).
       - name: Check no broad handler swallows a failure silently
         if: always()
-        run: bash scripts/ci-local.sh silent-fallback
+        run: bash scripts/gates.sh silent-fallback
       # Offline too (HATS-1599) — a ratchet on how much the suite patches the
       # units it tests; it only ever refuses a rise over the recorded baseline.
       - name: Check the suite patches its units no more than the baseline
         if: always()
-        run: bash scripts/ci-local.sh test-isolation
+        run: bash scripts/gates.sh test-isolation
       # Offline as well (HATS-1498) and independent of the full e2e job, so a
       # stale catalog is still named when that heavier job fails or is cancelled.
       - name: Check the e2e flow catalog is current
         if: always()
-        run: bash scripts/ci-local.sh e2e-catalog
+        run: bash scripts/gates.sh e2e-catalog
       # Same shape: ADR-0023's stage and gate tables render from scripts/gates.sh
       # and the role's bindings, and a row added without regenerating is red here.
       - name: Check the gate tables in ADR-0023 are current
         if: always()
-        run: bash scripts/ci-local.sh gate-table
+        run: bash scripts/gates.sh gate-table
       # The pin is re-spelled by hand in ~40 places; this refuses a
       # partial bump, and a pin the matrix above does not run.
       - name: Check every copy of the Python pin agrees
         if: always()
-        run: bash scripts/ci-local.sh python-pin
+        run: bash scripts/gates.sh python-pin
       # HATS-1877: the shell this repo SHIPS, on a Linux host. The maintainer's
       # gate runs the same stage, but a shell defect is exactly the class that
       # only one of the two arms can see (`mktemp -t` is BSD-only, and passed
@@ -244,10 +244,10 @@ jobs:
         # the runner image still carries it before trusting a green.
         run: |
           command -v shellcheck
-          bash scripts/ci-local.sh shellcheck
+          bash scripts/gates.sh shellcheck
       # HATS-1877: builds each package through the sdist, as the release does,
       # and refuses a wheel that lost a tracked file on the way. Offline apart
       # from the build backend, which the uv cache above already holds.
       - name: Check every tracked src file reaches its wheel
         if: always()
-        run: bash scripts/ci-local.sh wheel-contents
+        run: bash scripts/gates.sh wheel-contents

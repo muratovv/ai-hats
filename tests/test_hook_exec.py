@@ -898,35 +898,3 @@ def test_a_point_that_is_not_an_edge_states_its_missing_halves_as_null(tmp_path)
     assert call["actor"] is None
     # A caller naming no selector is one whose declaration named the point.
     assert call["selector"] == "wt:teardown[wt_out]"
-
-
-def test_the_rows_cargo_reaches_the_child_as_flattened_scalars(tmp_path, monkeypatch):
-    """ADR-0020 D2: the keys a row carries beside `run:`/`at:`/`on_error:` reach
-    the script it declares — flattened, never read: a string verbatim, anything
-    else as JSON, None absent, and an inherited `AI_HATS_CARGO_*` scrubbed."""
-    monkeypatch.setenv("AI_HATS_CARGO_STALE", "from-another-row")
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    script = _script(
-        tmp_path / "c.sh",
-        'echo "$AI_HATS_CARGO_GATE|${AI_HATS_CARGO_NOTE-unset}|$AI_HATS_CARGO_RETRY_COUNT'
-        '|$AI_HATS_CARGO_FLAGS|$AI_HATS_CARGO_ON|${AI_HATS_CARGO_STALE-unset}"\n'
-        "exit 2\n",
-    )
-
-    run = run_hook(
-        script,
-        point="review->done",
-        budget=10,
-        deadline=Deadline.without_lock(10, why="unit test"),
-        project_dir=proj,
-        cargo={
-            "gate": "done-gate",
-            "note": None,
-            "retry-count": 3,
-            "flags": ["a", "b"],
-            "on": True,
-        },
-    )
-
-    assert run.reason == 'done-gate|unset|3|["a", "b"]|true|unset'

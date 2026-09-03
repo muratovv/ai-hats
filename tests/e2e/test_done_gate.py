@@ -12,6 +12,7 @@ why:    without done gates, agents transition unreviewed, undocumented, or catal
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -38,8 +39,11 @@ MAINTAINER_ROLE = (
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "review->done"
-#: ONE hook on every edge since HATS-1878; the row's `gate:` cargo says which.
-SCRIPT = "hooks/gate.sh"
+#: A thin gate per edge since HATS-1878: each declares its stages and hands
+#: them to the project's `scripts/gates.sh`.
+SCRIPT = "hooks/done-gate.sh"
+MERGE_SCRIPT = "hooks/merge-gate.sh"
+REVIEW_SCRIPT = "hooks/review-gate.sh"
 #: ``<event>~<skill>~<script>.log`` — one file per (task, edge, binding), the
 #: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
 #: One log per (task, point, row). The row identity carries the app and the
@@ -50,11 +54,12 @@ SCRIPT = "hooks/gate.sh"
 #: binds: the row says `->done`, the event on this road is `review->done`. The
 #: arrow is escaped for a filename (HATS-1719) because it carries `>`, a shell
 #: redirect, and a refusal hands this path to an operator to paste.
-EDGE_LOG_STEM = f"review-%3Edone~rack~tasks~{SKILL}~hooks+gate.sh"
+EDGE_LOG_STEM = f"review-%3Edone~rack~tasks~{SKILL}~hooks+done-gate.sh"
 #: One marker per STAGE per tree (HATS-1878); a gate passes when its whole set is there.
 STAGES_DIR = Path(".git") / "ai-hats" / "stages"
-#: The project's side of the gate, copied into every sandbox (ADR-0023 D7).
-PROJECT_SCRIPTS = ("gates.sh", "ci-gate.sh")
+#: The project's side of the gate — the stages and the markers — copied into
+#: every sandbox (ADR-0023 D7). A check never runs a stage, so no stub runner.
+PROJECT_SCRIPTS = ("gates.sh",)
 
 #: Enough plan.md for the packaged plan-gate to let `execute` through.
 PLAN_SECTIONS = (
@@ -83,15 +88,11 @@ injection: |
   # ROLE: UNGATED
 """
 
-#: A stage runner the primitive can find. The stages never run from inside the
-#: lock — a check is a marker lookup — so a stub is the honest shape here.
-_CI_LOCAL_STUB = '#!/usr/bin/env bash\necho "[stub] stage=${1:-}" >&2\nexit 0\n'
-
 
 def gate_stages(gate: str) -> list[str]:
-    """What the table requires of a gate, asked of the table itself."""
+    """What a gate requires, asked of the gate script itself."""
     out = subprocess.run(
-        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "stages", gate],
+        ["bash", str(SKILL_SRC / "hooks" / f"{gate}.sh"), "--stages"],
         capture_output=True,
         text=True,
         check=True,
@@ -162,7 +163,6 @@ def gate_project(shared_launcher, tmp_path: Path):
         (project / ".gitignore").write_text(".agent/\n", encoding="utf-8")
         (project / TASKS_SUB).mkdir(parents=True)
         (project / "scripts").mkdir()
-        (project / "scripts" / "ci-local.sh").write_text(_CI_LOCAL_STUB, encoding="utf-8")
         for name in PROJECT_SCRIPTS:
             shutil.copy(REPO_ROOT / "scripts" / name, project / "scripts" / name)
         _seed_library(project, bind=bind)
@@ -317,27 +317,16 @@ def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
     the asymmetry that started the epic, and HATS-1538 left through the unheld
     one.
 
-    ONE script since HATS-1878: the edges still ask different questions
-    (ADR-0023 D3/D4), but the question is the ROW's — its `gate:` cargo names
-    the set the project's table requires there.
+    A thin script per edge since HATS-1878: each declares the stages it
+    requires (ADR-0023 D3/D4) and hands them to the project's `scripts/gates.sh`.
     """
     apps = shipped_apps()
     assert apps["rack"]["tasks"] == [
-        {
-            "run": f"{SKILL}/{SCRIPT}",
-            "gate": "review-gate",
-            "at": ["->review"],
-            "on_error": "refuse",
-        },
-        {"run": f"{SKILL}/{SCRIPT}", "gate": "done-gate", "at": ["->done"], "on_error": "refuse"},
+        {"run": f"{SKILL}/{REVIEW_SCRIPT}", "at": ["->review"], "on_error": "refuse"},
+        {"run": f"{SKILL}/{SCRIPT}", "at": ["->done"], "on_error": "refuse"},
     ], "the FSM road: the hand-off and every road into done, qualified by the backlog"
     assert apps["wt"] == [
-        {
-            "run": f"{SKILL}/{SCRIPT}",
-            "gate": "merge-gate",
-            "at": ["pre-merge"],
-            "on_error": "refuse",
-        }
+        {"run": f"{SKILL}/{MERGE_SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}
     ], "the direct `ai-hats wt merge` road, gated by ->merge and not by ->done"
 
 
@@ -439,41 +428,6 @@ def test_a_marker_that_never_ran_a_demanded_stage_does_not_clear_the_gate(gate_p
     assert refused.returncode == 1, refused.stdout + refused.stderr
     assert f"{EDGE} aborted by 'checks'" in refused.stderr, refused.stderr
     assert _state(project, task_id)["state"] == "review"
-
-
-def test_the_composition_is_read_from_the_tree_under_judgement(gate_project, rack_bin):
-    """A card that CHANGES the gate must be judged by the composition it carries.
-
-    Read from the main checkout instead, the gate judges one tree by another
-    tree's rules — which is how HATS-1604 refused its own merge: the branch was
-    the only place that knew the new contract.
-    """
-    project, env = gate_project("gated")
-    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
-    # The branch grows its gate a stage; master's table never hears of it.
-    branch_stage = "a-stage-only-this-branch-declares"
-    table = Path(wt) / "scripts" / "gates.sh"
-    table.write_text(
-        table.read_text(encoding="utf-8").replace(
-            "TABLE\n}", f"{branch_stage} | done-gate | only this branch\nTABLE\n}}", 1
-        ),
-        encoding="utf-8",
-    )
-    git(Path(wt), "add", "-A")
-    git(Path(wt), "commit", "-m", "change what the gate runs")
-    _write_marker(project, _tree(Path(wt)))
-
-    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=consented(env))
-    assert refused.returncode == 1, "master's set is not enough: the branch's table demands more"
-    assert branch_stage in _check_log(project, task_id).read_text(encoding="utf-8")
-
-    _write_marker(project, _tree(Path(wt)), stages=[branch_stage])
-    taken = _rack(
-        rack_bin, "transition", task_id, "done", "--json", cwd=project, env=consented(env)
-    )
-
-    assert taken.returncode == 0, taken.stdout + taken.stderr
-    assert json.loads(taken.stdout)["task"]["state"] == "done"
 
 
 # ---------------------------------------------------------------------------
@@ -826,7 +780,7 @@ def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog(tmp_path: Pa
     assert real[0] == "e2e-catalog", f"e2e-catalog must lead the composition: {real}"
     assert "lint" in real[1:], f"lint must follow it, or this test proves nothing: {real}"
 
-    # A clean sandbox with the real table and primitive, and a runner whose
+    # A clean sandbox with the real primitive, and a runner OUTSIDE it whose
     # `e2e-catalog` is red: the run must stop there, before `lint`.
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()
@@ -834,32 +788,34 @@ def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog(tmp_path: Pa
     (sandbox / "scripts").mkdir()
     for name in PROJECT_SCRIPTS:
         shutil.copy(REPO_ROOT / "scripts" / name, sandbox / "scripts" / name)
-    runner = sandbox / "scripts" / "ci-local.sh"
+    git(sandbox, "add", "-A")
+    git(sandbox, "commit", "-m", "seed")
+    runner = tmp_path / "runner.sh"
     runner.write_text(
         "#!/usr/bin/env bash\n"
-        'echo "[ci-local] $1" >&2\n'
+        'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
+        'echo "[gates] $1" >&2\n'
         '[[ "$1" == "e2e-catalog" ]] && exit 1\n'
         "exit 0\n",
         encoding="utf-8",
     )
     runner.chmod(0o755)
-    git(sandbox, "add", "-A")
-    git(sandbox, "commit", "-m", "seed")
 
     proc = subprocess.run(
-        ["bash", str(sandbox / "scripts" / "gates.sh"), "run", "done-gate"],
+        ["bash", str(SKILL_SRC / "hooks" / "done-gate.sh"), "--run"],
         cwd=str(sandbox),
         capture_output=True,
         text=True,
         timeout=60,
+        env={**os.environ, "GATES_STAGE_RUNNER": str(runner)},
     )
     assert proc.returncode != 0, (
         f"a red e2e-catalog must fail done-gate:\n{proc.stdout}\n{proc.stderr}"
     )
     combined = proc.stdout + proc.stderr
-    assert "[ci-local] e2e-catalog" in combined, (
+    assert "[gates] e2e-catalog" in combined, (
         f"done-gate output must announce e2e-catalog stage:\n{combined}"
     )
-    assert "[ci-local] lint" not in combined, (
+    assert "[gates] lint" not in combined, (
         f"done-gate must fail at e2e-catalog stage BEFORE reaching lint:\n{combined}"
     )

@@ -34,7 +34,7 @@ hook-подложкой и контрактом кодов возврата — 
 - **Ребро** — переход, который совершается: `->review` (карточка передаётся
   ревьюеру), `->merge` (ветка вливается в master), `->done` (карточка
   закрывается). Именуются по входу; форма `X->` не используется.
-- **Стадия** — одна именованная проверка, которую гоняет `scripts/ci-local.sh`:
+- **Стадия** — одна именованная проверка, которую гоняет `scripts/gates.sh`:
   функция `ci_<stage>`. Стадия запускается **голой** — после её имени в pytest не
   проезжает ничего — и не знает ни гейтов, ни маркеров, ни git.
 - **Гейт** — **имя для множества стадий**, объявленное в `scripts/gates.sh`.
@@ -63,21 +63,21 @@ hook-подложкой и контрактом кодов возврата — 
 
 | стадия             | требуют гейты                              | что проверяет                                                                |
 | ------------------ | ------------------------------------------ | ---------------------------------------------------------------------------- |
-| `e2e-catalog`      | review-gate merge-gate done-gate push-gate | tests/e2e/CATALOG.md matches the flow blocks in the tests' docstrings        |
-| `lint`             | review-gate merge-gate done-gate push-gate | ruff check and ruff format --check, both over the whole tree                 |
-| `shellcheck`       | review-gate merge-gate done-gate           | every tracked *.sh is clean at severity warning and above                    |
-| `dependency-floor` | review-gate merge-gate done-gate           | every pin on a workspace package tracks that package's version               |
-| `silent-fallback`  | review-gate merge-gate done-gate           | no broad except swallows a failure without reporting it                      |
-| `test-isolation`   | review-gate merge-gate done-gate           | the suite patches its own units no more than the recorded baseline           |
-| `prose-refs`       | review-gate merge-gate done-gate push-gate | paths, library prefixes, sections and symbols named in library prose resolve |
-| `ticket-ids`       | review-gate merge-gate done-gate push-gate | no tracker id in shipped library prose                                       |
-| `env-reference`    | review-gate merge-gate done-gate push-gate | docs/reference-env.md matches the env declarations the code reads            |
-| `gate-table`       | review-gate merge-gate done-gate push-gate | ADR-0023's stage and gate tables match this table and the role's bindings    |
+| `e2e-catalog`      | review-gate done-gate merge-gate push-gate | tests/e2e/CATALOG.md matches the flow blocks in the tests' docstrings        |
+| `lint`             | review-gate done-gate merge-gate push-gate | ruff check and ruff format --check, both over the whole tree                 |
+| `shellcheck`       | review-gate done-gate merge-gate           | every tracked *.sh is clean at severity warning and above                    |
+| `dependency-floor` | review-gate done-gate merge-gate           | every pin on a workspace package tracks that package's version               |
+| `silent-fallback`  | review-gate done-gate merge-gate           | no broad except swallows a failure without reporting it                      |
+| `test-isolation`   | review-gate done-gate merge-gate           | the suite patches its own units no more than the recorded baseline           |
+| `prose-refs`       | review-gate done-gate merge-gate push-gate | paths, library prefixes, sections and symbols named in library prose resolve |
+| `ticket-ids`       | review-gate done-gate merge-gate push-gate | no tracker id in shipped library prose                                       |
+| `env-reference`    | review-gate done-gate merge-gate push-gate | docs/reference-env.md matches the env declarations the code reads            |
+| `gate-table`       | review-gate done-gate merge-gate push-gate | ADR-0023's stage and gate tables match this file and the gates               |
 | `adr-integrity`    | push-gate                                  | every ADR citation resolves and a number names exactly one file              |
 | `bidi`             | push-gate                                  | no bidirectional control characters, which are invisible in review           |
-| `wheel-contents`   | review-gate merge-gate done-gate           | every tracked src file reaches the wheel built through the sdist             |
+| `wheel-contents`   | review-gate done-gate merge-gate           | every tracked src file reaches the wheel built through the sdist             |
 | `master-ci`        | done-gate                                  | master's last CI verdict is green (network)                                  |
-| `unit`             | review-gate merge-gate done-gate push-gate | every test not marked integration                                            |
+| `unit`             | review-gate done-gate merge-gate push-gate | every test not marked integration                                            |
 | `integration`      | done-gate                                  | the real-subprocess tests outside tests/e2e                                  |
 | `merge-smoke`      | done-gate                                  | the curated smoke subset of tests/e2e                                        |
 | `e2e`              | push-gate                                  | the full tier: integration or smoke, quarantine and live agents excluded     |
@@ -132,7 +132,7 @@ HATS-1607 (точный пин плюс явная область).
 **Гейт стоил файла, а таблица гнила (2026-09-02, HATS-1877 → HATS-1878).**
 Третий гейт на канале checks стоил четвёртого почти одинакового скрипта
 (`review-gate.sh`, отличавшегося от соседей двумя строками), правки трёх
-рукописных списков имён внутри одного `ci-local.sh`, таргета в Makefile, строки
+рукописных списков имён внутри одного `gates.sh`, таргета в Makefile, строки
 роли и — впустую — строки в этом ADR. При этом прогон `done-gate` после зелёного
 `review-gate` перегонял tier и `unit` заново (~2 минуты из ~4), потому что маркер
 писался на ГЕЙТ, всё или ничего, хотя читался уже постадийно. **Закрыто**
@@ -155,7 +155,7 @@ flowchart TD
     F --> H["git tag — самая дорогая дорога"]
 ```
 
-Дорог семь, и они не сводятся к выбору «стадия `ci-local.sh` или строка
+Дорог семь, и они не сводятся к выбору «стадия `gates.sh` или строка
 `composition.apps`»: `git_hooks` — единственный канал, доходящий до чужого
 проекта, CI и тегирование не выражаются ни тем, ни другим.
 
@@ -209,8 +209,8 @@ flowchart TD
 | гейт          | где применяется          | стадии                                                                                                                                                                           |
 | ------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit                                   |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit                                   |
 | `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents master-ci unit integration merge-smoke |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit                                   |
 | `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e                                                                                      |
 
 <!-- /gate-table:gates -->
@@ -270,7 +270,7 @@ HATS-1664 сделал прогон на коммите **исключением
 `HEAD` — субъект. Иначе примитив сам минтит одноразовую detached-воркtree на
 коммите под `<git-common-dir>/ai-hats/gate-checkouts/` (не `$TMPDIR`: macOS
 чистит его по atime, и venv, унаследовавший atime кэша uv, рождался просроченным
-— HATS-1632), готовит её `ci-local.sh --prepare`, гоняет и сносит. В воркtree
+— HATS-1632), готовит её `gates.sh --prepare`, гоняет и сносит. В воркtree
 карточки условие выполнено — быстрый путь; в главном чекауте оно не выполнено
 никогда, и туда просто нет дороги. Инвариант: **то, на чём стадии бежали, и есть
 то, что маркер называет**, и ничьё слияние в главный чекаут не сдвинет
@@ -335,7 +335,7 @@ HATS-1664 сделал прогон на коммите **исключением
 
 | слой             | файл                                                | знает                                                                | **не знает**                                  |
 | ---------------- | --------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------- |
-| L1 стадии        | `scripts/ci-local.sh`                               | команду каждой стадии, ростер (`declare -F`), как подготовить чекаут | маркеры, гейты, дерево, git                   |
+| L1 стадии        | `scripts/gates.sh`                               | команду каждой стадии, ростер (`declare -F`), как подготовить чекаут | маркеры, гейты, дерево, git                   |
 | L2 примитив      | `scripts/ci-gate.sh`                                | субъект, хранилище маркеров, «прогнать недостающее», чистоту         | имена гейтов, рёбра FSM, роли, код возврата 2 |
 | L3 гейты         | `scripts/gates.sh`                                  | таблицу «стадия → гейты», ростер, делегирование в L2                 | как устроена стадия, где лежит маркер, рёбра  |
 | адаптеры каналов | `hooks/gate.sh`, `git_hooks/pre-push-e2e-master.sh` | какое дерево кладёт в master этот переход; коды своего канала        | ни одной стадии, ни одного имени гейта        |
@@ -346,7 +346,7 @@ HATS-1664 сделал прогон на коммите **исключением
 той же фикстуры. Отказ на ребре поэтому всегда «недостают такие стадии, запусти
 `make <gate>`», и никогда — тесты внутри лока.
 
-**Стадия запускается голой.** Ни `ci-local.sh`, ни `ci-gate.sh` не пропускают
+**Стадия запускается голой.** Ни `gates.sh`, ни `ci-gate.sh` не пропускают
 argv после имени стадии: маркер за `unit -k foo` был бы ложью. Параллелизм CI
 едет через `PYTEST_ADDOPTS`. Фильтровать — вызывать `pytest` самому.
 
@@ -427,7 +427,7 @@ e2e.
 Workflow [10] запускает отдельную job `e2e` на каждом pull request в master и
 каждом push в master: полная git history, Python 3.13, тот же install-контур и
 git identity, что `merge-smoke`, и единственное определение стадии —
-`bash scripts/ci-local.sh e2e`. Параллелизм (`-n 8 --dist=loadgroup`) едет через
+`bash scripts/gates.sh e2e`. Параллелизм (`-n 8 --dist=loadgroup`) едет через
 `PYTEST_ADDOPTS` в env шага — стадия запускается голой (D6);
 `AI_HATS_E2E_REQUIRE_VENV=1` превращает невозможность собрать shared test venv из
 skip в явный отказ.
@@ -501,7 +501,7 @@ push-гейт остаётся: до HATS-927 CI — сигнал, но не н�
   `docs/adr/0021-surface-materialization.md`
 - [4] ADR-0017 — `backlog.yaml` как единственное определение:
   `docs/adr/0017-backlog-yaml-single-definition.md`
-- [5] Три слоя и рендер таблиц: `scripts/ci-local.sh` (стадии),
+- [5] Три слоя и рендер таблиц: `scripts/gates.sh` (стадии),
   `scripts/ci-gate.sh` (примитив), `scripts/gates.sh` (гейты),
   `scripts/gen_gate_table.py` (таблицы этого документа)
 - [6] Адаптеры каналов:

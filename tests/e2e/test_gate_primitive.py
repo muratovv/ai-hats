@@ -1,14 +1,15 @@
 """e2e (HATS-1604, HATS-1878)
 
-flow:   the one checks-channel gate hook, told which gate it is by its row's cargo
+flow:   a thin gate script on the checks channel, judging the tree a card puts into master
 cmds:
-    AI_HATS_CARGO_GATE=<gate> AI_HATS_WORKTREE_PATH=<wt> hooks/gate.sh
+    AI_HATS_WORKTREE_PATH=<wt> hooks/done-gate.sh
+    hooks/done-gate.sh --stages
     bash -c '. lib/gate.sh; gate_exit checks refuse'
-expect: no cargo refuses; a card with no code passes; a live worktree is judged
-        by ITS scripts/gates.sh and refused with the missing stages and the
-        command that earns them; a merged card is judged by its merge commit
-why:    a gate per edge used to be a file per edge, and the library file named
-        the project's gate — one hook selected at the usage site names nothing
+expect: a card with no code passes; a live worktree is judged by ITS scripts/gates.sh
+        against the stages the gate declares, and refused with the missing ones
+        and the command that earns them; a merged card is judged by its merge commit
+why:    a gate used to be sixty lines that differed from its siblings in two
+        strings; a few-line declaration over one primitive cannot drift
 """
 
 from __future__ import annotations
@@ -32,31 +33,24 @@ SKILL_SRC = (
     / "skills"
     / "maintainer-quality-gate"
 )
-HOOK = SKILL_SRC / "hooks" / "gate.sh"
+HOOKS = SKILL_SRC / "hooks"
 GATE_LIB = SKILL_SRC / "lib" / "gate.sh"
 
-#: A stage runner that runs nothing and answers nothing: the hook must never
-#: reach it (the check runs inside the rack lock), and the primitive's `check`
-#: has no code path to it.
+#: A stage runner that runs nothing and answers nothing: a check must never
+#: reach it (it runs inside the rack lock), and `gates.sh check` has no code
+#: path to it.
 RUNNER_STUB = "#!/usr/bin/env bash\nexit 99\n"
 
 
-def _project(root: Path, *, gates_table: str | None = None) -> Path:
-    """A clean main checkout carrying the project's side of the gate: the real
-    ci-gate.sh, a gates.sh (real unless a table is given), a stub runner, and
-    an `ai-hats.yaml` so the backlog-scope question can be answered."""
+def _project(root: Path) -> Path:
+    """A clean main checkout carrying the project's side of the gate — the real
+    `scripts/gates.sh` — and an `ai-hats.yaml` so the backlog-scope question can
+    be answered. Stages, if anything ran them, would hit the stub."""
     root.mkdir(parents=True)
     init_repo(root, branch="master")
     scripts = root / "scripts"
     scripts.mkdir()
-    shutil.copy(REPO_ROOT / "scripts" / "ci-gate.sh", scripts / "ci-gate.sh")
-    if gates_table is None:
-        shutil.copy(REPO_ROOT / "scripts" / "gates.sh", scripts / "gates.sh")
-    else:
-        (scripts / "gates.sh").write_text(gates_table)
-        (scripts / "gates.sh").chmod(0o755)
-    (scripts / "ci-local.sh").write_text(RUNNER_STUB)
-    (scripts / "ci-local.sh").chmod(0o755)
+    shutil.copy(REPO_ROOT / "scripts" / "gates.sh", scripts / "gates.sh")
     (root / "ai-hats.yaml").write_text("ai_hats_dir: .agent/ai-hats\n")
     (root / ".gitignore").write_text(".agent/\n")
     git(root, "add", "-A")
@@ -71,12 +65,9 @@ def _worktree(project: Path, name: str) -> Path:
     return wt
 
 
-def _stages(project: Path, gate: str) -> list[str]:
+def _stages(gate: str) -> list[str]:
     out = subprocess.run(
-        ["bash", str(project / "scripts" / "gates.sh"), "stages", gate],
-        capture_output=True,
-        text=True,
-        check=True,
+        ["bash", str(HOOKS / f"{gate}.sh"), "--stages"], capture_output=True, text=True, check=True
     )
     return out.stdout.split()
 
@@ -93,10 +84,10 @@ def _tree(repo: Path, rev: str = "HEAD") -> str:
 
 
 def _hook(
-    project: Path, env: dict[str, str | None], *argv: str
+    project: Path, gate: str, env: dict[str, str | None], *argv: str
 ) -> subprocess.CompletedProcess[str]:
-    """Spawn the hook the way the check runner does: bare, from the project
-    dir, with the shared env base plus the caller's own vocabulary."""
+    """Spawn a gate the way the check runner does: bare, from the project dir,
+    with the shared env base plus the caller's own vocabulary."""
     child = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
     child["AI_HATS_PROJECT_DIR"] = str(project)
     child["AI_HATS_IN_HOOK"] = "1"
@@ -104,13 +95,18 @@ def _hook(
     child["AI_HATS_TASKS_DIR"] = str(
         project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
     )
+    child["GATES_STAGE_RUNNER"] = str(project.parent / "runner-stub.sh")
     for name, value in env.items():
         if value is None:
             child.pop(name, None)
         else:
             child[name] = value
+    stub = project.parent / "runner-stub.sh"
+    if not stub.exists():
+        stub.write_text(RUNNER_STUB)
+        stub.chmod(0o755)
     return subprocess.run(
-        ["bash", str(HOOK), *argv],
+        ["bash", str(HOOKS / f"{gate}.sh"), *argv],
         cwd=project,
         capture_output=True,
         text=True,
@@ -120,37 +116,21 @@ def _hook(
 
 
 # ---------------------------------------------------------------------------
-# which gate am I — the row says, or nothing passes
+# a gate is a declaration
 # ---------------------------------------------------------------------------
 
 
-def test_a_row_naming_no_gate_is_refused_not_waved_through(tmp_path: Path):
-    """HATS-1878: the hook's identity is the row's to declare; without it there
-    is nothing to verify, and nothing to verify is a refusal, not a pass."""
-    project = _project(tmp_path / "proj")
-    wt = _worktree(project, "one")
-
-    out = _hook(project, {"AI_HATS_CARGO_GATE": None, "AI_HATS_WORKTREE_PATH": str(wt)})
-
-    assert out.returncode == 2, out.stdout + out.stderr
-    assert "names no gate" in out.stdout
-    assert "gate:" in out.stdout, "the refusal says what to add to the row"
-
-
-def test_a_gate_the_projects_table_does_not_know_is_refused(tmp_path: Path):
-    project = _project(tmp_path / "proj")
-    wt = _worktree(project, "one")
-
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "no-such-gate", "AI_HATS_WORKTREE_PATH": str(wt)})
-
-    assert out.returncode == 2, out.stdout + out.stderr
-    assert "knows no gate named no-such-gate" in out.stdout
+@pytest.mark.parametrize("gate", ["review-gate", "merge-gate", "done-gate"])
+def test_every_gate_declares_its_stages(gate: str):
+    """HATS-1878: the gate IS its stage list; `--stages` is how a reader, a test
+    and the ADR renderer learn it without parsing the file."""
+    assert _stages(gate), f"{gate} declares no stage"
 
 
 def test_a_typo_at_the_command_line_is_not_a_verdict(tmp_path: Path):
     project = _project(tmp_path / "proj")
 
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "done-gate"}, "--frobnicate")
+    out = _hook(project, "done-gate", {}, "--frobnicate")
 
     assert out.returncode == 64
 
@@ -164,14 +144,7 @@ def test_a_card_with_no_worktree_and_nothing_merged_passes(tmp_path: Path):
     """A doc or research card brings no commits, so it pays for none."""
     project = _project(tmp_path / "proj")
 
-    out = _hook(
-        project,
-        {
-            "AI_HATS_CARGO_GATE": "done-gate",
-            "AI_HATS_WORKTREE_PATH": None,
-            "AI_HATS_MERGED_SHA": None,
-        },
-    )
+    out = _hook(project, "done-gate", {"AI_HATS_WORKTREE_PATH": None, "AI_HATS_MERGED_SHA": None})
 
     assert out.returncode == 0, out.stdout + out.stderr
     assert "has no worktree" in out.stdout
@@ -182,11 +155,11 @@ def test_a_live_worktree_without_markers_is_refused_with_the_missing_stages(tmp_
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
 
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "review-gate", "AI_HATS_WORKTREE_PATH": str(wt)})
+    out = _hook(project, "review-gate", {"AI_HATS_WORKTREE_PATH": str(wt)})
 
     assert out.returncode == 2, out.stdout + out.stderr
     assert "Missing:" in out.stdout
-    for stage in _stages(project, "review-gate"):
+    for stage in _stages("review-gate"):
         assert f"    {stage}\n" in out.stdout
     assert f"cd {wt} && make review-gate" in out.stdout
     assert _tree(wt) in out.stdout, "the refusal names the tree it wanted"
@@ -195,9 +168,9 @@ def test_a_live_worktree_without_markers_is_refused_with_the_missing_stages(tmp_
 def test_markers_for_every_required_stage_let_the_worktree_through(tmp_path: Path):
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
-    _mark(project, _tree(wt), _stages(project, "review-gate"))
+    _mark(project, _tree(wt), _stages("review-gate"))
 
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "review-gate", "AI_HATS_WORKTREE_PATH": str(wt)})
+    out = _hook(project, "review-gate", {"AI_HATS_WORKTREE_PATH": str(wt)})
 
     assert out.returncode == 0, out.stdout + out.stderr
     assert "every required stage is green" in out.stdout
@@ -208,43 +181,24 @@ def test_a_wider_gates_markers_cover_a_narrower_gate_on_the_same_tree(tmp_path: 
     `done-gate` run stamps everything `review-gate` and `merge-gate` ask for."""
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
-    _mark(project, _tree(wt), _stages(project, "done-gate"))
+    _mark(project, _tree(wt), _stages("done-gate"))
 
     for gate in ("review-gate", "merge-gate"):
-        out = _hook(project, {"AI_HATS_CARGO_GATE": gate, "AI_HATS_WORKTREE_PATH": str(wt)})
+        out = _hook(project, gate, {"AI_HATS_WORKTREE_PATH": str(wt)})
         assert out.returncode == 0, (gate, out.stdout + out.stderr)
 
 
 def test_the_narrower_gates_markers_do_not_cover_the_wider_one(tmp_path: Path):
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
-    _mark(project, _tree(wt), _stages(project, "review-gate"))
+    _mark(project, _tree(wt), _stages("review-gate"))
 
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "done-gate", "AI_HATS_WORKTREE_PATH": str(wt)})
+    out = _hook(project, "done-gate", {"AI_HATS_WORKTREE_PATH": str(wt)})
 
     assert out.returncode == 2
-    only_done = set(_stages(project, "done-gate")) - set(_stages(project, "review-gate"))
+    only_done = set(_stages("done-gate")) - set(_stages("review-gate"))
     missing = out.stdout.split("Missing:", 1)[1].split("Run the gate", 1)[0].split()
     assert set(missing) == only_done, "exactly the stages the wider gate adds"
-
-
-def test_the_composition_is_the_worktrees_own_table_not_the_main_checkouts(tmp_path: Path):
-    """A card that changes the gate is judged by the table it carries — read
-    from the main checkout instead, one tree is judged by another's rules."""
-    project = _project(tmp_path / "proj")
-    wt = _worktree(project, "one")
-    table = (wt / "scripts" / "gates.sh").read_text()
-    table = table.replace(
-        "TABLE\n}", "only-here | review-gate | a stage only this branch declares\nTABLE\n}", 1
-    )
-    (wt / "scripts" / "gates.sh").write_text(table)
-    git(wt, "commit", "-qam", "grow the review gate")
-    _mark(project, _tree(wt), _stages(project, "review-gate"))
-
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "review-gate", "AI_HATS_WORKTREE_PATH": str(wt)})
-
-    assert out.returncode == 2, out.stdout + out.stderr
-    assert "only-here" in out.stdout
 
 
 def test_a_merged_card_is_judged_by_its_merge_commit(tmp_path: Path):
@@ -255,28 +209,15 @@ def test_a_merged_card_is_judged_by_its_merge_commit(tmp_path: Path):
     git(project, "merge", "--no-ff", "-q", "-m", "merge", "task/one")
     merged = git(project, "rev-parse", "HEAD").stdout.strip()
     git(project, "worktree", "remove", "--force", str(wt))
+    env = {"AI_HATS_WORKTREE_PATH": str(wt), "AI_HATS_MERGED_SHA": merged}
 
-    refused = _hook(
-        project,
-        {
-            "AI_HATS_CARGO_GATE": "done-gate",
-            "AI_HATS_WORKTREE_PATH": str(wt),
-            "AI_HATS_MERGED_SHA": merged,
-        },
-    )
+    refused = _hook(project, "done-gate", env)
     assert refused.returncode == 2, refused.stdout + refused.stderr
     assert f"merge commit {merged}" in refused.stdout
     assert f"make done-gate REV={merged}" in refused.stdout
 
-    _mark(project, _tree(project, merged), _stages(project, "done-gate"))
-    passed = _hook(
-        project,
-        {
-            "AI_HATS_CARGO_GATE": "done-gate",
-            "AI_HATS_WORKTREE_PATH": str(wt),
-            "AI_HATS_MERGED_SHA": merged,
-        },
-    )
+    _mark(project, _tree(project, merged), _stages("done-gate"))
+    passed = _hook(project, "done-gate", env)
     assert passed.returncode == 0, passed.stdout + passed.stderr
 
 
@@ -288,12 +229,7 @@ def test_a_swept_worktree_with_nothing_merged_passes(tmp_path: Path):
     git(project, "worktree", "remove", "--force", str(wt))
 
     out = _hook(
-        project,
-        {
-            "AI_HATS_CARGO_GATE": "done-gate",
-            "AI_HATS_WORKTREE_PATH": str(wt),
-            "AI_HATS_MERGED_SHA": None,
-        },
+        project, "done-gate", {"AI_HATS_WORKTREE_PATH": str(wt), "AI_HATS_MERGED_SHA": None}
     )
 
     assert out.returncode == 0, out.stdout + out.stderr
@@ -306,8 +242,8 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(tmp_path: Path):
 
     out = _hook(
         project,
+        "done-gate",
         {
-            "AI_HATS_CARGO_GATE": "done-gate",
             "AI_HATS_WORKTREE_PATH": str(wt),
             "AI_HATS_TASKS_DIR": str(tmp_path / "elsewhere" / "tasks"),
         },
@@ -318,14 +254,14 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(tmp_path: Path):
 
 
 def test_a_project_without_gates_sh_cannot_pass(tmp_path: Path):
-    """The library never falls back to a composition it names itself (D7): a
-    tree with no table cannot earn a marker, so it cannot pass."""
+    """The library never runs a stage itself (D7): a tree with no `scripts/gates.sh`
+    cannot earn a marker, so it cannot pass."""
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
     (wt / "scripts" / "gates.sh").unlink()
-    git(wt, "commit", "-qam", "drop the table")
+    git(wt, "commit", "-qam", "drop the runner")
 
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "done-gate", "AI_HATS_WORKTREE_PATH": str(wt)})
+    out = _hook(project, "done-gate", {"AI_HATS_WORKTREE_PATH": str(wt)})
 
     assert out.returncode == 2, out.stdout + out.stderr
     assert "no scripts/gates.sh" in out.stdout
@@ -336,7 +272,7 @@ def test_the_check_never_reaches_the_stage_runner(tmp_path: Path):
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
 
-    out = _hook(project, {"AI_HATS_CARGO_GATE": "done-gate", "AI_HATS_WORKTREE_PATH": str(wt)})
+    out = _hook(project, "done-gate", {"AI_HATS_WORKTREE_PATH": str(wt)})
 
     assert out.returncode == 2
     assert "99" not in out.stdout + out.stderr

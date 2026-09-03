@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Run the push gate here and stamp each green stage for HEAD's tree — what the
-# master pre-push hook demands before it lets a push through.
-#
-# The gate itself is `scripts/gates.sh run push-gate`: it runs only the stages
-# not yet marked for this tree and judges HEAD in place only when the checkout
-# is clean, otherwise in a scratch checkout of its own. What this wrapper adds
-# is the housekeeping the heavy tier wants first, and one switch the venv tier
-# reads.
+# Earn the push gate here — what the master pre-push hook demands before it
+# lets a push through. The gate itself is the hook's `--run`: `scripts/gates.sh
+# run` of the stages the hook declares, in place when this checkout is clean,
+# in a scratch checkout of the commit otherwise. What this wrapper adds is the
+# housekeeping the heavy tier wants first, and one switch the venv tier reads.
 #
 #   scripts/run-e2e-gate.sh              # judge HEAD
 #   scripts/run-e2e-gate.sh --rev <sha>  # judge one commit
@@ -17,6 +14,12 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     exit 70
 }
 cd "$repo_root" || exit 70
+
+hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
+if [[ ! -f "$hook" ]]; then
+    echo "[run-e2e-gate] no push gate at $hook — this checkout does not carry it" >&2
+    exit 70
+fi
 
 # Stale wheel-build artefacts: the worktree-tier e2e tests `pip install` against
 # the repo and write to build/; a leftover dist-info makes the next run fail
@@ -43,4 +46,4 @@ fi
 # is red, never a skip that reads as green.
 export AI_HATS_E2E_REQUIRE_VENV=1
 
-exec bash "$repo_root/scripts/gates.sh" run push-gate "$@"
+exec bash "$hook" --run "$@"

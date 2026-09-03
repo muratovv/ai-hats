@@ -2,9 +2,9 @@
 
 flow:   the gate primitive — a requirement over stages, and the run that meets it
 cmds:
-    scripts/ci-gate.sh check [--rev <commit>] <stage>...
-    scripts/ci-gate.sh run [--rev <commit>] [--fresh] <stage>...
-    scripts/ci-gate.sh subject [--rev <commit>]
+    scripts/gates.sh check [--rev <commit>] <stage>...
+    scripts/gates.sh run [--rev <commit>] [--fresh] <stage>...
+    scripts/gates.sh subject [--rev <commit>]
 expect: `check` lists what lacks a marker and never calls the runner; `run`
         runs only the unmarked, stamps each green stage for the SUBJECT tree,
         and judges a commit in a one-shot scratch worktree when the checkout is
@@ -26,7 +26,7 @@ from _helpers.git import commit_file, git, init_repo
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CI_GATE = REPO_ROOT / "scripts" / "ci-gate.sh"
+GATES = REPO_ROOT / "scripts" / "gates.sh"
 
 
 @pytest.fixture()
@@ -44,7 +44,7 @@ def runner(tmp_path: Path) -> Path:
 
     Outside, so the repo stays clean without committing it; the log too, so a
     stage cannot dirty the tree by being recorded. Per-stage exit codes come
-    from `CI_GATE_TEST_RC_<STAGE>`; unset means green. `--prepare` is the one
+    from `GATES_TEST_RC_<STAGE>`; unset means green. `--prepare` is the one
     non-stage verb the primitive asks of a runner, and it is a no-op here.
     """
     log = tmp_path / "calls.log"
@@ -53,7 +53,7 @@ def runner(tmp_path: Path) -> Path:
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
         f'printf "%s|%s\\n" "$1" "$PWD" >> "{log}"\n'
-        'name="CI_GATE_TEST_RC_$(printf "%s" "$1" | tr "a-z-" "A-Z_")"\n'
+        'name="GATES_TEST_RC_$(printf "%s" "$1" | tr "a-z-" "A-Z_")"\n'
         'exit "${!name:-0}"\n'
     )
     script.chmod(0o755)
@@ -70,12 +70,12 @@ def _calls(runner: Path) -> list[tuple[str, str]]:
 def _gate(
     repo: Path, runner: Path, *args: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    child = {k: v for k, v in os.environ.items() if not k.startswith("CI_GATE_TEST_RC_")}
-    child["CI_GATE_STAGE_RUNNER"] = str(runner)
+    child = {k: v for k, v in os.environ.items() if not k.startswith("GATES_TEST_RC_")}
+    child["GATES_STAGE_RUNNER"] = str(runner)
     child.pop("PYTEST_ADDOPTS", None)
     child.update(env or {})
     return subprocess.run(
-        ["bash", str(CI_GATE), *args],
+        ["bash", str(GATES), *args],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -106,13 +106,13 @@ def _marked(repo: Path, tree: str) -> set[str]:
 def test_check_lists_every_unmarked_stage_and_never_calls_the_runner(repo: Path, runner: Path):
     """The positive control lives in the same fixture: `run` below DOES reach
     this runner, so an empty call log here is absence, not a broken runner."""
-    out = _gate(repo, runner, "check", "lint", "unit", env={"CI_GATE_TEST_RC_LINT": "99"})
+    out = _gate(repo, runner, "check", "lint", "unit", env={"GATES_TEST_RC_LINT": "99"})
 
     assert out.returncode == 1, out.stderr
     assert out.stdout.split() == ["lint", "unit"]
     assert _calls(runner) == []
 
-    ran = _gate(repo, runner, "run", "lint", env={"CI_GATE_TEST_RC_LINT": "99"})
+    ran = _gate(repo, runner, "run", "lint", env={"GATES_TEST_RC_LINT": "99"})
     assert ran.returncode == 99
     assert [c[0] for c in _calls(runner)] == ["lint"], "the same runner IS reachable by run"
 
@@ -164,9 +164,7 @@ def test_fresh_reruns_a_marked_stage(repo: Path, runner: Path):
 
 
 def test_a_red_stage_stops_the_run_and_keeps_the_stamps_earned_before_it(repo: Path, runner: Path):
-    out = _gate(
-        repo, runner, "run", "lint", "unit", "integration", env={"CI_GATE_TEST_RC_UNIT": "7"}
-    )
+    out = _gate(repo, runner, "run", "lint", "unit", "integration", env={"GATES_TEST_RC_UNIT": "7"})
 
     assert out.returncode == 7
     assert "stage 'unit' FAILED (rc=7)" in out.stderr
@@ -258,8 +256,6 @@ def test_a_stage_that_dirties_the_tree_earns_no_marker(repo: Path, runner: Path,
 @pytest.mark.parametrize(
     "argv",
     [
-        (),
-        ("nonsense",),
         ("check",),
         ("run",),
         ("check", "unit", "-k", "foo"),
@@ -291,7 +287,7 @@ def test_the_real_repository_wires_up_without_side_effects():
     verdict is one of the two legal ones. `run` is not exercised here — it
     would stamp the developer's own git dir."""
     out = subprocess.run(
-        ["bash", str(CI_GATE), "check", "python-pin"],
+        ["bash", str(GATES), "check", "python-pin"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

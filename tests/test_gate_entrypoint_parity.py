@@ -1,6 +1,6 @@
 """Every gate runs through one entry point, so local and CI cannot drift apart.
 
-HATS-725/1372: `scripts/ci-local.sh` is the single source of the check commands.
+HATS-725/1372: `scripts/gates.sh` is the single source of the check commands.
 A Makefile target or CI job that spells out `ruff`/`pytest`/`bandit` itself is
 free to disagree with it — which is how `make lint` came to check a narrower
 path set than CI, and how the formatter check ended up running in neither.
@@ -17,7 +17,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Commands that decide pass/fail for a gate. Spelling one of these out anywhere
-# but ci-local.sh forks the definition of "the gate".
+# but gates.sh forks the definition of "the gate".
 _RUNNERS = (
     "ruff",
     "pytest",
@@ -36,17 +36,17 @@ _RUNNERS = (
 
 # The two sanctioned entry points: the CI stage dispatcher and the thin e2e
 # wrapper that delegates to the pre-push gate's run mode.
-_ENTRY_POINTS = ("scripts/ci-local.sh", "scripts/run-e2e-gate.sh")
+_ENTRY_POINTS = ("scripts/gates.sh", "scripts/run-e2e-gate.sh")
 
 _RUNNER_RE = re.compile(
     r"(?:^|[\s;&|(=/])(?:python[\d.]*\s+-m\s+)?(" + "|".join(map(re.escape, _RUNNERS)) + r")\b"
 )
 _INSTALL_RE = re.compile(r"\b(?:pip[\d.]*|uv)\s+(?:pip\s+)?install\b")
 
-# A stage named by a caller: `bash scripts/ci-local.sh <stage>` in ci.yml, or the
+# A stage named by a caller: `bash scripts/gates.sh <stage>` in ci.yml, or the
 # Makefile's `$(CI_LOCAL) <stage>`. `--stages <gate>` asks a different question.
 _STAGE_CALL_RE = re.compile(
-    r"(?:bash\s+scripts/ci-local\.sh|\$\(CI_LOCAL\))\s+(?!--)([a-z0-9][a-z0-9-]*)"
+    r"(?:bash\s+scripts/gates\.sh|\$\(CI_LOCAL\))\s+(?!--)([a-z0-9][a-z0-9-]*)"
 )
 
 
@@ -96,7 +96,7 @@ def test_python_dash_m_form_is_flagged():
 
 
 def test_delegation_to_the_dispatcher_passes():
-    assert raw_gate_invocations("bash scripts/ci-local.sh lint\n") == []
+    assert raw_gate_invocations("bash scripts/gates.sh lint\n") == []
 
 
 def test_installing_a_runner_is_not_invoking_it():
@@ -118,16 +118,16 @@ jobs:
   lint:
     steps:
       - name: ruff check
-        run: bash scripts/ci-local.sh lint
+        run: bash scripts/gates.sh lint
 """
-    assert workflow_run_steps(workflow) == "bash scripts/ci-local.sh lint"
+    assert workflow_run_steps(workflow) == "bash scripts/gates.sh lint"
 
 
 def test_makefile_delegates_every_gate():
     offenders = raw_gate_invocations(makefile_recipes((REPO_ROOT / "Makefile").read_text()))
     assert not offenders, (
         "Makefile spells out gate commands instead of delegating to "
-        f"scripts/ci-local.sh — they will drift from CI: {offenders}"
+        f"scripts/gates.sh — they will drift from CI: {offenders}"
     )
 
 
@@ -136,14 +136,14 @@ def test_ci_workflow_delegates_every_gate():
     offenders = raw_gate_invocations(workflow_run_steps(workflow))
     assert not offenders, (
         "ci.yml runs a gate command directly instead of calling a "
-        f"scripts/ci-local.sh stage: {offenders}"
+        f"scripts/gates.sh stage: {offenders}"
     )
 
 
 def _known_stages() -> set[str]:
     """The dispatcher's own answer: it prints every stage it knows on an unknown one."""
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "no-such-stage"],
+        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "no-such-stage"],
         capture_output=True,
         text=True,
     )
@@ -164,15 +164,22 @@ def test_every_caller_names_a_stage_the_dispatcher_knows():
     )
     unknown = sorted(called - _known_stages() - {"all"})
     assert not unknown, (
-        "ci.yml / Makefile call a ci-local.sh stage the dispatcher does not "
+        "ci.yml / Makefile call a gates.sh stage the dispatcher does not "
         f"know — that job runs nothing and exits 2: {unknown}"
     )
 
 
+_GATE_HOOKS = (
+    REPO_ROOT
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+    / "hooks"
+)
+
+
 def _composition(gate: str) -> list[str]:
-    """What the table itself says the gate requires — never a literal here."""
+    """What the gate script itself says it requires — never a literal here."""
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "stages", gate],
+        ["bash", str(_GATE_HOOKS / f"{gate}.sh"), "--stages"],
         capture_output=True,
         text=True,
         check=True,
@@ -195,20 +202,17 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     )
 
 
-def test_every_gate_the_makefile_earns_is_one_the_table_knows():
-    """`make <gate>` hands the name to gates.sh; a target naming a gate the table
-    does not know is a door to nowhere. The roster is derived from the table, so
-    nothing here is a hand-kept list of names."""
-    roster = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "list"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
-    assert roster, "the table named no gates at all"
-    targets = re.findall(
-        r"^\s*\$\(call run_gate,([a-z-]+)\)", (REPO_ROOT / "Makefile").read_text(), re.M
+def test_every_gate_the_makefile_earns_is_a_gate_script_and_vice_versa():
+    """`make <gate>` runs `hooks/<gate>.sh --run`; a target with no script is a
+    door to nowhere, and a script with no target cannot be earned by hand. The
+    roster is the hooks directory, so nothing here is a hand-kept list."""
+    roster = {p.stem for p in _GATE_HOOKS.glob("*-gate.sh")}
+    assert roster, "the skill ships no gate script at all"
+    targets = set(
+        re.findall(r"^\s*\$\(call run_gate,([a-z-]+)\)", (REPO_ROOT / "Makefile").read_text(), re.M)
     )
     assert targets, "the Makefile earns no gate at all"
-    unknown = sorted(set(targets) - set(roster))
-    assert not unknown, f"Makefile targets earn gates the table does not know: {unknown}"
+    assert targets == roster, {
+        "make target without a gate script": sorted(targets - roster),
+        "gate script without a make target": sorted(roster - targets),
+    }

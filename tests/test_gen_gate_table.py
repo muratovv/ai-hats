@@ -45,7 +45,7 @@ def test_the_rendered_tables_carry_every_stage_and_every_gate(tmp_path: Path):
     text = doc.read_text(encoding="utf-8")
 
     rows = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "table"],
+        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "list"],
         capture_output=True,
         text=True,
         check=True,
@@ -58,6 +58,9 @@ def test_the_rendered_tables_carry_every_stage_and_every_gate(tmp_path: Path):
     assert "`rack.tasks`: `->done`" in text, "where done-gate applies comes from the role"
     assert "`wt`: `pre-merge`" in text
     assert "`git pre-push`" in text, "where push-gate applies comes from the skill's git_hooks"
+    unit_row = next(line for line in text.splitlines() if line.startswith("| `unit`"))
+    for gate in ("review-gate", "merge-gate", "done-gate", "push-gate"):
+        assert gate in unit_row, "the stage table says which gates require a stage, from the gates"
 
 
 def test_a_stale_document_is_refused_naming_the_remedy(tmp_path: Path):

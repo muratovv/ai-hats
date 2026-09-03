@@ -2,12 +2,12 @@
 
 flow:   a maintainer pushing to master, gated by git's pre-push hook
 cmds:
-    git push origin master           # allowed only with every push-gate stage marked for the tree
+    git push origin master           # allowed only with every stage the hook declares marked
     scripts/run-e2e-gate.sh          # earns the markers out of band, one per stage
 expect: check mode reads the pre-push protocol, ignores non-master lines, and
-        asks the project's own `gates.sh check push-gate` about each pushed
-        commit's TREE; run mode runs only the unmarked stages, stops at the
-        first red, and stamps each green one for the commit it judged
+        asks the project's own `gates.sh check` about each pushed commit's TREE;
+        run mode runs only the unmarked stages, stops at the first red, and
+        stamps each green one for the commit it judged
 why:    GitHub closes the push connection ~30s in, so the tier runs out of band
         and the per-stage markers are the only evidence it ran
 """
@@ -29,9 +29,6 @@ HOOK = (
     / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
     / "git_hooks/pre-push-e2e-master.sh"
 )
-#: The project's side of the gate, copied into every sandbox so the hook asks
-#: the repo under judgement and not this checkout (ADR-0023 D7).
-PROJECT_SCRIPTS = ("gates.sh", "ci-gate.sh", "run-e2e-gate.sh")
 ZERO = "0" * 40
 OLD_SHA = "2" * 40
 OTHER_SHA = "3" * 40
@@ -39,10 +36,7 @@ OTHER_SHA = "3" * 40
 
 def _push_gate_stages() -> list[str]:
     out = subprocess.run(
-        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "stages", "push-gate"],
-        capture_output=True,
-        text=True,
-        check=True,
+        ["bash", str(HOOK), "--stages"], capture_output=True, text=True, check=True
     )
     return out.stdout.split()
 
@@ -59,18 +53,16 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _write_runner(repo: Path, rcs: dict[str, int] | None = None) -> Path:
-    """A fake `scripts/ci-local.sh`: every stage records itself OUTSIDE the repo
-    and exits as told (unset → green); `e2e` hands over to whatever `pytest` is
-    on PATH, so the tier's own invocation stays observable."""
-    scripts = repo / "scripts"
-    scripts.mkdir(exist_ok=True)
+def _write_runner(where: Path, rcs: dict[str, int] | None = None) -> Path:
+    """A fake stage runner OUTSIDE the repo: every stage records itself and exits
+    as told (unset → green); `e2e` hands over to whatever `pytest` is on PATH,
+    so the tier's own invocation stays observable."""
     arms = "".join(f"  {stage}) exit {rc} ;;\n" for stage, rc in (rcs or {}).items())
-    runner = scripts / "ci-local.sh"
+    runner = where / "runner.sh"
     runner.write_text(
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
-        f'printf "%s\\n" "$1" >> "{repo.parent / "stages_run"}"\n'
+        f'printf "%s\\n" "$1" >> "{where / "stages_run"}"\n'
         'case "$1" in\n'
         f"{arms}"
         '  e2e) exec pytest -m "(integration or smoke) and not quarantine and not live_agy" '
@@ -83,8 +75,8 @@ def _write_runner(repo: Path, rcs: dict[str, int] | None = None) -> Path:
 
 
 def _git_repo(tmp_path: Path, rcs: dict[str, int] | None = None) -> Path:
-    """One commit holding the real gates.sh / ci-gate.sh / run-e2e-gate.sh and
-    a fake stage runner. Committed, so the tree is clean and a run is in place."""
+    """One commit holding the real `scripts/gates.sh`; the fake stage runner sits
+    beside the repo and reaches it through GATES_STAGE_RUNNER."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -92,9 +84,8 @@ def _git_repo(tmp_path: Path, rcs: dict[str, int] | None = None) -> Path:
     _git(repo, "config", "user.name", "t")
     (repo / "f").write_text("x")
     (repo / "scripts").mkdir()
-    for name in PROJECT_SCRIPTS:
-        shutil.copy(REPO_ROOT / "scripts" / name, repo / "scripts" / name)
-    _write_runner(repo, rcs)
+    shutil.copy(REPO_ROOT / "scripts" / "gates.sh", repo / "scripts" / "gates.sh")
+    _write_runner(tmp_path, rcs)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "init")
     return repo
@@ -130,10 +121,14 @@ def _head(repo: Path) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
-def _env(bindir: Path | None) -> dict[str, str]:
+def _env(repo: Path, bindir: Path | None) -> dict[str, str]:
     """A bare PATH: system bash 3.2 on macOS, and no `python` — so the xdist
     probe falls through to the `pytest` a case puts in `bindir`."""
-    env = {"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/tmp")}
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "GATES_STAGE_RUNNER": str(repo.parent / "runner.sh"),
+    }
     if bindir is not None:
         env["PATH"] = f"{bindir}:{env['PATH']}"
     return env
@@ -148,19 +143,19 @@ def _check(stdin: str, *, cwd: Path) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         timeout=30,
-        env=_env(None),
+        env=_env(cwd, None),
     )
 
 
 def _run(bindir: Path | None, *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """The hook in RUN mode — a spelling of `scripts/run-e2e-gate.sh`."""
+    """The hook in RUN mode."""
     return subprocess.run(
         ["bash", str(HOOK), "--run"],
         cwd=str(cwd),
         capture_output=True,
         text=True,
         timeout=60,
-        env=_env(bindir),
+        env=_env(cwd, bindir),
     )
 
 
@@ -227,7 +222,7 @@ def test_master_deletion_is_noop(tmp_path: Path):
 
 def test_empty_stdin_is_noop(tmp_path: Path):
     """The check runner hands its children stdin=DEVNULL — which is exactly why
-    this hook is NOT the checks-channel gate (ADR-0023 D9)."""
+    this hook is NOT a checks-channel gate (ADR-0023 D9)."""
     repo = _git_repo(tmp_path)
     res = _check("", cwd=repo)
 
@@ -274,8 +269,8 @@ def test_master_push_blocked_when_one_demanded_stage_is_unmarked(tmp_path: Path)
     res = _check(f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n", cwd=repo)
 
     assert res.returncode == 1
-    assert stages[-1] in res.stderr
-    assert stages[0] not in res.stderr.split("Missing:", 1)[1].split("Run the gate", 1)[0]
+    missing = res.stderr.split("Missing:", 1)[1].split("Run the gate", 1)[0].split()
+    assert missing == [stages[-1]]
 
 
 def test_master_push_blocked_with_markers_for_another_tree(tmp_path: Path):
@@ -304,10 +299,10 @@ def test_mixed_payload_requires_markers_for_the_master_line_only(tmp_path: Path)
 
 def test_a_project_without_gates_sh_cannot_push_to_master(tmp_path: Path):
     """Nothing could have earned a marker, so nothing lets the push through —
-    the library never falls back to a composition it names itself (D7)."""
+    the library never runs a stage itself (D7)."""
     repo = _git_repo(tmp_path)
     (repo / "scripts" / "gates.sh").unlink()
-    _git(repo, "commit", "-qam", "drop the table")
+    _git(repo, "commit", "-qam", "drop the runner")
 
     res = _check(f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n", cwd=repo)
 
@@ -322,7 +317,7 @@ def test_a_project_without_gates_sh_cannot_push_to_master(tmp_path: Path):
 
 def test_run_mode_stops_at_the_first_red_and_the_tier_never_starts(tmp_path: Path):
     """The case that reached master on 2026-07-29: 66 ruff errors passed a gate
-    that ran only e2e+smoke. The table leads with the cheap stages, and a red
+    that ran only e2e+smoke. The list leads with the cheap stages, and a red
     one stops the run before the tier."""
     repo = _git_repo(tmp_path, rcs={"lint": 1})
     bindir = tmp_path / "bin"
@@ -352,17 +347,6 @@ def test_run_mode_green_run_marks_every_stage_and_runs_the_tier(tmp_path: Path):
     assert _marked(repo, _tree(repo)) == set(_push_gate_stages())
     marker = _store(repo) / _tree(repo) / "e2e"
     assert f"tree={_tree(repo)}" in marker.read_text()
-
-
-def test_run_mode_arms_the_venv_tier_fail_closed_switch(tmp_path: Path):
-    """AI_HATS_E2E_REQUIRE_VENV=1 reaches the tier: a venv it could not build is
-    red, never a skip that reads as green."""
-    repo = _git_repo(tmp_path)
-    bindir = tmp_path / "bin"
-    _make_pytest_stub(bindir, exit_code=0)
-
-    assert _run(bindir, cwd=repo).returncode == 0
-    assert (bindir / "last_require_venv").read_text() == "1"
 
 
 def test_run_mode_a_red_tier_earns_no_marker_for_it(tmp_path: Path):
@@ -463,3 +447,19 @@ def test_run_mode_runs_serial_without_xdist(tmp_path: Path):
     argv = (bindir / "last_argv").read_text()
     assert _xdist_n(argv) is None
     assert "--dist=loadgroup" not in argv
+
+
+# ===========================================================================
+# the wrapper
+# ===========================================================================
+
+
+def test_the_wrapper_arms_the_venv_switch_and_hands_over_to_the_hook():
+    """`scripts/run-e2e-gate.sh` is the maintainer's spelling: housekeeping, the
+    fail-closed venv switch, then the hook's own run mode. Probed for its shape,
+    not run — running it here would judge this very checkout."""
+    text = (REPO_ROOT / "scripts" / "run-e2e-gate.sh").read_text(encoding="utf-8")
+
+    assert "export AI_HATS_E2E_REQUIRE_VENV=1" in text
+    assert 'exec bash "$hook" --run "$@"' in text
+    assert "pre-push-e2e-master.sh" in text

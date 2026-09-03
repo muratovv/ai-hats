@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """Render ADR-0023's stage and gate tables from the code that defines them.
 
-The inventory a reader used to find in the ADR — which stage exists, which gate
-requires it, what it checks, where a gate stands — rotted seven stages out of
-twenty-three while the code moved on. It now comes from three places that are
-already the truth: `scripts/gates.sh table` (stage, gates, description), the
-maintainer role's `composition.apps` rows (where each card gate is bound, by its
-`gate:` cargo) and the quality-gate skill's `git_hooks` (where the push gate
-stands). `--check` refuses a document that no longer matches; the ADR's prose
-around the tables stays prose, because the decisions in it are not derivable.
-
-What `--check` cannot catch is a sentence in the prose drifting from the table
-beside it — that half is still a human's.
+The inventory a reader used to find in the ADR — which stage exists, what it
+checks, which gate requires it, where a gate stands — rotted seven stages out of
+twenty-three while the code moved on. It now comes from what is already the
+truth: `scripts/gates.sh list` (stage, description), each gate script's
+`--stages` (what it requires), the maintainer role's `composition.apps` rows
+(where each card gate is bound) and the quality-gate skill's `git_hooks` (where
+the push gate stands). `--check` refuses a document that no longer matches;
+the prose around the tables stays prose, because the decisions in it are not
+derivable.
 """
 
 from __future__ import annotations
@@ -46,36 +44,33 @@ class SourceError(Exception):
 
 
 @dataclass(frozen=True)
-class Row:
-    stage: str
-    gates: tuple[str, ...]
-    description: str
+class Gate:
+    name: str
+    stages: tuple[str, ...]
+    where: tuple[str, ...]
 
 
-def read_rows(repo: Path) -> list[Row]:
+def _bash(repo: Path, script: str, *args: str) -> str:
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(repo / GATES_SH), "table"], capture_output=True, text=True, check=False
+        ["bash", str(repo / script), *args], capture_output=True, text=True, check=False
     )
     if out.returncode != 0:
-        raise SourceError(f"{GATES_SH} table exited {out.returncode}: {out.stderr.strip()}")
+        raise SourceError(
+            f"{script} {' '.join(args)} exited {out.returncode}: {out.stderr.strip()}"
+        )
+    return out.stdout
+
+
+def read_stages(repo: Path) -> list[tuple[str, str]]:
     rows = []
-    for line in out.stdout.splitlines():
-        cells = [cell.strip() for cell in line.split("|", 2)]
-        if len(cells) != 3:
-            raise SourceError(f"{GATES_SH}: a row is not `stage | gates | description`: {line!r}")
-        rows.append(Row(cells[0], tuple(cells[1].split()), cells[2]))
+    for line in _bash(repo, GATES_SH, "list").splitlines():
+        cells = [cell.strip() for cell in line.split("|", 1)]
+        if len(cells) != 2:
+            raise SourceError(f"{GATES_SH} list: a row is not `stage | description`: {line!r}")
+        rows.append((cells[0], cells[1]))
     if not rows:
-        raise SourceError(f"{GATES_SH} table printed nothing")
+        raise SourceError(f"{GATES_SH} list printed nothing")
     return rows
-
-
-def roster(rows: list[Row]) -> list[str]:
-    seen: list[str] = []
-    for row in rows:
-        for gate in row.gates:
-            if gate != "-" and gate not in seen:
-                seen.append(gate)
-    return seen
 
 
 def _walk_rows(node, trail: tuple[str, ...]):
@@ -89,31 +84,41 @@ def _walk_rows(node, trail: tuple[str, ...]):
             yield from _walk_rows(value, (*trail, str(key)))
 
 
-def read_bindings(repo: Path) -> dict[str, list[str]]:
-    """`gate -> ["rack.tasks: ->review", ...]` from the role, plus the git hooks."""
-    config = yaml.safe_load((repo / ROLE_RELPATH).read_text(encoding="utf-8"))
-    bindings: dict[str, list[str]] = {}
-    for trail, row in _walk_rows(config.get("composition", {}).get("apps", {}), ()):
-        gate = row.get("gate")
-        if not gate:
-            continue
-        points = ", ".join(str(point) for point in row.get("at", []))
-        bindings.setdefault(str(gate), []).append(f"`{'.'.join(trail)}`: `{points}`")
-    skill = yaml.safe_load(_frontmatter((repo / SKILL_RELPATH / "SKILL.md").read_text("utf-8")))
-    for event, scripts in (skill.get("ai_hats", {}).get("git_hooks") or {}).items():
-        for script in scripts:
-            text = (repo / SKILL_RELPATH / script).read_text(encoding="utf-8")
-            match = re.search(r"^GATE='([^']+)'", text, re.M)
-            if match:
-                bindings.setdefault(match.group(1), []).append(f"`git {event}`")
-    return bindings
-
-
 def _frontmatter(text: str) -> str:
     parts = text.split("---", 2)
     if len(parts) < 3:
         raise SourceError("SKILL.md carries no frontmatter")
     return parts[1]
+
+
+def read_gates(repo: Path) -> list[Gate]:
+    """Every gate the role binds, in the role's order, then the git hooks'."""
+    config = yaml.safe_load((repo / ROLE_RELPATH).read_text(encoding="utf-8"))
+    found: dict[str, list[str]] = {}
+    scripts: dict[str, str] = {}
+    for trail, row in _walk_rows(config.get("composition", {}).get("apps", {}), ()):
+        run = str(row["run"])
+        if not run.startswith("maintainer-quality-gate/"):
+            continue
+        name = Path(run).stem
+        scripts[name] = run.split("/", 1)[1]
+        points = ", ".join(str(point) for point in row.get("at", []))
+        found.setdefault(name, []).append(f"`{'.'.join(trail)}`: `{points}`")
+    skill = yaml.safe_load(_frontmatter((repo / SKILL_RELPATH / "SKILL.md").read_text("utf-8")))
+    for event, hooks in (skill.get("ai_hats", {}).get("git_hooks") or {}).items():
+        for script in hooks:
+            text = (repo / SKILL_RELPATH / script).read_text(encoding="utf-8")
+            match = re.search(r"^GATE='([^']+)'", text, re.M)
+            if match:
+                scripts[match.group(1)] = script
+                found.setdefault(match.group(1), []).append(f"`git {event}`")
+    gates = []
+    for name, where in found.items():
+        stages = _bash(repo, f"{SKILL_RELPATH}/{scripts[name]}", "--stages").split()
+        gates.append(Gate(name, tuple(stages), tuple(where)))
+    if not gates:
+        raise SourceError("no gate is bound anywhere")
+    return gates
 
 
 def _table(headers: list[str], body: list[list[str]]) -> str:
@@ -127,17 +132,16 @@ def _table(headers: list[str], body: list[list[str]]) -> str:
     return "\n".join([line(headers), rule, *(line(cells) for cells in body)])
 
 
-def render_stages(rows: list[Row]) -> str:
-    body = [[f"`{r.stage}`", " ".join(r.gates), r.description] for r in rows]
+def render_stages(stages: list[tuple[str, str]], gates: list[Gate]) -> str:
+    body = []
+    for stage, desc in stages:
+        required = " ".join(g.name for g in gates if stage in g.stages) or "-"
+        body.append([f"`{stage}`", required, desc])
     return _table(["стадия", "требуют гейты", "что проверяет"], body)
 
 
-def render_gates(rows: list[Row], bindings: dict[str, list[str]]) -> str:
-    body = []
-    for gate in roster(rows):
-        stages = " ".join(r.stage for r in rows if gate in r.gates)
-        where = "; ".join(bindings.get(gate, [])) or "—"
-        body.append([f"`{gate}`", where, stages])
+def render_gates(gates: list[Gate]) -> str:
+    body = [[f"`{g.name}`", "; ".join(g.where), " ".join(g.stages)] for g in gates]
     return _table(["гейт", "где применяется", "стадии"], body)
 
 
@@ -155,9 +159,9 @@ def splice(doc: str, mark: str, table: str) -> str:
 
 
 def render(repo: Path, doc: str) -> str:
-    rows = read_rows(repo)
-    doc = splice(doc, STAGES_MARK, render_stages(rows))
-    return splice(doc, GATES_MARK, render_gates(rows, read_bindings(repo)))
+    stages, gates = read_stages(repo), read_gates(repo)
+    doc = splice(doc, STAGES_MARK, render_stages(stages, gates))
+    return splice(doc, GATES_MARK, render_gates(gates))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -181,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[{CHECK}] {doc_path} current", file=sys.stderr)
         return 0
     if rendered == current:
-        print(f"[{CHECK}] {doc_path} matches scripts/gates.sh and the bindings", file=sys.stderr)
+        print(f"[{CHECK}] {doc_path} matches the stages and the gates", file=sys.stderr)
         return 0
     print(
         f"[{CHECK}] {doc_path} is stale — run `python scripts/gen_gate_table.py --write`",

@@ -5,7 +5,7 @@
 Every environment variable you may SET to configure ai-hats, with its type, its
 default and one line on what it does. Rendered from the declarations the code
 itself reads by `scripts/gen_env_reference.py`, kept current by the `env-reference`
-stage of `scripts/ci-local.sh`.
+stage of `scripts/gates.sh`.
 
 No value here is a copy. A budget's default is the very object its reader
 consults (`BUDGETS`, declared in the distribution that reads it), and a path's

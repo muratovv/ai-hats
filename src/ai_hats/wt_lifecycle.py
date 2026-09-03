@@ -215,7 +215,6 @@ class HookRunningLifecycle:
                 # while the first one's reason still points at it — the HATS-1137
                 # defect `rack_consumers._escaped` exists to prevent.
                 log_path=log_dir / check_log_name(WT_PRE_MERGE, check),
-                cargo=check.cargo,
             )
             if not run.ok:
                 _raise_merge_aborted(

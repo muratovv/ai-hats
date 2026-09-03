@@ -1,11 +1,12 @@
-"""The gate table in `scripts/gates.sh` and the stage runner agree, both ways.
+"""The stages `scripts/gates.sh` knows and the gates that require them agree.
 
-A gate is a name for a set of stages, and the table is the one home of that
-fact. What can rot around it: a stage the runner grew that no row names (the
-"named nowhere" drift ADR-0023 D4 suffered — 7 of 23 stages), a row naming a
-stage the runner does not have, and the containment the marker's absorption
-rule stands on (review ⊆ merge ⊆ done). Each is a subprocess of the two
-scripts, never a literal copied here.
+A stage is a `ci_*` function and a row of `gates.sh list`; a gate is a thin
+script declaring the stages it requires. What can rot between them: a function
+with no row (the description the ADR renders from is missing), a row with no
+function, a gate naming a stage that does not exist, a stage no gate requires
+that nobody decided to leave out, and the containment the marker's absorption
+rule stands on (review ⊆ merge ⊆ done). Each is a subprocess of the scripts,
+never a literal copied here.
 """
 
 from __future__ import annotations
@@ -17,11 +18,21 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATES = REPO_ROOT / "scripts" / "gates.sh"
-CI_LOCAL = REPO_ROOT / "scripts" / "ci-local.sh"
+SKILL = (
+    REPO_ROOT
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+)
+#: Every gate this project has: the checks-channel ones and the git one.
+GATE_SCRIPTS = {
+    "review-gate": SKILL / "hooks" / "review-gate.sh",
+    "merge-gate": SKILL / "hooks" / "merge-gate.sh",
+    "done-gate": SKILL / "hooks" / "done-gate.sh",
+    "push-gate": SKILL / "git_hooks" / "pre-push-e2e-master.sh",
+}
 
-#: Runner verbs that are not stages yet take the stage slot — the table lists
-#: them with `-` so a reader sees they are deliberate.
-NON_STAGE_ROWS = {"prepare"}
+#: Stages no gate requires, each a decision: CI-only, network, housekeeping, a
+#: precondition. A new stage must join a gate or this list — never neither.
+KNOWN_UNGATED = {"coverage", "security", "version-skew", "python-pin", "tmp-sweep", "prepare"}
 
 
 def _run(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -30,77 +41,69 @@ def _run(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _roster() -> list[str]:
+def _stages(gate: str) -> list[str]:
+    out = _run(GATE_SCRIPTS[gate], "--stages")
+    assert out.returncode == 0, out.stderr
+    return out.stdout.split()
+
+
+def _listed() -> dict[str, str]:
+    """`stage -> description` from `gates.sh list`."""
     out = _run(GATES, "list")
     assert out.returncode == 0, out.stderr
-    return out.stdout.split()
-
-
-def _stages(gate: str) -> list[str]:
-    out = _run(GATES, "stages", gate)
-    assert out.returncode == 0, out.stderr
-    return out.stdout.split()
-
-
-def _rows() -> list[tuple[str, list[str], str]]:
-    out = _run(GATES, "table")
-    assert out.returncode == 0, out.stderr
-    rows = []
+    rows = {}
     for line in out.stdout.splitlines():
-        stage, gates, desc = (cell.strip() for cell in line.split("|", 2))
-        rows.append((stage, gates.split(), desc))
+        stage, desc = (cell.strip() for cell in line.split("|", 1))
+        rows[stage] = desc
     return rows
 
 
-def _runner_stages() -> set[str]:
+def _functions() -> set[str]:
     """What the dispatcher itself lists when refused an unknown stage."""
-    out = _run(CI_LOCAL, "no-such-stage")
+    out = _run(GATES, "no-such-stage")
     text = out.stdout + out.stderr
     assert "stages:" in text, text
     line = next(ln for ln in text.splitlines() if ln.strip().startswith("stages:"))
     return set(line.split(":", 1)[1].split())
 
 
-def test_the_roster_is_the_four_gates_and_every_one_resolves():
-    roster = _roster()
-
-    assert roster == ["review-gate", "merge-gate", "done-gate", "push-gate"]
-    for gate in roster:
-        assert _stages(gate), f"{gate} names no stage"
+def test_every_gate_script_exists_and_declares_stages():
+    for gate, script in GATE_SCRIPTS.items():
+        assert script.is_file(), f"{gate} has no script at {script}"
+        assert _stages(gate), f"{gate} declares no stage"
 
 
-def test_every_stage_a_row_names_is_a_stage_the_runner_has():
-    known = _runner_stages() | NON_STAGE_ROWS
+def test_every_listed_stage_is_a_function_and_every_function_is_listed():
+    listed, functions = set(_listed()), _functions()
 
-    phantom = {stage for stage, _gates, _desc in _rows()} - known
-
-    assert not phantom, f"the table names stages the runner does not have: {sorted(phantom)}"
-
-
-def test_every_stage_the_runner_has_is_named_by_a_row():
-    """The "named nowhere" refusal: a new `ci_*` function must take a position
-    in the table, even if that position is `-`."""
-    named = {stage for stage, _gates, _desc in _rows()}
-
-    unnamed = _runner_stages() - named
-
-    assert not unnamed, (
-        f"the runner has stages the table does not place: {sorted(unnamed)} — "
-        "add a row, with `-` if no gate requires it"
-    )
-
-
-def test_every_row_names_gates_the_roster_has_or_the_dash():
-    roster = set(_roster())
-    for stage, gates, _desc in _rows():
-        for gate in gates:
-            assert gate == "-" or gate in roster, f"{stage} names an unknown gate {gate!r}"
-        assert gates, f"{stage} has an empty gates column — write `-`"
+    assert listed == functions, {
+        "listed but no ci_* function": sorted(listed - functions),
+        "ci_* function but no row in `gates.sh list`": sorted(functions - listed),
+    }
 
 
 def test_every_row_carries_a_description():
-    for stage, _gates, desc in _rows():
+    for stage, desc in _listed().items():
         assert desc, f"{stage} has no description — the ADR's stage table renders from it"
+
+
+def test_every_stage_a_gate_requires_exists():
+    known = _functions()
+    for gate in GATE_SCRIPTS:
+        phantom = set(_stages(gate)) - known
+        assert not phantom, f"{gate} requires stages the runner does not have: {sorted(phantom)}"
+
+
+def test_every_stage_is_required_by_a_gate_or_deliberately_not():
+    """The "named nowhere" refusal: a new `ci_*` function must join a gate or the
+    list above — a stage nobody decided about is how seven went missing."""
+    required = {stage for gate in GATE_SCRIPTS for stage in _stages(gate)}
+
+    undecided = _functions() - required - KNOWN_UNGATED
+    stale = KNOWN_UNGATED & required
+
+    assert not undecided, f"stages no gate requires and nobody exempted: {sorted(undecided)}"
+    assert not stale, f"KNOWN_UNGATED lists stages a gate now requires: {sorted(stale)}"
 
 
 def test_review_and_merge_demand_the_same_set():
@@ -124,30 +127,32 @@ def test_the_card_gates_nest_so_one_run_of_the_widest_pays_for_all():
 
 
 def test_the_done_gate_demands_what_only_it_can_ask():
-    """A superset by at least one stage, or the gate keeps passing on a run it
-    never demanded and nothing turns red."""
-    assert set(_stages("done-gate")) - set(_stages("merge-gate"))
+    """Shrinking a set is the silent direction: markers on disk stay valid."""
+    assert set(_stages("done-gate")) - set(_stages("merge-gate")) == {
+        "integration",
+        "master-ci",
+        "merge-smoke",
+    }
 
 
 def test_a_precondition_is_never_part_of_a_verdict():
     """`prepare` asserts nothing; a gate naming it would count a venv build as
-    evidence. Every gate on the roster, not a hand-kept three."""
-    for gate in _roster():
+    evidence. Every gate there is, not a hand-kept three."""
+    for gate in GATE_SCRIPTS:
         assert "prepare" not in _stages(gate), f"{gate} names a precondition as a stage"
 
 
-def test_the_dispatcher_knows_no_gate():
-    """A gate is not a stage, and the dispatcher no longer keeps a shim for the
-    hooks — asked about one, it points at the table instead of answering."""
-    for gate in _roster():
-        asked = _run(CI_LOCAL, gate)
+def test_a_gate_is_not_a_stage():
+    """`gates.sh done-gate` names nothing the runner has — the gate is its own
+    script, and the runner knows no gate."""
+    for gate in GATE_SCRIPTS:
+        asked = _run(GATES, gate)
         assert asked.returncode == 2, asked.stderr
-        assert "is a gate, not a stage" in asked.stderr
-        assert f"scripts/gates.sh stages {gate}" in asked.stderr
+        assert "unknown stage" in asked.stderr
 
 
 @pytest.mark.parametrize(
-    "argv", [(), ("stages",), ("stages", "no-such-gate"), ("check", "done-gate", "unit")]
+    "argv", [("check",), ("run",), ("check", "unit", "-k", "x"), ("unit", "x")]
 )
 def test_usage_errors_exit_64(argv: tuple[str, ...]):
     out = _run(GATES, *argv)

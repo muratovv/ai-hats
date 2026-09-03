@@ -2,7 +2,7 @@
 
 flow:   a GitHub Actions runner executes the full e2e job declared in ci.yml
 cmds:
-    PYTEST_ADDOPTS="-n 8 --dist=loadgroup --collect-only" bash scripts/ci-local.sh e2e
+    PYTEST_ADDOPTS="-n 8 --dist=loadgroup --collect-only" bash scripts/gates.sh e2e
 expect: the versioned workflow command reaches the canonical dispatcher and
         successfully collects the full e2e selection
 why:    a syntactically valid workflow can still name a missing stage or bypass
@@ -52,7 +52,7 @@ def test_full_e2e_job_drives_the_canonical_dispatcher():
 
     combined = result.stdout + result.stderr
     assert result.returncode == 0, combined
-    assert "[ci-local] e2e" in combined
+    assert "[gates] e2e" in combined
     assert "test_ci_full_e2e_job.py::test_full_e2e_job_drives_the_canonical_dispatcher" in combined
     assert "test_agy_bypass.py::test_agy_bypasses_root_gemini_md" not in combined
     assert "test_clean_root_sentinel.py::test_agy_clean_root_sentinel" not in combined

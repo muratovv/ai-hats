@@ -20,13 +20,12 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Mapping, Sequence
 
 from ai_hats_core.deadline import Deadline
 
 from .env import (
     AI_HATS_PROJECT_DIR_ENV,
-    ENV_CARGO_PREFIX,
     ENV_FORCE,
     ENV_HOOK_CALL,
     ENV_HOOK_POINT,
@@ -139,7 +138,6 @@ def run_hook(
     tee: bool = False,
     drop_env: Sequence[str] = (),
     cwd: Path | None = None,
-    cargo: Mapping[str, Any] | None = None,
 ) -> HookRun:
     """Run ``script`` under the D2 contract and return its outcome.
 
@@ -219,16 +217,7 @@ def run_hook(
     cmd = [str(script), *argv]
     run_in = str(project_dir if cwd is None else cwd)
     env = _hook_env(
-        point,
-        project_dir,
-        force,
-        task_id,
-        worktree_path,
-        tasks_dir,
-        actor,
-        selector,
-        extra_env,
-        cargo,
+        point, project_dir, force, task_id, worktree_path, tasks_dir, actor, selector, extra_env
     )
     for name in drop_env:
         env.pop(name, None)
@@ -449,10 +438,9 @@ def _hook_env(
     actor: str | None,
     selector: str | None,
     extra: Mapping[str, str] | None,
-    cargo: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     """The shared base every hook receives (ADR-0020 D2), then the caller's own
-    point-specific vocabulary on top, then the declaring row's cargo.
+    point-specific vocabulary on top.
 
     An unresolvable value is REMOVED from the inherited environment rather than
     left alone: the ambient one may carry another worktree's path, and a check
@@ -482,24 +470,7 @@ def _hook_env(
         point, project_dir, force, task_id, worktree_path, tasks_dir, actor, selector
     )
     env.update(extra or {})
-    _put_cargo(env, cargo)
     return env
-
-
-def _put_cargo(env: dict[str, str], cargo: Mapping[str, Any] | None) -> None:
-    """One variable per row key, mechanically — flattened, never interpreted.
-
-    A string travels verbatim, anything else as JSON, None is absent (D2's
-    remove-if-None). Every inherited ``AI_HATS_CARGO_*`` goes first: a nested
-    hook would otherwise read another row's declaration as its own.
-    """
-    for name in [key for key in env if key.startswith(ENV_CARGO_PREFIX)]:
-        env.pop(name)
-    for key, value in (cargo or {}).items():
-        if value is None:
-            continue
-        name = ENV_CARGO_PREFIX + re.sub(r"[^A-Za-z0-9_]", "_", str(key)).upper()
-        env[name] = value if isinstance(value, str) else json.dumps(value)
 
 
 def _call_envelope(

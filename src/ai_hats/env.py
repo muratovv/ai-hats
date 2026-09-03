@@ -58,9 +58,6 @@ ENV_MERGED_SHA = "AI_HATS_MERGED_SHA"
 #: The call envelope — per-CALL facts as one versioned JSON object,
 #: BESIDE the scalars above, which shell keeps reading.
 ENV_HOOK_CALL = "AI_HATS_HOOK_CALL"
-#: The declaring row's own keys (its cargo), one variable each, flattened and
-#: never read: `gate: done-gate` arrives as AI_HATS_CARGO_GATE=done-gate.
-ENV_CARGO_PREFIX = "AI_HATS_CARGO_"
 
 # A budget and a hatch per gate channel — the tool-call one, then git's. Side by
 # side because they ARE one pair spelled twice, and a reader comparing them had
@@ -413,7 +410,6 @@ __all__ = [
     "ENV_TASKS_DIR",
     "ENV_MERGED_SHA",
     "ENV_HOOK_CALL",
-    "ENV_CARGO_PREFIX",
     "ENV_HOOK_TIMEOUT_S",
     "ENV_GATE_BROKEN_ACK",
     "ENV_GIT_HOOK_TIMEOUT_S",

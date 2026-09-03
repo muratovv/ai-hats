@@ -96,7 +96,7 @@ confirming which mode you're in.
 
 ## Testing
 
-Every `make` target delegates to a `scripts/ci-local.sh` stage, so a target and
+Every `make` target delegates to a `scripts/gates.sh` stage, so a target and
 the CI job of the same name cannot disagree — `tests/test_gate_entrypoint_parity.py`
 fails the build if either spells a check command out itself.
 
@@ -108,7 +108,7 @@ is not a stage keeps a different prefix.
 
 - `make check` — the fast inner loop: `lint` + `unit` only.
 - `make gates` — everything CI runs locally, the `all` bundle in
-  `scripts/ci-local.sh`. This is the parity gate; `check` is a subset of it.
+  `scripts/gates.sh`. This is the parity gate; `check` is a subset of it.
 - `make unit` (or `make tests`) — the unit stage, bounded by timeout (default 300s).
 - `make lint` — `ruff check .` plus `ruff format --check` over that same `.`
   (HATS-1651: two scopes could not stay equal by convention).
@@ -327,7 +327,7 @@ next to its composer.
 component that says "ai-hats" in prose but fires on any project is `usage`; one
 that never says it but only ever fires here is `ai-hats-dev`. Step 4 is `yes`
 when the component names `src/ai_hats/…`, `packages/ai-hats-library/…`, this
-repo's `CONTRIBUTING.md`, `docs/adr/…` or `scripts/ci-local.sh` **as a
+repo's `CONTRIBUTING.md`, `docs/adr/…` or `scripts/gates.sh` **as a
 dependency rather than as an example**. A guarded fast path is not a dependency:
 `rule-delivery-gate` hard-codes the library path and still lives in `usage`,
 because the hard-code is an `if [[ -d … ]]` branch with a package-resolve
@@ -408,7 +408,7 @@ filter-repo procedure for purging the history.
 
 ### ADR numbers and decision markers
 
-Two invariants over `docs/adr/`, enforced by `bash scripts/ci-local.sh adr-integrity`
+Two invariants over `docs/adr/`, enforced by `bash scripts/gates.sh adr-integrity`
 (in the `all` bundle and in the master push-gate):
 
 - **A number names exactly one file.** `0023` once named two live ADRs, and the

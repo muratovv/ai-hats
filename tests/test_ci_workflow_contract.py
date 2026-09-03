@@ -36,4 +36,4 @@ def test_full_e2e_job_uses_the_merge_smoke_environment_and_canonical_stage():
         "AI_HATS_E2E_REQUIRE_VENV": "1",
         "PYTEST_ADDOPTS": "-n 8 --dist=loadgroup",
     }
-    assert run["run"] == "bash scripts/ci-local.sh e2e"
+    assert run["run"] == "bash scripts/gates.sh e2e"

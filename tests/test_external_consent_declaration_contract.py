@@ -161,11 +161,10 @@ def test_the_shipped_question_rides_every_road_into_done():
         (_LIBRARY / "ai-hats-dev/roles/maintainer/config.yaml").read_text(encoding="utf-8")
     )
     # By NAME, never by being the only row: the role binds a gate per edge, and
-    # the one this pairs with is the `->done` gate specifically. The name is the
-    # row's `gate:` cargo — every row runs the same hook (HATS-1878).
+    # the one this pairs with is the `->done` gate specifically.
     rows = gate["composition"]["apps"]["rack"]["tasks"]
-    done_rows = [row for row in rows if row.get("gate") == "done-gate"]
-    assert len(done_rows) == 1, f"exactly one ->done gate, found: {[r.get('gate') for r in rows]}"
+    done_rows = [row for row in rows if row["run"].endswith("done-gate.sh")]
+    assert len(done_rows) == 1, f"exactly one ->done gate, found: {[r['run'] for r in rows]}"
     assert done_rows[0]["at"] == ["->done"], "the gate and the question must cover one set"
 
 

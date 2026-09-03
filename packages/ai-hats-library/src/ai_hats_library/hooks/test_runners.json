@@ -16,7 +16,8 @@
   ],
   "delegating": [
     "make",
-    "ci-local.sh"
+    "ci-local.sh",
+    "gates.sh"
   ],
   "foreign_runners": [
     "go test",
