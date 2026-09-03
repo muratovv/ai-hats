@@ -1241,10 +1241,11 @@ class WorktreeManager:
                 )
             try:
                 if squash:
-                    self._squash_merge()
+                    self._squash_merge(guard_drift=not accept_drift)
                 else:
-                    self._fast_forward_merge()
+                    self._fast_forward_merge(guard_drift=not accept_drift)
             except (
+                WorktreeDriftError,
                 WorktreeMainRepoMidMergeError,
                 WorktreeStaleRefError,
                 WorktreeMergeIncompleteError,
@@ -2384,36 +2385,14 @@ class WorktreeManager:
 
     _DRIFT_PATH_LIMIT = 50  # max paths printed inline; overflow → "… N more"
 
-    def _check_drift(self) -> None:
-        """Raise WorktreeDriftError if the base moved and the branch lacks it.
+    def _fetch_base(self) -> None:
+        """``git fetch origin <base>`` so ``_check_drift`` can see remote drift.
 
-        HATS-1307: drift needs BOTH terms. "Did it move since create" alone
-        false-refuses a rebased branch; "is it contained in the branch" alone
-        false-refuses the fork shape (base != merge_target, HATS-942), where
-        the target is never an ancestor of the branch by design.
-
-        Drift sources:
-          * local: another worktree's `wt merge` advanced the local
-            original branch and the worktree branch never took it in.
-          * remote: someone pushed commits to ``origin/<base>`` that
-            neither local nor the branch has — i.e. ``origin/<base>`` is
-            an ancestor of neither. ``current_remote != current_local`` is
-            insufficient: that condition also fires for normal unpushed
-            local work (HATS-487 false-positive).
-
-        ``git fetch origin <base>`` runs first to surface remote drift.
         Failures are logged at WARNING (HATS-489 / B-04): merge follows
-        immediately, so a swallowed fetch error can hide a real
-        remote-side push that we'd otherwise catch. Not raise — offline
-        / no-remote setups must still be able to merge.
-
-        Skips silently when the saved ``base_sha_at_create`` is missing
-        (legacy state file from before HATS-457).
+        immediately, so a swallowed fetch error can hide a real remote-side
+        push that we'd otherwise catch. Not raise — offline / no-remote setups
+        must still be able to merge.
         """
-        if self._base_sha_at_create is None or self._original_branch is None:
-            return
-
-        # HATS-489 / B-04: fetch failure escalated DEBUG → WARNING.
         # HATS-489 / B-05: FileNotFoundError (git binary missing) caught
         # consistently with CalledProcessError (mirrors
         # is_inside_linked_worktree / list_worktrees).
@@ -2441,6 +2420,38 @@ class WorktreeManager:
                 self._original_branch,
                 tail,
             )
+
+    def _check_drift(self, *, fetch: bool = True) -> None:
+        """Raise WorktreeDriftError if the base moved and the branch lacks it.
+
+        ``fetch=False`` is the re-check under the base lock: only a peer's
+        merge can have moved the base since the first check, and a fetch there
+        would hold every waiting peer for ``FETCH_TIMEOUT``.
+
+        HATS-1307: drift needs BOTH terms. "Did it move since create" alone
+        false-refuses a rebased branch; "is it contained in the branch" alone
+        false-refuses the fork shape (base != merge_target, HATS-942), where
+        the target is never an ancestor of the branch by design.
+
+        Drift sources:
+          * local: another worktree's `wt merge` advanced the local
+            original branch and the worktree branch never took it in.
+          * remote: someone pushed commits to ``origin/<base>`` that
+            neither local nor the branch has — i.e. ``origin/<base>`` is
+            an ancestor of neither. ``current_remote != current_local`` is
+            insufficient: that condition also fires for normal unpushed
+            local work (HATS-487 false-positive).
+
+        ``git fetch origin <base>`` runs first to surface remote drift
+        (:meth:`_fetch_base`).
+
+        Skips silently when the saved ``base_sha_at_create`` is missing
+        (legacy state file from before HATS-457).
+        """
+        if self._base_sha_at_create is None or self._original_branch is None:
+            return
+        if fetch:
+            self._fetch_base()
 
         try:
             current_local = self._git("rev-parse", self._original_branch).stdout.strip()
@@ -2545,7 +2556,7 @@ class WorktreeManager:
     def _short(sha: str) -> str:
         return sha[:8] if sha else "?"
 
-    def _squash_merge(self) -> None:
+    def _squash_merge(self, *, guard_drift: bool = False) -> None:
         """Squash-merge worktree branch into original branch.
 
         HATS-481 layered defense:
@@ -2564,6 +2575,9 @@ class WorktreeManager:
         with _acquire_base_branch_lock(self._state_dir, self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
+            # merge()'s road only: cleanup()'s squash never asked about drift.
+            if guard_drift:
+                self._check_drift(fetch=False)
             # HATS-1651: both steps under one snapshot. `--squash` leaves a
             # conflicted index and NO MERGE_HEAD, so a failure here is the one
             # shape the mid-merge guard above cannot catch on the next run.
@@ -2587,7 +2601,7 @@ class WorktreeManager:
                 self._refuse_unmerged(before, exc)
         logger.info("Squash-merged %s into %s", self.branch_name, self._original_branch)
 
-    def _fast_forward_merge(self) -> None:
+    def _fast_forward_merge(self, *, guard_drift: bool = False) -> None:
         """Merge worktree branch with --no-ff to preserve commit history.
 
         HATS-481 layered defense — see :meth:`_squash_merge` for details.
@@ -2600,6 +2614,9 @@ class WorktreeManager:
         with _acquire_base_branch_lock(self._state_dir, self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
+            # The base as it is NOW: a peer's merge may have landed while we waited.
+            if guard_drift:
+                self._check_drift(fetch=False)
             # HATS-1651: a conflict is the failure that leaves the main checkout
             # mid-merge; snapshot first so the refusal can state what it restored.
             before = self._main_state()

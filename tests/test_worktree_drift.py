@@ -158,6 +158,36 @@ class TestDriftDetection:
         assert "b.txt" in msg
         assert "c.txt" in msg
 
+    def test_drift_landing_before_the_base_lock_is_judged(self, git_project: Path) -> None:
+        """A peer merge that lands while this merge waits on the base lock is
+        refused, not raced past: the check runs again under the lock.
+
+        `_refuse_if_mid_merge` is the first call inside the base lock, so a
+        commit made there is exactly what a waiting merge finds on the base
+        once its turn comes.
+        """
+
+        class PeerLandsFirst(WorktreeManager):
+            def _refuse_if_mid_merge(self) -> None:
+                _make_main_commit(git_project, "peer.txt")
+                super()._refuse_if_mid_merge()
+
+        mgr = PeerLandsFirst(git_project, branch_name="task/late-drift")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        with pytest.raises(WorktreeDriftError) as exc:
+            mgr.merge()
+
+        assert "peer.txt" in str(exc.value)
+        # Nothing merged, nothing torn down: the branch and its worktree wait
+        # for the rebase the recipe names.
+        assert "wt-work" not in _git(git_project, "log", "--oneline", "-2").stdout
+        listing = _git(git_project, "branch", "--list", "task/late-drift").stdout
+        assert "task/late-drift" in listing
+        assert wt_path.is_dir()
+
 
 class TestRebasedBranchNotDrift:
     """HATS-1307: drift is *containment*, not "did the base move".
