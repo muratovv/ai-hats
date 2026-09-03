@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ai_hats_observe import Session
@@ -51,7 +53,7 @@ class ComputeUsage(Step):
                     "session_id",
                     "session_dir",
                     "claude_session_id",
-                    "project_dir",
+                    "layout",
                 }
             ),
             # Runner-threaded carve-outs, absent on paths that don't inject them:
@@ -74,13 +76,14 @@ class ComputeUsage(Step):
         session_id: str,
         session_dir: Path,
         claude_session_id: str,
-        project_dir: Path,
+        layout: ProjectLayout,
         role: str | None = None,
         static_cost_analyzer=None,
         audit_writer_factory=None,
         transcript_resolver=None,
         **_: Any,
     ) -> dict[str, Any]:
+        project_dir = layout.root
         from ai_hats_observe.parsers.claude import ClaudeParser
 
         # usage/v1 rides the surface's transcript parser (HATS-953); the seam

@@ -30,6 +30,8 @@ while passing in isolation.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import subprocess
 from pathlib import Path
 
@@ -85,7 +87,7 @@ def _run_step(tmp_path: Path) -> None:
     step = MaybeSpawnSessionReviewer()
     step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
 

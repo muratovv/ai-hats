@@ -110,7 +110,7 @@ def run_subagent(
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
     run_batch(
-        resolve_project().layout.root,
+        resolve_project().layout,
         role=role,
         task=task,
         provider=provider,

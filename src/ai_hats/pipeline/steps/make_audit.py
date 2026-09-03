@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ..step import Step, StepIO
@@ -50,7 +52,7 @@ class MakeAudit(Step):
                     "session_id",
                     "session_dir",
                     "claude_session_id",
-                    "project_dir",
+                    "layout",
                     "exit_code",
                     "session_factory",
                     "audit_writer_factory",
@@ -66,13 +68,14 @@ class MakeAudit(Step):
         session_id: str,
         session_dir: Path,
         claude_session_id: str,
-        project_dir: Path,
+        layout: ProjectLayout,
         exit_code: int,
         session_factory: Any,
         audit_writer_factory: Any,
         transcript_resolver: Any = None,
         **_: Any,
     ) -> dict[str, Any]:
+        project_dir = layout.root
         del exit_code  # contract-required key; AuditWriter reads metrics.json instead
 
         session = session_factory(session_id=session_id, session_dir=session_dir)

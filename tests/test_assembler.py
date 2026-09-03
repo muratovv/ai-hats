@@ -16,6 +16,7 @@ from ai_hats.paths import (
     state_md_path,
     tasks_dir,
 )
+from ai_hats_core.layout import ProjectLayout
 
 # HATS-469: ``Assembler.bump()`` was removed; use the test-side pipeline
 # helper that mirrors ``cli/assembly.py::do_bump``.
@@ -1393,7 +1394,7 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
     from ai_hats_observe import SessionManager
 
     runner = SubAgentRunner(
-        project,
+        ProjectLayout.at(project),
         _subagent_payload(result),
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )

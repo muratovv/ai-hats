@@ -14,6 +14,8 @@ from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from typing import TYPE_CHECKING
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
@@ -413,7 +415,8 @@ def _finalize_sub_agent(
                     _run_finalize_subagent(
                         session,
                         claude_session_id=claude_session_id or "",
-                        project_dir=work_dir,
+                        # the sub-agent's session tree lives in ITS checkout
+                        layout=ProjectLayout.at(work_dir),
                         exit_code=exit_code,
                         static_cost_analyzer=static_cost_analyzer,
                         session_factory=session_factory,
@@ -668,7 +671,7 @@ def _finalize_params(
     session: "Session",
     *,
     claude_session_id: str,
-    project_dir: Path,
+    layout: ProjectLayout,
     exit_code: int,
     static_cost_analyzer=None,
     session_factory=None,
@@ -682,7 +685,7 @@ def _finalize_params(
             dir=session.session_dir,
             provider_session_id=claude_session_id,
         ),
-        project_dir=project_dir,
+        layout=layout,
         exit_code=exit_code,
         static_cost_analyzer=static_cost_analyzer,
         session_factory=session_factory,
@@ -695,7 +698,7 @@ def _run_finalize_hitl(
     session: "Session",
     *,
     claude_session_id: str,
-    project_dir: Path,
+    layout: ProjectLayout,
     exit_code: int,
     static_cost_analyzer=None,
     session_factory=None,
@@ -717,7 +720,7 @@ def _run_finalize_hitl(
             _finalize_params(
                 session,
                 claude_session_id=claude_session_id,
-                project_dir=project_dir,
+                layout=layout,
                 exit_code=exit_code,
                 static_cost_analyzer=static_cost_analyzer,
                 session_factory=session_factory,
@@ -732,7 +735,7 @@ def _run_finalize_subagent(
     session: "Session",
     *,
     claude_session_id: str,
-    project_dir: Path,
+    layout: ProjectLayout,
     exit_code: int,
     static_cost_analyzer=None,
     session_factory=None,
@@ -752,7 +755,7 @@ def _run_finalize_subagent(
             _finalize_params(
                 session,
                 claude_session_id=claude_session_id,
-                project_dir=project_dir,
+                layout=layout,
                 exit_code=exit_code,
                 static_cost_analyzer=static_cost_analyzer,
                 session_factory=session_factory,

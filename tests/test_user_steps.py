@@ -9,6 +9,8 @@ itself.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import textwrap
 from pathlib import Path
 
@@ -294,7 +296,7 @@ def test_step_runs_in_pipeline_e2e(tmp_path, monkeypatch):
     # 3. Harness loads user steps on entry, then runs the project-local
     #    YAML via run_yaml (minimum-friction proxy for HATS-1797's
     #    `ai-hats pipeline run`, which arrives later).
-    with PipelineHarness("echo-pipeline", tmp_path) as h:
+    with PipelineHarness("echo-pipeline", ProjectLayout.at(tmp_path)) as h:
         final = h.run_yaml(yaml_path, {"text": "hello user"})
 
     assert final["echoed"] == "[user-step] hello user"

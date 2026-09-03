@@ -26,8 +26,9 @@ def _project_value(root):
     from ai_hats_core.layout import ProjectLayout
 
     layout = ProjectLayout.at(root)
-    return Project(layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=())
-
+    return Project(
+        layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=()
+    )
 
 
 def _active(*branches: str) -> list[mock.Mock]:

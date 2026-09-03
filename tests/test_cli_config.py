@@ -16,7 +16,7 @@ def cli_project(tmp_path, monkeypatch):
     monkeypatch.chdir(project)
     # Minimal ai-hats.yaml (v2)
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
     )
     return project, CliRunner()
 

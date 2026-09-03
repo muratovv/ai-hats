@@ -24,6 +24,8 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ...constants import ENV_SKIP_RETRO
@@ -49,7 +51,7 @@ class MaybeSpawnSessionReviewer(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="maybe_spawn_session_reviewer",
-            requires=frozenset({"session_id", "project_dir"}),
+            requires=frozenset({"session_id", "layout"}),
             produces=frozenset({"retro_decision"}),
         )
 
@@ -57,9 +59,10 @@ class MaybeSpawnSessionReviewer(Step):
         self,
         *,
         session_id: str,
-        project_dir: Path,
+        layout: ProjectLayout,
         **_: Any,
     ) -> dict[str, Any]:
+        project_dir = layout.root
         from ...cli import reflect_session_main
         from ...retro.auto_retro import (
             _spawn_session_reviewer_background,
@@ -99,9 +102,8 @@ class MaybeSpawnSessionReviewer(Step):
                     # project (R6) instead of re-deriving retros from a Path.
                     from ai_hats.cli._entry import resolve_project
 
-                    layout = resolve_project().layout
                     rc = reflect_session_main.run_session_review(
-                        session_id, 1, layout.root, retros=layout.sessions.retros
+                        session_id, 1, resolve_project().layout
                     )
                     _write_outcome(project_dir, session_id, f"sync-done (rc={rc})")
                 except (Exception, KeyboardInterrupt) as exc:

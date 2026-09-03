@@ -48,7 +48,7 @@ class SaveArtifact(Step):
     def io(self) -> StepIO:
         requires = frozenset({self.key}) | self._template_keys
         if self._needs_project_dir:
-            requires = requires | frozenset({"project_dir"})
+            requires = requires | frozenset({"layout"})
         return StepIO(
             name=self._NAME,
             requires=requires,
@@ -60,7 +60,7 @@ class SaveArtifact(Step):
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
         template = self.out_path_template
         if self._needs_project_dir:
-            template = expand_path_placeholders(template, inputs["project_dir"])
+            template = expand_path_placeholders(template, inputs["layout"].root)
         path = Path(template.format(ts=ts, **inputs))
         if self._needs_project_dir and not path.is_absolute():
             # ``<ai_hats_dir>`` expands to a *project-relative* path when the
@@ -70,7 +70,7 @@ class SaveArtifact(Step):
             # ``project_dir=tmp_path`` — otherwise leaked the artefact into the
             # real repo's gitignored ``sessions/`` dir). An absolute expansion
             # (``AI_HATS_DIR`` set out-of-tree, HATS-380/395) is left untouched.
-            path = Path(inputs["project_dir"]) / path
+            path = inputs["layout"].root / path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content if isinstance(content, str) else str(content))
         return {"saved_path": path}

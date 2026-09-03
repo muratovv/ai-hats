@@ -17,6 +17,7 @@ from ai_hats import wrap_runner
 from ai_hats.constants import PINNED_PYTHON
 from ai_hats.paths import runs_dir
 from ai_hats.wrap_runner import WrapRunner, interpreter_pin_notices
+from ai_hats_core.layout import ProjectLayout
 
 OFF_PIN = "3.11"
 
@@ -36,7 +37,7 @@ def _runner(project):
         hooks=hooks,
     )
     return WrapRunner(
-        project,
+        ProjectLayout.at(project),
         payload,
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
         tracer_factory=SidecarTracer,

@@ -35,7 +35,7 @@ def test_e2e_reinit_launches_wizard_and_runs_offline(tmp_venv_project, tmp_path)
 
     # Pre-initialize project with a valid ai-hats.yaml
     config_file.write_text(
-        "schema_version: 2\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         "provider: claude\n"
         "active_role: developer\n"
         "default_role: developer\n"

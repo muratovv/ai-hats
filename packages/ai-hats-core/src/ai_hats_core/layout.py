@@ -224,8 +224,9 @@ class ProjectLayout:
         return cls(root=root, base=root / ".agent" / "ai-hats")
 
     @classmethod
-    def at(cls, root: Path) -> ProjectLayout:
+    def at(cls, root: Path | str) -> ProjectLayout:
         """Deliberate anchor, no resolution: ``init`` on a bare directory, tests."""
+        root = Path(root)
         return cls(root=root, base=root / ".agent" / "ai-hats")
 
     # -- per-consumer views ---------------------------------------------------

@@ -137,7 +137,7 @@ def run_pipeline(config: PipelineConfig, params: RunParams) -> PipelineResult:
     """Run the configured pipeline: user steps, per-session namespace, GC, tracing."""
     from .harness import PipelineHarness  # deferred: costs ~160 ms of import at startup
 
-    with PipelineHarness(config.name, params.project_dir) as harness:
+    with PipelineHarness(config.name, params.layout) as harness:
         state = params.to_state(
             materialize_prompt=harness.materialize_prompt,
             scratch_dir=harness.namespace,

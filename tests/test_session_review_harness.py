@@ -29,7 +29,7 @@ def _check(project_dir: Path, session_id: str, runner_error: str | None = None) 
     """Mirror main()'s single-parse contract: load the doc once, then hand
     (raw, parse_issues) to _harness_check — the same call shape production
     uses, so this test file never re-introduces the double-parse (HATS-1369)."""
-    raw, parse_issues = _load_review_doc(_review_doc_path(project_dir, session_id))
+    raw, parse_issues = _load_review_doc(_review_doc_path(retros_dir(project_dir), session_id))
     return _harness_check(project_dir, session_id, runner_error, raw, parse_issues)
 
 

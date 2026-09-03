@@ -19,6 +19,8 @@ package — would mask test failures during local edits before reinstall).
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 
@@ -140,7 +142,7 @@ def test_pipeline_run_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
             "session_id": "test",
             "session_dir": session_dir,
             "claude_session_id": "fake-cid",  # make_audit's JSONL discovery fails gracefully (failure_policy=continue)
-            "project_dir": tmp_path,
+            "layout": ProjectLayout.at(tmp_path),
             "exit_code": 0,
             "session_factory": Session,
             "audit_writer_factory": AuditWriter,
@@ -177,7 +179,7 @@ def test_pipeline_run_no_spawn_below_threshold(tmp_path, monkeypatch):
             "session_id": "test",
             "session_dir": session_dir,
             "claude_session_id": "fake-cid",
-            "project_dir": tmp_path,
+            "layout": ProjectLayout.at(tmp_path),
             "exit_code": 0,
             "session_factory": Session,
             "audit_writer_factory": AuditWriter,
@@ -220,7 +222,7 @@ def test_pipeline_run_recursion_guard_blocks_spawn(tmp_path, monkeypatch):
             "session_id": "test",
             "session_dir": session_dir,
             "claude_session_id": "fake-cid",
-            "project_dir": tmp_path,
+            "layout": ProjectLayout.at(tmp_path),
             "exit_code": 0,
             "session_factory": Session,
             "audit_writer_factory": AuditWriter,

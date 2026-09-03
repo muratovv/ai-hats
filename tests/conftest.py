@@ -33,7 +33,13 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 # The identity envelope joins the pair: resolve_project deserializes it ahead of
 # any filesystem walk (R6), so the developer's LIVE session would answer every
 # test with the real checkout instead of the fixture project.
-for _pinned in ("AI_HATS_PROJECT_DIR", "AI_HATS_DIR", "AI_HATS_SESSION_IDENTITY", "AI_HATS_SESSION_ID", "AI_HATS_ROLE"):
+for _pinned in (
+    "AI_HATS_PROJECT_DIR",
+    "AI_HATS_DIR",
+    "AI_HATS_SESSION_IDENTITY",
+    "AI_HATS_SESSION_ID",
+    "AI_HATS_ROLE",
+):
     os.environ.pop(_pinned, None)
 
 

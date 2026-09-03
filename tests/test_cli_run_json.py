@@ -54,7 +54,7 @@ def _install_stub_runner(monkeypatch, project_dir: Path, metrics: dict):
 def project_dir(tmp_path: Path) -> Path:
     (tmp_path / ".gitlog").mkdir()
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: test-agent\ndefault_role: test-agent\n"
     )
     return tmp_path
 

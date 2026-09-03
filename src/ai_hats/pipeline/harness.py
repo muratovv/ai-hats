@@ -38,17 +38,19 @@ import shutil
 import string
 from datetime import datetime, timezone
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ..env import PIPELINE_KEEP_N, read_budget
-from ..paths import core_pipeline_path, runs_dir, traces_dir
+from ..paths import core_pipeline_path
 from .loader import load_pipeline
 from .pipeline import run as run_pipeline
 from .trace import JsonlTraceWriter, TraceHook
 from .user_steps import load_user_steps
 
 
-def _resolve_trace_path(value: str, project_dir: Path, name: str) -> Path:
+def _resolve_trace_path(value: str, traces: Path, name: str) -> Path:
     """Decide where to write the trace based on env value.
 
     Explicit ``.jsonl`` path → use as-is. Anything else (``1``, ``auto``,
@@ -58,7 +60,7 @@ def _resolve_trace_path(value: str, project_dir: Path, name: str) -> Path:
     if value.endswith(".jsonl"):
         return expanded
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S")
-    return traces_dir(project_dir) / f"{name}-{ts}.jsonl"
+    return traces / f"{name}-{ts}.jsonl"
 
 
 def _generate_session_id() -> str:
@@ -77,7 +79,7 @@ class PipelineHarness:
     """Context-manager harness for CLI → pipeline dispatch.
 
     Usage:
-        with PipelineHarness("execute", project_dir) as h:
+        with PipelineHarness("execute", layout) as h:
             final = h.run({
                 "prompt_path": h.materialize_prompt(text),
                 "interactive": True,
@@ -88,13 +90,14 @@ class PipelineHarness:
     def __init__(
         self,
         pipeline_name: str,
-        project_dir: Path,
+        layout: ProjectLayout,
         session_id: str | None = None,
     ) -> None:
         self.name = pipeline_name
-        self.project_dir = project_dir
+        self.layout = layout
+        self.project_dir = layout.root
         self.session_id = session_id or _generate_session_id()
-        self._pipeline_root = runs_dir(project_dir) / "pipeline_runs" / pipeline_name
+        self._pipeline_root = layout.sessions.runs / "pipeline_runs" / pipeline_name
         self.namespace = self._pipeline_root / self.session_id
         # Trace wiring — opt-in via env. Path resolved eagerly so the
         # filename's timestamp reflects "harness construction" (= run
@@ -103,7 +106,7 @@ class PipelineHarness:
         self.trace_path: Path | None = None
         trace_env = os.environ.get("AI_HATS_PIPELINE_TRACE", "").strip()
         if trace_env:
-            self.trace_path = _resolve_trace_path(trace_env, project_dir, pipeline_name)
+            self.trace_path = _resolve_trace_path(trace_env, layout.traces, pipeline_name)
             self._on_step = JsonlTraceWriter(self.trace_path)
         self._trace_values = os.environ.get("AI_HATS_PIPELINE_TRACE_VALUES", "").strip() not in (
             "",

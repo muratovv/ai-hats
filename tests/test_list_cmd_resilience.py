@@ -29,7 +29,7 @@ def test_list_rules_ignores_a_leftover_sidecar(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home))
 
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
     )
 
     result = CliRunner().invoke(main, ["list", "rules"])
@@ -54,7 +54,7 @@ def test_list_roles_survives_broken_config(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home))
 
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
     )
 
     runner = CliRunner()

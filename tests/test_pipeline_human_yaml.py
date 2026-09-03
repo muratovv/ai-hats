@@ -11,6 +11,8 @@ object to the runner (funnel/runner identity — ADR-0005 D1).
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -66,7 +68,7 @@ def test_human_pipeline_e2e(tmp_path: Path):
             {
                 "role": "assistant",
                 "interactive": True,
-                "project_dir": tmp_path,
+                "layout": ProjectLayout.at(tmp_path),
                 "composition": payload,
                 "session_mgr": session_mgr,
                 "tracer_factory": tracer_factory,
@@ -88,7 +90,7 @@ def test_human_pipeline_e2e(tmp_path: Path):
     # object the runner receives — no second composition anywhere in the
     # pipeline (ADR-0005 D1). HATS-867: observe handles injected alongside.
     wrap_cls.assert_called_once_with(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         payload,
         session_mgr=session_mgr,
         tracer_factory=tracer_factory,
@@ -124,7 +126,7 @@ def test_human_pipeline_e2e_empty_injection_omits_system_prompt(tmp_path: Path):
             {
                 "role": None,
                 "interactive": True,
-                "project_dir": tmp_path,
+                "layout": ProjectLayout.at(tmp_path),
                 "composition": payload,
                 "session_mgr": MagicMock(name="session_mgr"),
                 "tracer_factory": MagicMock(name="tracer_factory"),

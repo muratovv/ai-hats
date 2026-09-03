@@ -14,6 +14,8 @@ import uuid
 from collections import deque
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
@@ -231,13 +233,14 @@ class WrapRunner:
 
     def __init__(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         payload: CompositionPayload,
         *,
         session_mgr: "SessionManager",
         tracer_factory: "Callable[[Session], SidecarTracer]",
     ) -> None:
-        self.project_dir = project_dir
+        self.layout = layout
+        self.project_dir = layout.root
         self.payload = payload
         self.hooks = payload.hooks
         self.session_mgr = session_mgr
@@ -859,7 +862,7 @@ class WrapRunner:
                             _run_finalize_hitl(
                                 session,
                                 claude_session_id=claude_session_id,
-                                project_dir=self.project_dir,
+                                layout=self.layout,
                                 exit_code=exit_code,
                                 static_cost_analyzer=payload.static_cost_analyzer,
                                 session_factory=payload.session_factory,

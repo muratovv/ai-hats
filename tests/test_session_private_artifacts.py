@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import stat
@@ -79,7 +81,7 @@ def test_compute_usage_writes_private_artifact(tmp_path: Path) -> None:
             session_id=session.session_id,
             session_dir=session.session_dir,
             claude_session_id="provider-session",
-            project_dir=tmp_path,
+            layout=ProjectLayout.at(tmp_path),
             transcript_resolver=lambda *_args, **_kwargs: source,
             audit_writer_factory=lambda: SimpleNamespace(parser=parser),
         )

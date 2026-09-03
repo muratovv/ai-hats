@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -31,7 +33,7 @@ def _stale_entry() -> CacheEntry:
 
 def test_step_io_requires_project_dir():
     step = CheckUpdateAsync()
-    assert "project_dir" in step.io.requires
+    assert "layout" in step.io.requires
     assert step.io.name == "check_update_async"
 
 
@@ -44,7 +46,7 @@ def test_skips_spawn_when_disabled(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
-        result = step.run(project_dir=tmp_path)
+        result = step.run(layout=ProjectLayout.at(tmp_path))
     assert result == {}
     popen.assert_not_called()
 
@@ -61,7 +63,7 @@ def test_skips_spawn_when_cache_fresh_and_sha_matches(tmp_path, monkeypatch):
         ),
         patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen,
     ):
-        result = step.run(project_dir=tmp_path)
+        result = step.run(layout=ProjectLayout.at(tmp_path))
     assert result == {}
     popen.assert_not_called()
 
@@ -79,7 +81,7 @@ def test_skips_spawn_when_fresh_and_sha_unknown(tmp_path, monkeypatch):
         ),
         patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen,
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     popen.assert_not_called()
 
 
@@ -97,7 +99,7 @@ def test_spawns_when_fresh_but_sha_changed(tmp_path, monkeypatch):
         ),
         patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen,
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     popen.assert_called_once()
 
 
@@ -108,7 +110,7 @@ def test_skips_spawn_when_local_channel(tmp_path, monkeypatch):
     (tmp_path / PROJECT_CONFIG).write_text("harness:\n  channel: local\n  path: .\n")
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     popen.assert_not_called()
 
 
@@ -118,7 +120,7 @@ def test_spawns_when_cache_stale(tmp_path, monkeypatch):
     write_cache(tmp_path, _stale_entry())
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     popen.assert_called_once()
     args, kwargs = popen.call_args
     cmd = args[0]
@@ -132,7 +134,7 @@ def test_spawns_when_cache_missing(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     popen.assert_called_once()
 
 
@@ -145,5 +147,5 @@ def test_swallows_oserror_from_popen(tmp_path, monkeypatch):
         side_effect=OSError("python missing"),
     ):
         # Must not raise.
-        result = step.run(project_dir=tmp_path)
+        result = step.run(layout=ProjectLayout.at(tmp_path))
     assert result == {}

@@ -196,13 +196,14 @@ def execute_cmd(
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    project_dir = resolve_project().layout.root
+    layout = resolve_project().layout
+    project_dir = layout.root
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
     if not interactive:
         # HATS-1218: one Automate wiring, shared with ``ai-hats agent``.
         run_batch(
-            project_dir,
+            layout,
             role=role,
             task=prompt_text,
             provider=provider,
@@ -218,7 +219,7 @@ def execute_cmd(
     result = run_pipeline(
         EXECUTE,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name=role,
                 composition=build_composition_payload(

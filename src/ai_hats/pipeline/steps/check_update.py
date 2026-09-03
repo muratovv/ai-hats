@@ -14,9 +14,10 @@ the previous, stale entry).
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any, Mapping
 
 from ...update_check import (
@@ -39,10 +40,11 @@ class CheckUpdateAsync(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="check_update_async",
-            requires=frozenset({"project_dir"}),
+            requires=frozenset({"layout"}),
         )
 
-    def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
+    def run(self, *, layout: ProjectLayout, **_: Any) -> dict[str, Any]:
+        project_dir = layout.root
         if is_disabled():
             return {}
         # HATS-781: a LOCAL editable harness is updated via ``git`` — never

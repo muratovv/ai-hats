@@ -61,7 +61,7 @@ def test_resolve_prompt_project_library_overrides_builtin(
     project = tmp_path / "proj"
     project.mkdir()
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: maintainer\ndefault_role: maintainer\n"
     )
     inj_dir = project / "libraries" / "initial_injections"
     inj_dir.mkdir(parents=True)
@@ -80,7 +80,7 @@ def test_resolve_prompt_project_library_ships_custom_injection(
     project = tmp_path / "proj"
     project.mkdir()
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: maintainer\ndefault_role: maintainer\n"
     )
     inj_dir = project / "libraries" / "initial_injections"
     inj_dir.mkdir(parents=True)
@@ -119,7 +119,9 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     pd.mkdir()
     (pd / ".gitlog").mkdir()
-    (pd / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\nactive_role: primary\n")
+    (pd / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: primary\ndefault_role: primary\n"
+    )
     monkeypatch.chdir(pd)
     return pd
 

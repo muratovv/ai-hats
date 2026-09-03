@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -72,7 +74,7 @@ def _entry_diverged() -> CacheEntry:
 def test_step_io():
     step = RenderUpdateBanner()
     assert step.io.name == "render_update_banner"
-    assert "project_dir" in step.io.requires
+    assert "layout" in step.io.requires
 
 
 def test_step_is_continue_on_failure():
@@ -89,7 +91,7 @@ def test_renders_banner_when_update_available_fallback_shas(tmp_path, monkeypatc
         "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA,
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "ai-hats update available" in captured.err
@@ -120,7 +122,7 @@ def test_renders_banner_with_describe_labels(tmp_path, monkeypatch, capsys):
         "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA,
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert "v0.6.0" in captured.err
     assert "v0.6.0-19-gabcdef0" in captured.err
@@ -136,7 +138,7 @@ def test_silent_when_no_update(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_no_update())
     step = RenderUpdateBanner()
-    step.run(project_dir=tmp_path)
+    step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.err == ""
 
@@ -147,7 +149,7 @@ def test_silent_when_installed_ahead(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_installed_ahead())
     step = RenderUpdateBanner()
-    step.run(project_dir=tmp_path)
+    step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.err == ""
 
@@ -158,7 +160,7 @@ def test_silent_when_diverged(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_diverged())
     step = RenderUpdateBanner()
-    step.run(project_dir=tmp_path)
+    step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.err == ""
 
@@ -167,7 +169,7 @@ def test_silent_when_no_cache(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     step = RenderUpdateBanner()
-    step.run(project_dir=tmp_path)
+    step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.err == ""
 
@@ -177,7 +179,7 @@ def test_silent_when_disabled(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
-    step.run(project_dir=tmp_path)
+    step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.err == ""
 
@@ -197,7 +199,7 @@ def test_silent_when_installed_sha_differs(tmp_path, monkeypatch, capsys):
         "ai_hats.update_check.detect_installed_sha",
         return_value="f" * 40,
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.err == ""
 
@@ -212,7 +214,7 @@ def test_renders_when_installed_sha_matches_short(tmp_path, monkeypatch, capsys)
         "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA[:9],
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert "ai-hats update available" in captured.err
 
@@ -227,7 +229,7 @@ def test_renders_when_installed_sha_unknown(tmp_path, monkeypatch, capsys):
         "ai_hats.update_check.detect_installed_sha",
         return_value=None,
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert "ai-hats update available" in captured.err
 
@@ -243,6 +245,6 @@ def test_silent_when_local_channel(tmp_path, monkeypatch, capsys):
         "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA,
     ):
-        step.run(project_dir=tmp_path)
+        step.run(layout=ProjectLayout.at(tmp_path))
     captured = capsys.readouterr()
     assert captured.err == ""

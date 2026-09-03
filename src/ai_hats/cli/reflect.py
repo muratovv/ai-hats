@@ -108,12 +108,12 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         _spawn_detached(session_id, max_retries)
         return
 
-    project_dir = resolve_project().layout.root
+    layout = resolve_project().layout
     try:
         result = run_pipeline(
             REFLECT_SESSION,
             ReflectSessionRunParams(
-                project_dir=project_dir,
+                layout=layout,
                 session_id=session_id,
                 max_retries=max_retries,
             ),
@@ -193,7 +193,7 @@ def reflect_all_cmd(dry_run: bool):
     result = run_pipeline(
         REFLECT_ALL,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name="judge",
                 composition=build_composition_payload(
@@ -266,7 +266,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     r1 = run_pipeline(
         REFLECT_HYPOTHESIS_PHASE1,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name="judge-auditor",
                 composition=build_composition_payload(
@@ -321,7 +321,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     r2 = run_pipeline(
         REFLECT_HYPOTHESIS_PHASE2,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name="judge",
                 composition=build_composition_payload(
@@ -417,7 +417,7 @@ def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
     result = run_pipeline(
         REFLECT_ROLE,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name="role-judge",
                 composition=build_composition_payload(
@@ -447,9 +447,7 @@ def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
     outcome = SessionOutcome.of(result)
     if outcome.exit_code_or(1) == 0:
         # Not the file: role-judge names it with a timestamp of its own at Write time.
-        console.print(
-            f"[green]✓[/green] report under {layout.sessions.retros / 'role-coherence'}"
-        )
+        console.print(f"[green]✓[/green] report under {layout.sessions.retros / 'role-coherence'}")
     return outcome
 
 
@@ -565,7 +563,7 @@ def _build_intake_prompt(text: str, active_hyps: list) -> str:
 
 
 def _run_intake_pipeline(
-    project_dir: Path,
+    layout: ProjectLayout,
     prompt_text: str,
 ) -> tuple[str, int]:
     """Invoke `reflect-issue` pipeline; return (intake_result_text, exit_code).
@@ -576,10 +574,11 @@ def _run_intake_pipeline(
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
 
+    project_dir = layout.root
     result = run_pipeline(
         REFLECT_ISSUE,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name="hypothesis-intake",
                 composition=build_composition_payload(
@@ -791,7 +790,8 @@ def reflect_issue_cmd(
         console.print(f"[dim]reflect issue spawned (pid={pid}, bg) → {log_path}[/dim]")
         return
 
-    project_dir = resolve_project().layout.root
+    layout = resolve_project().layout
+    project_dir = layout.root
     # reflect issue creates an HYP; mount its backlog on a project that never had one.
     ensure_backlog(project_dir, "hypotheses")
     ws = rack_workspace(project_dir)
@@ -801,7 +801,7 @@ def reflect_issue_cmd(
     action = None
     degraded = False
     try:
-        intake_text, exit_code = _run_intake_pipeline(project_dir, prompt_text)
+        intake_text, exit_code = _run_intake_pipeline(layout, prompt_text)
         if exit_code != 0:
             raise RuntimeError(f"reflect-issue pipeline exited non-zero ({exit_code})")
         if not intake_text:
@@ -879,7 +879,8 @@ def reflect_issue_cmd(
 )
 def reflect_commit_cmd(accept, reject, defer, duplicate):
     """Bulk-update proposal statuses (called at end of interactive chat)."""
-    project_dir = resolve_project().layout.root
+    layout = resolve_project().layout
+    project_dir = layout.root
     ws = rack_workspace(project_dir)
     changes = 0
     for pid, to_state in (

@@ -8,6 +8,8 @@ inside ``RunSessionEnd``.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 from pathlib import Path
@@ -37,7 +39,6 @@ def _pin_project(monkeypatch, root):
             layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=()
         ),
     )
-
 
 
 def _make_session(tmp_path: Path) -> Session:
@@ -89,7 +90,7 @@ def test_io_contract():
     step = MaybeSpawnSessionReviewer()
     io = step.io
     assert io.name == "maybe_spawn_session_reviewer"
-    assert io.requires == frozenset({"session_id", "project_dir"})
+    assert io.requires == frozenset({"session_id", "layout"})
     assert io.produces == frozenset({"retro_decision"})
 
 
@@ -111,7 +112,7 @@ def test_writes_runtime_decision_line_for_skip(tmp_path):
     step = MaybeSpawnSessionReviewer()
     delta = step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
     log = runs_dir(tmp_path) / "session_test" / RETRO_LOG
@@ -144,7 +145,7 @@ def test_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
     sync_calls: list[tuple] = []
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
-        lambda sid, max_retries, pd, **kw: sync_calls.append((sid, max_retries, pd)),
+        lambda sid, max_retries, layout, **kw: sync_calls.append((sid, max_retries, layout.root)),
     )
     _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
@@ -152,7 +153,7 @@ def test_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
     step = MaybeSpawnSessionReviewer()
     delta = step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
     assert spawned == [(tmp_path, "test")]
@@ -182,7 +183,7 @@ def test_background_false_runs_sync_in_process(tmp_path, monkeypatch):
     sync_calls: list[tuple] = []
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
-        lambda sid, max_retries, pd, **kw: sync_calls.append((sid, max_retries, pd)),
+        lambda sid, max_retries, layout, **kw: sync_calls.append((sid, max_retries, layout.root)),
     )
     _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
@@ -190,7 +191,7 @@ def test_background_false_runs_sync_in_process(tmp_path, monkeypatch):
     step = MaybeSpawnSessionReviewer()
     delta = step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
     assert sync_calls == [("test", 1, tmp_path)]
@@ -209,7 +210,7 @@ def test_background_false_sets_and_clears_recursion_guard(tmp_path, monkeypatch)
 
     seen_during_call: list[str | None] = []
 
-    def _fake_run_session_review(sid, max_retries, pd, **kw):
+    def _fake_run_session_review(sid, max_retries, layout, **kw):
         seen_during_call.append(os.environ.get(ENV_SKIP_RETRO))
 
     monkeypatch.setattr(
@@ -222,7 +223,7 @@ def test_background_false_sets_and_clears_recursion_guard(tmp_path, monkeypatch)
     step = MaybeSpawnSessionReviewer()
     step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
     assert seen_during_call == ["1"], "guard must be set to '1' for the duration of the sync call"
@@ -237,7 +238,7 @@ def test_background_false_sync_failure_does_not_raise(tmp_path, monkeypatch):
     metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
     metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
 
-    def _boom(sid, max_retries, pd, **kw):
+    def _boom(sid, max_retries, layout, **kw):
         raise RuntimeError("sync boom")
 
     monkeypatch.setattr(
@@ -251,7 +252,7 @@ def test_background_false_sync_failure_does_not_raise(tmp_path, monkeypatch):
     # Must not raise.
     delta = step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
     assert delta["retro_decision"]["action"] == "run"
@@ -280,7 +281,7 @@ def test_recursion_guard_blocks_spawn(tmp_path, monkeypatch):
     step = MaybeSpawnSessionReviewer()
     delta = step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
     assert spawned == [], "recursion guard must block spawn"
@@ -313,7 +314,7 @@ def test_does_not_raise_when_spawn_fails(tmp_path, monkeypatch):
     # Must not raise.
     delta = step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
     # Decision still emitted despite spawn crash.
     assert delta["retro_decision"]["action"] == "run"
@@ -339,7 +340,7 @@ def test_does_not_raise_when_spawn_keyboard_interrupt(tmp_path, monkeypatch):
     # Must not raise.
     step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
 
@@ -365,7 +366,7 @@ def test_does_not_raise_when_make_decision_fails(tmp_path, monkeypatch):
     step = MaybeSpawnSessionReviewer()
     delta = step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
     # When decision fails before any output, the delta is empty —
     # downstream optional consumer ``run_session_end`` handles this
@@ -391,7 +392,7 @@ def test_breadcrumb_lands_before_the_decision(tmp_path, monkeypatch):
     monkeypatch.setattr("ai_hats.retro.auto_retro.make_decision", _interrupted)
 
     step = MaybeSpawnSessionReviewer()
-    delta = step.run(session_id=session.session_id, project_dir=tmp_path)
+    delta = step.run(session_id=session.session_id, layout=ProjectLayout.at(tmp_path))
 
     log = runs_dir(tmp_path) / "session_test" / RETRO_LOG
     assert log.exists(), "an interrupted decision must still leave a trace"
@@ -421,7 +422,7 @@ def test_outcome_suppressed_by_guard_is_journalled(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
     step = MaybeSpawnSessionReviewer()
-    step.run(session_id=session.session_id, project_dir=tmp_path)
+    step.run(session_id=session.session_id, layout=ProjectLayout.at(tmp_path))
 
     content = _retro_log(tmp_path)
     assert "runtime\toutcome\tsuppressed-by-guard" in content
@@ -442,7 +443,7 @@ def test_outcome_spawn_bg_is_journalled(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
-    step.run(session_id=session.session_id, project_dir=tmp_path)
+    step.run(session_id=session.session_id, layout=ProjectLayout.at(tmp_path))
 
     assert "runtime\toutcome\tspawn-bg" in _retro_log(tmp_path)
 
@@ -454,13 +455,13 @@ def test_outcome_sync_done_carries_the_return_code(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "ai_hats.cli.reflect_session_main.run_session_review",
-        lambda sid, max_retries, pd, **kw: 0,
+        lambda sid, max_retries, layout, **kw: 0,
     )
     _pin_project(monkeypatch, tmp_path)
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
-    step.run(session_id=session.session_id, project_dir=tmp_path)
+    step.run(session_id=session.session_id, layout=ProjectLayout.at(tmp_path))
 
     content = _retro_log(tmp_path)
     assert "runtime\toutcome\tsync-start" in content
@@ -473,7 +474,7 @@ def test_outcome_sync_failed_is_journalled(tmp_path, monkeypatch):
     metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
     metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
 
-    def _boom(sid, max_retries, pd, **kw):
+    def _boom(sid, max_retries, layout, **kw):
         raise RuntimeError("sync boom")
 
     monkeypatch.setattr("ai_hats.cli.reflect_session_main.run_session_review", _boom)
@@ -481,7 +482,7 @@ def test_outcome_sync_failed_is_journalled(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
-    step.run(session_id=session.session_id, project_dir=tmp_path)  # must not raise
+    step.run(session_id=session.session_id, layout=ProjectLayout.at(tmp_path))  # must not raise
 
     content = _retro_log(tmp_path)
     assert "runtime\toutcome\tsync-failed" in content
@@ -496,6 +497,6 @@ def test_no_outcome_line_for_a_skip_decision(tmp_path):
     metrics.write_text(json.dumps({"turns": 0, "tool_calls": 0}))
 
     step = MaybeSpawnSessionReviewer()
-    step.run(session_id=session.session_id, project_dir=tmp_path)
+    step.run(session_id=session.session_id, layout=ProjectLayout.at(tmp_path))
 
     assert "outcome" not in _retro_log(tmp_path)

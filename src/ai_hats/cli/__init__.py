@@ -295,14 +295,15 @@ def _launch_session(
     )
     from ._entry import resolve_project
 
-    project_dir = resolve_project().layout.root
+    layout = resolve_project().layout
+    project_dir = layout.root
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     result = run_pipeline(
         HUMAN,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             # HATS-865: compose ONCE here (effective-role resolution + the
             # first-run set_role side effect live in the seam) and seed the
             # payload into the funnel; the launch step hands it to WrapRunner.

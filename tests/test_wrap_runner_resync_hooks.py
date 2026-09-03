@@ -18,6 +18,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.wrap_runner import WrapRunner
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats_core.layout import ProjectLayout
 
 pytestmark = pytest.mark.integration
 
@@ -44,7 +45,7 @@ def _runner(project: Path) -> WrapRunner:
         hooks=Assembler(project).hooks,
     )
     return WrapRunner(
-        project,
+        ProjectLayout.at(project),
         payload,
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
         tracer_factory=SidecarTracer,

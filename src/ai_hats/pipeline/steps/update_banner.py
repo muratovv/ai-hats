@@ -18,8 +18,9 @@ hint on the third dim line is the discoverability surface for
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import sys
-from pathlib import Path
 from typing import Any, Mapping
 
 from ...update_check import (
@@ -75,11 +76,12 @@ class RenderUpdateBanner(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="render_update_banner",
-            requires=frozenset({"project_dir"}),
+            requires=frozenset({"layout"}),
             optional=frozenset({"session_dir"}),
         )
 
-    def run(self, *, project_dir: Path, session_dir: Any = None, **_: Any) -> dict[str, Any]:
+    def run(self, *, layout: ProjectLayout, session_dir: Any = None, **_: Any) -> dict[str, Any]:
+        project_dir = layout.root
         if is_disabled():
             return {}
         # The behind-upstream predicate (LOCAL channel + has_update + running-SHA

@@ -13,6 +13,8 @@ SIGINT-safe ``_print_session_end`` outer-``finally`` contract.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import calendar
 import json
 import os
@@ -382,7 +384,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
             interactive=True,
         )
         runner = WrapRunner(
-            project,
+            ProjectLayout.at(project),
             payload,
             session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
             tracer_factory=SidecarTracer,

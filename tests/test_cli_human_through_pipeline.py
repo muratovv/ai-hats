@@ -49,7 +49,7 @@ def test_launch_session_invokes_human_pipeline(tmp_path: Path, monkeypatch):
     initial = captured["initial"]
     assert initial["role"] == "judge"
     assert initial["interactive"] is True
-    assert initial["project_dir"] == tmp_path
+    assert initial["layout"].root == tmp_path
     # HATS-1218: the provider rides the composition payload, not a second
     # funnel key beside it — no step ever read the old ``provider`` seed.
     assert initial["composition"].provider.name == "claude"

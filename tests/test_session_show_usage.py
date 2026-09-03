@@ -74,7 +74,7 @@ def _make_session(project_dir: Path, *, usage: dict | str | None) -> None:
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: maintainer\ndefault_role: maintainer\n"
     )
     return tmp_path
 

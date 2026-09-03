@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 from typing import NoReturn
+
+from ai_hats_core.layout import ProjectLayout
 
 import click
 
@@ -30,7 +31,7 @@ from ._helpers import console
 
 
 def run_batch(
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
     role: str,
     task: str | None = None,
@@ -47,6 +48,7 @@ def run_batch(
     the HITL branch only (``steps/launch.py``), so accepting one here would ship
     exactly the ignored knob HATS-1218 exists to remove.
     """
+    project_dir = layout.root
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
 
@@ -55,7 +57,7 @@ def run_batch(
     result = run_pipeline(
         EXECUTE,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name=role,
                 composition=build_composition_payload(

@@ -43,7 +43,7 @@ class QuorumAutoclose(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="quorum_autoclose",
-            requires=frozenset({"project_dir"}),
+            requires=frozenset({"layout"}),
             produces=frozenset({"quorum_closed_hyps"}),
         )
 

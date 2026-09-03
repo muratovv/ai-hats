@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats.pty_tap import NullPtyTap, PtyTap, PtyTapFactory
 
 
@@ -279,7 +281,7 @@ def test_provider_step_seeds_pty_tap_factory_from_env(monkeypatch):
     monkeypatch.setattr(DummyWrapRunner, "run", mock_run_unset)
     step.run(
         interactive=True,
-        project_dir=".",
+        layout=ProjectLayout.at("."),
         composition=None,
         session_mgr=None,
         tracer_factory=None,
@@ -289,7 +291,7 @@ def test_provider_step_seeds_pty_tap_factory_from_env(monkeypatch):
     monkeypatch.setenv("AI_HATS_PTY_IN_FD", "10")
     step.run(
         interactive=True,
-        project_dir=".",
+        layout=ProjectLayout.at("."),
         composition=None,
         session_mgr=None,
         tracer_factory=None,

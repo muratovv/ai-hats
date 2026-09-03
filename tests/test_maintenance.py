@@ -47,8 +47,9 @@ def _project_value(root):
     from ai_hats_core.layout import ProjectLayout
 
     layout = ProjectLayout.at(root)
-    return Project(layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=())
-
+    return Project(
+        layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=()
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -293,7 +294,7 @@ def _setup_update_test_env(tmp_path: Path) -> Path:
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
-        "active_role: assistant\n"
+        "active_role: assistant\ndefault_role: assistant\n"
         # HATS-764: pin edge so these command-level update tests exercise the
         # git ahead/diverged guard + legacy in-place path (behaviourally the
         # pre-channel default). stable/local routing is covered by dedicated
@@ -1262,7 +1263,7 @@ def _setup_channel_env(tmp_path: Path, channel: str, *, extra: str = "") -> Path
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
-        "active_role: assistant\n"
+        "active_role: assistant\ndefault_role: assistant\n"
         f"harness:\n  channel: {channel}\n{extra}"
     )
     return project

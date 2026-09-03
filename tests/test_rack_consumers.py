@@ -525,7 +525,9 @@ def test_a_role_that_is_set_but_unresolvable_still_refuses(tmp_path):
     ``checks:`` row — HATS-1538 withdrew that row and the test went red without
     the behaviour changing at all.
     """
-    (tmp_path / "ai-hats.yaml").write_text("schema_version: 1\nactive_role: ghost\n")
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 1\nactive_role: ghost\ndefault_role: ghost\n"
+    )
     declaring = tmp_path / "libraries" / "roles" / "declares"
     declaring.mkdir(parents=True)
     (declaring / "config.yaml").write_text(

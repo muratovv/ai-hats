@@ -6,6 +6,8 @@ the step delegates into existing runtime/composer/runner code.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -30,7 +32,7 @@ def test_compose_role_omits_key_when_no_composition(tmp_path: Path):
     """HATS-452 / D3 + HATS-865: without a seeded ``composition`` payload the
     step OMITS ``system_prompt`` entirely (rather than emitting ``""``)."""
     step = ComposeRole()
-    out = step.run(project_dir=tmp_path, role=None)
+    out = step.run(layout=ProjectLayout.at(tmp_path), role=None)
     assert out == {}, (
         "compose_role must NOT emit system_prompt='' when no composition is "
         "seeded (HATS-452); empty-string-as-absent broke delivery once."
@@ -80,7 +82,7 @@ def test_resolve_prompt_default_empty():
 def test_build_handoff_delegates(tmp_path: Path):
     expected = tmp_path / "handoff.md"
     with patch("ai_hats.cli.reflect._build_handoff", return_value=expected) as m:
-        out = BuildHandoff().run(project_dir=tmp_path)
+        out = BuildHandoff().run(layout=ProjectLayout.at(tmp_path))
     m.assert_called_once_with(tmp_path)
     assert out == {"handoff_path": expected}
 
@@ -203,7 +205,7 @@ def test_save_artifact_ts_only_regression(tmp_path: Path):
     """Templates with only ``{ts}`` keep working when extra state is passed."""
     template = str(tmp_path / "{ts}.txt")
     step = SaveArtifact({"key": "blob", "out_path_template": template})
-    out = step.run(blob="x", role="ignored", project_dir=tmp_path)
+    out = step.run(blob="x", role="ignored", layout=ProjectLayout.at(tmp_path))
     assert out["saved_path"].read_text() == "x"
 
 
@@ -235,8 +237,8 @@ def test_save_artifact_expands_ai_hats_dir_placeholder(tmp_path: Path):
     # Step auto-requires ``project_dir`` when the placeholder is present
     # so the pipeline core surfaces a missing-projection at build time
     # instead of silently writing to a literal-placeholder path.
-    assert "project_dir" in step.io.requires
-    out = step.run(blob="payload", project_dir=tmp_path)
+    assert "layout" in step.io.requires
+    out = step.run(blob="payload", layout=ProjectLayout.at(tmp_path))
     saved = out["saved_path"]
     assert "<ai_hats_dir>" not in str(saved)
     assert ".agent/ai-hats/sessions/retros/judge/" in str(saved).replace("\\", "/")
@@ -269,7 +271,7 @@ def test_spawn_session_review_returns_pid(tmp_path: Path):
     with patch("subprocess.Popen", return_value=fake_proc) as m:
         out = SpawnSessionReview({"max_retries": 2}).run(
             session_id="20260101-010101-1",
-            project_dir=tmp_path,
+            layout=ProjectLayout.at(tmp_path),
         )
     assert out == {"review_pid": 12345}
     cmd = m.call_args[0][0]
@@ -296,7 +298,7 @@ def test_run_session_review_delegates(tmp_path: Path):
     ):
         out = RunSessionReview({"max_retries": 3}).run(
             session_id="sid",
-            project_dir=tmp_path,
+            layout=ProjectLayout.at(tmp_path),
         )
     assert out == {"review_path": expected}
     fake_runner.run.assert_called_once_with(

@@ -8,7 +8,8 @@ internal state we don't want to thread through pipeline state.
 
 from __future__ import annotations
 
-from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ..step import Step, StepIO
@@ -25,7 +26,7 @@ class RunSessionReview(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="run_session_review",
-            requires=frozenset({"session_id", "project_dir"}),
+            requires=frozenset({"session_id", "layout"}),
             optional=frozenset({"max_retries"}),
             produces=frozenset({"review_path"}),
         )
@@ -34,10 +35,11 @@ class RunSessionReview(Step):
         self,
         *,
         session_id: str,
-        project_dir: Path,
+        layout: ProjectLayout,
         max_retries: int | None = None,
         **_: Any,
     ) -> dict[str, Any]:
+        project_dir = layout.root
         from ...retro.session_review_runner import SessionReviewRunner
 
         # State override > YAML param default. Lets harness propagate
