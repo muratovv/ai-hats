@@ -93,27 +93,82 @@ beside the change rather than exercising it, and the card returns to `execute`.
 Origin: PROP-031 — two production bugs shipped past `done` because the unit
 suite stubbed the very contracts the change broke.
 
-## Earning a gate
+## Passing a gate
 
-    cd <task worktree>
-    make review-gate            # or merge-gate / done-gate
-    hooks/done-gate.sh --stages # what a gate requires
+1. **Transition.** `rack transition <ID> review` / `done`, or `ai-hats wt
+   merge`. Run nothing first: the gate reads markers inside the lock and, when
+   they are missing, refuses with the command that earns them.
+2. **Refused?** The refusal ends with that command — run it:
 
-A gate is earned per STAGE: the run skips every stage already marked green for
-this tree, runs the rest in the declared order, stops at the first red, and
-stamps each green one. A refusal on the edge names exactly the stages still
-missing and the command above. So a card that ran `make review-gate` and later
-`make done-gate` pays for the difference, not twice.
+       Missing:
+           integration
+           merge-smoke
+           master-ci
 
-The subject is always a commit — `HEAD`, or `REV=<sha>`. The run happens in the
+       Run the gate on that exact content, then retry:
+
+           cd <worktree> && make done-gate
+
+   (`make done-gate REV=<sha>` for a card already merged.) It runs only the
+   stages the tree has not earned, in order, stops at the first red, and
+   stamps each green one.
+3. **Green** — the run's first line is `RESULT …, green` — transition again.
+4. **Red** — the run's block, verdict first:
+
+       [gates] RESULT tree 5f225a1b (2ac163eb): 11 cached, 1 ran, FAILED unit (rc=1)
+       [gates] fix unit, then: make done-gate
+       [gates] unit said:
+       tests/test_x.py:12: AssertionError: …
+       1 failed, 6024 passed, 2 skipped in 40.1s
+       [gates] lint: 1203 files already formatted
+       …
+       [gates] cached (11): e2e-catalog …
+       [gates] 2ac163eb (tree 5f225a1b) in place: <worktree>
+       [gates] transcript: /tmp/gates-run.Xy12ab
+
+   In order of importance: the verdict, what to do, what the red stage said
+   (a failing test per line, a finding per line, or `master-ci`'s run URL),
+   one line per green stage, the cached ones, the subject, and the dir holding
+   every stage's full output. Triage the red stage:
+
+   - the stage alone, bare, exactly what CI runs: `bash scripts/gates.sh unit`
+     (`bash scripts/gates.sh list` says what each stage checks);
+   - narrower, with the tool itself: `pytest tests/<file> -k <name>`,
+     `ruff check <path>`, `python scripts/check_<name>.py`;
+   - fix, commit, `make <gate>` again. A fix is a new tree, and a new tree
+     earns every stamp afresh: the checkers take seconds, `unit` about a
+     minute — do not reach for `--fresh` or a narrower gate to save it.
+
+   `master-ci` is the one red the tree cannot fix: master itself is red. Its
+   knob (see "No bypass") is the supervisor's to set, never yours.
+5. **Touched what the gate does not name?** No card gate runs the `e2e`
+   stage, the full tier (`done-gate` runs `merge-smoke`, a curated subset).
+   Run it yourself and say so: `bash scripts/gates.sh e2e`. Nothing refuses
+   here, which is why that command is not optional. What a gate requires:
+
+       bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/hooks/done-gate.sh --stages
+
+### What a stamp saves
+
+A marker names the TREE a stage ran on, per stage. It spares the re-run of an
+unchanged tree, never of a fixed one:
+
+- the transition after a green run — instant;
+- `make done-gate` after `make review-gate` — pays the difference, not twice;
+- a merge commit whose tree equals the branch tip — a fast-forward, or a
+  merge into a master that moved nothing else — `REV=<merge sha>` finds every
+  stamp already there;
+- a stage marked green that you want to see run anyway:
+  `<gate>.sh --run --fresh` (no make target).
+
+### Where it runs, and what that costs
+
+The subject is a commit — `HEAD`, or `REV=<sha>`. The run happens in the
 checkout only when it is clean and at that commit; otherwise in a one-shot
-scratch checkout of the commit. A dirty desk therefore never taints a marker
-and never blocks one either.
-
-Neither card gate runs the e2e tier. If `--stages` does not name what your
-change touched, run it yourself and say so — e.g. `pytest -m integration
-tests/e2e/`. Nothing refuses here, which is why the second command is not
-optional.
+scratch checkout of the commit under the shared git dir, with a venv of its
+own. Measured 2026-09-03 with a warm uv cache: +2.5 s on `lint`, +5 s on a
+35 s `unit`. A dirty desk therefore never taints a marker and never blocks
+one, and `REV=` is not a cost worth working around.
 
 ## Pushing master
 
@@ -144,4 +199,5 @@ fix it, and the 2022 community keepalive workaround no longer works (paid for tw
 
 There is no `AI_HATS_E2E_SKIP` and no `--ack`. `git push --no-verify` and forging
 a marker are deliberate local acts by the trusted maintainer, never an accidental
-skip.
+skip. The one knob is `AI_HATS_RED_MASTER_ACK=1`: it lets `master-ci` pass on a
+red master, for the card that fixes it, and says so in the run.

@@ -366,6 +366,10 @@ def test_a_branch_with_no_marker_cannot_reach_done(gate_project, rack_bin):
     assert _state(project, task_id)["state"] == "review"
     assert f"{EDGE} aborted by 'checks'" in refused.stderr
     assert "Traceback" not in refused.stderr, "a refusal must be typed, not a stack"
+    # The refusal lands in the agent's context on the transition itself, whole:
+    # what is missing and the command that earns it, no log to open first.
+    assert "Missing:" in refused.stderr, refused.stderr
+    assert f"cd {wt} && make done-gate" in refused.stderr, refused.stderr
 
     as_json = _rack(
         rack_bin, "transition", task_id, "done", "--json", cwd=project, env=consented(env)

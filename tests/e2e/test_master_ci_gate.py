@@ -94,6 +94,8 @@ def test_a_red_master_refuses_and_names_the_run(tmp_path: Path):
     assert "failure" in combined, combined
     assert "actions/runs/1" in combined, combined
     assert ENV_ALLOW_RED in combined, combined
+    assert "Fix master first" in combined, combined
+    assert "v0.15.0" not in combined, "a history lesson is not a remedy"
 
 
 def test_the_override_lets_the_fix_for_the_redness_through(tmp_path: Path):

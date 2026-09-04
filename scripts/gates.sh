@@ -308,6 +308,19 @@ ci_master_ci() {
     run_py scripts/check_master_ci.py
 }
 
+# The stages that run pytest: `run` exports PYTEST_ADDOPTS — and says what it
+# found — before the first of these it reaches, so a checker-only run stays
+# silent about xdist. Hand-kept; `tests/test_gates_table.py` holds it equal to
+# the functions above that invoke pytest.
+PYTEST_STAGES='unit integration coverage merge-smoke e2e'
+
+_is_pytest_stage() {
+    case " $PYTEST_STAGES " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
 # The stage set IS the set of `ci_*` functions above: the dispatch and the usage
 # line both read it, so a stage cannot be reachable and unlisted or listed and
 # unreachable. A helper that is not a stage does not take the prefix.
@@ -383,7 +396,9 @@ _sweep() {
             ;;
     esac
     find "$store" -type f -mtime "+${keep}" -delete 2>/dev/null || true
-    find "$store" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+    # An empty tree dir younger than an hour is a parallel run between its
+    # mkdir and its mktemp; reaping it turned that run's green into exit 70.
+    find "$store" -mindepth 1 -type d -empty -mmin +60 -delete 2>/dev/null || true
     return 0
 }
 
@@ -463,10 +478,12 @@ _pytest_probe() {
     fi
 }
 
-# Bare stage invocations stay serial; a run uses the cores.
+# Bare stage invocations stay serial; a run uses the cores. What was found
+# goes into ADDOPTS_NOTE for the run's block rather than straight to stderr.
+ADDOPTS_NOTE=''
 _export_pytest_addopts() {
     local checkout="$1"
-    local addopts='--tb=line --no-header -p no:cacheprovider'
+    local addopts='--tb=line --no-header -p no:cacheprovider --disable-warnings'
     if _pytest_probe "$checkout" | grep -qi xdist; then
         local cores ceiling n
         cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
@@ -477,8 +494,7 @@ _export_pytest_addopts() {
         ceiling=8
         n=$(( cores < ceiling ? cores : ceiling ))
         (( n < 1 )) && n=1
-        printf '[gates] pytest-xdist detected — running -n%s --dist=loadgroup (cores=%s, cap=%s)\n' \
-               "$n" "$cores" "$ceiling" >&2
+        ADDOPTS_NOTE="pytest-xdist detected — -n$n --dist=loadgroup (cores=$cores, cap=$ceiling)"
         addopts="$addopts -n$n --dist=loadgroup"
     fi
     export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+$PYTEST_ADDOPTS }$addopts"
@@ -549,26 +565,104 @@ cmd_subject() {
            "$repo_root" "$sha" "$tree" "$(_where "$repo_root" "$sha")"
 }
 
+# Short ids for a reader; the marker files keep the full ones.
+_short() {
+    git -C "$1" rev-parse --short "$2" 2>/dev/null || printf '%s' "$2"
+}
+
+# The first line of every run's block, green or not.
+_result() {
+    local tree="$1" sha="$2" cached="$3" ran="$4" verdict="$5"
+    printf '[gates] RESULT tree %s (%s): %s cached, %s ran, %s\n' \
+           "$tree" "$sha" "$cached" "$ran" "$verdict" >&2
+}
+
+_in() {
+    local dir="$1"
+    shift
+    (cd "$dir" && "$@")
+}
+
+# A stage's both streams go to its log. A terminal sees them live as well;
+# a captured stream (an agent's) sees only the block at the end.
+LIVE=''
+_capture() {
+    local log="$1"
+    shift
+    if [[ -n "$LIVE" ]]; then
+        "$@" 2>&1 | tee "$log" >&2
+    else
+        "$@" > "$log" 2>&1
+    fi
+}
+
+# A stage's last non-empty line, its own `[stage]` tag dropped: the block
+# already names the stage in front of it.
+_last_line() {
+    local log="$1" stage="${2:-}" line
+    line="$(grep -v '^[[:space:]]*$' "$log" 2>/dev/null | tail -1 || true)"
+    printf '%s' "${line#"[$stage] "}"
+}
+
+# The printed copy of a log, without pytest's progress dots; the file keeps them.
+_print_log() {
+    grep -v -E '^[.sFxXE]+( +\[ *[0-9]+%\])?$' "$1" >&2 || true
+}
+
+# A run prints ONE block, in order of importance: the verdict, what to do, what
+# the red stage said, one line per green stage, the cached ones, the subject,
+# and where the full transcripts are. The reader is usually an agent looking
+# at a captured stream, and the first lines are what it acts on.
 cmd_run() {
     _parse 1 "$@"
     [[ ${#STAGES[@]} -gt 0 ]] || _die 64 "run: no stage named"
-    local store sha tree where checkout runner stage rc
+    local store sha tree sha_s tree_s where checkout runner stage rc=0
     store="$(_store "$repo_root")" || _die 70 "cannot resolve the shared git dir of $repo_root"
     sha="$(_commit_of "$repo_root" "$REV")" || _die 70 "$REV names no commit in $repo_root"
     tree="$(_tree_of "$repo_root" "$sha")" || _die 70 "cannot resolve the tree of $sha"
-    where="$(_where "$repo_root" "$sha")"
+    sha_s="$(_short "$repo_root" "$sha")"
+    tree_s="$(_short "$repo_root" "$tree")"
 
+    local -a cached=() todo=() ran_green=() notes=()
+    for stage in "${STAGES[@]}"; do
+        if [[ -z "$FRESH" ]] && _marked "$store" "$tree" "$stage"; then
+            cached+=("$stage")
+        else
+            todo+=("$stage")
+        fi
+    done
+    local ncached=${#cached[@]} nran=0
+
+    # Nothing to run needs no checkout: a dirty desk with every stage earned
+    # would otherwise mint and tear down a scratch worktree for nothing.
+    if [[ ${#todo[@]} -eq 0 ]]; then
+        _result "$tree_s" "$sha_s" "$ncached" 0 green
+        printf '[gates] cached (%s): %s\n' "$ncached" "${cached[*]}" >&2
+        printf '[gates] %s (tree %s)\n' "$sha_s" "$tree_s" >&2
+        exit 0
+    fi
+
+    if [[ -t 2 ]]; then
+        LIVE=1
+    fi
+    local run_dir
+    local tmp="${TMPDIR:-/tmp}"
+    run_dir="$(mktemp -d "${tmp%/}/gates-run.XXXXXX")" || _die 70 "cannot make a run dir under $tmp"
+
+    local subject
+    where="$(_where "$repo_root" "$sha")"
     if [[ "$where" == "in-place" ]]; then
         checkout="$repo_root"
+        subject="$sha_s (tree $tree_s) in place: $checkout"
     else
         _scratch_checkout "$repo_root" "$sha" \
             || _die 70 "could not check out $sha into a scratch worktree"
         checkout="$_SCRATCH_CHECKOUT"
-        printf '[gates] judging %s in a checkout of its own: %s\n' "$sha" "$checkout" >&2
+        subject="$sha_s (tree $tree_s) scratch: $checkout"
         # A PYTHON naming another checkout's interpreter would import that
         # checkout's source while claiming to judge this commit.
         if [[ -n "${PYTHON:-}" && "$PYTHON" != "$checkout"/* ]]; then
-            printf '[gates] ignoring PYTHON=%s — it belongs to another checkout\n' "$PYTHON" >&2
+            notes+=("ignoring PYTHON=$PYTHON — it belongs to another checkout")
             unset PYTHON
         fi
     fi
@@ -578,42 +672,78 @@ cmd_run() {
     if [[ "$where" == "scratch" ]]; then
         # A non-zero rc is REPORTED and the run goes on: a stage failing for
         # want of a dependency says so loudly; skipping here would say nothing.
-        if ! (cd "$checkout" && bash "$runner" --prepare); then
-            printf '[gates] the runner could not prepare %s (see above) — running anyway\n' \
-                   "$checkout" >&2
+        if _capture "$run_dir/prepare.log" _in "$checkout" bash "$runner" --prepare; then
+            notes+=("prepare: $(_last_line "$run_dir/prepare.log" worktree-venv)")
+        else
+            notes+=("the runner could not prepare $checkout — ran anyway; see $run_dir/prepare.log")
         fi
     fi
 
-    _export_pytest_addopts "$checkout"
-    for stage in "${STAGES[@]}"; do
-        if [[ -z "$FRESH" ]] && _marked "$store" "$tree" "$stage"; then
-            printf '[gates] %s: already green for tree %s — skipping\n' "$stage" "$tree" >&2
-            continue
+    local verdict='' failed='' dirty=''
+    for stage in "${todo[@]}"; do
+        if [[ -z "$ADDOPTS_NOTE" ]] && _is_pytest_stage "$stage"; then
+            _export_pytest_addopts "$checkout"
         fi
-        printf '[gates] %s: running in %s\n' "$stage" "$checkout" >&2
-        if (cd "$checkout" && bash "$runner" "$stage"); then
+        nran=$((nran + 1))
+        if _capture "$run_dir/$stage.log" _in "$checkout" bash "$runner" "$stage"; then
             rc=0
         else
             rc=$?
         fi
         if [[ "$rc" -ne 0 ]]; then
-            printf "[gates] stage '%s' FAILED (rc=%s) — stopping here; earlier stamps stand\n" \
-                   "$stage" "$rc" >&2
-            exit "$rc"
+            verdict="FAILED $stage (rc=$rc)"
+            failed="$stage"
+            break
         fi
         # A stage that changed tracked content ran the NEXT stages on something
         # other than the subject; the marker would then certify the wrong tree.
         if ! _clean "$checkout"; then
-            printf "[gates] stage '%s' left the tree dirty — NO marker for it, stopping\n" "$stage" >&2
-            git -C "$checkout" status --porcelain >&2
-            exit 1
+            dirty="$(git -C "$checkout" status --porcelain)"
+            verdict="FAILED $stage (rc=1): left the tree dirty"
+            failed="$stage"
+            rc=1
+            break
         fi
-        _stamp "$store" "$tree" "$stage" "$sha" "$where" \
-            || _die 70 "green but the marker for $stage could not be written"
-        printf '[gates] %s: green — stamped for tree %s\n' "$stage" "$tree" >&2
+        if ! _stamp "$store" "$tree" "$stage" "$sha" "$where"; then
+            verdict="FAILED $stage (rc=70): green, but the marker could not be written"
+            failed="$stage"
+            rc=70
+            break
+        fi
+        ran_green+=("$stage")
     done
-    printf '[gates] every named stage is green for tree %s (%s)\n' "$tree" "$sha" >&2
-    exit 0
+
+    _result "$tree_s" "$sha_s" "$ncached" "$nran" "${verdict:-green}"
+    if [[ -n "$failed" ]]; then
+        # The gate hands the command down; bare, the primitive can only say "again".
+        local then_what="${GATES_RESUME_CMD:+: $GATES_RESUME_CMD}"
+        printf '[gates] fix %s, then%s\n' "$failed" "${then_what:- run this again}" >&2
+        if [[ -n "$dirty" ]]; then
+            printf '[gates] %s left the tree dirty:\n%s\n' "$failed" "$dirty" >&2
+        fi
+        if [[ -z "$LIVE" ]]; then
+            printf '[gates] %s said:\n' "$failed" >&2
+            _print_log "$run_dir/$failed.log"
+        fi
+    fi
+    local said
+    for stage in ${ran_green[@]+"${ran_green[@]}"}; do
+        said="$(_last_line "$run_dir/$stage.log" "$stage")"
+        printf '[gates] %s: %s\n' "$stage" "${said:-green}" >&2
+    done
+    if [[ $ncached -gt 0 ]]; then
+        printf '[gates] cached (%s): %s\n' "$ncached" "${cached[*]}" >&2
+    fi
+    printf '[gates] %s\n' "$subject" >&2
+    if [[ -n "$ADDOPTS_NOTE" ]]; then
+        printf '[gates] %s\n' "$ADDOPTS_NOTE" >&2
+    fi
+    local note
+    for note in ${notes[@]+"${notes[@]}"}; do
+        printf '[gates] %s\n' "$note" >&2
+    done
+    printf '[gates] transcript: %s\n' "$run_dir" >&2
+    exit "$rc"
 }
 
 # ===========================================================================

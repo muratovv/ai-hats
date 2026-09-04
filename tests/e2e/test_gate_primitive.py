@@ -39,7 +39,7 @@ GATE_LIB = SKILL_SRC / "lib" / "gate.sh"
 #: A stage runner that runs nothing and answers nothing: a check must never
 #: reach it (it runs inside the rack lock), and `gates.sh check` has no code
 #: path to it.
-RUNNER_STUB = "#!/usr/bin/env bash\nexit 99\n"
+RUNNER_STUB = '#!/usr/bin/env bash\ntouch "$(dirname "$0")/runner-ran"\nexit 99\n'
 
 
 def _project(root: Path) -> Path:
@@ -163,6 +163,11 @@ def test_a_live_worktree_without_markers_is_refused_with_the_missing_stages(tmp_
         assert f"    {stage}\n" in out.stdout
     assert f"cd {wt} && make review-gate" in out.stdout
     assert _tree(wt) in out.stdout, "the refusal names the tree it wanted"
+    # Gate, tree, Missing, command: the standing paragraph that used to follow
+    # the command explained the marker model to a reader who wanted a verb.
+    assert "Run the gate" in out.stdout, "the command keeps its one-line intro"
+    assert "It runs only what is missing" not in out.stdout
+    assert out.stdout.rstrip().splitlines()[-1].strip() == f"cd {wt} && make review-gate"
 
 
 def test_markers_for_every_required_stage_let_the_worktree_through(tmp_path: Path):
@@ -268,14 +273,42 @@ def test_a_project_without_gates_sh_cannot_pass(tmp_path: Path):
 
 
 def test_the_check_never_reaches_the_stage_runner(tmp_path: Path):
-    """The runner stub exits 99; a check that ran anything would surface it."""
+    """The runner stub leaves a file when invoked; a check that ran anything
+    would leave it. (The old probe, "99" absent from the output, tripped on a
+    tree hash that happened to contain it.)"""
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
 
     out = _hook(project, "done-gate", {"AI_HATS_WORKTREE_PATH": str(wt)})
 
     assert out.returncode == 2
-    assert "99" not in out.stdout + out.stderr
+    assert not (project.parent / "runner-ran").exists(), "the check reached the stage runner"
+
+
+# ---------------------------------------------------------------------------
+# --run: earn the stages, and on red say how to resume
+# ---------------------------------------------------------------------------
+
+
+def test_a_red_run_names_the_command_that_resumes_it_right_after_the_verdict(tmp_path: Path):
+    """`gates.sh` prints its block verdict first and the resume command second;
+    it cannot spell that command, so the gate hands it down. The stub runner
+    exits 99, so the run is red at its first stage."""
+    project = _project(tmp_path / "proj")
+    wt = _worktree(project, "one")
+
+    in_place = _hook(project, "done-gate", {}, "--run")
+    assert in_place.returncode == 99, in_place.stderr
+    lines = in_place.stderr.splitlines()
+    assert lines[0].startswith("[gates] RESULT "), "the primitive's verdict opens the block"
+    assert lines[1] == "[gates] fix e2e-catalog, then: make done-gate"
+
+    sha = git(wt, "rev-parse", "HEAD").stdout.strip()
+    of_a_commit = _hook(project, "done-gate", {}, "--run", "--rev", sha)
+    assert of_a_commit.returncode == 99, of_a_commit.stderr
+    assert of_a_commit.stderr.splitlines()[1] == (
+        f"[gates] fix e2e-catalog, then: make done-gate REV={sha}"
+    )
 
 
 # ---------------------------------------------------------------------------
