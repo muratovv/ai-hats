@@ -396,7 +396,9 @@ _sweep() {
             ;;
     esac
     find "$store" -type f -mtime "+${keep}" -delete 2>/dev/null || true
-    find "$store" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+    # An empty tree dir younger than an hour is a parallel run between its
+    # mkdir and its mktemp; reaping it turned that run's green into exit 70.
+    find "$store" -mindepth 1 -type d -empty -mmin +60 -delete 2>/dev/null || true
     return 0
 }
 

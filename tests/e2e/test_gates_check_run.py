@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -333,6 +334,29 @@ def test_pytest_options_reach_only_a_pytest_stage_and_the_xdist_line_precedes_it
     assert handed["lint"] == ""
     assert "--tb=line" in handed["unit"] and "-n" in handed["unit"]
     assert "--disable-warnings" in handed["unit"], "a 48-line warnings block is not a verdict"
+
+
+# ---------------------------------------------------------------------------
+# the sweep is housekeeping: it may revoke a pass, never break a stamp in flight
+# ---------------------------------------------------------------------------
+
+
+def test_the_sweep_spares_a_fresh_empty_tree_dir_and_reaps_an_old_one(repo: Path, runner: Path):
+    """Two runs on a fresh tree race: A makes its tree dir, B's sweep deletes
+    it as empty, A's mktemp fails with exit 70. An empty dir younger than an
+    hour is somebody's stamp in flight; the aged one is the positive control."""
+    store = _store(repo)
+    fresh = store / ("f" * 40)
+    aged = store / ("a" * 40)
+    fresh.mkdir(parents=True)
+    aged.mkdir(parents=True)
+    two_hours_ago = time.time() - 2 * 3600
+    os.utime(aged, (two_hours_ago, two_hours_ago))
+
+    assert _gate(repo, runner, "run", "lint").returncode == 0
+
+    assert fresh.is_dir(), "an empty tree dir younger than an hour survives the sweep"
+    assert not aged.exists(), "an old empty one is reaped"
 
 
 # ---------------------------------------------------------------------------
