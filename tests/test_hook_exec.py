@@ -898,3 +898,46 @@ def test_a_point_that_is_not_an_edge_states_its_missing_halves_as_null(tmp_path)
     assert call["actor"] is None
     # A caller naming no selector is one whose declaration named the point.
     assert call["selector"] == "wt:teardown[wt_out]"
+
+
+# ----- HATS-1882: whose environment the child inherits ------------------------
+
+
+def test_the_child_inherits_the_environment_it_is_handed(tmp_path, monkeypatch):
+    """A dispatcher held open for a session runs in a process that is NOT the
+    session — the wrapper that launched it — and that process's environment is
+    what every gate inherited: no session envelope, so the consent gate read
+    "outside a session" and asked nothing (measured, HATS-1882).
+
+    The base is a parameter, and the point-specific vocabulary still goes on
+    top of whatever base was handed in.
+    """
+    monkeypatch.setenv("HATS_PROBE", "from-this-process")
+    script = _script(
+        tmp_path / "e.sh", 'echo "${HATS_PROBE-unset}|${AI_HATS_HOOK_POINT-unset}"\nexit 0\n'
+    )
+    session = {**os.environ, "HATS_PROBE": "from-the-session"}
+
+    run = run_hook(
+        script,
+        point="wt:create",
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+        environ=session,
+    )
+
+    assert run.said == "from-the-session|wt:create"
+
+
+def test_without_an_environment_the_child_inherits_this_process(tmp_path, monkeypatch):
+    """The default every other channel relies on: a dispatcher spawned by the
+    harness IS in the session's environment, and hands nothing in."""
+    monkeypatch.setenv("HATS_PROBE", "from-this-process")
+    script = _script(tmp_path / "e.sh", 'echo "${HATS_PROBE-unset}"\nexit 0\n')
+
+    run = run_hook(
+        script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path
+    )
+
+    assert run.said == "from-this-process"

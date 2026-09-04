@@ -138,6 +138,7 @@ def run_hook(
     tee: bool = False,
     drop_env: Sequence[str] = (),
     cwd: Path | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> HookRun:
     """Run ``script`` under the D2 contract and return its outcome.
 
@@ -172,6 +173,10 @@ def run_hook(
       its gates inspect THAT tree, and a gate rooting itself with
       ``git rev-parse --show-toplevel`` from the main checkout would validate the
       wrong one and pass — worse than failing (ADR-0019 D5/D7).
+    * ``environ`` — the environment the child inherits; this process's when
+      unset. A dispatcher held open for a whole session runs in the process
+      that launched the session, not in the session, and a gate that inherited
+      THAT environment saw no session envelope and asked nothing (HATS-1882).
     """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
         return _corrupt(
@@ -217,7 +222,16 @@ def run_hook(
     cmd = [str(script), *argv]
     run_in = str(project_dir if cwd is None else cwd)
     env = _hook_env(
-        point, project_dir, force, task_id, worktree_path, tasks_dir, actor, selector, extra_env
+        point,
+        project_dir,
+        force,
+        task_id,
+        worktree_path,
+        tasks_dir,
+        actor,
+        selector,
+        extra_env,
+        base=environ,
     )
     for name in drop_env:
         env.pop(name, None)
@@ -438,6 +452,8 @@ def _hook_env(
     actor: str | None,
     selector: str | None,
     extra: Mapping[str, str] | None,
+    *,
+    base: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """The shared base every hook receives (ADR-0020 D2), then the caller's own
     point-specific vocabulary on top.
@@ -447,7 +463,7 @@ def _hook_env(
     that validates the wrong tree and passes is worse than one that crashes
     (ADR-0019 D5/D7).
     """
-    env = dict(os.environ)
+    env = dict(os.environ if base is None else base)
     # HATS-1161: an agent session carries FORCE_COLOR=3, and Rich honours it even
     # when stdout is no tty — every hook would then answer in escape sequences.
     for forcing in ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR"):
