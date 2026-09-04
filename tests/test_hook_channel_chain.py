@@ -482,3 +482,44 @@ def test_a_matcher_in_the_surfaces_own_vocabulary_still_reaches_the_call(
     )
     assert verdict.decision is ChainDecision.ALLOW
     assert ran.exists(), "a matcher written in the surface's own vocabulary never fired"
+
+
+class TestWhoseEnvironmentTheGatesInherit:
+    """``environ`` is what the DISPATCHER reads — the hatch, the budget. What
+    the gates inherit is a separate question, because the one
+    dispatcher held open for a session (claude's resident server) runs in the
+    wrapper process, whose environment is not the session's: every gate there
+    inherited it, the consent gate found no session envelope, and asked nothing.
+    """
+
+    @staticmethod
+    def _echo(tmp_path: Path) -> HookRow:
+        """A gate whose refusal IS the variable, so the verdict names the env it saw."""
+        reply = (
+            '{"hookSpecificOutput":{"hookEventName":"PreToolUse",'
+            '"permissionDecision":"deny","permissionDecisionReason":"%s"}}'
+        )
+        return _hook(
+            tmp_path, "echo", f"cat >/dev/null; printf '{reply}' \"${{HATS_PROBE-unset}}\""
+        )
+
+    def test_the_gates_inherit_the_environment_the_chain_is_handed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HATS_PROBE", "from-this-process")
+        session = {**os.environ, "HATS_PROBE": "from-the-session"}
+
+        verdict = _run(tmp_path, self._echo(tmp_path), hook_environ=session)
+
+        assert verdict.reason == "from-the-session"
+
+    def test_without_one_the_gates_inherit_this_process(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The default every spawned dispatcher relies on, on every surface: it IS
+        in the session's environment and hands nothing in."""
+        monkeypatch.setenv("HATS_PROBE", "from-this-process")
+
+        verdict = _run(tmp_path, self._echo(tmp_path))
+
+        assert verdict.reason == "from-this-process"

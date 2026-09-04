@@ -4,7 +4,8 @@ The spawn model pays ~43 ms before any gate runs — a fresh interpreter and thi
 package's imports — and none of that work is per-call. The session's own wrapper
 process holds it instead and answers over a unix socket in the session cache.
 Every call still reads the manifest and still runs :func:`dispatch`, so what a
-gate decides is unchanged; only who was already loaded is.
+gate decides is unchanged; only who was already loaded is. The gates inherit the
+session's environment, handed in at construction: the wrapper's own is not it.
 
 Absence is not a failure mode: the settings entry falls back to spawning the
 dispatcher whenever the socket is missing, stale, or unreachable.
@@ -149,7 +150,14 @@ class HookServer:
         self._out.claim(out)
         self._err.claim(err)
         try:
-            status = dispatch(ClaudeChannel(), stdin=io.StringIO(payload), environ=self._environ)
+            # This process is the wrapper, not the session: its own environment
+            # carries no session envelope, so the gates must not inherit it.
+            status = dispatch(
+                ClaudeChannel(),
+                stdin=io.StringIO(payload),
+                environ=self._environ,
+                hook_environ=self._environ,
+            )
         finally:
             self._out.release()
             self._err.release()
