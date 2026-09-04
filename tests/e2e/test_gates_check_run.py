@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -52,7 +53,7 @@ def runner(tmp_path: Path) -> Path:
     script.write_text(
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
-        f'printf "%s|%s\\n" "$1" "$PWD" >> "{log}"\n'
+        f'printf "%s|%s|%s\\n" "$1" "$PWD" "${{PYTEST_ADDOPTS:-}}" >> "{log}"\n'
         'name="GATES_TEST_RC_$(printf "%s" "$1" | tr "a-z-" "A-Z_")"\n'
         'exit "${!name:-0}"\n'
     )
@@ -60,11 +61,19 @@ def runner(tmp_path: Path) -> Path:
     return script
 
 
-def _calls(runner: Path) -> list[tuple[str, str]]:
+def _rows(runner: Path) -> list[list[str]]:
     log = runner.parent / "calls.log"
-    if not log.exists():
-        return []
-    return [tuple(line.split("|", 1)) for line in log.read_text().splitlines()]  # type: ignore[misc]
+    return [line.split("|", 2) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+def _calls(runner: Path) -> list[tuple[str, str]]:
+    """(stage, cwd) per call."""
+    return [(stage, cwd) for stage, cwd, _ in _rows(runner)]
+
+
+def _addopts(runner: Path) -> dict[str, str]:
+    """stage -> the PYTEST_ADDOPTS it was handed."""
+    return {stage: addopts for stage, _, addopts in _rows(runner)}
 
 
 def _gate(
@@ -96,6 +105,18 @@ def _store(repo: Path) -> Path:
 def _marked(repo: Path, tree: str) -> set[str]:
     where = _store(repo) / tree
     return {p.name for p in where.iterdir()} if where.is_dir() else set()
+
+
+def _short(repo: Path, rev: str) -> str:
+    return git(repo, "rev-parse", "--short", rev).stdout.strip()
+
+
+def _header(repo: Path, rev: str = "HEAD") -> str:
+    return f"[gates] {_short(repo, rev)} (tree {_short(repo, rev + '^{tree}')})"
+
+
+def _result(repo: Path, verdict: str, rev: str = "HEAD") -> str:
+    return f"[gates] RESULT tree {_short(repo, rev + '^{tree}')} ({_short(repo, rev)}): {verdict}"
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +188,7 @@ def test_a_red_stage_stops_the_run_and_keeps_the_stamps_earned_before_it(repo: P
     out = _gate(repo, runner, "run", "lint", "unit", "integration", env={"GATES_TEST_RC_UNIT": "7"})
 
     assert out.returncode == 7
-    assert "stage 'unit' FAILED (rc=7)" in out.stderr
+    assert out.stderr.splitlines()[-1] == _result(repo, "0 cached, 2 ran, FAILED unit (rc=7)")
     assert [c[0] for c in _calls(runner)] == ["lint", "unit"], "nothing after the red one ran"
     assert _marked(repo, _tree(repo)) == {"lint"}, "lint's stamp survives unit's red"
 
@@ -206,6 +227,7 @@ def test_a_dirty_checkout_judges_head_in_a_one_shot_scratch_worktree(repo: Path,
     ((stage, ran_in),) = _calls(runner)
     assert stage == "lint"
     assert ran_in != str(repo), "the stage ran somewhere other than the dirty desk"
+    assert out.stderr.splitlines()[0] == f"{_header(repo)} scratch: {ran_in}"
     assert not Path(ran_in).exists(), "the scratch checkout is gone after the run"
     assert "scratch" not in git(repo, "worktree", "list").stdout, "and un-registered"
     assert _marked(repo, _tree(repo)) == {"lint"}, "stamped for HEAD's tree, readable from here"
@@ -245,7 +267,72 @@ def test_a_stage_that_dirties_the_tree_earns_no_marker(repo: Path, runner: Path,
 
     assert out.returncode == 1
     assert "left the tree dirty" in out.stderr
+    assert out.stderr.splitlines()[-1] == _result(
+        repo, "0 cached, 1 ran, FAILED lint (rc=1): left the tree dirty"
+    )
     assert _marked(repo, _tree(repo)) == set()
+
+
+# ---------------------------------------------------------------------------
+# the run narrates for a reader who sees the tail first
+# ---------------------------------------------------------------------------
+
+
+def test_a_run_is_header_then_cached_line_then_stages_then_result(repo: Path, runner: Path):
+    """Subject once, where it runs, the cached stages on ONE line, each stage's
+    own banner only, and a RESULT line last — what an agent reading the tail of
+    a long run gets to see."""
+    assert _gate(repo, runner, "run", "lint", "unit").returncode == 0
+
+    out = _gate(repo, runner, "run", "lint", "unit", "integration")
+
+    assert out.returncode == 0, out.stderr
+    lines = out.stderr.splitlines()
+    assert lines[0] == f"{_header(repo)} in place: {repo}"
+    assert lines[1] == "[gates] cached (2): lint unit"
+    assert lines[-1] == _result(repo, "2 cached, 1 ran, green")
+    assert "already green" not in out.stderr, "one line per cached stage is the noise this removes"
+    assert "running in" not in out.stderr, "the checkout is named once, in the header"
+
+
+def test_nothing_to_run_is_three_lines_and_mints_no_checkout(repo: Path, runner: Path):
+    assert _gate(repo, runner, "run", "lint").returncode == 0
+    (repo / "scratch.txt").write_text("untracked\n")
+
+    out = _gate(repo, runner, "run", "lint")
+
+    assert out.returncode == 0, out.stderr
+    assert out.stderr.splitlines() == [
+        _header(repo),
+        "[gates] cached (1): lint",
+        _result(repo, "1 cached, 0 ran, green"),
+    ]
+    assert [c[0] for c in _calls(runner)] == ["lint"], "the second run reached no runner"
+    assert "scratch" not in git(repo, "worktree", "list").stdout
+
+
+def test_pytest_options_reach_only_a_pytest_stage_and_the_xdist_line_precedes_it(
+    repo: Path, runner: Path
+):
+    """A checker stage gets no PYTEST_ADDOPTS and no xdist line; the first pytest
+    stage that RUNS gets both. The probe is pointed at this test's own
+    interpreter, whose pytest carries xdist — the positive control for the
+    absence asserted on `lint`."""
+    pytest.importorskip("xdist")
+    env = {"PYTHON": sys.executable}
+
+    only_checkers = _gate(repo, runner, "run", "lint", env=env)
+    assert only_checkers.returncode == 0, only_checkers.stderr
+    assert "xdist" not in only_checkers.stderr
+    assert _addopts(runner)["lint"] == ""
+
+    both = _gate(repo, runner, "run", "--fresh", "lint", "unit", env=env)
+    assert both.returncode == 0, both.stderr
+    assert both.stderr.count("pytest-xdist") == 1
+    handed = _addopts(runner)
+    assert handed["lint"] == ""
+    assert "--tb=line" in handed["unit"] and "-n" in handed["unit"]
+    assert "--disable-warnings" in handed["unit"], "a 48-line warnings block is not a verdict"
 
 
 # ---------------------------------------------------------------------------

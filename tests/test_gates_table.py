@@ -11,6 +11,7 @@ never a literal copied here.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -158,3 +159,17 @@ def test_usage_errors_exit_64(argv: tuple[str, ...]):
     out = _run(GATES, *argv)
 
     assert out.returncode == 64, (argv, out.stderr)
+
+
+def test_the_pytest_stages_are_exactly_the_functions_that_invoke_pytest():
+    """`run` exports PYTEST_ADDOPTS (and says so) before the first stage in this
+    list that runs, so a checker-only run stays silent about xdist. The list is
+    hand-kept beside the functions; this is what keeps it honest."""
+    src = GATES.read_text()
+    declared = re.search(r"^PYTEST_STAGES='([^']*)'$", src, re.M)
+    assert declared, "no PYTEST_STAGES line in gates.sh"
+    bodies = re.findall(r"^ci_(\w+)\(\) \{\n(.*?)^\}", src, re.S | re.M)
+    assert bodies, "no ci_* function parsed"
+    invoking = {name.replace("_", "-") for name, body in bodies if "pytest" in body}
+
+    assert set(declared.group(1).split()) == invoking

@@ -308,6 +308,19 @@ ci_master_ci() {
     run_py scripts/check_master_ci.py
 }
 
+# The stages that run pytest: `run` exports PYTEST_ADDOPTS — and says what it
+# found — before the first of these it reaches, so a checker-only run stays
+# silent about xdist. Hand-kept; `tests/test_gates_table.py` holds it equal to
+# the functions above that invoke pytest.
+PYTEST_STAGES='unit integration coverage merge-smoke e2e'
+
+_is_pytest_stage() {
+    case " $PYTEST_STAGES " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
 # The stage set IS the set of `ci_*` functions above: the dispatch and the usage
 # line both read it, so a stage cannot be reachable and unlisted or listed and
 # unreachable. A helper that is not a stage does not take the prefix.
@@ -466,7 +479,7 @@ _pytest_probe() {
 # Bare stage invocations stay serial; a run uses the cores.
 _export_pytest_addopts() {
     local checkout="$1"
-    local addopts='--tb=line --no-header -p no:cacheprovider'
+    local addopts='--tb=line --no-header -p no:cacheprovider --disable-warnings'
     if _pytest_probe "$checkout" | grep -qi xdist; then
         local cores ceiling n
         cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
@@ -549,28 +562,66 @@ cmd_subject() {
            "$repo_root" "$sha" "$tree" "$(_where "$repo_root" "$sha")"
 }
 
+# Short ids for a reader; the marker files keep the full ones.
+_short() {
+    git -C "$1" rev-parse --short "$2" 2>/dev/null || printf '%s' "$2"
+}
+
+# The last line of every run, green or not: what a reader who sees the tail
+# first needs, and nothing the lines above did not already say in full.
+_result() {
+    local tree="$1" sha="$2" cached="$3" ran="$4" verdict="$5"
+    printf '[gates] RESULT tree %s (%s): %s cached, %s ran, %s\n' \
+           "$tree" "$sha" "$cached" "$ran" "$verdict" >&2
+}
+
 cmd_run() {
     _parse 1 "$@"
     [[ ${#STAGES[@]} -gt 0 ]] || _die 64 "run: no stage named"
-    local store sha tree where checkout runner stage rc
+    local store sha tree sha_s tree_s where checkout runner stage rc
     store="$(_store "$repo_root")" || _die 70 "cannot resolve the shared git dir of $repo_root"
     sha="$(_commit_of "$repo_root" "$REV")" || _die 70 "$REV names no commit in $repo_root"
     tree="$(_tree_of "$repo_root" "$sha")" || _die 70 "cannot resolve the tree of $sha"
-    where="$(_where "$repo_root" "$sha")"
+    sha_s="$(_short "$repo_root" "$sha")"
+    tree_s="$(_short "$repo_root" "$tree")"
 
+    local -a cached=() todo=()
+    for stage in "${STAGES[@]}"; do
+        if [[ -z "$FRESH" ]] && _marked "$store" "$tree" "$stage"; then
+            cached+=("$stage")
+        else
+            todo+=("$stage")
+        fi
+    done
+    local ncached=${#cached[@]} nran=0
+
+    # Nothing to run needs no checkout: a dirty desk with every stage earned
+    # would otherwise mint and tear down a scratch worktree for nothing.
+    if [[ ${#todo[@]} -eq 0 ]]; then
+        printf '[gates] %s (tree %s)\n' "$sha_s" "$tree_s" >&2
+        printf '[gates] cached (%s): %s\n' "$ncached" "${cached[*]}" >&2
+        _result "$tree_s" "$sha_s" "$ncached" 0 green
+        exit 0
+    fi
+
+    where="$(_where "$repo_root" "$sha")"
     if [[ "$where" == "in-place" ]]; then
         checkout="$repo_root"
+        printf '[gates] %s (tree %s) in place: %s\n' "$sha_s" "$tree_s" "$checkout" >&2
     else
         _scratch_checkout "$repo_root" "$sha" \
             || _die 70 "could not check out $sha into a scratch worktree"
         checkout="$_SCRATCH_CHECKOUT"
-        printf '[gates] judging %s in a checkout of its own: %s\n' "$sha" "$checkout" >&2
+        printf '[gates] %s (tree %s) scratch: %s\n' "$sha_s" "$tree_s" "$checkout" >&2
         # A PYTHON naming another checkout's interpreter would import that
         # checkout's source while claiming to judge this commit.
         if [[ -n "${PYTHON:-}" && "$PYTHON" != "$checkout"/* ]]; then
             printf '[gates] ignoring PYTHON=%s — it belongs to another checkout\n' "$PYTHON" >&2
             unset PYTHON
         fi
+    fi
+    if [[ $ncached -gt 0 ]]; then
+        printf '[gates] cached (%s): %s\n' "$ncached" "${cached[*]}" >&2
     fi
     runner="$(_runner_in "$checkout")"
     [[ -f "$runner" ]] || _die 70 "no stage runner at $runner"
@@ -584,35 +635,38 @@ cmd_run() {
         fi
     fi
 
-    _export_pytest_addopts "$checkout"
-    for stage in "${STAGES[@]}"; do
-        if [[ -z "$FRESH" ]] && _marked "$store" "$tree" "$stage"; then
-            printf '[gates] %s: already green for tree %s — skipping\n' "$stage" "$tree" >&2
-            continue
+    local addopts_exported=''
+    for stage in "${todo[@]}"; do
+        if [[ -z "$addopts_exported" ]] && _is_pytest_stage "$stage"; then
+            _export_pytest_addopts "$checkout"
+            addopts_exported=1
         fi
-        printf '[gates] %s: running in %s\n' "$stage" "$checkout" >&2
+        nran=$((nran + 1))
         if (cd "$checkout" && bash "$runner" "$stage"); then
             rc=0
         else
             rc=$?
         fi
         if [[ "$rc" -ne 0 ]]; then
-            printf "[gates] stage '%s' FAILED (rc=%s) — stopping here; earlier stamps stand\n" \
-                   "$stage" "$rc" >&2
+            _result "$tree_s" "$sha_s" "$ncached" "$nran" "FAILED $stage (rc=$rc)"
             exit "$rc"
         fi
         # A stage that changed tracked content ran the NEXT stages on something
         # other than the subject; the marker would then certify the wrong tree.
         if ! _clean "$checkout"; then
-            printf "[gates] stage '%s' left the tree dirty — NO marker for it, stopping\n" "$stage" >&2
+            printf '[gates] %s left the tree dirty — no marker for it:\n' "$stage" >&2
             git -C "$checkout" status --porcelain >&2
+            _result "$tree_s" "$sha_s" "$ncached" "$nran" "FAILED $stage (rc=1): left the tree dirty"
             exit 1
         fi
-        _stamp "$store" "$tree" "$stage" "$sha" "$where" \
-            || _die 70 "green but the marker for $stage could not be written"
-        printf '[gates] %s: green — stamped for tree %s\n' "$stage" "$tree" >&2
+        if ! _stamp "$store" "$tree" "$stage" "$sha" "$where"; then
+            _result "$tree_s" "$sha_s" "$ncached" "$nran" \
+                    "FAILED $stage (rc=70): green, but the marker could not be written"
+            exit 70
+        fi
+        printf '[gates] %s: green, stamped\n' "$stage" >&2
     done
-    printf '[gates] every named stage is green for tree %s (%s)\n' "$tree" "$sha" >&2
+    _result "$tree_s" "$sha_s" "$ncached" "$nran" green
     exit 0
 }
 
