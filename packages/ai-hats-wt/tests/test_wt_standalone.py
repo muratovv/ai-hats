@@ -308,7 +308,7 @@ def test_merge_refuses_unmerged_tip_teardown(
     _commit_in_worktree(wt_path, "file1.txt", "commit A")
 
     # Monkeypatch _fast_forward_merge to do nothing so master is not updated
-    monkeypatch.setattr(mgr, "_fast_forward_merge", lambda: None)
+    monkeypatch.setattr(mgr, "_fast_forward_merge", lambda **_: None)
 
     with pytest.raises(wt.WorktreeMergeIncompleteError) as exc_info:
         mgr.merge()

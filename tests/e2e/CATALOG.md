@@ -4330,15 +4330,17 @@ as a claim to check, not as evidence.
 
 *pins HATS-481*
 
-- **flow** — two developer processes concurrently running transition done on tasks sharing base branch
+- **flow** — two developer processes concurrently running transition done on tasks sharing base branch; the one that lost the base lock takes the new base and retries
 - **cmds**
 
   ```console
   rack transition TST-001 done
+  git rebase main
+  rack transition TST-002 done
   ```
 
-- **expect** — base branch lock serializes merges and both transitions succeed without data loss
-- **why** — concurrent task finalization must synchronize base branch merges to prevent lock contention
+- **expect** — base branch lock serializes merges; the second merge refuses on drift with the rebase recipe and loses nothing, and the retry after the rebase lands it
+- **why** — concurrent task finalization must synchronize base branch merges and never land a branch whose verification did not see the peer's commits
 
 ## `test_wt_rebased_branch_refusal.py`
 
