@@ -9,6 +9,8 @@ package's ``test_usage.py``.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import calendar
 import json
 import os
@@ -59,7 +61,7 @@ def test_io_contract():
             "session_id",
             "session_dir",
             "claude_session_id",
-            "project_dir",
+            "layout",
         }
     )
     assert io.optional == frozenset(
@@ -96,7 +98,7 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id=csid,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
     )
 
@@ -143,7 +145,7 @@ def test_discovers_the_jsonl_when_no_session_id_was_taken(
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id="",
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
     )
 
@@ -174,7 +176,7 @@ def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id=csid,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
     )
 
@@ -201,7 +203,7 @@ def test_funnel_role_overrides_metrics_json(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id=csid,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
         role="live-role",
     )
@@ -224,7 +226,7 @@ def test_session_meta_null_when_no_metrics(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id=csid,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
     )
 
@@ -245,7 +247,7 @@ def test_missing_jsonl_returns_empty_delta_no_crash(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id="nonexistent-uuid",
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
     )
 
@@ -274,7 +276,7 @@ def test_parser_exception_is_swallowed(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id=csid,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
     )
     assert delta == {}
@@ -302,7 +304,7 @@ def test_routes_through_injected_parser(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id=csid,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
         audit_writer_factory=lambda: SimpleNamespace(parser=_FakeParser()),
     )

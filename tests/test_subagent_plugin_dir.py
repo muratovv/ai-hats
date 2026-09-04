@@ -14,6 +14,8 @@ will keep using.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from dataclasses import replace
 from pathlib import Path
 
@@ -198,7 +200,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
         provider=LifecycleProvider(),
     )
     runner = runtime_mod.SubAgentRunner(
-        project,
+        ProjectLayout.at(project),
         payload,
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )

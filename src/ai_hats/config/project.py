@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from ..paths._dirs import ProjectConfigError  # one family for every reader (HATS-1606)
+from ..paths.constants import KNOWN_SCHEMA_VERSION
 from pydantic import (
     ConfigDict,
     Field,
@@ -35,20 +38,6 @@ _DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset(
         "imports_order",  # HATS-290 planned but reverted; ghost in some v0.6 yamls.
     }
 )
-
-
-# HATS-792: highest ai-hats.yaml ``schema_version`` this binary understands.
-# Migrations in ``from_yaml`` run upward ONLY to this version; a yaml whose
-# ``schema_version`` exceeds it was written by a NEWER ai-hats whose format we
-# cannot safely interpret OR round-trip. Rather than silently treat it as v4
-# (and risk clobbering future fields on the next ``save()``), ``from_yaml``
-# fails loud with a remediation pointer (``ai-hats self update``). Bump this in
-# lockstep with the migration chain + the ``to_dict`` ``schema_version`` literal.
-KNOWN_SCHEMA_VERSION = 4
-
-
-class ProjectConfigError(ValueError):
-    """Raised when ai-hats.yaml fails schema validation."""
 
 
 class ProjectConfig(_YamlModel):

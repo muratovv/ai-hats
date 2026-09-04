@@ -12,6 +12,8 @@ why:    without SDK integration, sub-agent execution relies on legacy subprocess
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import shutil
 import subprocess
@@ -106,7 +108,7 @@ def test_subagent_runner_via_sdk_smoke(minimal_claude_project: Path, requires_cl
         role_override="probe",
     )
     runner = SubAgentRunner(
-        minimal_claude_project,
+        ProjectLayout.at(minimal_claude_project),
         payload,
         session_mgr=SessionManager(
             minimal_claude_project, runs_dir=runs_dir(minimal_claude_project)

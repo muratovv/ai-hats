@@ -5,7 +5,8 @@ from __future__ import annotations
 import click
 
 from ..paths import PROJECT_CONFIG
-from ._helpers import _project_dir, console
+from ._entry import resolve_project
+from ._helpers import console
 
 
 @click.group()
@@ -21,9 +22,7 @@ def config_feedback():
 @config_feedback.command("show")
 def config_feedback_show():
     """Display current feedback configuration."""
-    from ..models import ProjectConfig
-
-    cfg = ProjectConfig.from_yaml(_project_dir() / PROJECT_CONFIG)
+    cfg = resolve_project().config
     sr = cfg.feedback.session_retro
 
     console.print("[bold]Feedback config[/]")
@@ -47,10 +46,11 @@ def config_feedback_session_retro(
     background: bool | None,
 ):
     """Configure session-retro policy and options."""
-    from ..models import FeedbackPolicy, ProjectConfig
+    from ..models import FeedbackPolicy
 
-    path = _project_dir() / PROJECT_CONFIG
-    cfg = ProjectConfig.from_yaml(path)
+    project = resolve_project()
+    path = project.layout.root / PROJECT_CONFIG
+    cfg = project.config
     sr = cfg.feedback.session_retro
 
     nothing_to_do = policy is None and threshold is None and background is None

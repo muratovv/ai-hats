@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import logging
 
@@ -127,7 +129,7 @@ class TestReviewerOwnSession:
         metrics = _setup_project(tmp_path, policy="always")
         metrics.write_text(json.dumps({"role": "session-reviewer", "turns": 3}))
 
-        d = make_decision(tmp_path, "SID")
+        d = make_decision(ProjectLayout.at(tmp_path), "SID")
         assert d["action"] == "skip"
         assert "session-reviewer" in d["reason"]
 
@@ -249,7 +251,9 @@ class TestWriteRetroLog:
     def test_creates_file_and_session_dir(self, tmp_path):
         from ai_hats.retro.auto_retro import write_retro_log
 
-        write_retro_log(tmp_path, "SID", "runtime", "decision", "skip: below threshold")
+        write_retro_log(
+            ProjectLayout.at(tmp_path), "SID", "runtime", "decision", "skip: below threshold"
+        )
 
         log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         assert log.exists()
@@ -263,9 +267,11 @@ class TestWriteRetroLog:
     def test_appends_multiple_entries(self, tmp_path):
         from ai_hats.retro.auto_retro import write_retro_log
 
-        write_retro_log(tmp_path, "SID", "runtime", "decision", "run: threshold met")
-        write_retro_log(tmp_path, "SID", "hook", "spawn", "pid=1234")
-        write_retro_log(tmp_path, "SID", "builder", "saved", "/path/to/retro.md")
+        write_retro_log(
+            ProjectLayout.at(tmp_path), "SID", "runtime", "decision", "run: threshold met"
+        )
+        write_retro_log(ProjectLayout.at(tmp_path), "SID", "hook", "spawn", "pid=1234")
+        write_retro_log(ProjectLayout.at(tmp_path), "SID", "builder", "saved", "/path/to/retro.md")
 
         log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         lines = log.read_text().strip().split("\n")
@@ -277,7 +283,7 @@ class TestWriteRetroLog:
     def test_strips_tabs_and_newlines_in_detail(self, tmp_path):
         from ai_hats.retro.auto_retro import write_retro_log
 
-        write_retro_log(tmp_path, "SID", "hook", "skip", "a\tb\nc")
+        write_retro_log(ProjectLayout.at(tmp_path), "SID", "hook", "skip", "a\tb\nc")
         line = (runs_dir(tmp_path) / "session_SID" / RETRO_LOG).read_text().rstrip("\n")
         # Split on the SEPARATOR tabs (4 parts), then check the last field.
         parts = line.split("\t")
@@ -294,7 +300,7 @@ class TestMakeDecision:
         # "below threshold" claims a comparison nobody could have made.
         metrics.write_text(json.dumps({"measured": True, "turns": 0, "tool_calls": 0}))
 
-        d = make_decision(tmp_path, "SID")
+        d = make_decision(ProjectLayout.at(tmp_path), "SID")
         assert d["action"] == "skip"
         assert "below threshold" in d["reason"]
         assert d["retro_path"].endswith("sessions/retros/sessions/SID.md")
@@ -305,7 +311,7 @@ class TestMakeDecision:
         metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10)
         metrics.write_text(json.dumps({"turns": 20, "tool_calls": 50}))
 
-        d = make_decision(tmp_path, "SID")
+        d = make_decision(ProjectLayout.at(tmp_path), "SID")
         assert d["action"] == "run"
         assert d["background"] is True
         assert d["retro_path"].endswith("/sessions/SID.md")
@@ -316,7 +322,7 @@ class TestMakeDecision:
         metrics = _setup_project(tmp_path, policy="hint", min_turns=5, min_tool_calls=10)
         metrics.write_text(json.dumps({"turns": 20, "tool_calls": 50}))
 
-        d = make_decision(tmp_path, "SID")
+        d = make_decision(ProjectLayout.at(tmp_path), "SID")
         assert d["action"] == "hint"
         assert d["reminder"] == {
             "count": 1,
@@ -331,7 +337,7 @@ class TestMakeDecision:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(auto_retro, "should_run", boom)
-        d = auto_retro.make_decision(tmp_path, "SID")
+        d = auto_retro.make_decision(ProjectLayout.at(tmp_path), "SID")
         assert d["action"] == "skip"
         assert "internal error" in d["reason"]
         assert "boom" in d["reason"]
@@ -346,24 +352,19 @@ class TestMakeDecision:
             raise KeyboardInterrupt
 
         monkeypatch.setattr(auto_retro, "should_run", interrupted)
-        d = auto_retro.make_decision(tmp_path, "SID")
+        d = auto_retro.make_decision(ProjectLayout.at(tmp_path), "SID")
         assert d["action"] == "skip"
         assert "internal error" in d["reason"]
 
-    def test_unresolvable_paths_return_skip(self, tmp_path, monkeypatch):
-        """The incident died resolving runs_dir (unreadable ai-hats.yaml), which
-        sat outside the guard — and the skip dict resolves that path again."""
-        from ai_hats import paths
+    def test_unresolvable_paths_return_skip(self, tmp_path):
+        """The incident died resolving runs_dir (unreadable ai-hats.yaml). That
+        failure class is EXTINCT: paths are pure functions of the layout now,
+        so the decision degrades to an honest skip instead of an internal error."""
         from ai_hats.retro import auto_retro
 
-        def broken(*a, **kw):
-            raise ValueError("ai-hats.yaml unparseable")
-
-        monkeypatch.setattr(paths, "runs_dir", broken)
-        d = auto_retro.make_decision(tmp_path, "SID")
+        d = auto_retro.make_decision(ProjectLayout.at(tmp_path), "SID")
         assert d["action"] == "skip"
-        assert "internal error" in d["reason"]
-        assert d["log_path"] is None
+        assert "not found" in d["reason"]
 
 
 class TestDescribeDecision:
@@ -455,8 +456,8 @@ class TestMainHookWritesLog:
             "_spawn_session_reviewer_background",
             lambda pd, sid: spawned.append((pd, sid)),
         )
-        auto_retro._run_foreground(tmp_path, "SID")
-        assert spawned == [(tmp_path, "SID")]
+        auto_retro._run_foreground(ProjectLayout.at(tmp_path), "SID")
+        assert spawned == [(ProjectLayout.at(tmp_path), "SID")]
 
 
 class TestMainReadsTheIdentity:
@@ -536,7 +537,7 @@ class TestRecursionGuard:
             return _FakeProc()
 
         monkeypatch.setattr("subprocess.Popen", fake_popen)
-        auto_retro._spawn_session_reviewer_background(tmp_path, "SID")
+        auto_retro._spawn_session_reviewer_background(ProjectLayout.at(tmp_path), "SID")
 
         assert captured["env"][ENV_SKIP_RETRO] == "1"
         # ai_hats.cli.reflect_session_main is the harness entry-point.

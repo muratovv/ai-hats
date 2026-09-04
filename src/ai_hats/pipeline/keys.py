@@ -22,7 +22,6 @@ KEY_AI_HATS_DIR = "ai_hats_dir"
 KEY_VENV_PATH = "venv_path"
 KEY_NO_MANAGE_GITIGNORE = "no_manage_gitignore"
 KEY_HARNESS_PATH = "harness_path"
-KEY_PROJECT_CONFIG = "project_config"
 
 # Read back from the final state by CLI / runners.
 KEY_SESSION_ID = "session_id"
@@ -42,7 +41,6 @@ __all__ = [
     "KEY_VENV_PATH",
     "KEY_NO_MANAGE_GITIGNORE",
     "KEY_HARNESS_PATH",
-    "KEY_PROJECT_CONFIG",
     "KEY_SESSION_ID",
     "KEY_SESSION_DIR",
     "KEY_CLAUDE_SESSION_ID",

@@ -17,6 +17,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 import yaml
 
 from ..harness.errors import HarnessReliabilityError
@@ -46,18 +48,22 @@ def main() -> int:
     session_id = sys.argv[1]
     max_retries = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-    project_dir = Path.cwd()
+    from ._entry import resolve_project
 
-    return run_session_review(session_id, max_retries, project_dir)
+    layout = resolve_project().layout
+
+    return run_session_review(session_id, max_retries, layout)
 
 
-def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> int:
+def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout) -> int:
     """Run the session-reviewer pipeline in-process; return an exit code.
 
     Extracted from ``main()`` (HATS-1402) so a caller like
     ``MaybeSpawnSessionReviewer``'s ``background: false`` branch can run it
     synchronously in-process instead of only via the CLI subprocess.
     """
+    project_dir = layout.root
+    retros = layout.sessions.retros
     runner_error: str | None = None
     harness_error: HarnessReliabilityError | None = None
     saved_path: Path | None = None
@@ -65,7 +71,7 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
         result = run_pipeline(
             REFLECT_SESSION,
             ReflectSessionRunParams(
-                project_dir=project_dir,
+                layout=layout,
                 session_id=session_id,
                 max_retries=max_retries,
             ),
@@ -88,7 +94,7 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
 
     # HATS-1369 / HATS-1422: parse the doc ONCE — shared by the harvest below and
     # _harness_check, instead of each re-reading/re-parsing it independently.
-    raw, parse_issues = _load_review_doc(_review_doc_path(project_dir, session_id))
+    raw, parse_issues = _load_review_doc(_review_doc_path(retros, session_id))
 
     # Harvest whatever verdicts the doc carries into validation_log,
     # independent of _harness_check's full-active-coverage gate below or
@@ -106,7 +112,7 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
             print(f"harvested {len(persisted)} verdict(s): {persisted}")
         return 2
 
-    issues = _harness_check(project_dir, session_id, runner_error, raw, parse_issues)
+    issues = _harness_check(layout, session_id, runner_error, raw, parse_issues)
     if issues:
         _file_meta_proposal(
             project_dir,
@@ -129,10 +135,8 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
 _MISSING_ISSUE = "output file missing or empty"
 
 
-def _review_doc_path(project_dir: Path, session_id: str) -> Path:
-    from ..paths import retros_dir
-
-    return retros_dir(project_dir) / "sessions" / f"{session_id}.md"
+def _review_doc_path(retros: Path, session_id: str) -> Path:
+    return retros / "sessions" / f"{session_id}.md"
 
 
 def _load_review_doc(out_path: Path) -> tuple[dict | None, list[str]]:
@@ -160,7 +164,7 @@ def _load_review_doc(out_path: Path) -> tuple[dict | None, list[str]]:
 
 
 def _harness_check(
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
     runner_error: str | None,
     raw: dict | None,
@@ -188,7 +192,7 @@ def _harness_check(
         verdicts = []
 
     try:
-        active_ids = _load_active_hyp_ids(project_dir, session_id)
+        active_ids = _load_active_hyp_ids(layout, session_id)
     except Exception as e:  # noqa: BLE001 — observability over correctness
         issues.append(f"could not enumerate active HYPs: {e}")
         active_ids = set()
@@ -218,13 +222,13 @@ def _extract_frontmatter(text: str) -> str:
     return rest[:end]
 
 
-def _load_active_hyp_ids(project_dir: Path, session_id: str) -> set[str]:
+def _load_active_hyp_ids(layout: ProjectLayout, session_id: str) -> set[str]:
     from ..rack_workspace import active_hypotheses, created_at_or_before, rack_workspace
     from ..retro.window import session_cut
 
-    ws = rack_workspace(project_dir)
+    ws = rack_workspace(layout.root)
     every = active_hypotheses(ws)
-    kept = created_at_or_before(every, session_cut(project_dir, session_id))
+    kept = created_at_or_before(every, session_cut(layout, session_id))
     return {h.id for h in kept}
 
 

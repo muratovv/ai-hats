@@ -15,6 +15,8 @@ SIGKILL), there is still a persistent trace.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import logging
 import os
@@ -100,7 +102,7 @@ def should_run(
 
 
 def make_decision(
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
 ) -> dict:
     """Run policy decision and return a dict rich enough to drive UI + log.
@@ -110,11 +112,10 @@ def make_decision(
     promise excluded ``KeyboardInterrupt`` and, worse, the path resolution
     below sat outside the guard — the two lines the incident died on.
     """
-    from ..paths import retros_dir, runs_dir
-
+    project_dir = layout.root
     config_path = project_dir / PROJECT_CONFIG
     try:
-        metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
+        metrics_path = layout.sessions.runs / session_dirname(session_id) / METRICS_JSON
         action, reason = should_run(config_path, metrics_path)
         config = ProjectConfig.from_yaml(config_path)
         sr = config.feedback.session_retro
@@ -125,19 +126,19 @@ def make_decision(
             "reason": f"internal error: {exc!r}",
             "background": None,
             "retro_path": None,
-            "log_path": _safe_log_path(project_dir, session_id),
+            "log_path": _safe_log_path(layout, session_id),
             "wrap_up": None,
             "reminder": None,
         }
 
-    retro_path = retros_dir(project_dir) / "sessions" / f"{session_id}.md"
+    retro_path = layout.sessions.retros / "sessions" / f"{session_id}.md"
 
     # Wrap-up nudge (HATS-214) — pure side-effect-free; any error collapses to None.
     wrap_up_info = None
     try:
         from . import reminder as reminder_mod
 
-        wrap_up_info = reminder_mod.evaluate_wrap_up(project_dir, session_id)
+        wrap_up_info = reminder_mod.evaluate_wrap_up(layout, session_id)
     except Exception:  # silent-ok: the nudge is side-effect-free; any error collapses to None
         wrap_up_info = None
 
@@ -153,7 +154,7 @@ def make_decision(
         "reason": reason,
         "background": background,
         "retro_path": str(retro_path),
-        "log_path": str(_retro_log_path(project_dir, session_id)),
+        "log_path": str(_retro_log_path(layout, session_id)),
         "wrap_up": wrap_up_info,
         "reminder": reminder_info,
     }
@@ -202,23 +203,21 @@ def _parens_safe(reason: str) -> str:
     return s
 
 
-def _retro_log_path(project_dir: Path, session_id: str) -> Path:
-    from ..paths import runs_dir
-
-    return runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
+def _retro_log_path(layout: ProjectLayout, session_id: str) -> Path:
+    return layout.sessions.runs / session_dirname(session_id) / RETRO_LOG
 
 
-def _safe_log_path(project_dir: Path, session_id: str) -> str | None:
+def _safe_log_path(layout: ProjectLayout, session_id: str) -> str | None:
     """Resolving this path reads ai-hats.yaml — the very thing that may be broken."""
     try:
-        return str(_retro_log_path(project_dir, session_id))
+        return str(_retro_log_path(layout, session_id))
     except (Exception, KeyboardInterrupt) as exc:
         logger.warning("retro log path unresolvable: %r", exc)
         return None
 
 
 def write_retro_log(
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
     source: str,
     action: str,
@@ -231,7 +230,7 @@ def write_retro_log(
     I/O errors — observability must never break the caller.
     """
     try:
-        log_path = _retro_log_path(project_dir, session_id)
+        log_path = _retro_log_path(layout, session_id)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         # Strip tabs/newlines from detail so the line stays one-per-event.
@@ -242,7 +241,7 @@ def write_retro_log(
         pass
 
 
-def main(project_dir: Path | None = None) -> None:
+def main(layout: ProjectLayout | None = None) -> None:
     """Entrypoint for the shell hook; the project defaults to the caller's cwd.
 
     Recursion guard (HATS-252): when ``HATS_SKIP_RETRO=1`` is set in the env we
@@ -260,12 +259,17 @@ def main(project_dir: Path | None = None) -> None:
         return
     session_id = identity.id
 
-    if project_dir is None:
-        project_dir = Path.cwd()
+    if layout is None:
+        # Boundary adapter: the shell hook's own process deserializes the
+        # session's project (R6) exactly like its sibling entry points.
+        from ..cli._entry import resolve_project
+
+        layout = resolve_project().layout
+    project_dir = layout.root
 
     if os.environ.get(ENV_SKIP_RETRO) == "1":
         write_retro_log(
-            project_dir,
+            layout,
             session_id,
             "auto_retro",
             "skip",
@@ -273,38 +277,36 @@ def main(project_dir: Path | None = None) -> None:
         )
         return
 
-    from ..paths import runs_dir
-
     config_path = project_dir / PROJECT_CONFIG
-    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
+    metrics_path = layout.sessions.runs / session_dirname(session_id) / METRICS_JSON
 
     action, reason = should_run(config_path, metrics_path)
 
     if action == "skip":
-        write_retro_log(project_dir, session_id, "hook", "skip", reason)
+        write_retro_log(layout, session_id, "hook", "skip", reason)
     elif action == "hint":
-        write_retro_log(project_dir, session_id, "hook", "hint", reason)
+        write_retro_log(layout, session_id, "hook", "hint", reason)
     else:
         # action == "run"
         config = ProjectConfig.from_yaml(config_path)
         sr = config.feedback.session_retro
         if sr.background:
-            _run_background(project_dir, session_id)
+            _run_background(layout, session_id)
         else:
-            _run_foreground(project_dir, session_id)
+            _run_foreground(layout, session_id)
 
 
-def _run_foreground(project_dir: Path, session_id: str) -> None:
+def _run_foreground(layout: ProjectLayout, session_id: str) -> None:
     """Detach the single session-reviewer sub-process.
 
     Replaces the prior two-step flow (SessionRetroBuilder → reflect-session) —
     pure-Python facts + one LLM call now happen inside the reviewer runner.
     """
-    _spawn_session_reviewer_background(project_dir, session_id)
+    _spawn_session_reviewer_background(layout, session_id)
 
 
 def _spawn_session_reviewer_background(
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
 ) -> None:
     """Detach session-reviewer sub-process; never blocks caller.
@@ -317,7 +319,7 @@ def _spawn_session_reviewer_background(
     """
     import subprocess as sp
 
-    log_path = _retro_log_path(project_dir, session_id)
+    log_path = _retro_log_path(layout, session_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, ENV_SKIP_RETRO: "1"}
     try:
@@ -330,14 +332,14 @@ def _spawn_session_reviewer_background(
                     session_id,
                     "1",
                 ],
-                cwd=str(project_dir),
+                cwd=str(layout.root),
                 stdout=f,
                 stderr=f,
                 start_new_session=True,
                 env=env,
             )
         write_retro_log(
-            project_dir,
+            layout,
             session_id,
             "session-reviewer",
             "spawn",
@@ -345,7 +347,7 @@ def _spawn_session_reviewer_background(
         )
     except Exception as exc:
         write_retro_log(
-            project_dir,
+            layout,
             session_id,
             "session-reviewer",
             "spawn-failed",
@@ -353,10 +355,10 @@ def _spawn_session_reviewer_background(
         )
 
 
-def _run_background(project_dir: Path, session_id: str) -> None:
+def _run_background(layout: ProjectLayout, session_id: str) -> None:
     import subprocess as sp
 
-    log_path = _retro_log_path(project_dir, session_id)
+    log_path = _retro_log_path(layout, session_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # Append mode so runtime "decision" line written earlier is preserved.
     with open(log_path, "a") as f:
@@ -368,13 +370,13 @@ def _run_background(project_dir: Path, session_id: str) -> None:
                 "--foreground",
                 session_id,
             ],
-            cwd=str(project_dir),
+            cwd=str(layout.root),
             stdout=f,
             stderr=f,
             start_new_session=True,
         )
     write_retro_log(
-        project_dir,
+        layout,
         session_id,
         "hook",
         "spawn",
@@ -386,7 +388,10 @@ if __name__ == "__main__":
     # --foreground <session_id>: called by background Popen, runs in-process
     if len(sys.argv) == 3 and sys.argv[1] == "--foreground":
         sid = sys.argv[2]
-        project_dir = Path.cwd()
-        _run_foreground(project_dir, sid)
+        # Boundary adapter: the detached child deserializes the same project
+        # its parent pinned into the env (R6).
+        from ..cli._entry import resolve_project
+
+        _run_foreground(resolve_project().layout, sid)
     else:
         main()

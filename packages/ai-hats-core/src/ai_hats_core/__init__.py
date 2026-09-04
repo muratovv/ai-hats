@@ -29,7 +29,6 @@ if TYPE_CHECKING:  # the names above resolve for a reader and a type checker
     from ai_hats_core.git_env import scrubbed_git_env  # noqa: F401
     from ai_hats_core.locks import LockTimeoutError, file_lock  # noqa: F401
     from ai_hats_core.migrations import Migration, latest_step, run_pending  # noqa: F401
-    from ai_hats_core.paths import default_project_dir  # noqa: F401
     from ai_hats_core.yaml_model import YamlModel  # noqa: F401
 
 _HOMES = {
@@ -45,7 +44,6 @@ _HOMES = {
     "YamlModel": ".yaml_model",
     "atomic_write_bytes": ".atomic_io",
     "atomic_write_text": ".atomic_io",
-    "default_project_dir": ".paths",
     "file_lock": ".locks",
     "latest_step": ".migrations",
     "run_pending": ".migrations",

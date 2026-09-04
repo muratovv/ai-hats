@@ -18,6 +18,7 @@ from click.testing import CliRunner
 from rich.console import Console
 
 from ai_hats_observe.artifacts import METRICS_JSON
+from ai_hats_core.layout import ProjectLayout
 from ai_hats_observe.cli import _seam
 from ai_hats_observe.cli.session import session
 
@@ -49,8 +50,9 @@ def project(tmp_path, monkeypatch):
     transcript = tmp_path / f"{PROVIDER_SESSION_ID}.jsonl"
     shutil.copy(FIXTURE, transcript)
 
-    monkeypatch.setattr(_seam, "_PROJECT_DIR", lambda: tmp_path)
-    monkeypatch.setattr(_seam, "_RUNS_DIR", lambda _pd: runs)
+    monkeypatch.setattr(
+        _seam, "_LAYOUT", lambda: ProjectLayout(root=tmp_path, base=tmp_path / ".agent")
+    )
     # Wide console: at the default 80 columns rich truncates the note cell, so
     # assertions on *why* a session was refused would pass on any output.
     monkeypatch.setattr(_seam, "_CONSOLE", Console(width=200))

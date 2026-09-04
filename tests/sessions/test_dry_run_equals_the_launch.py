@@ -21,6 +21,8 @@ it together. The bindings section has its own inversion in
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import dataclasses
 import json
 import re
@@ -237,7 +239,7 @@ def _automate_for_real(monkeypatch, project: Path) -> dict:
 
     payload = build_composition_payload(project, role_override="maintainer")
     session_mgr = SessionManager(project, runs_dir=runs_dir(project))
-    session = SubAgentRunner(project, payload, session_mgr=session_mgr).run(
+    session = SubAgentRunner(ProjectLayout.at(project), payload, session_mgr=session_mgr).run(
         task=TASK_TEXT,
         ticket_id=TICKET,
         isolation_mode="none",
@@ -357,7 +359,7 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
 
     payload = build_composition_payload(proj, role_override="maintainer")
     session = SubAgentRunner(
-        proj, payload, session_mgr=SessionManager(proj, runs_dir=runs_dir(proj))
+        ProjectLayout.at(proj), payload, session_mgr=SessionManager(proj, runs_dir=runs_dir(proj))
     ).run(task=TASK_TEXT, isolation_mode="none")
 
     record = json.loads(Path(session.role_materialization_path).read_text())

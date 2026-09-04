@@ -6,6 +6,8 @@ Moved out of ``tests/e2e/`` by HATS-1493: it drives the runners in-process.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 from typing import Any
@@ -118,7 +120,9 @@ def test_automate_subagent_persists_role_materialization_json(
     session_mgr = SessionManager(
         project_with_maintainer_default, runs_dir=runs_dir(project_with_maintainer_default)
     )
-    runner = SubAgentRunner(project_with_maintainer_default, payload, session_mgr=session_mgr)
+    runner = SubAgentRunner(
+        ProjectLayout.at(project_with_maintainer_default), payload, session_mgr=session_mgr
+    )
     session = runner.run(task="test task", isolation_mode="none")
 
     rec_file = session.role_materialization_path

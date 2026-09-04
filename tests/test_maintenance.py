@@ -20,6 +20,8 @@ from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from ai_hats_core.layout import ProjectLayout
+
 import pytest
 from click.testing import CliRunner
 
@@ -36,6 +38,18 @@ from ai_hats.models import ProjectConfigError
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.update_check.cache import CacheEntry, cache_path, write_cache
 from datetime import datetime, timezone
+
+
+def _project_value(root):
+    """A real Project anchored at the fixture dir — the factory is patched, the types are not."""
+    from ai_hats.config.project import ProjectConfig
+    from ai_hats.project import Project
+    from ai_hats_core.layout import ProjectLayout
+
+    layout = ProjectLayout.at(root)
+    return Project(
+        layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=()
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -280,7 +294,7 @@ def _setup_update_test_env(tmp_path: Path) -> Path:
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
-        "active_role: assistant\n"
+        "active_role: assistant\ndefault_role: assistant\n"
         # HATS-764: pin edge so these command-level update tests exercise the
         # git ahead/diverged guard + legacy in-place path (behaviourally the
         # pre-channel default). stable/local routing is covered by dedicated
@@ -310,7 +324,7 @@ def test_update_runs_bump_in_subprocess_when_version_changed(tmp_path: Path) -> 
         return _make_completed(args, returncode=0, stdout="ok")
 
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch("ai_hats.cli.maintenance._get_installed_version", side_effect=["new-version-X"]),
         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}),
         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}),
@@ -370,7 +384,7 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
     # equivalent is now ``compose_for_role(...)``, patched separately below.
 
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch("ai_hats.cli.maintenance._get_installed_version", side_effect=["same-version"]),
         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}),
         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}),
@@ -418,7 +432,7 @@ def _run_degraded_update(tmp_path, *, version_changed, assembler_side_effect):
         return _make_completed(args, returncode=0, stdout="ok")
 
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch("ai_hats.cli.maintenance._get_installed_version", side_effect=[installed]),
         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}),
         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}),
@@ -547,7 +561,7 @@ def _invoke_update(
         return _make_completed(cmd_args, returncode=0, stdout="ok")
 
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch("ai_hats.cli.maintenance._get_installed_version", side_effect=["same-version"]),
         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}),
         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}),
@@ -746,7 +760,7 @@ def _edge_res(url: str, sha: str):
 def test_is_managed_editable_is_false(tmp_path, monkeypatch):
     """Editable dev checkout never gets versioned."""
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (True, "file:///src"))
-    assert _is_managed_install(tmp_path) is False
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is False
 
 
 def test_active_venv_root_uses_prefix_not_resolved_symlink(tmp_path, monkeypatch):
@@ -779,7 +793,7 @@ def test_is_managed_default_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / ".agent" / "ai-hats" / ".venv"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
-    assert _is_managed_install(tmp_path) is True
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is True
 
 
 def test_is_managed_versioned_venv(tmp_path, monkeypatch):
@@ -788,7 +802,7 @@ def test_is_managed_versioned_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
-    assert _is_managed_install(tmp_path) is True
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is True
 
 
 def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
@@ -797,7 +811,7 @@ def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / "user-owned"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
-    assert _is_managed_install(tmp_path) is False
+    assert _is_managed_install(ProjectLayout.at(tmp_path)) is False
 
 
 # HATS-1617 replaced the HATS-655 dormant-versioned-layout advisory with a
@@ -1249,7 +1263,7 @@ def _setup_channel_env(tmp_path: Path, channel: str, *, extra: str = "") -> Path
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
-        "active_role: assistant\n"
+        "active_role: assistant\ndefault_role: assistant\n"
         f"harness:\n  channel: {channel}\n{extra}"
     )
     return project
@@ -1381,7 +1395,7 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch, verify_returncode
 
     monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")  # _require_uv passes
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch("subprocess.run", side_effect=fake_run),
     ):
         result = CliRunner().invoke(update, [])
@@ -1409,7 +1423,7 @@ def test_update_invalidates_update_cache(tmp_path, monkeypatch):
 
     monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch("subprocess.run", side_effect=fake_run),
     ):
         result = CliRunner().invoke(update, [])
@@ -1435,7 +1449,7 @@ def test_check_exits_zero_on_healthy_install(tmp_path: Path) -> None:
     project = _setup_update_test_env(tmp_path)
     _seed_healthy_layers(project)
 
-    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
         result = CliRunner().invoke(update, ["--check"])
 
     assert result.exit_code == 0, result.output
@@ -1447,7 +1461,7 @@ def test_check_exits_one_and_names_remediation_when_library_missing(tmp_path: Pa
     _seed_healthy_layers(project)
     shutil.rmtree(project / ".agent" / "ai-hats" / "library")
 
-    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
         result = CliRunner().invoke(update, ["--check"])
 
     assert result.exit_code == 1, result.output
@@ -1460,7 +1474,7 @@ def test_check_stays_zero_on_warn_only_drift(tmp_path: Path) -> None:
     _seed_healthy_layers(project)
     _seed_update_cache(project)
 
-    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
         result = CliRunner().invoke(update, ["--check"])
 
     assert result.exit_code == 0, result.output
@@ -1471,7 +1485,7 @@ def test_check_writes_nothing(tmp_path: Path) -> None:
     _seed_healthy_layers(project)
     before = {p: p.stat().st_mtime_ns for p in project.rglob("*") if p.is_file()}
 
-    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
         CliRunner().invoke(update, ["--check"])
 
     after = {p: p.stat().st_mtime_ns for p in project.rglob("*") if p.is_file()}
@@ -1484,7 +1498,7 @@ def test_check_refuses_mutating_flags(tmp_path: Path, flag: str) -> None:
     _seed_healthy_layers(project)
     args = ["--check", flag] + (["v1.0.0"] if flag == "--revision" else [])
 
-    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
         result = CliRunner().invoke(update, args)
 
     assert result.exit_code == 2, result.output
@@ -1502,7 +1516,7 @@ def test_update_reverifies_and_reports_layers_still_broken(tmp_path: Path, monke
 
     monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch(
             "subprocess.run",
             side_effect=lambda args, **kw: _make_completed(list(args), returncode=0),
@@ -1527,7 +1541,7 @@ def test_update_reports_layers_restored_by_the_bump(tmp_path: Path, monkeypatch)
 
     monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
     with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
         patch("subprocess.run", side_effect=fake_run),
     ):
         result = CliRunner().invoke(update, [])
@@ -1565,7 +1579,7 @@ def test_check_exits_one_when_a_declared_hook_is_missing(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
         result = CliRunner().invoke(update, ["--check"])
 
     assert result.exit_code == 1, result.output

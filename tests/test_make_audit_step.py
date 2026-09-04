@@ -8,6 +8,8 @@ post-spawn audit derivation surface — for both HITL (via
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import calendar
 import os
 from pathlib import Path
@@ -54,7 +56,7 @@ def test_io_contract():
             "session_id",
             "session_dir",
             "claude_session_id",
-            "project_dir",
+            "layout",
             "exit_code",
             "session_factory",
             "audit_writer_factory",
@@ -100,7 +102,7 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id=csid,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
         exit_code=0,
         session_factory=Session,
@@ -145,7 +147,7 @@ def test_discovers_the_jsonl_when_no_session_id_was_taken(
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id="",
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         transcript_resolver=_claude_resolver,
         exit_code=0,
         session_factory=Session,
@@ -174,7 +176,7 @@ def test_swallows_audit_writer_exception(tmp_path):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id="any",
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
         exit_code=0,
         session_factory=Session,
         audit_writer_factory=_ExplodingAuditWriter,
@@ -196,7 +198,7 @@ def test_swallows_audit_writer_keyboard_interrupt(tmp_path):
         session_id=session.session_id,
         session_dir=session.session_dir,
         claude_session_id="any",
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
         exit_code=0,
         session_factory=Session,
         audit_writer_factory=_InterruptingAuditWriter,

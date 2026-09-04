@@ -20,9 +20,12 @@ import click
 from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
+from ai_hats_core.layout import ProjectNotFoundError
+
 from ..paths import PROJECT_CONFIG
 from ..session_policy import InitRunParams
-from ._helpers import _assembler, _project_dir, console
+from ._entry import resolve_project
+from ._helpers import _assembler, console
 
 
 @contextmanager
@@ -280,7 +283,12 @@ def init(
             "Use: ai-hats config customize <role> --add-trait <name>"
         )
 
-    project_dir = _project_dir()
+    # init anchors HERE when nothing resolves: a bare directory has no markers,
+    # and the silent cwd fallback lives nowhere else any more (HATS-1606).
+    try:
+        project_dir = resolve_project().layout.root
+    except ProjectNotFoundError:
+        project_dir = Path.cwd()
 
     # HATS-938: mirror the `config --channel` guard — a path only means the
     # local channel.
@@ -433,7 +441,11 @@ def set_role(
         )
         raise SystemExit(1)
 
-    project_dir = _project_dir()
+    # Auto-init anchors at cwd when nothing resolves — same form as init.
+    try:
+        project_dir = resolve_project().layout.root
+    except ProjectNotFoundError:
+        project_dir = Path.cwd()
     asm = _assembler(project_dir)
 
     # Auto-init if project not yet initialized
@@ -712,8 +724,11 @@ def customize(
     if is_global and is_project:
         raise click.UsageError("--global and --project are mutually exclusive")
 
-    project_dir = _project_dir()
-    project_path = project_dir / PROJECT_CONFIG
+    # The global layer works OUTSIDE a project; only the project layer needs one.
+    try:
+        project_path = resolve_project().layout.root / PROJECT_CONFIG
+    except ProjectNotFoundError:
+        project_path = None
     user_path = UserConfig.default_path()
 
     # ----- SHOW mode -----
@@ -725,7 +740,7 @@ def customize(
             _print_overlay("global", role, user_cfg.customizations.get(role, OverlayConfig()))
             return
         if is_project:
-            if not project_path.exists():
+            if project_path is None or not project_path.exists():
                 console.print("[red]No ai-hats.yaml found[/].")
                 raise SystemExit(1)
             proj_cfg = ProjectConfig.from_yaml(project_path)
@@ -734,7 +749,7 @@ def customize(
         # No layer flag → render both.
         user_cfg = UserConfig.from_yaml(user_path)
         _print_overlay("global", role, user_cfg.customizations.get(role, OverlayConfig()))
-        if project_path.exists():
+        if project_path is not None and project_path.exists():
             proj_cfg = ProjectConfig.from_yaml(project_path)
             _print_overlay("project", role, proj_cfg.customizations.get(role, OverlayConfig()))
         else:
@@ -752,7 +767,7 @@ def customize(
                 f"[green]Reset[/] (global) customizations for [bold]{role}[/] ([dim]{user_path}[/])"
             )
             return
-        if not project_path.exists():
+        if project_path is None or not project_path.exists():
             console.print("[red]No ai-hats.yaml found[/].")
             raise SystemExit(1)
         with _config_lock(project_path):
@@ -793,7 +808,7 @@ def customize(
         return
 
     # Default: project layer.
-    if not project_path.exists():
+    if project_path is None or not project_path.exists():
         console.print(
             "[red]No ai-hats.yaml found[/]. Run: ai-hats config set -r <role> -p <provider>"
         )
@@ -820,7 +835,7 @@ def customize(
 @click.command()
 def status():
     """Show current role, dependency tree, and health."""
-    asm = _assembler()
+    asm = _assembler(resolve_project().layout.root)
     st = asm.status()
 
     # HATS-497: the role + tree section is role-dependent, but install
@@ -955,9 +970,9 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
     from ..pipeline.pipeline import build as build_pipeline
     from ..pipeline.steps.emit import EmitStdout
     from ..pipeline.steps.materialize import MaterializeSystemPrompt
-    from ._helpers import _project_dir
+    from ._entry import resolve_project as _resolve_project
 
-    project_dir = _project_dir()
+    project_dir = _resolve_project().layout.root
 
     # Build the preview pipeline in-process — same shape as
     # library/core/pipelines/preview.yaml (which is shipped as a
@@ -1016,7 +1031,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     from ..migration_assert import assert_runtime_hooks_resolve
     from ..migration_backup import BackupError, snapshot_pre_bump
 
-    asm = _assembler()
+    asm = _assembler(resolve_project().layout.root)
     backup_path = None
     try:
         # 0. HATS-549: pre-bump snapshot BEFORE any destructive step.

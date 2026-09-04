@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ai_hats_wt import IsolationMode
@@ -54,7 +55,7 @@ class Provider(Step):
             requires=frozenset(
                 {
                     "interactive",
-                    "project_dir",
+                    "layout",
                     "composition",
                     "session_mgr",
                     "tracer_factory",
@@ -89,7 +90,7 @@ class Provider(Step):
         self,
         *,
         interactive: bool,
-        project_dir: Path,
+        layout: ProjectLayout,
         composition: Any,
         session_mgr: Any,
         tracer_factory: Any,
@@ -121,7 +122,7 @@ class Provider(Step):
             # channel; the payload's composition reaches the agent via
             # ``build_session_prompt`` inside ``run``.
             runner = WrapRunner(
-                project_dir,
+                layout,
                 composition,
                 session_mgr=session_mgr,
                 tracer_factory=tracer_factory,
@@ -143,7 +144,7 @@ class Provider(Step):
                 "exit_code": int(exit_code),
             }
 
-        runner = SubAgentRunner(project_dir, composition, session_mgr=session_mgr)
+        runner = SubAgentRunner(layout, composition, session_mgr=session_mgr)
         # HATS-378: SubAgentRunner internally applies timeout retry and
         # zero-output guard when ``harness_policy`` is supplied — no
         # external guard call needed for the sub-agent branch.

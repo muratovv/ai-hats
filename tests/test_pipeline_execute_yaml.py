@@ -11,6 +11,8 @@ pipeline that no longer exists, and whose step list was never ``execute.yaml``'s
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -49,7 +51,7 @@ def _run_batch(tmp_path: Path, sess: MagicMock) -> dict:
             {
                 "interactive": False,
                 "role": None,
-                "project_dir": tmp_path,
+                "layout": ProjectLayout.at(tmp_path),
                 "composition": MagicMock(name="composition_payload"),
                 "session_mgr": MagicMock(name="session_mgr"),
                 "tracer_factory": MagicMock(name="tracer_factory"),
@@ -79,6 +81,6 @@ def test_execute_yaml_io_shape():
 
     assert io.name == "execute"
     # `role` is optional — compose_role projects a seeded payload (HATS-865).
-    assert {"interactive", "project_dir", "composition"} <= io.requires
+    assert {"interactive", "layout", "composition"} <= io.requires
     for key in ("session_id", "session_dir", "transcript_path", "exit_code"):
         assert key in io.produces

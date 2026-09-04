@@ -12,6 +12,8 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
@@ -109,12 +111,13 @@ class SubAgentRunner:
 
     def __init__(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         payload: CompositionPayload,
         *,
         session_mgr: "SessionManager",
     ) -> None:
-        self.project_dir = project_dir
+        self.layout = layout
+        self.project_dir = layout.root
         self.payload = payload
         self.session_mgr = session_mgr
 

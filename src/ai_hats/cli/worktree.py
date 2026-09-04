@@ -13,9 +13,9 @@ import click
 from ai_hats_core import scrubbed_git_env
 from ..paths import (  # ADR-0013 D4: path bases for the wt core
     worktree_checkouts_dir,
-    worktrees_dir,
 )
-from ._helpers import _guard_not_inside_linked_worktree, _project_dir, console
+from ._entry import resolve_project
+from ._helpers import _guard_not_inside_linked_worktree, console
 
 
 # HATS-482 (B-07): branch-name input filter for `wt create`. Permissive on
@@ -56,7 +56,8 @@ def _resolve_worktree(branch: str | None = None):
     from ai_hats_wt import WorktreeManager
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
-    project_dir = _project_dir()
+    layout = resolve_project().layout
+    project_dir = layout.root
 
     # ADR-0013 D3: every manager this resolver hands back may be torn down
     # (merge/discard), so it carries ai-hats's hook-running bundle.
@@ -65,7 +66,7 @@ def _resolve_worktree(branch: str | None = None):
             project_dir,
             branch,
             lifecycle=HOOK_LIFECYCLE,
-            state_dir=worktrees_dir(project_dir),
+            state_dir=layout.sessions.worktrees,
         )
 
     # CWD is inside a linked worktree → detect branch automatically.
@@ -92,12 +93,12 @@ def _resolve_worktree(branch: str | None = None):
             project_dir,
             head,
             lifecycle=HOOK_LIFECYCLE,
-            state_dir=worktrees_dir(project_dir),
+            state_dir=layout.sessions.worktrees,
         )
 
     # HATS-482 / R-08: fail-on-ambiguity instead of silent first-active.
     active = WorktreeManager.list_active(
-        project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=worktrees_dir(project_dir)
+        project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=layout.sessions.worktrees
     )
     if not active:
         return None
@@ -121,9 +122,10 @@ def _peel_selector(args: list[str]) -> str | None:
 
     if not args:
         return None
-    project_dir = _project_dir()
+    layout = resolve_project().layout
+    project_dir = layout.root
     active = WorktreeManager.list_active(
-        project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=worktrees_dir(project_dir)
+        project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=layout.sessions.worktrees
     )
     if not any(m.branch_name == args[0] for m in active):
         return None
@@ -194,7 +196,8 @@ def wt_create(branch: str):
         assert_head_is_canonical_base,
     )
 
-    project_dir = _project_dir()
+    layout = resolve_project().layout
+    project_dir = layout.root
 
     # HATS-060: refuse to create from inside a linked worktree
     # (helper-extracted in HATS-482 / B-08 so merge/discard/list share it).
@@ -236,7 +239,7 @@ def wt_create(branch: str):
         base_branch=base_branch,
         merge_target=merge_target,
         lifecycle=HOOK_LIFECYCLE,
-        state_dir=worktrees_dir(project_dir),
+        state_dir=layout.sessions.worktrees,
         worktree_checkouts_dir=worktree_checkouts_dir(project_dir),  # HATS-1632
     )
     try:
@@ -319,7 +322,7 @@ def wt_merge(
         WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
     )
 
-    # HATS-482 / B-08: guard before resolving CWD/_project_dir.
+    # HATS-482 / B-08: guard before resolving the project.
     _guard_not_inside_linked_worktree()
 
     mgr = _resolve_worktree(branch)
@@ -387,7 +390,8 @@ def wt_merge(
         # principle contain Rich-markup characters).
         from rich.markup import escape as _escape
 
-        project_dir = _project_dir()
+        layout = resolve_project().layout
+        project_dir = layout.root
         console.print(f"[red]Refused (base branch mismatch)[/]: {_escape(str(e))}")
         console.print("Resolve:")
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
@@ -405,7 +409,8 @@ def wt_merge(
         # the operator can clean up the main repo and re-run unchanged.
         from rich.markup import escape as _escape
 
-        project_dir = _project_dir()
+        layout = resolve_project().layout
+        project_dir = layout.root
         console.print(f"[red]Refused (main repo mid-merge)[/]: {_escape(str(e))}")
         console.print("Resolve the in-progress merge first:")
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
@@ -437,7 +442,7 @@ def wt_merge(
 
         console.print(f"[red]Refused (merge left state behind)[/]: {_escape(str(e))}")
         console.print("Inspect and clean up the main checkout by hand before retrying:")
-        console.print(f"  [cyan]cd {_project_dir()}[/]", soft_wrap=True)
+        console.print(f"  [cyan]cd {resolve_project().layout.root}[/]", soft_wrap=True)
         console.print("  [cyan]git status[/]", soft_wrap=True)
         sys.exit(1)
     except WorktreeRebasedBranchError as e:
@@ -543,7 +548,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
         WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
     )
 
-    # HATS-482 / B-08: guard before resolving CWD/_project_dir.
+    # HATS-482 / B-08: guard before resolving the project.
     _guard_not_inside_linked_worktree()
 
     mgr = _resolve_worktree(branch)
@@ -608,13 +613,14 @@ def wt_list():
     """List all git worktrees."""
     from ai_hats_wt import WorktreeManager
 
-    project_dir = _project_dir()
+    layout = resolve_project().layout
+    project_dir = layout.root
     # HATS-482 / B-08: guard CWD-from-inside-linked-worktree.
     _guard_not_inside_linked_worktree()
     worktrees = WorktreeManager.list_worktrees(project_dir)
     tracked_branches = {
         m.branch_name
-        for m in WorktreeManager.list_active(project_dir, state_dir=worktrees_dir(project_dir))
+        for m in WorktreeManager.list_active(project_dir, state_dir=layout.sessions.worktrees)
     }
 
     if not worktrees:
@@ -633,8 +639,9 @@ def wt_status():
     """Show all tracked worktrees."""
     from ai_hats_wt import WorktreeManager
 
-    project_dir = _project_dir()
-    active = WorktreeManager.list_active(project_dir, state_dir=worktrees_dir(project_dir))
+    layout = resolve_project().layout
+    project_dir = layout.root
+    active = WorktreeManager.list_active(project_dir, state_dir=layout.sessions.worktrees)
     if not active:
         console.print("[dim]No active worktrees[/]")
         return

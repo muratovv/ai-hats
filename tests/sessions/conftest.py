@@ -66,7 +66,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     migrate_catalog(hypotheses_dir(pd), "hypotheses")
     migrate_catalog(proposals_dir(pd), "proposals")
     (pd / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: test-agent\ndefault_role: test-agent\n"
     )
     monkeypatch.chdir(pd)
     return pd

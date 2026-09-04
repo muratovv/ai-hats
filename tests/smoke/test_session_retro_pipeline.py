@@ -30,6 +30,8 @@ while passing in isolation.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import subprocess
 from pathlib import Path
 
@@ -85,7 +87,7 @@ def _run_step(tmp_path: Path) -> None:
     step = MaybeSpawnSessionReviewer()
     step.run(
         session_id=session.session_id,
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
     )
 
 
@@ -107,7 +109,7 @@ def test_run_action_dispatches_session_reviewer(tmp_path, monkeypatch, capsys):
 
     _run_step(tmp_path)
 
-    assert spawned == [(tmp_path, "test")], (
+    assert spawned == [(ProjectLayout.at(tmp_path), "test")], (
         f"expected one spawn call with (project_dir, session_id), got {spawned}"
     )
     capsys.readouterr()
@@ -181,7 +183,7 @@ def test_spawner_uses_start_new_session(tmp_path, monkeypatch):
         return _FakeProc()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    auto_retro._spawn_session_reviewer_background(tmp_path, "SID")
+    auto_retro._spawn_session_reviewer_background(ProjectLayout.at(tmp_path), "SID")
 
     assert captured["start_new_session"] is True, (
         "start_new_session=True is the SIGHUP-immunity guarantee — do not "

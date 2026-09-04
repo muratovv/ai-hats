@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Callable, Mapping
 
 from ai_hats_wt import IsolationMode
@@ -119,9 +121,10 @@ class RoleAudit:
 class SessionRunParams:
     """Launch a composed role in a provider session."""
 
-    # The project this run belongs to: every path a step touches hangs off it, and it
-    # is resolved once at the entry point so nothing below rediscovers it (ADR-0026 D2).
-    project_dir: Path
+    # The project's geometry this run belongs to: every path a step touches hangs
+    # off it, and it is resolved once at the entry point so nothing below
+    # rediscovers it (ADR-0026 D2).
+    layout: ProjectLayout
     role: MaterializedRole
     recording: SessionRecording
     harness: HarnessParams = field(default_factory=Automate)
@@ -139,12 +142,12 @@ class SessionRunParams:
         prompt = (
             harness.prompt
             if self.audit is None
-            else self.audit.first_message(scratch_dir, self.project_dir)
+            else self.audit.first_message(scratch_dir, self.layout.root)
         )
         state: dict[str, Any] = {
             "role": self.role.name,
             "composition": self.role.composition,
-            "project_dir": self.project_dir,
+            "layout": self.layout,
             "session_mgr": self.recording.manager,
             "tracer_factory": self.recording.tracer_factory,
             "tags": dict(self.annotations) if self.annotations else None,
@@ -176,7 +179,7 @@ class FinalizeRunParams:
     session: SessionRef
     # Where the session ran. ``make_audit`` hands it to ``transcript_resolver``, which
     # is how a provider finds its own transcripts (ADR-0026 D2).
-    project_dir: Path
+    layout: ProjectLayout
     # What the provider exited with. ``run_session_end`` reports it; ``make_audit``
     # takes it as a required key and reads metrics.json instead.
     exit_code: int
@@ -198,7 +201,7 @@ class FinalizeRunParams:
             # absent provider session id is the empty string — which is what both
             # callers already spelled before this contract existed.
             "claude_session_id": self.session.provider_session_id or "",
-            "project_dir": self.project_dir,
+            "layout": self.layout,
             "exit_code": self.exit_code,
         }
         # None-filtered on the way in as well, so a handle nobody supplied never
@@ -256,7 +259,7 @@ class ReflectSessionRunParams:
 
     # The project this run belongs to: every path a step touches hangs off it, and it
     # is resolved once at the entry point so nothing below rediscovers it (ADR-0026 D2).
-    project_dir: Path
+    layout: ProjectLayout
     # The past session to review, handed to SessionReviewRunner by
     # ``run_session_review`` (steps/session_review.py).
     session_id: str
@@ -268,7 +271,7 @@ class ReflectSessionRunParams:
         del materialize_prompt, scratch_dir  # no first message, nothing staged on disk
         return {
             "session_id": self.session_id,
-            "project_dir": self.project_dir,
+            "layout": self.layout,
             "max_retries": self.max_retries,
         }
 
@@ -285,6 +288,16 @@ class InitRunParams:
     # The project being initialized: the three steps resolve every path they write
     # from it, and it is resolved once at the entry point (ADR-0026 D2).
     project_dir: Path
+
+    @property
+    def layout(self) -> ProjectLayout:
+        """The harness's geometry for a run whose subject may not be a project
+        yet: the bootstrap default. A custom ``--ai-hats-dir`` is honoured —
+        it is this run's own input, not something to re-read from disk."""
+        if self.ai_hats_dir:
+            return ProjectLayout(root=self.project_dir, base=self.project_dir / self.ai_hats_dir)
+        return ProjectLayout.at(self.project_dir)
+
     # Which provider the project is configured for. ``select_provider`` treats None
     # as "ask, or fall back"; the other two steps then require what it decided.
     provider: str | None = None

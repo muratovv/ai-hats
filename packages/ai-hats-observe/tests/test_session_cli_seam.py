@@ -18,20 +18,17 @@ import pytest
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_default_runs_dir_is_project_local_agent_subtree(tmp_path: Path) -> None:
+def test_layout_default_is_the_shared_core_resolver(tmp_path: Path) -> None:
+    """The wt-free layout default delegates to ``ai_hats_core`` (HATS-1606) —
+    the walk-up behaviour itself is covered by core's ``test_layout.py``.
+    Standalone keeps the deliberate flat tree: base is ``.agent``, not
+    ``.agent/ai-hats``."""
     from ai_hats_observe.cli import _seam
 
-    assert _seam._default_runs_dir(tmp_path) == tmp_path / ".agent" / "sessions" / "runs"
-
-
-def test_project_dir_default_is_the_shared_core_resolver() -> None:
-    """The wt-free project-dir default delegates to ``ai_hats_core`` (HATS-952) —
-    the walk-up behaviour itself is covered by core's ``test_paths.py``."""
-    from ai_hats_core.paths import default_project_dir
-
-    from ai_hats_observe.cli import _seam
-
-    assert _seam._default_project_dir is default_project_dir
+    (tmp_path / ".agent").mkdir()
+    layout = _seam._default_layout(tmp_path)
+    assert layout.root == tmp_path.resolve()
+    assert layout.sessions.runs == tmp_path.resolve() / ".agent" / "sessions" / "runs"
 
 
 def test_default_tag_filter_parser_splits_kv() -> None:
@@ -67,8 +64,7 @@ def test_seam_slots_default_to_wt_free_functions_on_fresh_import() -> None:
     code = (
         "import sys\n"
         "import ai_hats_observe.cli._seam as s\n"
-        "assert s._PROJECT_DIR is s._default_project_dir\n"
-        "assert s._RUNS_DIR is s._default_runs_dir\n"
+        "assert s._LAYOUT is s._default_layout\n"
         "assert s._TAG_FILTER_PARSER is s._default_tag_filter_parser\n"
         "assert 'ai_hats' not in sys.modules, 'seam import pulled the integrator'\n"
     )

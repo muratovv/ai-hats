@@ -34,7 +34,7 @@ from ..session_policy import (
     SessionRunParams,
 )
 from ..pipeline_catalog import EXECUTE
-from ._helpers import _project_dir
+from ._entry import resolve_project
 
 
 def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
@@ -196,13 +196,14 @@ def execute_cmd(
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    project_dir = _project_dir()
+    layout = resolve_project().layout
+    project_dir = layout.root
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
     if not interactive:
         # HATS-1218: one Automate wiring, shared with ``ai-hats agent``.
         run_batch(
-            project_dir,
+            layout,
             role=role,
             task=prompt_text,
             provider=provider,
@@ -218,7 +219,7 @@ def execute_cmd(
     result = run_pipeline(
         EXECUTE,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             role=MaterializedRole(
                 name=role,
                 composition=build_composition_payload(

@@ -37,8 +37,8 @@ class _StubRunner:
 
     last_kwargs: dict | None = None
 
-    def __init__(self, project_dir: Path, _payload, *, session_mgr=None) -> None:
-        self.project_dir = project_dir
+    def __init__(self, layout, _payload, *, session_mgr=None) -> None:
+        self.project_dir = layout.root
 
     def run(self, **kwargs):
         _StubRunner.last_kwargs = kwargs
@@ -48,9 +48,10 @@ class _StubRunner:
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
     (tmp_path / ".gitlog").mkdir()
-    # Minimal ai-hats.yaml so _project_dir() resolves here.
+    # Minimal ai-hats.yaml so the resolver answers here.
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "active_role: test-agent\ndefault_role: test-agent\n"
     )
     return tmp_path
 

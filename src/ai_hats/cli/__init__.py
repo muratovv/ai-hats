@@ -95,7 +95,15 @@ class _PassthroughGroup(click.Group):
         if not provider_name and not role_name:
             return
 
-        provider = resolve_provider_for_help(provider_name, role_name)
+        root = None
+        if role_name:
+            try:
+                from ._entry import resolve_project
+
+                root = resolve_project().layout.root
+            except Exception:  # silent-ok: --help renders without a project
+                root = None
+        provider = resolve_provider_for_help(provider_name, role_name, project_dir=root)
         if not provider:
             return
 
@@ -249,12 +257,12 @@ def _dry_run_session(
     import json as _json
 
     from ..dry_run import dry_run_hitl
-    from ._helpers import _project_dir
+    from ._entry import resolve_project
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     report = dry_run_hitl(
-        _project_dir(),
+        resolve_project().layout.root,
         role=role,
         provider=provider,
         extra_args=list(extra_args or []),
@@ -285,16 +293,17 @@ def _launch_session(
         SessionRecording,
         SessionRunParams,
     )
-    from ._helpers import _project_dir
+    from ._entry import resolve_project
 
-    project_dir = _project_dir()
+    layout = resolve_project().layout
+    project_dir = layout.root
 
     # HATS-1228: the seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     result = run_pipeline(
         HUMAN,
         SessionRunParams(
-            project_dir=project_dir,
+            layout=layout,
             # HATS-865: compose ONCE here (effective-role resolution + the
             # first-run set_role side effect live in the seam) and seed the
             # payload into the funnel; the launch step hands it to WrapRunner.
@@ -396,13 +405,18 @@ main.add_command(wait_mod.wait_cmd)
 # HATS-952: observe session-browse CLI (list/show/audit) defaults to wt-free
 # resolvers; inject the integrator's AI_HATS_DIR/yaml-aware layout so
 # `ai-hats session` keeps its exact paths + tag semantics.
+from ai_hats_core.layout import ProjectLayout  # noqa: E402
 from ai_hats_observe.cli import _seam as _observe_seam  # noqa: E402
-from ..paths import runs_dir  # noqa: E402
 from ..tags import parse_tag_filters  # noqa: E402
-from ._helpers import _project_dir  # noqa: E402
 
-_observe_seam._PROJECT_DIR = _project_dir
-_observe_seam._RUNS_DIR = runs_dir
+
+def _integrator_layout() -> ProjectLayout:
+    from ._entry import resolve_project  # lazy: keeps config/pydantic off the CLI start path
+
+    return resolve_project().layout
+
+
+_observe_seam._LAYOUT = _integrator_layout
 _observe_seam._TAG_FILTER_PARSER = parse_tag_filters
 _observe_seam._CONSOLE = console
 
@@ -535,9 +549,11 @@ def _guard_self_location() -> None:
     resolved_venv: str | None = None
     is_editable = False
     try:
-        from ._helpers import _project_dir
+        from ._entry import resolve_project
 
-        resolved_venv = _resolve_guard_target(_project_dir())
+        project = resolve_project()
+        # Only a venv that ACTUALLY EXISTS can be shadowed (HATS-791).
+        resolved_venv = str(project.venv) if project.venv.exists() else None
     except Exception:  # silent-ok: fail open on ANY resolution error, per docstring
         resolved_venv = None
     try:

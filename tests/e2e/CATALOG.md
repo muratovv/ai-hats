@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**296 of 296 files catalogued — 304 flows.**
+**298 of 298 files catalogued — 306 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1695,6 +1695,20 @@ as a claim to check, not as evidence.
 - **expect** — launcher import probe fails cleanly with exit code 1 naming missing package and self update repair hint
 - **why** — without comprehensive workspace member probes, missing optional workspace packages leak uncaught ModuleNotFoundErrors
 
+## `test_launcher_resolution_matches_python.py`
+
+*pins HATS-1606*
+
+- **flow** — plant a deliberately foreign AI_HATS_DIR + pin pair and read WHICH project the launcher says it is foreign TO — that word is the launcher's resolved root, printed by its own trust procedure.
+- **cmds**
+
+  ```console
+  AI_HATS_DIR=<foreign> AI_HATS_PROJECT_DIR=<foreign> bash scripts/ai-hats-launcher --version
+  ```
+
+- **expect** — the printed root equals `resolve_root`'s answer for the same cwd — yaml-only markers and the conditional worktree hop included.
+- **why** — the launcher is a sanctioned bash mirror; parity is held by this conformance test, not shared code (ADR-0014 / ADR-0025 D3).
+
 ## `test_launcher_worktree_execution.py`
 
 *pins HATS-1306*
@@ -2063,6 +2077,21 @@ as a claim to check, not as evidence.
 
 - **expect** — privacy pre-commit hook scans staged diffs, blocks commits containing secrets, and logs journal
 - **why** — without privacy pre-commit hooks, sensitive tokens and API keys get accidentally committed to git
+
+## `test_project_resolution_parity.py`
+
+*pins HATS-1606*
+
+- **flow** — one cd, two stacks: in five layouts a REAL `python -c` subprocess asks the integrator's entry (`resolve_project`) and rack's `find_project_root` for the project root from the same cwd.
+- **cmds**
+
+  ```console
+  python -c "from ai_hats.cli._entry import resolve_project; ..."
+  python -c "from ai_hats_rack.resolver import find_project_root; ..."
+  ```
+
+- **expect** — byte-identical roots — the divergences of counter 1 (yaml-only project, stray ancestor) and R8 (linked worktree whose main checkout is NOT onboarded) are closed.
+- **why** — the historical resolvers disagreed on the marker table and the hop; `ai-hats wait` answered differently from its neighbours in one cd. The probes import each stack's public resolver inside a real subprocess rather than scraping a human-formatted CLI table: no stock command prints the root, and the subject is the semantics.
 
 ## `test_provider_entry_point_discovery.py`
 

@@ -93,6 +93,17 @@ def _handle_missing_provider(exc: "MissingProviderError") -> NoReturn:
     sys.exit(2)
 
 
+def _handle_no_project(exc: Exception) -> NoReturn:
+    """Render a ``ProjectNotFoundError`` as a friendly message + exit 2.
+
+    The resolver no longer falls back to cwd (the stray-ancestor bug), so an
+    un-onboarded directory is an ANSWER — point at init instead of a traceback.
+    """
+    console.print(f"[red]Error[/]: {exc}")
+    console.print("cd to your project root, or run [bold]ai-hats init[/] to onboard this one.")
+    raise SystemExit(2)
+
+
 def _handle_not_a_project(exc: "NotAnAiHatsProjectError") -> NoReturn:
     """Render a ``NotAnAiHatsProjectError`` as a friendly message + exit 2.
 
@@ -128,6 +139,8 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
     with catch_broken_install():
         from ..composition_seam import MissingProviderError, RoleNotFoundError
         from ..libraries.models import CheckBindingError, ComponentKeyError
+        from ai_hats_core.layout import ProjectNotFoundError
+
         from ..paths import NotAnAiHatsProjectError
         from ..surface_registry import UnknownSurfaceError
         from ..role_spec import RoleSpecError
@@ -138,6 +151,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         (UnknownSurfaceError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),
+        (ProjectNotFoundError, _handle_no_project),
         (CheckBindingError, _handle_check_binding_error),
         # HATS-1545 F7: a key defect is the same class of message as a binding
         # defect — both are a declared gate that cannot install, and a traceback
@@ -263,76 +277,12 @@ def catch_broken_install():
         raise
 
 
-def _project_dir(*, start: Path | None = None) -> Path:
-    """Resolve the project root by walking up from ``start`` (default: CWD).
-
-    ``start`` is the injection seam (HATS-1613): a caller that already knows
-    where to look says so, instead of a test having to `chdir` the process to
-    tell it — `scripts/check_test_isolation.py` exit 1.
-
-    Order of preference:
-      1. Nearest ancestor (incl. CWD itself) that contains `.agent/` —
-         that ancestor IS the project root for this backlog.
-      2. Nearest ancestor that contains a `.git` **directory** — standard
-         git-root semantics, used when the project hasn't been onboarded
-         to ai-hats yet but the user is initializing it.
-      3. Nearest ancestor whose `.git` is a **file** — a gitlink, typically a
-         linked git worktree (HATS-524; a submodule's `.git` is also a file).
-         The worktree checkout carries neither the gitignored `.agent/` nor the
-         untracked `ai-hats.yaml`, and the main checkout is NOT a filesystem
-         ancestor (worktrees live under /tmp), so pass 1 can never reach it.
-         Hop to the main worktree root via git's commondir so `ai-hats task`
-         ops route through the one live tracker. Anything that isn't a linked
-         worktree (submodule, malformed pointer, git error) yields no hop and
-         falls back to the dir holding the `.git` file.
-      4. Fallback: CWD (projects without VCS or pre-init scenarios).
-
-    `.agent/` takes precedence over `.git/` so a main checkout always resolves
-    to itself without spawning git — the worktree hop in pass 3 only fires when
-    no `.agent/` ancestor exists.
-    """
-    # HATS-788: fail loud on a removed cwd rather than crashing (macOS:
-    # Path.cwd() raises FileNotFoundError) or silently resurrecting a phantom
-    # tracker (Linux: os.getcwd() may return a stale path string for a removed
-    # directory). A non-existent-but-returned path is treated the same.
-    cwd = start
-    if cwd is None:
-        try:
-            cwd = Path.cwd()
-        except FileNotFoundError as exc:
-            raise DeadCwdError() from exc
-    # Outside the branch on purpose: an injected `start` must not opt out of the
-    # guard, or a dead path walks up to a stray ancestor `.agent/` (HATS-788).
-    if not cwd.exists():
-        raise DeadCwdError()
-    candidates = [cwd, *cwd.parents]
-
-    for d in candidates:
-        if (d / ".agent").is_dir():
-            return d
-
-    for d in candidates:
-        git = d / ".git"
-        if git.is_dir():
-            return d
-        if git.is_file():
-            # Gitlink (linked worktree / submodule): for a linked worktree,
-            # route to the main checkout's live tracker; otherwise fall back
-            # to this dir (current behaviour, never worse).
-            with catch_broken_install():
-                from ai_hats_wt import WorktreeManager
-
-            main_root = WorktreeManager.main_worktree_root(d)
-            return main_root if main_root is not None else d
-
-    return cwd
-
-
-def _assembler(project_dir: Path | None = None):
+def _assembler(project_dir: Path):
+    """The caller resolves the project; this helper only survives the import guard."""
     with catch_broken_install():
         from ..assembler import Assembler
 
-    return Assembler(project_dir or _project_dir())
+    return Assembler(project_dir)
 
 
 def _guard_not_inside_linked_worktree() -> None:

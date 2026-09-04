@@ -8,6 +8,8 @@ the test pins the reader and not whichever writer happened to produce the card.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -128,8 +130,8 @@ def test_session_cut_with_duration_s(tmp_path: Path) -> None:
     sdir.mkdir(parents=True)
     (sdir / METRICS_JSON).write_text('{"duration_s": 300}')
 
-    cut1 = session_cut(project, sid)
-    cut2 = session_cut(project, sid)
+    cut1 = session_cut(ProjectLayout.at(project), sid)
+    cut2 = session_cut(ProjectLayout.at(project), sid)
     assert cut1 == datetime(2026, 6, 13, 19, 16, 40, tzinfo=timezone.utc)
     assert cut1 == cut2
 
@@ -139,7 +141,7 @@ def test_session_cut_without_duration_s(tmp_path: Path) -> None:
 
     project = _project(tmp_path)
     sid = "20260613-191140-1"
-    cut = session_cut(project, sid)
+    cut = session_cut(ProjectLayout.at(project), sid)
     assert cut == datetime(2026, 6, 13, 23, 59, 59, tzinfo=timezone.utc)
 
 
@@ -154,8 +156,8 @@ def test_session_cut_handles_prefixed_session_id(tmp_path: Path) -> None:
     sdir.mkdir(parents=True)
     (sdir / METRICS_JSON).write_text('{"duration_s": 300}')
 
-    cut_prefixed = session_cut(project, f"session_{sid}")
-    cut_bare = session_cut(project, sid)
+    cut_prefixed = session_cut(ProjectLayout.at(project), f"session_{sid}")
+    cut_bare = session_cut(ProjectLayout.at(project), sid)
     assert cut_prefixed == cut_bare
     assert cut_prefixed == datetime(2026, 6, 13, 19, 16, 40, tzinfo=timezone.utc)
 
@@ -164,5 +166,5 @@ def test_session_cut_unparseable_session_id_returns_max(tmp_path: Path) -> None:
     from ai_hats.retro.window import session_cut
 
     project = _project(tmp_path)
-    cut = session_cut(project, "x-1")
+    cut = session_cut(ProjectLayout.at(project), "x-1")
     assert cut == datetime.max.replace(tzinfo=timezone.utc)

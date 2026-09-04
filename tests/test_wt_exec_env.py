@@ -19,6 +19,18 @@ from click.testing import CliRunner
 from ai_hats.cli.worktree import _peel_selector, wt
 
 
+def _project_value(root):
+    """A real Project anchored at the fixture dir — the factory is patched, the types are not."""
+    from ai_hats.config.project import ProjectConfig
+    from ai_hats.project import Project
+    from ai_hats_core.layout import ProjectLayout
+
+    layout = ProjectLayout.at(root)
+    return Project(
+        layout=layout, config=ProjectConfig(), venv=layout.default_venv, library_paths=()
+    )
+
+
 def _active(*branches: str) -> list[mock.Mock]:
     return [mock.Mock(branch_name=b) for b in branches]
 
@@ -77,7 +89,7 @@ def test_wt_exec_resolves_the_selector_not_cwd(tmp_path, active):
         return mock.Mock(returncode=0)
 
     with (
-        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(tmp_path)),
         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active(*active)),
         mock.patch("ai_hats.cli.worktree._resolve_worktree", return_value=fake_mgr) as resolve,
         mock.patch("ai_hats.cli.worktree.subprocess.run", side_effect=_fake_run),
@@ -108,7 +120,7 @@ def test_wt_env_honours_an_optional_branch(tmp_path, argv, expected):
 def test_peel_selector_pops_the_branch_and_a_trailing_separator(tmp_path):
     args = ["task/a", "--", "pytest", "-x"]
     with (
-        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(tmp_path)),
         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")),
     ):
         assert _peel_selector(args) == "task/a"
@@ -119,7 +131,7 @@ def test_peel_selector_leaves_a_plain_command_alone(tmp_path):
     """A first arg that names no active worktree is the command, not a selector."""
     args = ["pytest", "-x"]
     with (
-        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(tmp_path)),
         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")),
     ):
         assert _peel_selector(args) is None
@@ -129,7 +141,7 @@ def test_peel_selector_leaves_a_plain_command_alone(tmp_path):
 def test_peel_selector_refuses_a_selector_with_no_command(tmp_path):
     args = ["task/a"]
     with (
-        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(tmp_path)),
         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")),
         pytest.raises(click.UsageError, match="No command to run"),
     ):

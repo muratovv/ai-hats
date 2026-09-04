@@ -34,7 +34,8 @@ def _make_session(
 def project_dir(tmp_path: Path) -> Path:
     runs_dir(tmp_path).mkdir(parents=True, exist_ok=True)
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: primary\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "active_role: primary\ndefault_role: primary\n"
     )
     # Set of sessions covering filter axes.
     _make_session(

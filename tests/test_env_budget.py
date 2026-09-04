@@ -8,6 +8,8 @@ that broke it.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import pytest
 
 from ai_hats.env import Budget, read_budget
@@ -53,6 +55,6 @@ def test_the_pipeline_rotation_survives_a_garbage_budget(tmp_path, monkeypatch) 
     from ai_hats.pipeline.harness import PipelineHarness
 
     monkeypatch.setenv("AI_HATS_PIPELINE_KEEP_N", "abc")
-    harness = PipelineHarness("execute", tmp_path, session_id="sid")
+    harness = PipelineHarness("execute", ProjectLayout.at(tmp_path), session_id="sid")
     with harness:
         assert harness.namespace.is_dir()

@@ -17,8 +17,8 @@ import click
 
 from ai_hats_observe.cli.session import session
 
-from ..paths import runs_dir
-from ._helpers import _project_dir, console, exec_claude_with_retro
+from ._entry import resolve_project
+from ._helpers import console, exec_claude_with_retro
 
 __all__ = ["session"]
 
@@ -52,18 +52,18 @@ def session_retro(
 
     from ..retro.session_review_runner import SessionReviewError, SessionReviewRunner
 
-    project_dir = _project_dir()
+    project = resolve_project()
 
     if use_last or not session_id:
-        sessions = SessionManager(project_dir, runs_dir=runs_dir(project_dir)).list_sessions(
-            last_n=1
-        )
+        sessions = SessionManager(
+            project.layout.root, runs_dir=project.layout.sessions.runs
+        ).list_sessions(last_n=1)
         if not sessions:
             console.print("[red]No sessions found[/]")
             sys.exit(1)
         session_id = sessions[0].session_id
 
-    runner = SessionReviewRunner(project_dir)
+    runner = SessionReviewRunner(project.layout)
 
     try:
         with console.status(

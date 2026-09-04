@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -68,7 +70,7 @@ def test_wrap_up_fires_when_thresholds_met(tmp_path: Path) -> None:
     _create_done_task(project, "TST-002", SESSION_START + timedelta(minutes=30))
     _create_done_task(project, "TST-003", SESSION_START + timedelta(minutes=60))
 
-    info = evaluate_wrap_up(project, SESSION_ID)
+    info = evaluate_wrap_up(ProjectLayout.at(project), SESSION_ID)
     assert info is not None
     assert info["tasks_closed"] == 3
     assert info["duration_min"] == 90
@@ -80,7 +82,7 @@ def test_wrap_up_below_tasks_threshold(tmp_path: Path) -> None:
     _write_metrics(project)
     _create_done_task(project, "TST-001", SESSION_START + timedelta(minutes=10))
 
-    assert evaluate_wrap_up(project, SESSION_ID) is None
+    assert evaluate_wrap_up(ProjectLayout.at(project), SESSION_ID) is None
 
 
 def test_wrap_up_below_duration_threshold(tmp_path: Path) -> None:
@@ -89,7 +91,7 @@ def test_wrap_up_below_duration_threshold(tmp_path: Path) -> None:
     for i, off in enumerate([5, 10, 15], start=1):
         _create_done_task(project, f"TST-00{i}", SESSION_START + timedelta(minutes=off))
 
-    assert evaluate_wrap_up(project, SESSION_ID) is None
+    assert evaluate_wrap_up(ProjectLayout.at(project), SESSION_ID) is None
 
 
 def test_wrap_up_no_metrics_returns_none(tmp_path: Path) -> None:
@@ -97,7 +99,7 @@ def test_wrap_up_no_metrics_returns_none(tmp_path: Path) -> None:
     # No metrics.json written.
     _create_done_task(project, "TST-001", SESSION_START + timedelta(minutes=5))
     _create_done_task(project, "TST-002", SESSION_START + timedelta(minutes=10))
-    assert evaluate_wrap_up(project, SESSION_ID) is None
+    assert evaluate_wrap_up(ProjectLayout.at(project), SESSION_ID) is None
 
 
 def test_wrap_up_ignores_tasks_outside_window(tmp_path: Path) -> None:
@@ -115,7 +117,7 @@ def test_wrap_up_ignores_tasks_outside_window(tmp_path: Path) -> None:
     )
     _create_done_task(project, "TST-003", SESSION_START + timedelta(hours=10))
 
-    assert evaluate_wrap_up(project, SESSION_ID) is None
+    assert evaluate_wrap_up(ProjectLayout.at(project), SESSION_ID) is None
 
 
 def test_wrap_up_cache_read_rounds_to_mb(tmp_path: Path) -> None:
@@ -124,7 +126,7 @@ def test_wrap_up_cache_read_rounds_to_mb(tmp_path: Path) -> None:
     _create_done_task(project, "TST-001", SESSION_START + timedelta(minutes=5))
     _create_done_task(project, "TST-002", SESSION_START + timedelta(minutes=10))
 
-    info = evaluate_wrap_up(project, SESSION_ID)
+    info = evaluate_wrap_up(ProjectLayout.at(project), SESSION_ID)
     assert info is not None
     assert info["cache_read_mb"] == 0
 
@@ -135,4 +137,4 @@ def test_wrap_up_zero_duration_returns_none(tmp_path: Path) -> None:
     _create_done_task(project, "TST-001", SESSION_START + timedelta(minutes=1))
     _create_done_task(project, "TST-002", SESSION_START + timedelta(minutes=2))
 
-    assert evaluate_wrap_up(project, SESSION_ID) is None
+    assert evaluate_wrap_up(ProjectLayout.at(project), SESSION_ID) is None

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from unittest.mock import patch
 
 import pytest
@@ -41,7 +43,7 @@ def test_init_pipeline_full_harness_run(tmp_path, monkeypatch):
         patch("ai_hats.cli.assembly._wizard_provider_prompt", return_value="gemini"),
         patch("shutil.which", return_value="/usr/local/bin/ai-hats"),
     ):
-        with PipelineHarness(INIT.name, tmp_path) as h:
+        with PipelineHarness(INIT.name, ProjectLayout.at(tmp_path)) as h:
             res = h.run({KEY_PROJECT_DIR: tmp_path})
 
         assert res[KEY_PROVIDER] == "gemini"

@@ -15,7 +15,6 @@ from ..keys import (
     KEY_HARNESS_PATH,
     KEY_NO_MANAGE_GITIGNORE,
     KEY_NO_WIZARD,
-    KEY_PROJECT_CONFIG,
     KEY_PROJECT_DIR,
     KEY_PROVIDER,
     KEY_ROLE,
@@ -153,7 +152,7 @@ class BootstrapProjectStep(Step):
                     KEY_HARNESS_PATH,
                 }
             ),
-            produces=frozenset({KEY_PROJECT_CONFIG}),
+            produces=frozenset(),
         )
 
     def run(
@@ -230,7 +229,7 @@ class BootstrapProjectStep(Step):
                 console.print(f"[red]Init refused[/]:\n{e}")
                 raise SystemExit(1) from e
 
-        return {KEY_PROJECT_CONFIG: asm.project_config}
+        return {}
 
 
 class PrepareExecuteSessionStep(Step):

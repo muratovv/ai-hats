@@ -15,6 +15,8 @@ path under the ambient sentinel instead of ``tmp_path``).
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 from pathlib import Path
 
@@ -49,7 +51,7 @@ def test_save_artifact_judge_template_stays_in_project_dir(tmp_path: Path):
     """
     template = "<ai_hats_dir>/sessions/retros/judge/{ts}-report.md"
     step = SaveArtifact({"key": "blob", "out_path_template": template})
-    out = step.run(blob="payload", project_dir=tmp_path)
+    out = step.run(blob="payload", layout=ProjectLayout.at(tmp_path))
     saved = out["saved_path"]
     # ``.resolve()`` on both sides normalizes the macOS ``/var`` → ``/private/var``
     # symlink so containment is compared on canonical paths.

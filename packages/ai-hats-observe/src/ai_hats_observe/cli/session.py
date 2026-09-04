@@ -45,8 +45,8 @@ def session_audit(session_id: str | None):
 
     from ..session import SessionManager
 
-    pd = _seam._PROJECT_DIR()
-    mgr = SessionManager(pd, runs_dir=_seam._RUNS_DIR(pd))
+    layout = _seam._LAYOUT()
+    mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
 
     if session_id:
         s = mgr.get_session(session_id)
@@ -114,8 +114,8 @@ def session_list(
     except ValueError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    pd = _seam._PROJECT_DIR()
-    mgr = SessionManager(pd, runs_dir=_seam._RUNS_DIR(pd))
+    layout = _seam._LAYOUT()
+    mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
     sessions = mgr.list_sessions(
         productive_only=productive,
         role_eq=role_filter,
@@ -427,8 +427,8 @@ def session_show(session_id: str):
 
     from ..session import SessionManager
 
-    pd = _seam._PROJECT_DIR()
-    mgr = SessionManager(pd, runs_dir=_seam._RUNS_DIR(pd))
+    layout = _seam._LAYOUT()
+    mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
     s = mgr.get_session(session_id)
     if s is None:
         _seam._CONSOLE.print(f"[red]Session {session_id} not found[/]")
@@ -616,8 +616,8 @@ def session_backfill(
 
     from ..session import SessionManager
 
-    pd = _seam._PROJECT_DIR()
-    mgr = SessionManager(pd, runs_dir=_seam._RUNS_DIR(pd))
+    layout = _seam._LAYOUT()
+    mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
 
     if session_ids:
         sessions = [mgr.get_session(sid) for sid in session_ids]
@@ -638,7 +638,7 @@ def session_backfill(
         if not force and is_measured(_load_metrics_safe(s) or {}):
             skipped += 1
             continue
-        rows.append(_backfill_one(s, project_dir=pd, dry_run=dry_run))
+        rows.append(_backfill_one(s, project_dir=layout.root, dry_run=dry_run))
 
     table = Table(title="session backfill — dry run" if dry_run else "session backfill")
     table.add_column("session", no_wrap=True)

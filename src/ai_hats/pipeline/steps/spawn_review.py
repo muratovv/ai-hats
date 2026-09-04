@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ..step import Step, StepIO
@@ -21,7 +22,7 @@ class SpawnSessionReview(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="spawn_session_review",
-            requires=frozenset({"session_id", "project_dir"}),
+            requires=frozenset({"session_id", "layout"}),
             produces=frozenset({"review_pid"}),
         )
 
@@ -29,13 +30,13 @@ class SpawnSessionReview(Step):
         self,
         *,
         session_id: str,
-        project_dir: Path,
+        layout: ProjectLayout,
         **_: Any,
     ) -> dict[str, Any]:
+        project_dir = layout.root
         from ai_hats_observe.artifacts import RETRO_LOG, session_dirname
-        from ...paths import runs_dir
 
-        log_path = runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
+        log_path = layout.sessions.runs / session_dirname(session_id) / RETRO_LOG
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a") as f:
             proc = subprocess.Popen(

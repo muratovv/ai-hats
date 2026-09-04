@@ -8,7 +8,8 @@ internal state we don't want to thread through pipeline state.
 
 from __future__ import annotations
 
-from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any, Mapping
 
 from ..step import Step, StepIO
@@ -25,7 +26,7 @@ class RunSessionReview(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="run_session_review",
-            requires=frozenset({"session_id", "project_dir"}),
+            requires=frozenset({"session_id", "layout"}),
             optional=frozenset({"max_retries"}),
             produces=frozenset({"review_path"}),
         )
@@ -34,7 +35,7 @@ class RunSessionReview(Step):
         self,
         *,
         session_id: str,
-        project_dir: Path,
+        layout: ProjectLayout,
         max_retries: int | None = None,
         **_: Any,
     ) -> dict[str, Any]:
@@ -43,7 +44,7 @@ class RunSessionReview(Step):
         # State override > YAML param default. Lets harness propagate
         # CLI flags (--max-retries) without YAML-level reconfiguration.
         retries = max_retries if max_retries is not None else self.max_retries
-        runner = SessionReviewRunner(project_dir)
+        runner = SessionReviewRunner(layout)
         review_path = runner.run(
             session_id,
             max_retries=retries,

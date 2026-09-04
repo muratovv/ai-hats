@@ -43,7 +43,14 @@ from ..env import (  # noqa: E402
     ENV_LIBRARY_ROOT,
 )
 
+# HATS-792: highest ai-hats.yaml ``schema_version`` this binary understands. A
+# higher value was written by a NEWER ai-hats whose format we cannot read; every
+# reader — the full pydantic one and the bootstrap raw readers alike — refuses
+# it. Lives in the leaf so both can import it without a config dependency.
+KNOWN_SCHEMA_VERSION = 4
+
 __all__ = [
+    "KNOWN_SCHEMA_VERSION",
     "LIBRARY_PKG",
     "LIBRARY_LAYERS",
     "REQUIRED_LIBRARY_LAYERS",
