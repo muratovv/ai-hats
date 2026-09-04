@@ -51,7 +51,7 @@ fi
 
 cd "$WORKTREE" || exit 0
 
-if ! uv venv .venv; then
+if ! uv venv -q .venv; then
     echo "[worktree-venv] 'uv venv' failed — worktree left unprovisioned"
     exit 0
 fi
@@ -67,7 +67,7 @@ while IFS= read -r manifest; do
     targets+=(-e "$pkg_dir")
 done < <(find packages -name pyproject.toml -type f 2>/dev/null | sort)
 
-if ! VIRTUAL_ENV=.venv uv pip install "${targets[@]}"; then
+if ! VIRTUAL_ENV=.venv uv pip install -q "${targets[@]}"; then
     echo "[worktree-venv] editable install failed — re-run to finish:"
     echo "                cd $WORKTREE && VIRTUAL_ENV=.venv uv pip install ${targets[*]}"
     exit 0

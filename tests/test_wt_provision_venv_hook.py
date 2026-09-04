@@ -27,8 +27,10 @@ HOOK_PATH = SKILL_DIR / "hooks" / "provision-venv.sh"
 # so the script's own idempotence probe sees a real venv afterwards.
 _UV_STUB = """#!/usr/bin/env bash
 echo "$@" >> "{calls}"
-if [[ "${{1:-}}" == "venv" ]]; then
-    target="${{2:-.venv}}"
+words=()
+for arg in "$@"; do [[ "$arg" == -* ]] || words+=("$arg"); done
+if [[ "${{words[0]:-}}" == "venv" ]]; then
+    target="${{words[1]:-.venv}}"
     mkdir -p "$target/bin"
     printf '#!/bin/sh\\nexit 0\\n' > "$target/bin/python"
     chmod +x "$target/bin/python"
@@ -94,6 +96,8 @@ def test_hook_provisions_the_worktree_not_the_project_dir(tmp_path: Path) -> Non
     assert "-e ." in install or "-e .[dev]" in install, install
     assert "packages/pkg-a" in install and "packages/pkg-b" in install, install
     assert not (project_dir / ".venv").exists(), "provisioned the main checkout"
+    # A scratch gate run provisions on every run; uv's package roll is not a finding.
+    assert all(" -q " in f" {line} " for line in recorded), recorded
 
 
 def _make_venv(worktree: Path, *, gutted: bool = False) -> Path:
