@@ -39,7 +39,7 @@ GATE_LIB = SKILL_SRC / "lib" / "gate.sh"
 #: A stage runner that runs nothing and answers nothing: a check must never
 #: reach it (it runs inside the rack lock), and `gates.sh check` has no code
 #: path to it.
-RUNNER_STUB = "#!/usr/bin/env bash\nexit 99\n"
+RUNNER_STUB = '#!/usr/bin/env bash\ntouch "$(dirname "$0")/runner-ran"\nexit 99\n'
 
 
 def _project(root: Path) -> Path:
@@ -273,14 +273,16 @@ def test_a_project_without_gates_sh_cannot_pass(tmp_path: Path):
 
 
 def test_the_check_never_reaches_the_stage_runner(tmp_path: Path):
-    """The runner stub exits 99; a check that ran anything would surface it."""
+    """The runner stub leaves a file when invoked; a check that ran anything
+    would leave it. (The old probe, "99" absent from the output, tripped on a
+    tree hash that happened to contain it.)"""
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
 
     out = _hook(project, "done-gate", {"AI_HATS_WORKTREE_PATH": str(wt)})
 
     assert out.returncode == 2
-    assert "99" not in out.stdout + out.stderr
+    assert not (project.parent / "runner-ran").exists(), "the check reached the stage runner"
 
 
 # ---------------------------------------------------------------------------
@@ -288,27 +290,25 @@ def test_the_check_never_reaches_the_stage_runner(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_a_red_run_ends_with_the_command_that_resumes_it(tmp_path: Path):
-    """`gates.sh` ends every run with a RESULT line but knows no gate; the one
-    line it cannot print is the command that resumes the run, and the gate
-    adds it, worded as a step after the fix so it never reads as "try again".
-    The stub runner exits 99, so the run is red at its first stage."""
+def test_a_red_run_names_the_command_that_resumes_it_right_after_the_verdict(tmp_path: Path):
+    """`gates.sh` prints its block verdict first and the resume command second;
+    it cannot spell that command, so the gate hands it down. The stub runner
+    exits 99, so the run is red at its first stage."""
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
 
     in_place = _hook(project, "done-gate", {}, "--run")
     assert in_place.returncode == 99, in_place.stderr
-    assert in_place.stderr.splitlines()[-1] == (
-        "[done-gate] fix the FAILED stage above, then: make done-gate"
-    )
+    lines = in_place.stderr.splitlines()
+    assert lines[0].startswith("[gates] RESULT "), "the primitive's verdict opens the block"
+    assert lines[1] == "[gates] fix e2e-catalog, then: make done-gate"
 
     sha = git(wt, "rev-parse", "HEAD").stdout.strip()
     of_a_commit = _hook(project, "done-gate", {}, "--run", "--rev", sha)
     assert of_a_commit.returncode == 99, of_a_commit.stderr
-    assert of_a_commit.stderr.splitlines()[-1] == (
-        f"[done-gate] fix the FAILED stage above, then: make done-gate REV={sha}"
+    assert of_a_commit.stderr.splitlines()[1] == (
+        f"[gates] fix e2e-catalog, then: make done-gate REV={sha}"
     )
-    assert "RESULT" in of_a_commit.stderr.splitlines()[-2], "the primitive's own last word stays"
 
 
 # ---------------------------------------------------------------------------

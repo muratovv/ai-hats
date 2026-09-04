@@ -189,7 +189,10 @@ def test_a_red_stage_stops_the_run_and_keeps_the_stamps_earned_before_it(repo: P
     out = _gate(repo, runner, "run", "lint", "unit", "integration", env={"GATES_TEST_RC_UNIT": "7"})
 
     assert out.returncode == 7
-    assert out.stderr.splitlines()[-1] == _result(repo, "0 cached, 2 ran, FAILED unit (rc=7)")
+    lines = out.stderr.splitlines()
+    assert lines[0] == _result(repo, "0 cached, 2 ran, FAILED unit (rc=7)")
+    assert lines[1] == "[gates] fix unit, then run this again"
+    assert lines[2] == "[gates] unit said:", "what the red stage printed follows the verdict"
     assert [c[0] for c in _calls(runner)] == ["lint", "unit"], "nothing after the red one ran"
     assert _marked(repo, _tree(repo)) == {"lint"}, "lint's stamp survives unit's red"
 
@@ -228,7 +231,7 @@ def test_a_dirty_checkout_judges_head_in_a_one_shot_scratch_worktree(repo: Path,
     ((stage, ran_in),) = _calls(runner)
     assert stage == "lint"
     assert ran_in != str(repo), "the stage ran somewhere other than the dirty desk"
-    assert out.stderr.splitlines()[0] == f"{_header(repo)} scratch: {ran_in}"
+    assert f"{_header(repo)} scratch: {ran_in}" in out.stderr.splitlines()
     assert not Path(ran_in).exists(), "the scratch checkout is gone after the run"
     assert "scratch" not in git(repo, "worktree", "list").stdout, "and un-registered"
     assert _marked(repo, _tree(repo)) == {"lint"}, "stamped for HEAD's tree, readable from here"
@@ -268,9 +271,10 @@ def test_a_stage_that_dirties_the_tree_earns_no_marker(repo: Path, runner: Path,
 
     assert out.returncode == 1
     assert "left the tree dirty" in out.stderr
-    assert out.stderr.splitlines()[-1] == _result(
+    assert out.stderr.splitlines()[0] == _result(
         repo, "0 cached, 1 ran, FAILED lint (rc=1): left the tree dirty"
     )
+    assert " M README.md" in out.stderr, "the block names what the stage changed"
     assert _marked(repo, _tree(repo)) == set()
 
 
@@ -279,21 +283,24 @@ def test_a_stage_that_dirties_the_tree_earns_no_marker(repo: Path, runner: Path,
 # ---------------------------------------------------------------------------
 
 
-def test_a_run_is_header_then_cached_line_then_stages_then_result(repo: Path, runner: Path):
-    """Subject once, where it runs, the cached stages on ONE line, each stage's
-    own banner only, and a RESULT line last — what an agent reading the tail of
-    a long run gets to see."""
+def test_a_run_is_one_block_verdict_first(repo: Path, runner: Path):
+    """RESULT first, then one line per stage that ran, the cached stages on ONE
+    line, the subject, and the transcript dir — what an agent reading a
+    captured stream acts on, in that order."""
     assert _gate(repo, runner, "run", "lint", "unit").returncode == 0
 
     out = _gate(repo, runner, "run", "lint", "unit", "integration")
 
     assert out.returncode == 0, out.stderr
     lines = out.stderr.splitlines()
-    assert lines[0] == f"{_header(repo)} in place: {repo}"
-    assert lines[1] == "[gates] cached (2): lint unit"
-    assert lines[-1] == _result(repo, "2 cached, 1 ran, green")
+    assert lines[0] == _result(repo, "2 cached, 1 ran, green")
+    assert lines[1] == "[gates] integration: green"
+    assert lines[2] == "[gates] cached (2): lint unit"
+    assert lines[3] == f"{_header(repo)} in place: {repo}"
+    transcript = next(ln for ln in lines if ln.startswith("[gates] transcript: "))
+    assert Path(transcript.split(": ", 1)[1]).is_dir()
     assert "already green" not in out.stderr, "one line per cached stage is the noise this removes"
-    assert "running in" not in out.stderr, "the checkout is named once, in the header"
+    assert "running in" not in out.stderr, "the checkout is named once, in the subject line"
 
 
 def test_nothing_to_run_is_three_lines_and_mints_no_checkout(repo: Path, runner: Path):
@@ -304,9 +311,9 @@ def test_nothing_to_run_is_three_lines_and_mints_no_checkout(repo: Path, runner:
 
     assert out.returncode == 0, out.stderr
     assert out.stderr.splitlines() == [
-        _header(repo),
-        "[gates] cached (1): lint",
         _result(repo, "1 cached, 0 ran, green"),
+        "[gates] cached (1): lint",
+        _header(repo),
     ]
     assert [c[0] for c in _calls(runner)] == ["lint"], "the second run reached no runner"
     assert "scratch" not in git(repo, "worktree", "list").stdout

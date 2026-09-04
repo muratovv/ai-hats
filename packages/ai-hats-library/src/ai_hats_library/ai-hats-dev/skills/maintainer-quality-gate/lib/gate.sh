@@ -174,8 +174,8 @@ gate_check_task_worktree() {
     esac
 }
 
-# Earn the stages: `scripts/gates.sh run` of the checkout the caller stands in.
-# EXITS with the run's rc, after naming the command that resumes a red one.
+# Earn the stages: `scripts/gates.sh run` of the checkout the caller stands in,
+# told what command resumes a red run. EXITS with the run's rc.
 gate_run() {
     local gate="$1" stages="$2"
     shift 2
@@ -190,22 +190,16 @@ gate_run() {
                "$gate" "$repo_root" >&2
         exit 70
     fi
-    printf '[%s] earning: %s\n' "$gate" "$stages" >&2
-    local rc=0
+    # The primitive prints the resume command second in its block, right after
+    # the verdict; it cannot spell it, because no gate name reaches it.
+    local rev='' prev='' arg
+    for arg in "$@"; do
+        [[ "$prev" == "--rev" ]] && rev="$arg"
+        prev="$arg"
+    done
+    export GATES_RESUME_CMD="make $gate${rev:+ REV=$rev}"
     # shellcheck disable=SC2086
-    bash "$gates" run "$@" $stages || rc=$?
-    if [[ "$rc" -ne 0 ]]; then
-        # The primitive ends with its RESULT line; the retry is the one line it
-        # cannot write, because no gate name reaches it. "fix … then", not
-        # "retry": read alone, a bare retry under FAILED master-ci is a loop.
-        local rev='' prev='' arg
-        for arg in "$@"; do
-            [[ "$prev" == "--rev" ]] && rev="$arg"
-            prev="$arg"
-        done
-        printf '[%s] fix the FAILED stage above, then: make %s%s\n' "$gate" "$gate" "${rev:+ REV=$rev}" >&2
-    fi
-    exit "$rc"
+    exec bash "$gates" run "$@" $stages
 }
 
 # The thin gate's whole body. The check runner spawns a gate with no argv at

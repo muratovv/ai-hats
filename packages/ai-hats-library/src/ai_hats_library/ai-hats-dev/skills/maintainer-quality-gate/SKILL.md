@@ -112,14 +112,24 @@ suite stubbed the very contracts the change broke.
    (`make done-gate REV=<sha>` for a card already merged.) It runs only the
    stages the tree has not earned, in order, stops at the first red, and
    stamps each green one.
-3. **Green** — the run ends with `RESULT …, green` — transition again.
-4. **Red** — the run ends with:
+3. **Green** — the run's first line is `RESULT …, green` — transition again.
+4. **Red** — the run's block, verdict first:
 
-       [gates] RESULT tree 3245c9c9 (1662fc41): 11 cached, 1 ran, FAILED unit (rc=1)
-       [done-gate] fix the FAILED stage above, then: make done-gate
+       [gates] RESULT tree 5f225a1b (2ac163eb): 11 cached, 1 ran, FAILED unit (rc=1)
+       [gates] fix unit, then: make done-gate
+       [gates] unit said:
+       tests/test_x.py:12: AssertionError: …
+       1 failed, 6024 passed, 2 skipped in 40.1s
+       [gates] lint: 1203 files already formatted
+       …
+       [gates] cached (11): e2e-catalog …
+       [gates] 2ac163eb (tree 5f225a1b) in place: <worktree>
+       [gates] transcript: /tmp/gates-run.Xy12ab
 
-   The stage's own report is right above those lines: a failing test per line
-   (`--tb=line`), a finding per line, or `master-ci`'s run URL. Triage it:
+   In order of importance: the verdict, what to do, what the red stage said
+   (a failing test per line, a finding per line, or `master-ci`'s run URL),
+   one line per green stage, the cached ones, the subject, and the dir holding
+   every stage's full output. Triage the red stage:
 
    - the stage alone, bare, exactly what CI runs: `bash scripts/gates.sh unit`
      (`bash scripts/gates.sh list` says what each stage checks);
