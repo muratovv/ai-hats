@@ -900,14 +900,14 @@ def test_a_point_that_is_not_an_edge_states_its_missing_halves_as_null(tmp_path)
     assert call["selector"] == "wt:teardown[wt_out]"
 
 
-# ----- HATS-1882: whose environment the child inherits ------------------------
+# ----- whose environment the child inherits ----------------------------------
 
 
 def test_the_child_inherits_the_environment_it_is_handed(tmp_path, monkeypatch):
     """A dispatcher held open for a session runs in a process that is NOT the
     session — the wrapper that launched it — and that process's environment is
     what every gate inherited: no session envelope, so the consent gate read
-    "outside a session" and asked nothing (measured, HATS-1882).
+    "outside a session" and asked nothing (measured).
 
     The base is a parameter, and the point-specific vocabulary still goes on
     top of whatever base was handed in.

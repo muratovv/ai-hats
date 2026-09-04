@@ -113,6 +113,7 @@ def dispatch(
     stdin=None,
     argv: Sequence[str] = (),
     environ: Mapping[str, str] | None = None,
+    hook_environ: Mapping[str, str] | None = None,
 ) -> int:
     """Judge one tool call for ``channel`` and answer in its own protocol.
 
@@ -120,6 +121,9 @@ def dispatch(
     delivery refusals — that was the drift: a refusal for a call that already
     ran skipped the reduction on two surfaces of three and cancelled what cannot
     be cancelled.
+
+    ``hook_environ`` is what the gates inherit; a dispatcher that is not inside
+    the session it judges for hands the session's in.
     """
     env = environ if environ is not None else os.environ
     source = stdin if stdin is not None else sys.stdin
@@ -159,6 +163,7 @@ def dispatch(
             calls=channel.read(payload, arrival),
             project_dir=project_dir_from(env),
             environ=env,
+            hook_environ=hook_environ,
         ),
         arrival,
     )

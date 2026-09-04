@@ -176,7 +176,7 @@ def run_hook(
     * ``environ`` — the environment the child inherits; this process's when
       unset. A dispatcher held open for a whole session runs in the process
       that launched the session, not in the session, and a gate that inherited
-      THAT environment saw no session envelope and asked nothing (HATS-1882).
+      THAT environment saw no session envelope and asked nothing.
     """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
         return _corrupt(

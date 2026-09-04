@@ -577,6 +577,7 @@ def _run_matched(
     deadline: Deadline,
     project_dir: Path,
     log_dir: Path | None,
+    hook_environ: Mapping[str, str] | None,
 ) -> list[HookRun]:
     """Run every matched gate, together, and return their outcomes in job order.
 
@@ -594,6 +595,7 @@ def _run_matched(
             project_dir=project_dir,
             stdin_payload=json.dumps(call.payload).encode("utf-8"),
             tail_bytes=REPLY_BYTES,
+            environ=hook_environ,
             log_path=(
                 None
                 if log_dir is None
@@ -689,6 +691,7 @@ def run_chain(
     project_dir: Path,
     environ: Mapping[str, str] | None = None,
     log_dir: Path | None = None,
+    hook_environ: Mapping[str, str] | None = None,
 ) -> ChainVerdict:
     """Run every row this call matches and return what the chain concluded.
 
@@ -702,6 +705,11 @@ def run_chain(
     One deadline covers the whole call, so a chain cannot outlive the bound its
     surface gave the dispatcher; each hook draws its budget through it and a
     chain with nothing left refuses, naming the variable that widens it.
+
+    ``environ`` is what the dispatcher READS (the hatch, the budget);
+    ``hook_environ`` is what the gates INHERIT, this process's when unset. They
+    part only for a dispatcher held open outside the session it judges for; a
+    spawned one is inside it and hands nothing in.
     """  # comment-length: allow — what parallelism changes and what it does not is the contract
     env = environ if environ is not None else os.environ
     budget = resolve_hook_timeout(environ)
@@ -715,6 +723,7 @@ def run_chain(
         deadline=deadline,
         project_dir=project_dir,
         log_dir=log_dir,
+        hook_environ=hook_environ,
     )
     return _concluded(jobs, runs, event=event, environ=env, project_dir=project_dir)
 
