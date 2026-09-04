@@ -98,11 +98,6 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"{TAG} FAIL: {args.branch} last concluded '{conclusion}' — {title}", file=sys.stderr)
     print(f"{TAG}   {url}", file=sys.stderr)
-    print(
-        f"{TAG} A red base hides every defect this gate exists to find: for a month "
-        f"it hid seven of the nine that shipped in v0.15.0.",
-        file=sys.stderr,
-    )
     if os.environ.get(ENV_ALLOW_RED) == "1":
         print(
             f"{TAG} {ENV_ALLOW_RED}=1 — allowed anyway, on the supervisor's word.", file=sys.stderr

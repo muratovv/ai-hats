@@ -24,8 +24,8 @@ gate_tree() {
 }
 
 # The refusal is an action, not a diagnosis: what is missing, and the one
-# command that earns it. Every stage already green stays green — the retry
-# after that command pays only for what this list names.
+# command that earns it — nothing after the command, which is what a reader
+# who arrives at the tail sees first.
 gate_refusal() {
     local gate="$1" tree="$2" label="$3" cmd="$4" missing="$5"
     printf '%s: tree %s (%s) has not earned every stage this gate requires.\n\n' \
@@ -35,10 +35,7 @@ gate_refusal() {
     for stage in $missing; do
         printf '    %s\n' "$stage"
     done
-    printf '\nRun the gate on that exact content, then retry:\n\n    %s\n\n' "$cmd"
-    printf 'It runs only what is missing and stamps each green stage for the tree, so\n'
-    printf 'the retry is instant, and a wider gate whose set includes these stages\n'
-    printf 'stamps them too.\n'
+    printf '\nRun the gate on that exact content, then retry:\n\n    %s\n' "$cmd"
 }
 
 # This project's OWN tasks dir, from `ai-hats.yaml` and the documented default —
@@ -178,7 +175,7 @@ gate_check_task_worktree() {
 }
 
 # Earn the stages: `scripts/gates.sh run` of the checkout the caller stands in.
-# EXITS with the run's rc.
+# EXITS with the run's rc, after naming the command that resumes a red one.
 gate_run() {
     local gate="$1" stages="$2"
     shift 2
@@ -194,8 +191,20 @@ gate_run() {
         exit 70
     fi
     printf '[%s] earning: %s\n' "$gate" "$stages" >&2
+    local rc=0
     # shellcheck disable=SC2086
-    exec bash "$gates" run "$@" $stages
+    bash "$gates" run "$@" $stages || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        # The primitive ends with its RESULT line; the retry is the one line it
+        # cannot write, because no gate name reaches it.
+        local rev='' prev='' arg
+        for arg in "$@"; do
+            [[ "$prev" == "--rev" ]] && rev="$arg"
+            prev="$arg"
+        done
+        printf '[%s] retry: make %s%s\n' "$gate" "$gate" "${rev:+ REV=$rev}" >&2
+    fi
+    exit "$rc"
 }
 
 # The thin gate's whole body. The check runner spawns a gate with no argv at

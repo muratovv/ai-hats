@@ -163,6 +163,11 @@ def test_a_live_worktree_without_markers_is_refused_with_the_missing_stages(tmp_
         assert f"    {stage}\n" in out.stdout
     assert f"cd {wt} && make review-gate" in out.stdout
     assert _tree(wt) in out.stdout, "the refusal names the tree it wanted"
+    # Gate, tree, Missing, command: the standing paragraph that used to follow
+    # the command explained the marker model to a reader who wanted a verb.
+    assert "Run the gate" in out.stdout, "the command keeps its one-line intro"
+    assert "It runs only what is missing" not in out.stdout
+    assert out.stdout.rstrip().splitlines()[-1].strip() == f"cd {wt} && make review-gate"
 
 
 def test_markers_for_every_required_stage_let_the_worktree_through(tmp_path: Path):
@@ -276,6 +281,29 @@ def test_the_check_never_reaches_the_stage_runner(tmp_path: Path):
 
     assert out.returncode == 2
     assert "99" not in out.stdout + out.stderr
+
+
+# ---------------------------------------------------------------------------
+# --run: earn the stages, and on red say how to resume
+# ---------------------------------------------------------------------------
+
+
+def test_a_red_run_ends_with_the_command_that_resumes_it(tmp_path: Path):
+    """`gates.sh` ends every run with a RESULT line but knows no gate; the one
+    line it cannot print is the retry, and the gate adds it. The stub runner
+    exits 99, so the run is red at its first stage."""
+    project = _project(tmp_path / "proj")
+    wt = _worktree(project, "one")
+
+    in_place = _hook(project, "done-gate", {}, "--run")
+    assert in_place.returncode == 99, in_place.stderr
+    assert in_place.stderr.splitlines()[-1] == "[done-gate] retry: make done-gate"
+
+    sha = git(wt, "rev-parse", "HEAD").stdout.strip()
+    of_a_commit = _hook(project, "done-gate", {}, "--run", "--rev", sha)
+    assert of_a_commit.returncode == 99, of_a_commit.stderr
+    assert of_a_commit.stderr.splitlines()[-1] == f"[done-gate] retry: make done-gate REV={sha}"
+    assert "RESULT" in of_a_commit.stderr.splitlines()[-2], "the primitive's own last word stays"
 
 
 # ---------------------------------------------------------------------------
