@@ -510,8 +510,8 @@ as a claim to check, not as evidence.
   sh -c "<the command settings.json holds>"
   ```
 
-- **expect** — the verdict is byte-identical to the one a spawned dispatcher gives, and it arrives even when no dispatcher COULD be spawned
-- **why** — the resident path exists only to drop ~43 ms of interpreter and imports per tool call. The moment it answers differently from the spawn path it is a second gate implementation, which is the drift HATS-1858 spent a card removing
+- **expect** — the verdict is byte-identical to the one a spawned dispatcher gives, and it arrives even when no dispatcher COULD be spawned; the gates it runs inherit the SESSION's environment, so the consent gate asks through it with its ticket and refuses the spelling that skips the wrapper
+- **why** — the resident path exists only to drop ~43 ms of interpreter and imports per tool call. The moment it answers differently from the spawn path it is a second gate implementation, which is the drift HATS-1858 spent a card removing — and for four days it was one: the server lives in the wrapper process, whose environment is not the session's, so every gate reading the envelope saw no session and the consent question never reached the human
 
 ## `test_claude_scaffold_drop.py`
 
