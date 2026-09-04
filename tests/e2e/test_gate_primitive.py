@@ -290,19 +290,24 @@ def test_the_check_never_reaches_the_stage_runner(tmp_path: Path):
 
 def test_a_red_run_ends_with_the_command_that_resumes_it(tmp_path: Path):
     """`gates.sh` ends every run with a RESULT line but knows no gate; the one
-    line it cannot print is the retry, and the gate adds it. The stub runner
-    exits 99, so the run is red at its first stage."""
+    line it cannot print is the command that resumes the run, and the gate
+    adds it, worded as a step after the fix so it never reads as "try again".
+    The stub runner exits 99, so the run is red at its first stage."""
     project = _project(tmp_path / "proj")
     wt = _worktree(project, "one")
 
     in_place = _hook(project, "done-gate", {}, "--run")
     assert in_place.returncode == 99, in_place.stderr
-    assert in_place.stderr.splitlines()[-1] == "[done-gate] retry: make done-gate"
+    assert in_place.stderr.splitlines()[-1] == (
+        "[done-gate] fix the FAILED stage above, then: make done-gate"
+    )
 
     sha = git(wt, "rev-parse", "HEAD").stdout.strip()
     of_a_commit = _hook(project, "done-gate", {}, "--run", "--rev", sha)
     assert of_a_commit.returncode == 99, of_a_commit.stderr
-    assert of_a_commit.stderr.splitlines()[-1] == f"[done-gate] retry: make done-gate REV={sha}"
+    assert of_a_commit.stderr.splitlines()[-1] == (
+        f"[done-gate] fix the FAILED stage above, then: make done-gate REV={sha}"
+    )
     assert "RESULT" in of_a_commit.stderr.splitlines()[-2], "the primitive's own last word stays"
 
 

@@ -129,11 +129,15 @@ prints only the stages still missing, exit 0 or 1 — but nothing requires it.
     [gates] master-ci (master's last CI verdict)
     …
     [gates] RESULT tree 3bb644ac (cd6f584c): 14 cached, 1 ran, FAILED master-ci (rc=1)
-    [done-gate] retry: make done-gate
+    [done-gate] fix the FAILED stage above, then: make done-gate
 
 The last line on red is the command; RESULT above it is the verdict and the
-counts; the failing stage's own output sits above that. A green run ends with
-`RESULT …, green`.
+counts; the failing stage's own report sits above that, and is what to act
+on: a failing test per line (`--tb=line`), a finding per line, or for
+`master-ci` the run's URL. Fix it, then run the command — every stamped stage
+is skipped and the run resumes at the red one. `master-ci` is the one stage
+the tree cannot fix; its knob (see "No bypass") is the supervisor's to set,
+never yours. A green run ends with `RESULT …, green`.
 
 ### Markers are per tree
 
