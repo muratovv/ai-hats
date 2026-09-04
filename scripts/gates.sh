@@ -596,10 +596,12 @@ _capture() {
     fi
 }
 
+# A stage's last non-empty line, its own `[stage]` tag dropped: the block
+# already names the stage in front of it.
 _last_line() {
-    local line
-    line="$(grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -1 || true)"
-    printf '%s' "$line"
+    local log="$1" stage="${2:-}" line
+    line="$(grep -v '^[[:space:]]*$' "$log" 2>/dev/null | tail -1 || true)"
+    printf '%s' "${line#"[$stage] "}"
 }
 
 # The printed copy of a log, without pytest's progress dots; the file keeps them.
@@ -644,8 +646,8 @@ cmd_run() {
         LIVE=1
     fi
     local run_dir
-    run_dir="$(mktemp -d "${TMPDIR:-/tmp}/gates-run.XXXXXX")" \
-        || _die 70 "cannot make a run dir under ${TMPDIR:-/tmp}"
+    local tmp="${TMPDIR:-/tmp}"
+    run_dir="$(mktemp -d "${tmp%/}/gates-run.XXXXXX")" || _die 70 "cannot make a run dir under $tmp"
 
     local subject
     where="$(_where "$repo_root" "$sha")"
@@ -671,7 +673,7 @@ cmd_run() {
         # A non-zero rc is REPORTED and the run goes on: a stage failing for
         # want of a dependency says so loudly; skipping here would say nothing.
         if _capture "$run_dir/prepare.log" _in "$checkout" bash "$runner" --prepare; then
-            notes+=("prepare: $(_last_line "$run_dir/prepare.log")")
+            notes+=("prepare: $(_last_line "$run_dir/prepare.log" worktree-venv)")
         else
             notes+=("the runner could not prepare $checkout — ran anyway; see $run_dir/prepare.log")
         fi
@@ -726,7 +728,7 @@ cmd_run() {
     fi
     local said
     for stage in ${ran_green[@]+"${ran_green[@]}"}; do
-        said="$(_last_line "$run_dir/$stage.log")"
+        said="$(_last_line "$run_dir/$stage.log" "$stage")"
         printf '[gates] %s: %s\n' "$stage" "${said:-green}" >&2
     done
     if [[ $ncached -gt 0 ]]; then
