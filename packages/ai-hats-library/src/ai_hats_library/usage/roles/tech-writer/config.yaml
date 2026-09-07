@@ -11,6 +11,7 @@ composition:
   rules: []
   skills:
     - prose-review
+    - claim-evidence-check
 injection: |
   # ROLE: TECHNICAL WRITER
 
