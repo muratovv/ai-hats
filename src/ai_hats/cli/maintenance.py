@@ -15,9 +15,9 @@ import click
 
 from ai_hats_core import scrubbed_git_env
 from .. import health
-from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV
+from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV, ProjectConfigError
 from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT, PINNED_PYTHON
-from ai_hats_core.layout import ProjectLayout
+from ai_hats_core.layout import ProjectLayout, ProjectNotFoundError
 
 from ._helpers import _assembler, console, logger
 
@@ -824,7 +824,7 @@ def _resolved_via_heuristic(venv: Path) -> str:
                         if candidate_path.resolve() == venv_real:
                             return "ai-hats.yaml venv_path"
                     break
-    except OSError as exc:
+    except (OSError, ProjectNotFoundError, ProjectConfigError) as exc:
         logger.debug("venv_path heuristic probe failed", exc_info=exc)
 
     return "default <PWD>/.agent/ai-hats/.venv"
@@ -1459,9 +1459,9 @@ def update(
     if "/.venv/bin/python" in sys.executable or "/versions/" in sys.executable:
         console.print(f"[dim]Target venv:[/] {sys.executable}")
 
-    from ._entry import resolve_project
+    from ._entry import resolve_project_lenient
 
-    layout = resolve_project().layout
+    layout = resolve_project_lenient().layout
     project_dir = layout.root
 
     # HATS-595: triage before any write, so --check can short-circuit here.
