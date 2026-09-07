@@ -1,6 +1,6 @@
 ---
 name: retro-to-framework
-description: Convert project retrospective findings into framework-level improvements (rules, skills, skill updates). Use after a retrospective identifies problems that are not project-specific, when CLAUDE.md band-aids accumulate (more than 3 per-project rules that could be generic), or when the same problem recurs across multiple projects.
+description: Convert an observation about agent behavior — from a retrospective or from a single incident — into a framework-level change (hook, rule, skill, skill update). Use after a retrospective identifies problems that are not project-specific, after an incident where an agent misapplied a component it had read, when CLAUDE.md band-aids accumulate (more than 3 per-project rules that could be generic), or when the same problem recurs across multiple projects.
 license: MIT
 ---
 
@@ -19,11 +19,18 @@ Convert project-level retrospective findings into framework-level improvements.
 
 ## When to Use
 
-Runs *downstream* of a retro: **self-retrospective** produces the findings, this
-skill promotes the generic ones into rules/skills. Two boundaries — the finding
-must be **cross-project generic** (a project-local fix stays in that project's
-CLAUDE.md), and trimming or dedup of components that already exist is
-**skill-optimization**, not this.
+Two entry points, one procedure:
+
+- **Downstream of a retro** — **self-retrospective** produces the findings, this
+  skill promotes the generic ones.
+- **Downstream of an incident** — one session where an agent observably did the
+  wrong thing. No retro needed; the evidence is the session itself. Bring what
+  the agent did, what the component told it to do, and the proof it read that
+  component (otherwise the finding is "the agent never saw it", a different fix).
+
+Two boundaries — the finding must be **cross-project generic** (a project-local
+fix stays in that project's CLAUDE.md), and trimming or dedup of components that
+already exist is **skill-optimization**, not this.
 
 ## Procedure
 
@@ -33,13 +40,24 @@ CLAUDE.md), and trimming or dedup of components that already exist is
    - YES → framework candidate (rule, skill, or skill update)
    - NO → project-specific (stays in project CLAUDE.md)
 
-2. **Map to component type:**
-   | Finding type                               | Framework component               |
-   | ------------------------------------------ | --------------------------------- |
-   | Behavioral constraint ("always do X")      | Rule                              |
-   | Multi-step process ("when X, do Y then Z") | Skill                             |
-   | Missing check in existing process          | Skill update                      |
-   | Knowledge gap                              | Reference doc or injection update |
+2. **Map to component type — mechanism first:**
+   | Finding type                                        | Framework component               |
+   | --------------------------------------------------- | --------------------------------- |
+   | Invariant a machine can decide ("never write X to Y") | Hook / gate / CLI check — not prose |
+   | Behavioral constraint ("always do X")               | Rule                              |
+   | Multi-step process ("when X, do Y then Z")          | Skill                             |
+   | Missing check in existing process                   | Skill update                      |
+   | Knowledge gap                                       | Reference doc or injection update |
+
+   The first row is first on purpose: prose costs tokens every turn and asks the
+   agent to comply, a hook costs nothing and does not ask. Rank the options with
+   the mechanism ladder in trait `skill-engineer` before picking a row.
+
+   **If prose for this finding was already tried and did not hold, the first row
+   is the only honest answer.** A component the agent demonstrably read and did
+   not apply will not be fixed by rewording it in the same place — that is the
+   evidence that the mechanism, not the wording, is wrong. Record what was tried
+   and how it was measured, so the next reader does not re-run the experiment.
 
 3. **Draft the improvement:**
    Follow **skill-template** for new skills, rule naming convention for rules.

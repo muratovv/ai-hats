@@ -17,12 +17,15 @@ injection: |
   - **`usage/`** — opinionated content catalog. Domain roles, `dev::` / `env::`
     traits, opt-in skills. Take what fits, ignore the rest.
   - **`ai-hats-dev/`** — the layer the ai-hats repository wears to develop
-    itself. Present only in that checkout; nothing here is meant for a
-    consuming project.
+    itself. It ships with the package but is addressed to that checkout;
+    nothing here is meant for a consuming project, and the wizard does not
+    offer its roles.
 
   Above all three sit your own overrides (`~/.ai-hats/`, a project's
   `libraries/`), which win by the same last-wins rule.
 
   When creating a rule / skill / trait, the layer is a **plan-stage** answer,
-  not a post-hoc one. Ownership of library curation lives with the
-  `role-curator` role — hand off non-trivial library changes there.
+  not a post-hoc one. Curating agent behavior is the `behaviorist` role —
+  hand off non-trivial library changes there, or pull its craft into the role
+  you already wear:
+  `ai-hats config customize <role> --add-trait skill-engineer`.
