@@ -270,9 +270,11 @@ class CodexSurface(Surface):
     def _project_base_home(base_home: Path, session_home: Path, artifacts) -> None:
         try:
             for source in sorted(base_home.iterdir(), key=lambda path: path.name):
-                if source.name not in {"skills", "auth.json", _AI_HATS_HOME_DIR} and not source.name.endswith(
-                    _SQLITE_ARTIFACT_SUFFIXES
-                ):
+                if source.name not in {
+                    "skills",
+                    "auth.json",
+                    _AI_HATS_HOME_DIR,
+                } and not source.name.endswith(_SQLITE_ARTIFACT_SUFFIXES):
                     artifacts.port.symlink(source, session_home / source.name)
         except OSError:
             raise RuntimeError("Codex session home projection failed") from None
