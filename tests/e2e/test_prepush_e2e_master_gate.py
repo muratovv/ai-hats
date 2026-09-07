@@ -113,6 +113,11 @@ def _write_markers(repo: Path, tree: str, stages: list[str] | None = None) -> No
         (where / stage).write_text(f"tree={tree}\nstage={stage}\n")
 
 
+def _red(res: subprocess.CompletedProcess[str], stage: str) -> bool:
+    """The verdict line names the red stage: `RESULT … FAILED <stage> (rc=N)`."""
+    return f"FAILED {stage} (rc=" in res.stderr
+
+
 def _tree(repo: Path, rev: str = "HEAD") -> str:
     return _git(repo, "rev-parse", f"{rev}^{{tree}}").stdout.strip()
 
@@ -326,7 +331,7 @@ def test_run_mode_stops_at_the_first_red_and_the_tier_never_starts(tmp_path: Pat
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 1, res.stderr
-    assert "stage 'lint' FAILED" in res.stderr
+    assert _red(res, "lint"), res.stderr
     stages = _push_gate_stages()
     assert _stages_run(repo) == stages[: stages.index("lint") + 1]
     assert not _tier_ran(bindir), "the e2e tier ran despite a red cheap stage"
@@ -357,7 +362,7 @@ def test_run_mode_a_red_tier_earns_no_marker_for_it(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 1
-    assert "stage 'e2e' FAILED" in res.stderr
+    assert _red(res, "e2e"), res.stderr
     marked = _marked(repo, _tree(repo))
     assert "e2e" not in marked
     assert marked == set(_push_gate_stages()) - {"e2e"}, "the green cheap stages keep their stamps"
@@ -388,7 +393,7 @@ def test_run_mode_dirty_tree_is_judged_in_a_scratch_checkout(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert "checkout of its own" in res.stderr
+    assert "scratch: " in res.stderr, res.stderr
     assert _marked(repo, _tree(repo)) == set(_push_gate_stages())
     assert (repo / "dirty").exists(), "the desk is untouched"
     assert "scratch" not in _git(repo, "worktree", "list").stdout
@@ -401,7 +406,7 @@ def test_run_mode_without_pytest_the_tier_is_red_and_unmarked(tmp_path: Path):
     res = _run(bindir=None, cwd=repo)
 
     assert res.returncode != 0
-    assert "stage 'e2e' FAILED" in res.stderr
+    assert _red(res, "e2e"), res.stderr
     assert "e2e" not in _marked(repo, _tree(repo))
 
 
