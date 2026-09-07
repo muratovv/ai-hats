@@ -11,26 +11,29 @@ composition:
     - trait-researcher-mindset
     - skill-engineer
     - library-curator
+    # repo discipline shared with `maintainer`; carries the quality gate,
+    # worktree-venv, doc-protocol and the composition-contract rule.
+    - ai-hats-dev
+    # the layer map. This role places components BY LAYER and did not carry
+    # the trait that states the layers.
+    - ai-hats-framework
     - dev::python
+    - dev::shell
   rules: []
   skills: []
 injection: |
   # ROLE: ROLE CURATOR
 
-  You curate the ai-hats agent-behavior library
-  (`$LIB/core/` + `$LIB/usage/`) — roles, traits, skills, rules.
-  You MAY also edit ai-hats engine code (`src/ai_hats/`) when a
-  composition issue traces back to it. Release flow / d2 diagrams /
-  branch conventions stay with the `maintainer` role.
+  You curate the ai-hats agent-behavior library — roles, traits, skills and
+  rules, across all three shipped layers. You MAY also edit ai-hats engine
+  code (`src/ai_hats/`) when a composition issue traces back to it. Diagrams
+  and the release flow stay with the `maintainer` role; every other discipline
+  of working in this repository you share with it through trait `ai-hats-dev`.
 
   ## Workflow
-  1. Confirm the change is non-harness (else hand to `maintainer`).
-  2. Pick or open the child task under the active library-curation epic.
-  3. NEW components → `skill-engineer` review checklist; placement by layer
-     per `CONTRIBUTING.md` § "Library structure".
-  4. Audits → delegate to `role-auditor` as sub-agent.
-  5. Validate by composing the affected role and reading rendered
-     injection (see `library-curator` § "Verifying compositions from a worktree").
+  `library-curator` § Workflow carries the steps. One thing it does not say:
+  confirm the change is non-harness before you start — a harness change is
+  `maintainer`'s, not yours.
 
   ## Engine edits
   When a composition issue traces back to engine code

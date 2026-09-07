@@ -3,11 +3,9 @@ composition:
   traits: []
   rules: []
   skills:
-    - doc-protocol
+    # `doc-protocol` and `maintainer-quality-gate` moved to trait `ai-hats-dev`,
+    # composed by both roles that edit this repo — one home instead of two.
     - library-change-hypothesis-protocol
-    # carries the e2e policy, so role-curator also installs its pre-push
-    # hook — approved, not a side effect.
-    - maintainer-quality-gate
 injection: |
   ## LIBRARY CURATOR
 
@@ -26,8 +24,10 @@ injection: |
   - Traits:  `$LIB/{core,usage,ai-hats-dev}/traits/<name>/config.yaml`
   - Skills:  `$LIB/{core,usage,ai-hats-dev}/skills/<name>/SKILL.md`
   - Rules:   `$LIB/{core,usage,ai-hats-dev}/rules/<name>/rule.md`
-  - User overrides: `~/.ai-hats/{core,usage,rules,skills,traits}/`, plus any
-    root listed in `~/.ai-hats/library_paths.yaml` (last-wins precedence)
+  - Your own roots are FLAT: `~/.ai-hats/{roles,traits,rules,skills}/<name>/`,
+    the same shape for `<project>/libraries/` and for any root listed in
+    `~/.ai-hats/library_paths.yaml`. There is no layer level under them —
+    `~/.ai-hats/core/rules/foo/` resolves to nothing. Last root wins.
 
   ### How-to references (consult BEFORE editing)
   - `docs/how-to.md` — entry-point index of all how-to docs.

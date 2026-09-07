@@ -98,6 +98,7 @@ def test_maintainer_composition_has_expected_traits() -> None:
         "trait-researcher-mindset",
         "skill-engineer",
         "ai-hats-maintainer",
+        "ai-hats-dev",
         "ai-hats-framework",
         "dev::python",
         "dev::shell",
@@ -127,13 +128,6 @@ def test_maintainer_injection_has_role_header() -> None:
         # Glossary-first + numbered-refs
         "Glossary-first",
         "Numbered-refs",
-        # D2 diagrams — promoted reference_d2_label_syntax content
-        "Diagrams (d2)",
-        "Multiline labels",
-        "Theme overrides",
-        "Palette slot map",
-        "_palette.d2",
-        "Source Code Pro",
         # Architectural defaults (design preferences)
         "Strict typed contracts",
         "Immutable state",
@@ -144,16 +138,66 @@ def test_maintainer_injection_has_role_header() -> None:
         "HYP-as-technical-risk",
     ],
 )
+def test_ai_hats_dev_injection_contains(needle: str) -> None:
+    """Repo discipline every role editing this checkout needs."""
+    trait = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-dev/config.yaml"
+    )
+    assert needle in trait.injection, f"missing in ai-hats-dev injection: {needle!r}"
+
+
+@pytest.mark.parametrize(
+    "needle",
+    [
+        # D2 diagrams — promoted reference_d2_label_syntax content
+        "Diagrams (d2)",
+        "Multiline labels",
+        "Theme overrides",
+        "Palette slot map",
+        "_palette.d2",
+        "Source Code Pro",
+        "Release flow",
+    ],
+)
 def test_ai_hats_maintainer_injection_contains(needle: str) -> None:
+    """The two crafts that did NOT become shared discipline."""
     trait = _load(
         "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
     )
     assert needle in trait.injection, f"missing in ai-hats-maintainer injection: {needle!r}"
 
 
-def test_ai_hats_maintainer_attaches_doc_protocol() -> None:
-    trait = _load(
+def test_shared_discipline_reaches_both_roles() -> None:
+    """A trait nobody composes delivers nothing — the failure a file-level
+    content test cannot see. Both roles that edit this repo must carry it."""
+    for path in (
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml",
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml",
+    ):
+        assert "ai-hats-dev" in _load(path).composition.traits, path
+
+
+def test_repo_discipline_lives_in_exactly_one_trait() -> None:
+    """Moved, not copied: a section in both traits would reach `maintainer`
+    twice, since it composes both."""
+    shared = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-dev/config.yaml"
+    ).injection
+    specialties = _load(
         "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
+    ).injection
+    for heading in ("### E2E gate", "### Branches and commits", "### Anti-patterns to refuse"):
+        assert heading in shared and heading not in specialties, heading
+    for heading in ("### Diagrams (d2)", "### Release flow"):
+        assert heading in specialties and heading not in shared, heading
+    # the duplicated layer blurb is gone from both; `ai-hats-framework` owns it
+    assert "### Library split" not in shared and "### Library split" not in specialties
+
+
+def test_ai_hats_dev_attaches_doc_protocol() -> None:
+    """It followed its section: `### Documentation discipline` points at it."""
+    trait = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-dev/config.yaml"
     )
     assert "doc-protocol" in trait.composition.skills
 
@@ -161,7 +205,7 @@ def test_ai_hats_maintainer_attaches_doc_protocol() -> None:
 def test_e2e_gate_policy_folded_into_the_gate_skill() -> None:
     """HATS-1834: the rule was absorbed by the skill that enforces it."""
     trait = _load(
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-dev/config.yaml"
     )
     assert "dev_rule_e2e_gate" not in trait.composition.rules
     assert not (LIBRARY / "core/rules/dev_rule_e2e_gate").exists()

@@ -11,19 +11,14 @@ composition:
     - trait-researcher-mindset
     - skill-engineer
     - ai-hats-maintainer
+    # repo discipline shared with `role-curator` — the eight sections this
+    # trait used to carry alone.
+    - ai-hats-dev
     - ai-hats-framework
     - dev::python
     - dev::shell
   rules: []
-  skills:
-    # installs a pre-push hook that runs e2e+smoke when the
-    # push target is refs/heads/master. Pure infrastructure (no agent-side
-    # decision logic); hard gate, no env-var bypass.
-    - maintainer-quality-gate
-    # wt_in hook that mints a .venv in each new worktree, so the
-    # first commit clears the smoke gate without hand-provisioning. Pure
-    # infrastructure; warn-continue, never blocks worktree creation.
-    - worktree-venv
+  skills: []
   # the live consumer of the bindings channel, on BOTH roads into
   # master: `apps.rack.tasks` is the FSM automerge and `apps.wt` is a direct
   # `ai-hats wt merge`, and a gate that holds only one of them is the asymmetry
