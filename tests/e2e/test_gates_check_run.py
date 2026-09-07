@@ -83,6 +83,9 @@ def _gate(
     child = {k: v for k, v in os.environ.items() if not k.startswith("GATES_TEST_RC_")}
     child["GATES_STAGE_RUNNER"] = str(runner)
     child.pop("PYTEST_ADDOPTS", None)
+    # Every real gate exports this (lib/gate.sh), so a run of this file from
+    # INSIDE one would judge the primitive on the gate's resume command.
+    child.pop("GATES_RESUME_CMD", None)
     child.update(env or {})
     return subprocess.run(
         ["bash", str(GATES), *args],
