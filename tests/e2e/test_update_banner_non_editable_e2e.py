@@ -35,6 +35,15 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 LAG_COMMITS = 5  # how many commits behind ``master`` the installed snapshot is
 
 
+# The layout comes from the composition root, as it does in production.
+_BANNER_PROGRAM = (
+    "import sys; from pathlib import Path; "
+    "from ai_hats.cli._entry import resolve_project; "
+    "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+    "RenderUpdateBanner().run(layout=resolve_project(Path(sys.argv[1])).layout)"
+)
+
+
 def _run(cmd, *, cwd, env, timeout, expect_exit=0, check_returncode=True):
     result = subprocess.run(
         cmd,
@@ -208,9 +217,7 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
         [
             str(venv_python),
             "-c",
-            "import sys; from pathlib import Path; "
-            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            _BANNER_PROGRAM,
             str(project),
         ],
         cwd=project,
