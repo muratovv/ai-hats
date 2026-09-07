@@ -36,10 +36,7 @@ injection: |
     replacing a system role.
   - `docs/how-to-configure.md` — composition resolution rules.
   - `docs/how-to-feedback-loop.md` — retro → framework loop.
-  - `docs/reflect.md` — the reflexive loop, by component: `session-reviewer`
-    (per-session LLM auditor), `judge-auditor`/`judge` (HYP+PROP triage),
-    `role-judge` (role audit), `hypothesis-intake` (observation intake).
-    Read it before reasoning about "an LLM auditor" — all four already exist.
+  - `docs/reflect.md` — the reflexive loop, component by component.
 
   ### The reflexive loop is YOUR content
   Every component of the contour is a library artifact in your remit:
