@@ -15,6 +15,7 @@ never executes.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -155,9 +156,50 @@ def _check_overwrites(steps: tuple[Step, ...]) -> None:
             owner[k] = i
 
 
+def required_run_params(step: Step) -> frozenset[str]:
+    """The params ``step.run`` cannot be called without — bound, so no ``self``."""
+    return frozenset(
+        name
+        for name, p in inspect.signature(step.run).parameters.items()
+        if p.default is inspect.Parameter.empty
+        and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+    )
+
+
+def _check_run_signature(steps: tuple[Step, ...]) -> None:
+    """Refuse a step whose ``run`` demands a param its ``io`` never declares.
+
+    ``_run_steps`` projects kwargs strictly from the declaration, so an
+    undeclared param is never passed and every call raises ``TypeError`` — under
+    ``failure_policy="continue"`` the step is then skipped for its whole life
+    while the pipeline stays green (HATS-1892).
+
+    Strict against ``requires`` alone: ``optional`` means the key may be absent,
+    and a required param riding an absent key is the same TypeError.
+    """
+    for s in steps:
+        undeclared = required_run_params(s) - s.io.requires
+        if not undeclared:
+            continue
+        as_optional = sorted(undeclared & s.io.optional)
+        hint = (
+            f" {as_optional} are declared `optional`, which permits the key to be "
+            "absent — a required param cannot ride one."
+            if as_optional
+            else ""
+        )
+        raise BuildError(
+            f"{s.io.name}: run() cannot be called without {sorted(undeclared)}, "
+            f"which io.requires does not declare ({sorted(s.io.requires)}) — the "
+            f"runner projects kwargs from the declaration, so the step would raise "
+            f"TypeError on every run.{hint}"
+        )
+
+
 def build(*steps: Step, name: str = "pipeline") -> Pipeline:
     """Construct a Pipeline. Validation against actual inputs is in ``run``."""
     _check_overwrites(tuple(steps))
+    _check_run_signature(tuple(steps))
     return Pipeline(steps=tuple(steps), name=name)
 
 
@@ -205,6 +247,7 @@ def _execute_pipeline(
     del failure_policy  # reserved for future composite policy extensions
     # Repeated here for a Pipeline constructed directly, bypassing ``build``.
     _check_overwrites(steps)
+    _check_run_signature(steps)
     available = set(initial_state.keys())
     produced: set[str] = set()
     for s in steps:
