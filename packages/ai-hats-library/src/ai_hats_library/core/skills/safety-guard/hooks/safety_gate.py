@@ -899,7 +899,7 @@ def _wrapper_bypass_verdict(cmd: str, *, targets=None, points=None) -> dict:
     return {}
 
 
-def consent_ask(cmd: str, tool_input: dict) -> dict:
+def consent_ask(cmd: str, tool_input: dict, *, codex_rack_form: bool = False) -> dict:
     """The verdict for a call touching a point the ROLE declared consent on.
 
     Where to ask is not a judgement this hook makes — it reads the role's
@@ -938,7 +938,12 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
             if flag and os.environ.get(flag) == "1":
                 journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
                 return {}
-        return _ask_for(
+        if codex_rack_form and _envelope().get("provider") == "codex":
+            return {
+                "permissionDecision": "ask",
+                "permissionDecisionReason": f"{task_id}: → {target} needs your consent.",
+            }
+        decision = _ask_for(
             cmd,
             tool_input,
             args,
@@ -948,6 +953,12 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
             task_id,
             f"{task_id}: → {target} needs your consent.",
         )
+        if _envelope().get("provider") == "codex":
+            decision["permissionDecisionReason"] += (
+                " In an interactive Codex session, use ai_hats_consent.rack_transition "
+                "with the arguments after rack transition as a list."
+            )
+        return decision
 
     # `ai-hats wt merge` — the OTHER road into master (HATS-1130). Same question,
     # different engine, which is why one declaration has to cover both.
@@ -1109,6 +1120,13 @@ def check_command(cmd_string: str, depth: int = 0) -> str:
             if not cmd_bin:
                 continue
 
+            if _is_interpreter(cmd_bin) and any(
+                "ai_hats.surfaces.codex.consent_server" in token
+                or token.endswith("/codex/consent_server.py")
+                for token in args[1:]
+            ):
+                return "Stopped: use the registered MCP tool; do not launch its consent server."
+
             if depth < MAX_WRAPPER_DEPTH:
                 for payload in shell_payloads(cmd_bin, args):
                     reason = check_command(payload, depth + 1)
@@ -1165,7 +1183,11 @@ def main() -> int:
         return 0
 
     try:
-        decision = consent_ask(cmd, tool_input) or allow_verdict(cmd)
+        decision = consent_ask(
+            cmd,
+            tool_input,
+            codex_rack_form=payload.get("ai_hats_consent_transport") == "codex.rack_transition",
+        ) or allow_verdict(cmd)
     except Exception as exc:
         # A consent path that touches the filesystem must never take the rest of
         # the gate down with it — `rm`, `mkfs`, `dd` are judged above (HATS-1647).

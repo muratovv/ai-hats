@@ -790,6 +790,48 @@ as a claim to check, not as evidence.
 - **expect** — codex is discovered through the entry point ai-hats declares for it and is displayed alongside claude
 - **why** — a surface reaches the binary only through the `ai_hats.providers` group; codex used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
 
+## `test_codex_rack_consent_chain.py`
+
+*pins HATS-1897*
+
+- **flow** — the MCP client approves a real rack transition through the session wrapper
+- **cmds**
+
+  ```console
+  rack transition HATS-1897 execute
+  ```
+
+- **expect** — no task or worktree mutation before Accept; the wrapper then runs rack
+- **why** — a successful form alone does not prove the command boundary
+
+## `test_codex_rack_consent_delivery.py`
+
+*pins HATS-1897*
+
+- **flow** — ordinary Codex HITL artifact assembly delivers the consent MCP server
+- **cmds**
+
+  ```console
+  ai-hats --provider codex --role assistant
+  ```
+
+- **expect** — the launched session receives MCP config without a PoC launcher
+- **why** — an independently runnable server is not a delivered user feature
+
+## `test_codex_rack_consent_guards.py`
+
+*pins HATS-1897*
+
+- **flow** — a consent question precedes a denying guard on the MCP command path
+- **cmds**
+
+  ```console
+  rack transition HATS-1897 execute
+  ```
+
+- **expect** — the later denial wins and no authorization is issued
+- **why** — accepting the first ask must not hide another guard's refusal
+
 ## `test_codex_resume.py`
 
 *pins HATS-1801*

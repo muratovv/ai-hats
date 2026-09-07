@@ -266,6 +266,28 @@ def test_ticket_must_be_consumed_before_original_starts(tmp_path: Path):
     assert spawned == []
 
 
+def test_mcp_ticket_journal_failure_prevents_execution(tmp_path: Path):
+    from ai_hats.consent_wrapper import REQUEST_ENV
+
+    config = WrapperConfig(
+        project_dir=tmp_path,
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("->execute",)},
+    )
+    code = run_wrapped(
+        "rack",
+        ["transition", "HATS-001", "execute"],
+        config,
+        environ={REQUEST_ENV: "request-one"},
+        check_grant=lambda *_: Verdict(Outcome.NO_AGENT, "no grant"),
+        peek_ticket=lambda *_: True,
+        consume_ticket=lambda *_: True,
+        record_request=lambda *_: False,
+        spawn=lambda *_: pytest.fail("Unjournaled authorization executed"),
+    )
+    assert code == 2
+
+
 def test_declared_direct_wt_merge_refuses_before_spawn(tmp_path: Path):
     spawned: list[list[str]] = []
     config = WrapperConfig(

@@ -55,6 +55,7 @@ def _fake_result(
         user_rules=(),
         skills=skill_objs,
         checks=(),
+        consent=(),
     )
 
 

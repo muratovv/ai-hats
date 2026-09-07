@@ -20,6 +20,7 @@ REFUSED = 2
 _TICKET_ENV = "AI_HATS_CONSENT_TICKET"
 _GLOBAL_ACK = "AI_HATS_CONSENT_ACK"
 CONFIG_ENV = "AI_HATS_CONSENT_WRAPPER_CONFIG"
+REQUEST_ENV = "AI_HATS_CONSENT_REQUEST_ID"
 _ARROW = "->"
 _STATE_CHARS = frozenset(string.ascii_letters + string.digits + "_.-")
 _SOURCE_QUERY_TIMEOUT_S = 30
@@ -198,6 +199,19 @@ def _record_legacy(flag: str, operation: Operation, project_dir: Path) -> bool:
     )
 
 
+def _record_request(request_id: str, operation: Operation, project_dir: Path) -> bool:
+    from ai_hats_library.hooks.bypass_journal import journal_bypass
+
+    return journal_bypass(
+        "consent",
+        json.dumps(
+            {"request_id": request_id, "operation": operation.type, "phase": "ticket_consumed"}
+        ),
+        hook="consent_wrapper.py",
+        cwd=project_dir,
+    )
+
+
 def run_wrapped(
     surface: str,
     argv: Sequence[str],
@@ -209,6 +223,7 @@ def run_wrapped(
     consume_ticket: Callable[[str | None, Sequence[str]], bool],
     record_grant: Callable[[Verdict, Operation, Path], bool] = _record_grant,
     record_legacy: Callable[[str, Operation, Path], bool] = _record_legacy,
+    record_request: Callable[[str, Operation, Path], bool] = _record_request,
     resolve_transition_source: Callable[
         [str, str, Sequence[str], Mapping[str, str]], str
     ] = _resolve_transition_source,
@@ -255,7 +270,7 @@ def run_wrapped(
                 return REFUSED
 
     child_env = dict(env)
-    for flag in (*matched.legacy_flags, _TICKET_ENV):
+    for flag in (*matched.legacy_flags, _TICKET_ENV, REQUEST_ENV):
         child_env.pop(flag, None)
     if ticket and not consume_ticket(matched.ticket_subject, argv):
         print("consent: authorization ticket could not be consumed", file=sys.stderr)
@@ -265,6 +280,8 @@ def run_wrapped(
         recorded = record_grant(answer, matched.operation, config.project_dir)
     elif legacy_flag is not None:
         recorded = record_legacy(legacy_flag, matched.operation, config.project_dir)
+    elif ticket and env.get(REQUEST_ENV):
+        recorded = record_request(env[REQUEST_ENV], matched.operation, config.project_dir)
     if not recorded:
         print("consent: authorization use could not be recorded", file=sys.stderr)
         return REFUSED

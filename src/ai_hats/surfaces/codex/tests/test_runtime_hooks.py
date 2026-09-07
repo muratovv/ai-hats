@@ -199,6 +199,7 @@ def test_provider_artifact_pipeline_delivers_manifest_and_static_hook_config(
         merged_injection="",
         rules=[],
         user_rules=(),
+        consent=(),
     )
 
     artifacts = CodexSurface().build_session_artifacts(
