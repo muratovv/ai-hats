@@ -1,5 +1,5 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
 import pytest
 
@@ -7,8 +7,31 @@ from ai_hats.materialization import ApplyMaterializer, PlanMaterializer
 from ai_hats.surfaces.codex.session_auth import reconcile_auth, stage_auth
 
 
+@pytest.mark.parametrize(
+    "baseline",
+    [b"{", b"\xff", b"[]", b"{}", b'{"digest": 3}', b'{"digest": "bad"}'],
+)
+def test_invalid_baseline_is_reported_without_changing_credentials(
+    tmp_path: Path, baseline: bytes
+) -> None:
+    base, session = tmp_path / "base", tmp_path / "session"
+    base.mkdir()
+    (base / "auth.json").write_text('{"fixture": "old"}')
+    stage_auth(base, session, ApplyMaterializer())
+    (session / "auth.json").write_text('{"fixture": "new"}')
+    (session / ".ai-hats-auth-baseline.json").write_bytes(baseline)
+
+    with pytest.raises(RuntimeError, match="invalid.*baseline"):
+        reconcile_auth(base, session)
+
+    assert (base / "auth.json").read_text() == '{"fixture": "old"}'
+    assert (session / "auth.json").read_text() == '{"fixture": "new"}'
+
+
 @pytest.mark.parametrize("initial", [None, '{"fixture": "old"}'])
-def test_login_is_persisted_before_a_new_session_starts(tmp_path: Path, initial: str | None):
+def test_login_is_persisted_before_a_new_session_starts(
+    tmp_path: Path, initial: str | None
+) -> None:
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     if initial is not None:
@@ -25,7 +48,7 @@ def test_login_is_persisted_before_a_new_session_starts(tmp_path: Path, initial:
     assert (next_session / "auth.json").read_bytes() == (base / "auth.json").read_bytes()
 
 
-def test_dry_run_never_copies_credentials_or_records_their_digest(tmp_path: Path):
+def test_dry_run_never_copies_credentials_or_records_their_digest(tmp_path: Path) -> None:
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "private"}')
@@ -40,7 +63,7 @@ def test_dry_run_never_copies_credentials_or_records_their_digest(tmp_path: Path
     assert (session / "auth.json").stat().st_mode & 0o777 == 0o600
 
 
-def test_write_failure_is_reported_and_keeps_both_copies(tmp_path: Path):
+def test_write_failure_is_reported_and_keeps_both_copies(tmp_path: Path) -> None:
     if os.geteuid() == 0:
         pytest.skip("root bypasses directory write permissions")
     base, session = tmp_path / "base", tmp_path / "session"
@@ -61,7 +84,9 @@ def test_write_failure_is_reported_and_keeps_both_copies(tmp_path: Path):
 
 
 @pytest.mark.parametrize("changed", [False, True])
-def test_older_session_never_restores_auth_after_another_logout(tmp_path: Path, changed: bool):
+def test_older_session_never_restores_auth_after_another_logout(
+    tmp_path: Path, changed: bool
+) -> None:
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "old"}')
@@ -77,7 +102,7 @@ def test_older_session_never_restores_auth_after_another_logout(tmp_path: Path, 
 
 
 @pytest.mark.parametrize("location", ["base", "session"])
-def test_reconciliation_refuses_a_substituted_symlink(tmp_path: Path, location: str):
+def test_reconciliation_refuses_a_substituted_symlink(tmp_path: Path, location: str) -> None:
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "old"}')
@@ -92,3 +117,20 @@ def test_reconciliation_refuses_a_substituted_symlink(tmp_path: Path, location: 
         reconcile_auth(base, session)
 
     assert target.read_text() == "untouched"
+
+
+@pytest.mark.parametrize("legacy_auth", [False, True])
+def test_home_without_baseline_or_private_auth_can_be_finalized(
+    tmp_path: Path, legacy_auth: bool
+) -> None:
+    base, session = tmp_path / "base", tmp_path / "session"
+    base.mkdir()
+    session.mkdir()
+    shared = base / "auth.json"
+    shared.write_text('{"fixture": "old"}')
+    if legacy_auth:
+        (session / "auth.json").symlink_to(shared)
+
+    assert reconcile_auth(base, session) is None
+
+    assert shared.read_text() == '{"fixture": "old"}'

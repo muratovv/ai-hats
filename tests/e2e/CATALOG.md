@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**301 of 301 files catalogued — 309 flows.**
+**302 of 302 files catalogued — 310 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -673,6 +673,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the refusal exits non-zero and names "linked worktree"; the worktree survives it; HATS-1 stays in state review; sibling HATS-2 still resolves via `rack context`, both after the refusal and after the close finally issued from main
 - **why** — without the guard the close merges and `git worktree remove --force` deletes the operator's cwd — every later `rack` then mis-resolves the tracker and a sibling task reads "not found" though it is intact on disk
+
+## `test_codex_auth_lifecycle.py`
+
+*pins HATS-1896*
+
+- **flow** — a user logs out and logs back in across isolated Codex session homes
+- **cmds**
+
+  ```console
+  codex logout
+  codex login --with-api-key
+  codex login status
+  ```
+
+- **expect** — logout and subsequent login persist into the next session home
+- **why** — unlinking a projected auth symlink used to leave canonical credentials behind
 
 ## `test_codex_clean_root.py`
 

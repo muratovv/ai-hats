@@ -77,6 +77,28 @@ def test_write_text_is_recorded_with_its_byte_size(port: Materializer, tmp_path:
     assert entry.size == 5
 
 
+def test_private_write_hides_content_and_creates_parents(
+    port: Materializer, tmp_path: Path
+) -> None:
+    target = tmp_path / "session" / "private" / "auth.json"
+    content = '{"fixture": "private credentials"}'
+
+    port.write_private_text(target, content)
+    port.mkdir(target.parent)
+
+    [entry] = port.plan.entries
+    assert entry.kind is WriteKind.WRITE_TEXT
+    assert entry.target == target
+    assert entry.digest is None
+    assert entry.size == 0
+    assert content not in repr(entry)
+    if isinstance(port, ApplyMaterializer):
+        assert target.read_text() == content
+        assert target.stat().st_mode & 0o777 == 0o600
+    else:
+        assert not target.parent.exists()
+
+
 def test_write_executable_records_bytes_and_only_apply_sets_mode(
     port: Materializer, tmp_path: Path
 ):

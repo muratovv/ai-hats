@@ -374,6 +374,33 @@ def test_session_logout_removes_shared_auth(tmp_path: Path) -> None:
     assert not (base_home / "auth.json").exists()
 
 
+def test_session_without_auth_baseline_retains_credentials(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    (base_home / "auth.json").write_text('{"fixture": "old"}')
+    notices: list[str] = []
+    provider = CodexSurface()
+    run = SessionRun(SimpleNamespace(session_id="missing-baseline", log_sys=notices.append))
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "missing-baseline",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+        session_home = provider.session_codex_home(project, "missing-baseline")
+        (session_home / "auth.json").write_text('{"fixture": "new"}')
+        baseline = session_home / ".ai-hats-auth-baseline.json"
+        baseline.unlink()  # safe-delete: ok synthetic baseline fixture
+
+    assert (session_home / "auth.json").read_text() == '{"fixture": "new"}'
+    assert (base_home / "auth.json").read_text() == '{"fixture": "old"}'
+    assert len(notices) == 1
+    assert "baseline" in notices[0]
+
+
 def test_session_logout_preserves_a_newer_login(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()

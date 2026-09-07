@@ -19,6 +19,11 @@ still matches the baseline. An unchanged session must never resurrect credential
 removed elsewhere. A conflict or I/O failure preserves the session home and reports
 the failure. Crash-home recovery uses the same reconciliation.
 
+An invalid baseline prevents reconciliation. A missing baseline retains the home
+when a private credential copy is present, so incomplete staging or lost metadata
+cannot silently discard it. Legacy homes containing only a credential symlink,
+or no credentials, remain eligible for cleanup without reconciliation.
+
 The materialization port supports private writes without recording contents or
 digests in its public plan. Dry runs record the target without copying credentials
 or creating lock files.
