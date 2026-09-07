@@ -127,7 +127,7 @@ A role is a composition of traits + rules + skills + injection — definition in
 
 | Layer                                                       | Roles                                                                                                          | When to pick                                       |
 | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `packages/ai-hats-library/src/ai_hats_library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                              | Curated user-facing — pick one.                    |
+| `packages/ai-hats-library/src/ai_hats_library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`, `tech-writer`               | Curated user-facing — pick one.                    |
 | `packages/ai-hats-library/src/ai_hats_library/core/roles/`  | `initial-wizard`, `session-reviewer`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent` | Engine-internal — do **not** pick as your primary. |
 
 Bring-your-own roles go under `~/.ai-hats/roles/<name>/` or `<project>/libraries/roles/<name>/`. Override precedence and full library layout — see [3].

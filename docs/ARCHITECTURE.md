@@ -241,7 +241,7 @@ ai_hats_library/
     initial_injections/   initial-wizard, reflect-all, reflect-role, reflect-hypothesis, reflect-hypothesis-interactive
     templates/      githooks/ (dispatcher + managed hook scripts)
   usage/                             # curated content catalog — opt-in
-    roles/          assistant, dev-python, dev-web, maintainer, architect, sre, go-dev, go-dev-full
+    roles/          assistant, dev-python, dev-web, maintainer, architect, sre, go-dev, go-dev-full, tech-writer
     traits/         trait-se-mindset, trait-researcher-mindset, skill-engineer, dev::python, dev::shell, dev::go-*, env::proxmox
     rules/          dev_rule_secure_coding, env_rule_proxmox_infra
     skills/         55+ skills (golang-*, terraform, ansible, observability, system-design, ...)
