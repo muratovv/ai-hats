@@ -65,9 +65,19 @@ def _worktree(project: Path, name: str) -> Path:
     return wt
 
 
+PUSH_HOOK = SKILL_SRC / "git_hooks" / "pre-push-e2e-master.sh"
+
+
 def _stages(gate: str) -> list[str]:
     out = subprocess.run(
         ["bash", str(HOOKS / f"{gate}.sh"), "--stages"], capture_output=True, text=True, check=True
+    )
+    return out.stdout.split()
+
+
+def _push_stages() -> list[str]:
+    out = subprocess.run(
+        ["bash", str(PUSH_HOOK), "--stages"], capture_output=True, text=True, check=True
     )
     return out.stdout.split()
 
@@ -107,6 +117,28 @@ def _hook(
         stub.chmod(0o755)
     return subprocess.run(
         ["bash", str(HOOKS / f"{gate}.sh"), *argv],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env=child,
+        check=False,
+    )
+
+
+def _push_hook(
+    project: Path, env: dict[str, str | None], *argv: str
+) -> subprocess.CompletedProcess[str]:
+    """The push gate's own script — a separate file, because its default mode
+    reads git's protocol from stdin. Only `--run` is reachable from here."""
+    child = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    child["GATES_STAGE_RUNNER"] = str(project.parent / "runner-stub.sh")
+    for name, value in env.items():
+        if value is None:
+            child.pop(name, None)
+        else:
+            child[name] = value
+    return subprocess.run(
+        ["bash", str(PUSH_HOOK), *argv],
         cwd=project,
         capture_output=True,
         text=True,
@@ -309,6 +341,87 @@ def test_a_red_run_names_the_command_that_resumes_it_right_after_the_verdict(tmp
     assert of_a_commit.stderr.splitlines()[1] == (
         f"[gates] fix e2e-catalog, then: make done-gate REV={sha}"
     )
+
+
+def _green_runner(project: Path) -> Path:
+    """A stage runner that passes everything, so a run reaches its own end."""
+    script = project.parent / "green-runner.sh"
+    script.write_text("#!/usr/bin/env bash\nexit 0\n")
+    script.chmod(0o755)
+    return script
+
+
+def _next_line(res: subprocess.CompletedProcess[str]) -> str:
+    for line in res.stderr.splitlines():
+        if line.startswith("[gates] next: "):
+            return line[len("[gates] next: ") :]
+    return ""
+
+
+def test_a_green_run_names_what_the_next_gate_will_additionally_require(tmp_path: Path):
+    """The two round trips this kills: a green run, then a transition refused
+    for stages the run could already see were missing. Read from the markers,
+    so a gate whose set this run just earned — `merge-gate`, which declares
+    review's list verbatim — is not named, and neither is the gate that ran."""
+    project = _project(tmp_path / "proj")
+    env = {"GATES_STAGE_RUNNER": str(_green_runner(project))}
+
+    out = _hook(project, "review-gate", env, "--run")
+
+    assert out.returncode == 0, out.stderr
+    line = _next_line(out)
+    assert line, out.stderr
+    assert "review-gate" not in line, "it just went green; its own stages are marked"
+    assert "merge-gate" not in line, "same list as review's, so nothing is left of it"
+    earned = set(_stages("review-gate"))
+    for gate, declared in (("done-gate", _stages("done-gate")), ("push-gate", _push_stages())):
+        # In the gate's own order, which is the order the stages would run.
+        only_it = [stage for stage in declared if stage not in earned]
+        assert f"{gate} also needs {', '.join(only_it)}" in line
+
+
+def test_gates_owing_the_same_thing_are_named_together(tmp_path: Path):
+    """The measured sequence: a green push gate, then `->review` refused. The
+    push gate's list covers neither `review-gate` nor `merge-gate`, which
+    declare one list between them — so they are one entry, with the verb that
+    follows from the count."""
+    project = _project(tmp_path / "proj")
+    env = {"GATES_STAGE_RUNNER": str(_green_runner(project))}
+
+    out = _push_hook(project, env, "--run")
+
+    assert out.returncode == 0, out.stderr
+    pushed = set(_push_stages())
+    owed = ", ".join(stage for stage in _stages("review-gate") if stage not in pushed)
+    assert f"merge-gate, review-gate also need {owed}" in _next_line(out)
+    assert "push-gate" not in _next_line(out), "the gate that ran owes nothing now"
+
+
+def test_a_tree_that_owes_nothing_anywhere_says_so(tmp_path: Path):
+    """The end of the road is worth one line too: nothing left means the next
+    transition will not refuse, which is the last round trip this saves."""
+    project = _project(tmp_path / "proj")
+    env = {"GATES_STAGE_RUNNER": str(_green_runner(project))}
+    every = {
+        stage for gate in ("review-gate", "merge-gate", "done-gate") for stage in _stages(gate)
+    }
+    _mark(project, _tree(project), sorted(every | set(_push_stages())))
+
+    out = _hook(project, "done-gate", env, "--run")
+
+    assert out.returncode == 0, out.stderr
+    assert _next_line(out) == "nothing — every gate is green for this tree"
+
+
+def test_a_red_run_says_nothing_about_the_next_gate(tmp_path: Path):
+    """One job at a time: a red run's reader is fixing this gate, not planning
+    the one after it. The stub runner exits 99 at the first stage."""
+    project = _project(tmp_path / "proj")
+
+    out = _hook(project, "review-gate", {}, "--run")
+
+    assert out.returncode == 99, out.stderr
+    assert _next_line(out) == ""
 
 
 # ---------------------------------------------------------------------------
