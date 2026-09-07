@@ -8,10 +8,11 @@ cmds:
 expect: `check` lists what lacks a marker and never calls the runner; `run`
         runs only the unmarked, stamps each green stage for the SUBJECT tree,
         and judges a commit in a one-shot scratch worktree when the checkout is
-        dirty or its HEAD is not the subject
+        dirty or its HEAD is not the subject — saying so under the verdict, and
+        handing a red pytest stage the command that re-runs just its failures
 why:    a per-GATE, all-or-nothing marker made a wider gate re-run what a
         narrower one had earned; a run "here" judged whatever the desk held
-"""
+"""  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
 

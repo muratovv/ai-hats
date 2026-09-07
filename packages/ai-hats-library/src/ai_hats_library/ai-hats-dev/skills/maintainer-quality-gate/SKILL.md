@@ -112,11 +112,20 @@ suite stubbed the very contracts the change broke.
    (`make done-gate REV=<sha>` for a card already merged.) It runs only the
    stages the tree has not earned, in order, stops at the first red, and
    stamps each green one.
-3. **Green** — the run's first line is `RESULT …, green` — transition again.
+3. **Green** — the run's first line is `RESULT …, green`. Its last says what
+   the transition after this one will additionally demand, so you can earn it
+   now instead of being refused for it later:
+
+       [gates] next: merge-gate, review-gate also need wheel-contents;
+               done-gate also needs integration, merge-smoke, master-ci
+
+   `next: nothing` means no gate on the road is short of anything. Transition.
 4. **Red** — the run's block, verdict first:
 
        [gates] RESULT tree 5f225a1b (2ac163eb): 11 cached, 1 ran, FAILED unit (rc=1)
        [gates] fix unit, then: make done-gate
+       [gates] re-run just these:
+           /path/to/repo/.venv/bin/python -m pytest tests/test_x.py::test_y
        [gates] unit said:
        tests/test_x.py:12: AssertionError: …
        1 failed, 6024 passed, 2 skipped in 40.1s
@@ -131,13 +140,21 @@ suite stubbed the very contracts the change broke.
    one line per green stage, the cached ones, the subject, and the dir holding
    every stage's full output. Triage the red stage:
 
+   - a red pytest stage hands you the narrow command already — paste the
+     `re-run just these` line. Do not rebuild it: the interpreter in it is the
+     one this checkout answers for, and the worktree guard refuses another;
    - the stage alone, bare, exactly what CI runs: `bash scripts/gates.sh unit`
      (`bash scripts/gates.sh list` says what each stage checks);
-   - narrower, with the tool itself: `pytest tests/<file> -k <name>`,
-     `ruff check <path>`, `python scripts/check_<name>.py`;
+   - a checker: the tool itself, `ruff check <path>` or
+     `python scripts/check_<name>.py`;
    - fix, commit, `make <gate>` again. A fix is a new tree, and a new tree
      earns every stamp afresh: the checkers take seconds, `unit` about a
      minute — do not reach for `--fresh` or a narrower gate to save it.
+
+   **`the desk is dirty`, under the verdict?** A run with uncommitted changes
+   happens in a scratch checkout of the commit, so it judges what is COMMITTED
+   — a red one against a fix that was never there, a green one vouching for a
+   fix that never ran. Commit, then run again.
 
    `master-ci` is the one red the tree cannot fix: master itself is red. Its
    knob (see "No bypass") is the supervisor's to set, never yours.

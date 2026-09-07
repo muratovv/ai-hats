@@ -7,10 +7,11 @@ cmds:
     bash -c '. lib/gate.sh; gate_exit checks refuse'
 expect: a card with no code passes; a live worktree is judged by ITS scripts/gates.sh
         against the stages the gate declares, and refused with the missing ones
-        and the command that earns them; a merged card is judged by its merge commit
+        and the command that earns them; a merged card is judged by its merge commit;
+        a green run names what the gates after it still lack
 why:    a gate used to be sixty lines that differed from its siblings in two
         strings; a few-line declaration over one primitive cannot drift
-"""
+"""  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
 
