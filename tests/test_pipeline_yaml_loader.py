@@ -28,9 +28,9 @@ _BUILTIN_DIR = (
 _BUILTIN_NAMES = sorted(p.stem for p in _BUILTIN_DIR.glob("*.yaml"))
 
 
-def test_builtin_glob_is_not_empty():
+def test_builtin_glob_resolves():
     # The parametrization below silently passes on an empty list — e.g. a moved dir.
-    assert len(_BUILTIN_NAMES) >= 10
+    assert "finalize-hitl" in _BUILTIN_NAMES
 
 
 @pytest.mark.parametrize("name", _BUILTIN_NAMES)

@@ -156,7 +156,7 @@ def _check_overwrites(steps: tuple[Step, ...]) -> None:
             owner[k] = i
 
 
-def required_run_params(step: Step) -> frozenset[str]:
+def _required_run_params(step: Step) -> frozenset[str]:
     """The params ``step.run`` cannot be called without — bound, so no ``self``."""
     return frozenset(
         name
@@ -178,7 +178,7 @@ def _check_run_signature(steps: tuple[Step, ...]) -> None:
     and a required param riding an absent key is the same TypeError.
     """
     for s in steps:
-        undeclared = required_run_params(s) - s.io.requires
+        undeclared = _required_run_params(s) - s.io.requires
         if not undeclared:
             continue
         as_optional = sorted(undeclared & s.io.optional)

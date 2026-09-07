@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from ai_hats.pipeline import registry
-from ai_hats.pipeline.pipeline import BuildError, build, required_run_params
+from ai_hats.pipeline.pipeline import BuildError, _required_run_params, build
 from ai_hats.pipeline.step import Step, StepIO
 
 
@@ -78,10 +78,10 @@ class _Defaulted(Step):
         return {}
 
 
-def test_required_run_params_excludes_self_and_defaults():
-    assert required_run_params(_Declared()) == {"alpha"}
-    assert required_run_params(_Defaulted()) == frozenset()
-    assert required_run_params(_KwargsOnly()) == frozenset()
+def test_run_params_excludes_self_and_defaults():
+    assert _required_run_params(_Declared()) == {"alpha"}
+    assert _required_run_params(_Defaulted()) == frozenset()
+    assert _required_run_params(_KwargsOnly()) == frozenset()
 
 
 def test_build_accepts_a_declared_param():
@@ -110,7 +110,7 @@ def test_build_accepts_kwargs_only_and_defaulted_runs():
 @pytest.mark.parametrize("step_id", registry.names())
 def test_every_registered_step_can_be_called_from_its_declaration(step_id: str):
     step = registry.get(step_id)(_CONSTRUCTOR_PARAMS.get(step_id, {}))
-    undeclared = required_run_params(step) - step.io.requires
+    undeclared = _required_run_params(step) - step.io.requires
     assert not undeclared, (
         f"{step_id}: run() requires {sorted(undeclared)}, absent from "
         f"io.requires {sorted(step.io.requires)} — the runner can never pass them"
