@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..libraries.models import CheckBindingError
-    from ..paths import NotAnAiHatsProjectError
+    from ..paths import NotAnAiHatsProjectError, ProjectConfigError
     from ..surface_registry import UnknownSurfaceError
     from ..role_spec import RoleSpecError
 
