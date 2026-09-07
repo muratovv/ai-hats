@@ -6,10 +6,11 @@ Start an ordinary interactive session with runtime hooks enabled:
 ai-hats --provider codex --role assistant
 ```
 
-For development from a worktree, use its interpreter:
+For development from a worktree, select both its interpreter and its library:
 
 ```bash
-./.venv/bin/python -m ai_hats --provider codex --role maintainer
+AI_HATS_LIBRARY_ROOT="$PWD/packages/ai-hats-library/src/ai_hats_library" \
+  ./.venv/bin/python -m ai_hats --provider codex --role maintainer
 ```
 
 A role declaring `rack.transition` under `apps.consent_gate` receives the
@@ -19,6 +20,11 @@ after `rack transition`, for example `["HATS-042", "execute"]` [1].
 
 The server starts in the session's bound project directory, even when Codex
 itself starts from a worktree or another directory.
+
+Run the development command from the worktree root. A session bound to the
+main checkout otherwise resolves that checkout's library, which can contain
+an older consent hook than the worktree's server. Restart the session after
+changing the library selection; existing sessions retain their materialized hooks.
 
 Read the project, task, source state, command and request ID in the form.
 Accept authorizes that command once. Decline and Cancel leave it unstarted.
