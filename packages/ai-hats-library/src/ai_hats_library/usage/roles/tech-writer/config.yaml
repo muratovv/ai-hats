@@ -12,6 +12,7 @@ composition:
   skills:
     - prose-review
     - claim-evidence-check
+    - article-outline
 injection: |
   # ROLE: TECHNICAL WRITER
 
