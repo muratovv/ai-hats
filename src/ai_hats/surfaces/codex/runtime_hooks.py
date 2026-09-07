@@ -94,7 +94,7 @@ def _manifest(
     }
 
 
-def consent_cli_args(result) -> list[str]:
+def consent_cli_args(result, project_dir: Path) -> list[str]:
     from ai_hats.consent_wrapper import CONFIG_ENV, policy_from
     from ai_hats.session_identity import IDENTITY_ENV_KEYS
     from ai_hats_library.hooks.consent_gate import operations
@@ -112,6 +112,7 @@ def consent_cli_args(result) -> list[str]:
     }
     settings = {
         "command": sys.executable,
+        "cwd": str(project_dir.resolve()),
         "args": ["-m", "ai_hats.surfaces.codex.consent_server"],
         "env_vars": [
             *IDENTITY_ENV_KEYS,

@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import select
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -26,6 +27,72 @@ from ai_hats.session_artifacts import BuiltArtifacts
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.install_heavy
+def test_real_codex_initializes_required_consent_server(tmp_path, monkeypatch):
+    codex = shutil.which("codex")
+    if codex is None:
+        pytest.skip("Codex binary is not installed")
+    artifacts = BuiltArtifacts()
+    project, env = session(tmp_path, monkeypatch, artifacts)
+    env["CODEX_HOME"] = str(tmp_path / "real-codex")
+    Path(env["CODEX_HOME"]).mkdir()
+    launch_dir = tmp_path / "different-launch-directory"
+    launch_dir.mkdir()
+    cli_args = [
+        arg
+        for flag, value in zip(artifacts.cli_args, artifacts.cli_args[1:])
+        if flag == "-c" and value.startswith("mcp_servers.ai_hats_consent.")
+        for arg in (flag, value)
+    ]
+    with (tmp_path / "codex.stderr").open("w+") as stderr:
+        process = subprocess.Popen(
+            [codex, "app-server", *cli_args],
+            cwd=launch_dir,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+            text=True,
+        )
+
+        def request(request_id, method, params):
+            process.stdin.write(
+                json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+                + "\n"
+            )
+            process.stdin.flush()
+            for _ in range(50):
+                assert select.select([process.stdout], [], [], 30)[0], "Codex response timeout"
+                line = process.stdout.readline()
+                assert line, "Codex closed stdout"
+                message = json.loads(line)
+                if message.get("id") == request_id:
+                    return message
+            pytest.fail("Codex did not return the requested response")
+
+        try:
+            initialized = request(
+                1,
+                "initialize",
+                {
+                    "clientInfo": {"name": "consent-test", "version": "1"},
+                },
+            )
+            assert "result" in initialized, initialized
+            started = request(2, "thread/start", {"cwd": str(launch_dir), "ephemeral": True})
+            assert "result" in started, started
+        finally:
+            process.stdin.close()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            process.stdout.close()
+            stderr.seek(0)
+            print(stderr.read())
+
+
 def test_hitl_materialization_registers_server(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_TEST_SECRET", "do-not-forward")
     artifacts = BuiltArtifacts()
@@ -35,6 +102,7 @@ def test_hitl_materialization_registers_server(tmp_path, monkeypatch):
         if flag == "-c" and value.startswith("mcp_servers.ai_hats_consent."):
             settings.update(tomllib.loads(value)["mcp_servers"]["ai_hats_consent"])
     assert settings["command"] == sys.executable
+    assert settings["cwd"] == str(project.resolve())
     assert settings["args"] == ["-m", "ai_hats.surfaces.codex.consent_server"]
     assert settings["required"] is True
     assert "AI_HATS_SESSION_IDENTITY" in settings["env_vars"]
@@ -171,7 +239,7 @@ print(json.dumps({"env": env, "args": artifacts.cli_args}))
     with (tmp_path / "installed.stderr").open("w+") as stderr:
         process = subprocess.Popen(
             [config["command"], *config["args"]],
-            cwd=project,
+            cwd=config["cwd"],
             env={key: session_env[key] for key in config["env_vars"] if key in session_env},
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

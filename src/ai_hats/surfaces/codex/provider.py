@@ -538,7 +538,7 @@ class CodexSurface(Surface):
         from .runtime_hooks import consent_cli_args
 
         self._deliver_hooks(project_dir, result, session_id, artifacts)
-        artifacts.cli_args.extend(consent_cli_args(result))
+        artifacts.cli_args.extend(consent_cli_args(result, project_dir))
 
     def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_hooks(project_dir, result, session_id, artifacts)

@@ -17,6 +17,9 @@ A role declaring `rack.transition` under `apps.consent_gate` receives the
 timed grant is needed. The agent calls `rack_transition` with the arguments
 after `rack transition`, for example `["HATS-042", "execute"]` [1].
 
+The server starts in the session's bound project directory, even when Codex
+itself starts from a worktree or another directory.
+
 Read the project, task, source state, command and request ID in the form.
 Accept authorizes that command once. Decline and Cancel leave it unstarted.
 An existing human-issued grant can cover the operation without another form.
