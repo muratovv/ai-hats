@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 import pytest
 
@@ -39,21 +40,21 @@ def test_dry_run_never_copies_credentials_or_records_their_digest(tmp_path: Path
     assert (session / "auth.json").stat().st_mode & 0o777 == 0o600
 
 
-def test_write_failure_is_reported_and_keeps_both_copies(tmp_path: Path, monkeypatch):
-    from ai_hats.surfaces.codex import session_auth
-
+def test_write_failure_is_reported_and_keeps_both_copies(tmp_path: Path):
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses directory write permissions")
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "old"}')
     stage_auth(base, session, ApplyMaterializer())
     (session / "auth.json").write_text('{"fixture": "new"}')
 
-    def fail(*args, **kwargs):
-        raise PermissionError("fixture failure")
-
-    monkeypatch.setattr(session_auth, "atomic_write_bytes", fail)
-    with pytest.raises(PermissionError, match="fixture failure"):
-        reconcile_auth(base, session)
+    base.chmod(0o500)
+    try:
+        with pytest.raises(PermissionError):
+            reconcile_auth(base, session)
+    finally:
+        base.chmod(0o700)
 
     assert (base / "auth.json").read_text() == '{"fixture": "old"}'
     assert (session / "auth.json").read_text() == '{"fixture": "new"}'
