@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+import pytest
+
+from ai_hats.surface_registry import get_surface, surface_names
 from ai_hats.surfaces.claude.provider import ClaudeSurface, Surface
 from ai_hats.surfaces.agy.provider import AgySurface
+
+
+@pytest.mark.parametrize("name", surface_names())
+def test_every_surface_takes_a_model_override_spelled_model(name: str) -> None:
+    """HATS-1891: the root ``-m/--model`` alias hardcodes ``--model`` into the argv.
+
+    That is only safe while the spelling is a requirement rather than a
+    coincidence, so the requirement is asserted here — a surface that ever
+    diverges fails loudly instead of silently receiving the wrong flag.
+    """
+    assert get_surface(name).model_flags("some-model") == ["--model", "some-model"]
+
+
+@pytest.mark.parametrize("name", surface_names())
+def test_every_surface_advertises_its_model_override(name: str) -> None:
+    """The override is only discoverable if ``ai-hats --help -p <name>`` names it."""
+    hints = {hint.name for hint in get_surface(name).surface_hints()}
+    assert "--model" in hints
 
 
 def test_claude_model_flags() -> None:

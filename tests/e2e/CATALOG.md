@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**299 of 299 files catalogued — 307 flows.**
+**300 of 300 files catalogued — 308 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1892,6 +1892,22 @@ as a claim to check, not as evidence.
 
 - **expect** — CLI exits cleanly with code 2 displaying friendly remediation instructions without traceback
 - **why** — without friendly provider error handling, uninstalled provider packages throw raw ImportErrors
+
+## `test_model_flag_hitl.py`
+
+*pins HATS-1891*
+
+- **flow** — a developer picking a non-default model for an interactive session
+- **cmds**
+
+  ```console
+  ai-hats --dry-run-json -r test-role -m fable
+  ai-hats execute --interactive --model fable -p nonexistent_provider_1891
+  ai-hats execute --interactive --isolation squash -p nonexistent_provider_1891
+  ```
+
+- **expect** — the alias reaches the provider argv as `--model fable` and the report still spawns nothing; `execute --interactive --model` gets past the batch-only guard and dies later, on the unknown provider; `--isolation` is still refused by that same guard
+- **why** — `-m` used to reach the provider verbatim and die there ("unknown option '-m'"), and `execute --interactive --model` was refused with "the interactive runner cannot act on it" — a claim the pass-through argv had always disproved. The `--isolation` row is the positive control: without it, a guard that stopped refusing everything would read as a pass.
 
 ## `test_nested_consent_wrapper.py`
 

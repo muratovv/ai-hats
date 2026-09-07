@@ -37,6 +37,11 @@ class ClineSurface(Surface):
 
         return [
             SurfaceHint(
+                name="--model",
+                values="<model>",
+                description="Override the model for this session.",
+            ),
+            SurfaceHint(
                 name="--yolo",
                 values="N/A",
                 description="Run cline in fully autonomous mode without asking for permission.",

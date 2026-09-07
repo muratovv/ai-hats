@@ -19,7 +19,7 @@ from pathlib import Path
 import click
 
 from .. import __version__
-from ._helpers import console
+from ._helpers import console, with_model_flag
 
 
 class _PassthroughGroup(click.Group):
@@ -156,6 +156,12 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
 )
 @click.option("--role", "-r", default=None, help="Role override")
 @click.option(
+    "--model",
+    "-m",
+    default=None,
+    help="Model override, forwarded to the provider as --model.",
+)
+@click.option(
     "--tag",
     "tags_raw",
     multiple=True,
@@ -200,6 +206,7 @@ def main(
     ctx,
     provider: str | None,
     role: str | None,
+    model: str | None,
     tags_raw: tuple[str, ...],
     dry_run: bool,
     dry_run_json: bool,
@@ -220,6 +227,10 @@ def main(
                 '       ai-hats -r "maintainer + leader"\n'
                 "       or written without spaces:  ai-hats -r maintainer+leader"
             )
+
+        # ``ctx.args`` is the one argv both branches below read, so the alias
+        # lands in the launch and the dry-run report from a single prepend.
+        ctx.args = with_model_flag(model, ctx.args)
 
         if dry_run or dry_run_json or dry_run_full or materialize:
             _dry_run_session(
