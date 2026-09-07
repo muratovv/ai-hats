@@ -104,6 +104,17 @@ def _handle_no_project(exc: Exception) -> NoReturn:
     raise SystemExit(2)
 
 
+def _handle_bad_project_config(exc: "ProjectConfigError") -> NoReturn:
+    """Render a ``ProjectConfigError`` as a friendly message + exit 2.
+
+    The message already names the file and the offending field; what a
+    traceback added was the pydantic frames under it.
+    """
+    console.print(f"[red]Error:[/] {exc}")
+    console.print("Fix ai-hats.yaml, or run [bold]ai-hats config customize[/] to inspect it.")
+    raise SystemExit(2)
+
+
 def _handle_not_a_project(exc: "NotAnAiHatsProjectError") -> NoReturn:
     """Render a ``NotAnAiHatsProjectError`` as a friendly message + exit 2.
 
@@ -141,7 +152,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         from ..libraries.models import CheckBindingError, ComponentKeyError
         from ai_hats_core.layout import ProjectNotFoundError
 
-        from ..paths import NotAnAiHatsProjectError
+        from ..paths import NotAnAiHatsProjectError, ProjectConfigError
         from ..surface_registry import UnknownSurfaceError
         from ..role_spec import RoleSpecError
 
@@ -152,6 +163,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),
         (ProjectNotFoundError, _handle_no_project),
+        (ProjectConfigError, _handle_bad_project_config),
         (CheckBindingError, _handle_check_binding_error),
         # HATS-1545 F7: a key defect is the same class of message as a binding
         # defect — both are a declared gate that cannot install, and a traceback
