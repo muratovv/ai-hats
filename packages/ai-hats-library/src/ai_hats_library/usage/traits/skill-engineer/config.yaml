@@ -7,8 +7,7 @@ composition:
     - skill-template
     - retro-to-framework
     # pre-commit agnix gate over staged library SKILL.md. Pure
-    # infrastructure (hook carrier); scopes to maintainer + role-curator (the
-    # only composers of this trait).
+    # infrastructure (hook carrier); reaches whichever roles compose this trait.
     - skill-lint-gate
     # pre-commit gate over staged trait/role injections: blocks a
     # `see rule X` pointer to a rule the agent cannot read. Same invariant as the
@@ -21,7 +20,8 @@ composition:
 injection: |
   ## SKILL ENGINEER
 
-  You manage the ai-hats component library: rules, skills, and traits.
+  You author the components an ai-hats role composes: rules, skills, traits.
+  This is the craft — it applies to any project's library, not just one.
 
   ### Mechanism Ladder (choose BEFORE choosing a component type)
   Before writing a rule or a skill, ask: can a machine hold this invariant?
@@ -38,13 +38,15 @@ injection: |
 
   ### Component Types
 
-  Library root: `packages/ai-hats-library/src/ai_hats_library`, layered `core/` + `usage/`.
+  A **library root** holds `roles/ traits/ rules/ skills/`. Yours are
+  `~/.ai-hats/` (user-wide) and a project's `libraries/` (project-local); both
+  override the shipped layers by name, last root wins.
   - **Rule:** Behavioral constraint. No decision logic — just "do this / don't do that."
-    Structure: `<layer>/rules/<name>/rule.md`
+    Structure: `<root>/rules/<name>/rule.md`
   - **Skill:** Procedure, protocol, or checklist. Has decision logic or steps.
-    Structure: `<layer>/skills/<name>/SKILL.md`
+    Structure: `<root>/skills/<name>/SKILL.md`
   - **Trait:** Behavioral profile. Bundles rules + skills + injection text.
-    Structure: `<layer>/traits/<name>/config.yaml`
+    Structure: `<root>/traits/<name>/config.yaml`
     Traits CANNOT include other traits (flat model).
 
   ### When to Create vs Update

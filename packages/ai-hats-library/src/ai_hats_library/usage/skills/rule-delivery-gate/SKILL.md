@@ -1,6 +1,6 @@
 ---
 name: rule-delivery-gate
-description: Pre-commit gate over staged trait and role injections. Use when composing the maintainer or role-curator role, or when diagnosing why the rule-delivery hook blocked a commit.
+description: Pre-commit gate over staged trait and role injections. Use when composing a role that carries the `skill-engineer` trait, or when diagnosing why the rule-delivery hook blocked a commit.
 ai_hats:
   # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. On a staged
@@ -39,8 +39,9 @@ touch an injection — it never retro-blocks the pre-existing library.
 
 ## Who gets it
 
-Installed via the `skill-engineer` trait, composed only by the `maintainer` and
-`role-curator` roles. Other roles do not receive the hook. The server-side
+Installed via the `skill-engineer` trait — carried by the `behaviorist` role,
+by this repo's `maintainer` and `role-curator`, and by any role a project
+composes it into. Roles without that trait do not receive the hook. The server-side
 counterpart is the G2 unit test, run by CI on every PR/push to master.
 
 ## How to bypass

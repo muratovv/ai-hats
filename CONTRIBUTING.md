@@ -343,7 +343,7 @@ fallback, so it works in any project.
 | `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path             |
 | `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs          |
 | `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`     |
-| `skill-engineer` trait                                       | `ai-hats-dev` | its injection is about *this* library        |
+| `skill-engineer` trait, `behaviorist` role                   | `usage`       | component-authoring craft, no repo path      |
 
 The failure to avoid: a component in `core` whose body names `src/ai_hats/`.
 Every consumer then pays always-on tokens for ai-hats internals — which is how
