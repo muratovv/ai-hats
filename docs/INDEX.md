@@ -57,6 +57,7 @@ tool when a question goes beyond built-in instructions.
 ## Other docs
 
 - [`adr/`](adr/) — architecture decision records (one file per decision).
+- [Codex file credential reconciliation](adr/0032-codex-file-credential-reconciliation.md) — logout, concurrent updates, and session-end synchronization limits.
 - [`adr/attachments/`](adr/attachments/) — material an ADR leans on that is neither the
   decision nor user documentation: working context, measured baselines, corpora
   ([README](adr/attachments/README.md)).

@@ -33,6 +33,7 @@ from .session_home import (
     read_session_home_metadata,
     render_session_home_metadata,
 )
+from .session_auth import reconcile_auth, stage_auth
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -269,7 +270,7 @@ class CodexSurface(Surface):
     def _project_base_home(base_home: Path, session_home: Path, artifacts) -> None:
         try:
             for source in sorted(base_home.iterdir(), key=lambda path: path.name):
-                if source.name not in {"skills", _AI_HATS_HOME_DIR} and not source.name.endswith(
+                if source.name not in {"skills", "auth.json", _AI_HATS_HOME_DIR} and not source.name.endswith(
                     _SQLITE_ARTIFACT_SUFFIXES
                 ):
                     artifacts.port.symlink(source, session_home / source.name)
@@ -376,6 +377,7 @@ class CodexSurface(Surface):
         materialize_skills_dir(skills_root, result.skills, project_dir, artifacts.port)
         artifacts.port.mkdir(base_home / "sessions")
         self._project_base_home(base_home, session_home, artifacts)
+        stage_auth(base_home, session_home, artifacts.port)
         self._project_base_skills(
             base_home,
             skills_root,
@@ -401,6 +403,9 @@ class CodexSurface(Surface):
         if session_home.is_symlink():
             raise RuntimeError("Refusing to finalize a symlinked Codex session home")
         self._base_codex_home(session_home)
+        warning = reconcile_auth(base_home, session_home)
+        if warning:
+            return warning
         result = normalize_session_rollout_paths(sqlite_home, session_home, base_home)
         if not result.removable:
             return (

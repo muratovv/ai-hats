@@ -306,8 +306,9 @@ def test_role_skills_activate_native_codex_home_with_shared_user_state(
     assert (session_home / "skills" / "release" / "SKILL.md").is_file()
     assert (session_home / "sessions").is_symlink()
     assert (session_home / "sessions").resolve() == base_home / "sessions"
-    assert (session_home / "auth.json").is_symlink()
-    assert (session_home / "auth.json").resolve() == base_home / "auth.json"
+    assert not (session_home / "auth.json").is_symlink()
+    assert (session_home / "auth.json").read_text() == "shared auth"
+    assert (session_home / "auth.json").stat().st_mode & 0o777 == 0o600
     assert (session_home / "config.toml").is_symlink()
     assert not any((session_home / path.name).exists() for path in sqlite_artifacts)
     assert session_cache_dir(project, "sid-native") not in session_home.parents
@@ -350,6 +351,53 @@ def test_session_run_normalizes_rollout_and_removes_home(
     with sqlite3.connect(database) as connection:
         [(stored_path,)] = connection.execute("SELECT rollout_path FROM threads")
     assert stored_path == str(rollout)
+
+
+def test_session_logout_removes_shared_auth(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    (base_home / "auth.json").write_text('{"fixture": "old"}')
+    provider = CodexSurface()
+    run = SessionRun(SimpleNamespace(session_id="logout", log_sys=lambda _message: None))
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "logout",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+        session_home = provider.session_codex_home(project, "logout")
+        (session_home / "auth.json").unlink()  # safe-delete: ok synthetic logout fixture
+
+    assert not (base_home / "auth.json").exists()
+
+
+def test_session_logout_preserves_a_newer_login(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    (base_home / "auth.json").write_text('{"fixture": "old"}')
+    provider = CodexSurface()
+    notices = []
+    run = SessionRun(SimpleNamespace(session_id="older", log_sys=notices.append))
+    with run:
+        provider.build_session_artifacts(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "older",
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(resources=run),
+        )
+        session_home = provider.session_codex_home(project, "older")
+        (session_home / "auth.json").unlink()  # safe-delete: ok synthetic logout fixture
+        (base_home / "auth.json").write_text('{"fixture": "newer"}')
+
+    assert (base_home / "auth.json").read_text() == '{"fixture": "newer"}'
+    assert session_home.exists()
+    assert len(notices) == 1
+    assert "changed in another session" in notices[0]
 
 
 def test_session_run_retains_home_when_rollout_target_is_missing(tmp_path: Path) -> None:
