@@ -1,7 +1,7 @@
-"""Live-defect pins for the project-resolution slice (HATS-1606).
+"""Pins for the project-resolution slice (HATS-1606, HATS-1894).
 
-Each xfail(strict) documents a reproduced defect and names the step that turns
-it green — an accidental pass is a signal, not a bonus.
+The fail-loud half, and the two announced degradations the diagnostic and
+repair commands resolve through instead.
 """
 
 from __future__ import annotations
@@ -37,3 +37,51 @@ def test_raw_config_peek_refuses_future_schema_too(future_project: Path) -> None
 
     with pytest.raises(ProjectConfigError):
         ai_hats_dir(future_project)
+
+
+@pytest.fixture()
+def unreadable_project(tmp_path: Path) -> Path:
+    """An onboarded project whose config will not parse — the shape that reached
+    `self update` as a traceback."""
+    (tmp_path / ".agent" / "ai-hats").mkdir(parents=True)
+    (tmp_path / "ai-hats.yaml").write_text("manage_gitignore: not-a-bool\n")
+    return tmp_path
+
+
+def test_lenient_anchors_at_the_start_when_nothing_resolves(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`config status` answers "what am I running" before init, and says which
+    directory it is answering for."""
+    from ai_hats.cli._entry import resolve_project, resolve_project_lenient
+    from ai_hats_core.layout import ProjectNotFoundError
+
+    bare = tmp_path / "bare"
+    bare.mkdir()
+
+    with pytest.raises(ProjectNotFoundError):  # positive control: strict still refuses
+        resolve_project(start=bare, environ={})
+
+    project = resolve_project_lenient(start=bare, environ={})
+
+    assert project.layout.root == bare
+    assert "no ai-hats project above" in capsys.readouterr().err
+
+
+def test_lenient_falls_back_to_defaults_when_the_config_will_not_load(
+    unreadable_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`self update` repairs a project whose config is the broken thing — and
+    names the file it could not read."""
+    from ai_hats.cli._entry import resolve_project, resolve_project_lenient
+
+    with pytest.raises(ProjectConfigError):  # positive control
+        resolve_project(start=unreadable_project, environ={})
+
+    project = resolve_project_lenient(start=unreadable_project, environ={})
+
+    assert project.layout.root == unreadable_project
+    assert project.config == ProjectConfig()
+    err = capsys.readouterr().err
+    assert str(unreadable_project / "ai-hats.yaml") in err
+    assert "will not load" in err

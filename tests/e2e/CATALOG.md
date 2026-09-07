@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**298 of 298 files catalogued — 306 flows.**
+**299 of 299 files catalogued — 307 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -226,6 +226,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the write is denied all the same, and by this gate — `ai_hats_dir` is resolved from the TARGET path's own ai-hats.yaml
 - **why** — a worktree's project dir points at MAIN (HATS-524) and an inherited AI_HATS_DIR names a tracker of its own, so an env-based resolver would guard the wrong backlog while reporting success
+
+## `test_bad_project_config_friendly_error.py`
+
+*pins HATS-1894*
+
+- **flow** — a user whose ai-hats.yaml carries a value the schema refuses runs a command that needs the project
+- **cmds**
+
+  ```console
+  ai-hats wt list
+  ```
+
+- **expect** — a rendered refusal naming the file and the field, exit 2, no traceback
+- **why** — ProjectConfigError was the one resolution error missing from the friendly-error registry, so a one-character typo in ai-hats.yaml dumped pydantic's stack instead of the message the family already produces
 
 ## `test_bare_positional_prompt.py`
 

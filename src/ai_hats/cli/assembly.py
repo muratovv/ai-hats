@@ -24,7 +24,7 @@ from ai_hats_core.layout import ProjectNotFoundError
 
 from ..paths import PROJECT_CONFIG
 from ..session_policy import InitRunParams
-from ._entry import resolve_project
+from ._entry import resolve_project, resolve_project_lenient
 from ._helpers import _assembler, console
 
 
@@ -835,7 +835,7 @@ def customize(
 @click.command()
 def status():
     """Show current role, dependency tree, and health."""
-    asm = _assembler(resolve_project().layout.root)
+    asm = _assembler(resolve_project_lenient().layout.root)
     st = asm.status()
 
     # HATS-497: the role + tree section is role-dependent, but install
@@ -1031,7 +1031,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     from ..migration_assert import assert_runtime_hooks_resolve
     from ..migration_backup import BackupError, snapshot_pre_bump
 
-    asm = _assembler(resolve_project().layout.root)
+    asm = _assembler(resolve_project_lenient().layout.root)
     backup_path = None
     try:
         # 0. HATS-549: pre-bump snapshot BEFORE any destructive step.

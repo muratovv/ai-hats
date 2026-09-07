@@ -14,16 +14,18 @@ import os
 from pathlib import Path
 from typing import Mapping
 
+import click
 from ai_hats_core.layout import (
     ForeignPinPolicy,
     ProjectLayout,
+    ProjectNotFoundError,
     pin_is_foreign,
     resolve_root,
 )
 
 from ..config.project import ProjectConfig
 from ..env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_VENV
-from ..paths import PROJECT_CONFIG, builtin_library_layers
+from ..paths import PROJECT_CONFIG, ProjectConfigError, builtin_library_layers
 from ..project import Project
 from ..session_identity import SessionIdentity
 
@@ -41,26 +43,58 @@ def resolve_project(
     session" and "a session we cannot read" are different answers.
     """
     env = dict(os.environ if environ is None else environ)
+    root = _resolve_root(start, env)
+    return _assemble(root, _load_config(root), env)
 
+
+def resolve_project_lenient(
+    start: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> Project:
+    """The same ``Project``, for a command that must answer anyway.
+
+    Diagnostics and repair are the callers: refusing to say what version is
+    running because no project is here, or refusing to repair a project because
+    its config is the broken thing, makes the command useless exactly where it
+    is needed. Both degradations are ANNOUNCED — a silent default would hide
+    the breakage the user is asking about.
+
+    The happy path stays ``resolve_project``: this is a wrapper around it, never
+    a second way to build a ``Project``.
+    """
+    env = dict(os.environ if environ is None else environ)
+    try:
+        return resolve_project(start, environ)
+    except ProjectNotFoundError:
+        root = start or Path.cwd()
+        click.echo(
+            f"Warning: no ai-hats project above {root} — answering for this directory.",
+            err=True,
+        )
+        return _assemble(root, _load_config(root), env)
+    except ProjectConfigError as exc:
+        root = _resolve_root(start, env)  # it resolved; the config is what failed
+        click.echo(f"Warning: {root / PROJECT_CONFIG} will not load — using defaults.", err=True)
+        click.echo(f"  {exc}", err=True)
+        return _assemble(root, ProjectConfig(), env)
+
+
+def _resolve_root(start: Path | None, env: Mapping[str, str]) -> Path:
     identity = SessionIdentity.from_env(env)
     if identity is not None:
-        root = Path(identity.project_dir)
-    else:
-        if start is None:
-            try:
-                start = Path.cwd()
-                start.stat()
-            except OSError as exc:  # the worktree under our feet was torn down
-                from ._helpers import DeadCwdError
+        return Path(identity.project_dir)
+    if start is None:
+        try:
+            start = Path.cwd()
+            start.stat()
+        except OSError as exc:  # the worktree under our feet was torn down
+            from ._helpers import DeadCwdError
 
-                raise DeadCwdError() from exc
-        root = resolve_root(
-            start,
-            env,
-            on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE,
-        )
+            raise DeadCwdError() from exc
+    return resolve_root(start, env, on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE)
 
-    config = _load_config(root)
+
+def _assemble(root: Path, config: ProjectConfig, env: Mapping[str, str]) -> Project:
     layout = ProjectLayout.compute(root, env, ai_hats_dir=config.ai_hats_dir)
     return Project(
         layout=layout,

@@ -43,6 +43,14 @@ pytestmark = (
 # to the running sha.
 LATEST_SHA = "9876543210fedcba9876543210fedcba98765432"
 
+# The layout comes from the composition root, as it does in production.
+_BANNER_PROGRAM = (
+    "import sys; from pathlib import Path; "
+    "from ai_hats.cli._entry import resolve_project; "
+    "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+    "RenderUpdateBanner().run(layout=resolve_project(Path(sys.argv[1])).layout)"
+)
+
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
@@ -218,9 +226,7 @@ def test_update_banner_e2e(tmp_path):
         [
             str(venv_python),
             "-c",
-            "import sys; from pathlib import Path; "
-            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            _BANNER_PROGRAM,
             str(project),
         ],
         cwd=project,
@@ -250,9 +256,7 @@ def test_update_banner_e2e(tmp_path):
         [
             str(venv_python),
             "-c",
-            "import sys; from pathlib import Path; "
-            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            _BANNER_PROGRAM,
             str(project),
         ],
         cwd=project,
@@ -273,9 +277,7 @@ def test_update_banner_e2e(tmp_path):
         [
             str(venv_python),
             "-c",
-            "import sys; from pathlib import Path; "
-            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            _BANNER_PROGRAM,
             str(project),
         ],
         cwd=project,
@@ -298,9 +300,7 @@ def test_update_banner_e2e(tmp_path):
         [
             str(venv_python),
             "-c",
-            "import sys; from pathlib import Path; "
-            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            _BANNER_PROGRAM,
             str(project),
         ],
         cwd=project,
@@ -321,9 +321,7 @@ def test_update_banner_e2e(tmp_path):
         [
             str(venv_python),
             "-c",
-            "import sys; from pathlib import Path; "
-            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            _BANNER_PROGRAM,
             str(project),
         ],
         cwd=project,

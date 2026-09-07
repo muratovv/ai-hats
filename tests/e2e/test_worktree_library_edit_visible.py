@@ -51,37 +51,59 @@ def _bare_env(repo_root: Path) -> dict[str, str]:
 
 @pytest.mark.integration
 def test_worktree_library_edit_reaches_show_prompt(repo_root: Path, tmp_path: Path):
+    # The worktree hangs off a CLONE, never off the developer's checkout: the
+    # hop runs before the marker walk and accepts an onboarded main, so a
+    # worktree of this repo composes the developer's own ai-hats.yaml. A clone
+    # carries the tracked library and none of the gitignored project markers,
+    # which is the un-onboarded main the hop is required to refuse.
+    main = tmp_path / "main"
+    git(tmp_path, "clone", "--local", str(repo_root), str(main))
     wt = tmp_path / "wt-1501"
-    git(repo_root, "worktree", "add", "--detach", str(wt))
-    try:
-        trait = wt / TRAIT
-        original = trait.read_text()
-        assert "## LIBRARY CURATOR" in original, "trait shape changed; update this test"
-        trait.write_text(
-            original.replace("  ## LIBRARY CURATOR\n", f"  ## LIBRARY CURATOR\n\n  {SENTINEL}\n", 1)
-        )
-        ProjectConfig(
-            provider="claude",
-            customizations={"role-curator": OverlayConfig(injection_append=PROJECT_SENTINEL)},
-        ).save(wt / PROJECT_CONFIG)
-        Assembler(wt).init()
+    git(main, "worktree", "add", "--detach", str(wt))
 
-        proc = subprocess.run(
-            [sys.executable, "-m", "ai_hats", "config", "show-prompt", "--role", "role-curator"],
-            cwd=str(wt),
-            env=_bare_env(wt),
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+    trait = wt / TRAIT
+    original = trait.read_text()
+    assert "## LIBRARY CURATOR" in original, "trait shape changed; update this test"
+    trait.write_text(
+        original.replace("  ## LIBRARY CURATOR\n", f"  ## LIBRARY CURATOR\n\n  {SENTINEL}\n", 1)
+    )
+    ProjectConfig(
+        provider="claude",
+        customizations={"role-curator": OverlayConfig(injection_append=PROJECT_SENTINEL)},
+    ).save(wt / PROJECT_CONFIG)
+    Assembler(wt).init()
 
-        assert proc.returncode == 0, proc.stderr
-        # Positive control first: if the trait vanished entirely, a missing
-        # sentinel would prove nothing about WHICH checkout was composed.
-        assert "LIBRARY CURATOR" in proc.stdout, "trait did not compose at all"
-        assert PROJECT_SENTINEL in proc.stdout, "worktree project config did not compose"
-        assert SENTINEL in proc.stdout, (
-            "composed the main checkout's library, not the worktree's — HATS-1501"
-        )
-    finally:
-        git(repo_root, "worktree", "remove", "--force", str(wt))
+    # Asserted directly, not inferred from the sentinels: which root resolved is
+    # the thing that broke, and a sentinel can go missing for other reasons.
+    root = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from ai_hats.cli._entry import resolve_project; print(resolve_project().layout.root)",
+        ],
+        cwd=str(wt),
+        env=_bare_env(wt),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert root.returncode == 0, root.stderr
+    assert root.stdout.strip() == str(wt), f"resolved {root.stdout.strip()}, not the worktree"
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "ai_hats", "config", "show-prompt", "--role", "role-curator"],
+        cwd=str(wt),
+        env=_bare_env(wt),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    # Positive control first: if the trait vanished entirely, a missing
+    # sentinel would prove nothing about WHICH checkout was composed.
+    assert "LIBRARY CURATOR" in proc.stdout, "trait did not compose at all"
+    assert PROJECT_SENTINEL in proc.stdout, "worktree project config did not compose"
+    assert SENTINEL in proc.stdout, (
+        "composed the main checkout's library, not the worktree's — HATS-1501"
+    )
