@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**300 of 300 files catalogued — 308 flows.**
+**301 of 301 files catalogued — 309 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2152,6 +2152,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
 - **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised, and a broken or missing one would have gone unnoticed in every tier. The other half of the claim — that NOTHING registers claude behind the declaration's back — is structural and lives in tests/test_area_boundary.py, whose surfaces pin is empty: no shipped module may name a surface implementation at all (HATS-1826)
+
+## `test_provider_hints_projectless.py`
+
+*pins HATS-1901*
+
+- **flow** — a user requests role-specific help outside an ai-hats project
+- **cmds**
+
+  ```console
+  ai-hats -r architect --help
+  ```
+
+- **expect** — help includes provider hints and announces projectless resolution
+- **why** — strict project resolution must not remove built-in role help
 
 ## `test_pty_escape_hatch.py`
 

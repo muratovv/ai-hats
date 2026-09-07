@@ -98,9 +98,9 @@ class _PassthroughGroup(click.Group):
         root = None
         if role_name:
             try:
-                from ._entry import resolve_project
+                from ._entry import resolve_project_lenient
 
-                root = resolve_project().layout.root
+                root = resolve_project_lenient().layout.root
             except Exception:  # silent-ok: --help renders without a project
                 root = None
         provider = resolve_provider_for_help(provider_name, role_name, project_dir=root)
