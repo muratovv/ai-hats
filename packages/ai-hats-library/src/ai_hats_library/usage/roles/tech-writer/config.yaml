@@ -9,7 +9,8 @@ composition:
     - trait-base
     - trait-agent
   rules: []
-  skills: []
+  skills:
+    - prose-review
 injection: |
   # ROLE: TECHNICAL WRITER
 
