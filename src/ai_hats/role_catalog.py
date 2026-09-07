@@ -9,11 +9,15 @@ never appeared. Instead, the wizard injection now carries the
 ``build_session_prompt`` next to the HATS-380 ``<ai_hats_dir>`` expansion)
 with the **live** catalog the resolver actually sees.
 
-``user_facing=True`` drops engine-internal (``core``-layer) roles — the
-wizard must never recommend ``judge`` / ``role-auditor`` / itself.
+``user_facing=True`` drops the two builtin layers a consuming project cannot
+wear: ``core`` (engine-internal — the wizard must never recommend ``judge`` /
+``role-auditor`` / itself) and ``ai-hats-dev`` (this repository's own
+toolchain — ``maintainer`` / ``role-curator``, whose injections address
+ai-hats' own source tree). It is a filter on RECOMMENDATION, not on
+availability: any role stays selectable by name via ``ai-hats config set -r``.
 Layer is derived from the resolved role directory: a role lives at
 ``<libroot>/roles/<name>``, so the libroot's own name (``core`` / ``usage``
-/ anything else) classifies it.
+/ ``ai-hats-dev`` / anything else) classifies it.
 """
 
 from __future__ import annotations
@@ -28,6 +32,10 @@ if TYPE_CHECKING:
     from .resolver import LibraryResolver
 
 ROLE_CATALOG_PLACEHOLDER = "<available_roles>"
+
+# Builtin layers the wizard must not recommend from: `core` is engine-internal,
+# `ai-hats-dev` is what this repository wears to develop itself.
+_NON_RECOMMENDABLE_LAYERS = frozenset({"core", "ai-hats-dev"})
 
 
 def _layer_of(role_dir: Path) -> str:
@@ -70,14 +78,15 @@ def render_role_catalog(resolver: "LibraryResolver", *, user_facing: bool = True
 
     One line per role: ``- **name** — summary · _priorities_``. Sorted by
     name (``list_components`` is sorted), so output is deterministic. With
-    ``user_facing=True`` (the wizard case) ``core``-layer roles are omitted.
+    ``user_facing=True`` (the wizard case) roles from the ``core`` and
+    ``ai-hats-dev`` layers are omitted.
     """
     entries: list[str] = []
     for name in resolver.list_components(ComponentType.ROLE):
         role_dir = resolver.resolve(name, ComponentType.ROLE)
         if role_dir is None:
             continue
-        if user_facing and _layer_of(role_dir) == "core":
+        if user_facing and _layer_of(role_dir) in _NON_RECOMMENDABLE_LAYERS:
             continue
         cfg = resolver.resolve_config(name, ComponentType.ROLE)
         summary = _summary_from_injection(cfg.injection) if cfg else ""
