@@ -656,7 +656,7 @@ def _all_library_roles() -> list[str]:
     return sorted(p.parent.name for p in _LIB_BASE.glob("*/roles/*/config.yaml"))
 
 
-# The 11 roles that compose trait-agent — each inherits the flipped default.
+# The roles that compose trait-agent — each inherits the flipped default.
 _AGENT_ROLES = [
     "assistant",
     "maintainer",
@@ -669,6 +669,7 @@ _AGENT_ROLES = [
     "go-dev-full",
     "judge",
     "test-agent",
+    "tech-writer",
 ]
 
 
