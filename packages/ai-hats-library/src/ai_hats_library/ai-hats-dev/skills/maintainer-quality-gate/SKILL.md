@@ -116,8 +116,7 @@ suite stubbed the very contracts the change broke.
    the transition after this one will additionally demand, so you can earn it
    now instead of being refused for it later:
 
-       [gates] next: merge-gate, review-gate also need wheel-contents;
-               done-gate also needs integration, merge-smoke, master-ci
+       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, master-ci
 
    `next: nothing` means no gate on the road is short of anything. Transition.
 4. **Red** — the run's block, verdict first:
@@ -142,7 +141,7 @@ suite stubbed the very contracts the change broke.
 
    - a red pytest stage hands you the narrow command already — paste the
      `re-run just these` line. Do not rebuild it: the interpreter in it is the
-     one this checkout answers for, and the worktree guard refuses another;
+     one this checkout answers for, and another imports someone else's sources;
    - the stage alone, bare, exactly what CI runs: `bash scripts/gates.sh unit`
      (`bash scripts/gates.sh list` says what each stage checks);
    - a checker: the tool itself, `ruff check <path>` or
