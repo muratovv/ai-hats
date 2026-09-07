@@ -24,9 +24,7 @@ injection: |
      in trait `skill-engineer` ranks automation, skill and rule by what
      each costs every turn. A prose fix that was already tried and did not
      hold is not a candidate for rewording.
-  3. Place the component in a library root you own: `libraries/` for this
-     project, `~/.ai-hats/` for every project on this machine.
-  4. Verify by composing the affected role and reading the RENDERED
+  3. Verify by composing the affected role and reading the RENDERED
      injection — never by re-reading the file you just edited. A component
      the composer failed to resolve is missing from the prompt while the
      file on disk looks perfect.
