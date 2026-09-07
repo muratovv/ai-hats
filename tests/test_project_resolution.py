@@ -40,34 +40,31 @@ def test_raw_config_peek_refuses_future_schema_too(future_project: Path) -> None
 
 
 @pytest.fixture()
-def unreadable_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An onboarded project whose config will not parse — the shape that
-    reached `self update` as a traceback (HATS-1894 group D)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
+def unreadable_project(tmp_path: Path) -> Path:
+    """An onboarded project whose config will not parse — the shape that reached
+    `self update` as a traceback."""
     (tmp_path / ".agent" / "ai-hats").mkdir(parents=True)
     (tmp_path / "ai-hats.yaml").write_text("manage_gitignore: not-a-bool\n")
     return tmp_path
 
 
-def test_lenient_anchors_at_cwd_when_nothing_resolves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_lenient_anchors_at_the_start_when_nothing_resolves(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`config status` answers "what am I running" before init, and says it is
-    answering for this directory."""
+    """`config status` answers "what am I running" before init, and says which
+    directory it is answering for."""
     from ai_hats.cli._entry import resolve_project, resolve_project_lenient
     from ai_hats_core.layout import ProjectNotFoundError
 
     bare = tmp_path / "bare"
     bare.mkdir()
-    monkeypatch.chdir(bare)
 
     with pytest.raises(ProjectNotFoundError):  # positive control: strict still refuses
-        resolve_project(environ={})
+        resolve_project(start=bare, environ={})
 
-    project = resolve_project_lenient(environ={})
+    project = resolve_project_lenient(start=bare, environ={})
 
-    assert project.layout.root == Path.cwd()
+    assert project.layout.root == bare
     assert "no ai-hats project above" in capsys.readouterr().err
 
 
@@ -88,18 +85,3 @@ def test_lenient_falls_back_to_defaults_when_the_config_will_not_load(
     err = capsys.readouterr().err
     assert str(unreadable_project / "ai-hats.yaml") in err
     assert "will not load" in err
-
-
-def test_the_venv_heuristic_degrades_when_no_project_resolves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The second resolution point inside `config status` — a best-effort
-    heuristic that used to let ProjectNotFoundError escape past its OSError arm."""
-    from ai_hats.cli.maintenance import _resolved_via_heuristic
-
-    bare = tmp_path / "bare"
-    bare.mkdir()
-    monkeypatch.chdir(bare)
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-
-    assert _resolved_via_heuristic(bare / ".agent" / "ai-hats" / ".venv").startswith("default")

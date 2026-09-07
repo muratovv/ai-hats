@@ -58,23 +58,25 @@ def resolve_project_lenient(
     its config is the broken thing, makes the command useless exactly where it
     is needed. Both degradations are ANNOUNCED — a silent default would hide
     the breakage the user is asking about.
+
+    The happy path stays ``resolve_project``: this is a wrapper around it, never
+    a second way to build a ``Project``.
     """
     env = dict(os.environ if environ is None else environ)
     try:
-        root = _resolve_root(start, env)
+        return resolve_project(start, environ)
     except ProjectNotFoundError:
-        root = Path.cwd()
+        root = start or Path.cwd()
         click.echo(
             f"Warning: no ai-hats project above {root} — answering for this directory.",
             err=True,
         )
-    try:
-        config = _load_config(root)
+        return _assemble(root, _load_config(root), env)
     except ProjectConfigError as exc:
-        config = ProjectConfig()
+        root = _resolve_root(start, env)  # it resolved; the config is what failed
         click.echo(f"Warning: {root / PROJECT_CONFIG} will not load — using defaults.", err=True)
         click.echo(f"  {exc}", err=True)
-    return _assemble(root, config, env)
+        return _assemble(root, ProjectConfig(), env)
 
 
 def _resolve_root(start: Path | None, env: Mapping[str, str]) -> Path:
