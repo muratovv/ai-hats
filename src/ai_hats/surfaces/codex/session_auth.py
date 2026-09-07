@@ -1,4 +1,13 @@
-"""Reconcile file credentials without resurrecting an older session's login."""
+"""Preserve file login/logout across isolated Codex session homes.
+
+Logout unlinks symlinks: stage a private copy and baseline digest. At exit or
+recovery, sync under an ai-hats lock only if canonical auth matches baseline.
+Conflicts and I/O failures retain the home. Invalid baselines refuse sync;
+missing ones retain private copies but allow legacy-home cleanup.
+Writes are owner-only; plans omit contents/digests, and dry runs write nothing.
+Sessions keep snapshots. External writers bypass the lock and can race with sync;
+changes back to baseline are invisible. Keychain auth is outside scope.
+"""
 
 from __future__ import annotations
 
