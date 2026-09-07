@@ -2,7 +2,7 @@
 
 Two layers of guarantee:
 - **Hermetic exact-set** (``fixture_resolver``): a tmp library with a known
-  role set across core/usage/user layers — asserts ``render_role_catalog``
+  role set across core/usage/ai-hats-dev/user layers — asserts ``render_role_catalog``
   emits EXACTLY the intended user-facing roles, decoupled from the real
   catalog's growth.
 - **Real-library property** (``test_wizard_session_prompt_*``): the actual
@@ -51,14 +51,16 @@ def _write_role(libroot: Path, name: str, injection: str, priorities: list[str])
 
 @pytest.fixture
 def fixture_resolver(tmp_path):
-    """Known role set across the three layers (libroot name = layer)."""
-    core, usage, userlib = tmp_path / "core", tmp_path / "usage", tmp_path / "userlib"
+    """Known role set across the four scopes (libroot name = layer)."""
+    core, usage = tmp_path / "core", tmp_path / "usage"
+    devlayer, userlib = tmp_path / "ai-hats-dev", tmp_path / "userlib"
     _write_role(core, "wizard", "# ROLE: WIZARD\n\nbootstrap mentor.", ["User-clarity"])
     _write_role(core, "judge", "# ROLE: JUDGE\n\njudge verdicts.", ["Decisiveness"])
     _write_role(usage, "foo", "# ROLE: FOO DEVELOPER\n\nfoo prose.", ["Correctness", "Speed"])
     _write_role(usage, "bar", "# ROLE: BAR\n\nbar prose.", ["Quality"])
+    _write_role(devlayer, "selfdev", "# ROLE: SELF DEV\n\ndevelops the engine.", ["Coherence"])
     _write_role(userlib, "baz", "# ROLE: BAZ\n\nbaz prose.", ["Velocity"])
-    return LibraryResolver([core, usage, userlib])
+    return LibraryResolver([core, usage, devlayer, userlib])
 
 
 # --------------------------------------------------------------------- #
@@ -86,6 +88,7 @@ def test_summary_from_injection(injection, expected):
     [
         (Path("/x/ai_hats/library/core/roles/judge"), "core"),
         (Path("/x/ai_hats/library/usage/roles/dev-web"), "usage"),
+        (Path("/x/ai_hats/library/ai-hats-dev/roles/maintainer"), "ai-hats-dev"),
         (Path("/home/u/.ai-hats/roles/myrole"), "user"),
         (Path("/proj/libraries/roles/baz"), "user"),
     ],
@@ -105,7 +108,9 @@ def _names(catalog: str) -> list[str]:
 
 def test_render_user_facing_exact_set(fixture_resolver):
     catalog = render_role_catalog(fixture_resolver, user_facing=True)
-    # EXACTLY the non-core roles, sorted; judge + wizard (core) excluded.
+    # EXACTLY the consumer-facing roles, sorted. Excluded: judge + wizard
+    # (core, engine-internal) AND selfdev (ai-hats-dev, this repo's own
+    # toolchain — a consuming project has no use for it).
     assert _names(catalog) == ["bar", "baz", "foo"]
 
 
@@ -116,7 +121,7 @@ def test_render_carries_summary_and_priorities(fixture_resolver):
 
 def test_render_all_includes_core(fixture_resolver):
     catalog = render_role_catalog(fixture_resolver, user_facing=False)
-    assert _names(catalog) == ["bar", "baz", "foo", "judge", "wizard"]
+    assert _names(catalog) == ["bar", "baz", "foo", "judge", "selfdev", "wizard"]
 
 
 # --------------------------------------------------------------------- #
@@ -140,7 +145,14 @@ def test_expand_noop_without_placeholder(tmp_path):
 _WT_LIBRARY = (
     Path(__file__).resolve().parents[1] / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 )
-_WT_LIBRARY_PATHS = [str(_WT_LIBRARY / "core"), str(_WT_LIBRARY / "usage")]
+# All THREE builtin layers. The `ai-hats-dev` entry is load-bearing: without it
+# this fixture cannot observe whether that layer reaches the catalog, and the
+# leak it is meant to catch passes unseen.
+_WT_LIBRARY_PATHS = [
+    str(_WT_LIBRARY / "core"),
+    str(_WT_LIBRARY / "usage"),
+    str(_WT_LIBRARY / "ai-hats-dev"),
+]
 
 
 def test_wizard_session_prompt_lists_live_roles(tmp_path):
@@ -167,6 +179,11 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
     assert "- **judge**" not in content
     assert "- **role-auditor**" not in content
     assert "- **initial-wizard**" not in content
+    # this repo's own toolchain (ai-hats-dev) excluded: a consuming project
+    # cannot wear either, and the wizard recommends exactly one role from
+    # the list it is given.
+    assert "- **maintainer**" not in content
+    assert "- **role-curator**" not in content
 
 
 def test_non_wizard_prompt_has_no_catalog(tmp_path):
