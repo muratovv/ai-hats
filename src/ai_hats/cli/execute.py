@@ -35,6 +35,7 @@ from ..session_policy import (
 )
 from ..pipeline_catalog import EXECUTE
 from ._entry import resolve_project
+from ._helpers import with_model_flag
 
 
 def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
@@ -75,8 +76,8 @@ def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
 
 # Flags the HITL runner cannot act on: ``WrapRunner.run`` takes only
 # ``(extra_args, tags, pty_tap_factory)``. Param name → the spelling to echo.
+# ``--model`` is absent by design: it rides ``extra_args`` as the provider's flag.
 _BATCH_ONLY_FLAGS = (
-    ("model", "--model"),
     ("isolation", "--isolation"),
     ("ticket", "--ticket"),
     ("as_json", "--json"),
@@ -140,7 +141,7 @@ def _reject_inert_flags(interactive: bool, extra_args: tuple[str, ...]) -> None:
     "initial_injections/<name>.md across library_paths, last-wins) "
     "or filesystem path.",
 )
-@click.option("--model", default="", help="Model override (batch only).")
+@click.option("--model", default="", help="Model override.")
 @click.option(
     "--isolation",
     default=IsolationMode.DISCARD.value,
@@ -236,9 +237,12 @@ def execute_cmd(
                 tracer_factory=SidecarTracer,
             ),
             annotations=tags,
-            # model / isolation / ticket are batch-only and already refused here
-            # by _reject_inert_flags, so the HITL branch cannot carry them.
-            harness=Hitl(prompt=prompt_text, extra_args=tuple(extra_args)),
+            # isolation / ticket stay batch-only and are refused above; the model
+            # reaches the provider as its own flag, ahead of the user's args.
+            harness=Hitl(
+                prompt=prompt_text,
+                extra_args=tuple(with_model_flag(model, extra_args)),
+            ),
         ),
     )
 

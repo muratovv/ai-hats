@@ -17,7 +17,7 @@ from rich.console import Console
 from ..constants import is_debug_mode
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..libraries.models import CheckBindingError
@@ -27,6 +27,15 @@ if TYPE_CHECKING:
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+def with_model_flag(model: str | None, args: "Sequence[str]") -> list[str]:
+    """Put the model override at the head of a provider's argv.
+
+    The spelling is hardcoded because a registry contract test requires every
+    surface to emit ``--model``.
+    """
+    return [*(["--model", model] if model else []), *args]
 
 
 def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:

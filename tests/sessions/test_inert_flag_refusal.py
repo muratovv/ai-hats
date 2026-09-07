@@ -2,10 +2,14 @@
 
 The provider override was one instance of a class: a knob the CLI accepts and
 silently drops. ``WrapRunner.run`` takes only ``(extra_args, tags,
-pty_tap_factory)``, so ``--model/--isolation/--ticket/--json`` were inert under
+pty_tap_factory)``, so ``--isolation/--ticket/--json`` are inert under
 ``--interactive``; ``SubAgentRunner.run`` takes no ``extra_args``, so ``--batch``
 swallowed them. The help text hedged four of them with "(batch only)" and
 enforced none.
+
+``--model`` was in that set and left it (HATS-1891): the refusal claimed the HITL
+runner could not act on it, when the provider's own ``--model`` riding
+``extra_args`` had always worked.
 
 The negative controls matter as much as the refusals: a default must never be
 mistaken for a passed flag — which is why the guard reads Click's
@@ -26,7 +30,6 @@ from ai_hats.cli import main
 @pytest.mark.parametrize(
     ("flag", "expected"),
     [
-        pytest.param(["--model", "opus"], "--model", id="model"),
         pytest.param(["--isolation", "squash"], "--isolation", id="isolation"),
         pytest.param(["--ticket", "HATS-1"], "--ticket", id="ticket"),
         pytest.param(["--json"], "--json", id="json"),
@@ -43,6 +46,18 @@ def test_batch_only_flag_is_refused_under_interactive(
     assert expected in res.output
     assert "batch-only" in res.output
     assert not mock_runners["wrap_calls"], "refused launch still spawned a runner"
+
+
+def test_model_is_acted_on_under_interactive(project_dir: Path, mock_runners):
+    """HATS-1891: ``--model`` left the batch-only set — the HITL runner acts on it.
+
+    The three flags still in the parametrize above are this test's positive
+    control: if they stopped being refused, the refusal itself would be gone and
+    this assertion would prove nothing.
+    """
+    res = CliRunner().invoke(main, ["execute", "--role", "judge", "--model", "opus"])
+    assert res.exit_code == 0, res.output
+    assert mock_runners["wrap_calls"][0]["extra_args"] == ["--model", "opus"]
 
 
 def test_extra_args_are_refused_under_batch(project_dir: Path, mock_runners):
