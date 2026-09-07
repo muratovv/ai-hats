@@ -68,8 +68,9 @@ def test_e2e_wt_rebased_branch_refusal(shared_launcher, tmp_path):
         )
 
     init_repo(project, branch="master")
+    # wt create writes worktree state into the project layout, so it needs one.
+    ai_hats("self", "init", "-r", "assistant", "-p", "claude", "--task-prefix", "TST")
 
-    # Create worktree
     ai_hats("wt", "create", "task/rebased-e2e")
     wt_path = _locate_worktree(project, "task/rebased-e2e")
 
