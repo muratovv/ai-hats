@@ -31,7 +31,7 @@ dependencies = [
     # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
     # WorktreeMergeAborted); HATS-1603 to 0.6.0 (merge takes outer_deadline,
     # passed by wt_effects.teardown).
-    "ai-hats-wt>=0.6.2",
+    "ai-hats-wt>=0.6.3",
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.

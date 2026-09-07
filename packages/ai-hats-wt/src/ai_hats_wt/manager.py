@@ -965,6 +965,7 @@ class WorktreeManager:
                     except subprocess.CalledProcessError:
                         pass  # branch may not have been created — fine
                 raise WorktreeCreateError(_format_git_create_error(exc, self.branch_name)) from exc
+            self.save_state()  # Reserve the branch before another creator can adopt it.
         # HATS-823: wt_in runs AFTER add (git refuses a non-empty dir).
         # HATS-1593: and outside the repo-wide create lock, whose budget is a
         # quarter of the hook's. Acquired after that lock is released, so no
