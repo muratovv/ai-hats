@@ -190,15 +190,35 @@ def _strip_prefix(segment: list[str]) -> tuple[list[str], str | None]:
     return segment[i:], path_override
 
 
-def _resolve(spelling: str, cwd: Path, search_path: str | None) -> Path | None:
-    """The file ``spelling`` will execute, or None when it cannot be pinned down."""
+def _venv_prefix(spelled: Path) -> Path | None:
+    """The venv ``spelled`` belongs to, read the way CPython decides ``sys.prefix``.
+
+    A venv's ``bin/python`` is a symlink to the base interpreter, so what the
+    binary resolves to answers a question nobody asked. ``pyvenv.cfg`` beside the
+    invoked path is what actually decides where imports come from."""
+    bindir = spelled.parent
+    for candidate in (bindir, bindir.parent):
+        try:
+            if (candidate / "pyvenv.cfg").is_file():
+                return candidate
+        except OSError:
+            return None
+    return None
+
+
+def _spelled(spelling: str, cwd: Path, search_path: str | None) -> Path | None:
+    """The file ``spelling`` will execute, symlinks left alone, or None when it
+    cannot be pinned down.
+
+    Lexical on purpose: ``normpath`` collapses ``..`` without asking the
+    filesystem, so a venv's ``bin/python`` still names the venv it lives in."""
     if "/" in spelling:
         try:
-            return (cwd / spelling).resolve()
+            return Path(os.path.normpath(cwd / spelling))
         except (OSError, ValueError):
             return None
     found = shutil.which(spelling, path=search_path if search_path else os.environ.get("PATH"))
-    return Path(found).resolve() if found else None
+    return Path(found) if found else None
 
 
 def _deciding_executable(segment: list[str]) -> str | None:
@@ -262,11 +282,21 @@ def _finding(command: str, cwd: Path) -> tuple[str, Path, Path] | None:
         worktree = roots[effective_cwd]
         if worktree is None:
             continue  # main checkout or non-git -> its own interpreter is right
-        resolved = _resolve(spelling, effective_cwd, path_override)
-        if resolved is None:
+        spelled = _spelled(spelling, effective_cwd, path_override)
+        if spelled is None:
             continue  # unresolvable -> nothing proven
-        if not resolved.is_relative_to(worktree):
-            return (spelling, resolved, worktree)
+        # The venv decides, and only where there is none does the real file.
+        # Resolving first follows a venv's bin/python out to the base interpreter
+        # and reports the worktree's own interpreter as foreign.
+        venv = _venv_prefix(spelled)
+        if venv is None:
+            try:
+                spelled = spelled.resolve()
+            except (OSError, ValueError):
+                continue
+        home = venv or spelled
+        if not home.is_relative_to(worktree):
+            return (spelling, spelled, worktree)
     return None
 
 

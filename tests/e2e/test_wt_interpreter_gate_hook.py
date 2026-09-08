@@ -32,17 +32,27 @@ MARKER = "GUARDRAIL (worktree-isolation)"
 def _fake_venv(root: Path) -> None:
     """A venv shaped like the real one: what the guard resolves are these files.
 
-    ``python``/``python3`` forward to a real interpreter rather than exiting 0.
-    A stub there is not merely unrealistic — putting this bin on PATH would then
-    shadow the ``python3`` the hook's own shebang resolves, and the guard would
-    go silent for a reason that has nothing to do with its verdict.
+    ``python``/``python3`` are SYMLINKS to the base interpreter, which is what
+    ``python -m venv`` writes and the single property that decides this guard's
+    verdict — a stub file resolves to itself and makes every symlink-resolution
+    bug invisible. They point at a working interpreter rather than exiting 0
+    because putting this bin on PATH would otherwise shadow the ``python3`` the
+    hook's own shebang resolves, and the guard would go silent for a reason that
+    has nothing to do with its verdict.
+
+    ``pyvenv.cfg`` is the marker CPython itself reads to decide ``sys.prefix``.
     """
-    bindir = root / ".venv" / "bin"
+    venv = root / ".venv"
+    bindir = venv / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
+    base = Path(sys.executable).resolve()  # what `python -m venv` links bin/python to
+    (venv / "pyvenv.cfg").write_text(
+        f"home = {base.parent}\ninclude-system-site-packages = false\n"
+    )
     for name in ("python", "python3"):
         exe = bindir / name
-        exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
-        exe.chmod(0o755)
+        exe.unlink(missing_ok=True)
+        exe.symlink_to(base)
     for name in ("pytest", "ruff"):
         exe = bindir / name
         exe.write_text("#!/bin/sh\nexit 0\n")
