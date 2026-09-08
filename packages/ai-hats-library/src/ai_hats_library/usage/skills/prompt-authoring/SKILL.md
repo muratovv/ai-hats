@@ -22,15 +22,24 @@ validation scenario of the file you end up writing are `skill-template`.
 Before touching a word, separate three states. They look identical in the
 symptom and demand opposite fixes.
 
-| What the evidence shows                                        | What it means            | The move                    |
-| -------------------------------------------------------------- | ------------------------ | --------------------------- |
-| The instruction was **not in the prompt**                       | the agent never knew     | prose — write it            |
-| It was in the prompt but **never reached** (unloaded skill body, a doc the project does not have, a section for a different stage) | a DELIVERY defect        | move it to the point of use, do not reword |
-| It was present, reached, and **selectively applied**            | prose is refuted here    | automate — go back to the ladder |
+| What the evidence shows                                                                                                            | What it means         | The move                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------ |
+| The instruction was **not in the prompt**                                                                                          | the agent never knew  | prose — write it                           |
+| It was in the prompt but **never reached** (unloaded skill body, a doc the project does not have, a section for a different stage) | a DELIVERY defect     | move it to the point of use, do not reword |
+| It was present, reached, and **selectively applied**                                                                               | prose is refuted here | automate — go back to the ladder           |
 
 Presence is settled by reading the render (**composition-verification**), never
 by remembering what the file says. Reaching is settled by the transcript: did
 the agent quote it, act on part of it, or work in that section at all?
+
+**The default when the transcript is silent.** Rows two and three look identical
+for always-on text — a rule or an injection leaves no load event to point at, so
+"never reached" can never be shown. Resolve it by construction: always-on prose
+IS reached every turn, so a violated rule with no positive evidence of partial
+application is row three, not row two. Row two is available only for content that
+had to be fetched — a skill body, a doc, a section belonging to another stage —
+where the transcript can show the fetch never happened. Without this default the
+cheaper fix wins by silence, and rewording ships again.
 
 The third row is the one that costs sessions. A measured case: an agent applied
 the design half of a skill it had plainly read and skipped the operational half
@@ -52,8 +61,8 @@ any of them wrong, then let the list serve as illustration:
 
 > ❌ "Do not use `cat`, `head`, `tail`, `sed -n`."
 > ✅ "Reach for the narrowest tool the session offers; drop to the shell only
->    when none of them expresses the operation — `cat`, `head` and `sed -n` are
->    the common spellings, not the boundary."
+> when none of them expresses the operation — `cat`, `head` and `sed -n` are
+> the common spellings, not the boundary."
 
 ### 4. Put it where the decision is made
 
@@ -70,6 +79,17 @@ the agent already intended. Pair the shape to write with the shape to cut, and
 state what breaks when it is ignored — a consequence is harder to argue with
 than an imperative.
 
+Two shapes that fail this on their own:
+
+- **Prohibition without a replacement.** State the target behaviour positively;
+  a bare "do not X" survives only as a hard guardrail, and only when it names
+  what to do instead ("redirect instead: `pytest > /tmp/gate.log`"). An agent
+  told only what not to do picks its own second choice.
+- **Unowned silence.** Every decision the text leaves unstated is delegated to
+  model priors, which is where the old behaviour lives. Make each omission
+  deliberate: fill it, or mark it an open question — the three-state default in
+  §1 is that move applied to this skill's own hardest branch.
+
 ### 6. Re-read it as an agent looking for a way out
 
 Last pass, adversarial: can this be read as advisory? Does it leave a
@@ -83,6 +103,10 @@ what a rewrite that only adds emphasis never does.
 - Prose was written only for state one or two; state three went to the ladder.
 - The text names an invariant, sits at the point of use, and carries a foil.
 - One adversarial re-read was done and its loopholes closed.
+- The prediction is handed to **library-change-hypothesis-protocol**: this skill
+  argues prose is the right mechanism BEFOREHAND; only the check recorded there
+  can show afterwards that it worked. Prose whose effect nobody will measure is
+  the state-three defect being created rather than fixed.
 
 **Validation scenario (RED).** A recurring defect keeps appearing. The agent
 opens the rule that already forbids it and strengthens the wording — "never,

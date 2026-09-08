@@ -32,6 +32,15 @@ Any further root listed in `~/.ai-hats/library_paths.yaml` has the same shape.
 exists only inside the shipped library. Roots layer last-wins, so a component
 whose name matches a shipped one overrides it.
 
+**Start a new component from a shipped one, not from memory.** A rule is a bare
+`rule.md`; a skill is a `SKILL.md` (`skill-template` owns its shape); a trait is
+a `config.yaml` with `name`, `composition` (`traits` / `rules` / `skills` /
+`apps`) and `injection`. `ai-hats list traits` (and `list rules` / `list skills`)
+names the shipped ones — copy the closest and edit it, so the keys are right
+before the content is. `ai-hats config status` then tags each component of the
+active role with the layer it resolved from (`built-in` / `global` / `project`),
+which is how you confirm yours won.
+
 ### 2. Wire it — persistently, or for one session
 
 Persistent, written into `ai-hats.yaml` (project) or
@@ -46,9 +55,9 @@ ai-hats config customize <role> --injection-append "<text>"
 Ephemeral, for this launch only — a **role spec**, and nothing is written:
 
 ```bash
-ai-hats -r "dev-python + skill-engineer"      # quotes when spaces are used
-ai-hats -r dev-python+skill-engineer          # compact form, same thing
-ai-hats -r "maintainer - trait-base + trait-base-star"
+ai-hats -r "dev-python + skill-engineer"           # quotes when spaces are used
+ai-hats -r dev-python+skill-engineer               # compact form, same thing
+ai-hats -r "dev-python - dev::shell + skill-engineer"
 ```
 
 Reach for the role spec when you are testing whether a component changes

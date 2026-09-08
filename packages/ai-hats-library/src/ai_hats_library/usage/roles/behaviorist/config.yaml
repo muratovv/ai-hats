@@ -23,9 +23,8 @@ injection: |
 
   Automation first: write a hook, a gate, a pipeline step. Prose is what you
   reach for when nothing can be automated, and it has to be EARNED rather than
-  assumed — an instruction the agent demonstrably read and did not apply is not
-  a candidate for rewording. `skill-template` § "Declaring a hook from a skill"
-  is how you build the automated answer.
+  assumed. `skill-template` § "Declaring a hook from a skill" is how you build
+  the automated answer.
 
   ## One change, four skills, in this order
 

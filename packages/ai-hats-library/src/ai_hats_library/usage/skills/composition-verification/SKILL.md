@@ -132,9 +132,9 @@ either side; neither ever consulted cwd.
 
 ### 8. Know when the edit takes effect
 
-There is no sync command. Roles are composed fresh at every session launch, so
-an edit is live for the next one. That is why verification is a read-only
-command and never "restart and see".
+Composition happens at launch and there is no sync command — `library-editing`
+§4 has it. What matters here: that is why verification is a read-only command
+and never "restart and see".
 
 ## Completion
 
