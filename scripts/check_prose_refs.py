@@ -64,6 +64,19 @@ SYMBOL_RE = re.compile(r"^([A-Z][A-Za-z0-9]*)\.([a-z_][a-z0-9_]*)$")
 
 COMPONENT_DIRS = ("rules", "skills", "traits", "roles")
 
+#: Prose whose subject is a decision at a date. Its paths and symbols describe
+#: the tree of that day, so a class since renamed is the record, not rot —
+#: `docs/adr/0013` IS the decision to extract `src/ai_hats/wt/`. The library
+#: ROOT stays judged even here: that directory still exists and only its address
+#: changed, so restoring the prefix loses no history (HATS-1907).
+DATED_RECORD_RE = re.compile(r"^docs/(?:adr/|migration-v)")
+
+
+def describes_today(rel: str) -> bool:
+    """Whether this file claims to describe the tree as it stands now."""
+    return DATED_RECORD_RE.match(rel) is None
+
+
 UNCOVERED = (
     "paths under `~` — outside the repository, so absence is not wrongness",
     "gitignored paths (`.agent/**`): runtime state, absent on a fresh clone",
@@ -77,6 +90,8 @@ UNCOVERED = (
     "unquoted references, except the stale `library/` prefix: only backticked "
     "spans are judged, because an unquoted slash in prose is usually prose",
     "behaviour: that a hook DOES what the prose says it does (HATS-1825 class A)",
+    "paths and symbols inside a dated record (`docs/adr/**`, `docs/migration-v*.md`): "
+    "they describe the tree of that day. Their library ROOT is still judged",
 )
 
 
@@ -235,15 +250,25 @@ def strip_code_fences(text: str) -> list[tuple[int, str]]:
 
 
 def corpus(root: Path) -> list[Path]:
+    """Library prose, plus the docs a human reads.
+
+    Both halves make path claims about this tree and both rot the same way; only
+    the library half was ever judged, so the docs kept a library root that moved
+    out from under them (HATS-1907).
+    """
+    seen: set[Path] = set()
     lib = root / LIBRARY_RELPATH
-    if not lib.is_dir():
-        return []
-    seen = {
-        *lib.rglob("rules/*/rule.md"),
-        *lib.rglob("skills/*/SKILL.md"),
-        *lib.rglob("traits/*/config.yaml"),
-        *lib.rglob("roles/*/config.yaml"),
-    }
+    if lib.is_dir():
+        seen |= {
+            *lib.rglob("rules/*/rule.md"),
+            *lib.rglob("skills/*/SKILL.md"),
+            *lib.rglob("traits/*/config.yaml"),
+            *lib.rglob("roles/*/config.yaml"),
+        }
+    docs = root / "docs"
+    if docs.is_dir():
+        seen |= set(docs.rglob("*.md"))
+    seen |= {root / n for n in ("README.md", "CONTRIBUTING.md") if (root / n).is_file()}
     return sorted(seen)
 
 
@@ -277,10 +302,13 @@ def scan_file(
             message = check_library_alias(token, roots)
             if message:
                 findings.append(Finding(rel, lineno, token, message))
+        today = describes_today(rel)
         for match in TICK_RE.finditer(line):
             token = match.group(1).strip()
             symbol = SYMBOL_RE.match(token)
             if symbol:
+                if not today:
+                    continue
                 cls, method = symbol.groups()
                 if not symbol_resolves(root, cls, method):
                     findings.append(
@@ -292,6 +320,8 @@ def scan_file(
             head, _ = split_prefix(token)
             if head in STALE_LIBRARY_PREFIXES or head in LIVE_LIBRARY_PREFIXES:
                 message = check_library_alias(token, roots)
+            elif not today:
+                continue
             else:
                 message = check_repo_path(token, path, root, anchors)
                 if message is None and head not in anchors and not token.startswith("./"):
@@ -356,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     for path in opted_out:
         print(f"[{CHECK}] fixtures, not prose — skipped {path}", file=sys.stderr)
 
-    scope = f"{files} library prose files; {unanchored} unanchored paths not judged"
+    scope = f"{files} prose files (library + docs); {unanchored} unanchored paths not judged"
     if findings:
         print(f"[{CHECK}] {len(findings)} unresolved references across {scope}", file=sys.stderr)
     else:
