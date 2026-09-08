@@ -114,7 +114,7 @@ any exit code other than 0/1.
 ## Broken hook refs (HATS-1509)
 
 A settings entry can outlive the script it names — the pre-HATS-1170 residue
-`ai-hats:hats-437` points at `library/hooks/pre_bash_shared_state_guard.sh`,
+`ai-hats:hats-437` points at `library/hooks/pre_bash_shared_state_guard.sh`, <!-- prose-refs: was -->
 which materialization deletes once the guard moves into the `safety-guard`
 skill and gets a skill-prefixed filename. The harness then prints
 `No such file or directory` on every matching tool call, and nothing says the

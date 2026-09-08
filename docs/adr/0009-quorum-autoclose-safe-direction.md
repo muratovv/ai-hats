@@ -84,7 +84,7 @@ is reopened (`set-status active`) does not start pre-loaded with one vote.
 
 **Modified surfaces**
 
-- `packages/ai-hats-library/src/ai_hats_library/core/pipelines/finalize-hitl.yaml` — `quorum_autoclose` appended.
+- `library/core/pipelines/finalize-hitl.yaml` — `quorum_autoclose` appended.
 
 **Where those artifacts live now (update 2026-08-14, HATS-1655)**
 

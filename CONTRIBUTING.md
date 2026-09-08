@@ -431,6 +431,28 @@ prose section names, `.agent/`). A file whose ADR citations are test data rather
 than prose opts out with the marker `adr-integrity: fixtures`, and every opt-out
 is printed — an unannounced exclusion would read as green.
 
+### Path and symbol references
+
+`bash scripts/gates.sh prose-refs` judges the same corpus a reader browses:
+library prose (rules, skills, traits, roles) **plus** `docs/`, `README.md` and
+`CONTRIBUTING.md`. A backticked path anchored on a tracked top-level entry has
+to exist, a `Class.member` has to be declared beside its class, and the
+pre-`packages/` library prefix is refused quoted or not.
+
+Two escapes, both announced on every run:
+
+- **A dated record is out of the corpus.** `docs/adr/**` and
+  `docs/migration-v*.md` describe the tree of their own day — an ADR names the
+  path it decided to move, and a strikethrough row names a directory to say it
+  was removed. Correcting either rewrites the record.
+- **A line may say its references are historical.** Put `<!-- prose-refs: was -->`
+  on a line whose paths or symbols name what a thing *used to be* — a retired
+  glossary entry still has to be able to name what it retired. It applies to
+  that one line, so the rest of a living doc stays judged.
+
+Reach for the second only when the sentence is genuinely about the past. A
+reference that is merely stale is a finding, and the fix is the reference.
+
 ## Diagrams
 
 Architecture diagrams live in `docs/assets/diagrams/` and are written

@@ -29,6 +29,13 @@ CHECK = "prose-refs"
 OPT_OUT = f"{CHECK}: fixtures"
 OPT_OUT_RE = re.compile(rf"^[ \t]*(?:#|//|<!--)?[ \t]*{re.escape(OPT_OUT)}", re.MULTILINE)
 
+#: The same escape one line wide. A living doc carries retired entries — a
+#: glossary that says a thing is gone must still be able to name it — and a
+#: file-level opt-out would blind the other 400 lines. Composed for the reason
+#: above: spelled whole, this file would carry the marker on every line of it.
+WAS = f"{CHECK}: was"
+WAS_RE = re.compile(re.escape(WAS))
+
 #: Prefixes that named the library before it moved under `packages/` (HATS-1437
 #: moved it; the prose did not follow). A token opening with one of these is a
 #: finding whether or not its tail resolves — the tail tells us which message.
@@ -64,29 +71,12 @@ SYMBOL_RE = re.compile(r"^([A-Z][A-Za-z0-9]*)\.([a-z_][a-z0-9_]*)$")
 
 COMPONENT_DIRS = ("rules", "skills", "traits", "roles")
 
-#: Prose whose subject is a decision at a date. Its paths and symbols describe
-#: the tree of that day, so a class since renamed is the record, not rot —
-#: `docs/adr/0013` IS the decision to extract `src/ai_hats/wt/`. One kind is
-#: still judged there: a library reference whose tail resolves under today's
-#: root. That directory exists and only its address changed, so restoring the
-#: prefix makes a dead pointer live and loses no history (HATS-1907).
+#: Prose whose subject is a decision at a date describes the tree of that day,
+#: so none of its references are claims about this one: `docs/adr/0013` IS the
+#: decision to extract `src/ai_hats/wt/`, and a strikethrough row in
+#: `docs/adr/0021` names a flat copy precisely to say it was removed. Correcting
+#: either would rewrite the record, so the whole family stays out (HATS-1907).
 DATED_RECORD_RE = re.compile(r"^docs/(?:adr/|migration-v)")
-
-
-def describes_today(rel: str) -> bool:
-    """Whether this file claims to describe the tree as it stands now."""
-    return DATED_RECORD_RE.match(rel) is None
-
-
-def repairable(message: str) -> bool:
-    """Whether the reference names something that still exists, under a new address.
-
-    The other half of a library finding is a tail that resolves nowhere — the
-    thing itself is gone (`library/wt-hooks/`, retired) and no prefix makes it
-    point anywhere. In a dated record that is the record; correcting it would
-    invent a location that never existed.
-    """
-    return message.startswith("stale prefix:")
 
 
 UNCOVERED = (
@@ -102,9 +92,10 @@ UNCOVERED = (
     "unquoted references, except the stale `library/` prefix: only backticked "
     "spans are judged, because an unquoted slash in prose is usually prose",
     "behaviour: that a hook DOES what the prose says it does (HATS-1825 class A)",
-    "inside a dated record (`docs/adr/**`, `docs/migration-v*.md`): its paths, its "
-    "symbols, and a library reference naming something since removed — the tree of "
-    "that day is the record. A library tail that still resolves IS judged there",
+    "a dated record (`docs/adr/**`, `docs/migration-v*.md`): it describes the tree "
+    "of its own day, which is the point of keeping it",
+    f"a line carrying the `{WAS}` marker: it says outright that its references "
+    "name what a thing used to be",
 )
 
 
@@ -280,7 +271,11 @@ def corpus(root: Path) -> list[Path]:
         }
     docs = root / "docs"
     if docs.is_dir():
-        seen |= set(docs.rglob("*.md"))
+        seen |= {
+            f
+            for f in docs.rglob("*.md")
+            if not DATED_RECORD_RE.match(f.relative_to(root).as_posix())
+        }
     seen |= {root / n for n in ("README.md", "CONTRIBUTING.md") if (root / n).is_file()}
     return sorted(seen)
 
@@ -292,6 +287,8 @@ def scan_file(
     findings: list[Finding] = []
     unanchored = 0
     for lineno, line in strip_code_fences(path.read_text(encoding="utf-8", errors="ignore")):
+        if WAS_RE.search(line):
+            continue  # the line says outright that its references name former things
         for match in SECTION_RE.finditer(line):
             name, heading = match.group(1), match.group(2).strip()
             target = next(
@@ -313,15 +310,12 @@ def scan_file(
             if not is_path_shaped(token):
                 continue
             message = check_library_alias(token, roots)
-            if message and (describes_today(rel) or repairable(message)):
+            if message:
                 findings.append(Finding(rel, lineno, token, message))
-        today = describes_today(rel)
         for match in TICK_RE.finditer(line):
             token = match.group(1).strip()
             symbol = SYMBOL_RE.match(token)
             if symbol:
-                if not today:
-                    continue
                 cls, member = symbol.groups()
                 if not symbol_resolves(root, cls, member):
                     findings.append(
@@ -333,10 +327,6 @@ def scan_file(
             head, _ = split_prefix(token)
             if head in STALE_LIBRARY_PREFIXES or head in LIVE_LIBRARY_PREFIXES:
                 message = check_library_alias(token, roots)
-                if message and not today and not repairable(message):
-                    continue
-            elif not today:
-                continue
             else:
                 message = check_repo_path(token, path, root, anchors)
                 if message is None and head not in anchors and not token.startswith("./"):

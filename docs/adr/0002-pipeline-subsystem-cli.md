@@ -84,7 +84,7 @@ Pipeline-core видит только `Path` и плоские значения.
 
 ### §3 Built-in pipelines (4 эмуляции CLI-команд)
 
-`packages/ai-hats-library/src/ai_hats_library/core/pipelines/`:
+`library/core/pipelines/`:
 
 **`bare.yaml`** — bare `ai-hats`
 
@@ -167,7 +167,7 @@ ai-hats pipeline show <name>    → cat YAML
 **Storage resolution:**
 
 1. `<name>` ищется в `<project>/.agent/pipelines/<name>.yaml` (override).
-2. Затем в `packages/ai-hats-library/src/ai_hats_library/core/pipelines/<name>.yaml` (built-in).
+2. Затем в `library/core/pipelines/<name>.yaml` (built-in).
 3. Если `<arg>` — путь к `.yaml` файлу — load напрямую без registry.
 
 **Detail decisions откладываются на CLI execute-тикет:** синтаксис `--in` (типы / `--in-file` / префиксы), `--with-trace` flag, параметризация шагов в `build`. Pipeline-семантика на этом ADR-этапе работает только с `Path` и плоскими значениями — на уровне initial state сложных типов нет.

@@ -54,16 +54,16 @@ Empty draft (only `(none)` sections) is **not** a special case — Phase 2 still
 
 **New artifacts**
 
-- `packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml` — L0 role.
-- `packages/ai-hats-library/src/ai_hats_library/core/skills/judge-auditor-protocol/SKILL.md` — extracted non-mutation parts of `judge-protocol`; replaces CLI-mutation blocks with "record proposed verdict in draft".
-- `packages/ai-hats-library/src/ai_hats_library/core/pipelines/reflect-hypothesis-phase1.yaml` + `reflect-hypothesis-phase2.yaml`.
-- `packages/ai-hats-library/src/ai_hats_library/core/initial_injections/reflect-hypothesis.md` + `reflect-hypothesis-interactive.md`.
+- `library/core/roles/judge-auditor/config.yaml` — L0 role.
+- `library/core/skills/judge-auditor-protocol/SKILL.md` — extracted non-mutation parts of `judge-protocol`; replaces CLI-mutation blocks with "record proposed verdict in draft".
+- `library/core/pipelines/reflect-hypothesis-phase1.yaml` + `reflect-hypothesis-phase2.yaml`.
+- `library/core/initial_injections/reflect-hypothesis.md` + `reflect-hypothesis-interactive.md`.
 - `ai-hats reflect hypothesis [--headless] [--dry-run]` CLI command.
 
 **Modified surfaces**
 
-- `packages/ai-hats-library/src/ai_hats_library/core/roles/judge/config.yaml` — Mode-A/B paragraphs removed from injection; references draft input.
-- `packages/ai-hats-library/src/ai_hats_library/core/skills/judge-protocol/SKILL.md` — Step 0 (Mode selection) and Mode-A (autopilot) block removed; Step 1 reads draft from handoff instead of prior report directly.
+- `library/core/roles/judge/config.yaml` — Mode-A/B paragraphs removed from injection; references draft input.
+- `library/core/skills/judge-protocol/SKILL.md` — Step 0 (Mode selection) and Mode-A (autopilot) block removed; Step 1 reads draft from handoff instead of prior report directly.
 
 **Markers**
 
@@ -72,7 +72,7 @@ Empty draft (only `(none)` sections) is **not** a special case — Phase 2 still
 
 **Deprecation**
 
-- `ai-hats reflect all` and `packages/ai-hats-library/src/ai_hats_library/core/pipelines/reflect-all.yaml` remain unchanged for one bake cycle. Removal tracked as a follow-up task filed after `reflect hypothesis` ships and parity is confirmed.
+- `ai-hats reflect all` and `library/core/pipelines/reflect-all.yaml` remain unchanged for one bake cycle. Removal tracked as a follow-up task filed after `reflect hypothesis` ships and parity is confirmed.
 
 **Risks**
 
