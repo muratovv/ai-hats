@@ -23,7 +23,7 @@ from _helpers.hook_chain import composed_row
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SETTINGS = Path(".claude") / "settings.json"
-GUARD_TAG = "ai-hats:safety-guard:PreToolUse:Bash"
+GUARD_TAG = "ai-hats:safety-guard:PreToolUse:Bash:pre_bash_shared_state_guard"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):

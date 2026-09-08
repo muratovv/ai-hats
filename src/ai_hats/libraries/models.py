@@ -593,7 +593,7 @@ class SkillMetadata(_YamlModel):
                     f"of {{matcher, script}} entries, got {type(rows).__name__}"
                 )
             parsed: list[dict[str, str]] = []
-            seen_matchers: set[str] = set()
+            seen: set[tuple[str, str]] = set()
             for row in rows:
                 if not isinstance(row, dict) or "matcher" not in row or "script" not in row:
                     raise ValueError(
@@ -601,25 +601,28 @@ class SkillMetadata(_YamlModel):
                         f"have both 'matcher' and 'script' — got {row!r}"
                     )
                 matcher = str(row["matcher"])
-                # The provider keys a managed settings.json entry by
-                # (event, skill, matcher); a duplicate matcher in one event
-                # would collapse onto a single entry and silently drop a hook
-                # (the exact safety hole this validator exists to prevent).
-                # v1: one script per (event, matcher) — fail loud instead.
-                if matcher in seen_matchers:
+                script = str(row["script"])
+                # Two scripts may share a matcher — a skill is allowed to guard
+                # one tool surface twice. What stays refused is the SAME script
+                # twice, which would be wired and fire two times on one call.
+                # The older rule refused any repeat because the provider then
+                # keyed a settings.json entry by (event, skill, matcher) and the
+                # second row would have collapsed onto the first, dropping a
+                # guard silently; rows now live in a manifest list behind a
+                # dispatcher, so there is nothing to collapse onto.
+                if (matcher, script) in seen:
                     raise ValueError(
                         f"skill {skill_name!r}: runtime_hooks[{ev!r}] declares "
-                        f"matcher {matcher!r} more than once — only one script "
-                        f"per (event, matcher) is supported"
+                        f"{script!r} on matcher {matcher!r} twice — it would be "
+                        f"wired, and fire, two times on one call"
                     )
-                seen_matchers.add(matcher)
-                parsed.append({"matcher": matcher, "script": str(row["script"])})
+                seen.add((matcher, script))
+                parsed.append({"matcher": matcher, "script": script})
             normalized[ev] = parsed
 
-        # Materialized filename is ``<skill>-<basename>`` (managed_runtime_hook_
-        # filename), so two DISTINCT scripts sharing a basename would overwrite
-        # each other on disk and cross-wire their settings entries. The same
-        # script reused across events is fine (one file, several entries).
+        # Two DISTINCT scripts sharing a basename would cross-wire: the
+        # declaration is keyed by basename. The same script reused across events
+        # is fine (one file, several entries).
         basename_source: dict[str, str] = {}
         for rows in normalized.values():
             for row in rows:

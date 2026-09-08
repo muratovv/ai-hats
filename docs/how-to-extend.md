@@ -231,6 +231,33 @@ ai_hats:
 ---
 ```
 
+**A matcher may carry several scripts.** One skill can guard the same tool
+surface twice — declare a row per script:
+
+```yaml
+    PreToolUse:
+      - matcher: Bash
+        script: hooks/interpreter_gate.py   # nudges on the wrong interpreter
+      - matcher: Bash
+        script: hooks/git_gate.py           # denies a destructive git command
+```
+
+Two shapes are still refused at load, both loudly:
+
+- the **same** script twice on one matcher — it would be wired, and fire, twice
+  on one call;
+- two **different** scripts sharing a basename, whatever their matchers — give
+  them distinct filenames.
+
+What the runtime does with several rows is worth knowing before you split a
+guard in two. **Every matched script runs**: a row is not skipped because an
+earlier one objected, so each one's side effects — its journal writes included —
+happen either way. Row order decides only the **verdict**, which is the first
+objector's. So a script may not assume it is the only voice, and each one wants
+its own kill switch and its own journal call: the row's tag carries the script
+name, and that tag is what a catch record and a broken-gate notice use to say
+which gate acted.
+
 **Name the tool in Claude's vocabulary, always.** `matcher: Bash`,
 `matcher: Edit|Write|MultiEdit` — even for a project that runs on another
 surface. Each surface knows its own names and translates at spawn: agy calls the
@@ -357,9 +384,10 @@ Two behaviours worth knowing:
   rejects (naming the offending skill) any of:
   - an unknown event — only `PreToolUse` / `PostToolUse` are allowed;
   - a row missing `matcher` or `script`;
-  - the same `matcher` declared twice in one event — only one script per
-    `(event, matcher)` is supported, so a duplicate would collapse onto a
-    single hook entry and silently drop one;
+  - the same `script` declared twice on one `matcher` — it would be wired, and
+    fire, twice on one call. Two *different* scripts on one matcher are fine:
+    each row is its own entry in the session's hook manifest, so there is
+    nothing for a second one to collapse onto;
   - two *distinct* scripts whose filenames share a basename — they would
     collide on the materialized filename (reusing the *same* script across
     events is fine). The flattened `<skill>-<basename>` form that made this

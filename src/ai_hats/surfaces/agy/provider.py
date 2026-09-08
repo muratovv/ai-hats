@@ -197,7 +197,7 @@ class AgySurface(Surface):
                     {
                         "matcher": matcher,
                         "command": str(skills_dir / skill_name / script),
-                        "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
+                        "tag": f"ai-hats:{skill_name}:{event}:{matcher}:{Path(script).stem}",
                     }
                 )
         return manifest

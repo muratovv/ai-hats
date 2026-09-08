@@ -105,11 +105,11 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     # under. Since HATS-1874 the rows live in the manifest and settings.json
     # holds the dispatcher entry that runs them.
     pre = composed_rows(cache_settings, HOOK_PRE_TOOL_USE)
-    assert [row for row in pre if row["tag"] == "ai-hats:e2e-rthook:PreToolUse:Bash"] == [
+    assert [row for row in pre if row["tag"] == "ai-hats:e2e-rthook:PreToolUse:Bash:probe"] == [
         {
             "matcher": "Bash",
             "command": _expected_command(project),
-            "tag": "ai-hats:e2e-rthook:PreToolUse:Bash",
+            "tag": "ai-hats:e2e-rthook:PreToolUse:Bash:probe",
         }
     ], f"missing PreToolUse skill row in {pre}"
     # No guard row here, and that is the contract: this fixture role composes
@@ -119,11 +119,13 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
 
     # A. PostToolUse row under its own event.
     post = composed_rows(cache_settings, HOOK_POST_TOOL_USE)
-    assert [row for row in post if row["tag"] == "ai-hats:e2e-rthook:PostToolUse:Edit|Write"] == [
+    assert [
+        row for row in post if row["tag"] == "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe"
+    ] == [
         {
             "matcher": "Edit|Write",
             "command": _expected_command(project),
-            "tag": "ai-hats:e2e-rthook:PostToolUse:Edit|Write",
+            "tag": "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe",
         }
     ], f"missing PostToolUse skill row in {post}"
 

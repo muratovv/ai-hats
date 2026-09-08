@@ -261,8 +261,8 @@ def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None
     _settings(proj, _result([skill]))
     skill_tags = {row["tag"] for row in _manifest(proj)["hooks"][HOOK_PRE_TOOL_USE]}
     assert skill_tags == {
-        "ai-hats:skill-x:PreToolUse:Bash",
-        "ai-hats:skill-x:PreToolUse:Edit",
+        "ai-hats:skill-x:PreToolUse:Bash:a",
+        "ai-hats:skill-x:PreToolUse:Edit:b",
     }
 
 
@@ -413,14 +413,14 @@ def test_the_manifest_names_exactly_the_composed_gates(tmp_path: Path) -> None:
             {
                 "matcher": "Bash",
                 "command": _managed_command(proj, "skill-x", "hooks/pre.sh"),
-                "tag": f"ai-hats:skill-x:{HOOK_PRE_TOOL_USE}:Bash",
+                "tag": f"ai-hats:skill-x:{HOOK_PRE_TOOL_USE}:Bash:pre",
             }
         ],
         HOOK_POST_TOOL_USE: [
             {
                 "matcher": "Edit|Write",
                 "command": _managed_command(proj, "skill-y", "hooks/post.sh"),
-                "tag": f"ai-hats:skill-y:{HOOK_POST_TOOL_USE}:Edit|Write",
+                "tag": f"ai-hats:skill-y:{HOOK_POST_TOOL_USE}:Edit|Write:post",
             }
         ],
     }
