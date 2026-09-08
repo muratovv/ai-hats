@@ -171,6 +171,10 @@ class Materializer(abc.ABC):
     def write_text(self, path: Path, content: str) -> None: ...
 
     @abc.abstractmethod
+    def write_private_text(self, path: Path, content: str) -> None:
+        """Write with owner-only permissions, recording no credential digest."""
+
+    @abc.abstractmethod
     def write_executable(self, path: Path, content: str) -> None: ...
 
     @abc.abstractmethod
@@ -211,6 +215,12 @@ class ApplyMaterializer(Materializer):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         self._record(describe_write_text(path, content))
+
+    def write_private_text(self, path: Path, content: str) -> None:
+        from ai_hats_core.atomic_io import atomic_write_text
+
+        atomic_write_text(path, content, mode=0o600)
+        self._record(MaterializationEntry(kind=WriteKind.WRITE_TEXT, target=path))
 
     def write_executable(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -299,6 +309,10 @@ class PlanMaterializer(Materializer):
     def write_text(self, path: Path, content: str) -> None:
         self._mark_created(path.parent)  # apply creates parents without recording
         self._record(describe_write_text(path, content))
+
+    def write_private_text(self, path: Path, content: str) -> None:
+        self._mark_created(path)
+        self._record(MaterializationEntry(kind=WriteKind.WRITE_TEXT, target=path))
 
     def write_executable(self, path: Path, content: str) -> None:
         self._mark_created(path.parent)
