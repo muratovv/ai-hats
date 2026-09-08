@@ -344,7 +344,12 @@ def test_the_nudge_survives_the_whole_bash_chain(shared_launcher, tmp_path_facto
     """
     import subprocess as sp
 
-    from _helpers.hook_chain import build_session_settings, pretooluse_hooks, run_chain
+    from _helpers.hook_chain import (
+        build_session_settings,
+        pretooluse_hooks,
+        run_chain,
+        run_tool_chain,
+    )
 
     launcher, base_env, _venv = shared_launcher
     env = dict(base_env)
@@ -372,6 +377,29 @@ def test_the_nudge_survives_the_whole_bash_chain(shared_launcher, tmp_path_facto
     verdict = run_chain(project, "pytest tests/ ; git commit -m wip", settings=settings, env=env)
     assert "state-mutating command follows" in verdict.context, verdict
     assert not verdict.gated, f"this guard must never gate, it only nudges: {verdict}"
+
+    # The background branch reads a tool_input FIELD, not the command string, so
+    # the flag has to survive the composed dispatcher — a single-hook test cannot
+    # show that, and the fix would be dead in a real session with every unit test
+    # green (HATS-1709). The pair IS the control: one payload, one field apart.
+    # Bounded, because the command-lifetime guard REFUSES an unbounded background
+    # launch — and its deny would be the chain's verdict, hiding whether this
+    # guard said anything at all. The bound is what an agent has to write anyway.
+    incident = (
+        "timeout 1800 bash scripts/gates.sh e2e > /tmp/e2e.log 2>&1; echo $? > /tmp/e2e.rc"
+    )
+    foreground = run_tool_chain(project, "Bash", {"command": incident}, settings=settings, env=env)
+    assert not foreground.context, f"the capture form preserves in the foreground: {foreground}"
+
+    background = run_tool_chain(
+        project,
+        "Bash",
+        {"command": incident, "run_in_background": True},
+        settings=settings,
+        env=env,
+    )
+    assert "completion notice" in background.context, background
+    assert not background.gated, f"this guard must never gate, it only nudges: {background}"
 
 
 # --- backgrounded runs: the notice reports the wrapper (HATS-1709) ------------
