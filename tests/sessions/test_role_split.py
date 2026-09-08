@@ -261,7 +261,7 @@ def test_the_layer_split_is_carried_by_no_component() -> None:
     assert framework.composition.skills == []
 
     curator = _load(
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/library-curator/config.yaml"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml"
     )
     for carrier in ("rule_core_vs_usage_split", "library-layer-split"):
         assert carrier not in curator.composition.rules
