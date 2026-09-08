@@ -80,6 +80,12 @@ The `TOTAL` column sums skill bodies too, and those are **not** resident. The
 always-on figure is injections plus rule bodies — read those rows, not the
 total. Quote the number this run produced.
 
+**`list tokens` does not follow cwd** the way `show-prompt` does: it resolves
+the project root, so run from a worktree — or any checkout that is not the
+project — it silently prices the OTHER tree and returns 0. Set
+`AI_HATS_LIBRARY_ROOT` to the library you mean before pricing, and confirm the
+table lists a component you know is only in that tree.
+
 ### 6. When you need the object graph, compose in-process
 
 Only when the CLI's output is not enough — you want `errors`, the resolved
@@ -107,8 +113,9 @@ export AI_HATS_LIBRARY_ROOT=<path to a library root>
 
 ### 7. From a worktree, read-only and writing commands disagree
 
-A **read-only** command run inside a worktree composes THAT worktree's
-library — `show-prompt` and friends key off cwd, so your edit is what you see.
+`show-prompt` run inside a worktree composes THAT worktree's library: it keys
+off cwd, so your edit is what you see. Do not generalize that to every
+read-only command — `list tokens` does not (step 5).
 
 A command that **writes** — init, anything materializing into the agent
 directory — deliberately still keys off the project, which for a linked

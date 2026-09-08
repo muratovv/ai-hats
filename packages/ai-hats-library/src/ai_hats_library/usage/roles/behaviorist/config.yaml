@@ -29,10 +29,12 @@ injection: |
   ## Find this project's own library before you edit anything
 
   Components you author live in a root this project already has, not in the
-  shipped library: `<project>/libraries/` or `~/.ai-hats/`. Confirm which roots
-  are live, and which role actually composes them, with `ai-hats config status`
-  — a component authored into a root the project does not read is invisible,
-  and nothing about the file on disk says so.
+  shipped library: `<project>/libraries/` or `~/.ai-hats/`. A component written
+  into a root the project does not read is invisible, and nothing about the file
+  on disk says so — `ai-hats config status` tags each component of the ACTIVE
+  role with the root it came from (`built-in` / `global` / `project`). For a
+  role you are not currently running, `ai-hats config show-prompt --stats
+  --role <role>`.
 
   ## Close the loop
 
