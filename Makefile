@@ -87,7 +87,7 @@ e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 # here only when this checkout is clean AND at that commit; otherwise in a
 # one-shot scratch checkout — which is what a card whose worktree is already
 # merged away needs, and what the gate's own refusal hands you.
-GATE_HOOKS := packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/hooks
+GATE_HOOKS := packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks
 
 # $(1) = gate name, which is its script's basename
 define run_gate

@@ -109,10 +109,18 @@ def _rev(repo: Path, ref: str) -> str:
 
 
 def _journal_lines(repo: Path) -> list[dict]:
-    path = repo / JOURNAL_REL
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    # Both homes (HATS-1634): a row that named its session moved to the session
+    # dir. A reader that knows only .git turns an absence assertion into a test
+    # that cannot fail.
+    paths = [repo / JOURNAL_REL]
+    paths += sorted((repo / ".agent/ai-hats/sessions/runs").glob("session_*/bypasses.jsonl"))
+    return [
+        json.loads(line)
+        for path in paths
+        if path.exists()
+        for line in path.read_text().splitlines()
+        if line.strip()
+    ]
 
 
 @pytest.mark.integration

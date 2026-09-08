@@ -1,5 +1,5 @@
 ---
-name: maintainer-quality-gate
+name: quality-gate
 description: When a change owes an e2e test, and the gates that enforce it — pre-push e2e+smoke to master plus the ->review, ->merge and ->done gates. Use when changing the CLI, a shell script, the install flow or any installed hook, and when handing over, merging or closing a card.
 ai_hats:
   # hook-carrier skill. `ai-hats self init` installs one
@@ -12,7 +12,7 @@ ai_hats:
 license: MIT
 ---
 
-# maintainer-quality-gate
+# quality-gate
 
 **This directory is machinery, not prose.** It carries the gates that guard the
 ai-hats codebase — one thin script per edge in `hooks/`, and the git one in
@@ -162,7 +162,7 @@ suite stubbed the very contracts the change broke.
    Run it yourself and say so: `bash scripts/gates.sh e2e`. Nothing refuses
    here, which is why that command is not optional. What a gate requires:
 
-       bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/hooks/done-gate.sh --stages
+       bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/done-gate.sh --stages
 
 ### What a stamp saves
 

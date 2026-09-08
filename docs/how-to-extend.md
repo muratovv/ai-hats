@@ -6,9 +6,9 @@ Add your own roles, traits, rules, skills, and pipelines to ai-hats — without 
 
 When you install ai-hats, three layers ship as built-in content:
 
-- **`library/core/`** — engine fundament. System roles (`initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`hatrack`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
-- **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::web`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and the optional skills (golang, terraform, ansible, observability, system-design, component authoring, …).
-- **`library/ai-hats-dev/`** — the layer the ai-hats repository wears to develop *itself*: the `maintainer` and `role-curator` roles, their traits, and the gates wired to this repo's CI. Nothing here is meant for a consuming project; it ships today only because it has not yet been unbundled.
+- **`core/`** — engine fundament. System roles (`initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`hatrack`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
+- **`usage/`** — curated content catalog. Opinionated roles (`assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::web`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and the optional skills (golang, terraform, ansible, observability, system-design, component authoring, …).
+- **`ai-hats-dev/`** — the layer the ai-hats repository wears to develop *itself*: the `maintainer` and `role-curator` roles, their traits, and the gates wired to this repo's CI. Nothing here is meant for a consuming project; it ships today only because it has not yet been unbundled.
 
 The split is informational — all three layers are loaded at runtime, `core` → `usage` → `ai-hats-dev`, and a later layer wins a name it shares with an earlier one. You can override any of them from your own library path.
 
@@ -268,14 +268,14 @@ per-call shape is git's.
  "worktree":"/tmp/wt-…","tasks_dir":"/…/backlog/tasks","project_dir":"/…"}
 ```
 
-| field                | what it answers                                                              |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `v`                  | contract version — bumped only when a field is removed, retyped or re-meant  |
-| `selector`           | which declaration called (`->done` — the row's own spelling)                 |
-| `event` / `from`/`to` | which road was actually taken (`review->done`); `null` off the FSM channel   |
-| `actor`              | who moved the card — see below                                               |
-| `force`              | whether the transition was forced                                            |
-| the paths            | the tree, the backlog and the project this call is about; `null` when none   |
+| field                 | what it answers                                                             |
+| --------------------- | --------------------------------------------------------------------------- |
+| `v`                   | contract version — bumped only when a field is removed, retyped or re-meant |
+| `selector`            | which declaration called (`->done` — the row's own spelling)                |
+| `event` / `from`/`to` | which road was actually taken (`review->done`); `null` off the FSM channel  |
+| `actor`               | who moved the card — see below                                              |
+| `force`               | whether the transition was forced                                           |
+| the paths             | the tree, the backlog and the project this call is about; `null` when none  |
 
 **A field that does not apply is `null`, never a missing key.** That is the one
 thing the envelope gives you that a scalar cannot: an absent scalar is
@@ -530,7 +530,7 @@ does not break an older engine.
 Pipelines are YAML graphs of steps that wire together composition, prompt
 resolution, provider launch, logging, and reflect-specific glue. The built-in
 pipelines (`execute`, `human`, `reflect-{session,role,all,issue}`) live in
-`library/core/pipelines/` and are invoked by the CLI behind the scenes.
+`packages/ai-hats-library/src/ai_hats_library/core/pipelines/` and are invoked by the CLI behind the scenes.
 
 You can drop your own pipeline YAML under any library path:
 
@@ -738,8 +738,8 @@ After `ai-hats self init`, the composed role is materialized into your project. 
 
 ## Cookbook entries
 
-- **Add a project-specific rule that bans `git push --force`** — make `libraries/rules/no-force-push/rule.md` with the constraint, then `ai-hats config customize <role> --add-rule no-force-push`.
-- **Tweak the injection of a built-in trait** — copy `library/usage/traits/<name>/config.yaml` into your `libraries/traits/<name>/`, edit the `injection:` block, `ai-hats self init`. Same last-wins rule applies to traits.
+- **Add a project-specific rule that bans `git push --force`** — make `<project>/libraries/rules/no-force-push/rule.md` with the constraint, then `ai-hats config customize <role> --add-rule no-force-push`.
+- **Tweak the injection of a built-in trait** — copy `packages/ai-hats-library/src/ai_hats_library/usage/traits/<name>/config.yaml` into your `<project>/libraries/traits/<name>/`, edit the `injection:` block, `ai-hats self init`. Same last-wins rule applies to traits.
 - **Share a private skill across projects** — put it under `~/.ai-hats/skills/<name>/`. Every project on your machine sees it without further config.
 
 ## Migrating from a removed built-in component

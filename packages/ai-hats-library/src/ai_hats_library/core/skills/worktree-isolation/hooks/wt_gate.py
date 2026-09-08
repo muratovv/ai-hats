@@ -20,12 +20,19 @@ from pathlib import Path
 # The hooks are stdlib-only, so the journal arrives as a flattened sibling.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from bypass_journal import journal_bypass
+    from bypass_journal import journal_bypass, journal_catch
 except ImportError:  # helper absent -> say so; never skip quietly
 
     def journal_bypass(kind: str, reason: str, **_kw) -> bool:
         print(
             f"[bypass-journal] NOT RECORDED ({kind}: {reason}) — bypass_journal.py missing",
+            file=sys.stderr,
+        )
+        return False
+
+    def journal_catch(rule: str, verdict: str, **_kw) -> bool:
+        print(
+            f"[catch-journal] NOT RECORDED ({rule}: {verdict}) — bypass_journal.py missing",
             file=sys.stderr,
         )
         return False
@@ -218,6 +225,7 @@ def main() -> int:
     if _is_git_ignored(file_path, directory):
         return 0  # gitignored tracker/runtime/config (.agent/, ai-hats.yaml) -> silent
 
+    journal_catch("worktree-isolation", "deny", hook="wt_gate.py", cmd=file_path)
     print(
         json.dumps(
             {

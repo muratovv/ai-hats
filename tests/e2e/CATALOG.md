@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**305 of 305 files catalogued — 313 flows.**
+**307 of 307 files catalogued — 315 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1346,6 +1346,20 @@ as a claim to check, not as evidence.
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] ticket-ids`, reports on every run what it does NOT cover and how many ids the pattern still finds where history lives, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
 - **why** — the checker's own silence is the thing under test. 177 ids had accumulated in this library while a rule actively prescribed the form, and every gate stayed green through all of them because none read prose for what it must NOT carry. A checker that is wired but never refuses anything reproduces exactly that, and the ONE id this repo legitimately keeps is the reason a blanket "no matches ever" assertion would not do.
 
+## `test_git_gate_catch.py`
+
+*pins HATS-1634*
+
+- **flow** — a developer committing a file the privacy gate refuses
+- **cmds**
+
+  ```console
+  git commit -m wip
+  ```
+
+- **expect** — the commit is blocked and the refusal is recorded as a catch row
+- **why** — a git gate's refusal lives only in stderr, so nothing could count how often the tier fires or notice it silently stopping firing
+
 ## `test_githooks_argv_contract.py`
 
 *pins HATS-1519*
@@ -1437,6 +1451,20 @@ as a claim to check, not as evidence.
 
 - **expect** — `self init` reports the role and provider and writes default_role into ai-hats.yaml; `show-prompt` carries the composed role's markers; the batch run exits 0 and emits one JSON envelope with exit_code 0, a session_id and a session_dir, alongside audit.md and a trace.jsonl naming every pipeline step; the turn's cost stays under the $0.10 cap; and bare `ai-hats` surfaces its session-start and session-end banners in the parent's stdout through the PTY proxy
 - **why** — every layer the product sells sits on this one path — launcher install, yaml parsing, role and provider validation, composition, prompt materialisation, the pipeline harness and both runners. Three of bare `ai-hats`'s four steps are byte-identical to the batch pipeline's, so a composition or provider regression that breaks the product breaks here.
+
+## `test_guard_catch_journal.py`
+
+*pins HATS-1634*
+
+- **flow** — an agent tripping the composed PreToolUse chain — a denied edit, an advisory nudge, and a clean command
+- **cmds**
+
+  ```console
+  Write into the main checkout / cat a file / echo hi
+  ```
+
+- **expect** — every gate that fires appends one catch row to the session's own catches.jsonl beside audit.md; a clean command appends nothing
+- **why** — the reviewer may only answer `confirmed` when a guard visibly fired, so a firing that leaves no record makes every guard hypothesis unclosable
 
 ## `test_hats541_silent_done_regression.py`
 

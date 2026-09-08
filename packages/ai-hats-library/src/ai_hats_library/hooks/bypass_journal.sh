@@ -38,10 +38,52 @@ ai_hats_journal_bypass() {
 
     hook_name="$(basename "${0:-unknown}")"
 
+    # `--hook-path "$0"`: a runtime gate is invoked by its path inside the
+    # session tree, and that path is the only channel carrying the session — the
+    # harness spawns the hook without AI_HATS_SESSION_ID in its environment.
     python3 "$py_script" record \
         --kind "$kind" \
         --reason "$reason" \
         --hook "$hook_name" \
+        --hook-path "${0:-}" \
+        --cmd "$cmd_arg" \
+        --session-id "$session_arg" || true
+
+    return 0
+}
+
+# ai_hats_journal_catch <rule> <verdict> [cmd] [session_id]
+#   rule    : the rule / invariant that fired
+#   verdict : deny | ask | nudge | block
+#
+# `--hook-path "$0"` is what makes attribution work: a runtime gate is invoked by
+# its path inside the session tree, so the writer reads the session id off it
+# (HATS-1634). A git gate's $0 carries none, and the writer falls back to env.
+ai_hats_journal_catch() {
+    local rule="${1:-unknown}" verdict="${2:-unspecified}" cmd_arg="${3:-}" session_arg="${4:-}"
+    local helper_dir py_script hook_name
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "[catch-journal] NOT RECORDED ($rule: $verdict) — python3 missing" >&2
+        return 0
+    fi
+
+    helper_dir="${BASH_SOURCE[0]%/*}"
+    [[ "$helper_dir" == "${BASH_SOURCE[0]}" ]] && helper_dir="."
+    py_script="${helper_dir}/bypass_journal.py"
+
+    if [[ ! -f "$py_script" ]]; then
+        echo "[catch-journal] NOT RECORDED ($rule: $verdict) — $py_script missing" >&2
+        return 0
+    fi
+
+    hook_name="$(basename "${0:-unknown}")"
+
+    python3 "$py_script" catch \
+        --rule "$rule" \
+        --verdict "$verdict" \
+        --hook "$hook_name" \
+        --hook-path "${0:-}" \
         --cmd "$cmd_arg" \
         --session-id "$session_arg" || true
 

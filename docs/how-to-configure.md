@@ -125,10 +125,10 @@ Wizard is one-shot — to change provider / role / prefix later use `ai-hats con
 
 A role is a composition of traits + rules + skills + injection — definition in [1]. The shipped library is layered:
 
-| Layer                  | Roles                                                                                                          | When to pick                                       |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                              | Curated user-facing — pick one.                    |
-| `library/core/roles/`  | `initial-wizard`, `session-reviewer`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent` | Engine-internal — do **not** pick as your primary. |
+| Layer                                                       | Roles                                                                                                          | When to pick                                       |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `packages/ai-hats-library/src/ai_hats_library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                              | Curated user-facing — pick one.                    |
+| `packages/ai-hats-library/src/ai_hats_library/core/roles/`  | `initial-wizard`, `session-reviewer`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent` | Engine-internal — do **not** pick as your primary. |
 
 Bring-your-own roles go under `~/.ai-hats/roles/<name>/` or `<project>/libraries/roles/<name>/`. Override precedence and full library layout — see [3].
 
@@ -367,7 +367,7 @@ Yaml edits and `library_paths` changes need no rerun — they are picked up at t
 - **`library_paths` precedence.** Later paths win; project-local `<project>/libraries/` overrides the shipped library. Full precedence table — see [3].
 - **Override venv updates.** Once `venv_path:` is set, ai-hats only does `uv pip install -U` into that venv — never recreates it. If it breaks (e.g. corrupted site-packages), you fix it manually.
 - **Wizard re-run.** Wizard is one-shot — there is no replay flag. To rerun from scratch: `rm ai-hats.yaml && ai-hats self init`. To tweak individual fields without restarting: `ai-hats config set …` or `ai-hats config customize …`.
-- **`Overlay` vs base edit.** Don't edit `library/usage/roles/<name>/config.yaml` directly — the change is lost on `ai-hats self update`. Always overlay via `customizations:` (§4).
+- **`Overlay` vs base edit.** Don't edit `packages/ai-hats-library/src/ai_hats_library/usage/roles/<name>/config.yaml` directly — the change is lost on `ai-hats self update`. Always overlay via `customizations:` (§4).
 - **Broken venv / launcher.** For symptom-to-command recovery (`command not found`, `venv missing`, corrupted site-packages, override venv broken, a stray shadow, or an unrunnable install needing `bootstrap.sh --repair`) — see [2] §10.
 - **`WARN: ... dropping unknown field` on load.** A NEWER ai-hats wrote a field this (older) binary doesn't know. It is **preserved, not lost** — the field round-trips through `save()` (HATS-792) so a save from the older binary won't delete it; the WARN just flags that the typed model ignored it. Run `ai-hats self update` to use the field properly. By contrast, `schema_version N is newer than this ai-hats` **fails loud** (not a warning): the on-disk format is too new to read safely — update before editing.
 
@@ -392,7 +392,7 @@ If only one of `AI_HATS_PTY_IN_FD` or `AI_HATS_PTY_OUT_FD` is set, `ai-hats` use
 
 **[2]** — [`docs/how-to.md`](how-to.md) — overlay cookbook: full recipes for §4, plus the recovery table referenced from §8.
 
-**[3]** — [`docs/how-to-extend.md`](how-to-extend.md) — library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
+**[3]** — [`docs/how-to-extend.md`](how-to-extend.md) — library layout (`core/` vs `usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
 
 **[4]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — reflect-session and reflect-all in practice; policy threshold tuning; what the retro emits.
 

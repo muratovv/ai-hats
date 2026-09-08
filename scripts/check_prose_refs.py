@@ -12,6 +12,7 @@ and printed, never flagged — the count is what tells you the gate's reach.
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 import sys
@@ -28,6 +29,13 @@ CHECK = "prose-refs"
 #: opts ITSELF out (the trick is `check_adr_integrity.py`'s, HATS-1646).
 OPT_OUT = f"{CHECK}: fixtures"
 OPT_OUT_RE = re.compile(rf"^[ \t]*(?:#|//|<!--)?[ \t]*{re.escape(OPT_OUT)}", re.MULTILINE)
+
+#: The same escape one line wide. A living doc carries retired entries — a
+#: glossary that says a thing is gone must still be able to name it — and a
+#: file-level opt-out would blind the other 400 lines. Composed for the reason
+#: above: spelled whole, this file would carry the marker on every line of it.
+WAS = f"{CHECK}: was"
+WAS_RE = re.compile(re.escape(WAS))
 
 #: Prefixes that named the library before it moved under `packages/` (HATS-1437
 #: moved it; the prose did not follow). A token opening with one of these is a
@@ -59,10 +67,18 @@ BARE_LIBRARY_RE = re.compile(
 #: checked the same way: the component resolves, then the heading must exist.
 SECTION_RE = re.compile(r"`([a-z0-9][a-z0-9._-]*)`\s*§\s*[\"“]([^\"”\n]+)[\"”]")
 
-#: `Class.method`, the one code-symbol shape prose actually uses.
+#: `Class.member`, the one code-symbol shape prose actually uses.
 SYMBOL_RE = re.compile(r"^([A-Z][A-Za-z0-9]*)\.([a-z_][a-z0-9_]*)$")
 
 COMPONENT_DIRS = ("rules", "skills", "traits", "roles")
+
+#: Prose whose subject is a decision at a date describes the tree of that day,
+#: so none of its references are claims about this one: `docs/adr/0013` IS the
+#: decision to extract `src/ai_hats/wt/`, and a strikethrough row in
+#: `docs/adr/0021` names a flat copy precisely to say it was removed. Correcting
+#: either would rewrite the record, so the whole family stays out.
+DATED_RECORD_RE = re.compile(r"^docs/(?:adr/|migration-v)")
+
 
 UNCOVERED = (
     "paths under `~` — outside the repository, so absence is not wrongness",
@@ -77,6 +93,10 @@ UNCOVERED = (
     "unquoted references, except the stale `library/` prefix: only backticked "
     "spans are judged, because an unquoted slash in prose is usually prose",
     "behaviour: that a hook DOES what the prose says it does (HATS-1825 class A)",
+    "a dated record (`docs/adr/**`, `docs/migration-v*.md`): it describes the tree "
+    "of its own day, which is the point of keeping it",
+    f"a line carrying the `{WAS}` marker: it says outright that its references "
+    "name what a thing used to be",
 )
 
 
@@ -235,15 +255,29 @@ def strip_code_fences(text: str) -> list[tuple[int, str]]:
 
 
 def corpus(root: Path) -> list[Path]:
+    """Library prose, plus the docs a human reads.
+
+    Both halves make path claims about this tree and both rot the same way; only
+    the library half was ever judged, so the docs kept a library root that moved
+    out from under them.
+    """
+    seen: set[Path] = set()
     lib = root / LIBRARY_RELPATH
-    if not lib.is_dir():
-        return []
-    seen = {
-        *lib.rglob("rules/*/rule.md"),
-        *lib.rglob("skills/*/SKILL.md"),
-        *lib.rglob("traits/*/config.yaml"),
-        *lib.rglob("roles/*/config.yaml"),
-    }
+    if lib.is_dir():
+        seen |= {
+            *lib.rglob("rules/*/rule.md"),
+            *lib.rglob("skills/*/SKILL.md"),
+            *lib.rglob("traits/*/config.yaml"),
+            *lib.rglob("roles/*/config.yaml"),
+        }
+    docs = root / "docs"
+    if docs.is_dir():
+        seen |= {
+            f
+            for f in docs.rglob("*.md")
+            if not DATED_RECORD_RE.match(f.relative_to(root).as_posix())
+        }
+    seen |= {root / n for n in ("README.md", "CONTRIBUTING.md") if (root / n).is_file()}
     return sorted(seen)
 
 
@@ -254,6 +288,10 @@ def scan_file(
     findings: list[Finding] = []
     unanchored = 0
     for lineno, line in strip_code_fences(path.read_text(encoding="utf-8", errors="ignore")):
+        # Outside code spans: a doc that documents the marker quotes it, and a
+        # quoted marker must not silently exempt the line quoting it.
+        if WAS_RE.search(TICK_RE.sub(" ", line)):
+            continue  # the line says outright that its references name former things
         for match in SECTION_RE.finditer(line):
             name, heading = match.group(1), match.group(2).strip()
             target = next(
@@ -281,10 +319,10 @@ def scan_file(
             token = match.group(1).strip()
             symbol = SYMBOL_RE.match(token)
             if symbol:
-                cls, method = symbol.groups()
-                if not symbol_resolves(root, cls, method):
+                cls, member = symbol.groups()
+                if not symbol_resolves(root, cls, member):
                     findings.append(
-                        Finding(rel, lineno, token, f"no `{method}` on a class named `{cls}`")
+                        Finding(rel, lineno, token, f"no `{member}` on a class named `{cls}`")
                     )
                 continue
             if not is_path_shaped(token):
@@ -304,23 +342,55 @@ def scan_file(
 _SYMBOL_CACHE: dict[tuple[str, str], bool] = {}
 
 
-def symbol_resolves(root: Path, cls: str, method: str) -> bool:
-    """`Class.method` resolves when some file declaring `class Class` also
-    declares `def method`. Co-location in one file is the cheap proxy for
-    membership that needs no import of the tree under test."""
-    key = (cls, method)
+def class_members(text: str, cls: str, source: Path) -> set[str] | None:
+    """Names declared in the body of `class cls`, or None when the file has none.
+
+    Parsed, not matched: a regex over the whole file accepts a signature
+    parameter, a local annotation and an unquoted dict key as members, so a
+    prose reference to a field that does not exist would pass.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        print(f"[{CHECK}] warn: {source} does not parse, skipped: {exc}", file=sys.stderr)
+        return None
+    names: set[str] = set()
+    seen = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != cls:
+            continue
+        seen = True
+        for item in node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(item.name)
+            elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                names.add(item.target.id)
+            elif isinstance(item, ast.Assign):
+                names |= {t.id for t in item.targets if isinstance(t, ast.Name)}
+    return names if seen else None
+
+
+def symbol_resolves(root: Path, cls: str, member: str) -> bool:
+    """`Class.member` resolves when a file declaring `class Class` declares it there.
+
+    A member is a def, an annotated field or a plain class attribute — the docs
+    cite dataclass and pydantic FIELDS at least as often as methods.
+    """
+    key = (cls, member)
     if key in _SYMBOL_CACHE:
         return _SYMBOL_CACHE[key]
     class_re = re.compile(rf"^\s*class\s+{re.escape(cls)}\b", re.MULTILINE)
-    def_re = re.compile(rf"^\s*(?:async\s+)?def\s+{re.escape(method)}\b", re.MULTILINE)
     found = False
     seen_class = False
     for source in [*(root / "src").rglob("*.py"), *(root / "packages").rglob("*.py")]:
         text = source.read_text(encoding="utf-8", errors="ignore")
         if not class_re.search(text):
             continue
+        members = class_members(text, cls, source)
+        if members is None:
+            continue
         seen_class = True
-        if def_re.search(text):
+        if member in members:
             found = True
             break
     # An unknown class is somebody else's vocabulary (`Path.cwd`), not a finding.
@@ -356,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
     for path in opted_out:
         print(f"[{CHECK}] fixtures, not prose — skipped {path}", file=sys.stderr)
 
-    scope = f"{files} library prose files; {unanchored} unanchored paths not judged"
+    scope = f"{files} prose files (library + docs); {unanchored} unanchored paths not judged"
     if findings:
         print(f"[{CHECK}] {len(findings)} unresolved references across {scope}", file=sys.stderr)
     else:

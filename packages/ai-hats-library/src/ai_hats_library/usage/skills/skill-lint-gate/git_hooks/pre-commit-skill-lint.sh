@@ -32,6 +32,9 @@ if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journ
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_SKILL_LINT_ACK:-}" == "1" ]]; then
@@ -83,6 +86,7 @@ if [[ ${#lic_violations[@]} -gt 0 ]]; then
         echo "Fix, or skip this single commit after confirming intent:"
         echo "  AI_HATS_SKILL_LINT_ACK=1 git commit ..."
     } >&2
+    ai_hats_journal_catch skill-lint block "staged SKILL.md fails the lint"
     exit 1
 fi
 
@@ -121,6 +125,7 @@ if [[ $rc -ne 0 ]]; then
         echo "skill is intentionally non-conforming:"
         echo "  AI_HATS_SKILL_LINT_ACK=1 git commit ..."
     } >&2
+    ai_hats_journal_catch skill-lint block "staged SKILL.md fails the lint"
     exit 1
 fi
 

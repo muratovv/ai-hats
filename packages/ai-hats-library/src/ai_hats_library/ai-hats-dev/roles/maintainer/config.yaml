@@ -24,14 +24,14 @@ composition:
   apps:
     rack:
       tasks:
-        - run: maintainer-quality-gate/hooks/review-gate.sh
+        - run: quality-gate/hooks/review-gate.sh
           at: ['->review']
           on_error: refuse
-        - run: maintainer-quality-gate/hooks/done-gate.sh
+        - run: quality-gate/hooks/done-gate.sh
           at: ['->done']
           on_error: refuse
     wt:
-      - run: maintainer-quality-gate/hooks/merge-gate.sh
+      - run: quality-gate/hooks/merge-gate.sh
         at: [pre-merge]
         on_error: refuse
 # Composition rationale (author-facing — NOT injected into the agent prompt).

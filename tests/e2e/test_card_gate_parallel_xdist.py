@@ -62,10 +62,7 @@ def maintainer_project(shared_launcher, tmp_path: Path, monkeypatch):
     scripts = project / "scripts"
     scripts.mkdir(exist_ok=True)
     shutil.copy2(REPO_ROOT / "scripts" / "gates.sh", scripts / "gates.sh")
-    hooks = (
-        project
-        / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
-    )
+    hooks = project / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
     shutil.copytree(REPO_ROOT / hooks.relative_to(project), hooks)
     runner = tmp_path / "runner.sh"
     runner.write_text(

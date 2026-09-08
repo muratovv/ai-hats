@@ -32,7 +32,7 @@ SKILL_SRC = (
     / "packages/ai-hats-library/src/ai_hats_library"
     / "ai-hats-dev"
     / "skills"
-    / "maintainer-quality-gate"
+    / "quality-gate"
 )
 HOOKS = SKILL_SRC / "hooks"
 GATE_LIB = SKILL_SRC / "lib" / "gate.sh"

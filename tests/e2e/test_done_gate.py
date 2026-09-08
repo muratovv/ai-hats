@@ -27,7 +27,7 @@ from _helpers.git import git, init_repo
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SKILL = "maintainer-quality-gate"
+SKILL = "quality-gate"
 SKILL_SRC = (
     REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library" / "ai-hats-dev" / "skills" / SKILL
 )

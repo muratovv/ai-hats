@@ -6,7 +6,7 @@ composition:
     - rule_composition_value_contract
   skills:
     # decides what owes an e2e test, and installs the pre-push hook enforcing it.
-    - maintainer-quality-gate
+    - quality-gate
     # what § "Documentation discipline" points at.
     - doc-protocol
     # wt_in hook that mints a .venv in each new worktree.
@@ -21,7 +21,7 @@ injection: |
   ### E2E gate
   A change to code running **outside the Python process** — the CLI, a
   `scripts/*.sh`, the install/venv flow, any installed hook — owes an e2e test
-  named in the plan by path. Expand skill **maintainer-quality-gate** for the
+  named in the plan by path. Expand skill **quality-gate** for the
   full trigger surface and what counts; it is a `done` gate, not advice.
 
   ### Branches and commits
@@ -97,5 +97,5 @@ injection: |
 
   ### Anti-patterns to refuse
   - **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (There is a consolidation precedent.)
-  - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see skill `maintainer-quality-gate`).
+  - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see skill `quality-gate`).
   - **HYP-as-technical-risk**: HYP is for agent-behaviour hypotheses. Code / migration / harness risks belong in `rack transition <FOLLOW_UP_ID> --log "…"`, not in a new HYP (see `rule_backlog_discipline §5`).
