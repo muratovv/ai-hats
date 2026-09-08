@@ -107,24 +107,43 @@ def session_id_from_hook_path(path: str) -> str:
     return ""
 
 
-def _catch_path(session_id: str, cwd: Path | str | None = None) -> tuple[Path | None, bool]:
-    """Where a catch belongs: (path, attributed_to_a_session).
+def _journal_path(
+    session_id: str, filename: str, cwd: Path | str | None = None
+) -> tuple[Path | None, bool]:
+    """Where a record belongs: (path, attributed_to_a_session).
 
-    Attributed catches land beside ``audit.md``, so the post-session auditor
-    reads them from the dir it already reads. The session dir must EXIST — it is
-    created at session start, so its absence means this is not that session's
-    tree, and guessing would file the record under a session that never ran.
+    A record that knows its session lands beside that session's ``audit.md``, so
+    everything about one session is in one directory. One that does not keeps the
+    repo-wide journal under ``.git`` — the address every session-less git-tier
+    row has always had. The session dir must EXIST: it is created at session
+    start, so its absence means this is not that session's tree, and guessing
+    would file the record under a session that never ran.
     """
     git_dir = _git_common_dir(cwd)
     if git_dir is None:
         return None, False
     if session_id:
         # From THIS repo, never AI_HATS_DIR: inherited from another checkout it
-        # names a foreign tracker, and a catch filed there is silent corruption.
+        # names a foreign tracker, and a record filed there is silent corruption.
         session_dir = git_dir.parent / AI_HATS_REL / RUNS_REL / f"{SESSION_PREFIX}{session_id}"
         if session_dir.is_dir():
-            return session_dir / "catches.jsonl", True
-    return git_dir / "ai-hats" / "catches.jsonl", False
+            return session_dir / filename, True
+    return git_dir / "ai-hats" / filename, False
+
+
+def _resolve_session(session_id: str, hook_path: str) -> str:
+    """The session a record belongs to, by the three channels that can know it.
+
+    The path is what makes runtime attribution work at all: the harness spawns a
+    PreToolUse hook with an environment that does not carry AI_HATS_SESSION_ID
+    (measured: 5 of 3898 rows), but it invokes the hook by its absolute path
+    inside the session tree, and that path names the session.
+    """
+    return (
+        session_id
+        or session_id_from_hook_path(hook_path or sys.argv[0])
+        or os.environ.get("AI_HATS_SESSION_ID", "")
+    )
 
 
 def journal_catch(
@@ -144,13 +163,9 @@ def journal_catch(
     """
     own_path = hook_path or sys.argv[0]
     hook_name = hook or Path(own_path).name or "unknown"
-    resolved_id = (
-        session_id
-        or session_id_from_hook_path(own_path)
-        or os.environ.get("AI_HATS_SESSION_ID", "")
-    )
+    resolved_id = _resolve_session(session_id, own_path)
 
-    path, attributed = _catch_path(resolved_id, cwd)
+    path, attributed = _journal_path(resolved_id, "catches.jsonl", cwd)
     if path is None:
         print(
             f"[catch-journal] NOT RECORDED ({hook_name}/{rule}: {verdict}) — no git dir",
@@ -194,6 +209,7 @@ def journal_bypass(
     hook: str | None = None,
     cmd: str = "",
     session_id: str = "",
+    hook_path: str = "",
     cwd: Path | None = None,
 ) -> bool:
     """Append one bypass record. Returns False (loudly) if it could not.
@@ -201,11 +217,11 @@ def journal_bypass(
     Never raises: a hook must not die because the journal is unwritable. It must
     not go quiet either — an unrecorded bypass is the defect this file removes.
     """
-    hook_name = hook or Path(sys.argv[0]).name or "unknown"
-    # The COMMON dir, so a bypass from a worktree lands in the journal the
-    # reviewer reads on the main checkout.
-    git_dir = _git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd)
-    if not git_dir:
+    own_path = hook_path or sys.argv[0]
+    hook_name = hook or Path(own_path).name or "unknown"
+    resolved_id = _resolve_session(session_id, own_path)
+    path, _attributed = _journal_path(resolved_id, "bypasses.jsonl", cwd)
+    if path is None:
         print(f"[bypass-journal] NOT RECORDED ({kind}: {reason}) — no git dir", file=sys.stderr)
         return False
 
@@ -218,14 +234,13 @@ def journal_bypass(
         "cmd": cmd,
         "head_before": _git("rev-parse", "HEAD", cwd=cwd),
         "branch": _git("rev-parse", "--abbrev-ref", "HEAD", cwd=cwd),
-        "session_id": session_id or os.environ.get("AI_HATS_SESSION_ID", ""),
+        "session_id": resolved_id,
         "sha": "",
     }
     # PreToolUse hooks fire outside pre-commit, so sha is set immediately.
     # pre-commit event leaves sha empty for post-commit to stamp.
     entry["sha"] = "" if entry["event"] == "pre-commit" else entry["head_before"]
 
-    path = Path(git_dir) / "ai-hats" / "bypasses.jsonl"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
@@ -239,20 +254,39 @@ def journal_bypass(
     return True
 
 
-def stamp_sha() -> bool:
-    """Stamp the new commit SHA onto pre-commit entries waiting in the journal."""
-    git_dir = _git("rev-parse", "--git-common-dir")
-    if not git_dir:
-        return True
-    path = Path(git_dir) / "ai-hats" / "bypasses.jsonl"
-    if not path.is_file():
-        return True
+def _stamp_targets() -> list[Path]:
+    """Every journal a post-commit can reach: the repo-wide one under ``.git``,
+    and this session's own — a pre-commit bypass that knew its session was
+    filed there, and stamping only ``.git`` would leave it unstamped forever."""
+    out: list[Path] = []
+    repo_wide, _ = _journal_path("", "bypasses.jsonl")
+    if repo_wide is not None:
+        out.append(repo_wide)
+    session_id = _resolve_session("", "")
+    if session_id:
+        mine, attributed = _journal_path(session_id, "bypasses.jsonl")
+        if attributed and mine is not None:
+            out.append(mine)
+    return out
 
+
+def stamp_sha() -> bool:
+    """Stamp the new commit SHA onto pre-commit entries waiting in the journals."""
     head = _git("rev-parse", "HEAD")
     if not head:
         return True
     parent = _git("rev-parse", "HEAD^")
     branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    ok = True
+    for path in _stamp_targets():
+        ok = _stamp_one(path, head, parent, branch) and ok
+    return ok
+
+
+def _stamp_one(path: Path, head: str, parent: str, branch: str) -> bool:
+    """Stamp ``head`` onto the rows of one journal that are waiting for it."""
+    if not path.is_file():
+        return True
 
     try:
         raw_text = path.read_text(encoding="utf-8")
@@ -326,6 +360,7 @@ def _main() -> None:
     record_p.add_argument("--kind", required=True)
     record_p.add_argument("--reason", required=True)
     record_p.add_argument("--hook", required=True)
+    record_p.add_argument("--hook-path", dest="hook_path", default="")
     record_p.add_argument("--cmd", default="")
     record_p.add_argument("--session-id", dest="session_id", default="")
 
@@ -355,6 +390,7 @@ def _main() -> None:
             args.kind,
             args.reason,
             hook=args.hook,
+            hook_path=args.hook_path,
             cmd=args.cmd,
             session_id=args.session_id,
         )

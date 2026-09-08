@@ -82,6 +82,48 @@ def test_catch_lands_in_the_session_dir_its_own_path_names(writer, tmp_path):
     assert entry["session_id"] == SESSION_ID
 
 
+def test_a_bypass_that_knows_its_session_lands_in_the_session_dir(writer, tmp_path):
+    """Everything about one session in one directory — the bypass follows the catch.
+
+    The runtime tier never filled `session_id` from the environment (5 rows in
+    3898); reading it off the hook's own path is what makes the routing possible
+    at all, so this asserts the field AND the location together.
+    """
+    project = _git_project(tmp_path / "proj")
+    sdir = _session_dir(project)
+    hook = _materialized_hook(tmp_path / "cache")
+
+    ok = writer.journal_bypass(
+        "hatch", "AI_HATS_WT_GATE_OFF", hook="wt_gate.py", hook_path=str(hook), cwd=project
+    )
+
+    assert ok is True
+    journal = sdir / "bypasses.jsonl"
+    assert journal.is_file(), f"bypass not beside audit.md; dir holds {list(sdir.iterdir())}"
+    entry = json.loads(journal.read_text(encoding="utf-8").strip())
+    assert entry["session_id"] == SESSION_ID
+    assert entry["kind"] == "hatch"
+    assert not (project / ".git/ai-hats/bypasses.jsonl").exists(), (
+        "a session-attributed bypass must MOVE, not be copied into both journals"
+    )
+
+
+def test_a_bypass_with_no_session_keeps_the_repo_wide_journal(writer, tmp_path, monkeypatch):
+    """The default path under .git stays for every row that cannot name a session —
+    94% of today's rows, and the only address `pre-push-bypass-report.sh` knows."""
+    monkeypatch.delenv("AI_HATS_SESSION_ID", raising=False)
+    project = _git_project(tmp_path / "proj")
+
+    ok = writer.journal_bypass(
+        "hatch", "AI_HATS_PRIVACY_ACK", hook="pre-commit-privacy.sh", hook_path="", cwd=project
+    )
+
+    assert ok is True
+    journal = project / ".git/ai-hats/bypasses.jsonl"
+    assert journal.is_file(), "a session-less bypass lost its home"
+    assert json.loads(journal.read_text(encoding="utf-8").strip())["session_id"] == ""
+
+
 def test_a_catch_with_no_session_dir_is_recorded_unattributed_and_says_so(writer, tmp_path, capsys):
     """A fallback that cannot report is forbidden — dev_rule_silent_fallback."""
     project = _git_project(tmp_path / "proj")

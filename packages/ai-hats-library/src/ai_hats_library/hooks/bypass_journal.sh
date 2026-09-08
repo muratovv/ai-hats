@@ -38,10 +38,14 @@ ai_hats_journal_bypass() {
 
     hook_name="$(basename "${0:-unknown}")"
 
+    # `--hook-path "$0"`: a runtime gate is invoked by its path inside the
+    # session tree, and that path is the only channel carrying the session — the
+    # harness spawns the hook without AI_HATS_SESSION_ID in its environment.
     python3 "$py_script" record \
         --kind "$kind" \
         --reason "$reason" \
         --hook "$hook_name" \
+        --hook-path "${0:-}" \
         --cmd "$cmd_arg" \
         --session-id "$session_arg" || true
 
