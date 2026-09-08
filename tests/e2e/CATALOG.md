@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**309 of 309 files catalogued — 317 flows.**
+**310 of 310 files catalogued — 318 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2685,6 +2685,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the pre-commit hook verifies that all referenced rules exist and blocks the commit with an error if a rule reference is missing
 - **why** — trait configurations must not reference non-existent rules to prevent broken rule pointers in role injections
+
+## `test_runcheck_wrapper.py`
+
+*pins HATS-1709*
+
+- **flow** — a maintainer runs the long check tier in the background and needs the verdict to be the RUNNER's, not the wrapper's — the harness announces a backgrounded command by its last element, so a trailing capture turns a red run into "exit code 0"
+- **cmds**
+
+  ```console
+  timeout 60 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/runcheck.sh --log /tmp/e2e.log -- bash scripts/gates.sh unit
+  ```
+
+- **expect** — the wrapper exits with the runner's own status and writes that same number to <log>.rc, so the completion notice and the file agree
+- **why** — two measured incidents announced `exit code 0` over a red tier; the form that captures the status is also the form that masks it, and only a wrapper puts the capture inside and the status outside
 
 ## `test_runner_spelling_consent_chain.py`
 
