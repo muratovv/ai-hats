@@ -66,20 +66,24 @@ def test_a_cd_does_not_leak_backwards(tmp_path, walk_mod):
     assert [cwd for _seg, cwd, _path in steps] == [tmp_path, (tmp_path / "wt").resolve()]
 
 
-def test_a_separator_with_no_space_around_it_swallows_the_line(walk_mod):
-    """Today's boundary, pinned so it is a known limit and not a surprise.
+def test_a_separator_needs_no_space_around_it(tmp_path, walk_mod):
+    """Deleting a space must not hide a command from a guard.
 
-    ``shlex.split`` is whitespace-driven, so ``/x;git`` is one word: the whole
-    line reads as a single ``cd`` and the walk reports NO segment at all. For a
-    guard that nudges, that is a missed nudge; for one that denies, it is a way
-    through. Inherited verbatim from the guard this module was extracted from,
-    so fixing it here would change that guard's behaviour in the same commit
-    that claims to change none — it belongs to whichever caller must not miss
-    ``cd /x;git reset --hard``."""
-    assert walk_mod.walk("cd /x;git reset --hard", Path("/tmp")) == []
-    assert walk_mod.walk("pytest a;pytest b", Path("/tmp")) == [
-        (["pytest", "a;pytest", "b"], Path("/tmp"), None)
-    ]
+    Under ``shlex.split`` this line was three words with ``/x;git`` in the
+    middle: it read as one long ``cd``, the walk returned nothing, and a deny
+    had nothing to judge."""
+    (tmp_path / "x").mkdir()
+    steps = walk_mod.walk(f"cd {tmp_path / 'x'};git reset --hard", tmp_path)
+    assert [seg for seg, _cwd, _path in steps] == [["git", "reset", "--hard"]]
+    assert steps[0][1] == (tmp_path / "x").resolve()
+
+
+def test_a_quoted_command_is_still_one_argument(walk_mod):
+    """The other half: tokenizing punctuation must not start reading strings.
+
+    ``echo 'git reset --hard'`` names no command but its own."""
+    steps = walk_mod.walk("echo 'git reset --hard'", Path("/tmp"))
+    assert [seg for seg, _cwd, _path in steps] == [["echo", "git reset --hard"]]
 
 
 def test_an_unreadable_line_is_none_rather_than_a_guess(walk_mod):

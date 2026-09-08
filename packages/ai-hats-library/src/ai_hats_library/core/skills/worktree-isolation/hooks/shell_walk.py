@@ -58,6 +58,18 @@ def strip_prefix(segment: list[str]) -> tuple[list[str], str | None]:
     return segment[i:], path_override
 
 
+def _tokens(command: str) -> list[str]:
+    """Split a command line, treating punctuation as punctuation.
+
+    ``shlex.split`` is whitespace-driven, so ``cd /x;git reset --hard`` is three
+    words with ``/x;git`` in the middle: the line reads as one long ``cd`` and no
+    command reaches the caller at all. A guard that denies must not be escapable
+    by deleting a space, so the separators are tokenized rather than spelled."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
 def walk(command: str, cwd: Path) -> list[tuple[list[str], Path, str | None]] | None:
     """Each runnable segment with the directory it runs in and the PATH it sets.
 
@@ -68,7 +80,7 @@ def walk(command: str, cwd: Path) -> list[tuple[list[str], Path, str | None]] | 
     The directory is tracked per segment rather than taken once from the payload,
     because a leading ``cd`` moves the agent inside the same call."""
     try:
-        tokens = shlex.split(command)
+        tokens = _tokens(command)
     except ValueError:
         return None
 
