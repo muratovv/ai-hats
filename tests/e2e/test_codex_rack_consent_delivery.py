@@ -13,9 +13,12 @@ import sys
 import tomllib
 import json
 import os
+import signal
 import subprocess
 import select
 import shutil
+import time
+from contextlib import suppress
 import zipfile
 from pathlib import Path
 
@@ -27,8 +30,40 @@ from ai_hats.session_artifacts import BuiltArtifacts
 pytestmark = pytest.mark.integration
 
 
+def consent_children(parent_pid: int) -> set[int]:
+    result = subprocess.run(
+        ["ps", "-axo", "pid=,ppid=,args="], capture_output=True, text=True, check=True, timeout=5
+    )
+    rows = [line.split(None, 2) for line in result.stdout.splitlines()]
+    descendants = {parent_pid}
+    for _ in rows:
+        children = {int(pid) for pid, parent, _ in rows if int(parent) in descendants}
+        if children <= descendants:
+            break
+        descendants.update(children)
+    return {
+        int(pid)
+        for pid, _, command in rows
+        if int(pid) in descendants and "-m ai_hats.consent_mcp.server" in command
+    }
+
+
+def wait_for_exit(pid: int, timeout: float = 5) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.05)
+    with suppress(ProcessLookupError):
+        os.kill(pid, signal.SIGKILL)
+    pytest.fail(f"MCP process {pid} survived its Codex client; killed during test cleanup")
+
+
 @pytest.mark.install_heavy
-def test_real_codex_initializes_required_consent_server(tmp_path, monkeypatch):
+@pytest.mark.parametrize("shutdown", ["eof", "kill"])
+def test_real_codex_initializes_required_consent_server(tmp_path, monkeypatch, shutdown):
     codex = shutil.which("codex")
     if codex is None:
         pytest.skip("Codex binary is not installed")
@@ -81,6 +116,15 @@ def test_real_codex_initializes_required_consent_server(tmp_path, monkeypatch):
             assert "result" in initialized, initialized
             started = request(2, "thread/start", {"cwd": str(launch_dir), "ephemeral": True})
             assert "result" in started, started
+            server_pids = consent_children(process.pid)
+            assert len(server_pids) == 1, server_pids
+            if shutdown == "kill":
+                process.kill()
+            else:
+                process.stdin.close()
+            assert process.wait(timeout=10) == (-9 if shutdown == "kill" else 0)
+            for pid in server_pids:
+                wait_for_exit(pid)
         finally:
             process.stdin.close()
             try:

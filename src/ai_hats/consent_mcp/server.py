@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+import anyio
 from mcp import types
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import BaseModel, ConfigDict
@@ -38,6 +39,7 @@ from ai_hats_library.hooks.consent_gate.questions import RACK_FORM
 from ..surfaces import ChainDecision
 from ..surface_registry import get_surface
 from .guards import check_transition
+from .lifecycle import serve
 
 logger = logging.getLogger(__name__)
 EXECUTION_TIMEOUT_S = 300
@@ -139,6 +141,23 @@ def record(binding: Binding, result: Result, argv: tuple[str, ...], phase: str) 
     )
 
 
+async def _stop_command(process: asyncio.subprocess.Process) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError as exc:
+        logger.info("Transition process group already exited: %s", exc)
+    with anyio.move_on_after(3) as grace:
+        await process.communicate()
+    if grace.cancel_called:
+        logger.warning("Transition did not stop after SIGTERM; killing its process group")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError as exc:
+            logger.info("Transition process group already exited: %s", exc)
+        with anyio.fail_after(3):
+            await process.communicate()
+
+
 async def execute(
     binding: Binding,
     argv: tuple[str, ...],
@@ -152,6 +171,7 @@ async def execute(
     if nonce is not None:
         env[consent_ticket.TICKET_ENV] = nonce
     process = None
+    completed = False
     try:
         process = await asyncio.create_subprocess_exec(
             str(binding.config_path.parent / "bin" / "rack"),
@@ -164,6 +184,7 @@ async def execute(
         )
         async with asyncio.timeout(timeout_s):
             output, _ = await process.communicate()
+        completed = True
         return result.model_copy(
             update={
                 "execution": "finished",
@@ -179,17 +200,16 @@ async def execute(
             }
         )
     finally:
-        if process is not None and process.returncode is None:
+        with anyio.CancelScope(shield=True):
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError as exc:
-                logger.info("Transition process already exited: %s", exc)
-            await process.wait()
-        store = consent_ticket.tickets_dir(binding.config.project_dir)
-        if nonce is not None and store is not None and (store / f"{nonce}.json").is_file():
-            consent_ticket.consume(
-                result.task_id, start=binding.config.project_dir, nonce=nonce, argv=argv
-            )
+                if process is not None and not completed:
+                    await _stop_command(process)
+            finally:
+                store = consent_ticket.tickets_dir(binding.config.project_dir)
+                if nonce is not None and store is not None and (store / f"{nonce}.json").is_file():
+                    consent_ticket.consume(
+                        result.task_id, start=binding.config.project_dir, nonce=nonce, argv=argv
+                    )
 
 
 def build_server(binding: Binding) -> FastMCP:
@@ -296,7 +316,7 @@ def build_server(binding: Binding) -> FastMCP:
 
 
 def main() -> None:
-    build_server(Binding.load()).run(transport="stdio")
+    anyio.run(serve, build_server(Binding.load()))
 
 
 if __name__ == "__main__":

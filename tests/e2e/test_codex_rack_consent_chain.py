@@ -10,9 +10,13 @@ why: a successful form alone does not prove the command boundary
 from __future__ import annotations
 
 import json
+import os
 import select
+import signal
 import subprocess
 import sys
+import time
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -82,7 +86,7 @@ class Rpc:
 
 
 @pytest.fixture
-def rpc(tmp_path, monkeypatch):
+def rpc(tmp_path, monkeypatch, request):
     project, env = session(tmp_path, monkeypatch)
     for args in (("create", "Consent probe", "--id", TASK), ("transition", TASK, "plan")):
         result = rack(project, env, *args)
@@ -100,6 +104,28 @@ def rpc(tmp_path, monkeypatch):
             )
         )
     )
+    execution = getattr(request, "param", None)
+    if execution in ("held_execution", "stubborn_execution"):
+        config_path = Path(env["AI_HATS_CONSENT_WRAPPER_CONFIG"])
+        config = json.loads(config_path.read_text())
+        original = config["originals"]["rack"]
+        held = tmp_path / "held-rack"
+        held.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, signal, sys, time\nfrom pathlib import Path\n"
+            "if sys.argv[1] != 'transition':\n"
+            f"    os.execv({original!r}, [{original!r}, *sys.argv[1:]])\n"
+            "def terminate(signum, frame):\n"
+            "    Path('terminated').write_text('SIGTERM')\n"
+            "    sys.exit(0)\n"
+            f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if execution == 'stubborn_execution' else 'terminate'})\n"
+            "Path('executing.tmp').write_text(json.dumps({'pid': os.getpid(), 'group': os.getpgrp()}))\n"
+            "Path('executing.tmp').replace('executing')\n"
+            "time.sleep(60)\n"
+        )
+        held.chmod(0o755)
+        config["originals"]["rack"] = str(held)
+        config_path.write_text(json.dumps(config))
     with (tmp_path / "server.stderr").open("w+") as stderr:
         process = subprocess.Popen(
             [sys.executable, "-m", "ai_hats.consent_mcp.server"],
@@ -120,8 +146,43 @@ def rpc(tmp_path, monkeypatch):
                 process.kill()
                 process.wait(timeout=5)
             process.stdout.close()
+            marker = project / "executing"
+            if marker.exists():
+                with suppress(ProcessLookupError):
+                    os.killpg(json.loads(marker.read_text())["group"], signal.SIGKILL)
             stderr.seek(0)
             print(stderr.read())
+
+
+def test_stdio_buffers_fragmented_utf8_and_batched_messages(rpc):
+    message = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "проверка", "version": "1"},
+            },
+        },
+        ensure_ascii=False,
+    ).encode()
+    split = message.index("п".encode()) + 1
+    rpc.process.stdin.buffer.write(message[:split])
+    rpc.process.stdin.buffer.flush()
+    assert not select.select([rpc.process.stdout], [], [], 0.1)[0]
+    rpc.process.stdin.buffer.write(message[split:] + b"\n")
+    rpc.process.stdin.buffer.flush()
+    assert "result" in rpc.receive()
+    rpc.process.stdin.write(
+        '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
+        '{"jsonrpc":"2.0","id":2,"method":"ping"}\n'
+    )
+    rpc.process.stdin.flush()
+    assert rpc.receive() == {"jsonrpc": "2.0", "id": 2, "result": {}}
+    rpc.process.stdin.close()
+    assert rpc.process.wait(timeout=10) == 0
 
 
 def test_accept_runs_real_transition_only_after_answer(rpc):
@@ -291,12 +352,78 @@ def test_existing_human_grant_is_respected(rpc):
     assert rpc.state() == "execute"
 
 
-def test_disconnected_client_leaves_no_authorization(rpc):
+@pytest.mark.parametrize("shutdown", ["eof", "terminate"])
+def test_disconnected_client_leaves_no_authorization(rpc, shutdown):
     rpc.initialize()
     assert rpc.action()["method"] == "elicitation/create"
-    rpc.process.stdin.close()
-    rpc.process.wait(timeout=10)
+    if shutdown == "terminate":
+        rpc.process.terminate()
+    else:
+        rpc.process.stdin.close()
+    assert rpc.process.wait(timeout=10) == 0
     assert rpc.state() == "plan"
+    assert not list((rpc.project / ".git/ai-hats/consent").glob("*.json"))
+    entries = [
+        json.loads(line)
+        for line in (rpc.project / ".git/ai-hats/bypasses.jsonl").read_text().splitlines()
+    ]
+    outcomes = [
+        json.loads(entry["reason"])
+        for entry in entries
+        if entry["hook"] == "codex.consent_server"
+        and json.loads(entry["reason"])["phase"] in ("cancelled", "result")
+    ]
+    assert len(outcomes) == 1
+    assert outcomes[0]["execution"] == "not_started"
+
+
+def approve_execution(rpc):
+    rpc.initialize()
+    question = rpc.action()
+    rpc.send(id=question["id"], result={"action": "accept", "content": {}})
+    marker = rpc.project / "executing"
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.05)
+    assert marker.exists(), "Approved command did not start"
+    child_pid = json.loads(marker.read_text())["pid"]
+    os.kill(child_pid, 0)
+    return child_pid
+
+
+@pytest.mark.parametrize("rpc", ["held_execution"], indirect=True)
+@pytest.mark.parametrize("shutdown", ["eof", "terminate", "interrupt"])
+def test_shutdown_gracefully_stops_active_command(rpc, shutdown):
+    child_pid = approve_execution(rpc)
+    if shutdown == "terminate":
+        rpc.process.terminate()
+    elif shutdown == "interrupt":
+        rpc.process.send_signal(signal.SIGINT)
+    else:
+        rpc.process.stdin.close()
+    assert rpc.process.wait(timeout=10) == 0
+    assert (rpc.project / "terminated").read_text() == "SIGTERM"
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    assert not list((rpc.project / ".git/ai-hats/consent").glob("*.json"))
+    outcomes = [
+        json.loads(entry["reason"])
+        for line in (rpc.project / ".git/ai-hats/bypasses.jsonl").read_text().splitlines()
+        if (entry := json.loads(line))["hook"] == "codex.consent_server"
+        and json.loads(entry["reason"])["phase"] == "cancelled"
+    ]
+    assert len(outcomes) == 1
+    assert outcomes[0]["execution"] == "indeterminate"
+
+
+@pytest.mark.parametrize("rpc", ["stubborn_execution"], indirect=True)
+def test_disconnect_kills_command_ignoring_sigterm(rpc):
+    child_pid = approve_execution(rpc)
+    rpc.process.stdin.close()
+    assert rpc.process.wait(timeout=10) == 0
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    assert not (rpc.project / "terminated").exists()
     assert not list((rpc.project / ".git/ai-hats/consent").glob("*.json"))
 
 
