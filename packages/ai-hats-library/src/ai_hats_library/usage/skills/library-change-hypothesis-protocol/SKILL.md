@@ -67,11 +67,12 @@ Skip when: the change is to engine or harness code rather than to a
 composed component, or the change was already declared "no behavior
 change — pure refactor" at the plan-stage check (see Step 1).
 
-If this project has no hypotheses backlog yet, it is seeded on first
-write by `ai-hats reflect issue`, which mounts it from the packaged
-definition. Reaching for `rack hyp` first on such a project answers
-`unknown backlog 'hypotheses'` — the backlog is discovered by scanning
-the tracker, and nothing has created it yet.
+If this project has no hypotheses backlog yet, `ai-hats reflect issue`
+seeds one from the packaged definition on first write. Do not reach for
+`rack hyp` first: until the backlog is mounted that group does not
+exist, and the answer is `No such command 'hyp'` — the subcommands are
+registered from the backlogs found in the tracker, so a missing one
+looks like a missing feature rather than a missing directory.
 
 ## Why companion HYPs at all
 
