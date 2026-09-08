@@ -31,9 +31,7 @@ GATES_SH = "scripts/gates.sh"
 ROLE_RELPATH = (
     "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
 )
-SKILL_RELPATH = (
-    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
-)
+SKILL_RELPATH = "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
 
 STAGES_MARK = "gate-table:stages"
 GATES_MARK = "gate-table:gates"
@@ -98,7 +96,7 @@ def read_gates(repo: Path) -> list[Gate]:
     scripts: dict[str, str] = {}
     for trail, row in _walk_rows(config.get("composition", {}).get("apps", {}), ()):
         run = str(row["run"])
-        if not run.startswith("maintainer-quality-gate/"):
+        if not run.startswith("quality-gate/"):
             continue
         name = Path(run).stem
         scripts[name] = run.split("/", 1)[1]

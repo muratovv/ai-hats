@@ -27,14 +27,14 @@ composition:
   apps:
     rack:
       tasks:
-        - run: maintainer-quality-gate/hooks/review-gate.sh
+        - run: quality-gate/hooks/review-gate.sh
           at: ['->review']
           on_error: refuse
-        - run: maintainer-quality-gate/hooks/done-gate.sh
+        - run: quality-gate/hooks/done-gate.sh
           at: ['->done']
           on_error: refuse
     wt:
-      - run: maintainer-quality-gate/hooks/merge-gate.sh
+      - run: quality-gate/hooks/merge-gate.sh
         at: [pre-merge]
         on_error: refuse
 injection: |
@@ -44,7 +44,7 @@ injection: |
   rules, across all three shipped layers. You MAY also edit ai-hats engine
   code (`src/ai_hats/`) when a composition issue traces back to it: you have the
   `dev::python` gear and the engine map below. Honor skill
-  `maintainer-quality-gate` for anything running outside the Python process.
+  `quality-gate` for anything running outside the Python process.
   Diagrams and the release flow stay with the `maintainer` role; every other
   discipline of working in this repository you share with it through trait
   `ai-hats-dev`.
@@ -171,4 +171,4 @@ injection: |
   - Editing `$LIB/` without consulting `docs/how-to-extend.md`.
   - Touching anything that runs outside the Python process — cli/, scripts/,
     `_bootstrap.py`, `cli/maintenance.py`, `[project.scripts]`, any installed
-    hook — without honoring skill `maintainer-quality-gate`.
+    hook — without honoring skill `quality-gate`.

@@ -65,14 +65,14 @@ composition:
         # `at` is EVERY road into the state here too, for the reason measured
         # on `->done`: a gate bound to the single expected edge covered 1 of its
         # 8 roads, so the question went unasked wherever the card took another.
-        - run: maintainer-quality-gate/hooks/review-gate.sh
+        - run: quality-gate/hooks/review-gate.sh
           at: ['->review']
           on_error: refuse
-        - run: maintainer-quality-gate/hooks/done-gate.sh
+        - run: quality-gate/hooks/done-gate.sh
           at: ['->done']
           on_error: refuse
     wt:
-      - run: maintainer-quality-gate/hooks/merge-gate.sh
+      - run: quality-gate/hooks/merge-gate.sh
         at: [pre-merge]
         on_error: refuse
 # Composition rationale (author-facing — NOT injected into the agent prompt).

@@ -171,7 +171,7 @@ def test_every_caller_names_a_stage_the_dispatcher_knows():
 
 _GATE_HOOKS = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
     / "hooks"
 )
 

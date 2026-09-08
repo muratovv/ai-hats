@@ -137,9 +137,7 @@ def test_unreadable_output_is_announced_not_silent(tmp_path: Path):
     assert "cannot read" in combined, combined
 
 
-_GATE_HOOKS = (
-    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/hooks"
-)
+_GATE_HOOKS = "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks"
 
 
 def test_the_done_gate_composition_names_the_stage():

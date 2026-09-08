@@ -214,9 +214,9 @@ def test_role_curator_carries_the_quality_gate() -> None:
     runs = [r["run"] for r in apps["rack"]["tasks"]] + [r["run"] for r in apps["wt"]]
     assert sorted(runs) == sorted(
         [
-            "maintainer-quality-gate/hooks/review-gate.sh",
-            "maintainer-quality-gate/hooks/done-gate.sh",
-            "maintainer-quality-gate/hooks/merge-gate.sh",
+            "quality-gate/hooks/review-gate.sh",
+            "quality-gate/hooks/done-gate.sh",
+            "quality-gate/hooks/merge-gate.sh",
         ]
     )
     assert all(r["on_error"] == "refuse" for r in apps["rack"]["tasks"] + apps["wt"])
@@ -238,12 +238,12 @@ def test_e2e_gate_policy_folded_into_the_gate_skill() -> None:
     assert "dev_rule_e2e_gate" not in trait.composition.rules
     assert not (LIBRARY / "core/rules/dev_rule_e2e_gate").exists()
 
-    gate = (LIBRARY / "ai-hats-dev/skills/maintainer-quality-gate/SKILL.md").read_text()
+    gate = (LIBRARY / "ai-hats-dev/skills/quality-gate/SKILL.md").read_text()
     assert "tests/e2e/" in gate and "@pytest.mark.integration" in gate
 
     # The stub stays always-on: knowing the gate EXISTS must not wait on a trigger.
     assert "### E2E gate" in trait.injection
-    assert "maintainer-quality-gate" in trait.injection
+    assert "quality-gate" in trait.injection
 
 
 # --- ai-hats-framework trait — injection only, no component behind it --------

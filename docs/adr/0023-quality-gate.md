@@ -541,7 +541,7 @@ push-гейт остаётся: до HATS-927 CI — сигнал, но не н�
 - [5] Стадии и примитив: `scripts/gates.sh`; рендер таблиц этого документа:
   `scripts/gen_gate_table.py`
 - [6] Адаптеры каналов:
-  `packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/`
+  `packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/`
 - [7] Журнал обходов:
   `packages/ai-hats-library/src/ai_hats_library/hooks/bypass_journal.sh`
 - [8] Фактура ревизии, из которой выросла карточка:

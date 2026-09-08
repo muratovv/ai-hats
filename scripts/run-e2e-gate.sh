@@ -15,7 +15,7 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 }
 cd "$repo_root" || exit 70
 
-hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
+hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/git_hooks/pre-push-e2e-master.sh"
 if [[ ! -f "$hook" ]]; then
     echo "[run-e2e-gate] no push gate at $hook — this checkout does not carry it" >&2
     exit 70
