@@ -11,7 +11,7 @@ needed.
 Deterministic, no agent: the mutation lives in code, NOT in ADR-0007's L0
 ``judge-auditor`` (which stays read-only by construction). The quorum decision
 core is the pure ``hypothesis.quorum`` module; this step is the thin pipeline
-driver that resolves the store from ``project_dir`` and persists the result.
+driver that resolves the store from ``layout.root`` and persists the result.
 
 ``failure_policy = "continue"``: a sweep hiccup must never orphan session
 finalization — mirror of ``make_audit`` / ``compute_usage``.
@@ -20,8 +20,9 @@ finalization — mirror of ``make_audit`` / ``compute_usage``.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any, Mapping
+
+from ai_hats_core.layout import ProjectLayout
 
 from ..step import Step, StepIO
 
@@ -47,11 +48,12 @@ class QuorumAutoclose(Step):
             produces=frozenset({"quorum_closed_hyps"}),
         )
 
-    def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
+    def run(self, *, layout: ProjectLayout, **_: Any) -> dict[str, Any]:
         from ai_hats_rack.extensions.quorum import AUTOCLOSE_ACTOR
 
         from ...rack_workspace import autoclose_hypotheses, hyp_backlog_mounted, rack_workspace
 
+        project_dir = layout.root
         ws = rack_workspace(project_dir)
         if not hyp_backlog_mounted(ws):
             return {}  # pre-migration: no HYP backlog mounted yet → nothing to sweep

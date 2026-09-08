@@ -23,7 +23,17 @@ _BUILTIN_DIR = (
 )
 
 
-@pytest.mark.parametrize("name", ["human", "execute", "reflect-all", "reflect-session"])
+#: Every shipped pipeline, by glob — a hardcoded sample is what let `finalize-hitl`
+#: ship a step that could not be called (HATS-1892).
+_BUILTIN_NAMES = sorted(p.stem for p in _BUILTIN_DIR.glob("*.yaml"))
+
+
+def test_builtin_glob_resolves():
+    # The parametrization below silently passes on an empty list — e.g. a moved dir.
+    assert "finalize-hitl" in _BUILTIN_NAMES
+
+
+@pytest.mark.parametrize("name", _BUILTIN_NAMES)
 def test_load_each_builtin(name: str):
     p = load_pipeline(_BUILTIN_DIR / f"{name}.yaml")
     assert p.io.name == name
@@ -217,6 +227,8 @@ def test_core_pipeline_cache_absorbs_on_disk_drift(tmp_path: Path, monkeypatch: 
 # ---- __main__ dry-run inspector ----
 
 
+# A representative sample, not the glob: this asserts the __main__ inspector, and
+# every pipeline's build already runs in-process above — at no subprocess apiece.
 @pytest.mark.integration
 @pytest.mark.parametrize("name", ["human", "execute", "reflect-all", "reflect-session"])
 def test_loader_main_inspects_each_builtin(name: str):

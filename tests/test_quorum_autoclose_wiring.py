@@ -2,7 +2,7 @@
 
 Asserts the step is registered, wired into ``finalize-hitl`` only (HITL-only by
 design — see ADR-0008 / plan Out-of-scope), and that the thin pipeline driver
-resolves the store from ``project_dir`` and closes a quorum-reached HYP.
+resolves the store from ``layout.root`` and closes a quorum-reached HYP.
 
 Pipelines are loaded from the worktree YAML by explicit path (NOT
 ``load_core_pipeline``, which resolves to the installed package and would mask
@@ -19,8 +19,11 @@ import yaml
 from ai_hats.paths import hypotheses_dir
 from ai_hats.pipeline import registry
 from ai_hats.pipeline.loader import load_pipeline
+from ai_hats.pipeline.pipeline import build
 from ai_hats.pipeline.steps.quorum_autoclose import QuorumAutoclose
 from ai_hats.rack_workspace import rack_workspace
+from ai_hats.session_policy import FinalizeRunParams, SessionRef
+from ai_hats_core.layout import ProjectLayout
 from ai_hats_rack.migration import migrate_catalog
 
 PIPELINES = (
@@ -95,7 +98,7 @@ def test_step_closes_quorum_hyp(tmp_path: Path):
     pd = tmp_path / "proj"
     _write_quorum_hyp(pd)
 
-    delta = QuorumAutoclose({"k": 3}).run(project_dir=pd)
+    delta = QuorumAutoclose({"k": 3}).run(layout=ProjectLayout.at(pd))
 
     assert delta == {"quorum_closed_hyps": ["HYP-001"]}
     # Read the migrated card back through the rack (its `state` is the status).
@@ -108,11 +111,38 @@ def test_step_emits_empty_delta_when_nothing_closes(tmp_path: Path):
     pd = tmp_path / "proj"
     hypotheses_dir(pd).mkdir(parents=True)
     migrate_catalog(hypotheses_dir(pd), "hypotheses")  # mounted but empty
-    assert QuorumAutoclose({"k": 3}).run(project_dir=pd) == {}
+    assert QuorumAutoclose({"k": 3}).run(layout=ProjectLayout.at(pd)) == {}
 
 
 def test_step_noop_when_backlog_unmigrated(tmp_path: Path):
     # Pre-migration (no backlog.yaml): the HYP backlog is unmounted → {}.
     pd = tmp_path / "proj"
     hypotheses_dir(pd).mkdir(parents=True)
-    assert QuorumAutoclose({"k": 3}).run(project_dir=pd) == {}
+    assert QuorumAutoclose({"k": 3}).run(layout=ProjectLayout.at(pd)) == {}
+
+
+def test_step_runs_through_the_real_finalize_funnel(tmp_path: Path):
+    """The projection, not a hand-made call — what the old driver tests missed.
+
+    They passed ``project_dir`` directly, the one kwarg ``_run_steps`` can never
+    build, so a declaration that named another key stayed green here and dead in
+    production (HATS-1892). This drives the step from the YAML instance and the
+    initial state ``_run_finalize_hitl`` actually supplies.
+    """
+    pd = tmp_path / "proj"
+    _write_quorum_hyp(pd)
+    step = next(
+        s
+        for s in load_pipeline(PIPELINES / "finalize-hitl.yaml").steps
+        if s.io.name == "quorum_autoclose"
+    )
+    state = FinalizeRunParams(
+        session=SessionRef(id="s1", dir=tmp_path / "sess", provider_session_id="c1"),
+        layout=ProjectLayout.at(pd),
+        exit_code=0,
+    ).to_state()
+
+    out = build(step, name="funnel").run(state)
+
+    assert out["quorum_closed_hyps"] == ["HYP-001"]
+    assert rack_workspace(pd).kernel_for("HYP-001").get("HYP-001").state == "refuted"
