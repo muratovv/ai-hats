@@ -119,7 +119,9 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
 
     # A. PostToolUse row under its own event.
     post = composed_rows(cache_settings, HOOK_POST_TOOL_USE)
-    assert [row for row in post if row["tag"] == "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe"] == [
+    assert [
+        row for row in post if row["tag"] == "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe"
+    ] == [
         {
             "matcher": "Edit|Write",
             "command": _expected_command(project),
