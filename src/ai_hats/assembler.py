@@ -120,7 +120,15 @@ class Assembler:
         project_dir: Path,
         library_paths: list[Path] | None = None,
         hooks: "HooksManager | None" = None,
+        *,
+        prefer_cwd: bool = False,
+        cwd: Path | None = None,
     ) -> None:
+        # Read-only callers ONLY: nothing is written on that path, so the
+        # checkout you stand in cannot contaminate a target (HATS-1911).
+        # `cwd` names that checkout — told, not resolved three frames down.
+        self.prefer_cwd = prefer_cwd
+        self.cwd = cwd
         self.project_dir = project_dir
         self.agent_dir = project_dir / AGENT_DIR
         self.config_path = project_dir / PROJECT_CONFIG
@@ -165,13 +173,17 @@ class Assembler:
 
         # Fail loud FIRST if the pinned library declares a format-schema newer
         # than this ai-hats understands (T18; built-in only).
-        check_library_schema(builtin_library_root(self.project_dir))
+        check_library_schema(
+            builtin_library_root(self.project_dir, prefer_cwd=self.prefer_cwd, cwd=self.cwd)
+        )
         return build_library_paths(
             self.project_dir,
             config_paths=self.project_config.library_paths,
             # Re-pointed to the worktree when composing inside one (HATS-831).
             local_libraries=self._worktree_local_libraries(),
             extra=extra,
+            prefer_cwd=self.prefer_cwd,
+            cwd=self.cwd,
         )
 
     def _worktree_local_libraries(self) -> Path | None:

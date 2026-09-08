@@ -225,19 +225,19 @@ def _importlib_library_layers() -> list[Path]:
 
 
 def builtin_library_layers(
-    project_dir: Path | None = None, *, prefer_cwd: bool = False
+    project_dir: Path | None = None, *, prefer_cwd: bool = False, cwd: Path | None = None
 ) -> list[Path]:
     """The builtin layers present under the root, lowest priority first.
 
-    Derived from :func:`builtin_library_root` (see it for ``prefer_cwd``). Every
-    REQUIRED layer must exist under the resolved root, else we fall through to
-    the installed package (never a partial builtin); an optional layer is
-    included when present and skipped when not (HATS-1834).
+    Derived from :func:`builtin_library_root` (see it for ``prefer_cwd`` and
+    ``cwd``). Every REQUIRED layer must exist under the resolved root, else we
+    fall through to the installed package (never a partial builtin); an optional
+    layer is included when present and skipped when not (HATS-1834).
     """
     root = (
-        builtin_library_root(project_dir, prefer_cwd=prefer_cwd)
+        builtin_library_root(project_dir, prefer_cwd=prefer_cwd, cwd=cwd)
         if project_dir is not None
-        else builtin_library_root(prefer_cwd=prefer_cwd)
+        else builtin_library_root(prefer_cwd=prefer_cwd, cwd=cwd)
     )
     if root is None:
         return []

@@ -122,20 +122,23 @@ def build_library_paths(
     local_libraries: Path | None = None,
     extra: Sequence[Path] = (),
     prefer_cwd: bool = False,
+    cwd: Path | None = None,
 ) -> list[Path]:
     """Build the ordered list of library root paths for component resolution.
 
-    Order (first-wins in search, last-wins in layer override):
+    Order, lowest priority first — resolution is LAST-wins throughout
+    (:func:`find_component_dir`), so a later root overrides an earlier one:
     1. Built-in skill source packages (e.g. ``ai-hats-library``)
     2. User global library (``~/.ai-hats`` + ``library_paths.yaml``)
     3. Project configured library paths (from ``ai-hats.yaml``)
     4. Project local libraries (``./libraries`` or explicit)
     5. Extra runtime overrides
 
-    ``prefer_cwd`` is for READ-ONLY composition only — see
+    ``prefer_cwd`` is for READ-ONLY composition only, and ``cwd`` names the
+    directory that counts as "here" — see
     :func:`ai_hats.paths.library.builtin_library_root`.
     """
-    paths: list[Path] = list(builtin_library_layers(project_dir, prefer_cwd=prefer_cwd))
+    paths: list[Path] = list(builtin_library_layers(project_dir, prefer_cwd=prefer_cwd, cwd=cwd))
 
     # HATS-871 / ADR-0016: out-of-tree packages contribute their skills/ via the
     # ``ai_hats.skills`` entry-point (open registry). Shipped tier — ranks above
