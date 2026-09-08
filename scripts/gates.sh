@@ -75,6 +75,7 @@ silent-fallback  | no broad except swallows a failure without reporting it
 test-isolation   | the suite patches its own units no more than the recorded baseline
 prose-refs       | paths, library prefixes, sections and symbols named in library prose resolve
 ticket-ids       | no tracker id in shipped library prose
+consumer-refs    | no library component names a component that composes it
 env-reference    | docs/reference-env.md matches the env declarations the code reads
 gate-table       | ADR-0023's stage and gate tables match this file and the gates
 adr-integrity    | every ADR citation resolves and a number names exactly one file
@@ -228,6 +229,14 @@ ci_prose_refs() {
 ci_ticket_ids() {
     echo "[gates] ticket-ids (no tracker id in shipped library prose)" >&2
     run_py scripts/check_no_ticket_ids.py
+}
+
+# Which way a reference points. A role saying why it takes a trait points down;
+# a trait naming the role that takes it points up, and rots the moment that role
+# drops it. The composition graph is what makes the direction checkable.
+ci_consumer_refs() {
+    echo "[gates] consumer-refs (no component names a component that composes it)" >&2
+    run_py scripts/check_consumer_refs.py
 }
 
 # The env reference page is rendered from the declarations the code reads. A
@@ -847,6 +856,7 @@ case "$verb" in
         ci_gate_table
         ci_adr_integrity
         ci_ticket_ids
+        ci_consumer_refs
         ci_unit
         ci_coverage
         ci_merge_smoke
