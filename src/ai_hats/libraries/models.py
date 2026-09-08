@@ -620,10 +620,9 @@ class SkillMetadata(_YamlModel):
                 parsed.append({"matcher": matcher, "script": script})
             normalized[ev] = parsed
 
-        # Materialized filename is ``<skill>-<basename>`` (managed_runtime_hook_
-        # filename), so two DISTINCT scripts sharing a basename would overwrite
-        # each other on disk and cross-wire their settings entries. The same
-        # script reused across events is fine (one file, several entries).
+        # Two DISTINCT scripts sharing a basename would cross-wire: the
+        # declaration is keyed by basename. The same script reused across events
+        # is fine (one file, several entries).
         basename_source: dict[str, str] = {}
         for rows in normalized.values():
             for row in rows:
