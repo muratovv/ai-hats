@@ -31,6 +31,9 @@ GATE='push-gate'
 STAGES='e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e'
 CHANNEL='githook'
 RUN_CMD='scripts/run-e2e-gate.sh'
+# A script takes a commit as a flag, not as a make variable. Read by gate.sh.
+# shellcheck disable=SC2034
+RUN_REV_FMT='--rev %s'
 
 _self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 if ! . "$_self_dir/../lib/gate.sh"; then

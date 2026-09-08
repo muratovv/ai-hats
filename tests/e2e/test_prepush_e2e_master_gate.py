@@ -152,10 +152,12 @@ def _check(stdin: str, *, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _run(bindir: Path | None, *, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run(
+    bindir: Path | None, *, cwd: Path, argv: tuple[str, ...] = ()
+) -> subprocess.CompletedProcess[str]:
     """The hook in RUN mode."""
     return subprocess.run(
-        ["bash", str(HOOK), "--run"],
+        ["bash", str(HOOK), "--run", *argv],
         cwd=str(cwd),
         capture_output=True,
         text=True,
@@ -452,6 +454,25 @@ def test_run_mode_runs_serial_without_xdist(tmp_path: Path):
     argv = (bindir / "last_argv").read_text()
     assert _xdist_n(argv) is None
     assert "--dist=loadgroup" not in argv
+
+
+def test_run_mode_resumes_with_the_command_that_actually_earns_this_gate(tmp_path: Path):
+    """`make push-gate` is a target nothing defines: this gate is earned by
+    `scripts/run-e2e-gate.sh`. The card gates keep the make spelling, which is
+    what the shared default asserts on the other side of this pair."""
+    repo = _git_repo(tmp_path, rcs={"lint": 1})
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+
+    bare = _run(bindir, cwd=repo)
+    assert bare.returncode == 1, bare.stderr
+    assert "[gates] fix lint, then: scripts/run-e2e-gate.sh" in bare.stderr
+    assert "make push-gate" not in bare.stderr
+
+    sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    of_a_commit = _run(bindir, cwd=repo, argv=("--rev", sha))
+    assert of_a_commit.returncode == 1, of_a_commit.stderr
+    assert f"[gates] fix lint, then: scripts/run-e2e-gate.sh --rev {sha}" in of_a_commit.stderr
 
 
 # ===========================================================================

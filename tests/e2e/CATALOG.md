@@ -1223,7 +1223,7 @@ as a claim to check, not as evidence.
   bash -c '. lib/gate.sh; gate_exit checks refuse'
   ```
 
-- **expect** — a card with no code passes; a live worktree is judged by ITS scripts/gates.sh against the stages the gate declares, and refused with the missing ones and the command that earns them; a merged card is judged by its merge commit
+- **expect** — a card with no code passes; a live worktree is judged by ITS scripts/gates.sh against the stages the gate declares, and refused with the missing ones and the command that earns them; a merged card is judged by its merge commit; a green run names what the gates after it still lack
 - **why** — a gate used to be sixty lines that differed from its siblings in two strings; a few-line declaration over one primitive cannot drift
 
 ## `test_gates_check_run.py`
@@ -1239,7 +1239,7 @@ as a claim to check, not as evidence.
   scripts/gates.sh subject [--rev <commit>]
   ```
 
-- **expect** — `check` lists what lacks a marker and never calls the runner; `run` runs only the unmarked, stamps each green stage for the SUBJECT tree, and judges a commit in a one-shot scratch worktree when the checkout is dirty or its HEAD is not the subject
+- **expect** — `check` lists what lacks a marker and never calls the runner; `run` runs only the unmarked, stamps each green stage for the SUBJECT tree, and judges a commit in a one-shot scratch worktree when the checkout is dirty or its HEAD is not the subject — saying so under the verdict, and handing a red pytest stage the command that re-runs just its failures
 - **why** — a per-GATE, all-or-nothing marker made a wider gate re-run what a narrower one had earned; a run "here" judged whatever the desk held
 
 ## `test_gates_prepare.py`

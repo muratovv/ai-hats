@@ -16,8 +16,16 @@
 #   gate_refusal <gate> <tree> <label> <cmd> <missing>
 #   gate_exit <channel> pass|refuse     -> exits with that channel's code
 #
+# A gate may declare RUN_CMD (what earns it; default `make <gate>`) and
+# RUN_REV_FMT (how that command names a commit; default `REV=%s`).
+#
 # Nothing here names a stage: what a gate requires is the gate's own line, and
 # how a stage runs is `scripts/gates.sh`'s.
+
+# This file is `<skill>/lib/gate.sh`, so the gates are its siblings' contents.
+# From BASH_SOURCE rather than $0: a gate is spawned by make, by git and by the
+# check runner, and only this is the same under all three.
+_GATE_SKILL_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 gate_tree() {
     (cd "$1" 2>/dev/null && git rev-parse "$2^{tree}" 2>/dev/null) || return 1
@@ -174,6 +182,104 @@ gate_check_task_worktree() {
     esac
 }
 
+# Every gate this skill carries, card gates first. A gate that cannot be listed
+# here is a gate nothing can ask about.
+_gate_scripts() {
+    local dir script
+    for dir in "$_GATE_SKILL_DIR/hooks" "$_GATE_SKILL_DIR/git_hooks"; do
+        [[ -d "$dir" ]] || continue
+        for script in "$dir"/*.sh; do
+            if [[ -f "$script" ]]; then
+                printf '%s\n' "$script"
+            fi
+        done
+    done
+}
+
+# A gate's name: its own `GATE=` when it declares one (the git hooks, whose file
+# name is about git), otherwise the script's basename (the card gates, whose
+# file name IS the name the role binds and `make` spells).
+_gate_name_of() {
+    local script="$1" declared base
+    declared="$(sed -n "s/^GATE='\([^']*\)'.*/\1/p" "$script" 2>/dev/null | head -1)"
+    if [[ -n "$declared" ]]; then
+        printf '%s' "$declared"
+        return 0
+    fi
+    base="$(basename -- "$script")"
+    printf '%s' "${base%.sh}"
+}
+
+# What the NEXT transition will additionally demand, said once after a green run
+# so the road costs one refusal fewer. Read from the MARKERS, never from a set
+# difference: a stage two gates share can still be red, and one this run has
+# just earned must not be named. The gate that ran needs no excluding — its own
+# stages are all marked now, so it drops out by the same rule as the rest.
+gate_next_note() {
+    local repo_root="$1" gates="$2" rev="$3"
+    local -a sets=() names=() counts=() args=(check)
+    if [[ -n "$rev" ]]; then
+        args+=(--rev "$rev")
+    fi
+    local script name stages missing rc i idx found unanswered='' used='' line='' verb
+    while IFS= read -r script; do
+        name="$(_gate_name_of "$script")"
+        if ! stages="$(bash "$script" --stages 2>/dev/null)" || [[ -z "$stages" ]]; then
+            unanswered="$unanswered $name"
+            continue
+        fi
+        # shellcheck disable=SC2086
+        missing="$(cd "$repo_root" && bash "$gates" "${args[@]}" $stages)"
+        rc=$?
+        if [[ $rc -gt 1 ]]; then
+            unanswered="$unanswered $name"
+            continue
+        fi
+        missing="$(printf '%s' "$missing" | tr '\n' ' ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//')"
+        [[ -n "$missing" ]] || continue
+        found=''
+        for ((i = 0; i < ${#sets[@]}; i++)); do
+            if [[ "${sets[$i]}" == "$missing" ]]; then
+                names[$i]="${names[$i]}, $name"
+                found=1
+                break
+            fi
+        done
+        if [[ -z "$found" ]]; then
+            sets+=("$missing")
+            names+=("$name")
+            counts+=("$(printf '%s' "$missing" | wc -w | tr -d ' ')")
+        fi
+    done < <(_gate_scripts)
+
+    # Cheapest step first: the fewest stages still to earn.
+    while :; do
+        idx=-1
+        for ((i = 0; i < ${#sets[@]}; i++)); do
+            case " $used " in *" $i "*) continue ;; esac
+            if [[ $idx -lt 0 || ${counts[$i]} -lt ${counts[$idx]} ]]; then
+                idx=$i
+            fi
+        done
+        [[ $idx -ge 0 ]] || break
+        used="$used $idx"
+        case "${names[$idx]}" in
+            *,*) verb='also need' ;;
+            *) verb='also needs' ;;
+        esac
+        line="${line:+$line; }${names[$idx]} $verb $(printf '%s' "${sets[$idx]}" | sed 's/ /, /g')"
+    done
+
+    if [[ -n "$line" ]]; then
+        printf '[gates] next: %s\n' "$line" >&2
+    else
+        printf '[gates] next: nothing — every gate is green for this tree\n' >&2
+    fi
+    if [[ -n "$unanswered" ]]; then
+        printf '[gates] next: could not ask%s what it requires\n' "$unanswered" >&2
+    fi
+}
+
 # Earn the stages: `scripts/gates.sh run` of the checkout the caller stands in,
 # told what command resumes a red run. EXITS with the run's rc.
 gate_run() {
@@ -191,15 +297,31 @@ gate_run() {
         exit 70
     fi
     # The primitive prints the resume command second in its block, right after
-    # the verdict; it cannot spell it, because no gate name reaches it.
+    # the verdict; it cannot spell it, because no gate name reaches it. A gate
+    # earned by something other than `make <gate> REV=<sha>` says so in RUN_CMD
+    # and RUN_REV_FMT — the push gate is earned by a script, and the resume line
+    # used to name `make push-gate`, a target nothing defines.
     local rev='' prev='' arg
     for arg in "$@"; do
         [[ "$prev" == "--rev" ]] && rev="$arg"
         prev="$arg"
     done
-    export GATES_RESUME_CMD="make $gate${rev:+ REV=$rev}"
+    local rev_arg=''
+    if [[ -n "$rev" ]]; then
+        # The format is a gate's own declaration, never input.
+        # shellcheck disable=SC2059
+        printf -v rev_arg " ${RUN_REV_FMT:-REV=%s}" "$rev"
+    fi
+    export GATES_RESUME_CMD="${RUN_CMD:-make $gate}$rev_arg"
+    # Not `exec`: a green run has one more thing to say, and saying it needs the
+    # markers the run has just written.
+    local rc=0
     # shellcheck disable=SC2086
-    exec bash "$gates" run "$@" $stages
+    bash "$gates" run "$@" $stages || rc=$?
+    if [[ $rc -eq 0 ]]; then
+        gate_next_note "$repo_root" "$gates" "$rev"
+    fi
+    exit "$rc"
 }
 
 # The thin gate's whole body. The check runner spawns a gate with no argv at

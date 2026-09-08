@@ -8,10 +8,11 @@ cmds:
 expect: `check` lists what lacks a marker and never calls the runner; `run`
         runs only the unmarked, stamps each green stage for the SUBJECT tree,
         and judges a commit in a one-shot scratch worktree when the checkout is
-        dirty or its HEAD is not the subject
+        dirty or its HEAD is not the subject — saying so under the verdict, and
+        handing a red pytest stage the command that re-runs just its failures
 why:    a per-GATE, all-or-nothing marker made a wider gate re-run what a
         narrower one had earned; a run "here" judged whatever the desk held
-"""
+"""  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
 
@@ -46,8 +47,10 @@ def runner(tmp_path: Path) -> Path:
 
     Outside, so the repo stays clean without committing it; the log too, so a
     stage cannot dirty the tree by being recorded. Per-stage exit codes come
-    from `GATES_TEST_RC_<STAGE>`; unset means green. `--prepare` is the one
-    non-stage verb the primitive asks of a runner, and it is a no-op here.
+    from `GATES_TEST_RC_<STAGE>`; unset means green. What a stage PRINTS comes
+    from `GATES_TEST_OUT_<STAGE>`, which is how a test hands a stage a real
+    pytest short summary. `--prepare` is the one non-stage verb the primitive
+    asks of a runner, and it is a no-op here.
     """
     log = tmp_path / "calls.log"
     script = tmp_path / "runner.sh"
@@ -55,6 +58,8 @@ def runner(tmp_path: Path) -> Path:
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
         f'printf "%s|%s|%s\\n" "$1" "$PWD" "${{PYTEST_ADDOPTS:-}}" >> "{log}"\n'
+        'said="GATES_TEST_OUT_$(printf "%s" "$1" | tr "a-z-" "A-Z_")"\n'
+        'if [[ -n "${!said:-}" ]]; then printf "%s\\n" "${!said}"; fi\n'
         'name="GATES_TEST_RC_$(printf "%s" "$1" | tr "a-z-" "A-Z_")"\n'
         'exit "${!name:-0}"\n'
     )
@@ -80,7 +85,7 @@ def _addopts(runner: Path) -> dict[str, str]:
 def _gate(
     repo: Path, runner: Path, *args: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    child = {k: v for k, v in os.environ.items() if not k.startswith("GATES_TEST_RC_")}
+    child = {k: v for k, v in os.environ.items() if not k.startswith("GATES_TEST_")}
     child["GATES_STAGE_RUNNER"] = str(runner)
     child.pop("PYTEST_ADDOPTS", None)
     # Every real gate exports this (lib/gate.sh), so a run of this file from
@@ -344,6 +349,118 @@ def test_pytest_options_reach_only_a_pytest_stage_and_the_xdist_line_precedes_it
     assert handed["lint"] == ""
     assert "--tb=line" in handed["unit"] and "-n" in handed["unit"]
     assert "--disable-warnings" in handed["unit"], "a 48-line warnings block is not a verdict"
+
+
+#: What a red pytest stage prints: pytest's short summary, dots and all.
+SUMMARY = "\n".join(
+    [
+        "..F..F",
+        "=== short test summary info ===",
+        "FAILED tests/e2e/a.py::test_one - AssertionError: nope",
+        "FAILED tests/e2e/b.py::test_two[a-b] - ValueError",
+        "ERROR tests/e2e/c.py::test_three",
+        "2 failed, 4 passed in 1.2s",
+    ]
+)
+
+
+def _rerun(stderr: str) -> str:
+    """The command under `re-run just these:`, or '' when the block has none."""
+    lines = stderr.splitlines()
+    for i, line in enumerate(lines):
+        if line == "[gates] re-run just these:":
+            return lines[i + 1].strip()
+    return ""
+
+
+def test_a_red_pytest_stage_prints_the_command_that_re_runs_just_its_failures(
+    repo: Path, runner: Path
+):
+    """The ids are pytest's; the interpreter is the gate's, and that is the half
+    a hand-built invocation gets wrong. The positive control is the same summary
+    under a CHECKER stage: no line there, so the absence is the stage kind and
+    not a parser that stopped matching."""
+    env = {"PYTHON": sys.executable, "GATES_TEST_RC_UNIT": "1", "GATES_TEST_OUT_UNIT": SUMMARY}
+
+    out = _gate(repo, runner, "run", "unit", env=env)
+
+    assert out.returncode == 1, out.stderr
+    lines = out.stderr.splitlines()
+    assert lines[0] == _result(repo, "0 cached, 1 ran, FAILED unit (rc=1)")
+    assert lines[1] == "[gates] fix unit, then run this again"
+    assert lines[2] == "[gates] re-run just these:", "the action follows the verdict"
+    assert _rerun(out.stderr) == (
+        f"{sys.executable} -m pytest tests/e2e/a.py::test_one "
+        "'tests/e2e/b.py::test_two[a-b]' tests/e2e/c.py::test_three"
+    ), "every failing id, the gate's own interpreter, and no flags of the run's own"
+
+    checker = _gate(
+        repo,
+        runner,
+        "run",
+        "lint",
+        env={"PYTHON": sys.executable, "GATES_TEST_RC_LINT": "1", "GATES_TEST_OUT_LINT": SUMMARY},
+    )
+    assert checker.returncode == 1, checker.stderr
+    assert _rerun(checker.stderr) == "", "a checker stage runs no pytest, so it offers no re-run"
+
+
+def test_a_stage_that_failed_too_widely_offers_no_command_at_all(repo: Path, runner: Path):
+    """Past the cap a re-run line is not a command any more. The pair is the
+    control: one id under the cap DOES produce a line from the same runner."""
+    many = "\n".join(f"FAILED tests/e2e/t{n}.py::test_it - boom" for n in range(21))
+    env = {"PYTHON": sys.executable, "GATES_TEST_RC_UNIT": "1", "GATES_TEST_OUT_UNIT": many}
+
+    wide = _gate(repo, runner, "run", "unit", env=env)
+    assert wide.returncode == 1, wide.stderr
+    assert _rerun(wide.stderr) == ""
+    assert any(ln.startswith("[gates] transcript: ") for ln in wide.stderr.splitlines())
+
+    env["GATES_TEST_OUT_UNIT"] = "FAILED tests/e2e/t0.py::test_it - boom"
+    narrow = _gate(repo, runner, "run", "--fresh", "unit", env=env)
+    assert _rerun(narrow.stderr).endswith("tests/e2e/t0.py::test_it")
+
+
+# ---------------------------------------------------------------------------
+# a dirty desk is judged in a scratch checkout, so the run answers about HEAD
+# ---------------------------------------------------------------------------
+
+
+def test_a_dirty_desk_is_told_that_the_run_judges_committed_content(repo: Path, runner: Path):
+    """Green or red, the note sits under the verdict: a red one gets believed
+    against a fix that was never there, a green one vouches for one that never
+    ran. The clean run in the same test is the control."""
+    note = "[gates] the desk is dirty"
+
+    clean = _gate(repo, runner, "run", "lint")
+    assert clean.returncode == 0, clean.stderr
+    assert note not in clean.stderr, "a clean desk IS the subject — nothing to warn about"
+
+    (repo / "scratch.txt").write_text("uncommitted\n")
+    green = _gate(repo, runner, "run", "--fresh", "lint")
+    assert green.returncode == 0, green.stderr
+    lines = green.stderr.splitlines()
+    assert lines[0] == _result(repo, "0 cached, 1 ran, green")
+    assert lines[1] == (
+        f"{note} — this run judges HEAD ({_short(repo, 'HEAD')}) in a scratch checkout; "
+        "uncommitted changes are invisible to it"
+    )
+    assert green.stderr.count(note) == 1, "one line in a captured stream, not two"
+
+    red = _gate(repo, runner, "run", "--fresh", "lint", env={"GATES_TEST_RC_LINT": "1"})
+    assert red.stderr.splitlines()[1].startswith(note), "and it precedes what to do about it"
+
+
+def test_a_rev_that_is_not_head_is_named_by_its_sha(repo: Path, runner: Path):
+    first = git(repo, "rev-parse", "HEAD").stdout.strip()
+    commit_file(repo, "b.txt", "b\n", "second")
+    (repo / "scratch.txt").write_text("uncommitted\n")
+
+    out = _gate(repo, runner, "run", "--rev", first, "lint")
+
+    assert out.returncode == 0, out.stderr
+    assert f"judges {_short(repo, first)} in a scratch checkout" in out.stderr
+    assert "judges HEAD" not in out.stderr, "HEAD is not the subject here"
 
 
 # ---------------------------------------------------------------------------

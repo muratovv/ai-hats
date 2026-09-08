@@ -609,6 +609,44 @@ _print_log() {
     grep -v -E '^[.sFxXE]+( +\[ *[0-9]+%\])?$' "$1" >&2 || true
 }
 
+# Past this many, a re-run line is not a command any more; the transcript path
+# in the block is the better answer.
+RERUN_MAX_IDS=20
+
+# The node ids a red pytest stage named, in pytest's own order. `FAILED <id> -
+# <reason>` and `ERROR <id>` are its short summary; the reason is prose, not
+# argv, so it is cut — an id carrying its own ` - ` loses its tail, which is why
+# the ids are printed back to a reader who can see the log right below.
+_failed_ids() {
+    sed -n -E 's/^(FAILED|ERROR) (.*)$/\2/p' "$1" 2>/dev/null \
+        | sed -E 's/ - .*$//' \
+        | awk 'NF && !seen[$0]++'
+}
+
+# The one command that re-runs just what failed. What pytest's summary cannot
+# name is the interpreter this checkout answers for — the decision a hand-built
+# invocation gets wrong, and the one the worktree guard refuses. No flags: the
+# gate's own PYTEST_ADDOPTS (`--tb=line`, xdist) is what a reader wants OFF.
+# Prints nothing rather than something unrunnable.
+_rerun_cmd() {
+    local log="$1" ids count id out=''
+    [[ -f "$log" ]] || return 1
+    ids="$(_failed_ids "$log")"
+    [[ -n "$ids" ]] || return 1
+    # A quote in a node id cannot be spelled safely in one line, and no amount
+    # of escaping makes a half-quoted command worth pasting.
+    case "$ids" in *\'*) return 1 ;; esac
+    count="$(printf '%s\n' "$ids" | wc -l | tr -d ' ')"
+    [[ "$count" -le "$RERUN_MAX_IDS" ]] || return 1
+    while IFS= read -r id; do
+        case "$id" in
+            *[!A-Za-z0-9_./:@=+~-]*) id="'$id'" ;;
+        esac
+        out="$out $id"
+    done <<< "$ids"
+    printf '%s -m pytest%s' "$PY" "$out"
+}
+
 # A run prints ONE block, in order of importance: the verdict, what to do, what
 # the red stage said, one line per green stage, the cached ones, the subject,
 # and where the full transcripts are. The reader is usually an agent looking
@@ -679,6 +717,27 @@ cmd_run() {
         fi
     fi
 
+    # A dirty desk is judged in a scratch checkout of the subject, so the WHOLE
+    # run answers about committed content — the tier that clones to build its
+    # venv (tests/e2e) is the loudest case of that, not the only one. It belongs
+    # under the verdict either way: a red one gets believed against a fix that
+    # was never there, a green one vouches for a fix that never ran. A terminal
+    # also gets it up front, where minutes of tier still separate the two; a
+    # captured stream does not, because there the two lines would be adjacent.
+    local desk_note='' named
+    if ! _clean "$repo_root"; then
+        if [[ "$REV" == "HEAD" ]]; then
+            named="HEAD ($sha_s)"
+        else
+            named="$sha_s"
+        fi
+        desk_note="the desk is dirty — this run judges $named in a scratch checkout;"
+        desk_note="$desk_note uncommitted changes are invisible to it"
+        if [[ -n "$LIVE" ]]; then
+            printf '[gates] %s\n' "$desk_note" >&2
+        fi
+    fi
+
     local verdict='' failed='' dirty=''
     for stage in "${todo[@]}"; do
         if [[ -z "$ADDOPTS_NOTE" ]] && _is_pytest_stage "$stage"; then
@@ -714,10 +773,17 @@ cmd_run() {
     done
 
     _result "$tree_s" "$sha_s" "$ncached" "$nran" "${verdict:-green}"
+    if [[ -n "$desk_note" ]]; then
+        printf '[gates] %s\n' "$desk_note" >&2
+    fi
     if [[ -n "$failed" ]]; then
         # The gate hands the command down; bare, the primitive can only say "again".
         local then_what="${GATES_RESUME_CMD:+: $GATES_RESUME_CMD}"
         printf '[gates] fix %s, then%s\n' "$failed" "${then_what:- run this again}" >&2
+        local rerun
+        if _is_pytest_stage "$failed" && rerun="$(_rerun_cmd "$run_dir/$failed.log")"; then
+            printf '[gates] re-run just these:\n    %s\n' "$rerun" >&2
+        fi
         if [[ -n "$dirty" ]]; then
             printf '[gates] %s left the tree dirty:\n%s\n' "$failed" "$dirty" >&2
         fi
