@@ -42,9 +42,14 @@ fi
 payload="$(cat || true)"
 [[ -z "$payload" ]] && exit 0
 
-extract_command() {
+# One pass for both fields: a second pass over the same payload is a second
+# chance for the two to disagree about which call they read. The flag goes on
+# line 1 and the command takes every line after it, because the command is the
+# field that can be MULTI-LINE (HATS-1709, the shape borrowed from
+# pre_bash_lifetime_guard.sh).
+extract_fields() {
     if command -v jq >/dev/null 2>&1; then
-        jq -r '.tool_input.command // empty' <<<"$payload"
+        jq -r '((.tool_input.run_in_background // false) | tostring), (.tool_input.command // "")' <<<"$payload" 2>/dev/null
         return
     fi
     if command -v python3 >/dev/null 2>&1; then
@@ -54,15 +59,22 @@ try:
     d = json.loads(sys.stdin.read())
 except Exception:
     sys.exit(0)
-print((d.get("tool_input") or {}).get("command") or "")
+ti = d.get("tool_input") or {}
+print("true" if ti.get("run_in_background") else "false")
+print(ti.get("command") or "")
 ' <<<"$payload"
         return
     fi
     echo ""  # no JSON parser -> fail-safe allow
 }
 
-cmd="$(extract_command)"
-[[ -z "$cmd" ]] && exit 0
+fields="$(extract_fields)"
+# `$(…)` strips trailing newlines, so a payload with no command leaves the flag
+# alone on the only line — without this the flag itself would be judged as one.
+[[ "$fields" != *$'\n'* ]] && exit 0
+background="${fields%%$'\n'*}"
+cmd="${fields#*$'\n'}"
+[[ -z "${cmd//[[:space:]]/}" ]] && exit 0
 
 # trim leading whitespace
 cmd="${cmd#"${cmd%%[![:space:]]*}"}"
@@ -138,7 +150,12 @@ if ! runner_alt="$(build_runner_alt)"; then
     ai_hats_journal_bypass degraded "unreadable test_runners.json — using the embedded mirror"
     runner_alt="$runner_alt_fallback"
 fi
-runner_rx="(^|[[:space:]|;&])($runner_alt)($|[[:space:]|;&])"
+# A leading `/` opens the name as surely as a space does: `bash scripts/gates.sh`
+# is the form this project prescribes and the form both measured incidents took,
+# and a boundary of whitespace alone left every path-qualified runner invisible
+# (HATS-1709). The corpus was all bare names, so nothing went red. The trailing
+# boundary stays strict — `Makefile` and `make-a-thing.md` are not `make`.
+runner_rx="(^|[[:space:]|;&]|/)($runner_alt)($|[[:space:]|;&])"
 if [[ "$cmd_bare" =~ $runner_rx ]]; then
     # HATS-1819 — the third case, and the one no masking check can see: the status
     # is the runner's, correct, and simply not depended on. `;` sequences, it does
@@ -185,11 +202,22 @@ if [[ "$cmd_bare" =~ $runner_rx ]]; then
     masked=""
     if [[ -z "$pipe_preserved" ]] && [[ "$cmd_bare" =~ $pipe_rx ]]; then
         masked=pipe
-    elif [[ ! "$cmd_bare" =~ $capture_rx ]] && [[ "$cmd_bare" =~ $semi_rx || "$cmd_bare" =~ $or_rx ]]; then
-        masked=chain
+    elif [[ "$cmd_bare" =~ $semi_rx || "$cmd_bare" =~ $or_rx ]]; then
+        # The capture form preserves in the foreground and MASKS in the
+        # background, and one flag is the whole difference: backgrounded, the
+        # completion notice reports the status of the whole command, so the
+        # trailing echo is the number the agent is told. Measured — a tier that
+        # returned 1 on 30 failures was announced as "exit code 0" (HATS-1709).
+        if [[ "$background" == "true" ]]; then
+            masked=notice
+        elif [[ ! "$cmd_bare" =~ $capture_rx ]]; then
+            masked=chain
+        fi
     fi
     if [[ -n "$masked" ]]; then
-        if [[ "$masked" == pipe ]]; then
+        if [[ "$masked" == notice ]]; then
+            msg="a backgrounded runner ends in another command — the completion notice reports the status of the WHOLE command, so that trailing element is the number you are told, and a red run arrives as 'exit code 0'. Measured. Put the capture inside and let the status out: timeout <n> bash -c '<runner>; rc=\$?; echo \$rc > <file>; exit \$rc' > <log> 2>&1 — then the notice and the file agree. Read the file either way: for a background launch a notice is never evidence of the run."
+        elif [[ "$masked" == pipe ]]; then
             msg="exit code masking detected in test runner command — a pipeline's status is the LAST stage's, so the runner's is lost. Use set -o pipefail (correct in bash and zsh), or redirect and read the log in a separate call. \${PIPESTATUS[0]} is bash-only: in zsh it is unset, so exiting on it returns 0 for every run — the zsh name is \${pipestatus[1]}."
         else
             msg="exit code masking detected in test runner command — a command after ';' or '||' becomes the status of the whole thing, so the runner's is lost. set -o pipefail does NOT help here: it fixes which status a PIPELINE reports, never what runs next. Drop the trailing command and read the log in a separate call, or capture the status with '; echo \$? > <file>' and read that file."
