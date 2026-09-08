@@ -32,37 +32,42 @@ GUARD = (
 INCIDENT_CMD = 'until grep -qE "=+ .*(passed|failed|error)" /tmp/unit2.log 2>/dev/null; do :; done'
 
 
-def _run(
-    command: str | None,
-    *,
-    background: bool = False,
-    env: dict | None = None,
-    raw: str | None = None,
-):
-    if raw is not None:
-        stdin = raw
-    elif command is None:
-        stdin = ""
-    else:
-        stdin = json.dumps(
-            {
-                "hook_event_name": HOOK_PRE_TOOL_USE,
-                "tool_name": "Bash",
-                "tool_input": {"command": command, "run_in_background": background},
-            }
+@pytest.fixture
+def _run(hook_repo):
+    def run(
+        command: str | None,
+        *,
+        background: bool = False,
+        env: dict | None = None,
+        raw: str | None = None,
+    ):
+        if raw is not None:
+            stdin = raw
+        elif command is None:
+            stdin = ""
+        else:
+            stdin = json.dumps(
+                {
+                    "hook_event_name": HOOK_PRE_TOOL_USE,
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command, "run_in_background": background},
+                }
+            )
+        base_env = os.environ.copy()
+        base_env.pop("AI_HATS_LIFETIME_ACK", None)
+        if env:
+            base_env.update(env)
+        return subprocess.run(
+            ["bash", str(GUARD)],
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=base_env,
+            cwd=hook_repo,
         )
-    base_env = os.environ.copy()
-    base_env.pop("AI_HATS_LIFETIME_ACK", None)
-    if env:
-        base_env.update(env)
-    return subprocess.run(
-        ["bash", str(GUARD)],
-        input=stdin,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=base_env,
-    )
+
+    return run
 
 
 def _out(res) -> dict:
@@ -88,7 +93,7 @@ def _nudge(res) -> str | None:
 # --- S2: the unbounded loop is refused ---------------------------------------
 
 
-def test_incident_command_is_denied():
+def test_incident_command_is_denied(_run):
     res = _run(INCIDENT_CMD)
     assert res.returncode == 0
     assert _decision(res) == "deny"
@@ -99,7 +104,7 @@ def test_incident_command_is_denied():
     ["timeout", "counter", "Monitor"],
     ids=["names-timeout", "names-counter", "names-monitor"],
 )
-def test_refusal_names_the_bounded_alternative(alternative):
+def test_refusal_names_the_bounded_alternative(_run, alternative):
     """A4 — a refusal the agent cannot act on just costs a turn."""
     assert alternative in _reason(_run(INCIDENT_CMD))
 
@@ -113,7 +118,7 @@ def test_refusal_names_the_bounded_alternative(alternative):
     ],
     ids=["while-true", "until-sleep", "poll-endpoint"],
 )
-def test_unbounded_loops_denied_with_or_without_sleep(cmd):
+def test_unbounded_loops_denied_with_or_without_sleep(_run, cmd):
     """Supervisor scope: 'любой цикл без ограничителя' — sleep is not a bound."""
     assert _decision(_run(cmd)) == "deny"
 
@@ -132,16 +137,16 @@ def test_unbounded_loops_denied_with_or_without_sleep(cmd):
     ],
     ids=["timeout-wrapped", "read-eof", "read-ifs", "counter", "for-list"],
 )
-def test_bounded_loops_pass_silently(cmd):
+def test_bounded_loops_pass_silently(_run, cmd):
     assert _run(cmd).stdout.strip() == ""
 
 
-def test_silence_on_bounded_loops_is_not_a_broken_guard():
+def test_silence_on_bounded_loops_is_not_a_broken_guard(_run):
     """Positive control for the test above — the same guard still refuses."""
     assert _decision(_run(INCIDENT_CMD)) == "deny"
 
 
-def test_a_loop_quoted_in_prose_is_not_a_loop_being_run():
+def test_a_loop_quoted_in_prose_is_not_a_loop_being_run(_run):
     """HATS-1819 — recording this incident in a work log must not be refused."""
     cmd = f"rack transition HATS-1873 --log 'the runaway was: {INCIDENT_CMD}'"
     assert _run(cmd).stdout.strip() == ""
@@ -158,16 +163,16 @@ while true; do :; done
 EOF"""
 
 
-def test_heredoc_body_is_not_shell():
+def test_heredoc_body_is_not_shell(_run):
     """12 of 161 corpus refusals were python source read as a shell loop."""
     assert _run(HEREDOC_SCRIPT).stdout.strip() == ""
 
 
-def test_heredoc_silence_is_not_a_broken_guard():
+def test_heredoc_silence_is_not_a_broken_guard(_run):
     assert _decision(_run(INCIDENT_CMD)) == "deny"
 
 
-def test_a_real_loop_after_a_heredoc_is_still_seen():
+def test_a_real_loop_after_a_heredoc_is_still_seen(_run):
     """Dropping heredoc BODIES must not drop the commands around them."""
     cmd = HEREDOC_SCRIPT + "\nwhile true; do :; done"
     assert _decision(_run(cmd)) == "deny"
@@ -178,21 +183,21 @@ def test_a_real_loop_after_a_heredoc_is_still_seen():
     ["sleep 600; echo waited", "sleep 45; cat /tmp/run.rc 2>/dev/null || echo pending"],
     ids=["sleep-echo", "sleep-poll"],
 )
-def test_leading_sleep_is_already_the_bound(cmd):
+def test_leading_sleep_is_already_the_bound(_run, cmd):
     """`sleep N` in the background ends in N seconds by construction."""
     assert _run(cmd, background=True).stdout.strip() == ""
 
 
-def test_a_leading_sleep_does_not_excuse_a_following_loop():
+def test_a_leading_sleep_does_not_excuse_a_following_loop(_run):
     """One predicate for both checks let this through: the sleep bounds nothing."""
     assert _decision(_run("sleep 1; while true; do :; done")) == "deny"
 
 
-def test_sleep_inside_a_loop_body_is_not_a_bound():
+def test_sleep_inside_a_loop_body_is_not_a_bound(_run):
     assert _decision(_run("while true; do sleep 1; done")) == "deny"
 
 
-def test_do_is_matched_as_a_word_not_a_substring():
+def test_do_is_matched_as_a_word_not_a_substring(_run):
     """`docs`, `done` and `download` are not the `do` of a shell loop."""
     assert _run("ls docs/ && echo done && echo download").stdout.strip() == ""
     assert _run("while pgrep -q x; do sleep 1; done").stdout.strip() != ""
@@ -201,15 +206,15 @@ def test_do_is_matched_as_a_word_not_a_substring():
 # --- S4: the unbounded background launch is refused --------------------------
 
 
-def test_background_without_timeout_denied():
+def test_background_without_timeout_denied(_run):
     assert _decision(_run("python train.py", background=True)) == "deny"
 
 
-def test_background_with_timeout_passes():
+def test_background_with_timeout_passes(_run):
     assert _run("timeout 3600 python train.py", background=True).stdout.strip() == ""
 
 
-def test_background_refusal_names_the_hatch():
+def test_background_refusal_names_the_hatch(_run):
     """A6 — a deny that does not name a working way past it strands the agent."""
     assert "AI_HATS_LIFETIME_ACK" in _reason(_run("python train.py", background=True))
 
@@ -229,17 +234,17 @@ def test_background_refusal_names_the_hatch():
     ],
     ids=["pip", "npm", "brew", "curl", "git-clone", "docker-build"],
 )
-def test_long_commands_are_nudged_never_denied(cmd):
+def test_long_commands_are_nudged_never_denied(_run, cmd):
     res = _run(cmd)
     assert _decision(res) is None, "trigger C must never block"
     assert _nudge(res), "trigger C must say something"
 
 
-def test_long_command_with_timeout_is_silent():
+def test_long_command_with_timeout_is_silent(_run):
     assert _run("timeout 600 pip install -r requirements.txt").stdout.strip() == ""
 
 
-def test_test_runners_are_left_to_the_hygiene_guard():
+def test_test_runners_are_left_to_the_hygiene_guard(_run):
     """Two nudges about one pytest run is how a channel gets tuned out."""
     assert _run("pytest tests/ -q").stdout.strip() == ""
 
@@ -252,13 +257,13 @@ def test_test_runners_are_left_to_the_hygiene_guard():
     ["", "not json at all", "{}", '{"tool_input": {}}'],
     ids=["empty", "garbage", "no-tool-input", "no-command"],
 )
-def test_unreadable_payload_fails_open(raw):
+def test_unreadable_payload_fails_open(_run, raw):
     res = _run(None, raw=raw)
     assert res.returncode == 0
     assert res.stdout.strip() == ""
 
 
-def test_hatch_relaxes_the_refusal():
+def test_hatch_relaxes_the_refusal(_run):
     res = _run(INCIDENT_CMD, env={"AI_HATS_LIFETIME_ACK": "1"})
     assert res.returncode == 0
     assert res.stdout.strip() == ""
@@ -308,5 +313,5 @@ def test_taking_the_hatch_is_recorded(tmp_path):
     ],
     ids=["ls", "git-status", "pipe", "rack", "chained"],
 )
-def test_ordinary_commands_pass_silently(cmd):
+def test_ordinary_commands_pass_silently(_run, cmd):
     assert _run(cmd).stdout.strip() == ""

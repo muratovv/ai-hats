@@ -82,9 +82,18 @@ def _hook(tmp_path: Path, name: str, body: str) -> HookRow:
     return HookRow(command=script, matcher="Bash", tag=f"ai-hats:{name}")
 
 
-def _run(channel, payload=_PAYLOAD, *, argv=(), environ=None) -> int:
-    body = payload if isinstance(payload, str) else json.dumps(payload)
-    return dispatch(channel, stdin=io.StringIO(body), argv=argv, environ=environ or {})
+@pytest.fixture
+def _run(hook_repo):
+    def run(channel, payload=_PAYLOAD, *, argv=(), environ=None) -> int:
+        body = payload if isinstance(payload, str) else json.dumps(payload)
+        return dispatch(
+            channel,
+            stdin=io.StringIO(body),
+            argv=argv,
+            environ={**(environ or {}), "AI_HATS_PROJECT_DIR": str(hook_repo)},
+        )
+
+    return run
 
 
 class TestEveryPathReachesTheSurfaceThroughOneAnswer:
@@ -98,7 +107,9 @@ class TestEveryPathReachesTheSurfaceThroughOneAnswer:
             ('["a list"]', "payload is list, not an object"),
         ],
     )
-    def test_an_unreadable_payload_refuses_and_names_the_hatch(self, payload, expected) -> None:
+    def test_an_unreadable_payload_refuses_and_names_the_hatch(
+        self, _run, payload, expected
+    ) -> None:
         channel = Recorder()
         _run(channel, payload)
         (verdict,) = channel.said
@@ -107,7 +118,7 @@ class TestEveryPathReachesTheSurfaceThroughOneAnswer:
         assert verdict.hatch_env == GATE_BROKEN_ACK_ENV
         assert channel.rows_asked == 0, "the manifest was read for a call we could not parse"
 
-    def test_a_manifest_that_never_resolved_refuses_and_names_the_hatch(self) -> None:
+    def test_a_manifest_that_never_resolved_refuses_and_names_the_hatch(self, _run) -> None:
         channel = Recorder(raises="cannot read session hook manifest /gone/hooks.json")
         _run(channel)
         (verdict,) = channel.said
@@ -115,13 +126,13 @@ class TestEveryPathReachesTheSurfaceThroughOneAnswer:
         assert "/gone/hooks.json" in verdict.reason
         assert verdict.hatch_env == GATE_BROKEN_ACK_ENV
 
-    def test_the_refusal_is_worded_in_this_surfaces_own_name(self) -> None:
+    def test_the_refusal_is_worded_in_this_surfaces_own_name(self, _run) -> None:
         """An operator reading a session log has to know which channel spoke."""
         channel = Recorder(raises="manifest gone")
         _run(channel)
         assert "ai-hats-claude-hook:" in channel.said[0].reason
 
-    def test_a_delivery_refusal_is_reduced_like_any_other_verdict(self) -> None:
+    def test_a_delivery_refusal_is_reduced_like_any_other_verdict(self, _run) -> None:
         """The drift itself: on a surface that cannot deny after the fact, a
         refusal for a call that ALREADY ran must become something the reader
         sees — not a cancellation of what cannot be cancelled."""
@@ -137,14 +148,14 @@ class TestEveryPathReachesTheSurfaceThroughOneAnswer:
             "the way past went missing with the refusal it belonged to"
         )
 
-    def test_the_hatch_opens_a_delivery_refusal_here_too(self) -> None:
+    def test_the_hatch_opens_a_delivery_refusal_here_too(self, _run) -> None:
         channel = Recorder(raises="manifest gone")
         _run(channel, environ={GATE_BROKEN_ACK_ENV: "1"})
         assert channel.said[0].decision is ChainDecision.ALLOW
 
 
 class TestAnArrivalNothingBindsTo:
-    def test_an_unknown_arrival_allows_without_reading_the_manifest(self) -> None:
+    def test_an_unknown_arrival_allows_without_reading_the_manifest(self, _run) -> None:
         """Nothing composed can bind there, so no gate was missed — and reading
         the manifest for it is how agy came to run every gate on a Notification."""
         channel = Recorder()
@@ -152,7 +163,7 @@ class TestAnArrivalNothingBindsTo:
         assert channel.said[0].decision is ChainDecision.ALLOW
         assert channel.rows_asked == 0
 
-    def test_an_arrival_outside_the_profiles_row_allows_too(self) -> None:
+    def test_an_arrival_outside_the_profiles_row_allows_too(self, _run) -> None:
         """`native_events` is the row that says what a surface delivers; an
         arrival missing from it is not this channel's call to judge."""
         channel = Recorder()
@@ -163,7 +174,9 @@ class TestAnArrivalNothingBindsTo:
 
 
 class TestTheChainIsActuallyRun:
-    def test_a_refusing_gate_reaches_the_surface_with_its_reason(self, tmp_path: Path) -> None:
+    def test_a_refusing_gate_reaches_the_surface_with_its_reason(
+        self, _run, tmp_path: Path
+    ) -> None:
         doc = json.dumps(
             {
                 "hookSpecificOutput": {
@@ -180,19 +193,19 @@ class TestTheChainIsActuallyRun:
         assert (verdict.decision, verdict.reason) == (ChainDecision.DENY, "not on my watch")
         assert verdict.hatch_env == "", "a gate's own refusal carries no hatch of ours"
 
-    def test_a_silent_chain_allows(self, tmp_path: Path) -> None:
+    def test_a_silent_chain_allows(self, _run, tmp_path: Path) -> None:
         row = _hook(tmp_path, "quiet", "cat >/dev/null; exit 0")
         channel = Recorder(rows=[row])
         _run(channel)
         assert channel.said[0].decision is ChainDecision.ALLOW
 
-    def test_the_gate_is_handed_the_payload_this_channel_read(self, tmp_path: Path) -> None:
+    def test_the_gate_is_handed_the_payload_this_channel_read(self, _run, tmp_path: Path) -> None:
         seen = tmp_path / "seen.json"
         row = _hook(tmp_path, "echo", f"cat > {seen}")
         _run(Recorder(rows=[row]))
         assert json.loads(seen.read_text(encoding="utf-8"))["tool_name"] == "Bash"
 
-    def test_a_row_whose_matcher_misses_never_runs(self, tmp_path: Path) -> None:
+    def test_a_row_whose_matcher_misses_never_runs(self, _run, tmp_path: Path) -> None:
         ran = tmp_path / "ran"
         row = _hook(tmp_path, "edits", f"cat >/dev/null; touch {ran}")
         _run(Recorder(rows=[replace(row, matcher="Edit|Write")]))
@@ -206,7 +219,7 @@ class TestTheDialectIsARow:
     event; as a row it cannot disagree with the profile that declares it.
     """
 
-    def test_the_narrowing_for_this_arrival_is_honoured(self, tmp_path: Path) -> None:
+    def test_the_narrowing_for_this_arrival_is_honoured(self, _run, tmp_path: Path) -> None:
         doc = json.dumps(
             {
                 "hookSpecificOutput": {
@@ -234,7 +247,7 @@ class TestTheDialectIsARow:
         assert narrowed.dialect("PreToolUse").can_ask
         assert not narrowed.dialect("PermissionRequest").can_ask
 
-    def test_a_narrower_dialect_on_this_arrival_is_honoured(self, tmp_path: Path) -> None:
+    def test_a_narrower_dialect_on_this_arrival_is_honoured(self, _run, tmp_path: Path) -> None:
         doc = json.dumps(
             {
                 "hookSpecificOutput": {
@@ -255,7 +268,7 @@ class TestTheDialectIsARow:
         assert "may I" in verdict.reason and "cannot carry the consent" in verdict.reason
 
     def test_the_control_the_same_question_survives_where_the_arrival_can_ask(
-        self, tmp_path: Path
+        self, _run, tmp_path: Path
     ) -> None:
         """Without this, the refusal above is indistinguishable from a channel
         that turns every `ask` into a deny."""
@@ -373,11 +386,11 @@ class TestTheStatusIsDerivedFromTheVerdict:
     """Not chosen while writing the reply: the document is the answer on every
     surface, and a status is a projection two of them additionally act on."""
 
-    def test_an_allow_exits_zero(self) -> None:
+    def test_an_allow_exits_zero(self, _run) -> None:
         assert _run(Recorder()) == 0
 
     def test_a_refusal_a_hook_uttered_exits_zero_on_a_surface_that_reads_none(
-        self, tmp_path: Path
+        self, _run, tmp_path: Path
     ) -> None:
         doc = json.dumps(
             {
@@ -391,12 +404,12 @@ class TestTheStatusIsDerivedFromTheVerdict:
         row = _hook(tmp_path, "deny", f"cat >/dev/null; printf '%s' {json.dumps(doc)}")
         assert _run(Recorder(rows=[row])) == 0
 
-    def test_a_refusal_ai_hats_imposed_carries_the_surfaces_own_status(self) -> None:
+    def test_a_refusal_ai_hats_imposed_carries_the_surfaces_own_status(self, _run) -> None:
         channel = Recorder(raises="manifest gone")
         channel.profile = replace(profiles.CLAUDE, imposed_status=2)
         assert _run(channel) == 2
 
-    def test_a_hooks_own_refusal_never_borrows_that_status(self, tmp_path: Path) -> None:
+    def test_a_hooks_own_refusal_never_borrows_that_status(self, _run, tmp_path: Path) -> None:
         """Arguing with a gate that RAN is between its author and whoever it
         stopped; inventing a status for it would overrule them."""
         doc = json.dumps(
@@ -414,7 +427,7 @@ class TestTheStatusIsDerivedFromTheVerdict:
         assert _run(channel) == 0
 
     def test_a_surface_whose_protocol_is_the_status_forwards_the_childs(
-        self, tmp_path: Path
+        self, _run, tmp_path: Path
     ) -> None:
         """agy's BROKE contract (HATS-1598): exit 2 from a gate travels out."""
         row = _hook(tmp_path, "hard", "cat >/dev/null; echo 'BLOCKED' >&2; exit 2")
@@ -429,7 +442,7 @@ def test_the_arrival_helper_maps_only_what_binds() -> None:
     assert Arrival.of("Notification").native == "Notification"
 
 
-def test_a_nudge_keeps_its_author_through_the_flow(tmp_path: Path) -> None:
+def test_a_nudge_keeps_its_author_through_the_flow(_run, tmp_path: Path) -> None:
     doc = json.dumps(
         {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "prefer Grep"}}
     )

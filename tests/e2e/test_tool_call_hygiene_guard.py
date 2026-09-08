@@ -27,31 +27,36 @@ GUARD = (
 )
 
 
-def _run(command: str | None, *, env: dict | None = None, raw: str | None = None):
-    if raw is not None:
-        stdin = raw
-    elif command is None:
-        stdin = ""
-    else:
-        stdin = json.dumps(
-            {
-                "hook_event_name": HOOK_PRE_TOOL_USE,
-                "tool_name": "Bash",
-                "tool_input": {"command": command},
-            }
+@pytest.fixture
+def _run(hook_repo):
+    def run(command: str | None, *, env: dict | None = None, raw: str | None = None):
+        if raw is not None:
+            stdin = raw
+        elif command is None:
+            stdin = ""
+        else:
+            stdin = json.dumps(
+                {
+                    "hook_event_name": HOOK_PRE_TOOL_USE,
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command},
+                }
+            )
+        base_env = os.environ.copy()
+        base_env.pop("AI_HATS_TOOL_HYGIENE_OFF", None)
+        if env:
+            base_env.update(env)
+        return subprocess.run(
+            ["bash", str(GUARD)],
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            env=base_env,
+            cwd=hook_repo,
         )
-    base_env = os.environ.copy()
-    base_env.pop("AI_HATS_TOOL_HYGIENE_OFF", None)
-    if env:
-        base_env.update(env)
-    return subprocess.run(
-        ["bash", str(GUARD)],
-        input=stdin,
-        capture_output=True,
-        text=True,
-        timeout=5,
-        env=base_env,
-    )
+
+    return run
 
 
 def _nudge(res) -> str | None:
@@ -64,7 +69,7 @@ def _nudge(res) -> str | None:
 
 
 @pytest.mark.integration
-def test_pure_grep_nudges_to_grep_tool():
+def test_pure_grep_nudges_to_grep_tool(_run):
     res = _run("grep foo .")
     assert res.returncode == 0, res.stderr
     ctx = _nudge(res)
@@ -88,7 +93,7 @@ def test_pure_grep_nudges_to_grep_tool():
         "make build",  # build command, not covered
     ],
 )
-def test_compound_or_noncovered_gets_no_nudge(command):
+def test_compound_or_noncovered_gets_no_nudge(_run, command):
     """Bias-to-allow: anything compound/redirected is legitimately Bash."""
     res = _run(command)
     assert res.returncode == 0, res.stderr
@@ -106,7 +111,7 @@ def test_compound_or_noncovered_gets_no_nudge(command):
         ("awk -i inplace '{print}' f.txt", "Edit"),
     ],
 )
-def test_conditional_covered_forms_nudge(command, tool):
+def test_conditional_covered_forms_nudge(_run, command, tool):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     ctx = _nudge(res)
@@ -124,7 +129,7 @@ def test_conditional_covered_forms_nudge(command, tool):
         "awk '{print $1}' f.txt",  # stream awk is fine
     ],
 )
-def test_noncovered_command_forms_get_no_nudge(command):
+def test_noncovered_command_forms_get_no_nudge(_run, command):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None, f"unexpected nudge: {res.stdout!r}"
@@ -155,7 +160,7 @@ def test_noncovered_command_forms_get_no_nudge(command):
         "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
     ],
 )
-def test_exit_code_masking_nudges(command):
+def test_exit_code_masking_nudges(_run, command):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     ctx = _nudge(res)
@@ -192,7 +197,7 @@ def test_exit_code_masking_nudges(command):
         "ruff check src/ > /tmp/lint.log 2>&1; echo $?>/tmp/lint.rc",
     ],
 )
-def test_exit_code_preservation_gets_no_nudge(command):
+def test_exit_code_preservation_gets_no_nudge(_run, command):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None, f"unexpected nudge for {command!r}: {res.stdout!r}"
@@ -202,21 +207,21 @@ def test_exit_code_preservation_gets_no_nudge(command):
 
 
 @pytest.mark.integration
-def test_empty_payload_no_crash_no_nudge():
+def test_empty_payload_no_crash_no_nudge(_run):
     res = _run(None)  # empty stdin (harness no-op / manual test)
     assert res.returncode == 0
     assert _nudge(res) is None
 
 
 @pytest.mark.integration
-def test_garbage_payload_fails_safe():
+def test_garbage_payload_fails_safe(_run):
     res = _run(None, raw="this is not json {{{")
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None
 
 
 @pytest.mark.integration
-def test_non_bash_payload_gets_no_nudge():
+def test_non_bash_payload_gets_no_nudge(_run):
     raw = json.dumps({"tool_input": {"file_path": "/tmp/x"}})
     res = _run(None, raw=raw)
     assert res.returncode == 0, res.stderr
@@ -224,7 +229,7 @@ def test_non_bash_payload_gets_no_nudge():
 
 
 @pytest.mark.integration
-def test_kill_switch_disables_hook():
+def test_kill_switch_disables_hook(_run):
     res = _run("grep foo .", env={"AI_HATS_TOOL_HYGIENE_OFF": "1"})
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None
@@ -246,7 +251,7 @@ def test_kill_switch_disables_hook():
         'git commit -m "make the gate green" | tail -1',
     ],
 )
-def test_runner_name_inside_an_argument_is_not_a_call(command):
+def test_runner_name_inside_an_argument_is_not_a_call(_run, command):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None, f"spurious nudge for {command!r}: {res.stdout!r}"
@@ -267,7 +272,7 @@ def test_runner_name_inside_an_argument_is_not_a_call(command):
         "set -o pipefail; pytest tests/ ; git commit -m wip",
     ],
 )
-def test_mutation_sequenced_after_a_runner_nudges(command):
+def test_mutation_sequenced_after_a_runner_nudges(_run, command):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     ctx = _nudge(res)
@@ -286,14 +291,14 @@ def test_mutation_sequenced_after_a_runner_nudges(command):
         "ls -la ; git commit -m wip",
     ],
 )
-def test_gated_or_unjudged_mutation_gets_no_nudge(command):
+def test_gated_or_unjudged_mutation_gets_no_nudge(_run, command):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None, f"unexpected nudge for {command!r}: {res.stdout!r}"
 
 
 @pytest.mark.integration
-def test_a_c_body_is_still_read_as_commands():
+def test_a_c_body_is_still_read_as_commands(_run):
     """A ``-c`` body is commands, so the guard must read it.
 
     Measured, not assumed: the guard was silent here BEFORE this card too — the
