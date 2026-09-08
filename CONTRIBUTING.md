@@ -4,10 +4,12 @@ Thanks for taking the time to look at ai-hats. This guide covers the
 practical bits — dev setup, branch and commit conventions, what to test,
 and what **not** to commit.
 
-> **For agents working in this repo:** the policies below are mirrored
-> into the `maintainer` role via the `ai-hats-maintainer` trait. Load it
-> with `ai-hats config set -r maintainer` (the project's `ai-hats.yaml`
-> ships this default). This `CONTRIBUTING.md` is the human-readable
+> **For agents working in this repo:** the policies below are mirrored into
+> the `ai-hats-dev` trait, which both `maintainer` and `role-curator` compose.
+> Diagrams and the release flow stay in the `maintainer` role's own injection.
+> Load a role with
+> `ai-hats config set -r maintainer` (the project's `ai-hats.yaml` ships this
+> default). This `CONTRIBUTING.md` is the human-readable
 > reference — agents pick up the same content through `ai-hats self init`.
 
 For the architectural overview see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -344,6 +346,7 @@ fallback, so it works in any project.
 | `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs          |
 | `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`     |
 | `skill-engineer` trait, `behaviorist` role                   | `usage`       | component-authoring craft, no repo path      |
+| `ai-hats-dev` trait                                          | `ai-hats-dev` | repo discipline shared by both roles here    |
 
 The failure to avoid: a component in `core` whose body names `src/ai_hats/`.
 Every consumer then pays always-on tokens for ai-hats internals — which is how
@@ -362,7 +365,7 @@ it lives in `core/skills/` and declares `requires.cli: ai-hats-rack`; the
 (ADR-0016). The dependency arrow is skill → tool, so the skill iterates without
 forcing an engine release.
 
-**Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (injected via the `ai-hats-maintainer` trait since HATS-1834; it rode `trait-agent` until then) is the agent-facing short form.
+**Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (injected via the `ai-hats-dev` trait, so both roles that edit this repo carry it; it rode `trait-agent` until HATS-1834) is the agent-facing short form.
 
 For end-user docs on extending the library (worked examples for roles /
 traits / rules / skills, override precedence, replacing a system role) see

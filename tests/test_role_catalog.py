@@ -140,7 +140,7 @@ def test_expand_noop_without_placeholder(tmp_path):
 # Editable installs map `ai_hats.library` to the INSTALL location, not this
 # worktree. Point the project's library_paths at the worktree's library so
 # composition AND expand_role_catalog see the in-progress wizard + roles
-# (library-curator recipe). builtin layers stay underneath; worktree wins
+# (the role-curator recipe). builtin layers stay underneath; worktree wins
 # last (override).
 _WT_LIBRARY = (
     Path(__file__).resolve().parents[1] / "packages" / "ai-hats-library" / "src" / "ai_hats_library"

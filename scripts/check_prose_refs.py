@@ -35,7 +35,7 @@ OPT_OUT_RE = re.compile(rf"^[ \t]*(?:#|//|<!--)?[ \t]*{re.escape(OPT_OUT)}", re.
 STALE_LIBRARY_PREFIXES = ("library", "libraries")
 
 #: Spellings that correctly denote the library root today, defined by the prose
-#: itself (`library-curator` defines `$LIB`, `rule_core_vs_usage_split` `<LIB>`).
+#: itself (the `role-curator` injection defines `$LIB`, `rule_core_vs_usage_split` `<LIB>`).
 LIVE_LIBRARY_PREFIXES = ("$LIB", "<LIB>")
 
 PATH_SUFFIXES = frozenset(

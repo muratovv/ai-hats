@@ -34,7 +34,7 @@ from _helpers.env import checkout_pythonpath
 from _helpers.git import git
 
 TRAIT = Path(
-    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/library-curator/config.yaml"
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-dev/config.yaml"
 )
 SENTINEL = "SENTINEL_HATS_1501_WORKTREE_EDIT"
 PROJECT_SENTINEL = "SENTINEL_HATS_1699_PROJECT_CONFIG"
