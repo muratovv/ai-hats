@@ -41,10 +41,9 @@ retro-blocks the pre-existing backlog), the hook runs, in order:
 
 ## Who gets it
 
-Installed via the `skill-engineer` trait — carried by the `behaviorist` role,
-by this repo's `maintainer` and `role-curator`, and by any role a project
-composes it into. Roles without that trait do not receive the hook. The server-side
-counterpart is the CI `lint-skills` job.
+Whatever composes this skill, and nothing else: the hook is written into
+`.githooks/pre-commit.d/` at composition time, so a role that does not carry
+it never sees the gate. The server-side counterpart is the CI `lint-skills` job.
 
 ## How to bypass
 

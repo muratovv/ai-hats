@@ -4,11 +4,8 @@ composition:
   rules:
     - rule_backlog_discipline
     - dev_rule_tool_call_hygiene
-  # Global hygiene/destructive rules are bundled by `trait-analyst-base`
-  # (composed by every judge variant — see HYP-014). No need
-  # to duplicate here; the symmetric attachment lives in the analyst base
-  # so both L0 (`base-auditor`) and L1 (`base-judge`) inherit it
-  # consistently.
+  # Global hygiene and destructive-action rules arrive from
+  # `trait-analyst-base`, so they are deliberately absent here.
   skills:
     - tool-call-hygiene
     - request-supervisor
