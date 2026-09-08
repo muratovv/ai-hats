@@ -88,6 +88,7 @@ capture = {
     "codex_home": str(codex_home),
     "sqlite_home": os.environ["CODEX_SQLITE_HOME"],
     "auth_is_symlink": (codex_home / "auth.json").is_symlink(),
+    "auth_matches_base": (codex_home / "auth.json").read_bytes() == (base_codex_home / "auth.json").read_bytes(),
     "sqlite_entry_exists": (codex_home / "state_5.sqlite").exists(),
     "role_skill_exists": (codex_home / "skills" / "hatrack" / "SKILL.md").is_file(),
     "role_skill_is_symlink": (codex_home / "skills" / "hatrack").is_symlink(),
@@ -193,14 +194,14 @@ def test_codex_exit_cleans_session_home_and_preserves_shared_state(
     assert not Path(capture["cache_dir"]).exists(), "session cache must be cleaned at exit"
     assert not Path(capture["codex_home"]).exists()
     assert capture["base_codex_home"] == str(base_home)
-    assert capture["auth_is_symlink"] is True
+    assert capture["auth_is_symlink"] is False
+    assert capture["auth_matches_base"]
     assert capture["config_is_symlink"] is True
     assert capture["personal_skill_is_symlink"] is True
     assert capture["codex_home"] == str(
         base_home / ".ai-hats" / "session-homes" / project_key(project) / capture["session_id"]
     )
     assert capture["sqlite_home"] == str(base_home)
-    assert capture["auth_is_symlink"]
     assert not capture["sqlite_entry_exists"]
     assert capture["role_skill_exists"]
     assert not capture["role_skill_is_symlink"]
@@ -219,7 +220,9 @@ def test_codex_exit_cleans_session_home_and_preserves_shared_state(
     assert not (project / "AGENTS.md").exists()
     assert not (project / ".agents").exists()
     assert not (project / ".codex").exists()
-    assert _snapshot_non_agent_files(base_home) == base_before
+    assert _snapshot_non_agent_files(base_home) == base_before | {
+        ".ai-hats/auth.lock": hashlib.sha256(b"").hexdigest()
+    }
 
 
 def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
@@ -291,7 +294,8 @@ def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
         assert not Path(payload["cache_dir"]).exists()
         assert not Path(payload["codex_home"]).exists()
         assert payload["base_codex_home"] == str(base_home)
-        assert payload["auth_is_symlink"] is True
+        assert payload["auth_is_symlink"] is False
+        assert payload["auth_matches_base"]
         assert payload["codex_home"] == str(
             base_home / ".ai-hats" / "session-homes" / project_key(project) / payload["session_id"]
         )
@@ -302,5 +306,7 @@ def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
         )
     assert len(list(barrier.glob("*.ready"))) == 2
     assert _snapshot_non_agent_files(project) == before
-    assert _snapshot_non_agent_files(base_home) == base_before
+    assert _snapshot_non_agent_files(base_home) == base_before | {
+        ".ai-hats/auth.lock": hashlib.sha256(b"").hexdigest()
+    }
     assert not (project / ".codex").exists()
