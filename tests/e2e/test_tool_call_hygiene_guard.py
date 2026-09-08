@@ -385,7 +385,7 @@ def test_the_nudge_survives_the_whole_bash_chain(shared_launcher, tmp_path_facto
         # correctly AND were announced as "exit code 0", because the trailing
         # echo is what the completion notice reports.
         "bash scripts/ci-local.sh e2e > /tmp/e2e.log 2>&1; echo $? > /tmp/e2e.rc",
-        'timeout 1800 bash -c \'bash scripts/gates.sh run unit\' > /tmp/g.log 2>&1; echo "GATES_EXIT=$?" >> /tmp/g.log',
+        "timeout 1800 bash -c 'bash scripts/gates.sh run unit' > /tmp/g.log 2>&1; echo \"GATES_EXIT=$?\" >> /tmp/g.log",
     ],
 )
 def test_a_backgrounded_capture_is_masking_not_preservation(_run, command):
