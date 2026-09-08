@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**307 of 307 files catalogued — 315 flows.**
+**308 of 308 files catalogued — 316 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3678,6 +3678,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the existing worktree is adopted instead of provisioning a second worktree off main
 - **why** — transitioning to execute from inside a worktree must adopt the caller worktree to prevent duplicate worktree creation
+
+## `test_two_bash_hooks_one_skill.py`
+
+*pins HATS-1917*
+
+- **flow** — a skill declares TWO PreToolUse/Bash scripts and a session composes it
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r maintainer --no-wizard
+  ```
+
+- **expect** — both scripts reach the composed Bash chain, and both act — one nudges on its own marker, the other denies on its own
+- **why** — the loader used to refuse the second row outright, and the refusal took the whole CLI down with it; the wiring that made that refusal necessary (one managed settings entry per (event, skill, matcher)) has since been replaced by a manifest list behind a dispatcher, so nothing was left to collapse onto — but nothing proved the second row survives end to end
 
 ## `test_unknown_provider_friendly_error.py`
 

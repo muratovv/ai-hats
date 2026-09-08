@@ -1007,12 +1007,17 @@ def test_runtime_hooks_missing_field_fails_loud(tmp_path):
         SkillMetadata.from_yaml(path)
 
 
-def test_runtime_hooks_duplicate_matcher_in_event_rejected(tmp_path):
-    """HATS-607: two rows with the same (event, matcher) would collapse onto one
-    managed settings.json entry and silently drop a hook → fail loud."""
+def test_runtime_hooks_two_scripts_on_one_matcher_ok(tmp_path):
+    """A skill may guard one tool surface twice.
+
+    The refusal this replaces was written when the provider keyed a managed
+    settings.json entry by (event, skill, matcher), where a second row would
+    have collapsed onto the first and silently dropped a guard. Every surface
+    now carries its rows in a manifest LIST behind a dispatcher, so there is
+    nothing left to collapse onto."""
     path = tmp_path / "metadata.yaml"
     path.write_text(
-        "name: dup-matcher\n"
+        "name: two-guards\n"
         "runtime_hooks:\n"
         "  PreToolUse:\n"
         "    - matcher: Bash\n"
@@ -1020,7 +1025,26 @@ def test_runtime_hooks_duplicate_matcher_in_event_rejected(tmp_path):
         "    - matcher: Bash\n"
         "      script: hooks/b.sh\n"
     )
-    with pytest.raises(Exception, match="more than once"):
+    meta = SkillMetadata.from_yaml(path)
+    assert [h.script for h in meta.runtime_hooks[HOOK_PRE_TOOL_USE]] == [
+        "hooks/a.sh",
+        "hooks/b.sh",
+    ]
+
+
+def test_runtime_hooks_same_script_twice_on_one_matcher_rejected(tmp_path):
+    """The half that stays a mistake: one script wired twice fires twice."""
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: dup-script\n"
+        "runtime_hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/a.sh\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/a.sh\n"
+    )
+    with pytest.raises(Exception, match="twice"):
         SkillMetadata.from_yaml(path)
 
 
