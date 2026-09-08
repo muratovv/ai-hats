@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.metadata
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -44,6 +45,14 @@ for _pinned in (
 
 
 _EntryPointFingerprint = tuple[tuple[str, int, int], ...]
+
+
+@pytest.fixture
+def hook_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "hook-cwd"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, timeout=10)
+    return repo
 
 
 @dataclass

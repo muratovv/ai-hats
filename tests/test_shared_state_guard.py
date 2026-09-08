@@ -36,28 +36,34 @@ def _classify(command: str) -> str:
     ).stdout.strip()
 
 
-def _run_guard(
-    command: str, *, ack: bool = False, claude: bool = True
-) -> subprocess.CompletedProcess[str]:
-    """Drive the guard.
+@pytest.fixture
+def _run_guard(hook_repo):
+    def run(
+        command: str, *, ack: bool = False, claude: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        """Drive the guard.
 
-    ``claude`` selects the caller's dialect: Claude Code's PreToolUse payload
-    carries ``hook_event_name``, a plain invocation (cline's surface, a CLI
-    probe) does not.
-    """
-    env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"}
-    if ack:
-        env["AI_HATS_SHARED_STATE_ACK"] = "1"
-    payload: dict[str, object] = {"tool_input": {"command": command}}
-    if claude:
-        payload["hook_event_name"] = "PreToolUse"
-    return subprocess.run(
-        [str(GUARD)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+        ``claude`` selects the caller's dialect: Claude Code's PreToolUse payload
+        carries ``hook_event_name``, a plain invocation (cline's surface, a CLI
+        probe) does not.
+        """
+        env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"}
+        if ack:
+            env["AI_HATS_SHARED_STATE_ACK"] = "1"
+        payload: dict[str, object] = {"tool_input": {"command": command}}
+        if claude:
+            payload["hook_event_name"] = "PreToolUse"
+        return subprocess.run(
+            [str(GUARD)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=hook_repo,
+            timeout=20,
+        )
+
+    return run
 
 
 @pytest.mark.parametrize(
@@ -90,7 +96,7 @@ def test_classifier_verdicts(command: str, verdict: str) -> None:
     assert _classify(command) == verdict
 
 
-def test_irreversible_command_asks_rather_than_denying() -> None:
+def test_irreversible_command_asks_rather_than_denying(_run_guard) -> None:
     """The guard must escalate to the user, not hard-deny.
 
     Exit 0 matters: Claude Code discards a hook's stdout when it exits 2, so a
@@ -104,27 +110,31 @@ def test_irreversible_command_asks_rather_than_denying() -> None:
     assert payload["permissionDecisionReason"].strip()
 
 
-def test_gated_command_also_asks() -> None:
+def test_gated_command_also_asks(_run_guard) -> None:
     result = _run_guard("git push origin master")
     assert result.returncode == 0, result.stderr
     decision = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
     assert decision == "ask"
 
 
-def test_safe_command_passes_silently() -> None:
+def test_safe_command_passes_silently(_run_guard) -> None:
     result = _run_guard("ls -la")
     assert result.returncode == 0
     assert result.stdout.strip() == ""
 
 
-def test_environment_ack_allows_without_prompting() -> None:
+def test_environment_ack_allows_without_prompting(_run_guard, hook_repo: Path) -> None:
     """The one channel the agent cannot reach: the launching environment."""
     result = _run_guard("git push --force origin master", ack=True)
     assert result.returncode == 0
     assert result.stdout.strip() == ""
+    journal = hook_repo / ".git/ai-hats/bypasses.jsonl"
+    assert journal.is_file(), "the hook wrote outside its fixture repository"
+    entry = json.loads(journal.read_text().splitlines()[-1])
+    assert entry["reason"] == "AI_HATS_SHARED_STATE_ACK"
 
 
-def test_non_claude_caller_gets_the_universal_deny() -> None:
+def test_non_claude_caller_gets_the_universal_deny(_run_guard) -> None:
     """The guard is not Claude-only.
 
     The cline surface and direct CLI probes invoke it as a plain script and
@@ -138,12 +148,12 @@ def test_non_claude_caller_gets_the_universal_deny() -> None:
     assert result.stdout.strip() == "", "no JSON at a caller that cannot parse it"
 
 
-def test_non_claude_caller_still_passes_safe_commands() -> None:
+def test_non_claude_caller_still_passes_safe_commands(_run_guard) -> None:
     result = _run_guard("echo hello", claude=False)
     assert result.returncode == 0
 
 
-def test_reason_does_not_advertise_the_unreachable_prefix() -> None:
+def test_reason_does_not_advertise_the_unreachable_prefix(_run_guard) -> None:
     """Anti-regression on the defect itself.
 
     The old message told the agent to retry as ``AI_HATS_SHARED_STATE_ACK=1
@@ -158,7 +168,7 @@ def test_reason_does_not_advertise_the_unreachable_prefix() -> None:
 
 
 @pytest.mark.parametrize("claude", [True, False])
-def test_refusal_text_names_no_specific_provider(claude: bool) -> None:
+def test_refusal_text_names_no_specific_provider(_run_guard, claude: bool) -> None:
     """This guard serves every surface, so its text must not assume one.
 
     Naming a provider's settings file here would be wrong under the harnesses

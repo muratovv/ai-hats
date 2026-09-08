@@ -112,35 +112,40 @@ SUPPRESSED_MODULE_DOC = (
 )
 
 
-def _run(file_path, *, env_extra=None, raw=None):
-    if raw is not None:
-        payload = raw
-    else:
-        payload = json.dumps(
-            {
-                "hook_event_name": HOOK_POST_TOOL_USE,
-                "tool_name": "Edit",
-                "tool_input": {"file_path": str(file_path)},
-            }
+@pytest.fixture
+def _run(hook_repo):
+    def run(file_path, *, env_extra=None, raw=None):
+        if raw is not None:
+            payload = raw
+        else:
+            payload = json.dumps(
+                {
+                    "hook_event_name": HOOK_POST_TOOL_USE,
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(file_path)},
+                }
+            )
+        env = os.environ.copy()
+        for k in (
+            "AI_HATS_COMMENT_LINT_OFF",
+            "AI_HATS_COMMENT_MAX_LINES",
+            "AI_HATS_DOCSTRING_MAX_LINES",
+            "AI_HATS_DOCSTRING_MAX_CHARS",
+        ):
+            env.pop(k, None)
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=env,
+            cwd=hook_repo,
         )
-    env = os.environ.copy()
-    for k in (
-        "AI_HATS_COMMENT_LINT_OFF",
-        "AI_HATS_COMMENT_MAX_LINES",
-        "AI_HATS_DOCSTRING_MAX_LINES",
-        "AI_HATS_DOCSTRING_MAX_CHARS",
-    ):
-        env.pop(k, None)
-    if env_extra:
-        env.update(env_extra)
-    return subprocess.run(
-        [sys.executable, str(HOOK)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        env=env,
-    )
+
+    return run
 
 
 def _ctx(res):
@@ -157,7 +162,7 @@ def _write(tmp_path, src, name="m.py"):
 
 
 @pytest.mark.integration
-def test_di_comment_block_flagged(tmp_path):
+def test_di_comment_block_flagged(_run, tmp_path):
     res = _run(_write(tmp_path, DI_COMMENT))
     assert res.returncode == 0, res.stderr
     ctx = _ctx(res)
@@ -166,7 +171,7 @@ def test_di_comment_block_flagged(tmp_path):
 
 
 @pytest.mark.integration
-def test_bloated_docstring_flagged(tmp_path):
+def test_bloated_docstring_flagged(_run, tmp_path):
     res = _run(_write(tmp_path, BLOATED_DOCSTRING))
     assert res.returncode == 0, res.stderr
     ctx = _ctx(res)
@@ -174,35 +179,35 @@ def test_bloated_docstring_flagged(tmp_path):
 
 
 @pytest.mark.integration
-def test_healthy_contract_docstring_silent(tmp_path):
+def test_healthy_contract_docstring_silent(_run, tmp_path):
     res = _run(_write(tmp_path, HEALTHY_DOCSTRING))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None, f"healthy docstring should not flag: {res.stdout!r}"
 
 
 @pytest.mark.integration
-def test_terse_comment_and_docstring_silent(tmp_path):
+def test_terse_comment_and_docstring_silent(_run, tmp_path):
     res = _run(_write(tmp_path, TERSE_OK))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None
 
 
 @pytest.mark.integration
-def test_inline_trailing_comments_not_a_block(tmp_path):
+def test_inline_trailing_comments_not_a_block(_run, tmp_path):
     res = _run(_write(tmp_path, INLINE_TRAILERS))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None
 
 
 @pytest.mark.integration
-def test_marker_suppresses_comment_block(tmp_path):
+def test_marker_suppresses_comment_block(_run, tmp_path):
     res = _run(_write(tmp_path, SUPPRESSED_COMMENT))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None, f"marker should suppress: {res.stdout!r}"
 
 
 @pytest.mark.integration
-def test_ruff_safe_marker_suppresses_comment_block(tmp_path):
+def test_ruff_safe_marker_suppresses_comment_block(_run, tmp_path):
     # HATS-888: the ruff-safe marker suppresses the same as the legacy one,
     # but without tripping ruff's noqa directive parser.
     res = _run(_write(tmp_path, SUPPRESSED_COMMENT_NEW))
@@ -211,21 +216,21 @@ def test_ruff_safe_marker_suppresses_comment_block(tmp_path):
 
 
 @pytest.mark.integration
-def test_marker_on_def_line_suppresses_docstring(tmp_path):
+def test_marker_on_def_line_suppresses_docstring(_run, tmp_path):
     res = _run(_write(tmp_path, SUPPRESSED_DOCSTRING_DEF))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None, f"def-line marker should suppress: {res.stdout!r}"
 
 
 @pytest.mark.integration
-def test_marker_inside_module_docstring_suppresses(tmp_path):
+def test_marker_inside_module_docstring_suppresses(_run, tmp_path):
     res = _run(_write(tmp_path, SUPPRESSED_MODULE_DOC))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None, f"in-docstring marker should suppress: {res.stdout!r}"
 
 
 @pytest.mark.integration
-def test_threshold_env_override_silences_comment(tmp_path):
+def test_threshold_env_override_silences_comment(_run, tmp_path):
     res = _run(
         _write(tmp_path, DI_COMMENT),
         env_extra={"AI_HATS_COMMENT_MAX_LINES": "10"},
@@ -235,21 +240,21 @@ def test_threshold_env_override_silences_comment(tmp_path):
 
 
 @pytest.mark.integration
-def test_kill_switch_disables_hook(tmp_path):
+def test_kill_switch_disables_hook(_run, tmp_path):
     res = _run(_write(tmp_path, DI_COMMENT), env_extra={"AI_HATS_COMMENT_LINT_OFF": "1"})
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None
 
 
 @pytest.mark.integration
-def test_non_py_file_is_silent(tmp_path):
+def test_non_py_file_is_silent(_run, tmp_path):
     res = _run(_write(tmp_path, DI_COMMENT, name="notes.txt"))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None
 
 
 @pytest.mark.integration
-def test_syntax_error_fails_open(tmp_path):
+def test_syntax_error_fails_open(_run, tmp_path):
     res = _run(_write(tmp_path, "def (:\n  # a\n  # b\n  # c\n  # d\n"))
     assert res.returncode == 0, res.stderr
     # comment-run detection still works on a tokenizable prefix; the contract is
@@ -258,14 +263,14 @@ def test_syntax_error_fails_open(tmp_path):
 
 
 @pytest.mark.integration
-def test_garbage_payload_fails_open():
+def test_garbage_payload_fails_open(_run):
     res = _run(None, raw="not json {{{")
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None
 
 
 @pytest.mark.integration
-def test_missing_file_is_silent(tmp_path):
+def test_missing_file_is_silent(_run, tmp_path):
     res = _run(tmp_path / "does_not_exist.py")
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None

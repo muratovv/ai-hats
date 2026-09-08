@@ -27,36 +27,41 @@ HOOK = (
 )
 
 
-def _decide(payload: dict, *, env_extra: dict[str, str] | None = None) -> dict:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
-    env.update(env_extra or {})
-    res = subprocess.run(
-        [sys.executable, str(HOOK)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        env=env,
-    )
-    assert res.returncode == 0, res.stderr
-    return json.loads(res.stdout)["hookSpecificOutput"] if res.stdout.strip() else {}
+@pytest.fixture
+def _decide(hook_repo):
+    def run(payload: dict, *, env_extra: dict[str, str] | None = None) -> dict:
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+        env.update(env_extra or {})
+        res = subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=env,
+            cwd=hook_repo,
+        )
+        assert res.returncode == 0, res.stderr
+        return json.loads(res.stdout)["hookSpecificOutput"] if res.stdout.strip() else {}
+
+    return run
 
 
-def test_creating_a_worktree_is_denied_with_the_ai_hats_recipe():
+def test_creating_a_worktree_is_denied_with_the_ai_hats_recipe(_decide):
     out = _decide({"tool_name": "EnterWorktree", "tool_input": {}})
 
     assert out["permissionDecision"] == "deny"
     assert "ai-hats wt create" in out["permissionDecisionReason"]
 
 
-def test_entering_an_existing_worktree_is_denied_naming_the_path():
+def test_entering_an_existing_worktree_is_denied_naming_the_path(_decide):
     out = _decide({"tool_name": "EnterWorktree", "tool_input": {"path": "/tmp/wt-42"}})
 
     assert out["permissionDecision"] == "deny"
     assert "cd /tmp/wt-42" in out["permissionDecisionReason"]
 
 
-def test_the_agy_payload_shape_is_denied_too():
+def test_the_agy_payload_shape_is_denied_too(_decide):
     """Non-Claude surfaces deliver the arguments under toolCall.args — and the
     SURFACE translates before the script is spawned (HATS-1776).
 
@@ -73,11 +78,11 @@ def test_the_agy_payload_shape_is_denied_too():
     assert "cd /tmp/wt-7" in out["permissionDecisionReason"]
 
 
-def test_the_kill_switch_disables_the_gate():
+def test_the_kill_switch_disables_the_gate(_decide):
     assert _decide({"tool_input": {}}, env_extra={"AI_HATS_WT_ENTRY_OFF": "1"}) == {}
 
 
-def test_an_unparsable_payload_fails_open():
+def test_an_unparsable_payload_fails_open(hook_repo):
     """Documented fail-open — pinned so it cannot flip to a blanket deny unnoticed."""
     res = subprocess.run(
         [sys.executable, str(HOOK)],
@@ -85,6 +90,7 @@ def test_an_unparsable_payload_fails_open():
         capture_output=True,
         text=True,
         timeout=20,
+        cwd=hook_repo,
     )
 
     assert res.returncode == 0

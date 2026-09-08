@@ -50,27 +50,32 @@ def repos(tmp_path):
     return main, linked
 
 
-def _run(file_path, *, env_extra=None, raw=None, cwd=None):
-    body = {
-        "hook_event_name": HOOK_PRE_TOOL_USE,
-        "tool_name": "Edit",
-        "tool_input": {"file_path": str(file_path)},
-    }
-    if cwd is not None:
-        body["cwd"] = str(cwd)  # HATS-959: session repo the gate scopes to
-    payload = raw if raw is not None else json.dumps(body)
-    env = os.environ.copy()
-    env.pop("AI_HATS_WT_GATE_OFF", None)
-    if env_extra:
-        env.update(env_extra)
-    return subprocess.run(
-        [sys.executable, str(HOOK)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        env=env,
-    )
+@pytest.fixture
+def _run(hook_repo):
+    def run(file_path, *, env_extra=None, raw=None, cwd=None):
+        body = {
+            "hook_event_name": HOOK_PRE_TOOL_USE,
+            "tool_name": "Edit",
+            "tool_input": {"file_path": str(file_path)},
+        }
+        if cwd is not None:
+            body["cwd"] = str(cwd)  # HATS-959: session repo the gate scopes to
+        payload = raw if raw is not None else json.dumps(body)
+        env = os.environ.copy()
+        env.pop("AI_HATS_WT_GATE_OFF", None)
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=env,
+            cwd=hook_repo,
+        )
+
+    return run
 
 
 def _decision(res):
@@ -84,7 +89,7 @@ def _decision(res):
 
 
 @pytest.mark.integration
-def test_code_file_in_main_checkout_is_denied(repos):
+def test_code_file_in_main_checkout_is_denied(_run, repos):
     main, _ = repos
     res = _run(main / "service.py")  # new file; parent (main) exists
     assert res.returncode == 0, res.stderr  # deny is carried in JSON, not a non-zero exit
@@ -95,7 +100,7 @@ def test_code_file_in_main_checkout_is_denied(repos):
 
 
 @pytest.mark.integration
-def test_code_file_in_linked_worktree_is_silent(repos):
+def test_code_file_in_linked_worktree_is_silent(_run, repos):
     _, linked = repos
     res = _run(linked / "service.py")
     assert res.returncode == 0, res.stderr
@@ -103,7 +108,7 @@ def test_code_file_in_linked_worktree_is_silent(repos):
 
 
 @pytest.mark.integration
-def test_docs_file_in_main_is_silent(repos):
+def test_docs_file_in_main_is_silent(_run, repos):
     main, _ = repos
     for name in ("README.md", "CHANGELOG.md", "notes.txt"):
         res = _run(main / name)
@@ -112,7 +117,7 @@ def test_docs_file_in_main_is_silent(repos):
 
 
 @pytest.mark.integration
-def test_config_file_in_main_is_denied(repos):
+def test_config_file_in_main_is_denied(_run, repos):
     # HATS-857 review: config edits in the main checkout also collide between
     # concurrent agents, so they are denied too.
     main, _ = repos
@@ -123,7 +128,7 @@ def test_config_file_in_main_is_denied(repos):
 
 
 @pytest.mark.integration
-def test_env_override_extensions(repos, tmp_path):
+def test_env_override_extensions(_run, repos, tmp_path):
     main, _ = repos
     override = tmp_path / "exts.json"
     override.write_text(json.dumps({"custom": [".xyz"]}))
@@ -137,7 +142,7 @@ def test_env_override_extensions(repos, tmp_path):
 
 
 @pytest.mark.integration
-def test_gitignored_file_in_main_is_silent(repos):
+def test_gitignored_file_in_main_is_silent(_run, repos):
     # Tracker/runtime/config (.agent/, ai-hats.yaml, .claude/) lives in gitignored
     # paths and is edited from the MAIN repo by design — gitignored files are not
     # version-controlled source and must NOT be denied (HATS-889 false-positive).
@@ -150,14 +155,14 @@ def test_gitignored_file_in_main_is_silent(repos):
 
 
 @pytest.mark.integration
-def test_non_git_path_is_silent(tmp_path):
+def test_non_git_path_is_silent(_run, tmp_path):
     res = _run(tmp_path / "loose.py")  # tmp_path is not a git repo
     assert res.returncode == 0, res.stderr
     assert _decision(res) == (None, None), f"non-git path must be silent, {res.stdout!r}"
 
 
 @pytest.mark.integration
-def test_kill_switch_is_silent(repos):
+def test_kill_switch_is_silent(_run, repos):
     main, _ = repos
     res = _run(main / "service.py", env_extra={"AI_HATS_WT_GATE_OFF": "1"})
     assert res.returncode == 0, res.stderr
@@ -166,7 +171,7 @@ def test_kill_switch_is_silent(repos):
 
 @pytest.mark.integration
 @pytest.mark.parametrize("raw", ["", "not json", "{}", '{"tool_input": {}}'])
-def test_malformed_payload_fails_open(raw):
+def test_malformed_payload_fails_open(_run, raw):
     res = _run(None, raw=raw)
     assert res.returncode == 0, res.stderr
     assert _decision(res) == (None, None), f"malformed payload must fail open, {res.stdout!r}"
@@ -190,7 +195,7 @@ def foreign(tmp_path):
 
 
 @pytest.mark.integration
-def test_file_in_foreign_repo_is_silent(repos, foreign):
+def test_file_in_foreign_repo_is_silent(_run, repos, foreign):
     # The reported bug: a session in project A edits a tracked config in an unrelated
     # repo B. B's file is a main-checkout, trigger-ext, non-gitignored file, so the
     # pre-HATS-959 gate denied it. With cwd scoping it is out of project -> silent.
@@ -201,7 +206,7 @@ def test_file_in_foreign_repo_is_silent(repos, foreign):
 
 
 @pytest.mark.integration
-def test_same_repo_main_is_denied_with_cwd(repos):
+def test_same_repo_main_is_denied_with_cwd(_run, repos):
     # Primary protection preserved: cwd and file share the session repo -> deny.
     main, _ = repos
     res = _run(main / "service.py", cwd=main)
@@ -210,7 +215,7 @@ def test_same_repo_main_is_denied_with_cwd(repos):
 
 
 @pytest.mark.integration
-def test_worktree_session_editing_main_is_denied(repos):
+def test_worktree_session_editing_main_is_denied(_run, repos):
     # cwd inside a linked worktree, file in that repo's MAIN checkout: same
     # git-common-dir -> still the collision case HATS-526 guards -> deny.
     main, linked = repos
@@ -220,7 +225,7 @@ def test_worktree_session_editing_main_is_denied(repos):
 
 
 @pytest.mark.integration
-def test_missing_cwd_falls_back_to_old_behavior(repos):
+def test_missing_cwd_falls_back_to_old_behavior(_run, repos):
     # cwd absent: cannot scope -> fall back to location-only deny (R4).
     main, _ = repos
     res = _run(main / "service.py")  # no cwd in payload
@@ -229,7 +234,7 @@ def test_missing_cwd_falls_back_to_old_behavior(repos):
 
 
 @pytest.mark.integration
-def test_non_git_cwd_falls_back_to_old_behavior(repos, tmp_path):
+def test_non_git_cwd_falls_back_to_old_behavior(_run, repos, tmp_path):
     # cwd present but not a git repo: session repo unresolvable -> old deny (R4).
     main, _ = repos
     res = _run(main / "service.py", cwd=tmp_path)

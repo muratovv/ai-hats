@@ -365,6 +365,84 @@ def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
 
 
 @pytest.mark.integration
+def test_pre_push_dispatcher_summarizes_repeated_events_without_rewriting_audit(tmp_path: Path):
+    repo = tmp_path
+    init_repo(repo)
+    base = _rev(repo, "HEAD")
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "next"], cwd=repo, check=True)
+    head = _rev(repo, "HEAD")
+    _wire_dispatcher(repo, "pre-push", [LIB / f"{GM}/pre-push-bypass-report.sh"])
+    rows = (
+        [{"sha": head, "kind": "hatch", "hook": "guard.sh", "reason": "EXPLICIT_ACK"}] * 12
+        + [{"sha": head, "kind": "consent", "hook": "consent", "reason": "approved"}] * 2
+        + [{"sha": head, "kind": "no-question", "hook": "consent", "reason": "denied"}]
+    )
+    journal = repo / JOURNAL_REL
+    journal.parent.mkdir(parents=True)
+    original = "".join(json.dumps(row) + "\n" for row in rows)
+    journal.write_text(original)
+    result = subprocess.run(
+        [str(repo / ".githooks/pre-push"), "origin", "url"],
+        cwd=repo,
+        input=f"refs/heads/master {head} refs/heads/master {base}\n",
+        env={**os.environ, **_ai_hats_pin()},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "15 audit events" in result.stderr
+    assert "12 hatch" in result.stderr
+    assert "2 consent" in result.stderr
+    assert "1 no-question" in result.stderr
+    assert "EXPLICIT_ACK" in result.stderr
+    assert len(result.stderr.splitlines()) <= 10
+    assert '"sha":' not in result.stderr
+    assert str(journal.resolve()) in result.stderr
+    assert journal.read_text() == original
+
+
+@pytest.mark.integration
+def test_pre_push_reports_a_missing_summarizer_without_dumping_the_journal(tmp_path: Path):
+    import shutil
+
+    repo = tmp_path
+    init_repo(repo)
+    head = _rev(repo, "HEAD")
+    journal = repo / JOURNAL_REL
+    journal.parent.mkdir(parents=True)
+    journal.write_text(json.dumps({"sha": head, "kind": "hatch", "reason": "EXPLICIT_ACK"}) + "\n")
+    hook = LIB / f"{GM}/pre-push-bypass-report.sh"
+    payload = f"refs/heads/main {head} refs/heads/main {'0' * 40}\n"
+    control = subprocess.run(
+        ["/bin/bash", str(hook)],
+        cwd=repo,
+        input=payload,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert control.returncode == 0, control.stderr
+    assert "1 audit events" in control.stderr
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").symlink_to(shutil.which("git"))
+    result = subprocess.run(
+        ["/bin/bash", str(hook)],
+        cwd=repo,
+        input=payload,
+        env={**os.environ, "PATH": str(bin_dir)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0
+    assert "python3 missing" in result.stderr
+    assert str(journal.resolve()) in result.stderr
+    assert '"sha":' not in result.stderr
+
+
+@pytest.mark.integration
 def test_pre_push_reports_bypasses_in_the_pushed_range(tmp_path: Path):
     repo = tmp_path
     init_repo(repo)
@@ -398,7 +476,7 @@ def test_pre_push_reports_bypasses_in_the_pushed_range(tmp_path: Path):
 
     assert res.returncode == 0, "reporting is not blocking — the hatch was deliberate"
     assert "AI_HATS_SMOKE_SKIP" in res.stderr, res.stderr
-    assert "1 gate bypass" in res.stderr, res.stderr
+    assert "1 audit events" in res.stderr, res.stderr
 
 
 @pytest.mark.integration
@@ -432,7 +510,47 @@ def test_pre_push_is_silent_when_the_pushed_range_is_clean(tmp_path: Path):
         env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
     )
     assert res.returncode == 0
-    assert "gate bypass" not in res.stderr, res.stderr
+    assert res.stderr == ""
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("bash", ["/bin/bash", "bash"])
+def test_pre_push_bounds_details_and_matches_only_commit_fields(tmp_path: Path, bash: str):
+    repo = tmp_path
+    init_repo(repo)
+    base = _rev(repo, "HEAD")
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "next"], cwd=repo, check=True)
+    head = _rev(repo, "HEAD")
+    rows = [
+        {"sha": head, "kind": "future", "hook": "guard", "reason": str(i) + "x" * 2000}
+        for i in range(12)
+    ]
+    rows += [
+        {"sha": head, "kind": "fail_open", "reason": "parser unavailable"},
+        {"sha": base, "kind": "hatch", "reason": "unrelated " + head},
+    ]
+    journal = repo / JOURNAL_REL
+    journal.parent.mkdir(parents=True)
+    original = "".join(json.dumps(row) + "\n" for row in rows) + "{broken\n[]\n"
+    journal.write_text(original)
+    result = subprocess.run(
+        [bash, str(LIB / f"{GM}/pre-push-bypass-report.sh")],
+        cwd=repo,
+        input=f"refs/heads/master {head} refs/heads/master {base}\n",
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "13 audit events" in result.stderr
+    assert "12 other" in result.stderr
+    assert "1 fail-open" in result.stderr
+    assert "2 unreadable journal records" in result.stderr
+    assert "8 more groups" in result.stderr
+    assert "unrelated" not in result.stderr
+    assert len(result.stderr.splitlines()) <= 10
+    assert all(len(line) <= 180 for line in result.stderr.splitlines()[:-1])
+    assert journal.read_text() == original
 
 
 @pytest.mark.integration
