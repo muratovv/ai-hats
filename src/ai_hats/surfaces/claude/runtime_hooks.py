@@ -42,7 +42,7 @@ def composed_rows(result, skills_dir: Path) -> dict[str, list[dict[str, str]]]:
                 {
                     "matcher": hook.matcher,
                     "command": str(skills_dir / skill_name / hook.script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
+                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
                 }
             )
     return rows

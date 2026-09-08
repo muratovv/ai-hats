@@ -53,7 +53,7 @@ def _manifest(
                 {
                     "matcher": hook.matcher,
                     "command": str(skills_dir / skill_name / hook.script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
+                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
                 }
             )
     return {

@@ -28,7 +28,7 @@ def _manifest(project_dir: Path, result, session_id: str, *, skills_dir: Path) -
                 {
                     "matcher": hook.matcher,
                     "command": str(skills_dir / skill_name / hook.script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
+                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
                 }
             )
     return {
