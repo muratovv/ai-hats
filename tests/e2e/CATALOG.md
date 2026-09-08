@@ -2484,6 +2484,21 @@ as a claim to check, not as evidence.
 - **expect** — STATE.md is refreshed on card creation and a git worktree is provisioned when transitioning to execute
 - **why** — module-level rack execution must bind the full kernel extensions rather than falling back to a bare un-wired state
 
+## `test_readonly_cli_reads_worktree_library.py`
+
+*pins HATS-1911*
+
+- **flow** — someone authors a role inside a linked worktree and asks the ordinary read-only commands about it from that worktree, expecting their own tree to be the one reported
+- **cmds**
+
+  ```console
+  git worktree add --detach <wt>
+  python -m ai_hats list roles | list traits | list tokens <role> | config status
+  ```
+
+- **expect** — each command reports the component that exists ONLY in the worktree — `list tokens` in particular must print a budget rather than "Role '...' not found", which is what it printed before this
+- **why** — the failure was silent and plausible: a missing role reads as broken YAML and a foreign tree's budget looks exactly like your own. It needs a real subprocess for the reason HATS-1501 documents — in process `_detect_source_library_root(cwd)` already returns the worktree, so an in-process probe agrees with the fix while the shipped CLI still reads master. `AI_HATS_LIBRARY_ROOT` is deliberately unset: setting it is the manual workaround this test exists to remove
+
 ## `test_reflect_friendly_errors.py`
 
 *pins HATS-547, HATS-1228*

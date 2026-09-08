@@ -136,7 +136,9 @@ def test_readonly_commands_report_the_worktree_library(repo_root: Path, tmp_path
     # "Error: Role '<name>' not found" at exit 0, and that text CONTAINS the
     # role name — so only the trait row distinguishes the two outcomes.
     assert "not found" not in tokens.stdout, tokens.stdout
-    assert TRAIT in tokens.stdout, "`list tokens` composed the MAIN checkout's library"
+    assert TRAIT in tokens.stdout, (
+        "`list tokens` composed the MAIN checkout's library — HATS-1911"
+    )
 
     status = _run(wt, "config", "status")
     assert status.returncode == 0, status.stderr
