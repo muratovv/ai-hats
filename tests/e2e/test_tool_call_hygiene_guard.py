@@ -385,9 +385,7 @@ def test_the_nudge_survives_the_whole_bash_chain(shared_launcher, tmp_path_facto
     # Bounded, because the command-lifetime guard REFUSES an unbounded background
     # launch — and its deny would be the chain's verdict, hiding whether this
     # guard said anything at all. The bound is what an agent has to write anyway.
-    incident = (
-        "timeout 1800 bash scripts/gates.sh e2e > /tmp/e2e.log 2>&1; echo $? > /tmp/e2e.rc"
-    )
+    incident = "timeout 1800 bash scripts/gates.sh e2e > /tmp/e2e.log 2>&1; echo $? > /tmp/e2e.rc"
     foreground = run_tool_chain(project, "Bash", {"command": incident}, settings=settings, env=env)
     assert not foreground.context, f"the capture form preserves in the foreground: {foreground}"
 
