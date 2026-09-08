@@ -160,33 +160,43 @@ if [[ "$cmd_bare" =~ $runner_rx ]]; then
     # zsh spelling is the lowercase `${pipestatus[1]}`, indexed from 1. Exempting
     # the uppercase name outright let the silent-zero through and nudged the one
     # spelling that works here — so it is excused only under an explicit bash.
-    preserved=""
-    if [[ "$cmd_bare" == *"pipefail"* || "$cmd_bare" == *"pipestatus"* ]]; then
-        preserved=1
+    # These fix WHICH status a PIPELINE reports and say nothing about what a `;`
+    # or `||` runs next, so the exemption belongs to the pipe test ALONE. Sharing
+    # it with the chain tests let `set -o pipefail` anywhere on the line excuse a
+    # trailing echo — the measured incident: the shell-level defence was present
+    # and the status reported was still the echo's (HATS-1709). Matched as a
+    # TOKEN for the same reason a name is: `--junit=pipefail.xml` disarmed a
+    # substring test.
+    pipe_preserved=""
+    if [[ "$cmd_bare" =~ (^|[[:space:]])pipefail([^[:alnum:]._-]|$) || "$cmd_bare" == *"pipestatus"* ]]; then
+        pipe_preserved=1
     elif [[ "$cmd_bare" == *"PIPESTATUS"* && "$cmd_bare" =~ (^|[[:space:]])bash([[:space:]]|$) ]]; then
-        preserved=1
+        pipe_preserved=1
     fi
-    if [[ -z "$preserved" ]]; then
-        pipe_rx='\|[[:space:]]*(tail|head|grep|rg|tee)'
-        semi_rx=';[[:space:]]*(echo|true|exit[[:space:]]+0)'
-        or_rx='\|\|[[:space:]]*(echo|true|exit[[:space:]]+0)'
-        # `; echo $? > file` captures the status for the agent to read rather
-        # than printing and losing it, so it is not masking at any path. Whether
-        # that file belongs to THIS run is the rule's business, not the hook's.
-        # Only the chain grounds are excused — a pipe still masks.
-        capture_rx=';[[:space:]]*echo[[:space:]]+\$\?[[:space:]]*>'
-        masked=""
-        if [[ "$cmd_bare" =~ $pipe_rx ]]; then
-            masked=1
-        elif [[ ! "$cmd_bare" =~ $capture_rx ]] && [[ "$cmd_bare" =~ $semi_rx || "$cmd_bare" =~ $or_rx ]]; then
-            masked=1
+
+    pipe_rx='\|[[:space:]]*(tail|head|grep|rg|tee)'
+    semi_rx=';[[:space:]]*(echo|true|exit[[:space:]]+0)'
+    or_rx='\|\|[[:space:]]*(echo|true|exit[[:space:]]+0)'
+    # `; echo $? > file` captures the status for the agent to read rather
+    # than printing and losing it, so it is not masking at any path. Whether
+    # that file belongs to THIS run is the rule's business, not the hook's.
+    # Only the chain grounds are excused — a pipe still masks.
+    capture_rx=';[[:space:]]*echo[[:space:]]+\$\?[[:space:]]*>'
+    masked=""
+    if [[ -z "$pipe_preserved" ]] && [[ "$cmd_bare" =~ $pipe_rx ]]; then
+        masked=pipe
+    elif [[ ! "$cmd_bare" =~ $capture_rx ]] && [[ "$cmd_bare" =~ $semi_rx || "$cmd_bare" =~ $or_rx ]]; then
+        masked=chain
+    fi
+    if [[ -n "$masked" ]]; then
+        if [[ "$masked" == pipe ]]; then
+            msg="exit code masking detected in test runner command — a pipeline's status is the LAST stage's, so the runner's is lost. Use set -o pipefail (correct in bash and zsh), or redirect and read the log in a separate call. \${PIPESTATUS[0]} is bash-only: in zsh it is unset, so exiting on it returns 0 for every run — the zsh name is \${pipestatus[1]}."
+        else
+            msg="exit code masking detected in test runner command — a command after ';' or '||' becomes the status of the whole thing, so the runner's is lost. set -o pipefail does NOT help here: it fixes which status a PIPELINE reports, never what runs next. Drop the trailing command and read the log in a separate call, or capture the status with '; echo \$? > <file>' and read that file."
         fi
-        if [[ -n "$masked" ]]; then
-            msg="exit code masking detected in test runner command — a compound command's status is the LAST command's, so the runner's is lost. Use set -o pipefail (correct in bash and zsh), or redirect and read the log in a separate call. \${PIPESTATUS[0]} is bash-only: in zsh it is unset, so exiting on it returns 0 for every run — the zsh name is \${pipestatus[1]}."
-            ai_hats_journal_catch dev_rule_exit_code_provenance nudge "$cmd"
-            printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
-            exit 0
-        fi
+        ai_hats_journal_catch dev_rule_exit_code_provenance nudge "$cmd"
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
+        exit 0
     fi
 fi
 

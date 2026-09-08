@@ -158,6 +158,13 @@ def test_noncovered_command_forms_get_no_nudge(_run, command):
         # bash-only spelling with no bash in sight: in the tool's zsh this is
         # `exit ""` -> 0 for every run, so it masks rather than preserves.
         "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
+        # `pipefail` fixes WHICH status a pipeline reports and says nothing about
+        # what a `;` runs next, so it cannot excuse a trailing echo (HATS-1709).
+        # This is the measured incident shape: the shell-level defence was there
+        # and the status was still the echo's.
+        "bash -c 'set -o pipefail; pytest tests/' ; echo done",
+        # ...and the exemption was a substring test, so a filename disarmed it.
+        "pytest tests/ --junit=pipefail.xml; echo done",
     ],
 )
 def test_exit_code_masking_nudges(_run, command):
