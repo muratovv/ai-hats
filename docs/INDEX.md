@@ -30,7 +30,6 @@ tool when a question goes beyond built-in instructions.
 
 | File                                                     | Topic                                                                                                                                        | When to read                     |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| [how-to-codex-consent.md](how-to-codex-consent.md)       | Native rack-transition confirmation and manual acceptance prompt                                                                             | Codex consent setup              |
 | [how-to-configure.md](how-to-configure.md)               | Full configuration walkthrough — fields, paths, customization, feedback, verification                                                        | Steps 2, 4, 5, 6, 7              |
 | [reference-env.md](reference-env.md)                     | Every environment variable you may set — type, default, one line each (generated)                                                            | Any env-var question; new knob   |
 | [how-to-extend.md](how-to-extend.md)                     | Bring-your-own roles / traits / skills / rules; layered library precedence; skill-declared git/runtime hooks; custom verbs via shell aliases | Step 3, 4; custom-component work |

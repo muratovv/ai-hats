@@ -167,11 +167,6 @@ operation's selectors, while `rack` and `wt` receive ordinary commands and know
 nothing about consent. A role without this declaration gets the original
 command surface unchanged.
 
-In an interactive Codex session, the agent uses the automatically registered
-`ai_hats_consent.rack_transition` MCP tool. It shows the exact command for
-Accept / Decline / Cancel, then delegates through the same wrapper. Setup and
-verification — [8].
-
 On a surface that delivers a question with a command rewrite, the agent runs the command and the guard
 turns it into a **question in chat**. The answer carries a one-shot ticket to the
 session-local command wrapper, good for that card, session, and exact command.
@@ -619,5 +614,3 @@ off-cycle flips.
 **[6]** — [`ai_hats_library/core/skills/hatrack/SKILL.md`](../packages/ai-hats-library/src/ai_hats_library/core/skills/hatrack/SKILL.md) — in-session skill that drives this CLI on behalf of any role; owns the per-edge lifecycle policy.
 
 **[7]** — [`packages/ai-hats-rack/README.md`](../packages/ai-hats-rack/README.md) — engine reference: transition pipeline, subscriber contract, event registry, lock model, journal.
-
-**[8]** — [Codex consent](how-to-codex-consent.md) — native confirmation of rack transitions.
