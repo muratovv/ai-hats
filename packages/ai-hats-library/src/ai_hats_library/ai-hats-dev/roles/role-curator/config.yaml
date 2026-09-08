@@ -18,9 +18,7 @@ composition:
     - dev::python
     - dev::shell
   rules: []
-  skills:
-    # files the companion HYP for a behavior-changing library edit.
-    - library-change-hypothesis-protocol
+  skills: []
   # Consent is separate and comes from `trait-agent` (ADR-0030); these rows are
   # the quality gate. `at` names EVERY road into a state — a gate bound to the
   # single expected edge goes unasked wherever the card takes another.
@@ -128,45 +126,11 @@ injection: |
     throughout (`find_component_dir` returns the LAST match), so a later layer
     overrides an earlier one — there is one search, not two.
 
-  ## Verifying compositions from a worktree
-  A **read-only** command run from inside a worktree composes THAT
-  worktree's library, so your edit is what you see. That is the whole
-  read-only family — `config show-prompt`, `--dry-run`, every `list`
-  subcommand that reads the library (`list providers` reads none), and
-  `config status`'s role tree.
+  ## Verifying compositions
+  The procedure is skill **composition-verification**; here it needs one value —
+  `AI_HATS_LIBRARY_ROOT` for this checkout is
+  `<wt>/packages/ai-hats-library/src/ai_hats_library`.
 
-  Two things inside that output still answer about the PROJECT, and are not
-  bugs: `config status`'s **Health** block (version, venv, materialized
-  `system_prompt`) reports what is installed here, and its `Library:` line
-  comes from `importlib`, not the resolver — so it can disagree with the tree
-  the command just composed from.
-
-  A command that **writes** — init, sync, anything materializing into
-  `.agent/` — deliberately still keys off the project, which for a linked
-  worktree is the MAIN checkout (`_project_dir` hops there so tracker ops
-  reach the one live backlog). Composing one checkout's library
-  into another project's `.agent` is a known gap; do not expect a worktree
-  edit to reach a materialized artifact.
-
-  To force either way explicitly:
-
-      export AI_HATS_LIBRARY_ROOT=<wt>/packages/ai-hats-library/src/ai_hats_library
-
-  In-process, construct the Assembler with the worktree path:
-
-      from pathlib import Path
-      from ai_hats.assembler import Assembler
-      wt = Path('.').resolve()        # run this FROM inside the worktree
-      a = Assembler(wt)               # wt passed explicitly IS what resolves the library
-      # ALWAYS pass overlays — without them, user-global customizations
-      # (~/.ai-hats/customizations.yaml) and project ai-hats.yaml overlays
-      # are silently skipped, leading to false "rule absent" diagnoses.
-      overlays = a._get_overlays('role-curator')
-      result = a.composer.compose('role-curator', overlays=overlays)
-      assert result.errors == []
-
-  Passing `wt` explicitly is what makes the worktree's library win here —
-  this path never consulted cwd, before the fix or after.
 
   ## Governance
   Every non-harness agent-behavior change is a child task under the
