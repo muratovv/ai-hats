@@ -275,6 +275,61 @@ def test_the_main_checkouts_own_interpreter_is_silent(chain):
     assert MARKER not in verdict.context, f"main-checkout run nudged: {verdict.context!r}"
 
 
+def _prescribed_commands() -> list[str]:
+    """Every command line the skill marks `# CORRECT`, read from the skill itself.
+
+    Parsed rather than restated: a list copied into this file would keep passing
+    the day the doc changed, which is the failure the whole case is about."""
+    from ai_hats.paths import builtin_library_root
+
+    root = builtin_library_root()
+    assert root is not None, "no builtin library root — the install under test is broken"
+    lines = (root / "core" / "skills" / "worktree-isolation" / "SKILL.md").read_text().splitlines()
+
+    commands: list[str] = []
+    collecting = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("# CORRECT"):
+            collecting = True
+            continue
+        if not collecting:
+            continue
+        if not stripped or stripped.startswith("```"):
+            collecting = False
+            continue
+        if stripped.startswith("#"):
+            continue
+        commands.append(stripped)
+    return commands
+
+
+@pytest.mark.integration
+def test_the_skill_prescribes_commands_this_test_can_read(chain):
+    """Positive control for the anti-wolf case below.
+
+    No sample means the loop asserts nothing, and a guard that nudged every
+    prescribed command would pass an empty parametrization just as quietly."""
+    assert len(_prescribed_commands()) >= 3, _prescribed_commands()
+
+
+@pytest.mark.integration
+def test_every_spelling_the_skill_prescribes_draws_silence(chain):
+    """The anti-wolf invariant (HATS-1899 AC-5).
+
+    A guard that nudges the command its own skill tells you to type teaches the
+    agent to skip guardrail text — and the text it then skips is the class that
+    moved master by a commit. So the doc is the fixture: whatever it prescribes
+    has to be silent."""
+    _project, worktree, settings, env = chain
+    noisy = []
+    for command in _prescribed_commands():
+        verdict = run_chain(worktree, command, settings=settings, env=env, cwd=worktree)
+        if MARKER in verdict.context:
+            noisy.append((command, verdict.context))
+    assert not noisy, f"the guard nudged what SKILL.md prescribes: {noisy}"
+
+
 @pytest.mark.integration
 def test_the_kill_switch_silences_the_guard(chain):
     project, worktree, settings, env = chain
