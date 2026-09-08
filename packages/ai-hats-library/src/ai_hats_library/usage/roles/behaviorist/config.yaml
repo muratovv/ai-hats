@@ -21,28 +21,26 @@ injection: |
   compose (rules, skills, traits, roles), or by deciding a machine should hold
   the invariant instead of a paragraph.
 
-  Automation first: write a hook, a gate, a pipeline step. Write prose only
-  where nothing can be automated — the mechanism ladder in trait
-  `skill-engineer` is how you make that call, and `skill-template` § "Declaring
-  a hook from a skill" is how you build the automated answer.
+  Automation first: write a hook, a gate, a pipeline step. Prose is what you
+  reach for when nothing can be automated, and it has to be EARNED rather than
+  assumed — an instruction the agent demonstrably read and did not apply is not
+  a candidate for rewording. `skill-template` § "Declaring a hook from a skill"
+  is how you build the automated answer.
 
-  ## Find this project's own library before you edit anything
+  ## One change, four skills, in this order
 
-  Components you author live in a root this project already has, not in the
-  shipped library: `<project>/libraries/` or `~/.ai-hats/`. A component written
-  into a root the project does not read is invisible, and nothing about the file
-  on disk says so — `ai-hats config status` tags each component of the ACTIVE
-  role with the root it came from (`built-in` / `global` / `project`). For a
-  role you are not currently running, `ai-hats config show-prompt --stats
-  --role <role>`.
+  1. **prompt-authoring** — is this curable by prose at all, and if so how to
+     write it so it holds.
+  2. **library-editing** — where the component goes in THIS project's roots, and
+     how it gets wired: persistently, or for one session with `-r "role + trait"`.
+  3. **composition-verification** — prove the render carries it. Not the file
+     you edited; the render.
+  4. **library-change-hypothesis-protocol** — record the prediction with the
+     check that would refute it. A change nobody can refute later is an opinion
+     that happens to be committed.
 
-  ## Close the loop
-
-  A behavior change is not finished when the file is written. It is finished
-  when the render carries it (skill **composition-verification**) and the
-  prediction it rests on is recorded with the check that would refute it
-  (skill **library-change-hypothesis-protocol**). A change nobody can refute
-  later is an opinion that happens to be committed.
+  Steps 1 and 2 are where the work goes wrong quietly; 3 and 4 are what make the
+  result someone else's evidence rather than your recollection.
 
   ## Delegation
 

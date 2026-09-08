@@ -15,6 +15,11 @@ contradictions is `role-coherence-protocol`, run by the `role-auditor` role.
 This skill answers the narrower question that must come first — did the change
 reach the prompt at all?
 
+It is the last of three steps, and owns only its own. Deciding that prose is the
+right mechanism and writing it is `prompt-authoring`; placing the component in a
+root this project reads and wiring it to a role is `library-editing`. Arrive
+here once the edit is made.
+
 The general discipline of proving your verification path is not itself broken
 is **positive-control**; this skill is that discipline applied to composition,
 and step 3 is where the two meet.

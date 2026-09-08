@@ -510,3 +510,29 @@ def test_hypothesis_protocol_reaches_any_project() -> None:
     body = _read(HYP_PROTOCOL)
     for repo_path in ("packages/ai-hats-library", "src/ai_hats/", "cli/maintenance.py"):
         assert repo_path not in body, repo_path
+
+
+@pytest.mark.parametrize(
+    "skill", ["prompt-authoring", "library-editing", "composition-verification"]
+)
+def test_the_authoring_chain_is_wired_to_the_trait(skill: str) -> None:
+    """Decide (prose or machine), wire, verify — one skill each, all three
+    riding the trait so any project composing it gets the whole chain."""
+    assert skill in _load(SKILL_ENGINEER).composition.skills
+    assert (LIBRARY / "usage" / "skills" / skill / "SKILL.md").is_file()
+
+
+def test_behaviorist_names_the_chain_in_order() -> None:
+    """A role that lists its skills out of order teaches the wrong sequence:
+    verifying before deciding is how a reworded rule ships twice."""
+    injection = _load(BEHAVIORIST).injection
+    order = [
+        injection.index(name)
+        for name in (
+            "prompt-authoring",
+            "library-editing",
+            "composition-verification",
+            "library-change-hypothesis-protocol",
+        )
+    ]
+    assert order == sorted(order), order

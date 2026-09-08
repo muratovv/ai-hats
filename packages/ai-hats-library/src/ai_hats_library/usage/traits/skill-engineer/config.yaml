@@ -18,6 +18,12 @@ composition:
     # a dead link in the projects this library installs into. Learns the prefix
     # from the project's own cards; pure infrastructure (hook carrier).
     - ticket-id-gate
+    # where a component goes in THIS project's roots, and how it gets wired to
+    # a role — persistently or for one session via the `-r "role + trait"` spec.
+    - library-editing
+    # whether the defect is curable by prose at all, and how to write prose
+    # that holds once it is.
+    - prompt-authoring
     # how to prove a component edit reached the composed prompt: the render,
     # the positive control every zero needs, in-process composition.
     - composition-verification
@@ -46,7 +52,9 @@ injection: |
 
   A rule a hook could hold is a candidate for REPLACEMENT, not for a rewrite.
   The reverse move counts too: a mechanism with no automatable invariant and no
-  trigger has not earned a rule either.
+  trigger has not earned a rule either. Whether prose can fix THIS defect at all
+  — and how to write it once it can — is skill **prompt-authoring**; wiring the
+  component you choose into a role is skill **library-editing**.
   Precedent: `dev_rule_tool_call_hygiene` → `core/skills/tool-call-hygiene/hooks/`.
 
   ### Component Types
