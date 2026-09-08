@@ -90,10 +90,6 @@ def hooked_project(shared_launcher, tmp_path_factory):
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="the gate is still in KNOWN_UNCAUGHT — S3/S4 wiring removes this marker",
-    strict=True,
-)
 def test_a_denied_edit_records_a_catch_beside_the_session_audit(hooked_project):
     """Fail-under-revert: drop journal_catch from wt_gate.py and this finds no row."""
     project, env, settings = hooked_project
@@ -116,10 +112,6 @@ def test_a_denied_edit_records_a_catch_beside_the_session_audit(hooked_project):
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="the gate is still in KNOWN_UNCAUGHT — S3/S4 wiring removes this marker",
-    strict=True,
-)
 def test_an_advisory_nudge_is_recorded_even_though_the_call_proceeds(hooked_project):
     """The 596-nudge blind spot: an allow-with-nudge must still be countable."""
     project, env, settings = hooked_project
@@ -138,10 +130,6 @@ def test_an_advisory_nudge_is_recorded_even_though_the_call_proceeds(hooked_proj
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="the gate is still in KNOWN_UNCAUGHT — S3/S4 wiring removes this marker",
-    strict=True,
-)
 def test_an_escalation_is_attributed_to_the_ai_hats_session_not_the_provider_one(hooked_project):
     """`ask` is a firing too — and its gate holds the provider's session UUID.
 

@@ -27,6 +27,9 @@ if ! . "$(dirname "$0")/bypass_journal.sh" 2>/dev/null; then
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 # --- kill switch -------------------------------------------------------------
@@ -145,6 +148,7 @@ if [[ "$cmd_bare" =~ $runner_rx ]]; then
     mutate_rx=';[[:space:]]*(git[[:space:]]+(commit|push|add|merge|tag|rebase)|rack[[:space:]]+transition)'
     if [[ "$cmd_bare" =~ $mutate_rx ]]; then
         msg="a state-mutating command follows ';' after a check/test runner — ';' sequences but does not gate, so the mutation runs whatever the runner returned. Chain it with '&&' if it must not run on red. This is the case the masking checks cannot see: the status was yours and correct, and the next action simply did not depend on it."
+        ai_hats_journal_catch dev_rule_exit_code_provenance nudge "$cmd"
         printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
         exit 0
     fi
@@ -179,6 +183,7 @@ if [[ "$cmd_bare" =~ $runner_rx ]]; then
         fi
         if [[ -n "$masked" ]]; then
             msg="exit code masking detected in test runner command — a compound command's status is the LAST command's, so the runner's is lost. Use set -o pipefail (correct in bash and zsh), or redirect and read the log in a separate call. \${PIPESTATUS[0]} is bash-only: in zsh it is unset, so exiting on it returns 0 for every run — the zsh name is \${pipestatus[1]}."
+            ai_hats_journal_catch dev_rule_exit_code_provenance nudge "$cmd"
             printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
             exit 0
         fi
@@ -225,5 +230,6 @@ case "$tool" in
     Read) msg="raw cat/head/tail detected — dev_rule_tool_call_hygiene: if the Read tool is available, prefer it (numbered lines, safe pagination, no context flood); if not, bound the output instead of dumping whole files.";;
     Edit) msg="in-place sed/awk edit detected — dev_rule_tool_call_hygiene: if the Edit tool is available, prefer it (uniqueness-checked; prevents silent multi-replace); if not, verify the match is unique before rewriting.";;
 esac
+ai_hats_journal_catch dev_rule_tool_call_hygiene nudge "$cmd"
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
 exit 0

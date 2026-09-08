@@ -42,6 +42,9 @@ if ! . "${HOOK_DIR}/bypass_journal.sh" 2>/dev/null; then
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 # --- 1. Read tool-input JSON from stdin --------------------------------
@@ -229,8 +232,14 @@ print(json.dumps({"hookSpecificOutput": {
 
 # `hook_event_name` is Claude Code's marker; its absence means the caller does
 # not speak that protocol, so refuse the way it understands.
+# Recorded HERE, not inside the emitters: emit_ask falls back to deny_hard when
+# no JSON tool exists, and one command must not book two catches. No session
+# argument on purpose — `$session_id` is the PROVIDER's UUID from the payload and
+# would outrank the ai-hats id the hook's own path carries.
 if [[ "$hook_event" == "PreToolUse" ]]; then
+    ai_hats_journal_catch rule_pause_before_shared_state_write ask "$cmd"
     emit_ask
     exit 0
 fi
+ai_hats_journal_catch rule_pause_before_shared_state_write deny "$cmd"
 deny_hard

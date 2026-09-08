@@ -346,6 +346,7 @@ def run_tool_chain(
     env: dict | None = None,
     ack: str | None = None,
     cwd: Path | None = None,
+    payload_extra: dict | None = None,
 ) -> Verdict:
     """Run one ``tool`` call through the project's whole PreToolUse chain.
 
@@ -360,6 +361,11 @@ def run_tool_chain(
     the payload's own ``cwd`` key (HATS-1856) — because a hook reading the key
     would otherwise pass on the fallback and never exercise the live route.
     ``CLAUDE_PROJECT_DIR`` stays pinned to ``project``, as the harness pins it.
+
+    ``payload_extra`` adds top-level keys the real harness sends and this helper
+    otherwise omits — ``session_id``, ``transcript_path``. A gate that reads one
+    of them was untestable here, and that gap hid a live bug: the provider's
+    session UUID outranking the ai-hats session id (HATS-1634).
     """
     base_env = dict(env) if env is not None else os.environ.copy()
     for key in [k for k in base_env if ACK_FLAG_RE.fullmatch(k)]:
@@ -371,6 +377,7 @@ def run_tool_chain(
     body: dict = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
     if cwd is not None:
         body["cwd"] = str(cwd)
+    body.update(payload_extra or {})
     payload = json.dumps(body)
 
     base_env.setdefault("CLAUDE_PROJECT_DIR", str(project))
@@ -405,10 +412,18 @@ def run_chain(
     env: dict | None = None,
     ack: str | None = None,
     cwd: Path | None = None,
+    payload_extra: dict | None = None,
 ) -> Verdict:
     """Run a Bash ``command`` through the whole PreToolUse chain."""
     return run_tool_chain(
-        project, "Bash", {"command": command}, settings=settings, env=env, ack=ack, cwd=cwd
+        project,
+        "Bash",
+        {"command": command},
+        settings=settings,
+        env=env,
+        ack=ack,
+        cwd=cwd,
+        payload_extra=payload_extra,
     )
 
 

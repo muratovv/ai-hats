@@ -41,34 +41,7 @@ NOT_A_GATE = {
 #: gate -> why it does not record a catch yet. Remove an entry when you wire it;
 #: `test_the_documented_gaps_are_still_gaps` refuses one you forgot to remove.
 #: This seed IS the S3/S4 worklist and must reach `{}` before the task closes.
-KNOWN_UNCAUGHT: dict[str, str] = {
-    # S3 — runtime tier
-    "backlog_write_gate.py": "S3",
-    "comment_length_lint.py": "S3",
-    "pre_bash_lifetime_guard.sh": "S3",
-    "pre_bash_shared_state_guard.sh": "S3",
-    "py_security_lint.py": "S3",
-    "safety_gate.py": "S3",
-    "tool_call_hygiene_guard.sh": "S3",
-    "wt_entry_gate.py": "S3",
-    "wt_gate.py": "S3",
-    "wt_interpreter_gate.py": "S3",
-    # S4 — git tier. The three quality-gate shims are wired by `gate.sh` alone:
-    # they source it, so crediting them follows from crediting it.
-    "done-gate.sh": "S4",
-    "gate.sh": "S4",
-    "merge-gate.sh": "S4",
-    "review-gate.sh": "S4",
-    "pre-commit-docs-index.sh": "S4",
-    "pre-commit-no-raw-destructive.sh": "S4",
-    "pre-commit-privacy.sh": "S4",
-    "pre-commit-rule-delivery.sh": "S4",
-    "pre-commit-skill-lint.sh": "S4",
-    "pre-commit-smoke.sh": "S4",
-    "pre-commit-ticket-ids.sh": "S4",
-    "pre-push-e2e-master.sh": "S4",
-    "pre-push-shared-state.sh": "S4",
-}
+KNOWN_UNCAUGHT: dict[str, str] = {}
 
 #: How a gate signals it did NOT wave the call through.
 VERDICT_RE = re.compile(

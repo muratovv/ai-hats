@@ -30,6 +30,9 @@ if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journ
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_NO_RAW_DESTRUCTIVE_SKIP:-}" == "1" ]]; then
@@ -129,6 +132,7 @@ if [[ -n "$violators" ]]; then
     echo "  shutil.rmtree(cache)  # safe-delete: ok session-cache" >&2
     echo "" >&2
     echo "Override (one commit): AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ..." >&2
+    ai_hats_journal_catch global_rule_destructive_actions block "raw destructive call in staged source"
     exit 1
 fi
 

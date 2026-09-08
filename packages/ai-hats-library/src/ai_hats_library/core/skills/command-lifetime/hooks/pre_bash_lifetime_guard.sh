@@ -36,6 +36,9 @@ if ! . "$(dirname "$0")/bypass_journal.sh" 2>/dev/null; then
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_LIFETIME_ACK:-}" == "1" ]]; then
@@ -139,11 +142,13 @@ cmd_bare="$(printf '%s' "$cmd_bare" \
     | sed -E "s/'[^']*'|\"[^\"]*\"//g" 2>/dev/null)"
 
 emit_deny() {
+    ai_hats_journal_catch dev_rule_command_lifetime deny "$cmd_bare"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
     exit 0
 }
 
 emit_nudge() {
+    ai_hats_journal_catch dev_rule_command_lifetime nudge "$cmd_bare"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$1"
     exit 0
 }

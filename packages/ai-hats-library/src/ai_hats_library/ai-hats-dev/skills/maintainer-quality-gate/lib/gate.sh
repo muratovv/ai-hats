@@ -4,6 +4,19 @@
 #
 # Sourced, never executed; callers keep their own `set` options.
 #
+# HATS-1634 — the refusal exits through `gate_exit`, so that is where it is
+# counted. Every literal `exit 1` in a gate above means the gate BROKE, not that
+# it refused; recording those would file a breakage as a verdict.
+# shellcheck source=../../../../hooks/bypass_journal.sh
+if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journal.sh}" 2>/dev/null; then
+    ai_hats_journal_bypass() {
+        echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
+fi
+#
 #   gate_main <gate> "<stages>" [--check | --run [--rev <sha>] | --stages]
 #       --check (DEFAULT, what a bare spawn from the checks channel gets):
 #           say which tree this transition puts into master, ask that tree's
@@ -328,6 +341,8 @@ gate_run() {
 # all, so --check is the default.
 gate_main() {
     local gate="$1" stages="$2"
+    # `gate_exit` is several frames down and needs the name for its record.
+    AI_HATS_GATE_NAME="$gate"
     shift 2
     case "${1:---check}" in
         --check) gate_check_task_worktree "$gate" "$stages" ;;
@@ -352,7 +367,10 @@ gate_exit() {
     local channel="$1" outcome="$2"
     case "$outcome" in
         pass) exit 0 ;;
-        refuse) [[ "$channel" == "checks" ]] && exit 2 || exit 1 ;;
+        refuse)
+            ai_hats_journal_catch "${AI_HATS_GATE_NAME:-quality-gate}" refuse "$channel"
+            [[ "$channel" == "checks" ]] && exit 2 || exit 1
+            ;;
         *)
             printf 'gate_exit: unknown outcome %s\n' "$outcome" >&2
             exit 64

@@ -51,10 +51,6 @@ def _catch_rows(path: Path) -> list[dict]:
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    reason="the gate is still in KNOWN_UNCAUGHT — S3/S4 wiring removes this marker",
-    strict=True,
-)
 def test_a_blocked_commit_records_a_catch(repo):
     """Fail-under-revert: drop the journal_catch from the gate and no row appears."""
     (repo / "leak.env").write_text('AWS_SECRET_ACCESS_KEY="AKIAIOSFODNN7EXAMPLE"\n')
