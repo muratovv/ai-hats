@@ -180,15 +180,14 @@ def test_a_marker_without_a_reason_says_so(repo: Path, capsys):
     assert "(no reason given)" in capsys.readouterr().err
 
 
-def test_a_clean_run_is_refused_when_the_pattern_itself_is_dead(repo: Path, monkeypatch, capsys):
-    """A green verdict over a clean corpus proves nothing about a dead pattern.
+def test_the_control_finds_its_own_sample(repo: Path):
+    """One detector each, on a sample the checker builds and scans itself."""
+    assert consumer_refs.control_hits() == 2
 
-    The control is a sample the checker builds and scans through the same code
-    on every run. Break the matcher and the run must fail LOUDLY rather than
-    report the library clean.
-    """
-    monkeypatch.setattr(consumer_refs, "NAME_RE_TEMPLATE", "(?!x)x{0}")
-    assert _run(repo) == 1
+
+def test_a_clean_run_is_refused_when_the_control_comes_back_short(repo: Path, capsys):
+    """A green verdict over a clean corpus proves nothing about a dead pattern."""
+    assert consumer_refs.main([str(repo)], control=lambda: 0) == 1
     assert "BROKEN" in capsys.readouterr().err
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -239,13 +240,13 @@ def control_hits() -> int:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, control: Callable[[], int] = control_hits) -> int:
     root = Path(argv[0]).resolve() if argv else REPO_ROOT
 
-    control = control_hits()
-    if control != 2:
+    found_in_control = control()
+    if found_in_control != 2:
         print(
-            f"[{CHECK}] BROKEN: the detectors found {control} of 2 references in "
+            f"[{CHECK}] BROKEN: the detectors found {found_in_control} of 2 references in "
             f"their own control sample. Nothing below is a verdict.",
             file=sys.stderr,
         )
