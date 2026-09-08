@@ -13,12 +13,7 @@ import sys
 from pathlib import Path
 
 from ai_hats.env import (
-    AI_HATS_PROJECT_DIR_ENV,
-    ENV_AI_HATS_CACHE_HOME,
-    ENV_AI_HATS_DIR,
     ENV_AI_HATS_PYTHON,
-    ENV_AI_HATS_USER_HOME,
-    ENV_LIBRARY_ROOT,
     ENV_SESSION_CACHE_DIR,
 )
 from .profile import PROFILE
@@ -92,50 +87,6 @@ def _manifest(
         },
         "hooks": hooks,
     }
-
-
-def consent_cli_args(result, project_dir: Path) -> list[str]:
-    from ai_hats.consent_wrapper import CONFIG_ENV, policy_from
-    from ai_hats.session_identity import IDENTITY_ENV_KEYS
-    from ai_hats_library.hooks.consent_gate import operations
-
-    policy = policy_from(result.consent)
-    if "rack.transition" not in policy:
-        return []
-    spec = operations.spec_for("rack.transition")
-    if spec is None:
-        raise RuntimeError("rack.transition is missing from the consent registry")
-    legacy = {
-        flag
-        for selector in policy["rack.transition"]
-        for flag in spec.legacy_flags(operations.Reading("", "", selector.partition("->")[2]))
-    }
-    settings = {
-        "command": sys.executable,
-        "cwd": str(project_dir.resolve()),
-        "args": ["-m", "ai_hats.surfaces.codex.consent_server"],
-        "env_vars": [
-            *IDENTITY_ENV_KEYS,
-            CONFIG_ENV,
-            "PATH",
-            ENV_AI_HATS_DIR,
-            AI_HATS_PROJECT_DIR_ENV,
-            ENV_SESSION_CACHE_DIR,
-            ENV_AI_HATS_PYTHON,
-            ENV_AI_HATS_CACHE_HOME,
-            ENV_AI_HATS_USER_HOME,
-            ENV_LIBRARY_ROOT,
-            *sorted(legacy),
-        ],
-        "startup_timeout_sec": 30,
-        "tool_timeout_sec": 960,
-        "required": True,
-    }
-    return [
-        arg
-        for key, value in settings.items()
-        for arg in ("-c", f"mcp_servers.ai_hats_consent.{key}={json.dumps(value)}")
-    ]
 
 
 def materialize_hook_manifest(

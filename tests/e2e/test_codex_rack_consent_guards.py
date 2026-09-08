@@ -21,7 +21,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_later_guard_denial_wins_over_consent_question(tmp_path: Path) -> None:
-    from ai_hats.surfaces.codex.consent_guards import check_transition
+    from ai_hats.consent_mcp.guards import check_transition
 
     rows = []
     for name, decision in (("safety_gate.py", "ask"), ("quality.py", "deny")):
@@ -51,7 +51,7 @@ def test_later_guard_denial_wins_over_consent_question(tmp_path: Path) -> None:
 
 def test_materialized_guard_defers_question_without_ticket(tmp_path: Path, monkeypatch) -> None:
     from _helpers.codex_consent import session
-    from ai_hats.surfaces.codex.consent_guards import check_transition
+    from ai_hats.consent_mcp.guards import check_transition
     from ai_hats.surfaces.codex.hook_dispatcher import _load_manifest, _rows
     from ai_hats.surfaces.hook_channel import HookEvent
     from ai_hats_library.hooks.consent_ticket import tickets_dir
@@ -82,7 +82,7 @@ def test_direct_server_launch_is_refused(tmp_path: Path, monkeypatch) -> None:
     result = run_codex_dispatch(
         project,
         env,
-        tool_input={"command": "python -m ai_hats.surfaces.codex.consent_server"},
+        tool_input={"command": "python -m ai_hats.consent_mcp.server"},
     )
     assert result.returncode == 0, result.stderr
     reply = json.loads(result.stdout)["hookSpecificOutput"]
@@ -107,7 +107,7 @@ def test_shell_transition_refusal_points_to_registered_tool(tmp_path: Path, monk
 
 def test_codex_marker_does_not_change_claude_ticket_path(tmp_path: Path, monkeypatch) -> None:
     from _helpers.codex_consent import session
-    from ai_hats.surfaces.codex.consent_guards import check_transition
+    from ai_hats.consent_mcp.guards import check_transition
     from ai_hats.surfaces.codex.hook_dispatcher import _load_manifest, _rows
     from ai_hats.surfaces.hook_channel import HookEvent
 

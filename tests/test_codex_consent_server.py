@@ -5,7 +5,7 @@ import sys
 
 from ai_hats.consent_wrapper import WrapperConfig
 from ai_hats.session_identity import SessionIdentity
-from ai_hats.surfaces.codex import consent_server
+from ai_hats.consent_mcp import server as consent_server
 
 
 def test_execution_timeout_reports_possible_effects_without_retry(tmp_path):

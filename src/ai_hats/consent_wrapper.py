@@ -369,6 +369,10 @@ def materialize_consent_wrappers(
     artifacts.extra_env["PATH"] = os.pathsep.join(filter(None, (str(bin_dir), effective_path)))
     artifacts.extra_env[CONFIG_ENV] = str(config_path)
 
+    from .consent_mcp.registration import register_server
+
+    register_server(project_dir, policy, provider, artifacts)
+
 
 def load_config(path: Path) -> WrapperConfig:
     """Load the strict, session-frozen wrapper configuration."""

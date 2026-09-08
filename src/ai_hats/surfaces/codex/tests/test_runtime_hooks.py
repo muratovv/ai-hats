@@ -600,6 +600,10 @@ def test_real_safety_guard_deny_survives_the_codex_adapter(
     )
     cache = tmp_path / "cache"
     _manifest(cache, guard)
+    shutil.copytree(
+        guard.parent / "consent_gate",
+        cache / "codex-home/skills/guard/hooks/consent_gate",
+    )
     monkeypatch.delenv("AI_HATS_YOLO", raising=False)
 
     code, stdout, stderr = _run(

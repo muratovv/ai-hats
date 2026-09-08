@@ -102,7 +102,7 @@ def rpc(tmp_path, monkeypatch):
     )
     with (tmp_path / "server.stderr").open("w+") as stderr:
         process = subprocess.Popen(
-            [sys.executable, "-m", "ai_hats.surfaces.codex.consent_server"],
+            [sys.executable, "-m", "ai_hats.consent_mcp.server"],
             cwd=project,
             env=env,
             stdin=subprocess.PIPE,

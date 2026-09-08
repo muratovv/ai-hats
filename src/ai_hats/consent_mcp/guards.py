@@ -7,15 +7,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from ..hook_channel import (
+from ai_hats_library.hooks.consent_gate.questions import RACK_FORM
+from ..surfaces import (
     ChainDecision,
     ChainVerdict,
     HookCall,
     HookEvent,
     HookRow,
     run_chain,
+    hook_profile,
 )
-from .profile import PROFILE
 
 
 def check_transition(
@@ -30,12 +31,12 @@ def check_transition(
         "tool_name": "Bash",
         "tool_input": {"command": shlex.join(("rack", *argv))},
         "cwd": str(project_dir),
-        "ai_hats_consent_transport": "codex.rack_transition",
+        "ai_hats_consent_transport": RACK_FORM.id,
     }
     pending = ChainVerdict(decision=ChainDecision.ALLOW, event=HookEvent.PRE_TOOL_USE)
     for row in rows:
         verdict = run_chain(
-            PROFILE,
+            hook_profile(RACK_FORM.provider),
             event=HookEvent.PRE_TOOL_USE,
             rows=(row,),
             calls=(HookCall(payload, "exec"),),

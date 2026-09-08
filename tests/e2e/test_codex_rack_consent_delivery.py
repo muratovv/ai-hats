@@ -103,7 +103,7 @@ def test_hitl_materialization_registers_server(tmp_path, monkeypatch):
             settings.update(tomllib.loads(value)["mcp_servers"]["ai_hats_consent"])
     assert settings["command"] == sys.executable
     assert settings["cwd"] == str(project.resolve())
-    assert settings["args"] == ["-m", "ai_hats.surfaces.codex.consent_server"]
+    assert settings["args"] == ["-B", "-m", "ai_hats.consent_mcp.server"]
     assert settings["required"] is True
     assert "AI_HATS_SESSION_IDENTITY" in settings["env_vars"]
     assert "AI_HATS_CONSENT_WRAPPER_CONFIG" in settings["env_vars"]
@@ -117,7 +117,7 @@ def test_foreign_session_binding_refuses_startup(tmp_path, monkeypatch, field):
     project, env = session(tmp_path, monkeypatch)
     env[field] = "foreign-session"
     result = subprocess.run(
-        [sys.executable, "-m", "ai_hats.surfaces.codex.consent_server"],
+        [sys.executable, "-m", "ai_hats.consent_mcp.server"],
         cwd=project,
         env=env,
         input="",
@@ -153,7 +153,7 @@ def test_installed_wheel_delivers_a_startable_server(tmp_path, monkeypatch):
     run(["uv", "build", "--out-dir", str(wheels), str(source)])
     wheel = next(wheels.glob("ai_hats-*.whl"))
     with zipfile.ZipFile(wheel) as archive:
-        assert "ai_hats/surfaces/codex/consent_server.py" in archive.namelist()
+        assert "ai_hats/consent_mcp/server.py" in archive.namelist()
         metadata = archive.read(
             next(name for name in archive.namelist() if name.endswith("/METADATA"))
         ).decode()

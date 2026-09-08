@@ -45,7 +45,7 @@ dependencies = [
     "ai-hats-observe>=0.7.0",  # the seam takes a ProjectLayout slot (0.7.0)
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
     # HATS-1755 the external session wrapper, not rack, consumes its tickets.
-    "ai-hats-library>=0.6.8",  # Codex consent needs the ticketless hook response.
+    "ai-hats-library>=0.6.8",  # Form registration and the question presenter share one contract.
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",

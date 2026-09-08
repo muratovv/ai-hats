@@ -24,7 +24,17 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
         SurfaceRunResult,  # noqa: F401
         TranscriptResolver,  # noqa: F401
     )
+    from .hook_channel import (
+        ChainDecision,  # noqa: F401
+        ChainVerdict,  # noqa: F401
+        HookCall,  # noqa: F401
+        HookEvent,  # noqa: F401
+        HookRow,  # noqa: F401
+        run_chain,  # noqa: F401
+    )
     from .managed_tags import sweep_stale_managed_tags  # noqa: F401
+    from .mcp import StdioMCPServer  # noqa: F401
+    from .profiles import hook_profile  # noqa: F401
 
 # comment-length: allow — an alias has to say what it does NOT cover
 # HATS-1826: deprecated aliases, so an out-of-tree surface written against
@@ -40,6 +50,14 @@ _ALIASES = {
 # Bound lazily (PEP 562): the hook dispatchers live under this package and are a
 # fresh process per tool call, so entering it must not cost `contract`.
 _HOMES = {
+    "ChainDecision": ".hook_channel",
+    "ChainVerdict": ".hook_channel",
+    "HookCall": ".hook_channel",
+    "HookEvent": ".hook_channel",
+    "HookRow": ".hook_channel",
+    "StdioMCPServer": ".mcp",
+    "hook_profile": ".profiles",
+    "run_chain": ".hook_channel",
     "MetricsSink": ".contract",
     "Provider": ".contract",
     "ProviderHint": ".contract",

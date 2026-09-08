@@ -34,9 +34,10 @@ from ai_hats_library.hooks.consent_gate import operations
 from ai_hats_rack.ops import StateOp, parse_ops
 from ai_hats_rack.verbs.transition import transition
 
-from ..hook_channel import ChainDecision, HookEvent
-from .consent_guards import check_transition
-from .hook_dispatcher import _load_manifest, _rows
+from ai_hats_library.hooks.consent_gate.questions import RACK_FORM
+from ..surfaces import ChainDecision
+from ..surface_registry import get_surface
+from .guards import check_transition
 
 logger = logging.getLogger(__name__)
 EXECUTION_TIMEOUT_S = 300
@@ -73,7 +74,7 @@ class Binding:
     def load(cls) -> Binding:
         env = dict(os.environ)
         identity = SessionIdentity.from_env(env)
-        if identity is None or identity.provider != "codex":
+        if identity is None or identity.provider != RACK_FORM.provider:
             raise ValueError("Consent server requires its Codex session identity")
         path = Path(env.get(CONFIG_ENV, "")).resolve()
         expected = Path(identity.session_cache_dir) / "consent-wrapper" / "config.json"
@@ -86,7 +87,7 @@ class Binding:
             raise ValueError("Consent server must start in its session project")
         if "rack.transition" not in config.policy:
             raise ValueError("The session does not declare rack.transition consent")
-        _load_manifest(env)
+        get_surface(identity.provider).command_guard_rows(env)
         return cls(identity, config, path, path.read_text(), env)
 
     def source(self, task_id: str, argv: tuple[str, ...]) -> str:
@@ -225,7 +226,7 @@ def build_server(binding: Binding) -> FastMCP:
                 check_transition,
                 argv,
                 project_dir=binding.config.project_dir,
-                rows=_rows(_load_manifest(binding.environ), HookEvent.PRE_TOOL_USE),
+                rows=get_surface(binding.identity.provider).command_guard_rows(binding.environ),
                 environ=binding.environ,
             )
             if guarded.decision is ChainDecision.DENY:
