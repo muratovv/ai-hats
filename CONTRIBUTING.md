@@ -297,18 +297,18 @@ Built-in content (roles, traits, rules, skills, pipelines) ships inside the
 `ai_hats_library` data package, split into three layers loaded together —
 `core` → `usage` → `ai-hats-dev`, later wins a shared name:
 
-- **`library/core/`** — engine fundament. System roles (`session-reviewer`,
+- **`core/`** — engine fundament. System roles (`session-reviewer`,
   `role-auditor`, …), base traits (`trait-base`, `trait-agent`,
   `trait-analyst-base`, `base-judge`, `base-auditor`,
   `trait-reflect-mode`), global rules, foundational skills
   (`hatrack`, `git-mastery`, `review-*`, `judge-*`, …), all
   pipelines + initial injections, and the provider scaffold template.
   Without these the engine cannot bootstrap or run reflect pipelines.
-- **`library/usage/`** — curated content catalog. Opinionated roles
+- **`usage/`** — curated content catalog. Opinionated roles
   (`assistant`, `architect`, `sre`, `go-dev`, …), domain traits
   (`trait-se-mindset`, `dev::*`, `env::*`), opt-in skills (golang stack,
   terraform, observability, system-design, component authoring, …).
-- **`library/ai-hats-dev/`** — what this repository wears to develop itself:
+- **`ai-hats-dev/`** — what this repository wears to develop itself:
   the `maintainer` and `role-curator` roles, their traits, and the gates wired
   to this repo's CI. A consuming project has no use for any of it.
 

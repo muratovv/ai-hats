@@ -26,7 +26,7 @@ D2), HATS-1268 (проводка claude резолвится в дерево с�
 через интерпретатор, см. D3, — и HATS-1269 (worktree-канал переведён на
 `in_process`: копия `library/wt-hooks/` вместе с манифестом, свипом,
 drift-армом и create-time-бэкстопом снята; residue сносится миграцией
-step 9), и **HATS-1480** (копия `library/hooks/` вместе с манифестом, свипом
+step 9), и **HATS-1480** (копия `packages/ai-hats-library/src/ai_hats_library/hooks/` вместе с манифестом, свипом
 и drift-net снесена; residue сносится миграцией step 10). Не начаты:
 HATS-1338 (agy root + мерж `$HOME`), HATS-1339 (GC). **Обновление
 (2026-08-14, HATS-1655): HATS-1339 с тех пор сделана** — ливнес-гейтед реаппинг

@@ -66,15 +66,27 @@ COMPONENT_DIRS = ("rules", "skills", "traits", "roles")
 
 #: Prose whose subject is a decision at a date. Its paths and symbols describe
 #: the tree of that day, so a class since renamed is the record, not rot —
-#: `docs/adr/0013` IS the decision to extract `src/ai_hats/wt/`. The library
-#: ROOT stays judged even here: that directory still exists and only its address
-#: changed, so restoring the prefix loses no history (HATS-1907).
+#: `docs/adr/0013` IS the decision to extract `src/ai_hats/wt/`. One kind is
+#: still judged there: a library reference whose tail resolves under today's
+#: root. That directory exists and only its address changed, so restoring the
+#: prefix makes a dead pointer live and loses no history (HATS-1907).
 DATED_RECORD_RE = re.compile(r"^docs/(?:adr/|migration-v)")
 
 
 def describes_today(rel: str) -> bool:
     """Whether this file claims to describe the tree as it stands now."""
     return DATED_RECORD_RE.match(rel) is None
+
+
+def repairable(message: str) -> bool:
+    """Whether the reference names something that still exists, under a new address.
+
+    The other half of a library finding is a tail that resolves nowhere — the
+    thing itself is gone (`library/wt-hooks/`, retired) and no prefix makes it
+    point anywhere. In a dated record that is the record; correcting it would
+    invent a location that never existed.
+    """
+    return message.startswith("stale prefix:")
 
 
 UNCOVERED = (
@@ -90,8 +102,9 @@ UNCOVERED = (
     "unquoted references, except the stale `library/` prefix: only backticked "
     "spans are judged, because an unquoted slash in prose is usually prose",
     "behaviour: that a hook DOES what the prose says it does (HATS-1825 class A)",
-    "paths and symbols inside a dated record (`docs/adr/**`, `docs/migration-v*.md`): "
-    "they describe the tree of that day. Their library ROOT is still judged",
+    "inside a dated record (`docs/adr/**`, `docs/migration-v*.md`): its paths, its "
+    "symbols, and a library reference naming something since removed — the tree of "
+    "that day is the record. A library tail that still resolves IS judged there",
 )
 
 
@@ -300,7 +313,7 @@ def scan_file(
             if not is_path_shaped(token):
                 continue
             message = check_library_alias(token, roots)
-            if message:
+            if message and (describes_today(rel) or repairable(message)):
                 findings.append(Finding(rel, lineno, token, message))
         today = describes_today(rel)
         for match in TICK_RE.finditer(line):
@@ -309,10 +322,10 @@ def scan_file(
             if symbol:
                 if not today:
                     continue
-                cls, method = symbol.groups()
-                if not symbol_resolves(root, cls, method):
+                cls, member = symbol.groups()
+                if not symbol_resolves(root, cls, member):
                     findings.append(
-                        Finding(rel, lineno, token, f"no `{method}` on a class named `{cls}`")
+                        Finding(rel, lineno, token, f"no `{member}` on a class named `{cls}`")
                     )
                 continue
             if not is_path_shaped(token):
@@ -320,6 +333,8 @@ def scan_file(
             head, _ = split_prefix(token)
             if head in STALE_LIBRARY_PREFIXES or head in LIVE_LIBRARY_PREFIXES:
                 message = check_library_alias(token, roots)
+                if message and not today and not repairable(message):
+                    continue
             elif not today:
                 continue
             else:
@@ -334,15 +349,23 @@ def scan_file(
 _SYMBOL_CACHE: dict[tuple[str, str], bool] = {}
 
 
-def symbol_resolves(root: Path, cls: str, method: str) -> bool:
-    """`Class.method` resolves when some file declaring `class Class` also
-    declares `def method`. Co-location in one file is the cheap proxy for
-    membership that needs no import of the tree under test."""
-    key = (cls, method)
+def symbol_resolves(root: Path, cls: str, member: str) -> bool:
+    """`Class.member` resolves when some file declaring `class Class` also
+    declares that member. Co-location in one file is the cheap proxy for
+    membership that needs no import of the tree under test.
+
+    A member is a `def` OR an annotated attribute: the docs cite dataclass and
+    pydantic FIELDS at least as often as methods, and a def-only pattern read
+    every one of them as a defect (HATS-1907).
+    """
+    key = (cls, member)
     if key in _SYMBOL_CACHE:
         return _SYMBOL_CACHE[key]
     class_re = re.compile(rf"^\s*class\s+{re.escape(cls)}\b", re.MULTILINE)
-    def_re = re.compile(rf"^\s*(?:async\s+)?def\s+{re.escape(method)}\b", re.MULTILINE)
+    name = re.escape(member)
+    member_re = re.compile(
+        rf"^\s*(?:(?:async\s+)?def\s+{name}\b|{name}\s*:\s*[^\s=])", re.MULTILINE
+    )
     found = False
     seen_class = False
     for source in [*(root / "src").rglob("*.py"), *(root / "packages").rglob("*.py")]:
@@ -350,7 +373,7 @@ def symbol_resolves(root: Path, cls: str, method: str) -> bool:
         if not class_re.search(text):
             continue
         seen_class = True
-        if def_re.search(text):
+        if member_re.search(text):
             found = True
             break
     # An unknown class is somebody else's vocabulary (`Path.cwd`), not a finding.

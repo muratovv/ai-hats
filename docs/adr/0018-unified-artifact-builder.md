@@ -147,7 +147,7 @@ A critical distinction governs hook lifecycle:
 
 > **Расхождение, датировано 2026-08-14 (HATS-1655).** Граница «wiring vs
 > installation» в силе; изменился её *installation*-берег. Ни одного из трёх
-> перечисленных выше артефактов больше нет: `library/hooks/` снесена
+> перечисленных выше артефактов больше нет: `packages/ai-hats-library/src/ai_hats_library/hooks/` снесена
 > (HATS-1480), `library/wt-hooks/` — (HATS-1269), а сам `sync_hooks` ретайрен
 > вместе с ними — у `HooksManager` такого метода уже нет, имя выживает только в
 > названиях тестов и в комментариях. От installation-берега осталась одна
