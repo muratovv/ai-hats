@@ -74,8 +74,8 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
         project, result, "sid-rthook-fires", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
     )
     cache_settings = session_cache_dir(project, "sid-rthook-fires") / "settings.json"
-    pre_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PreToolUse:Bash")["command"]
-    post_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write")["command"]
+    pre_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PreToolUse:Bash:probe")["command"]
+    post_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe")["command"]
     # Both events route to the same materialized script (one declared script).
     assert pre_cmd == post_cmd
     # The command carries the $CLAUDE_PROJECT_DIR/ runtime placeholder (HATS-615);
