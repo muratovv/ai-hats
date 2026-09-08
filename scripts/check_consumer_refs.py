@@ -65,6 +65,8 @@ UNCOVERED = (
     "a consumer described rather than named — only a name the composition graph knows is judged",
     "a bare mention in shipped prose: a role-specific protocol skill has to be "
     "able to address its own role, so prose needs a relationship claim too",
+    "a claim phrased outside `PHRASE_RE` — only the YAML half is settled by the "
+    "graph alone; over prose this is a verb list, and a verb list is never done",
     "history in a comment — `git log -S` prose is `dev_rule_comment_discipline`'s "
     "half, not a machine's",
     "libraries outside this repository: this is a CI stage, not a shipped hook",
