@@ -124,7 +124,7 @@ is not a stage keeps a different prefix.
   and a refusal prints this command for the right directory. Run one in the
   **task worktree**, or name a commit with `REV=<sha>`. Each gate is a few-line
   script in the quality-gate skill's `hooks/`;
-  `bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate/hooks/<gate>.sh --stages`
+  `bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/<gate>.sh --stages`
   prints what it requires, and `scripts/gates.sh list` names every stage there is.
 - `make help` — display available Makefile targets.
 
@@ -343,7 +343,7 @@ fallback, so it works in any project.
 | `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                |
 | `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them |
 | `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path             |
-| `maintainer-quality-gate`, `doc-protocol`, `worktree-venv`   | `ai-hats-dev` | wired to this repo's gates and docs          |
+| `quality-gate`, `doc-protocol`, `worktree-venv`              | `ai-hats-dev` | wired to this repo's gates and docs          |
 | `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`     |
 | `skill-engineer` trait, `behaviorist` role                   | `usage`       | component-authoring craft, no repo path      |
 | `ai-hats-dev` trait                                          | `ai-hats-dev` | repo discipline shared by both roles here    |

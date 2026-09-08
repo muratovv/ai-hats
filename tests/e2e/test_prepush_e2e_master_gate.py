@@ -15,6 +15,7 @@ why:    GitHub closes the push connection ~30s in, so the tier runs out of band
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -26,7 +27,7 @@ pytestmark = pytest.mark.integration
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
     / "git_hooks/pre-push-e2e-master.sh"
 )
 ZERO = "0" * 40
@@ -488,4 +489,9 @@ def test_the_wrapper_arms_the_venv_switch_and_hands_over_to_the_hook():
 
     assert "export AI_HATS_E2E_REQUIRE_VENV=1" in text
     assert 'exec bash "$hook" --run "$@"' in text
-    assert "pre-push-e2e-master.sh" in text
+
+    # A stale literal here is exit 70 at run time, which nothing else observes;
+    # the basename alone would survive a move of the skill, so match the path.
+    named = re.search(r'^hook="\$repo_root/(.+)"$', text, re.M)
+    assert named, "the wrapper no longer names the hook the way this test reads it"
+    assert REPO_ROOT / named.group(1) == HOOK

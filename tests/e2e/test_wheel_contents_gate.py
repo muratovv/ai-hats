@@ -110,7 +110,7 @@ def test_the_release_blocker_is_named_when_the_fix_is_reverted():
 def test_the_merge_gate_names_the_stage():
     """The gate runs what its `--stages` names, so dropping it here disarms it."""
     hook = (
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
         "/hooks/merge-gate.sh"
     )
     listed = subprocess.run(

@@ -30,7 +30,7 @@ while read -r a b c d; do :; done
 exit 0
 """
 
-# Mirror maintainer-quality-gate-pre-push-e2e-master.sh trigger: fire only on a
+# Mirror quality-gate-pre-push-e2e-master.sh trigger: fire only on a
 # master target with a non-zero local sha, then record what we saw to the marker.
 MARKER_HOOK = f"""#!/usr/bin/env bash
 set -uo pipefail

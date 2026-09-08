@@ -19,10 +19,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATES = REPO_ROOT / "scripts" / "gates.sh"
-SKILL = (
-    REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
-)
+SKILL = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
 #: Every gate this project has: the checks-channel ones and the git one.
 GATE_SCRIPTS = {
     "review-gate": SKILL / "hooks" / "review-gate.sh",

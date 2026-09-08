@@ -18,8 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 
 #: Every layer that ships a gate, and every directory one can live in. The
-#: `ai-hats-dev` rows are not symmetry: `maintainer-quality-gate` moved there,
-#: and a glob set blind to a layer reports the gates in it as clean.
+#: `ai-hats-dev` rows are not symmetry: `quality-gate` moved there, and a glob
+#: set blind to a layer reports the gates in it as clean.
 HOOK_GLOBS = tuple(
     f"{layer}/skills/*/{where}/*.{ext}"
     for layer in ("core", "usage", "ai-hats-dev")

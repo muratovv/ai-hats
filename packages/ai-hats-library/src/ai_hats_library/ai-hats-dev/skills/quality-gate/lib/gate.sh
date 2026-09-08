@@ -165,7 +165,7 @@ gate_check_task_worktree() {
         printf '%s: %s has no scripts/gates.sh, so no marker could ever be earned\n' \
                "$gate" "$run_in"
         printf 'honestly. Give the project one, or unbind the gate: drop the\n'
-        printf "maintainer-quality-gate/hooks/%s.sh row from 'composition.apps' in the\n" "$gate"
+        printf "quality-gate/hooks/%s.sh row from 'composition.apps' in the\n" "$gate"
         printf 'role that composes this skill.\n'
         gate_exit checks refuse
     fi

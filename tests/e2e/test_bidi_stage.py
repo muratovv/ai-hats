@@ -75,7 +75,7 @@ def test_a_planted_override_is_refused(tmp_path: Path):
 def test_push_gate_composition_names_the_stage():
     """The gate runs what its `--stages` names, so dropping it here disarms it."""
     hook = (
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
         "/git_hooks/pre-push-e2e-master.sh"
     )
     listed = subprocess.run(

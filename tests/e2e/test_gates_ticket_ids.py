@@ -104,7 +104,7 @@ def test_the_stage_is_part_of_the_merge_gate():
     """Wired but ungated gates nothing."""
     gate = (
         Path(__file__).resolve().parents[2]
-        / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/maintainer-quality-gate"
+        / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
         / "hooks/merge-gate.sh"
     )
     composition = subprocess.run(
