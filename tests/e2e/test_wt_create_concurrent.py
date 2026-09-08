@@ -12,12 +12,71 @@ from __future__ import annotations
 from _helpers.git import git as _git
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+from ai_hats_wt import LifecycleContext, WorktreeManager
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+@pytest.mark.integration
+def test_create_reserves_branch_before_running_hooks(tmp_path: Path):
+    _git(tmp_path, "init", "-b", "main")
+    _git(
+        tmp_path,
+        "-c",
+        "user.email=e2e@test",
+        "-c",
+        "user.name=E2E",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "init",
+    )
+    outcomes = []
+
+    class CompetingCreate:
+        def on_created(self, ctx: LifecycleContext) -> None:
+            outcomes.append(
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import sys; from pathlib import Path; "
+                        "from ai_hats_wt import WorktreeManager; "
+                        "WorktreeManager(Path(sys.argv[1]), branch_name='task/race', "
+                        "state_dir=Path(sys.argv[2])).create()",
+                        str(ctx.project_dir),
+                        str(ctx.state_dir),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+            )
+
+        def before_merge(self, ctx: LifecycleContext) -> None:
+            return None
+
+        def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
+            return None
+
+    manager = WorktreeManager(
+        tmp_path,
+        branch_name="task/race",
+        state_dir=tmp_path / ".wt",
+        lifecycle=CompetingCreate(),
+    )
+
+    manager.create()
+
+    assert len(outcomes) == 1
+    assert outcomes[0].returncode == 1, outcomes[0].stdout + outcomes[0].stderr
+    assert "already exists" in outcomes[0].stderr
+    manager.discard()
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):

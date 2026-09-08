@@ -31,7 +31,7 @@ dependencies = [
     # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
     # WorktreeMergeAborted); HATS-1603 to 0.6.0 (merge takes outer_deadline,
     # passed by wt_effects.teardown).
-    "ai-hats-wt>=0.6.2",
+    "ai-hats-wt>=0.6.3",
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
@@ -45,7 +45,7 @@ dependencies = [
     "ai-hats-observe>=0.7.0",  # the seam takes a ProjectLayout slot (0.7.0)
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
     # HATS-1755 the external session wrapper, not rack, consumes its tickets.
-    "ai-hats-library>=0.6.5",  # the quality gates are thin scripts over gates.sh (HATS-1878)
+    "ai-hats-library>=0.6.6",
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
