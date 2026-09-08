@@ -125,8 +125,8 @@ Wizard is one-shot — to change provider / role / prefix later use `ai-hats con
 
 A role is a composition of traits + rules + skills + injection — definition in [1]. The shipped library is layered:
 
-| Layer                  | Roles                                                                                                          | When to pick                                       |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Layer                                                       | Roles                                                                                                          | When to pick                                       |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | `packages/ai-hats-library/src/ai_hats_library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                              | Curated user-facing — pick one.                    |
 | `packages/ai-hats-library/src/ai_hats_library/core/roles/`  | `initial-wizard`, `session-reviewer`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent` | Engine-internal — do **not** pick as your primary. |
 

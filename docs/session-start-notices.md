@@ -35,17 +35,17 @@ while showing none of them.
 All run in `WrapRunner.run()` between session creation and the PTY spawn,
 each fail-open — a broken check must never block session start:
 
-| Producer                         | Emits                                                                        |
-| -------------------------------- | ---------------------------------------------------------------------------- |
-| `_resync_managed_hooks`          | NOTE per healed hook surface; WARN on failure / version-skew (HATS-833)      |
-| `_check_skill_collisions`        | NOTE on mirror heal; WARN on a home-scope skill collision (HATS-901/907)     |
-| `_check_skill_script_collisions` | WARN per skill-script filename collision (HATS-1114)                         |
-| `_payload_startup_notices`       | WARN per hooks warning carried from the first-run compose seam (HATS-970)    |
+| Producer                         | Emits                                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `_resync_managed_hooks`          | NOTE per healed hook surface; WARN on failure / version-skew (HATS-833)                   |
+| `_check_skill_collisions`        | NOTE on mirror heal; WARN on a home-scope skill collision (HATS-901/907)                  |
+| `_check_skill_script_collisions` | WARN per skill-script filename collision (HATS-1114)                                      |
+| `_payload_startup_notices`       | WARN per hooks warning carried from the first-run compose seam (HATS-970)                 |
 | `_payload_startup_notices`       | one notice per composition `Diagnostic`, at the level its producer set (HATS-1753, below) |
-| finalize-hitl preload            | WARN when the finalize pipeline fails to eager-load (HATS-566)               |
-| `_lint_provider_settings`        | WARN per provider-reported settings pitfall (HATS-1006, below)               |
-| `_lint_env_drift`                | WARN when the editable dev env is stale — needs `uv sync` (HATS-1013, below) |
-| `_check_broken_hook_refs`        | WARN per settings hook ref pointing at a missing file (HATS-1509, below)     |
+| finalize-hitl preload            | WARN when the finalize pipeline fails to eager-load (HATS-566)                            |
+| `_lint_provider_settings`        | WARN per provider-reported settings pitfall (HATS-1006, below)                            |
+| `_lint_env_drift`                | WARN when the editable dev env is stale — needs `uv sync` (HATS-1013, below)              |
+| `_check_broken_hook_refs`        | WARN per settings hook ref pointing at a missing file (HATS-1509, below)                  |
 
 ## Provider settings lint (HATS-1006)
 

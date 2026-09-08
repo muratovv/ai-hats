@@ -268,14 +268,14 @@ per-call shape is git's.
  "worktree":"/tmp/wt-…","tasks_dir":"/…/backlog/tasks","project_dir":"/…"}
 ```
 
-| field                | what it answers                                                              |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `v`                  | contract version — bumped only when a field is removed, retyped or re-meant  |
-| `selector`           | which declaration called (`->done` — the row's own spelling)                 |
-| `event` / `from`/`to` | which road was actually taken (`review->done`); `null` off the FSM channel   |
-| `actor`              | who moved the card — see below                                               |
-| `force`              | whether the transition was forced                                            |
-| the paths            | the tree, the backlog and the project this call is about; `null` when none   |
+| field                 | what it answers                                                             |
+| --------------------- | --------------------------------------------------------------------------- |
+| `v`                   | contract version — bumped only when a field is removed, retyped or re-meant |
+| `selector`            | which declaration called (`->done` — the row's own spelling)                |
+| `event` / `from`/`to` | which road was actually taken (`review->done`); `null` off the FSM channel  |
+| `actor`               | who moved the card — see below                                              |
+| `force`               | whether the transition was forced                                           |
+| the paths             | the tree, the backlog and the project this call is about; `null` when none  |
 
 **A field that does not apply is `null`, never a missing key.** That is the one
 thing the envelope gives you that a scalar cannot: an absent scalar is

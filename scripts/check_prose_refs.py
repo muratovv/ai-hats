@@ -12,6 +12,7 @@ and printed, never flagged — the count is what tells you the gate's reach.
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 import sys
@@ -66,7 +67,7 @@ BARE_LIBRARY_RE = re.compile(
 #: checked the same way: the component resolves, then the heading must exist.
 SECTION_RE = re.compile(r"`([a-z0-9][a-z0-9._-]*)`\s*§\s*[\"“]([^\"”\n]+)[\"”]")
 
-#: `Class.method`, the one code-symbol shape prose actually uses.
+#: `Class.member`, the one code-symbol shape prose actually uses.
 SYMBOL_RE = re.compile(r"^([A-Z][A-Za-z0-9]*)\.([a-z_][a-z0-9_]*)$")
 
 COMPONENT_DIRS = ("rules", "skills", "traits", "roles")
@@ -287,7 +288,9 @@ def scan_file(
     findings: list[Finding] = []
     unanchored = 0
     for lineno, line in strip_code_fences(path.read_text(encoding="utf-8", errors="ignore")):
-        if WAS_RE.search(line):
+        # Outside code spans: a doc that documents the marker quotes it, and a
+        # quoted marker must not silently exempt the line quoting it.
+        if WAS_RE.search(TICK_RE.sub(" ", line)):
             continue  # the line says outright that its references name former things
         for match in SECTION_RE.finditer(line):
             name, heading = match.group(1), match.group(2).strip()
@@ -339,31 +342,55 @@ def scan_file(
 _SYMBOL_CACHE: dict[tuple[str, str], bool] = {}
 
 
-def symbol_resolves(root: Path, cls: str, member: str) -> bool:
-    """`Class.member` resolves when some file declaring `class Class` also
-    declares that member. Co-location in one file is the cheap proxy for
-    membership that needs no import of the tree under test.
+def class_members(text: str, cls: str, source: Path) -> set[str] | None:
+    """Names declared in the body of `class cls`, or None when the file has none.
 
-    A member is a `def` OR an annotated attribute: the docs cite dataclass and
-    pydantic FIELDS at least as often as methods, and a def-only pattern read
-    every one of them as a defect (HATS-1907).
+    Parsed, not matched: a regex over the whole file accepts a signature
+    parameter, a local annotation and an unquoted dict key as members, so a
+    prose reference to a field that does not exist would pass (HATS-1907).
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        print(f"[{CHECK}] warn: {source} does not parse, skipped: {exc}", file=sys.stderr)
+        return None
+    names: set[str] = set()
+    seen = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != cls:
+            continue
+        seen = True
+        for item in node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(item.name)
+            elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                names.add(item.target.id)
+            elif isinstance(item, ast.Assign):
+                names |= {t.id for t in item.targets if isinstance(t, ast.Name)}
+    return names if seen else None
+
+
+def symbol_resolves(root: Path, cls: str, member: str) -> bool:
+    """`Class.member` resolves when a file declaring `class Class` declares it there.
+
+    A member is a def, an annotated field or a plain class attribute — the docs
+    cite dataclass and pydantic FIELDS at least as often as methods.
     """
     key = (cls, member)
     if key in _SYMBOL_CACHE:
         return _SYMBOL_CACHE[key]
     class_re = re.compile(rf"^\s*class\s+{re.escape(cls)}\b", re.MULTILINE)
-    name = re.escape(member)
-    member_re = re.compile(
-        rf"^\s*(?:(?:async\s+)?def\s+{name}\b|{name}\s*:\s*[^\s=])", re.MULTILINE
-    )
     found = False
     seen_class = False
     for source in [*(root / "src").rglob("*.py"), *(root / "packages").rglob("*.py")]:
         text = source.read_text(encoding="utf-8", errors="ignore")
         if not class_re.search(text):
             continue
+        members = class_members(text, cls, source)
+        if members is None:
+            continue
         seen_class = True
-        if member_re.search(text):
+        if member in members:
             found = True
             break
     # An unknown class is somebody else's vocabulary (`Path.cwd`), not a finding.
