@@ -419,3 +419,45 @@ def test_a_background_run_whose_status_survives_gets_no_nudge(_run, command):
     res = _run(command, background=True)
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None, f"unexpected nudge for {command!r}: {res.stdout!r}"
+
+
+# --- a MULTI-LINE quoted argument is still argument text (HATS-1709) ----------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The role's commonest write, verbatim in shape: a work-log body that
+        # talks about a run, and the `cd` that puts `; rack transition` on the
+        # line. Both halves are needed — the text supplies the runner name, the
+        # prefix supplies the mutation the guard then reports.
+        "cd /repo; rack transition HATS-1 --log 'ran the tier\nbash scripts/gates.sh e2e came back red\nfixing now'",
+        "cd /repo; rack transition HATS-1 --log 'gates.sh e2e is red\nsecond thought'",
+        "cd /repo; rack create task --description 'we should run pytest here\nand ci-local.sh too'",
+    ],
+)
+def test_a_multiline_quoted_argument_is_not_a_call(_run, command):
+    """Quote stripping was line-oriented, so an opening quote whose pair sits on
+    a later line never paired and the body was read as commands. Measured on the
+    card's own work-log writes — the guard cried wolf on the text describing it."""
+    res = _run(command)
+    assert res.returncode == 0, res.stderr
+    assert _nudge(res) is None, f"spurious nudge for {command!r}: {res.stdout!r}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The positive control the fix must not blind: a REAL runner on a later
+        # line, outside any quote. Silence here would mean the contour went dark
+        # rather than the noise going away.
+        "cd /repo\nbash scripts/gates.sh run unit | tail",
+        "echo starting\npytest tests/ ; git commit -m wip",
+    ],
+)
+def test_a_real_runner_on_a_later_line_is_still_a_call(_run, command):
+    res = _run(command)
+    assert res.returncode == 0, res.stderr
+    assert _nudge(res) is not None, f"contour went dark for {command!r}"

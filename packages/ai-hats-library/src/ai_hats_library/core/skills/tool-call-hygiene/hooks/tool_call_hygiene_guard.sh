@@ -91,15 +91,24 @@ cmd="${cmd#"${cmd%%[![:space:]]*}"}"
 # No sed (or an unparsable line) leaves this empty and every test below goes quiet —
 # the file's own bias, stated at the allowlist: a missed nudge is acceptable, a
 # spurious one is noise.
-if command -v sed >/dev/null 2>&1; then
+# `sed` is LINE-oriented, and a quote pairs the way the shell pairs it: across
+# newlines. Folding the command onto one line for the two passes and unfolding
+# after is what makes that true here — without it an opening quote whose pair sat
+# on a later line never paired, and a multi-line `--log` body was read as
+# commands (HATS-1709; measured on this card's own work-log writes, which is the
+# role's commonest write). The unfold is not cosmetic: the boundaries below spell
+# a word gap as `[[:space:]]`, which a newline is and the sentinel is not.
+if command -v sed >/dev/null 2>&1 && command -v tr >/dev/null 2>&1; then
     cmd_bare="$(printf '%s' "$cmd" \
+        | tr '\n' '\001' \
         | sed -E "s/-c[[:space:]]+'([^']*)'/-c \1/g; s/-c[[:space:]]+\"([^\"]*)\"/-c \1/g" 2>/dev/null \
-        | sed -E "s/'[^']*'|\"[^\"]*\"//g" 2>/dev/null)"
+        | sed -E "s/'[^']*'|\"[^\"]*\"//g" 2>/dev/null \
+        | tr '\001' '\n')"
 else
     # Degrading to silence is right; degrading SILENTLY is not
     # (dev_rule_silent_fallback) — without this line the exit-code checks just
     # stop and no log ever says why.
-    ai_hats_journal_bypass fail-open "sed absent — exit-code checks skipped"
+    ai_hats_journal_bypass fail-open "sed or tr absent — exit-code checks skipped"
     cmd_bare=""
 fi
 
