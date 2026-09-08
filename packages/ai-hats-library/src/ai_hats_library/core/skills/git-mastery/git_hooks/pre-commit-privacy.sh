@@ -23,6 +23,9 @@ if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journ
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_PRIVACY_ACK:-}" == "1" ]]; then
@@ -191,6 +194,7 @@ Resolve in this order — do NOT reflexively bypass; a real secret must never la
   4. Last resort — whole commit, and only after telling the user what was flagged:
        AI_HATS_PRIVACY_ACK=1 git commit ...
 EOF
+    ai_hats_journal_catch privacy block "hard hit(s) in staged content"
     exit 1
 fi
 

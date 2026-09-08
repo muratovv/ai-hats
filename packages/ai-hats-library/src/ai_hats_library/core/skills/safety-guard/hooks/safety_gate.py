@@ -24,12 +24,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from consent_gate.questions import ConsentQuestion, present_question, protected_server_launch
 
 try:
-    from bypass_journal import journal_bypass
+    from bypass_journal import journal_bypass, journal_catch
 except ImportError:  # helper absent -> say so; never skip quietly
 
     def journal_bypass(kind: str, reason: str, **_kw) -> bool:
         print(
             f"[bypass-journal] NOT RECORDED ({kind}: {reason}) — bypass_journal.py missing",
+            file=sys.stderr,
+        )
+        return False
+
+    def journal_catch(rule: str, verdict: str, **_kw) -> bool:
+        print(
+            f"[catch-journal] NOT RECORDED ({rule}: {verdict}) — bypass_journal.py missing",
             file=sys.stderr,
         )
         return False
@@ -1167,7 +1174,11 @@ def main() -> int:
         return 0
 
     if reason:
-        _emit({"permissionDecision": "deny", "permissionDecisionReason": reason})
+        _emit(
+            {"permissionDecision": "deny", "permissionDecisionReason": reason},
+            "global_rule_destructive_actions",
+            cmd,
+        )
         return 0
 
     try:
@@ -1183,11 +1194,22 @@ def main() -> int:
         return 0
 
     if decision:
-        _emit(decision)
+        _emit(decision, "consent", cmd)
     return 0
 
 
-def _emit(decision: dict) -> None:
+def _emit(decision: dict, rule: str = "", cmd: str = "") -> None:
+    """The one place a verdict leaves this gate — so the one place it is counted.
+
+    The rule is passed in, never read out of the reason prose: four non-allow
+    branches converge here, and a telemetry key parsed from a human-readable
+    message rots the moment somebody rewords it.
+    """
+    verdict = decision.get("permissionDecision", "")
+    if verdict in ("deny", "ask"):
+        journal_catch(
+            rule or "global_rule_destructive_actions", verdict, hook="safety_gate.py", cmd=cmd
+        )
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", **decision}}))
 
 

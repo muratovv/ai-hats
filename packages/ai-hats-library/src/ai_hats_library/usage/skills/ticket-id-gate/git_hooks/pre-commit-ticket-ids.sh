@@ -22,6 +22,9 @@ if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journ
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_TICKET_IDS_ACK:-}" == "1" ]]; then
@@ -91,6 +94,7 @@ if [[ ${#violations[@]} -gt 0 ]]; then
         echo "Or skip this single commit after confirming intent:"
         echo "  AI_HATS_TICKET_IDS_ACK=1 git commit ..."
     } >&2
+    ai_hats_journal_catch ticket-ids block "tracker id in staged library prose"
     exit 1
 fi
 

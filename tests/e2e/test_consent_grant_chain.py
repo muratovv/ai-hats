@@ -126,8 +126,12 @@ def _grants(env: dict) -> list[Path]:
 
 
 def _journal(project: Path) -> str:
-    path = project / ".git" / "ai-hats" / "bypasses.jsonl"
-    return path.read_text(encoding="utf-8") if path.is_file() else ""
+    # Both homes (HATS-1634): a row that named its session moved to the session
+    # dir. A reader that knows only .git turns an absence assertion into a test
+    # that cannot fail.
+    paths = [project / ".git/ai-hats/bypasses.jsonl"]
+    paths += sorted((project / ".agent/ai-hats/sessions/runs").glob("session_*/bypasses.jsonl"))
+    return "".join(p.read_text(encoding="utf-8") for p in paths if p.is_file())
 
 
 def _issue_verb(project: Path, env: dict, *args: str):

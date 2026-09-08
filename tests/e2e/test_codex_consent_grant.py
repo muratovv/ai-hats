@@ -137,7 +137,12 @@ seen = subprocess.run(
 store = Path(identity["session_cache_dir"]) / "consent" / "grants"
 grant_files = sorted(store.glob("*.json"))
 grant = json.loads(grant_files[0].read_text()) if len(grant_files) == 1 else {}
-journal_path = Path(os.getcwd()) / ".git" / "ai-hats" / "bypasses.jsonl"
+# Both homes (HATS-1634): a bypass that knows its session lands beside that
+# session's audit.md, and only one that cannot stays under .git.
+journals = [Path(os.getcwd()) / ".git" / "ai-hats" / "bypasses.jsonl"]
+journals += sorted(
+    (Path(os.getcwd()) / ".agent/ai-hats/sessions/runs").glob("session_*/bypasses.jsonl")
+)
 capture = {
     "identity": identity,
     "ack_keys": sorted(
@@ -167,7 +172,7 @@ capture = {
     "context_stderr": seen.stderr,
     "grant_count": len(grant_files),
     "grant_id": grant.get("id", ""),
-    "journal": journal_path.read_text() if journal_path.is_file() else "",
+    "journal": "".join(j.read_text() for j in journals if j.is_file()),
     "merged_content": (Path(os.getcwd()) / "consent-merged.txt").read_text()
     if (Path(os.getcwd()) / "consent-merged.txt").is_file()
     else "",

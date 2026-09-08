@@ -23,6 +23,9 @@ if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journ
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_DOCS_INDEX_ACK:-}" == "1" ]]; then
@@ -66,4 +69,5 @@ the catalog is intentionally out of sync):
 
   AI_HATS_DOCS_INDEX_ACK=1 git commit ...
 EOF
+ai_hats_journal_catch docs-index block "docs/ drift with INDEX.md unstaged"
 exit 1

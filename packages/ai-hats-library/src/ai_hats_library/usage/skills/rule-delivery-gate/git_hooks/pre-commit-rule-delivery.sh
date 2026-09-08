@@ -32,6 +32,9 @@ if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journ
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_RULE_DELIVERY_ACK:-}" == "1" ]]; then
@@ -125,6 +128,7 @@ if [[ $rc -ne 0 ]]; then
         echo "intentional:"
         echo "  AI_HATS_RULE_DELIVERY_ACK=1 git commit ..."
     } >&2
+    ai_hats_journal_catch rule_composition_value_contract block "undelivered rule pointer in staged injection"
     exit 1
 fi
 

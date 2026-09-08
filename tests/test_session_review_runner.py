@@ -818,3 +818,27 @@ def test_build_prompt_states_the_two_easy_to_confuse_bars(tmp_path: Path):
         "absence-is-not-evidence bar missing — this is what produced false `confirmed`"
     )
     assert "never `confirmed`" in out
+
+
+def test_evidence_names_the_catch_journal_when_the_session_has_one(tmp_path: Path) -> None:
+    """The reviewer's bar is "the guard visibly firing"; the catches are the only
+    record of that, so the evidence section must name the file."""
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
+    sdir = runner.gitlog_dir / f"session_{SID}"
+    sdir.mkdir(parents=True)
+    (sdir / "catches.jsonl").write_text(
+        '{"kind":"catch","hook":"wt_gate.py","rule":"worktree-isolation"}\n', encoding="utf-8"
+    )
+
+    rendered = runner._render_session_evidence(SID)
+
+    assert "catches.jsonl" in rendered
+    assert str(sdir / "catches.jsonl") in rendered
+
+
+def test_evidence_stays_silent_about_a_catch_journal_that_does_not_exist(tmp_path: Path) -> None:
+    """Naming a missing file sends the reviewer after evidence nothing wrote."""
+    runner = SessionReviewRunner(ProjectLayout.at(tmp_path))
+    (runner.gitlog_dir / f"session_{SID}").mkdir(parents=True)
+
+    assert "catches.jsonl" not in runner._render_session_evidence(SID)

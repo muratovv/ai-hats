@@ -28,6 +28,9 @@ if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journ
     ai_hats_journal_bypass() {
         echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
     }
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
 fi
 
 if [[ "${AI_HATS_SHARED_STATE_ACK:-}" == "1" ]]; then
@@ -78,6 +81,7 @@ Recover without wasting turns (rule_pause_before_shared_state_write):
      (do not chain it with other git commands):
        AI_HATS_SHARED_STATE_ACK=1 git push ...
 EOF
+    ai_hats_journal_catch rule_pause_before_shared_state_write block "unacked push to a shared branch"
     exit 1
 fi
 
