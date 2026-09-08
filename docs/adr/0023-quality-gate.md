@@ -71,6 +71,7 @@ hook-подложкой и контрактом кодов возврата. **A
 | `test-isolation`   | review-gate done-gate merge-gate           | the suite patches its own units no more than the recorded baseline           |
 | `prose-refs`       | review-gate done-gate merge-gate push-gate | paths, library prefixes, sections and symbols named in library prose resolve |
 | `ticket-ids`       | review-gate done-gate merge-gate push-gate | no tracker id in shipped library prose                                       |
+| `consumer-refs`    | review-gate done-gate merge-gate           | no library component names a component that composes it                      |
 | `env-reference`    | review-gate done-gate merge-gate push-gate | docs/reference-env.md matches the env declarations the code reads            |
 | `gate-table`       | review-gate done-gate merge-gate push-gate | ADR-0023's stage and gate tables match this file and the gates               |
 | `adr-integrity`    | push-gate                                  | every ADR citation resolves and a number names exactly one file              |
@@ -207,12 +208,12 @@ flowchart TD
 
 <!-- gate-table:gates -->
 
-| гейт          | где применяется          | стадии                                                                                                                                                                           |
-| ------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit                                   |
-| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit integration merge-smoke master-ci |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids env-reference gate-table wheel-contents unit                                   |
-| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e                                                                                      |
+| гейт          | где применяется          | стадии                                                                                                                                                                                         |
+| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                   |
+| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke master-ci |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                   |
+| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e                                                                                                    |
 
 <!-- /gate-table:gates -->
 

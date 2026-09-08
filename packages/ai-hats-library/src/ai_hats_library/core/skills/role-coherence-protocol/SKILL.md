@@ -159,9 +159,8 @@ the **Write** tool to save the report directly to the path declared in
 your role injection (typically
 `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md`). Do
 NOT emit `BEGIN_REFLECT` / `END_REFLECT` markers — the pipeline does
-not extract them on this path. Used by `role-judge` via
-`ai-hats reflect role` and manual `ai-hats execute --role
-role-judge`.
+not extract them on this path. Entered through `ai-hats reflect role`
+or manual `ai-hats execute --role role-judge`.
 
 ## Edge Cases
 

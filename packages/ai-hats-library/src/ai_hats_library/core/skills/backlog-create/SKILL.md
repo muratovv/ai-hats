@@ -6,10 +6,10 @@ license: MIT
 
 # Backlog Create
 
-Narrow companion to **hatrack** for roles authorized to file tasks
-but not to drive the full lifecycle (transitions, hyp/proposal mutations).
-Used by L1 analyst roles like `role-judge` whose mutation policy
-whitelists exactly `rack create` + `ai-hats list …`.
+Narrow companion to **hatrack** for roles authorized to file tasks but not
+to drive the full lifecycle (transitions, hyp/proposal mutations) — a
+mutation policy that whitelists exactly `rack create` + `ai-hats list …`
+and forbids the rest.
 
 For the full backlog lifecycle (state machine, hyp / proposal verbs,
 `plan-extract`, work-log cadence) see **hatrack**.

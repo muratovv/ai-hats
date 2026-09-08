@@ -1,8 +1,8 @@
 name: ai-hats-framework
 composition:
   traits: []
-  # No rule here: the injection carries layer-awareness always-on, the decision
-  # itself is CONTRIBUTING's, and placing a component is role-curator's call.
+  # No rule here: the injection carries layer-awareness always-on, and the
+  # decision itself is CONTRIBUTING's.
   rules: []
   skills: []
 injection: |
