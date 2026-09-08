@@ -305,6 +305,15 @@ class SessionReviewRunner:
         if audit_path.exists():
             audit_text = self._truncate_audit(audit_path.read_text())
             parts.append(f"audit.md:\n```\n{audit_text}\n```")
+        # Named, not inlined: `confirmed` demands the guard visibly firing and
+        # this is the only record of it, but the file is unbounded.
+        catches = sdir / "catches.jsonl"
+        if catches.is_file():
+            parts.append(
+                "catches.jsonl — every gate that FIRED this session, one JSON object "
+                "per line (kind/hook/rule/verdict/cmd). Absence of a firing is not "
+                f"evidence a guard worked; this file is. Read it at:\n{catches}"
+            )
         return "\n\n".join(parts)
 
     # HATS-684: content-aware audit *delivery* (generation stays lossless,
