@@ -73,10 +73,40 @@ error handling**. A committed script saves tokens and is more reliable
 than code regenerated from a description each time. Keep ad-hoc, one-off,
 or judgment-heavy steps as prose.
 
-A skill's `SKILL.md` frontmatter can also declare **hooks** under a top-level
-`ai_hats:` key — `git_hooks` (git events), `runtime_hooks` (Claude Code
-`PreToolUse` / `PostToolUse`), and `worktree` (`wt_in` / `wt_out` worktree
-lifecycle hooks). See `docs/how-to-extend.md`.
+## Declaring a hook from a skill
+
+This is how the ladder's top rung is actually built: a skill's `SKILL.md`
+frontmatter declares **hooks** under a top-level `ai_hats:` key — `git_hooks`
+(git events), `runtime_hooks` (`PreToolUse` / `PostToolUse`), and `worktree`
+(`wt_in` / `wt_out` lifecycle). The skill directory carries the script:
+
+```yaml
+---
+name: my-guard
+description: What it does. Use when <triggers>.
+ai_hats:
+  runtime_hooks:
+    PreToolUse:
+      - matcher: Bash             # tool name or regex
+        script: hooks/guard.sh    # path relative to THIS skill's directory
+    PostToolUse:
+      - matcher: Edit|Write|MultiEdit
+        script: hooks/audit.py
+---
+```
+
+Two rules that are not guessable:
+
+- **Name the tool in Claude's vocabulary, always** — `Bash`,
+  `Edit|Write|MultiEdit` — even on another surface. Each surface translates at
+  spawn, so enumerating other surfaces' tool names guards nothing extra.
+- **Your script reads ONE dialect**: `tool_name`, `tool_input.command`,
+  `tool_input.file_path`. Do not add a second reading for another surface's
+  payload shape; the adapter has already mapped it.
+
+A shipped example to copy: `usage/skills/py-security-lint/` — frontmatter plus
+`hooks/`. Fuller contract, when you have the ai-hats checkout at hand:
+`docs/how-to-extend.md` § "Declaring hooks from a skill".
 
 ## When your edit takes effect
 
