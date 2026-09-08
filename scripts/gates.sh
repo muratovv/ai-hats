@@ -235,11 +235,12 @@ ci_prose_refs() {
     run_py scripts/check_prose_refs.py
 }
 
-# What prose must NOT carry: the library installs into other projects, where
-# this repo's tracker ids are dead links. It reports the ids it still finds in
-# docs/adr and CHANGELOG, so a clean run proves the pattern is alive.
+# What prose must NOT carry: the library installs into other projects and
+# `.agent/` is gitignored here, so this repo's tracker ids are dead links on
+# both sides. It reports the ids it still finds in docs/adr and CHANGELOG, so a
+# clean run proves the pattern is alive.
 ci_ticket_ids() {
-    echo "[gates] ticket-ids (no tracker id in shipped library prose)" >&2
+    echo "[gates] ticket-ids (no tracker id in library prose or a living doc)" >&2
     run_py scripts/check_no_ticket_ids.py
 }
 

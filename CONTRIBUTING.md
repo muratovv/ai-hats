@@ -453,6 +453,47 @@ Two escapes, both announced on every run:
 Reach for the second only when the sentence is genuinely about the past. A
 reference that is merely stale is a finding, and the fix is the reference.
 
+### Tracker ids
+
+`bash scripts/gates.sh ticket-ids` reads the same corpus for a different fault:
+a `HATS-<digits>` in prose. The library installs into projects that have no such
+tracker, and `.agent/` is gitignored here, so the id is a dead link on a fresh
+clone of this repository too. State the fact instead — and where the *when*
+carries weight, write the date the card closed rather than its number.
+
+- **Digits are the whole discrimination.** A placeholder teaches the shape of an
+  id and survives; a concrete one cites history and does not. Samples in prose
+  take the placeholder form.
+- **A fenced block is a sample, not a claim.** A CLI template needs two
+  distinguishable numbers to teach the grammar of a link, so nothing inside a
+  fence is judged. Fences are read per CommonMark: a four-backtick block holding
+  three-backtick ones is two fences, not three. An **unclosed** fence is reported
+  by name — everything after it is out of the gate's reach, and that has to be
+  visible rather than silent.
+- **Dated records keep their ids** — the same `docs/adr/**`, `docs/migration-v*.md`
+  and `CHANGELOG.md` as above; the first and last are also this gate's positive
+  control, so a run that finds nothing there refuses instead of congratulating.
+- **An id a machine prints may stay**, with the reason on the same line. The hook
+  prints the reason back, and a marker without one is reported as
+  `(no reason given)`.
+
+The four forms, which is also why this section states them inside a block — a
+doc that spelled them in prose would be refused by the gate it documents:
+
+````markdown
+Run `rack ls HATS-NNN` <- placeholder: survives
+The form landed in HATS-1430. <- citation: refused
+
+```bash
+rack transition HATS-042 --link depends_on:HATS-041   <- sample: not judged
+```
+
+a wall of HATS-1242 errors <!-- ticket-ids: allow the guard prints it -->
+````
+
+Library code, `hooks/` and `git_hooks/` are not judged: a bare id with no words
+has to be rewritten rather than deleted.
+
 ## Diagrams
 
 Architecture diagrams live in `docs/assets/diagrams/` and are written

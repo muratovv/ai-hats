@@ -129,7 +129,89 @@ def test_an_absent_control_corpus_is_skipped_not_failed(tmp_path: Path, capsys):
     assert "positive control: skipped" in capsys.readouterr().err
 
 
-def test_the_live_library_is_clean(capsys):
+def _doc(root: Path, body: str, name: str = "how-to.md") -> Path:
+    path = root / "docs" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+    return path
+
+
+def test_a_living_doc_is_judged_and_a_dated_record_is_not(repo: Path, capsys):
+    """`.agent/` is gitignored, so a doc id is a dead link on a fresh clone too.
+
+    The record is the other half of the same decision: an ADR names the id it
+    decided, and correcting that would rewrite history rather than a reference.
+    """
+    _skill(repo, "clean\n")
+    _doc(repo, "The plan home moved in HATS-637.\n")
+    (repo / "docs" / "adr" / "0002-y.md").write_text("Decided in HATS-1430.\n")
+    (repo / "docs" / "migration-v0.9.0.md").write_text("Renamed in HATS-1430.\n")
+    assert _run(repo) == 1
+    fails = [line for line in capsys.readouterr().err.splitlines() if "FAIL" in line]
+    assert len(fails) == 1, fails
+    assert "docs/how-to.md:1" in fails[0] and "HATS-637" in fails[0], fails
+
+
+def test_the_root_docs_are_judged(repo: Path, capsys):
+    _skill(repo, "clean\n")
+    (repo / "CONTRIBUTING.md").write_text("The scope split landed in HATS-1651.\n")
+    assert _run(repo) == 1
+    assert "CONTRIBUTING.md:1" in capsys.readouterr().err
+
+
+def test_a_fenced_sample_is_not_a_citation(repo: Path, capsys):
+    """The discrimination the docs half rests on, asserted both ways at once.
+
+    `rack transition HATS-042 …` teaches the grammar of a link and needs two
+    distinguishable numbers to do it; the same token in a sentence cites history.
+    """
+    _skill(repo, "clean\n")
+    _doc(
+        repo,
+        "```bash\nrack transition HATS-042 --link depends_on:HATS-041\n```\n\nLanded in HATS-1430.\n",
+    )
+    assert _run(repo) == 1
+    fails = [line for line in capsys.readouterr().err.splitlines() if "FAIL" in line]
+    assert len(fails) == 1, fails
+    assert "HATS-1430" in fails[0] and "HATS-042" not in fails[0], fails
+
+
+def test_a_nested_fence_does_not_flip_the_parity(repo: Path, capsys):
+    """A ```` block holding ``` ones is two fences, not three.
+
+    Counting every ```-prefixed line as a toggle leaves the file "open" at the
+    end, and every line after it stops being judged — silently, which is how a
+    dead reference sat on the last line of a doc the gate was supposed to read.
+    """
+    _skill(repo, "clean\n")
+    _doc(repo, "````markdown\n```bash\nrack ls HATS-092\n```\n````\n\nLanded in HATS-1430.\n")
+    assert _run(repo) == 1
+    fails = [line for line in capsys.readouterr().err.splitlines() if "FAIL" in line]
+    assert len(fails) == 1, fails
+    assert "HATS-1430" in fails[0] and ":7:" in fails[0], fails
+
+
+def test_an_unclosed_fence_is_reported_rather_than_swallowed(repo: Path, capsys):
+    """A gate that cannot see part of a file has to say which part."""
+    _skill(repo, "clean\n")
+    _doc(repo, "```bash\nrack ls\n\nLanded in HATS-1430.\n")
+    assert _run(repo) == 0
+    out = capsys.readouterr().err
+    assert "blind — docs/how-to.md:1" in out, out
+    assert "FAIL" not in out
+
+
+def test_the_dated_records_match_the_sibling_gate():
+    """Both gates exempt the same set; neither imports the other to do it."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import check_prose_refs  # noqa: PLC0415
+
+    assert ticket_ids.DATED_RECORD_RE.pattern == check_prose_refs.DATED_RECORD_RE.pattern
+
+
+def test_the_live_tree_is_clean(capsys):
     """The tree this repository actually ships, not a fixture."""
     assert ticket_ids.main([]) == 0
-    assert "positive control: the pattern still finds" in capsys.readouterr().err
+    out = capsys.readouterr().err
+    assert "positive control: the pattern still finds" in out
+    assert "prose files (library + living docs)" in out
