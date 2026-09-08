@@ -17,54 +17,13 @@ composition:
     - dev::shell
   rules: []
   skills: []
-  # the live consumer of the bindings channel, on BOTH roads into
-  # master: `apps.rack.tasks` is the FSM automerge and `apps.wt` is a direct
-  # `ai-hats wt merge`, and a gate that holds only one of them is the asymmetry
-  # that started this epic. Each check is a marker lookup; the suites
-  # run out of band via `make <gate>`.
-  #
-  # A GATE PER EDGE, each a few-line script declaring the stages it requires
-  # and handing them to the project's `scripts/gates.sh` (ADR-0023 D6). This
-  # is the only place that says where a gate applies. `->review`: is this work
-  # fit for a human to spend time on. `->merge`: is this branch fit to enter
-  # master — the agent is alone at that refusal. `->done`: is master green after
-  # this card, judged on the MERGE RESULT — the worktree while it lives, the
-  # merge commit once it does not. Markers are per stage, so a wider gate
-  # re-runs nothing a narrower one already earned (D5).
-  #
-  # Two apps rather than one list of points: the app owns the
-  # grammar above `run:`, so a row belongs to exactly one app. `apps.rack.tasks`
-  # names the backlog it gates, which is what keeps it off a sibling backlog.
-  #
-  # On the edge it fires in the per-task lock at priority 15, ahead of the
-  # worktree teardown-merge (30) and the ownership release (40), so a refusal
-  # leaves the card in `review` with no merge commit. In `wt merge` it fires
-  # after `_check_clean` / `_check_drift` and before any mutation.
-  #
-  # An earlier pass shipped the edge half and withdrew it an hour later for
-  # two reasons, both now closed: the gate fired on every backlog the rack CLI
-  # touched (the hook decides that itself now — AI_HATS_TASKS_DIR, see
-  # lib/gate.sh), and a session predating the binding had no snapshot to
-  # resolve from (there is no separate snapshot any more).
-  #
-  # Role-scoped on purpose (ADR-0019 D7): each gate demands its row in the
-  # project's scripts/gates.sh and refuses a project that has none, so they
-  # belong to a role only this codebase wears — never to a base trait.
-  #
-  # `at: ['->done']` is EVERY road into the state, not just the review one
-  # Measured: the worktree teardown-merge fires on 8 of the 8 edges
-  # into `done` and this gate covered 1 — a forced close (`--state done --force`)
-  # merged into master with "is master green after this card" never asked.
+  # Consent is separate and comes from `trait-agent` (ADR-0030); these rows are
+  # the quality gate (ADR-0023). `at` names EVERY road into a state — a gate
+  # bound to the single expected edge goes unasked wherever the card takes
+  # another (ADR-0017).
   apps:
     rack:
       tasks:
-        # The gate covers every road into `done`, and so does the question — which is why the narrow `review->done` consent row
-        # this role used to carry is gone rather than merely moved. Consent itself is
-        # session middleware now, declared by trait-agent under `apps.consent_gate`
-        # and read by nothing in rack (ADR-0030 D1/D3).
-        # `at` is EVERY road into the state here too, for the reason measured
-        # on `->done`: a gate bound to the single expected edge covered 1 of its
-        # 8 roads, so the question went unasked wherever the card took another.
         - run: maintainer-quality-gate/hooks/review-gate.sh
           at: ['->review']
           on_error: refuse
