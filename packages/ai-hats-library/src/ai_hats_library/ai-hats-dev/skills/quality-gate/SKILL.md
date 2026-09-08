@@ -168,7 +168,7 @@ suite stubbed the very contracts the change broke.
    red runs were announced as `exit code 0` that way. Hand the run to the
    wrapper instead, which exits with the tier's own status:
 
-       timeout 1800 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/runcheck.sh \
+       timeout 1800 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh \
            --log /tmp/e2e.log -- bash scripts/gates.sh e2e
 
    Then read `/tmp/e2e.log.rc`. Absent means the bound fired before the tier

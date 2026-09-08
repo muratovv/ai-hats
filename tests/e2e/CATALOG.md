@@ -2694,7 +2694,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  timeout 60 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/runcheck.sh --log /tmp/e2e.log -- bash scripts/gates.sh unit
+  timeout 60 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh --log /tmp/e2e.log -- bash scripts/gates.sh unit
   ```
 
 - **expect** — the wrapper exits with the runner's own status and writes that same number to <log>.rc, so the completion notice and the file agree

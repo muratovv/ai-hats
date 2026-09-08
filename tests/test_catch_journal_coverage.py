@@ -36,7 +36,6 @@ NOT_A_GATE = {
     "post-commit-bypass-stamp.sh": "stamps sha onto existing rows",
     "shared_state_classifier.sh": "sourced classifier — echoes a verdict, owns no outcome",
     "provision-venv.sh": "warn-continue provisioning, not a gate",
-    "runcheck.sh": "runs a command and reports its status — owns no verdict",
 }
 
 #: gate -> why it does not record a catch yet. Remove an entry when you wire it;

@@ -5,7 +5,7 @@ flow:   a maintainer runs the long check tier in the background and needs the
         backgrounded command by its last element, so a trailing capture turns a
         red run into "exit code 0"
 cmds:
-    timeout 60 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/runcheck.sh --log /tmp/e2e.log -- bash scripts/gates.sh unit
+    timeout 60 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh --log /tmp/e2e.log -- bash scripts/gates.sh unit
 expect: the wrapper exits with the runner's own status and writes that same
         number to <log>.rc, so the completion notice and the file agree
 why:    two measured incidents announced `exit code 0` over a red tier; the form
@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RUNCHECK = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills"
-    / "quality-gate/hooks/runcheck.sh"
+    / "quality-gate/bin/runcheck.sh"
 )
 
 
