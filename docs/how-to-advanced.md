@@ -82,7 +82,7 @@ That's it — `id: echo` matches the string you passed to `register()`.
 
 ### 1.3 Run it
 
-User-facing CLI for `pipeline run` is on the roadmap (HATS-1797). Until it lands, drive the harness from Python directly via `run_yaml`:
+User-facing CLI for `pipeline run` is on the roadmap. Until it lands, drive the harness from Python directly via `run_yaml`:
 
 ```python
 from pathlib import Path
@@ -139,7 +139,7 @@ Overriding a built-in is not supported — pick a different id."
 
 **Pick a different name** — overriding built-ins is intentionally not supported (silent overrides are bad debugging surface).
 
-The refusal does not depend on whether anything has used that built-in yet. Built-in ids are *declared* under the `ai_hats.steps` entry-point group and imported only when a pipeline names one, so `register` refuses against the declared ids, not just the imported ones (HATS-1799).
+The refusal does not depend on whether anything has used that built-in yet. Built-in ids are *declared* under the `ai_hats.steps` entry-point group and imported only when a pipeline names one, so `register` refuses against the declared ids, not just the imported ones.
 
 To see all registered step ids:
 
@@ -232,7 +232,7 @@ ai-hats wt merge feat/HATS-NNN --squash      # alternative
 ai-hats wt discard feat/HATS-NNN
 ```
 
-Run `wt merge` / `wt discard` from the **main repo**, passing the branch explicitly (as above). Invoking them from inside the worktree is refused (HATS-788): the teardown runs `git worktree remove`, which would delete the cwd you are standing in and desync the tracker. To act on a worktree without leaving the main repo, use `ai-hats wt exec` / `ai-hats wt env`.
+Run `wt merge` / `wt discard` from the **main repo**, passing the branch explicitly (as above). Invoking them from inside the worktree is refused: the teardown runs `git worktree remove`, which would delete the cwd you are standing in and desync the tracker. To act on a worktree without leaving the main repo, use `ai-hats wt exec` / `ai-hats wt env`.
 
 ### 2.3 Running commands inside the worktree
 
@@ -243,7 +243,7 @@ ai-hats wt exec -- ruff check src/
 ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
 ```
 
-**It swaps the import path, not the interpreter.** `wt exec … -- python -c 'import sys; print(sys.executable)'` prints the **main** checkout's `.venv/bin/python`; only `PYTHONPATH` points into the worktree. That covers in-process imports, and nothing else: a subprocess that does not inherit `PYTHONPATH`, or an `ai-hats` binary resolved from `PATH`, reads the main checkout. So run pytest — and anything that spawns subprocesses — with the worktree's **own** interpreter, which `wt create` provisions (HATS-1291):
+**It swaps the import path, not the interpreter.** `wt exec … -- python -c 'import sys; print(sys.executable)'` prints the **main** checkout's `.venv/bin/python`; only `PYTHONPATH` points into the worktree. That covers in-process imports, and nothing else: a subprocess that does not inherit `PYTHONPATH`, or an `ai-hats` binary resolved from `PATH`, reads the main checkout. So run pytest — and anything that spawns subprocesses — with the worktree's **own** interpreter, which `wt create` provisions:
 
 ```bash
 cd <worktree> && ./.venv/bin/python -m pytest tests/test_foo.py -xvs
@@ -260,7 +260,7 @@ ai-hats wt exec task/hats-1193 -C packages/ai-hats-observe -- ruff check .
 `-C` moves the cwd, not the interpreter — so to run that subproject's *tests*,
 stand in the worktree and use its own `./.venv/bin/python -m pytest`.
 
-A leading token that names an **active branch** is a worktree selector, and it always beats cwd — so the reach-in form works from anywhere, including from inside a *different* worktree (HATS-1213). A first token that names no active worktree is just the command:
+A leading token that names an **active branch** is a worktree selector, and it always beats cwd — so the reach-in form works from anywhere, including from inside a *different* worktree. A first token that names no active worktree is just the command:
 
 ```bash
 # from inside task/hats-1205 — still runs in 1193:
@@ -287,16 +287,16 @@ ai-hats agent sre --task "investigate alert XYZ" --isolation
 
 Each agent has its own worktree, branch, and trace dir. Use this when the parent agent needs to keep working on the main task while a side investigation runs in parallel.
 
-Branch naming convention: `<type>/<TICKET-ID>` (e.g. `feat/HATS-200`, `fix/HATS-380`). The `rack transition <id> execute` flow picks the branch name automatically from the task ID.
+Branch naming convention: `<type>/<TICKET-ID>` (e.g. `feat/HATS-NNN`, `fix/HATS-NNN`). The `rack transition <id> execute` flow picks the branch name automatically from the task ID.
 
 ### 2.5 Pitfalls
 
 - **Uncommitted work in a worktree is NOT protected.** A worktree is a filesystem directory; parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy it without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task).
-- **Don't `cp` skill files manually.** At runtime ai-hats materializes the role's skills into the per-session cache (`<cache_root>/sessions/<sid>/`, outside the project — default `~/.cache/ai-hats/`) and hands them to the surface by flag — the exact subpath is provider-specific, see [`docs/ARCHITECTURE.md#materialization`](ARCHITECTURE.md#materialization). Edits take effect on the next session without running any command. There is no permanent skill-mirror to maintain at `.claude/skills/` (retired in HATS-294) or `<ai_hats_dir>/library/skills/` (that one holds components **you** author locally). **Never** `cp -r .claude/skills/ ~/.claude/skills/`: ai-hats does not manage user-level Claude skill catalogs, the copy will drift from source-of-truth, and `self init` will print a WARN about the orphan `.ai-hats-managed` marker on every run (HATS-465).
+- **Don't `cp` skill files manually.** At runtime ai-hats materializes the role's skills into the per-session cache (`<cache_root>/sessions/<sid>/`, outside the project — default `~/.cache/ai-hats/`) and hands them to the surface by flag — the exact subpath is provider-specific, see [`docs/ARCHITECTURE.md#materialization`](ARCHITECTURE.md#materialization). Edits take effect on the next session without running any command. There is no permanent skill-mirror to maintain at `.claude/skills/` (retired) or `<ai_hats_dir>/library/skills/` (that one holds components **you** author locally). **Never** `cp -r .claude/skills/ ~/.claude/skills/`: ai-hats does not manage user-level Claude skill catalogs, the copy will drift from source-of-truth, and `self init` will print a WARN about the orphan `.ai-hats-managed` marker on every run.
 - **Don't create a worktree from inside a worktree.** `ai-hats wt create` from a linked worktree is blocked. Always `cd` back to the main repo first.
-- **Pre-existing `task/<id>` branches are handled, with one caveat.** Three cases (HATS-517): (1) you ran `git branch task/hats-NNN` ahead of time and the branch isn't checked out anywhere — `rack transition <id> execute` attaches the existing branch to a fresh linked worktree, no error; (2) a linked worktree for that branch already exists but its ai-hats state JSON was lost — the transition adopts the existing path and re-persists state; (3) you're **currently on** `task/hats-NNN` (or any non-base branch) in the main repo — the transition refuses, because adopting the main worktree would silently disable auto-merge on `transition done`. Case 3 is intercepted earlier by the HATS-518 canonical-base guard (`WorktreeBaseBranchError`); recovery is `git checkout master` in the main repo, then retry — or `rack transition <id> --state done --force --reason "shipped on main"` if the work already landed.
-- **Don't let the main-repo HEAD wander between `wt create` and `wt merge`.** The merge target is captured at create-time as `_original_branch`, and `wt merge` / `rack transition <id> done` invoke `git merge` from the main-repo cwd. If anything moves the main-repo HEAD off `_original_branch` in the window between create and merge — manual `git checkout` to look at another task, an IDE branch-switch, a peer agent that commits directly in the main repo without using a linked worktree — the merge would otherwise land on the **current** branch, not on the merge target. The HATS-533 merge-time guard (`WorktreeBaseBranchMismatchError`) refuses before any mutation; the CLI emits a copy-pasteable recipe (`cd <main-repo>; git checkout <expected>; ai-hats wt merge` — or `… rack transition <id> done` on the transition surface). The worktree branch is preserved across the refusal; no work lost, no commits dropped. `--force` (dirty-worktree consent) and `--accept-drift` (stale-baseline consent) do **not** bypass this guard — they address different safety contracts. Symmetric peer of HATS-518 (which closes the same wrong-branch class at create-time).
-- **Run `wt merge` / `wt discard` / `rack transition <id> done` from the main repo, never from inside the worktree** — the teardown runs `git worktree remove` on the cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker (HATS-788). The CLI refuses the in-worktree invocation; `cd` back to the project dir and pass the branch explicitly, or use `ai-hats wt exec` / `wt env` to act on a worktree without leaving it.
+- **Pre-existing `task/<id>` branches are handled, with one caveat.** Three cases: (1) you ran `git branch task/hats-NNN` ahead of time and the branch isn't checked out anywhere — `rack transition <id> execute` attaches the existing branch to a fresh linked worktree, no error; (2) a linked worktree for that branch already exists but its ai-hats state JSON was lost — the transition adopts the existing path and re-persists state; (3) you're **currently on** `task/hats-NNN` (or any non-base branch) in the main repo — the transition refuses, because adopting the main worktree would silently disable auto-merge on `transition done`. Case 3 is intercepted earlier by the canonical-base guard (`WorktreeBaseBranchError`); recovery is `git checkout master` in the main repo, then retry — or `rack transition <id> --state done --force --reason "shipped on main"` if the work already landed.
+- **Don't let the main-repo HEAD wander between `wt create` and `wt merge`.** The merge target is captured at create-time as `_original_branch`, and `wt merge` / `rack transition <id> done` invoke `git merge` from the main-repo cwd. If anything moves the main-repo HEAD off `_original_branch` in the window between create and merge — manual `git checkout` to look at another task, an IDE branch-switch, a peer agent that commits directly in the main repo without using a linked worktree — the merge would otherwise land on the **current** branch, not on the merge target. The merge-time guard (`WorktreeBaseBranchMismatchError`) refuses before any mutation; the CLI emits a copy-pasteable recipe (`cd <main-repo>; git checkout <expected>; ai-hats wt merge` — or `… rack transition <id> done` on the transition surface). The worktree branch is preserved across the refusal; no work lost, no commits dropped. `--force` (dirty-worktree consent) and `--accept-drift` (stale-baseline consent) do **not** bypass this guard — they address different safety contracts. Symmetric peer of the create-time guard, which closes the same wrong-branch class.
+- **Run `wt merge` / `wt discard` / `rack transition <id> done` from the main repo, never from inside the worktree** — the teardown runs `git worktree remove` on the cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker. The CLI refuses the in-worktree invocation; `cd` back to the project dir and pass the branch explicitly, or use `ai-hats wt exec` / `wt env` to act on a worktree without leaving it.
 
 ### 2.6 Recovery from a stray worktree
 
@@ -423,6 +423,6 @@ The env var wins over `harness.repo` for that run only; the persisted config is 
 
 **[8]** — [`ai_hats_library/core/skills/worktree-isolation/SKILL.md`](../packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/SKILL.md) — in-session skill for isolated work.
 
-**[9]** — [`src/ai_hats/runtime.py`](../src/ai_hats/runtime.py) — `_scan_escape` (escape-gesture counter) + `WrapRunner._pty_spawn` (the PTY passthrough loop and force-exit wire), HATS-679.
+**[9]** — [`src/ai_hats/runtime.py`](../src/ai_hats/runtime.py) — `_scan_escape` (escape-gesture counter) + `WrapRunner._pty_spawn` (the PTY passthrough loop and force-exit wire).
 
 **[10]** — [`docs/glossary.md`](glossary.md) — **Harness source / channel**: the local / edge / stable channel model and its resolver.

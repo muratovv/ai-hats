@@ -68,7 +68,7 @@ From role to materialized prompt — a single pipeline; the split happens only a
 
 <!-- Source: docs/assets/diagrams/composition-flow.d2 — render: docs/assets/diagrams/render.sh -->
 
-The overlays apply in order `[global, project, runtime]`: global customizations (`~/.ai-hats/customizations.yaml`) first, project customizations (`ai-hats.yaml`) second, and ephemeral runtime role specs (`-r "maintainer + leader"`, HATS-1456) last. Overlay `add` / `remove` patches component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored (first-wins).
+The overlays apply in order `[global, project, runtime]`: global customizations (`~/.ai-hats/customizations.yaml`) first, project customizations (`ai-hats.yaml`) second, and ephemeral runtime role specs (`-r "maintainer + leader"`) last. Overlay `add` / `remove` patches component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored (first-wins).
 
 <a id="materialization"></a>
 
@@ -81,7 +81,7 @@ and delta-writes `ai-hats.yaml`, runs migrations, creates the `<ai_hats_dir>`
 scaffold, manages `.gitignore`, and installs git hooks. It writes a project-root
 prompt file for **agy only** — the AI-HATS-managed block in `./GEMINI.md`, which
 the Antigravity CLI reads natively. Claude and cline write nothing to the project
-root (ADR-0018 / HATS-1170).
+root (ADR-0018).
 
 **2. Session launch.** The role is composed **in memory, per session** — framework
 rules and skills are never materialized into the canonical tree — and the
@@ -95,7 +95,7 @@ the table below is that dir):
 | **agy**    | `--add-dir <cache>/rules` (`rules/GEMINI.md`) | `<cache>/rules/.agents/skills/` | `<cache>/hooks.json` + global dispatcher      |
 | **cline**  | `--config <cache>`                            | `<cache>/skills`                | `<cache>`                                     |
 
-**The cache is not in the workspace** (HATS-1398). `<cache_root>` resolves to
+**The cache is not in the workspace**. `<cache_root>` resolves to
 `$AI_HATS_CACHE_HOME` → `$XDG_CACHE_HOME/ai-hats` → `~/.cache/ai-hats`, plus a
 per-project subdir keyed `<dirname>-<sha256(abs path)[:8]>` — so two checkouts
 sharing a basename never collide. It also holds the update-check probe mirror
@@ -111,7 +111,7 @@ editing a `SKILL.md` body, swapping a role, or adding a customization all land
 on the next session by themselves. `self init` is for step 1 above — validating
 the config and refreshing the project scaffold — not for making composition
 changes take effect. There is no permanent skill mirror at
-`.claude/skills/` (retired in HATS-294) and none at
+`.claude/skills/` (retired) and none at
 `<ai_hats_dir>/library/skills/` — that directory is the landing spot for
 components **you** author locally, not an export of the installed library.
 
@@ -197,7 +197,7 @@ Triggered after `session_end` when `policy ∈ {always, smart}` and the threshol
 
 ### Manual reflect hypothesis (triage)
 
-When HYPs and PROPs have piled up — the user runs `ai-hats reflect hypothesis`. Triage runs in two phases (ADR-0007 / HATS-513): Phase 1 (`judge-auditor`, read-only audit) produces a draft report with proposed verdicts and mutations, and Phase 2 (`judge`, HITL) discusses the draft with the supervisor, ack's mutations, and bulk-commits status updates.
+When HYPs and PROPs have piled up — the user runs `ai-hats reflect hypothesis`. Triage runs in two phases (ADR-0007): Phase 1 (`judge-auditor`, read-only audit) produces a draft report with proposed verdicts and mutations, and Phase 2 (`judge`, HITL) discusses the draft with the supervisor, ack's mutations, and bulk-commits status updates.
 
 <p align="center">
   <img src="assets/diagrams/manual-reflect-all.svg" alt="Manual reflect-all diagram" width="520">
@@ -250,7 +250,7 @@ ai_hats_library/
 
 The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `~/.ai-hats/library_paths.yaml`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [11].
 
-Vendored golang-* skills carry the upstream commit SHA, LICENSE, and attribution in `metadata.yaml.upstream.*` — the foundation for a future plugin system (see HATS-050).
+Vendored golang-* skills carry the upstream commit SHA, LICENSE, and attribution in `metadata.yaml.upstream.*` — the foundation for a future plugin system.
 
 ### Skill template
 
@@ -275,7 +275,7 @@ Metadata: `metadata.yaml` (name, description, author, tags, pattern).
 
 A skill may optionally declare **git hooks** in its `SKILL.md` frontmatter
 (under the top-level `ai_hats:` key, alongside `runtime_hooks` and `worktree`),
-installed automatically into `.githooks/` when the role is built (HATS-088):
+installed automatically into `.githooks/` when the role is built:
 
 ```yaml
 # <skill>/SKILL.md frontmatter
@@ -321,7 +321,7 @@ package: `hatrack` stays in the library content layer and declares
 `ai_hats.skills` entry-point registry remains the discovery seam for out-of-tree
 skill sources (third-party skill packages).
 
-### Shared-state guard (HATS-437)
+### Shared-state guard
 
 Some operations write shared state with no undo path — `gh pr merge` and
 `git push --force` chief among them. The framework defends against
@@ -340,7 +340,7 @@ autonomous invocations in two layers:
      Blocks `gh pr merge` and `git push --force` when run without a controlling TTY
      (i.e. agent context).
    - `packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
-     — git pre-push hook installed via the HATS-088 mechanism. Detects
+     — git pre-push hook installed via the managed git-hook mechanism. Detects
      non-fast-forward pushes and blocks them; branch creations and
      deletions short-circuit so benign cleanup is not affected.
 
@@ -348,10 +348,10 @@ autonomous invocations in two layers:
    same way. The git hook runs inside the `git push` process, so a per-command
    prefix works: `AI_HATS_SHARED_STATE_ACK=1 git push ...`. The PreToolUse hook
    runs *before* the command it judges is a process, so a prefix never reaches
-   it (HATS-1294) — it reads the ack from its own environment, set where the
+   it — it reads the ack from its own environment, set where the
    agent is launched, which pre-approves the whole session. That export stops at
    the session it was given in: a sub-agent is a different session and the launch
-   blanks the flag for it (HATS-1743, `constants.BYPASS_FLAGS_NOT_INHERITED`).
+   blanks the flag for it (`constants.BYPASS_FLAGS_NOT_INHERITED`).
 
 **Provider asymmetry.** Gemini CLI has no PreToolUse equivalent, so
 Gemini sessions get the rule + the git pre-push hook only — the
@@ -362,10 +362,10 @@ overrides `Surface.ensure_runtime_hooks()` to perform the auto-wire;
 **Skill-declared runtime hooks.** Beyond the built-in guard, any skill can
 declare its own `PreToolUse` / `PostToolUse` hooks via `runtime_hooks:` in its
 `SKILL.md` frontmatter (`ai_hats:` key); `ensure_runtime_hooks()` materializes
-and wires them through the same path (HATS-597/601). See
+and wires them through the same path. See
 [how-to-extend.md](how-to-extend.md).
 
-### Worktree lifecycle hooks (HATS-823)
+### Worktree lifecycle hooks
 
 The third hook kind runs at the boundary of an `ai-hats wt` worktree rather than
 on git events or tool use. A skill declares `wt_in` / `wt_out` scripts under
