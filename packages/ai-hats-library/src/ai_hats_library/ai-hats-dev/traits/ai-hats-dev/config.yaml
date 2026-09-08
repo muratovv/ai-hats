@@ -3,20 +3,13 @@ composition:
   traits: []
   rules:
     # agent-facing short form of the ADR that § "Architectural defaults" states.
-    # It followed that section here; role-curator edits the composer and did
-    # not carry it before.
     - rule_composition_value_contract
   skills:
-    # the gate that decides what owes an e2e test, and the pre-push hook that
-    # enforces it. Lives here so both roles editing this repo get it from ONE
-    # place; it used to be composed twice (library-curator + maintainer role).
+    # decides what owes an e2e test, and installs the pre-push hook enforcing it.
     - maintainer-quality-gate
-    # what § "Documentation discipline" points at; was composed twice
-    # (ai-hats-maintainer + library-curator) before this trait existed.
+    # what § "Documentation discipline" points at.
     - doc-protocol
-    # wt_in hook that mints a .venv in each new worktree. Both roles that edit
-    # this repo work in worktrees; role-curator did not carry it and paid for
-    # that by hand-provisioning twice in one session.
+    # wt_in hook that mints a .venv in each new worktree.
     - worktree-venv
 injection: |
   ## AI-HATS REPOSITORY DISCIPLINE

@@ -6,8 +6,8 @@ composition:
     - skill-optimization
     - skill-template
     - retro-to-framework
-    # pre-commit agnix gate over staged library SKILL.md. Pure
-    # infrastructure (hook carrier); reaches whichever roles compose this trait.
+    # pre-commit agnix gate over staged library SKILL.md. Hook carrier, no
+    # agent-side decision logic.
     - skill-lint-gate
     # pre-commit gate over staged trait/role injections: blocks a
     # `see rule X` pointer to a rule the agent cannot read. Same invariant as the

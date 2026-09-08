@@ -5,9 +5,9 @@ practical bits — dev setup, branch and commit conventions, what to test,
 and what **not** to commit.
 
 > **For agents working in this repo:** the policies below are mirrored into
-> the `ai-hats-dev` trait, which both `maintainer` and `role-curator` compose
-> — the `ai-hats-maintainer` trait keeps only the two crafts that stay with
-> the maintainer, diagrams and the release flow. Load a role with
+> the `ai-hats-dev` trait, which both `maintainer` and `role-curator` compose.
+> Diagrams and the release flow stay in the `maintainer` role's own injection.
+> Load a role with
 > `ai-hats config set -r maintainer` (the project's `ai-hats.yaml` ships this
 > default). This `CONTRIBUTING.md` is the human-readable
 > reference — agents pick up the same content through `ai-hats self init`.
@@ -365,7 +365,7 @@ it lives in `core/skills/` and declares `requires.cli: ai-hats-rack`; the
 (ADR-0016). The dependency arrow is skill → tool, so the skill iterates without
 forcing an engine release.
 
-**Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (injected via the `ai-hats-dev` trait, so both roles that edit this repo carry it; it rode `trait-agent` until HATS-1834 and `ai-hats-maintainer` until the split) is the agent-facing short form.
+**Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (injected via the `ai-hats-dev` trait, so both roles that edit this repo carry it; it rode `trait-agent` until HATS-1834) is the agent-facing short form.
 
 For end-user docs on extending the library (worked examples for roles /
 traits / rules / skills, override precedence, replacing a system role) see

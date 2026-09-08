@@ -97,7 +97,6 @@ def test_maintainer_composition_has_expected_traits() -> None:
         "trait-se-mindset",
         "trait-researcher-mindset",
         "skill-engineer",
-        "ai-hats-maintainer",
         "ai-hats-dev",
         "ai-hats-framework",
         "dev::python",
@@ -113,7 +112,7 @@ def test_maintainer_injection_has_role_header() -> None:
     assert "AI-HATS MAINTAINER" in role.injection
 
 
-# --- ai-hats-maintainer trait — promoted content present --------------------
+# --- shared repo discipline vs the maintainer's own crafts ------------------
 
 
 @pytest.mark.parametrize(
@@ -159,12 +158,13 @@ def test_ai_hats_dev_injection_contains(needle: str) -> None:
         "Release flow",
     ],
 )
-def test_ai_hats_maintainer_injection_contains(needle: str) -> None:
-    """The two crafts that did NOT become shared discipline."""
-    trait = _load(
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
+def test_maintainer_role_injection_contains(needle: str) -> None:
+    """The two crafts that did NOT become shared discipline. They sit in the
+    role's own injection: a trait only one role would ever take is not a trait."""
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
     )
-    assert needle in trait.injection, f"missing in ai-hats-maintainer injection: {needle!r}"
+    assert needle in role.injection, f"missing in maintainer injection: {needle!r}"
 
 
 def test_shared_discipline_reaches_both_roles() -> None:
@@ -177,14 +177,14 @@ def test_shared_discipline_reaches_both_roles() -> None:
         assert "ai-hats-dev" in _load(path).composition.traits, path
 
 
-def test_repo_discipline_lives_in_exactly_one_trait() -> None:
-    """Moved, not copied: a section in both traits would reach `maintainer`
-    twice, since it composes both."""
+def test_repo_discipline_is_not_duplicated() -> None:
+    """Moved, not copied: a section present in the shared trait AND in the
+    maintainer injection would reach that role twice."""
     shared = _load(
         "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-dev/config.yaml"
     ).injection
     specialties = _load(
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-maintainer/config.yaml"
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
     ).injection
     for heading in ("### E2E gate", "### Branches and commits", "### Anti-patterns to refuse"):
         assert heading in shared and heading not in specialties, heading
@@ -192,6 +192,34 @@ def test_repo_discipline_lives_in_exactly_one_trait() -> None:
         assert heading in specialties and heading not in shared, heading
     # the duplicated layer blurb is gone from both; `ai-hats-framework` owns it
     assert "### Library split" not in shared and "### Library split" not in specialties
+
+
+def test_single_consumer_trait_was_folded_into_its_role() -> None:
+    """`ai-hats-maintainer` had exactly one composer, so its content belongs in
+    that role. A trait no second role would take only adds an indirection."""
+    assert not (LIBRARY / "ai-hats-dev/traits/ai-hats-maintainer").exists()
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
+    )
+    assert "ai-hats-maintainer" not in role.composition.traits
+
+
+def test_role_curator_carries_the_quality_gate() -> None:
+    """It edits `src/ai_hats/` and merges to master, so every road into
+    `review` / `done` / a merge owes the same refusal the maintainer owes."""
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml"
+    )
+    apps = role.composition.apps
+    runs = [r["run"] for r in apps["rack"]["tasks"]] + [r["run"] for r in apps["wt"]]
+    assert sorted(runs) == sorted(
+        [
+            "maintainer-quality-gate/hooks/review-gate.sh",
+            "maintainer-quality-gate/hooks/done-gate.sh",
+            "maintainer-quality-gate/hooks/merge-gate.sh",
+        ]
+    )
+    assert all(r["on_error"] == "refuse" for r in apps["rack"]["tasks"] + apps["wt"])
 
 
 def test_ai_hats_dev_attaches_doc_protocol() -> None:

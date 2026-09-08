@@ -59,7 +59,7 @@ LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_libr
 # Unique substrings produced by composing the maintainer role with its
 # default trait set. Each comes from a different composition source —
 # regression in role injection / trait injection / merge would drop one.
-TRAIT_MARKER_E2E_GATE = "E2E gate"  # trait ai-hats-maintainer
+TRAIT_MARKER_E2E_GATE = "E2E gate"  # trait ai-hats-dev
 TRAIT_MARKER_AGENT_PROTOCOL = "Agent Protocol"  # trait trait-agent
 # role maintainer's own injection intro (HATS-703 dropped the "## Workflow" marker)
 ROLE_MARKER_INTRO = "primary development assistant for the"

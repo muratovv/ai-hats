@@ -3,8 +3,6 @@ composition:
   traits: []
   rules: []
   skills:
-    # `doc-protocol` and `maintainer-quality-gate` moved to trait `ai-hats-dev`,
-    # composed by both roles that edit this repo — one home instead of two.
     - library-change-hypothesis-protocol
 injection: |
   ## LIBRARY CURATOR

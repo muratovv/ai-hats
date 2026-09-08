@@ -11,16 +11,31 @@ composition:
     - trait-researcher-mindset
     - skill-engineer
     - library-curator
-    # repo discipline shared with `maintainer`; carries the quality gate,
-    # worktree-venv, doc-protocol and the composition-contract rule.
+    # this role edits the library and `src/ai_hats/`, so the repo's own
+    # working agreements bind it.
     - ai-hats-dev
-    # the layer map. This role places components BY LAYER and did not carry
-    # the trait that states the layers.
+    # the layer map: this role places components by layer.
     - ai-hats-framework
     - dev::python
     - dev::shell
   rules: []
   skills: []
+  # Consent is separate and comes from `trait-agent` (ADR-0030); these rows are
+  # the quality gate. `at` names EVERY road into a state — a gate bound to the
+  # single expected edge goes unasked wherever the card takes another.
+  apps:
+    rack:
+      tasks:
+        - run: maintainer-quality-gate/hooks/review-gate.sh
+          at: ['->review']
+          on_error: refuse
+        - run: maintainer-quality-gate/hooks/done-gate.sh
+          at: ['->done']
+          on_error: refuse
+    wt:
+      - run: maintainer-quality-gate/hooks/merge-gate.sh
+        at: [pre-merge]
+        on_error: refuse
 injection: |
   # ROLE: ROLE CURATOR
 
