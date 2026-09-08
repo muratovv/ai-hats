@@ -10,6 +10,7 @@ not.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -209,3 +210,18 @@ def test_a_carrier_reached_through_a_trait_still_counts(repo: Path, capsys):
     fails = _fails(capsys)
     assert len(fails) == 2, fails  # one line, two upward names: the trait and the role
     assert "`gear`" in fails[0] and "`pilot`" in fails[1], fails
+
+
+def test_the_script_refuses_from_the_command_line(repo: Path):
+    """The argv path and the exit code, which an in-process `main()` never proves."""
+    script = Path(__file__).resolve().parents[1] / "scripts" / "check_consumer_refs.py"
+    _write(
+        repo,
+        "core/traits/gear/config.yaml",
+        "name: gear\ncomposition:\n  # pilot needs this\n  skills:\n    - wrench\n",
+    )
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        [sys.executable, str(script), str(repo)], capture_output=True, text=True, check=False
+    )
+    assert out.returncode == 1, out.stderr
+    assert "FAIL" in out.stderr and "pilot" in out.stderr
