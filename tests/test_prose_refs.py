@@ -132,7 +132,7 @@ def test_placeholder_becomes_a_glob(repo: Path) -> None:
     assert any("resolves under" in f for f in found), found
 
 
-# ---- HATS-1907: the docs corpus, its two escapes, and member resolution ----
+# ---- The docs corpus, its two escapes, and member resolution ----
 
 
 def _doc(repo: Path, rel: str, body: str) -> None:

@@ -76,7 +76,7 @@ COMPONENT_DIRS = ("rules", "skills", "traits", "roles")
 #: so none of its references are claims about this one: `docs/adr/0013` IS the
 #: decision to extract `src/ai_hats/wt/`, and a strikethrough row in
 #: `docs/adr/0021` names a flat copy precisely to say it was removed. Correcting
-#: either would rewrite the record, so the whole family stays out (HATS-1907).
+#: either would rewrite the record, so the whole family stays out.
 DATED_RECORD_RE = re.compile(r"^docs/(?:adr/|migration-v)")
 
 
@@ -259,7 +259,7 @@ def corpus(root: Path) -> list[Path]:
 
     Both halves make path claims about this tree and both rot the same way; only
     the library half was ever judged, so the docs kept a library root that moved
-    out from under them (HATS-1907).
+    out from under them.
     """
     seen: set[Path] = set()
     lib = root / LIBRARY_RELPATH
@@ -347,7 +347,7 @@ def class_members(text: str, cls: str, source: Path) -> set[str] | None:
 
     Parsed, not matched: a regex over the whole file accepts a signature
     parameter, a local annotation and an unquoted dict key as members, so a
-    prose reference to a field that does not exist would pass (HATS-1907).
+    prose reference to a field that does not exist would pass.
     """
     try:
         tree = ast.parse(text)
