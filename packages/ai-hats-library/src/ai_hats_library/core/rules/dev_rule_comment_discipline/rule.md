@@ -40,6 +40,25 @@ rows = fetch_all()  # TODO(PROJ-123): stream once the cursor API lands
 # ❌ a stale-able count ("~600 chars", "only caller")  → omit
 ```
 
+## A composition file is code too
+
+A comment in a `roles/` or `traits/` `config.yaml` is held to everything above,
+plus the one thing that exists only here — which way the reference points:
+
+```yaml
+# ✅ a role saying why it takes a trait — the reference points DOWN
+traits:
+  - shell  # this role ships install scripts
+
+# ❌ a trait naming the role that takes it — the reference points UP: the trait
+#    needs an edit whenever a role takes it, and rots when one drops it
+skills:
+  - deploy-gate  # the release role installs its pre-push hook
+```
+
+Who composes a component is the composition graph's to know. The WHY belongs in
+the role that takes it.
+
 ## Before typing, ask
 
 1. Does the code already say this? → delete.

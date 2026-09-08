@@ -1,7 +1,8 @@
 name: skill-engineer
 composition:
   traits: []
-  rules: []
+  rules:
+    - dev_rule_comment_discipline
   skills:
     - skill-optimization
     - skill-template
