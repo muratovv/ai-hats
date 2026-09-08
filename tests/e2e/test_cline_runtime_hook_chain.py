@@ -43,6 +43,14 @@ def test_cline_hitl_runs_composed_pretooluse_chain(tmp_path: Path, shared_launch
     env.pop("PYTHONPATH", None)
     for key in [name for name in env if name.startswith("AI_HATS_") and name.endswith("ACK")]:
         del env[key]
+    env["UV_CACHE_DIR"] = subprocess.run(
+        ["uv", "cache", "dir"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    ).stdout.strip()
     env["HOME"] = str(tmp_path / "home")
     env["AI_HATS_CACHE_HOME"] = str(tmp_path / "cache")
     env["AI_HATS_NO_UPDATE_CHECK"] = "1"

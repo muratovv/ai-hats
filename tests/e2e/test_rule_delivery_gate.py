@@ -15,6 +15,7 @@ from _helpers.git import git as _git
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -164,7 +165,7 @@ def test_real_checker_blocks_dangling_pointer(repo: Path):
     res = _run_hook(
         repo,
         env={
-            "AI_HATS_RULE_DELIVERY_CMD": "python3 -m ai_hats.rule_delivery",
+            "AI_HATS_RULE_DELIVERY_CMD": f"{sys.executable} -m ai_hats.rule_delivery",
             "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         },
     )
@@ -189,7 +190,7 @@ def test_real_checker_allows_existing_rule_without_delivery_field(repo: Path):
     res = _run_hook(
         repo,
         env={
-            "AI_HATS_RULE_DELIVERY_CMD": "python3 -m ai_hats.rule_delivery",
+            "AI_HATS_RULE_DELIVERY_CMD": f"{sys.executable} -m ai_hats.rule_delivery",
             "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         },
     )

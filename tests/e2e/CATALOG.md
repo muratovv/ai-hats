@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**299 of 299 files catalogued — 307 flows.**
+**301 of 301 files catalogued — 309 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1893,6 +1893,22 @@ as a claim to check, not as evidence.
 - **expect** — CLI exits cleanly with code 2 displaying friendly remediation instructions without traceback
 - **why** — without friendly provider error handling, uninstalled provider packages throw raw ImportErrors
 
+## `test_model_flag_hitl.py`
+
+*pins HATS-1891*
+
+- **flow** — a developer picking a non-default model for an interactive session
+- **cmds**
+
+  ```console
+  ai-hats --dry-run-json -r test-role -m fable
+  ai-hats execute --interactive --model fable -p nonexistent_provider_1891
+  ai-hats execute --interactive --isolation squash -p nonexistent_provider_1891
+  ```
+
+- **expect** — the alias reaches the provider argv as `--model fable` and the report still spawns nothing; `execute --interactive --model` gets past the batch-only guard and dies later, on the unknown provider; `--isolation` is still refused by that same guard
+- **why** — `-m` used to reach the provider verbatim and die there ("unknown option '-m'"), and `execute --interactive --model` was refused with "the interactive runner cannot act on it" — a claim the pass-through argv had always disproved. The `--isolation` row is the positive control: without it, a guard that stopped refusing everything would read as a pass.
+
 ## `test_nested_consent_wrapper.py`
 
 *pins HATS-1806*
@@ -2136,6 +2152,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
 - **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised, and a broken or missing one would have gone unnoticed in every tier. The other half of the claim — that NOTHING registers claude behind the declaration's back — is structural and lives in tests/test_area_boundary.py, whose surfaces pin is empty: no shipped module may name a surface implementation at all (HATS-1826)
+
+## `test_provider_hints_projectless.py`
+
+*pins HATS-1901*
+
+- **flow** — a user requests role-specific help outside an ai-hats project
+- **cmds**
+
+  ```console
+  ai-hats -r architect --help
+  ```
+
+- **expect** — help includes provider hints and announces projectless resolution
+- **why** — strict project resolution must not remove built-in role help
 
 ## `test_pty_escape_hatch.py`
 

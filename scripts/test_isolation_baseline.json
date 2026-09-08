@@ -146,7 +146,7 @@
   "tests/test_wrap_runner_broken_hook_refs.py": 1,
   "tests/test_wrap_runner_env_drift.py": 3,
   "tests/test_wrap_runner_skill_collisions.py": 3,
-  "tests/test_wt_exec_env.py": 14,
+  "tests/test_wt_exec_env.py": 11,
   "tests/unit/test_assembler_provenance.py": 4,
   "tests/update_check/test_checker.py": 71,
   "tests/update_check/test_main.py": 7,
