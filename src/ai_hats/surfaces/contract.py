@@ -36,6 +36,8 @@ from ai_hats.session_artifacts import (
 
 from ..debt import SessionId
 from .system_prompt import compose_sections, write_managed_block
+from .mcp import StdioMCPServer
+from .hook_channel import HookRow
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
@@ -326,6 +328,14 @@ class Surface(abc.ABC):
     def supports_sdk_engine(self) -> bool:
         """Whether this surface provides a native SDK SubagentEngine."""
         return False
+
+    def mcp_form_cli_args(self, server: StdioMCPServer) -> list[str] | None:
+        """Return form-server launch arguments, or None when this surface cannot deliver forms."""
+        return None
+
+    def command_guard_rows(self, environ: Mapping[str, str]) -> list[HookRow]:
+        """Load and validate this session's command guards for an external integration."""
+        raise NotImplementedError(f"{self.name} does not expose session command guards")
 
     def supports_session_command_wrappers(self) -> bool:
         """Whether HITL children inherit an authoritative session PATH."""

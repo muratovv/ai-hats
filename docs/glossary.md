@@ -6,6 +6,18 @@ This file is the naming source-of-truth. When another doc needs to define a core
 
 ---
 
+## Codex consent tool
+
+Session-local MCP server `ai_hats_consent`, exposing `rack_transition(args)`.
+It presents the exact rack transition for human confirmation before delegating
+through the consent wrapper. The composed command guards still run; a refusal
+prevents execution [12].
+
+The consent integration owns the operation and server registration. A surface's
+`mcp_form_cli_args` accepts a `StdioMCPServer` description and renders launch
+settings, or reports that form delivery is unsupported; it does not interpret
+the operation's consent policy.
+
 ## Provider
 
 A target LLM CLI that ai-hats wraps. **`provider` is the published word and `Surface` is the code name** (HATS-1826): the CLI flag (`-p/--provider`), the `ai-hats.yaml` key, the `ai_hats.providers` entry-point group and the `provider` marker in session artifacts all keep the published spelling, because renaming them breaks installed third-party surfaces and existing sessions; every Python symbol inside the process says surface — `Surface`, `SurfaceHint`, `ClaudeSurface`, `ai_hats.surface_registry.get_surface`. Do not "fix" one side to match the other without a migration. The set is an **open registry** (HATS-870) — every provider is discovered through the `ai_hats.providers` entry point, whether it ships inside `ai-hats` (`claude`, `agy`, `cline`, `codex`, `opencode`) or in another installed package (see [Surface plugin](#surface-plugin)). The choice lives in `ai-hats.yaml` (`provider:`). A role composition is built per session and delivered per provider from the session cache — see [1] for the per-surface table. Switching keeps composition intact: `ai-hats config set -p <provider>`.

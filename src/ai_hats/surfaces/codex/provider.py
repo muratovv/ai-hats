@@ -16,9 +16,10 @@ import shutil
 import subprocess
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping
 
 from ai_hats.surfaces import Surface
+from ai_hats.surfaces.mcp import StdioMCPServer
 from ai_hats.session_artifacts import (
     AutomateLaunch,
     BuiltArtifacts,
@@ -26,6 +27,7 @@ from ai_hats.session_artifacts import (
     SessionPolicy,
 )
 
+from ..hook_channel import HookEvent, HookRow
 from .session_home import (
     SESSION_HOME_MANIFEST,
     SessionHomeMetadata,
@@ -536,6 +538,27 @@ class CodexSurface(Surface):
 
     def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_hooks(project_dir, result, session_id, artifacts)
+
+    def mcp_form_cli_args(self, server: StdioMCPServer) -> list[str]:
+        settings = {
+            "command": server.command,
+            "args": server.args,
+            "cwd": str(server.cwd),
+            "env_vars": server.env_vars,
+            "startup_timeout_sec": server.startup_timeout_s,
+            "tool_timeout_sec": server.tool_timeout_s,
+            "required": True,
+        }
+        return [
+            arg
+            for key, value in settings.items()
+            for arg in ("-c", f"mcp_servers.{server.name}.{key}={json.dumps(value)}")
+        ]
+
+    def command_guard_rows(self, environ: Mapping[str, str]) -> list[HookRow]:
+        from .hook_dispatcher import _load_manifest, _rows
+
+        return _rows(_load_manifest(environ), HookEvent.PRE_TOOL_USE)
 
     def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_hooks(project_dir, result, session_id, artifacts)

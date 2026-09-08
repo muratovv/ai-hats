@@ -23,4 +23,12 @@ def by_label(label: str) -> SurfaceProfile | None:
     return next((p for p in ALL if p.label == label), None)
 
 
-__all__ = ["AGY", "ALL", "CLAUDE", "CLINE", "CODEX", "OPENCODE", "by_label"]
+def hook_profile(label: str) -> SurfaceProfile:
+    """Return a registered command-hook profile or reject an unsupported surface."""
+    profile = by_label(label)
+    if profile is None:
+        raise ValueError(f"No command-hook profile for {label}")
+    return profile
+
+
+__all__ = ["AGY", "ALL", "CLAUDE", "CLINE", "CODEX", "OPENCODE", "by_label", "hook_profile"]

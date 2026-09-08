@@ -184,10 +184,19 @@ def orphaned_subagent(tmp_project, tmp_path: Path, repo_root: Path):
     surface = install(tmp_project, tmp_path, repo_root)
     session = surface.start_held("subagent", automate=True)
     child = session.surface_pid
-    session.kill_and_reap()
-    yield surface, session, child
-    if not _pid_gone(child):
-        os.kill(child, signal.SIGKILL)
+    try:
+        deadline = time.monotonic() + ORPHAN_GRACE_S
+        while time.monotonic() < deadline:
+            anchor = json.loads((session.cache_dir / ANCHOR_NAME).read_text())
+            if anchor.get("child_pid") == child and anchor.get("child_start_time_utc"):
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail(f"Wrapper did not record the surface child: {anchor}")
+        session.kill_and_reap()
+        yield surface, session, child
+    finally:
+        session.kill_if_running()
 
 
 def test_a_dead_wrappers_cache_is_kept_while_its_surface_still_reads_it(

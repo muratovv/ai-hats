@@ -89,6 +89,7 @@ UNDECLARED: dict[str, frozenset[str]] = {
             "AI_HATS_BRANCH_NAME",
             "AI_HATS_BYPASS_JOURNAL",
             "AI_HATS_CONSENT_TICKET",
+            "AI_HATS_CONSENT_REQUEST_ID",
             "AI_HATS_CONSENT_WRAPPER_CONFIG",
             "AI_HATS_EVENT",
             "AI_HATS_FORCE",

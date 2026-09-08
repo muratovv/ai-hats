@@ -167,7 +167,7 @@ operation's selectors, while `rack` and `wt` receive ordinary commands and know
 nothing about consent. A role without this declaration gets the original
 command surface unchanged.
 
-On a surface with runtime hooks the agent simply runs the command and the guard
+On a surface that delivers a question with a command rewrite, the agent runs the command and the guard
 turns it into a **question in chat**. The answer carries a one-shot ticket to the
 session-local command wrapper, good for that card, session, and exact command.
 The wrapper consumes it immediately before starting the original executable;

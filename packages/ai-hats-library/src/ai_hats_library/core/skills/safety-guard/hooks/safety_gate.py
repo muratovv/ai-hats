@@ -9,6 +9,8 @@ tracker backlog is refused with the `rack` recipe. Not handled here: `git push`
 (pre_bash_shared_state_guard.sh), worktrees (wt_gate.py).
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -19,6 +21,8 @@ from pathlib import Path
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
 # The hooks are stdlib-only, so the journal arrives as a flattened sibling.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from consent_gate.questions import ConsentQuestion, present_question, protected_server_launch
+
 try:
     from bypass_journal import journal_bypass
 except ImportError:  # helper absent -> say so; never skip quietly
@@ -409,6 +413,9 @@ SELF_GRANT_FORBIDDEN = (
 
 def check_self_grant(args) -> str:
     """The agent must not hand itself consent inline; exporting it is the user's call."""
+    for call in command_slices(args):
+        if _is_interpreter(get_bin(call)) and protected_server_launch(call[1:]):
+            return "Stopped: use the registered MCP tool; do not launch its consent server."
     for token in args:
         upper = token.upper()
         for flag in SELF_GRANT_FORBIDDEN:
@@ -899,25 +906,26 @@ def _wrapper_bypass_verdict(cmd: str, *, targets=None, points=None) -> dict:
     return {}
 
 
-def consent_ask(cmd: str, tool_input: dict) -> dict:
-    """The verdict for a call touching a point the ROLE declared consent on.
-
-    Where to ask is not a judgement this hook makes — it reads the role's
-    `composition.apps` rows and asks exactly on the points they name (HATS-1682).
-    One hook, one verdict (HATS-1253): the process that mints the ticket is the
-    one that refuses a typed one, so the two can never disagree about which is
-    which.
-
-    ``{}`` means NO declared point was matched — nothing to ask about, and the
-    ordinary permission flow decides. Once a point IS matched the answer is
-    `ask` or `deny`, never ``{}``: on a declared point silence is that flow's
-    allow, which is how three everyday spellings merged into master unasked
-    (HATS-1682 A4, measured).
-    """  # comment-length: allow — the {} / ask / deny contract is the whole fix
+def consent_ask(cmd: str, tool_input: dict, *, payload: dict | None = None) -> dict:
+    """Resolve a consent requirement, then deliver its question."""
     bypass = _wrapper_bypass_verdict(cmd)
     if bypass:
         return bypass
+    question = consent_requirement(cmd)
+    if question is None:
+        return {}
+    return present_question(
+        question,
+        provider=_envelope().get("provider", ""),
+        transport_id=(payload or {}).get("ai_hats_consent_transport", ""),
+        issue=lambda q: _ask_for(
+            cmd, tool_input, q.args, q.anchor, q.ordinal, q.total, q.subject, q.headline
+        ),
+    )
 
+
+def consent_requirement(cmd: str) -> ConsentQuestion | None:
+    """Find the first declared operation whose existing authorization is insufficient."""
     declared = None
     for anchor, ordinal, total, args in anchored_calls(cmd, "rack"):
         task_id, target = transition_target(args)
@@ -930,18 +938,17 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
         # A live grant already answered this, for a window the supervisor named
         # — asking again is the click the grant was issued to remove (HATS-1735).
         if grant_covers("rack.transition", task_id, cmd):
-            return {}
+            return None
         # The env channel stands in wherever no question can be asked — headless,
         # cron, a surface without runtime hooks. Set there, a prompt is redundant,
         # and in headless an `ask` does not prompt, it blocks.
         for flag in (CONSENT_ACK, LEGACY_ACK_BY_TARGET.get(target, "")):
             if flag and os.environ.get(flag) == "1":
                 journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
-                return {}
-        return _ask_for(
-            cmd,
-            tool_input,
-            args,
+                return None
+        return ConsentQuestion(
+            "rack.transition",
+            tuple(args),
             anchor,
             ordinal,
             total,
@@ -957,23 +964,22 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
             if not subject or point not in _operation_points(operation):
                 continue
             if grant_covers(operation, subject, cmd):
-                return {}
+                return None
             legacy = (WT_MERGE_ACK,) if operation == "wt.merge" else ()
             for flag in (CONSENT_ACK, *legacy):
                 if os.environ.get(flag) == "1":
                     journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
-                    return {}
-            return _ask_for(
-                cmd,
-                tool_input,
-                call,
+                    return None
+            return ConsentQuestion(
+                operation,
+                tuple(call),
                 anchor,
                 ordinal,
                 total,
                 subject,
                 headline.format(subject=subject),
             )
-    return {}
+    return None
 
 
 #: Said once, so the two questions cannot drift into describing different tickets.
@@ -1165,7 +1171,11 @@ def main() -> int:
         return 0
 
     try:
-        decision = consent_ask(cmd, tool_input) or allow_verdict(cmd)
+        decision = consent_ask(
+            cmd,
+            tool_input,
+            payload=payload,
+        ) or allow_verdict(cmd)
     except Exception as exc:
         # A consent path that touches the filesystem must never take the rest of
         # the gate down with it — `rm`, `mkfs`, `dd` are judged above (HATS-1647).
