@@ -132,6 +132,79 @@ def test_placeholder_becomes_a_glob(repo: Path) -> None:
     assert any("resolves under" in f for f in found), found
 
 
+# ---- The docs corpus, its two escapes, and member resolution ----
+
+
+def _doc(repo: Path, rel: str, body: str) -> None:
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{body}\n")
+
+
+def test_a_living_doc_is_judged_a_dated_record_is_not(repo: Path) -> None:
+    """The docs a human reads make the same path claims library prose does."""
+    _doc(repo, "docs/guide.md", "The runner lives in `src/pkg/gone.py`.")
+    _doc(repo, "docs/adr/0001-x.md", "We moved it out of `src/pkg/gone.py`.")
+    _doc(repo, "docs/migration-v9.9.9.md", "It used to be `src/pkg/gone.py`.")
+    found = [f"{f.path} :: {f.token}" for f in prose_refs.scan(repo)[0]]
+    assert any("docs/guide.md" in f for f in found), found
+    assert not any("adr" in f or "migration" in f for f in found), found
+
+
+def test_readme_and_contributing_are_in_the_corpus(repo: Path) -> None:
+    _doc(repo, "README.md", "Start at `src/pkg/gone.py`.")
+    _doc(repo, "CONTRIBUTING.md", "Then read `src/pkg/real.py`.")
+    found = [f"{f.path} :: {f.token}" for f in prose_refs.scan(repo)[0]]
+    assert any("README.md" in f for f in found), found
+    assert not any("CONTRIBUTING.md" in f for f in found), found
+
+
+def test_was_marker_exempts_its_line_only(repo: Path) -> None:
+    """A living doc still has to be able to name what it retired."""
+    _doc(
+        repo,
+        "docs/guide.md",
+        "Retired: `src/pkg/gone.py`. %s\n\nStill claimed: `src/pkg/also_gone.py`."
+        % "<!-- prose-refs: was -->",
+    )
+    found = _findings(repo)
+    assert not any("src/pkg/gone.py" in f for f in found), found
+    assert any("src/pkg/also_gone.py" in f for f in found), found
+
+
+def test_a_quoted_marker_does_not_exempt_the_line_quoting_it(repo: Path) -> None:
+    """The doc that documents the escape must not silently take it."""
+    _doc(
+        repo,
+        "docs/guide.md",
+        "Write `<!-- prose-refs: was -->` on such a line — see `src/pkg/gone.py`.",
+    )
+    assert any("src/pkg/gone.py" in f for f in _findings(repo)), _findings(repo)
+
+
+def test_a_field_is_a_member_a_signature_parameter_is_not(repo: Path) -> None:
+    """A regex over the file read a parameter and a dict key as members, so a
+    reference to a field that does not exist passed (the def-only pattern read
+    every real field as a defect — both directions are asserted here)."""
+    (repo / "src" / "pkg" / "model.py").write_text(
+        "class Card:\n"
+        "    extras: dict = {}\n"
+        "    def build(self, nowhere: str) -> None:\n"
+        "        local: int = 1\n"
+        "        cfg = {alsonowhere: 1}\n"
+    )
+    _skill(
+        repo,
+        "`Card.extras` and `Card.build` exist; `Card.nowhere`, `Card.local` "
+        "and `Card.alsonowhere` do not.",
+    )
+    found = _findings(repo)
+    for live in ("Card.extras", "Card.build"):
+        assert not any(live in f for f in found), found
+    for dead in ("Card.nowhere", "Card.local", "Card.alsonowhere"):
+        assert any(dead in f for f in found), found
+
+
 def test_real_repository_scan_reports_its_own_reach() -> None:
     """The checker must be able to say what it did NOT judge. A gate that reports
     only findings cannot be distinguished from one that looked at nothing."""

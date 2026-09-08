@@ -174,7 +174,7 @@ Full reference — `ai-hats --tree`.
 
 ## Customization
 
-The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). Role definitions live under `library/core/roles/` and `library/usage/roles/`; you change behaviour by composing or replacing them rather than editing core code.
+The shipped library splits into `core/` (engine fundament) and `usage/` (curated content). Role definitions live under `packages/ai-hats-library/src/ai_hats_library/core/roles/` and `packages/ai-hats-library/src/ai_hats_library/usage/roles/`; you change behaviour by composing or replacing them rather than editing core code.
 
 Reference for role changes — [`docs/how-to-extend.md`](docs/how-to-extend.md):
 
