@@ -342,7 +342,8 @@ gate_run() {
 gate_main() {
     local gate="$1" stages="$2"
     # `gate_exit` is several frames down and needs the name for its record.
-    AI_HATS_GATE_NAME="$gate"
+    # A plain shell global, not AI_HATS_*: nobody configures this from outside.
+    _ai_hats_gate_name="$gate"
     shift 2
     case "${1:---check}" in
         --check) gate_check_task_worktree "$gate" "$stages" ;;
@@ -368,7 +369,7 @@ gate_exit() {
     case "$outcome" in
         pass) exit 0 ;;
         refuse)
-            ai_hats_journal_catch "${AI_HATS_GATE_NAME:-quality-gate}" refuse "$channel"
+            ai_hats_journal_catch "${_ai_hats_gate_name:-quality-gate}" refuse "$channel"
             [[ "$channel" == "checks" ]] && exit 2 || exit 1
             ;;
         *)
