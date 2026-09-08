@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**301 of 301 files catalogued — 309 flows.**
+**307 of 307 files catalogued — 315 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -674,6 +674,22 @@ as a claim to check, not as evidence.
 - **expect** — the refusal exits non-zero and names "linked worktree"; the worktree survives it; HATS-1 stays in state review; sibling HATS-2 still resolves via `rack context`, both after the refusal and after the close finally issued from main
 - **why** — without the guard the close merges and `git worktree remove --force` deletes the operator's cwd — every later `rack` then mis-resolves the tracker and a sibling task reads "not found" though it is intact on disk
 
+## `test_codex_auth_lifecycle.py`
+
+*pins HATS-1896*
+
+- **flow** — a user logs out and logs back in across isolated Codex session homes
+- **cmds**
+
+  ```console
+  codex logout
+  codex login --with-api-key
+  codex login status
+  ```
+
+- **expect** — logout and subsequent login persist into the next session home
+- **why** — unlinking a projected auth symlink used to leave canonical credentials behind
+
 ## `test_codex_clean_root.py`
 
 *pins HATS-1531*
@@ -773,6 +789,48 @@ as a claim to check, not as evidence.
 
 - **expect** — codex is discovered through the entry point ai-hats declares for it and is displayed alongside claude
 - **why** — a surface reaches the binary only through the `ai_hats.providers` group; codex used to ship as its own distribution and HATS-1826 folded it into ai-hats, so a dropped declaration would silently un-ship the surface
+
+## `test_codex_rack_consent_chain.py`
+
+*pins HATS-1897*
+
+- **flow** — the MCP client approves a real rack transition through the session wrapper
+- **cmds**
+
+  ```console
+  rack transition HATS-1897 execute
+  ```
+
+- **expect** — no task or worktree mutation before Accept; the wrapper then runs rack
+- **why** — a successful form alone does not prove the command boundary
+
+## `test_codex_rack_consent_delivery.py`
+
+*pins HATS-1897*
+
+- **flow** — ordinary Codex HITL artifact assembly delivers the consent MCP server
+- **cmds**
+
+  ```console
+  ai-hats --provider codex --role assistant
+  ```
+
+- **expect** — the launched session receives MCP config without a PoC launcher
+- **why** — an independently runnable server is not a delivered user feature
+
+## `test_codex_rack_consent_guards.py`
+
+*pins HATS-1897*
+
+- **flow** — a consent question precedes a denying guard on the MCP command path
+- **cmds**
+
+  ```console
+  rack transition HATS-1897 execute
+  ```
+
+- **expect** — the later denial wins and no authorization is issued
+- **why** — accepting the first ask must not hide another guard's refusal
 
 ## `test_codex_resume.py`
 
@@ -1223,7 +1281,7 @@ as a claim to check, not as evidence.
   bash -c '. lib/gate.sh; gate_exit checks refuse'
   ```
 
-- **expect** — a card with no code passes; a live worktree is judged by ITS scripts/gates.sh against the stages the gate declares, and refused with the missing ones and the command that earns them; a merged card is judged by its merge commit
+- **expect** — a card with no code passes; a live worktree is judged by ITS scripts/gates.sh against the stages the gate declares, and refused with the missing ones and the command that earns them; a merged card is judged by its merge commit; a green run names what the gates after it still lack
 - **why** — a gate used to be sixty lines that differed from its siblings in two strings; a few-line declaration over one primitive cannot drift
 
 ## `test_gates_check_run.py`
@@ -1239,7 +1297,7 @@ as a claim to check, not as evidence.
   scripts/gates.sh subject [--rev <commit>]
   ```
 
-- **expect** — `check` lists what lacks a marker and never calls the runner; `run` runs only the unmarked, stamps each green stage for the SUBJECT tree, and judges a commit in a one-shot scratch worktree when the checkout is dirty or its HEAD is not the subject
+- **expect** — `check` lists what lacks a marker and never calls the runner; `run` runs only the unmarked, stamps each green stage for the SUBJECT tree, and judges a commit in a one-shot scratch worktree when the checkout is dirty or its HEAD is not the subject — saying so under the verdict, and handing a red pytest stage the command that re-runs just its failures
 - **why** — a per-GATE, all-or-nothing marker made a wider gate re-run what a narrower one had earned; a run "here" judged whatever the desk held
 
 ## `test_gates_prepare.py`
@@ -1921,6 +1979,22 @@ as a claim to check, not as evidence.
 - **expect** — CLI exits cleanly with code 2 displaying friendly remediation instructions without traceback
 - **why** — without friendly provider error handling, uninstalled provider packages throw raw ImportErrors
 
+## `test_model_flag_hitl.py`
+
+*pins HATS-1891*
+
+- **flow** — a developer picking a non-default model for an interactive session
+- **cmds**
+
+  ```console
+  ai-hats --dry-run-json -r test-role -m fable
+  ai-hats execute --interactive --model fable -p nonexistent_provider_1891
+  ai-hats execute --interactive --isolation squash -p nonexistent_provider_1891
+  ```
+
+- **expect** — the alias reaches the provider argv as `--model fable` and the report still spawns nothing; `execute --interactive --model` gets past the batch-only guard and dies later, on the unknown provider; `--isolation` is still refused by that same guard
+- **why** — `-m` used to reach the provider verbatim and die there ("unknown option '-m'"), and `execute --interactive --model` was refused with "the interactive runner cannot act on it" — a claim the pass-through argv had always disproved. The `--isolation` row is the positive control: without it, a guard that stopped refusing everything would read as a pass.
+
 ## `test_nested_consent_wrapper.py`
 
 *pins HATS-1806*
@@ -2164,6 +2238,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
 - **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised, and a broken or missing one would have gone unnoticed in every tier. The other half of the claim — that NOTHING registers claude behind the declaration's back — is structural and lives in tests/test_area_boundary.py, whose surfaces pin is empty: no shipped module may name a surface implementation at all (HATS-1826)
+
+## `test_provider_hints_projectless.py`
+
+*pins HATS-1901*
+
+- **flow** — a user requests role-specific help outside an ai-hats project
+- **cmds**
+
+  ```console
+  ai-hats -r architect --help
+  ```
+
+- **expect** — help includes provider hints and announces projectless resolution
+- **why** — strict project resolution must not remove built-in role help
 
 ## `test_pty_escape_hatch.py`
 
