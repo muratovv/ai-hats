@@ -18,6 +18,7 @@
 #   gates.sh check [--rev C] <stage>... # which of these lack a marker; runs nothing
 #   gates.sh run   [--rev C] [--fresh] <stage>...   # run the unmarked, stamp each
 #   gates.sh subject [--rev C]          # what a run would judge, and where
+#   gates.sh touched [--rev C] [--base B]  # zone stages this change demands
 #
 # A STAGE RUNS BARE: nothing after its name reaches pytest, because a marker
 # earned for `unit -k foo` would be a lie. CI's parallelism rides PYTEST_ADDOPTS.
@@ -636,6 +637,86 @@ cmd_subject() {
            "$repo_root" "$sha" "$tree" "$(_where "$repo_root" "$sha")"
 }
 
+# The branch a card lands on. A shell copy of ai-hats-wt's
+# CANONICAL_BASE_BRANCHES, held equal to it by `tests/test_zone_touched.py`:
+# a drifted copy names the wrong base, and a wrong base is a wrong diff.
+CANONICAL_BASE_BRANCHES='master main'
+
+_base_branch() {
+    local name
+    for name in $CANONICAL_BASE_BRANCHES; do
+        if git -C "$1" show-ref --verify --quiet "refs/heads/$name"; then
+            printf '%s' "$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Which zone stages a change demands — the diff turned into stage names, one per
+# line. NEVER SILENT ABOUT NOT KNOWING: a base it cannot name exits non-zero,
+# because "nothing changed" and "I could not tell" are the same empty output,
+# and a gate reading the second as the first passes what it never examined.
+#
+# The base has two roads, the same two the subject has (ADR-0023 D4): a merge
+# commit is judged against its first parent, so the diff is exactly what the card
+# contributed; anything else against where it left the base branch.
+cmd_touched() {
+    local base='' rev='HEAD'
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --rev)
+                [[ -n "${2:-}" ]] || _die 64 "--rev names no commit"
+                rev="$2"
+                shift 2
+                ;;
+            --base)
+                [[ -n "${2:-}" ]] || _die 64 "--base names no commit"
+                base="$2"
+                shift 2
+                ;;
+            *) _die 64 "touched: unexpected argument '$1'" ;;
+        esac
+    done
+
+    local sha
+    sha="$(_commit_of "$repo_root" "$rev")" || _die 70 "$rev names no commit in $repo_root"
+    if [[ -z "$base" ]]; then
+        if git -C "$repo_root" rev-parse --verify --quiet "$sha^2" >/dev/null 2>&1; then
+            base="$sha^1"
+        else
+            local branch
+            branch="$(_base_branch "$repo_root")" \
+                || _die 70 "no base branch here (looked for: $CANONICAL_BASE_BRANCHES) — cannot tell what changed"
+            base="$(git -C "$repo_root" merge-base "$sha" "$branch" 2>/dev/null)" \
+                || _die 70 "no merge base between $rev and $branch — cannot tell what changed"
+        fi
+    fi
+
+    local changed
+    changed="$(git -C "$repo_root" diff --name-only "$base" "$sha" 2>/dev/null)" \
+        || _die 70 "cannot diff $base..$sha — cannot tell what changed"
+
+    local prefix zone path hit
+    while IFS='|' read -r prefix zone; do
+        prefix="${prefix//[[:space:]]/}"
+        zone="${zone//[[:space:]]/}"
+        [[ -n "$prefix" && -n "$zone" ]] || continue
+        # A prefix owning nothing is a zone that can never be demanded — the
+        # silent hole this table is most likely to grow.
+        if ! git -C "$repo_root" ls-files --error-unmatch -- "$prefix" >/dev/null 2>&1; then
+            _die 70 "zone '$zone' owns '$prefix', which matches no tracked file"
+        fi
+        hit=''
+        while IFS= read -r path; do
+            [[ -n "$path" ]] || continue
+            case "$path" in "$prefix"*) hit=1; break ;; esac
+        done <<< "$changed"
+        [[ -n "$hit" ]] && printf 'e2e-%s\n' "$zone"
+    done < <(zone_table)
+    return 0
+}
+
 # Short ids for a reader; the marker files keep the full ones.
 _short() {
     git -C "$1" rev-parse --short "$2" 2>/dev/null || printf '%s' "$2"
@@ -893,6 +974,7 @@ case "$verb" in
     check) shift; cmd_check "$@" ;;
     run) shift; cmd_run "$@" ;;
     subject) shift; cmd_subject "$@"; exit 0 ;;
+    touched) shift; cmd_touched "$@"; exit 0 ;;
 esac
 if [[ $# -gt 1 ]]; then
     echo "[gates] a stage runs bare: '${*:2}' after '$verb' is not accepted" >&2
@@ -933,6 +1015,7 @@ case "$verb" in
             echo "  stages: $(known_stages | tr '\n' ' ')" >&2
             echo "  bundle: all (the local pre-push bundle, and the default)" >&2
             echo "  list | check <stage>... | run <stage>... | subject — the markers" >&2
+            echo "  touched: the zone stages this change demands (a diff, not a marker)" >&2
             echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
             exit 2
         fi
