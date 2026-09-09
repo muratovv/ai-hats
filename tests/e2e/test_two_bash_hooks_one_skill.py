@@ -24,7 +24,7 @@ import pytest
 from _helpers.git import init_repo
 from _helpers.hook_chain import build_session_settings, pretooluse_hooks, run_chain
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards]
 
 SKILL = "worktree-isolation"
 SESSION_ID = "sid-two-hooks"

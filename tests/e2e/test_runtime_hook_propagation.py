@@ -25,6 +25,8 @@ from _helpers.hook_chain import composed_rows
 
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
+pytestmark = pytest.mark.guards
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "runtime_hook_lib"

@@ -23,6 +23,8 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
+pytestmark = pytest.mark.guards
+
 
 def _seed_stuck_state(project_path: Path) -> None:
     """Mimic proxmox-stuck shape: settings.json post-heal form pointing

@@ -24,7 +24,7 @@ import pytest
 
 from ai_hats.surfaces.agy.global_hook import DISPATCHER_COMMAND
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.surfaces]
 
 SESSION_ID = "e2e-sid-timeout"
 BUDGET_S = 2.0

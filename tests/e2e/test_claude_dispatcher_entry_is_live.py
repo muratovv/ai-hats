@@ -29,6 +29,8 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
+
 SESSION_ID = "sid-dispatcher-entry"
 
 

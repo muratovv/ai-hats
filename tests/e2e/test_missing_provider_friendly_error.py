@@ -14,7 +14,7 @@ import pytest
 
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
+pytestmark = [pytest.mark.integration, pytest.mark.smoke, pytest.mark.surfaces]
 
 
 @pytest.fixture

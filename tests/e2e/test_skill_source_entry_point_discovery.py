@@ -21,7 +21,7 @@ import pytest
 from _helpers.env import checkout_pythonpath
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 def _write_skill_plugin_dist(root: Path) -> Path:

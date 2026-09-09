@@ -26,6 +26,8 @@ import pytest
 from _helpers.hook_chain import run_claude_dispatch
 from _helpers.sessions import stand_in_session
 
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
+
 SESSION_ID = "sid-claude-vanished"
 
 

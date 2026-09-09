@@ -19,7 +19,7 @@ import pytest
 
 from _helpers.wt import ai_hats, child_env, git, init_repo, spawn_worktree, worktree_branches
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 
 def _cache_pinned_env(repo_root: Path, cache_home: Path) -> dict[str, str]:

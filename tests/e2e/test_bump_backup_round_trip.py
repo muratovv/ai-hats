@@ -24,6 +24,8 @@ import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 from ai_hats.constants import ENV_REPO_URL, HOOK_PRE_TOOL_USE
 
+pytestmark = pytest.mark.install
+
 # Load-bearing files whose pre-bump bytes the round-trip check restores.
 _ROUND_TRIP_FILES = (PROJECT_CONFIG, ".claude/settings.json", ".agent/hooks/guard.py")
 

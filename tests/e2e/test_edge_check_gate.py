@@ -23,7 +23,7 @@ import pytest
 
 from _helpers.git import git, init_repo
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "brainstorm->plan"

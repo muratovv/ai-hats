@@ -37,6 +37,8 @@ from _helpers.repo_src import build_src  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV  # noqa: E402
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
 
+pytestmark = pytest.mark.guards
+
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(

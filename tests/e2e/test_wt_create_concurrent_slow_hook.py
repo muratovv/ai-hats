@@ -19,6 +19,8 @@ import pytest
 
 from _helpers.git import git as _git
 
+pytestmark = pytest.mark.wt
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "wt_hook_lib"
 

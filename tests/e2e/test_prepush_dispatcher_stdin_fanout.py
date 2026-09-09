@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.guards
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DISPATCHER_TEMPLATE = REPO_ROOT / "src/ai_hats/templates/githooks/dispatcher.sh"

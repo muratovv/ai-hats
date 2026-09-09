@@ -26,7 +26,7 @@ from ai_hats.runs_retention import BULK_MAX_AGE_DAYS, RETAINED_ARTIFACTS
 
 from _helpers.fake_surface import install
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.observe]
 
 #: The facts tier, named literally rather than imported: a rename that silently
 #: dropped one of these from the retained set is exactly what this test exists to

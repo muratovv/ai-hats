@@ -20,6 +20,8 @@ import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
+pytestmark = pytest.mark.install
+
 
 def _run(cmd, *, cwd, env, timeout=60, expect_exit=0):
     result = subprocess.run(

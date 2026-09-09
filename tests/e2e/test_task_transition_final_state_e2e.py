@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.rack
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

@@ -27,6 +27,8 @@ import pytest
 from _helpers.sessions import stand_in_session
 from _helpers.hook_chain import run_codex_dispatch
 
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
+
 SESSION_ID = "sid-codex-terminal"
 OFF_LIMITS = "rm -rf /"
 

@@ -24,7 +24,7 @@ import pytest
 
 from _helpers.git import git as _git
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.surfaces]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SESSION_ID = "sid-agy-chain"

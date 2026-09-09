@@ -24,7 +24,7 @@ from ai_hats.models import ProjectConfig
 from ai_hats_rack.extensions.sections import render_scaffold
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.rack]
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

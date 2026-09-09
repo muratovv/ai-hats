@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 # Pin the spawned `ai-hats` binary to THIS checkout's `src` (HATS-685): the
 # autouse `_scrub_redirect_env` strips PYTHONPATH so a raw env copy would resolve

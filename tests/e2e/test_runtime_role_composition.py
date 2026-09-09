@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = [pytest.mark.integration]
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 def test_e2e_runtime_composition_add(tmp_project):

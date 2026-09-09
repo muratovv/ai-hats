@@ -32,6 +32,7 @@ from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_VENV
 pytestmark = [
     pytest.mark.install_heavy,
     pytest.mark.skip(reason="HATS-1527: pre-retirement baseline pins 3.11 (HATS-1521 floor bump)"),
+    pytest.mark.install,
 ]
 
 

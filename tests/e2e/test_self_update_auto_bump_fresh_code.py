@@ -27,9 +27,10 @@ from _helpers.repo_src import build_src  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL, HOOK_PRE_TOOL_USE  # noqa: E402
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):

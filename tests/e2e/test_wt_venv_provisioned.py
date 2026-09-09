@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.wt
+
 PYPROJECT = """\
 [project]
 name = "demo"

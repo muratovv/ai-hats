@@ -26,6 +26,8 @@ from ai_hats.assembler import Assembler
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.surfaces.agy.provider import AgySurface
 
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
