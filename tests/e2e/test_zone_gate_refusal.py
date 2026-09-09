@@ -7,10 +7,10 @@ cmds:
     make merge-gate
     make done-gate
 expect: the merge gate refuses naming `e2e-rack` — a stage no gate declares,
-        demanded because the branch changed `packages/ai-hats-rack/` — and the
-        same branch with that one stage earned is let through; a branch that
-        changed nothing zoned is never asked for it, and the done gate never
-        asks for it at all
+        demanded because the branch changed `packages/ai-hats-rack/`, or because
+        it edited a test carrying that zone's marker — and the same branch with
+        that one stage earned is let through; a branch that changed nothing
+        zoned is never asked for it, and the done gate never asks at all
 why:    without it a change lands in master with only the tier that runs after
         the merge, so the tests its own area owns are first run when the
         breakage is already shared
@@ -34,9 +34,11 @@ DONE_GATE = SKILL / "hooks" / "done-gate.sh"
 GATES = REPO_ROOT / "scripts" / "gates.sh"
 STAGES_DIR = Path(".git") / "ai-hats" / "stages"
 
-#: The shipped zone: the stage it demands and a path inside it.
+#: The shipped zone: the stage it demands, a source path inside it, and a test
+#: of the tier that declares it — the two roads a zone is found by.
 ZONE_STAGE = "e2e-rack"
 ZONE_FILE = "packages/ai-hats-rack/src/ai_hats_rack/cli.py"
+ZONE_TEST = "tests/e2e/test_zone_probe.py"
 #: The checks channel spells a refusal 2 and a pass 0 (ADR-0020 D2).
 REFUSE, PASS = 2, 0
 
@@ -96,6 +98,7 @@ def project(tmp_path: Path) -> Path:
     (project / "scripts").mkdir(parents=True)
     init_repo(project)
     (project / "scripts" / "gates.sh").write_text(GATES.read_text(encoding="utf-8"))
+    commit_file(project, ZONE_TEST, "pytestmark = pytest.mark.rack\n", "a zoned test exists")
     commit_file(project, ZONE_FILE, "x = 1\n", "the zone exists")
     git(project, "checkout", "-q", "-b", "task/hats-1921")
     return project
@@ -147,6 +150,22 @@ def test_the_done_gate_never_asks_for_the_zone_the_branch_changed(project: Path)
 
     assert out.returncode == PASS, out.stdout + out.stderr
     assert ZONE_STAGE not in _missing(out)
+
+
+def test_a_branch_that_touched_only_a_zoned_test_is_refused_for_that_zone(project: Path):
+    """The second road in, at the gate. The table's prefixes name source, and a
+    zoned test is already subtracted from `e2e-default` — so a card that only
+    edits its own zoned test would be asked for nothing here and would first run
+    it on `push-gate`, after the merge it was written for."""
+    commit_file(
+        project, ZONE_TEST, "pytestmark = pytest.mark.rack  # edited\n", "edit a zoned test"
+    )
+    _stamp(project, _declared())
+
+    out = _check(project)
+
+    assert out.returncode == REFUSE, out.stdout + out.stderr
+    assert _missing(out) == [ZONE_STAGE]
 
 
 def test_a_branch_outside_every_zone_is_never_asked_for_one(project: Path):
