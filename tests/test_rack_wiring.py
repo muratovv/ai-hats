@@ -5,6 +5,8 @@ refusals, and the wired derived views."""
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 import subprocess
 from pathlib import Path
@@ -15,7 +17,6 @@ from ai_hats_rack import OperationAborted
 from ai_hats_rack.dispatch import Phase
 from ai_hats_rack.extensions import standalone_extensions
 from ai_hats_rack.selectors import Edge
-from ai_hats.paths import worktrees_dir
 from ai_hats.rack_wiring import build_rack_kernel
 from ai_hats_wt import WorktreeManager
 
@@ -71,8 +72,8 @@ def project(tmp_path):
 
 def _kernel(project: Path, **kwargs):
     return build_rack_kernel(
-        project,
-        backlog_owner=project,
+        ProjectLayout.at(project),
+        backlog_owner=ProjectLayout.at(project),
         tasks_dir=project / ".agent" / "tasks",
         state_md_path=project / ".agent" / "STATE.md",
         prefix="T",
@@ -107,7 +108,7 @@ def _check_pack(project: Path, script: Path | None = None):
     tasks_dir = project / ".agent" / "tasks"
     return [
         CheckSubscriber(
-            AiHatsCheckPort(project, catalog=tasks_dir, resolve=lambda: checks),
+            AiHatsCheckPort(ProjectLayout.at(project), catalog=tasks_dir, resolve=lambda: checks),
             topology=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).topology,
             backlog=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).name,
         )
@@ -141,7 +142,10 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     registry = kernel.tasks_dir.parent / "ownership.json"
     assert not registry.exists(), "gate abort must not leave an ownership claim"
     assert (
-        WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
+        WorktreeManager.load_for_task(
+            project, "T-1", state_dir=ProjectLayout.at(project).sessions.worktrees
+        )
+        is None
     ), "gate abort must not leave a worktree"
     assert not WorktreeManager.branch_exists(project, "task/t-1")
     assert (kernel.tasks_dir / "T-1" / "task.yaml").read_bytes() == before
@@ -168,8 +172,8 @@ def test_ownership_follows_the_backlog_while_worktrees_follow_the_anchor(tmp_pat
     tasks_dir.mkdir(parents=True)
 
     kernel = build_rack_kernel(
-        anchor,
-        backlog_owner=backlog,
+        ProjectLayout.at(anchor),
+        backlog_owner=ProjectLayout.at(backlog),
         tasks_dir=tasks_dir,
         state_md_path=backlog / "STATE.md",
         prefix="T",
@@ -180,7 +184,7 @@ def test_ownership_follows_the_backlog_while_worktrees_follow_the_anchor(tmp_pat
 
     assert claim.registry_path == tasks_dir.parent / "ownership.json"  # backlog side
     assert worktree.project_dir == anchor  # checkout side
-    assert worktrees_dir(anchor).is_relative_to(anchor)
+    assert ProjectLayout.at(anchor).sessions.worktrees.is_relative_to(anchor)
 
 
 def test_in_lock_order_reproduces_the_tracker_sequence(project):
@@ -256,7 +260,12 @@ def test_check_refusal_leaves_no_ownership_and_no_worktree(project, monkeypatch)
     assert exc_info.value.subscriber == "checks"
     assert exc_info.value.reason == "plan not signed off"
     assert not (kernel.tasks_dir.parent / "ownership.json").exists()
-    assert WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
+    assert (
+        WorktreeManager.load_for_task(
+            project, "T-1", state_dir=ProjectLayout.at(project).sessions.worktrees
+        )
+        is None
+    )
     assert (kernel.tasks_dir / "T-1" / "task.yaml").read_bytes() == before
 
 
@@ -342,7 +351,10 @@ def test_full_stack_lifecycle_with_views(project, monkeypatch):
 
     kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
     assert (
-        WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is not None
+        WorktreeManager.load_for_task(
+            project, "T-1", state_dir=ProjectLayout.at(project).sessions.worktrees
+        )
+        is not None
     )
 
     for state in ("document", "review", "done"):

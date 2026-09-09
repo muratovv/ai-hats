@@ -34,19 +34,17 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from ..paths import pipeline_steps_dir
 
 _LOADED: set[str] = set()
 
 
-def load_user_steps(project_dir: Path) -> list[Path]:
+def load_user_steps(steps_dir: Path) -> list[Path]:
     """Import every ``*.py`` (sans ``_``-prefix) under
-    ``pipeline_steps_dir(project_dir)``.
+    ``steps_dir``.
 
     Idempotent: a path imported once stays loaded. Returns the list of
     paths actually imported on this call (may be empty).
     """
-    steps_dir = pipeline_steps_dir(project_dir)
     loaded: list[Path] = []
     for path in sorted(steps_dir.glob("*.py")):
         if path.name.startswith("_"):

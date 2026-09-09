@@ -57,9 +57,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from pathlib import Path
 
+        from .cli._entry import project_at
         from .retired_dists import prune_retired
 
-        for removed in prune_retired(Path.cwd()):
+        for removed in prune_retired(project_at(Path.cwd()).layout):
             print(f"ai-hats: removed retired {removed}", file=sys.stderr)
     except BaseException as exc:  # noqa: BLE001 - never let a prune cost the bump
         print(f"ai-hats: retired-distribution prune skipped: {exc!r}", file=sys.stderr)

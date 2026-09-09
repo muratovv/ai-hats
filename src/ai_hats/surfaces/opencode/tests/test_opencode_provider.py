@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -71,7 +73,7 @@ def test_provider_identity_and_session_cache_contract(tmp_path: Path) -> None:
     provider = OpenCodeSurface()
     assert provider.name == "opencode"
     assert provider.detected_home_dirs() == [".opencode"]
-    assert provider.system_prompt_path(tmp_path) is None
+    assert provider.system_prompt_path(ProjectLayout.at(tmp_path)) is None
     assert provider.rules_dir(tmp_path / "session") == tmp_path / "session" / "rules"
     # Consent middleware is PATH-based and provider-agnostic; opencode opts in
     # so roles declaring consent points are enforceable on this surface.
@@ -88,10 +90,10 @@ def test_context_hitl_materializes_session_agent(tmp_path: Path) -> None:
     artifacts = BuiltArtifacts()
 
     provider.build_session_artifacts(
-        project, result, _session_id(), run_mode=RunMode.HITL, artifacts=artifacts
+        ProjectLayout.at(project), result, _session_id(), run_mode=RunMode.HITL, artifacts=artifacts
     )
 
-    config_path = provider.session_config_path(project, _session_id())
+    config_path = provider.session_config_path(ProjectLayout.at(project), _session_id())
     assert artifacts.extra_env[ENV_OPENCODE_CONFIG] == str(config_path)
     assert config_path.is_file(), "session config must be materialized"
 
@@ -101,7 +103,10 @@ def test_context_hitl_materializes_session_agent(tmp_path: Path) -> None:
     assert "repository maintainer" in agent["prompt"]
     assert "## RULES" in agent["prompt"]
     assert "hatrack" in agent["prompt"], "skill index with cache paths must ride the prompt"
-    assert str(provider.session_skills_root(project, _session_id())) in agent["prompt"]
+    assert (
+        str(provider.session_skills_root(ProjectLayout.at(project), _session_id()))
+        in agent["prompt"]
+    )
 
     assert artifacts.cli_args[-2:] == ["--agent", AGENT_NAME]
     assert artifacts.full_content == agent["prompt"]
@@ -113,14 +118,16 @@ def test_context_config_carries_no_permission_keys(tmp_path: Path) -> None:
     project = _project(tmp_path)
 
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[_make_skill(tmp_path, "hatrack")]),
         _session_id(),
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
 
-    config = json.loads(provider.session_config_path(project, _session_id()).read_text())
+    config = json.loads(
+        provider.session_config_path(ProjectLayout.at(project), _session_id()).read_text()
+    )
     assert "permission" not in config, "generated config must stay free of policy keys"
     assert set(config) == {"$schema", "agent", "plugin"}
 
@@ -131,7 +138,7 @@ def test_hitl_build_writes_nothing_into_project_root(tmp_path: Path) -> None:
     before = _snapshot(project)
 
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[_make_skill(tmp_path, "hatrack")]),
         _session_id(),
         run_mode=RunMode.HITL,
@@ -151,14 +158,20 @@ def test_skills_mirror_lands_in_session_cache_with_path_env(tmp_path: Path) -> N
     artifacts = BuiltArtifacts()
 
     provider.build_session_artifacts(
-        project, result, _session_id(), run_mode=RunMode.HITL, artifacts=artifacts
+        ProjectLayout.at(project), result, _session_id(), run_mode=RunMode.HITL, artifacts=artifacts
     )
 
-    mirror = provider.session_skills_root(project, _session_id()) / "hatrack" / "SKILL.md"
+    mirror = (
+        provider.session_skills_root(ProjectLayout.at(project), _session_id())
+        / "hatrack"
+        / "SKILL.md"
+    )
     assert mirror.is_file()
     parts = artifacts.extra_env["PATH"].split(":")
     mirrored_scripts = str(
-        provider.session_skills_root(project, _session_id()) / "hatrack" / "scripts"
+        provider.session_skills_root(ProjectLayout.at(project), _session_id())
+        / "hatrack"
+        / "scripts"
     )
     assert mirrored_scripts in parts
     assert parts.index(mirrored_scripts) < parts.index(str(skill_source / "scripts")), (
@@ -174,10 +187,10 @@ def test_skills_mirror_is_natively_discoverable_via_xdg(tmp_path: Path) -> None:
     artifacts = BuiltArtifacts()
 
     provider.build_session_artifacts(
-        project, result, _session_id(), run_mode=RunMode.HITL, artifacts=artifacts
+        ProjectLayout.at(project), result, _session_id(), run_mode=RunMode.HITL, artifacts=artifacts
     )
 
-    xdg_root = provider.session_xdg_config_home(project, _session_id())
+    xdg_root = provider.session_xdg_config_home(ProjectLayout.at(project), _session_id())
     assert (xdg_root / "opencode" / "skills" / "hatrack" / "SKILL.md").is_file(), (
         "mirror must sit on a native discovery path"
     )
@@ -203,19 +216,21 @@ def test_base_config_home_is_projected_not_mutated(
     composed = _make_skill(tmp_path, "hatrack")
 
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[composed]),
         _session_id(),
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
 
-    session_dir = provider.session_xdg_config_home(project, _session_id()) / "opencode"
+    session_dir = (
+        provider.session_xdg_config_home(ProjectLayout.at(project), _session_id()) / "opencode"
+    )
     assert (session_dir / "opencode.jsonc").is_symlink()
     assert (session_dir / "plugins").is_symlink()
     assert not (session_dir / "skills").is_symlink(), "skills dir is session-owned"
 
-    skills_dir = provider.session_skills_root(project, _session_id())
+    skills_dir = provider.session_skills_root(ProjectLayout.at(project), _session_id())
     assert (skills_dir / "hatrack" / "SKILL.md").is_file(), "composed mirror is real files"
     assert (skills_dir / "user-own-skill").is_symlink(), "non-shadowed user skills projected"
     assert (base_opencode / "opencode.jsonc").read_text().startswith("{"), "base untouched"
@@ -235,14 +250,14 @@ def test_composed_skill_shadows_same_named_user_skill(
     composed = _make_skill(tmp_path, "hatrack", "composed wins")
 
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[composed]),
         _session_id(),
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
 
-    skills_dir = provider.session_skills_root(project, _session_id())
+    skills_dir = provider.session_skills_root(ProjectLayout.at(project), _session_id())
     assert not (skills_dir / "hatrack").is_symlink()
     body = (skills_dir / "hatrack" / "SKILL.md").read_text()
     assert "composed wins" in body
@@ -254,7 +269,7 @@ def test_skillsless_role_pins_no_xdg(tmp_path: Path) -> None:
     artifacts = BuiltArtifacts()
 
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[]),
         _session_id(),
         run_mode=RunMode.HITL,
@@ -268,7 +283,7 @@ def test_get_env_pins_framework_identity(tmp_path: Path) -> None:
     from ai_hats.env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 
     provider = OpenCodeSurface()
-    env = provider.get_env(tmp_path / "session", tmp_path)
+    env = provider.get_env(tmp_path / "session", ProjectLayout.at(tmp_path))
     assert env[ENV_AI_HATS_DIR].endswith(".agent/ai-hats") or "ai-hats" in env[ENV_AI_HATS_DIR]
     assert env[AI_HATS_PROJECT_DIR_ENV] == str(tmp_path)
 

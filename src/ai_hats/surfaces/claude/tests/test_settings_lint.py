@@ -7,6 +7,8 @@ Claude-specific; ``WrapRunner`` only consumes ``Surface.settings_lint_warnings``
 import json
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats.surfaces.claude.provider import (
     ClaudeSurface,
     lint_permission_rules,
@@ -88,7 +90,7 @@ def test_claude_provider_lints_the_three_file_chain(tmp_path, monkeypatch):
     _seed(project / ".claude" / "settings.json", {"deny": ["Glob(src/**)"]})
     _seed(project / ".claude" / "settings.local.json", {"allow": ["Edit(//tmp/**)"]})
 
-    warnings_ = ClaudeSurface().settings_lint_warnings(project)
+    warnings_ = ClaudeSurface().settings_lint_warnings(ProjectLayout.at(project))
 
     assert len(warnings_) == 2
     assert "Write(~/dev/**)" in warnings_[0]
@@ -102,4 +104,4 @@ def test_claude_provider_clean_chain_is_silent(tmp_path, monkeypatch):
     project = tmp_path / "proj"
     project.mkdir()
 
-    assert ClaudeSurface().settings_lint_warnings(project) == []
+    assert ClaudeSurface().settings_lint_warnings(ProjectLayout.at(project)) == []

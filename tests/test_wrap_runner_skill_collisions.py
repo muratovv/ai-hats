@@ -8,7 +8,6 @@ and is covered there. The heal flow itself is e2e-covered in
 
 from types import SimpleNamespace
 
-from ai_hats.paths import runs_dir, session_cache_dir
 from ai_hats.wrap_runner import WrapRunner
 from ai_hats_core.layout import ProjectLayout
 
@@ -42,14 +41,14 @@ def _runner(project):
     return WrapRunner(
         ProjectLayout.at(project),
         payload,
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
         tracer_factory=SidecarTracer,
     )
 
 
 def _setup(project, tmp_path, monkeypatch, sid="sess-1"):
     """Minimal plugin skills dir + isolated HOME + trace-capturing session."""
-    plugin_skills = session_cache_dir(project, sid) / "plugin" / "skills"
+    plugin_skills = ProjectLayout.at(project).cache.session(sid) / "plugin" / "skills"
     (plugin_skills / "alpha").mkdir(parents=True)
     (plugin_skills / "alpha" / "SKILL.md").write_text("# alpha\n")
     fake_home = tmp_path / "fake-home"

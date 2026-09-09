@@ -8,6 +8,8 @@ file that question would be asked by nobody and asserted by nobody.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 
@@ -24,16 +26,16 @@ class _Surface:
     def __init__(self, skills_root: Path | None) -> None:
         self._skills_root = skills_root
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path | None:
-        del project_dir, session_id
+    def session_skills_root(self, layout, session_id: str) -> Path | None:
+        del layout, session_id
         return self._skills_root
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        del session_dir, project_dir
+    def get_env(self, session_dir: Path, layout) -> dict[str, str]:
+        del session_dir, layout
         return {}
 
-    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        del session_dir, project_dir
+    def claim_launch_env(self, session_dir: Path, layout) -> dict[str, str]:
+        del session_dir, layout
         return {}
 
 
@@ -45,7 +47,7 @@ def _env(
 ) -> dict[str, str]:
     return assemble_launch_env(
         _Surface(skills_root),
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         tmp_path / "session",
         session_id="sess-a",
         trace_path=str(tmp_path / "trace.log"),
@@ -168,11 +170,10 @@ def test_the_launch_publishes_the_session_cache_dir(tmp_path: Path):
     re-deriving the hashed path is exactly what the field exists to prevent, and
     a test spelling it out by hand would be that copy.
     """
-    from ai_hats.paths import session_cache_dir
 
     envelope = _envelope(_env(tmp_path, tmp_path / "m"))
 
-    assert envelope["session_cache_dir"] == str(session_cache_dir(tmp_path, "sess-a"))
+    assert envelope["session_cache_dir"] == str(ProjectLayout.at(tmp_path).cache.session("sess-a"))
 
 
 def test_an_envelope_written_before_the_field_existed_still_reads(tmp_path: Path):

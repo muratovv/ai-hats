@@ -10,6 +10,8 @@ why:    without headless hook execution, safety and quality gates fail to run in
 """
 
 from __future__ import annotations
+
+from ai_hats_core.layout import ProjectLayout
 from _helpers.git import git as _git
 
 import json
@@ -97,7 +99,7 @@ print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PreToolUse"}}}}))
     cmd = provider.get_run_command(["agy"], "Use Bash to run echo test_execution")
 
     env = os.environ.copy()
-    env.update(provider.get_env(tmp_path / "session", project))
+    env.update(provider.get_env(tmp_path / "session", ProjectLayout.at(project)))
 
     res = subprocess.run(
         cmd,

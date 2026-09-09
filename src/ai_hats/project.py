@@ -23,7 +23,7 @@ class Project:
     """Resolved once at the entry point; nothing below re-reads cwd, env, or yaml.
 
     Out-of-process consumers — hooks — cannot take the object: the executor
-    that holds it marshals the anchors explicitly (``cli/_entry.hook_child_env``),
+    that holds it marshals the anchors explicitly (each ``Surface.get_env``),
     and the hook-side entry point deserializes. A hook never computes the
     project from its own cwd.
     """

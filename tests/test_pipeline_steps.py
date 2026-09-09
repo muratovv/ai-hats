@@ -21,7 +21,6 @@ from ai_hats.pipeline.steps.prompt import ResolvePrompt
 from ai_hats.pipeline.steps.save import SaveArtifact
 from ai_hats.pipeline.steps.session_review import RunSessionReview
 from ai_hats.pipeline.steps.spawn_review import SpawnSessionReview
-from ai_hats.paths import runs_dir
 from ai_hats_observe.artifacts import RETRO_LOG
 
 
@@ -277,7 +276,7 @@ def test_spawn_session_review_returns_pid(tmp_path: Path):
     cmd = m.call_args[0][0]
     assert "ai_hats.cli.reflect_session_main" in cmd
     assert "2" in cmd  # max_retries
-    log_path = runs_dir(tmp_path) / "session_20260101-010101-1" / RETRO_LOG
+    log_path = ProjectLayout.at(tmp_path).sessions.runs / "session_20260101-010101-1" / RETRO_LOG
     assert log_path.parent.exists()
 
 

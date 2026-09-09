@@ -10,6 +10,8 @@ E2E coverage (real ``ai-hats self bump`` subprocess) lives in
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import subprocess
 from pathlib import Path
@@ -124,7 +126,7 @@ def test_scan_finds_ref_in_settings_json(tmp_path: Path) -> None:
             indent=2,
         )
     )
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert len(refs) == 1
     assert refs[0].file == settings
     assert refs[0].legacy_substr == ".agent/hooks/"
@@ -134,7 +136,7 @@ def test_scan_finds_ref_in_settings_json(tmp_path: Path) -> None:
 def test_scan_finds_ref_in_markdown(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     (p / "CLAUDE.md").write_text("Hook lives at `.agent/hooks/foo.py` and is documented.\n")
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert len(refs) == 1
     assert refs[0].line == 1
     assert refs[0].legacy_substr == ".agent/hooks/"
@@ -146,7 +148,7 @@ def test_scan_skips_managed_namespace(tmp_path: Path) -> None:
     inside_managed = p / ".agent" / "ai-hats" / "sessions" / "retros" / "old.md"
     inside_managed.parent.mkdir(parents=True)
     inside_managed.write_text("retro mentions `.agent/hooks/foo.py` historically\n")
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert refs == []
 
 
@@ -156,7 +158,7 @@ def test_scan_skips_git_node_modules_venv(tmp_path: Path) -> None:
         f = p / noise_dir / "x.md"
         f.parent.mkdir(parents=True)
         f.write_text("`.agent/hooks/x`\n")
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert refs == []
 
 
@@ -165,7 +167,7 @@ def test_scan_skips_backup_dirs(tmp_path: Path) -> None:
     backup = p / ".agent" / "backlog.bak.20260422-150614" / "x.md"
     backup.parent.mkdir(parents=True)
     backup.write_text("`.agent/hooks/x`\n")
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert refs == []
 
 
@@ -185,7 +187,7 @@ def test_scan_skips_changelog_md(tmp_path: Path) -> None:
         "## [0.6.0]\n- HATS-412 — fix references to `.agent/hooks/` legacy path.\n"
     )
     (p / "OTHER.md").write_text("Hook lives at `.agent/hooks/foo.py` and is documented.\n")
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     ref_files = {r.file.name for r in refs}
     assert "CHANGELOG.md" not in ref_files, "CHANGELOG.md must be skipped"
     assert "OTHER.md" in ref_files, "non-CHANGELOG .md files must still scan"
@@ -197,7 +199,7 @@ def test_scan_picks_up_multiple_extensions(tmp_path: Path) -> None:
     (p / "b.sh").write_text("source .agent/hooks/b\n")
     (p / "c.j2").write_text("# .agent/skills/c\n")
     (p / ".envrc").write_text("PATH=.agent/hooks/d:$PATH\n")
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert {r.file.name for r in refs} == {"a.md", "b.sh", "c.j2", ".envrc"}
 
 
@@ -205,7 +207,7 @@ def test_scan_ignores_unknown_extensions(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     (p / "noisy.bin").write_bytes(b".agent/hooks/x\n")
     (p / "code.py").write_text("# .agent/hooks/x\n")  # python intentionally not scanned
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert refs == []
 
 
@@ -227,7 +229,7 @@ def test_heal_json_rewrites_hook_path(tmp_path: Path) -> None:
         }
     }
     settings.write_text(json.dumps(payload, indent=2))
-    count = heal_json_file(settings, p)
+    count = heal_json_file(settings, ProjectLayout.at(p))
     assert count == 1
     new_data = json.loads(settings.read_text())
     cmd = new_data["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
@@ -240,8 +242,8 @@ def test_heal_json_idempotent(tmp_path: Path) -> None:
     settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"x": ".agent/hooks/y.py"}, indent=2))
-    assert heal_json_file(settings, p) == 1
-    assert heal_json_file(settings, p) == 0
+    assert heal_json_file(settings, ProjectLayout.at(p)) == 1
+    assert heal_json_file(settings, ProjectLayout.at(p)) == 0
 
 
 def test_heal_json_preserves_trailing_newline(tmp_path: Path) -> None:
@@ -250,7 +252,7 @@ def test_heal_json_preserves_trailing_newline(tmp_path: Path) -> None:
     settings.parent.mkdir(parents=True)
     original = json.dumps({"x": ".agent/hooks/y"}, indent=2) + "\n"
     settings.write_text(original)
-    heal_json_file(settings, p)
+    heal_json_file(settings, ProjectLayout.at(p))
     assert settings.read_text().endswith("\n")
 
 
@@ -259,7 +261,7 @@ def test_heal_json_no_match_returns_zero(tmp_path: Path) -> None:
     settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"x": "clean/path"}, indent=2))
-    assert heal_json_file(settings, p) == 0
+    assert heal_json_file(settings, ProjectLayout.at(p)) == 0
 
 
 # ---------- Stage A2 — text heal ----------
@@ -269,7 +271,7 @@ def test_heal_text_rewrites_markdown(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     f = p / "CLAUDE.md"
     f.write_text("see `.agent/hooks/foo.py` for details\n")
-    count = heal_text_file(f, p)
+    count = heal_text_file(f, ProjectLayout.at(p))
     assert count == 1
     assert ".agent/hooks/" not in f.read_text()
     assert "library/hooks/foo.py" in f.read_text()
@@ -279,8 +281,8 @@ def test_heal_text_idempotent(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     f = p / "CLAUDE.md"
     f.write_text("see `.agent/hooks/foo.py` for details\n")
-    heal_text_file(f, p)
-    assert heal_text_file(f, p) == 0
+    heal_text_file(f, ProjectLayout.at(p))
+    assert heal_text_file(f, ProjectLayout.at(p)) == 0
 
 
 # ---------- git-clean gate ----------
@@ -291,7 +293,7 @@ def test_git_clean_returns_true_for_committed_file(tmp_path: Path) -> None:
     _init_git_repo(p)
     (p / "x.md").write_text("hello\n")
     _commit_all(p)
-    assert is_file_git_clean(p / "x.md", p) is True
+    assert is_file_git_clean(p / "x.md", ProjectLayout.at(p)) is True
 
 
 def test_git_clean_returns_false_for_modified_file(tmp_path: Path) -> None:
@@ -300,14 +302,14 @@ def test_git_clean_returns_false_for_modified_file(tmp_path: Path) -> None:
     (p / "x.md").write_text("hello\n")
     _commit_all(p)
     (p / "x.md").write_text("hello\nmore\n")
-    assert is_file_git_clean(p / "x.md", p) is False
+    assert is_file_git_clean(p / "x.md", ProjectLayout.at(p)) is False
 
 
 def test_git_clean_permissive_outside_repo(tmp_path: Path) -> None:
     """No git repo → assume clean (don't block heal on non-git projects)."""
     p = _init_project(tmp_path)
     (p / "x.md").write_text("hello\n")
-    assert is_file_git_clean(p / "x.md", p) is True
+    assert is_file_git_clean(p / "x.md", ProjectLayout.at(p)) is True
 
 
 # ---------- Inventory — Stage B ----------
@@ -329,7 +331,7 @@ def test_write_inventory_creates_file_with_entries(tmp_path: Path) -> None:
             new_substr=".agent/ai-hats/tracker/backlog/",
         ),
     ]
-    out = write_inventory(p, refs)
+    out = write_inventory(ProjectLayout.at(p), refs)
     assert out is not None
     assert out.exists()
     content = out.read_text()
@@ -341,7 +343,7 @@ def test_write_inventory_creates_file_with_entries(tmp_path: Path) -> None:
 
 def test_write_inventory_empty_returns_none(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    assert write_inventory(p, []) is None
+    assert write_inventory(ProjectLayout.at(p), []) is None
 
 
 # ---------- Orchestration ----------
@@ -349,7 +351,7 @@ def test_write_inventory_empty_returns_none(tmp_path: Path) -> None:
 
 def test_heal_external_refs_clean_project_noop(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     assert report.total == 0
 
 
@@ -376,7 +378,7 @@ def test_heal_external_refs_full_clean_git_tree(tmp_path: Path) -> None:
 
     _commit_all(p)
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     assert len(report.healed_json) == 1
     assert len(report.healed_text) == 2
     assert report.inventoried == []
@@ -398,7 +400,7 @@ def test_heal_external_refs_dirty_file_falls_to_inventory(tmp_path: Path) -> Non
     # Modify after commit to make it dirty
     (p / "CLAUDE.md").write_text("see `.agent/hooks/g.py`\n")
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     assert report.healed_text == []
     assert len(report.inventoried) == 1
     assert report.inventory_path is not None
@@ -424,7 +426,7 @@ def test_heal_external_refs_json_heals_even_when_other_files_dirty(tmp_path: Pat
     settings.write_text(json.dumps({"x": ".agent/hooks/g.py"}, indent=2))
     (p / "CLAUDE.md").write_text("see `.agent/hooks/g.py`\n")
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     # JSON heals (A1 always-on, no git gate)
     assert len(report.healed_json) == 1
     # Markdown lands in inventory (dirty)
@@ -443,10 +445,10 @@ def test_heal_external_refs_idempotent(tmp_path: Path) -> None:
     (p / ".agent" / "hooks" / "g.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
 
-    heal_external_refs(p, verbose=False)
+    heal_external_refs(ProjectLayout.at(p), verbose=False)
     # Re-commit the healed content so git considers it clean again
     _commit_all(p, msg="post-heal")
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     assert report.total == 0
 
 
@@ -472,7 +474,7 @@ def test_heal_refuses_when_legacy_and_new_both_missing(tmp_path: Path) -> None:
     _commit_all(p)
     # Note: NO .agent/hooks/lost.py on disk anywhere.
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     assert len(report.healed_json) == 0
     assert len(report.inventoried) == 1
@@ -503,7 +505,7 @@ def test_heal_proceeds_when_legacy_source_exists(tmp_path: Path) -> None:
     (p / ".agent" / "hooks" / "x.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     assert len(report.healed_json) == 1
     assert report.inventoried == []
@@ -531,7 +533,7 @@ def test_heal_proceeds_when_new_destination_exists(tmp_path: Path) -> None:
     _commit_all(p)
     # Note: legacy .agent/hooks/y.py absent — only new dst exists.
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     assert len(report.healed_json) == 1
     assert report.inventoried == []
@@ -561,7 +563,7 @@ def test_mixed_state_file_invents_whole_file(tmp_path: Path) -> None:
     # lost.py NOT created
     _commit_all(p)
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     assert len(report.healed_json) == 0
     assert len(report.inventoried) == 2
@@ -588,7 +590,7 @@ def test_inventory_carries_dst_missing_diagnosis(tmp_path: Path) -> None:
     )
     _commit_all(p)
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     assert report.inventory_path is not None
     body = report.inventory_path.read_text()
     assert "dst-missing" in body
@@ -608,7 +610,7 @@ def test_full_legacy_and_new_paths_captured_during_scan(tmp_path: Path) -> None:
         )
     )
 
-    refs = scan_external_refs(p)
+    refs = scan_external_refs(ProjectLayout.at(p))
     assert len(refs) == 1
     r = refs[0]
     # full_legacy_path stitches prefix + tail
@@ -634,7 +636,7 @@ def test_is_ref_safe_to_heal_handles_claude_project_dir_prefix(tmp_path: Path) -
         full_legacy_path="$CLAUDE_PROJECT_DIR/.agent/hooks/real.py",
         full_new_path="$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/real.py",
     )
-    safe, reason = is_ref_safe_to_heal(ref, p)
+    safe, reason = is_ref_safe_to_heal(ref, ProjectLayout.at(p))
     assert safe is True
     assert reason == "auto-heal"
 
@@ -654,7 +656,7 @@ def test_legacyref_without_full_paths_treated_as_safe(tmp_path: Path) -> None:
         new_substr=".agent/ai-hats/library/hooks/",
         # full_legacy_path / full_new_path default to "" → safe
     )
-    safe, reason = is_ref_safe_to_heal(ref, p)
+    safe, reason = is_ref_safe_to_heal(ref, ProjectLayout.at(p))
     assert safe is True
     assert reason == "auto-heal"
 
@@ -696,7 +698,7 @@ def test_phase4_disables_user_owned_hook_in_settings(tmp_path: Path) -> None:
     (p / ".agent" / "hooks" / "my_secret_guard.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     payload = json.loads(settings.read_text())
     # The PreToolUse list should no longer contain any matcher entry —
@@ -746,7 +748,7 @@ def test_phase4_leaves_ai_hats_owned_hook_alone(tmp_path: Path) -> None:
     (new_loc / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
     _commit_all(p)
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     payload = json.loads(settings.read_text())
     cmd = payload["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
@@ -800,7 +802,7 @@ def test_phase4_cascade_drops_empty_hooks_array(tmp_path: Path) -> None:
     (new_loc / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
     _commit_all(p)
 
-    heal_external_refs(p, verbose=False)
+    heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     payload = json.loads(settings.read_text())
     matchers = payload["hooks"][HOOK_PRE_TOOL_USE]
@@ -854,7 +856,7 @@ def test_phase4_preserves_managed_marker_on_remaining_matcher(tmp_path: Path) ->
     (new_loc / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
     _commit_all(p)
 
-    heal_external_refs(p, verbose=False)
+    heal_external_refs(ProjectLayout.at(p), verbose=False)
 
     payload = json.loads(settings.read_text())
     matchers = payload["hooks"][HOOK_PRE_TOOL_USE]
@@ -898,7 +900,7 @@ def test_phase4_inventory_includes_reenable_snippet(tmp_path: Path) -> None:
     (p / ".agent" / "hooks" / "foo.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
 
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     assert report.inventory_path is not None
     body = report.inventory_path.read_text()
     assert "Re-enable snippet" in body
@@ -935,7 +937,7 @@ def test_phase4_idempotent_no_op_when_no_user_hooks(tmp_path: Path) -> None:
     _commit_all(p)
 
     before = settings.read_text()
-    report = heal_external_refs(p, verbose=False)
+    report = heal_external_refs(ProjectLayout.at(p), verbose=False)
     after = settings.read_text()
 
     # No-op: settings unchanged, no inventoried disables.

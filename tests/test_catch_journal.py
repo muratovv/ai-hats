@@ -220,20 +220,19 @@ def test_a_foreign_ai_hats_dir_never_diverts_the_catch(writer, tmp_path, monkeyp
     ).exists()
 
 
-def test_the_mirrored_session_path_still_matches_the_one_ai_hats_resolves(writer, monkeypatch):
+def test_the_mirrored_session_path_still_matches_the_one_ai_hats_resolves(writer):
     """The hook cannot import ai_hats, so it mirrors the path — pin the mirror.
 
     A silent drift here files every catch where no auditor looks.
     """
     from ai_hats_observe.artifacts import SESSION_PREFIX, session_dirname
 
-    from ai_hats.paths import runs_dir
+    from ai_hats_core.layout import ProjectLayout
 
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)  # else the env wins over the default
     project = Path("/proj")
 
     mirrored = (
         project / writer.AI_HATS_REL / writer.RUNS_REL / f"{writer.SESSION_PREFIX}{SESSION_ID}"
     )
-    assert mirrored == runs_dir(project) / session_dirname(SESSION_ID)
+    assert mirrored == ProjectLayout.at(project).sessions.runs / session_dirname(SESSION_ID)
     assert writer.SESSION_PREFIX == SESSION_PREFIX

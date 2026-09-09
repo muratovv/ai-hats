@@ -28,7 +28,7 @@ from ai_hats_rack.definition import packaged_definition_source
 from ai_hats_rack.resolver import RackRoot
 from ai_hats_rack.workspace import UnknownExtensionError, UnknownPrefixError
 
-from .paths import ensure_ai_hats_dir, tasks_dir
+from ai_hats_core.layout import ProjectLayout, is_onboarded
 
 #: Actor stamped on integrator-side rack writes (reflect/judge provenance).
 REFLECT_ACTOR = "rack:reflect"
@@ -39,7 +39,19 @@ REFLECT_ACTOR = "rack:reflect"
 SESSION_REVIEWER_ACTOR = "rack:session-reviewer"
 
 
-def rack_workspace(project_dir: Path) -> Workspace:
+class NotAnAiHatsProjectError(Exception):
+    """A write would bootstrap a phantom tracker at a root no project was ever onboarded at."""
+
+    def __init__(self, project_dir: Path) -> None:
+        self.project_dir = project_dir
+        super().__init__(
+            f"{project_dir} is not an ai-hats project (no .agent/ or ai-hats.yaml, "
+            "and AI_HATS_DIR is unset). cd to your project root, or run "
+            "`ai-hats init` to onboard it."
+        )
+
+
+def rack_workspace(layout: ProjectLayout) -> Workspace:
     """Discover the workspace for a project: the tasks catalog plus the sibling
     HYP/PROP catalogs under ``<ai_hats_dir>/tracker`` (mounted once migrated).
 
@@ -53,12 +65,12 @@ def rack_workspace(project_dir: Path) -> Workspace:
     # Anchor and owner coincide by construction here: the caller named the
     # project, and the backlog is that project's own.
     root = RackRoot(
-        project_dir=project_dir, tasks_dir=tasks_dir(project_dir), backlog_owner=project_dir
+        project_dir=layout.root, tasks_dir=layout.tracker.tasks_dir, backlog_owner=layout.root
     )
-    return Workspace.discover([root], check_port=check_port_factory(project_dir))
+    return Workspace.discover([root], check_port=check_port_factory(layout))
 
 
-def ensure_backlog(project_dir: Path, definition_name: str) -> None:
+def ensure_backlog(layout: ProjectLayout, definition_name: str) -> None:
     """Seed a sibling backlog's ``backlog.yaml`` from the packaged definition when
     absent, so a write path (e.g. ``reflect issue``) can mount HYP/PROP on a
     project that never had one — parity with the pre-rack auto-create; idempotent.
@@ -68,10 +80,11 @@ def ensure_backlog(project_dir: Path, definition_name: str) -> None:
     falls back to a bare cwd. Validate before the ``parents=True`` mkdir below, or a
     stray root gets a phantom tracker (HATS-1264).
     """
-    catalog = tasks_dir(project_dir).parent / definition_name
+    catalog = layout.tracker.tasks_dir.parent / definition_name
     dest = catalog / "backlog.yaml"
     if not dest.is_file():
-        ensure_ai_hats_dir(project_dir)
+        if not (is_onboarded(layout.root) or layout.base.is_dir()):
+            raise NotAnAiHatsProjectError(layout.root)
         catalog.mkdir(parents=True, exist_ok=True)
         atomic_write_text(dest, packaged_definition_source(definition_name))
 
@@ -260,7 +273,7 @@ def open_proposals(ws: Workspace) -> list[PropView]:
 _DONE = "done"
 
 
-def closed_tasks(project_dir: Path) -> list[ClosedTaskView]:
+def closed_tasks(layout: ProjectLayout) -> list[ClosedTaskView]:
     """Every task card in the terminal ``done`` state, id + close stamp.
 
     Takes the project rather than a :class:`Workspace`: the tasks catalog *is*
@@ -269,7 +282,7 @@ def closed_tasks(project_dir: Path) -> list[ClosedTaskView]:
     """
     return [
         ClosedTaskView(card.id, card.completed_at)
-        for card in _load_cards(tasks_dir(project_dir))
+        for card in _load_cards(layout.tracker.tasks_dir)
         if card.state == _DONE
     ]
 

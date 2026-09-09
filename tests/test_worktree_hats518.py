@@ -15,12 +15,13 @@ Integration with ``WorktreeManager.create()`` / CLI commands lives in
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import worktrees_dir
 from ai_hats_wt import WorktreeBaseBranchError, assert_head_is_canonical_base
 from ai_hats_wt.manager import CANONICAL_BASE_BRANCHES
 
@@ -247,14 +248,14 @@ class TestCliWtCreate:
             wt = WorktreeManager.load_for_branch(
                 master_project,
                 "task/probe",
-                state_dir=worktrees_dir(master_project),
+                state_dir=ProjectLayout.at(master_project).sessions.worktrees,
             )
             assert wt is not None
         finally:
             wt = WorktreeManager.load_for_branch(
                 master_project,
                 "task/probe",
-                state_dir=worktrees_dir(master_project),
+                state_dir=ProjectLayout.at(master_project).sessions.worktrees,
             )
             if wt is not None:
                 wt.cleanup()
@@ -288,7 +289,11 @@ class TestTransitionExecute:
         """
         from ai_hats.rack_wiring import build_rack_kernel
 
-        kernel = build_rack_kernel(master_project, backlog_owner=master_project, prefix="T")
+        kernel = build_rack_kernel(
+            ProjectLayout.at(master_project),
+            backlog_owner=ProjectLayout.at(master_project),
+            prefix="T",
+        )
         kernel.create(
             actor="test", caller_cwd=master_project, task_id="T-1", title="HATS-518 probe"
         )
@@ -338,7 +343,9 @@ class TestTransitionExecute:
         from ai_hats_wt import WorktreeManager
 
         master_project, kernel = task_kernel
-        state_dir = worktrees_dir(master_project)  # D4: where the seam persists state
+        state_dir = ProjectLayout.at(
+            master_project
+        ).sessions.worktrees  # D4: where the seam persists state
         try:
             result = kernel.transition("T-1", "execute", actor="test", caller_cwd=master_project)
             assert result.task.state == "execute"

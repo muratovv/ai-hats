@@ -17,7 +17,6 @@ from pathlib import Path
 import yaml
 
 from ai_hats_observe import Session
-from ai_hats.paths import runs_dir
 from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
     MaybeSpawnSessionReviewer,
 )
@@ -76,7 +75,7 @@ def _seed_project(
             }
         )
     )
-    metrics_dir = runs_dir(tmp_path) / "session_test"
+    metrics_dir = ProjectLayout.at(tmp_path).sessions.runs / "session_test"
     metrics_dir.mkdir(parents=True, exist_ok=True)
     return metrics_dir / METRICS_JSON
 
@@ -115,7 +114,7 @@ def test_writes_runtime_decision_line_for_skip(tmp_path):
         layout=ProjectLayout.at(tmp_path),
     )
 
-    log = runs_dir(tmp_path) / "session_test" / RETRO_LOG
+    log = ProjectLayout.at(tmp_path).sessions.runs / "session_test" / RETRO_LOG
     assert log.exists()
     content = log.read_text()
     assert "runtime\tdecision" in content
@@ -394,7 +393,7 @@ def test_breadcrumb_lands_before_the_decision(tmp_path, monkeypatch):
     step = MaybeSpawnSessionReviewer()
     delta = step.run(session_id=session.session_id, layout=ProjectLayout.at(tmp_path))
 
-    log = runs_dir(tmp_path) / "session_test" / RETRO_LOG
+    log = ProjectLayout.at(tmp_path).sessions.runs / "session_test" / RETRO_LOG
     assert log.exists(), "an interrupted decision must still leave a trace"
     assert "runtime\tstart" in log.read_text()
     assert delta == {}
@@ -406,7 +405,7 @@ def test_breadcrumb_lands_before_the_decision(tmp_path, monkeypatch):
 
 
 def _retro_log(tmp_path: Path) -> str:
-    return (runs_dir(tmp_path) / "session_test" / RETRO_LOG).read_text()
+    return (ProjectLayout.at(tmp_path).sessions.runs / "session_test" / RETRO_LOG).read_text()
 
 
 def test_outcome_suppressed_by_guard_is_journalled(tmp_path, monkeypatch):

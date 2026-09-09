@@ -81,14 +81,13 @@ class RenderUpdateBanner(Step):
         )
 
     def run(self, *, layout: ProjectLayout, session_dir: Any = None, **_: Any) -> dict[str, Any]:
-        project_dir = layout.root
         if is_disabled():
             return {}
         # The behind-upstream predicate (LOCAL channel + has_update + running-SHA
         # match) is centralized in ``upstream_update``, shared with hook
         # self-heal so the guard set can't diverge per-consumer. ``is_disabled`` is
         # the banner's own UI opt-out and stays here, above the predicate.
-        entry = upstream_update(project_dir)
+        entry = upstream_update(layout)
         if entry is None:
             return {}
         if session_dir is not None:

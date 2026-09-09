@@ -13,6 +13,8 @@ Two layers of guarantee:
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 import pytest
@@ -167,7 +169,9 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
     asm.init()
 
     result = asm.composer.compose("initial-wizard")
-    _, _, content = ClaudeSurface().build_session_prompt(project, result, "sid-xyz")
+    _, _, content = ClaudeSurface().build_session_prompt(
+        ProjectLayout.at(project), result, "sid-xyz"
+    )
 
     # placeholder fully expanded
     assert ROLE_CATALOG_PLACEHOLDER not in content
@@ -198,7 +202,7 @@ def test_non_wizard_prompt_has_no_catalog(tmp_path):
     asm.init()
 
     result = asm.composer.compose("assistant")
-    _, _, content = ClaudeSurface().build_session_prompt(project, result, "sid-2")
+    _, _, content = ClaudeSurface().build_session_prompt(ProjectLayout.at(project), result, "sid-2")
 
     assert ROLE_CATALOG_PLACEHOLDER not in content
     assert "- **dev-web**" not in content  # no catalog block in a normal role

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import logging
 import os
@@ -25,18 +27,8 @@ from ai_hats.session_liveness import (
     write_session_anchor,
 )
 from ai_hats_observe import SessionManager
-from ai_hats.paths import (
-    cache_home,
-    cache_root,
-    complete_sentinel,
-    current_pointer,
-    runs_dir,
-    session_cache_dir,
-    session_cache_root,
-    version_dir,
-    versions_root,
-)
 from ai_hats.paths import ENV_AI_HATS_DIR
+from ai_hats_core.layout import cache_home
 
 
 @pytest.fixture(autouse=True)
@@ -46,13 +38,13 @@ def _isolate(tmp_path, monkeypatch):
 
 
 def _mk_complete_version(project_dir, sha):
-    vdir = version_dir(project_dir, sha)
+    vdir = ProjectLayout.at(project_dir).versions.dir(sha)
     (vdir / "bin").mkdir(parents=True, exist_ok=True)
     (vdir / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
     # bin/python — read_current_sha requires a runnable interpreter (HATS-657),
     # so a "complete version" the reclaim tests treat as `current` must have it.
     (vdir / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
-    complete_sentinel(project_dir, sha).write_text("", encoding="utf-8")
+    ProjectLayout.at(project_dir).versions.sentinel(sha).write_text("", encoding="utf-8")
     return vdir
 
 
@@ -63,27 +55,27 @@ def test_run_protects_own_non_current_pin(tmp_path, monkeypatch):
     """A run pinned to a now-non-current sha must NOT reclaim its own version:
     EnvironmentRecovery writes our ref before the reclaim pass observes it."""
     _mk_complete_version(tmp_path, "neWc0de0")
-    current_pointer(tmp_path).write_text("neWc0de0\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("neWc0de0\n", encoding="utf-8")
     pinned = _mk_complete_version(tmp_path, "0ldc0de0")  # what WE run from
     monkeypatch.setattr(sys, "prefix", str(pinned))
 
-    EnvironmentRecovery(tmp_path).run()
+    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
 
     assert pinned.exists()  # our live ref (written first) protected it
-    ref = versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json"
+    ref = ProjectLayout.at(tmp_path).versions.root / ".refs" / f"{os.getpid()}.json"
     assert ref.exists()
 
 
 def test_run_reclaims_unpinned_orphan(tmp_path, monkeypatch):
     """Same layout, but this process does NOT run from the orphan → reclaimed."""
     _mk_complete_version(tmp_path, "neWc0de0")
-    current_pointer(tmp_path).write_text("neWc0de0\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("neWc0de0\n", encoding="utf-8")
     orphan = _mk_complete_version(tmp_path, "0ldc0de0")
     legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
     legacy.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(sys, "prefix", str(legacy))  # legacy run pins nothing
 
-    EnvironmentRecovery(tmp_path).run()
+    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
 
     assert not orphan.exists()
 
@@ -94,12 +86,12 @@ def test_run_reclaims_unpinned_orphan(tmp_path, monkeypatch):
 def test_run_reclaims_legacy_venv_when_running_from_versioned(tmp_path, monkeypatch):
     """We run from a complete versioned venv → the orphaned .venv is reclaimed."""
     pinned = _mk_complete_version(tmp_path, "cafef00d")
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
     legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
     (legacy / "bin").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(sys, "prefix", str(pinned))
 
-    EnvironmentRecovery(tmp_path).run()
+    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
 
     assert not legacy.exists()
     assert pinned.is_dir()  # the versioned venv we run from is untouched
@@ -108,12 +100,12 @@ def test_run_reclaims_legacy_venv_when_running_from_versioned(tmp_path, monkeypa
 def test_run_keeps_legacy_venv_on_legacy_run(tmp_path, monkeypatch):
     """A run from .venv itself (current_run_sha None) must keep .venv."""
     _mk_complete_version(tmp_path, "cafef00d")
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
     legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
     (legacy / "bin").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(sys, "prefix", str(legacy))  # running from .venv
 
-    EnvironmentRecovery(tmp_path).run()
+    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
 
     assert legacy.exists()
 
@@ -129,7 +121,7 @@ def test_run_skips_gc_when_version_lock_held(tmp_path, monkeypatch):
     from ai_hats.version_lock import gc_lock_path
 
     _mk_complete_version(tmp_path, "neWc0de0")
-    current_pointer(tmp_path).write_text("neWc0de0\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("neWc0de0\n", encoding="utf-8")
     orphan = _mk_complete_version(tmp_path, "0ldc0de0")
     legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
     legacy.mkdir(parents=True, exist_ok=True)
@@ -137,11 +129,11 @@ def test_run_skips_gc_when_version_lock_held(tmp_path, monkeypatch):
     # Keep the test fast: a tiny timeout still proves the swallow path.
     monkeypatch.setattr("ai_hats.environment_recovery.GC_LOCK_TIMEOUT", 0.2)
 
-    gc_lock_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
-    holder = filelock.FileLock(str(gc_lock_path(tmp_path)), timeout=1.0)
+    gc_lock_path(ProjectLayout.at(tmp_path).versions).parent.mkdir(parents=True, exist_ok=True)
+    holder = filelock.FileLock(str(gc_lock_path(ProjectLayout.at(tmp_path).versions)), timeout=1.0)
     holder.acquire()
     try:
-        EnvironmentRecovery(tmp_path).run()  # must not raise
+        EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()  # must not raise
     finally:
         holder.release()
 
@@ -152,7 +144,7 @@ def test_run_swallows_oserror_in_version_gc(tmp_path, monkeypatch):
     """An I/O error mid-version-GC is swallowed (never breaks create_session);
     the later legacy-.venv reclaim still runs."""
     _mk_complete_version(tmp_path, "cafef00d")
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
     legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
     legacy.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(sys, "prefix", str(legacy))  # this run pins nothing
@@ -162,14 +154,14 @@ def test_run_swallows_oserror_in_version_gc(tmp_path, monkeypatch):
 
     monkeypatch.setattr("ai_hats.environment_recovery.reclaim_orphan_versions", _boom)
 
-    EnvironmentRecovery(tmp_path).run()  # must not raise
+    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()  # must not raise
 
 
 # ---------- moved session-cache sweep still works ----------
 
 
 def test_sweep_orphan_session_caches_moved(tmp_path):
-    root = session_cache_root(tmp_path)
+    root = ProjectLayout.at(tmp_path).cache.sessions
     aged = root / "old-sid"
     aged.mkdir(parents=True)
     old = time.time() - 48 * 3600
@@ -177,7 +169,7 @@ def test_sweep_orphan_session_caches_moved(tmp_path):
     recent = root / "new-sid"
     recent.mkdir(parents=True)
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert not aged.exists()
     assert recent.exists()
@@ -204,7 +196,7 @@ def test_sweep_drops_the_whole_in_tree_cache(tmp_path, legacy_cache):
     old = time.time() - 48 * 3600
     os.utime(aged, (old, old))
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert not legacy_cache.exists(), "no cache may survive inside the workspace"
 
@@ -214,7 +206,7 @@ def test_sweep_spares_an_in_tree_session_dir_that_may_still_be_live(tmp_path, le
     live = legacy_cache / "sessions" / "live-sid"
     live.mkdir(parents=True)
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert live.exists()
 
@@ -232,7 +224,9 @@ class _SpyRecovery:
 
 def test_session_manager_calls_recovery_once_per_create(tmp_path):
     spy = _SpyRecovery()
-    mgr = SessionManager(tmp_path, runs_dir=runs_dir(tmp_path), recovery=spy)
+    mgr = SessionManager(
+        tmp_path, runs_dir=ProjectLayout.compute(tmp_path, os.environ).sessions.runs, recovery=spy
+    )
     mgr.create_session()
     mgr.create_session()
     assert spy.calls == 2
@@ -242,10 +236,14 @@ def test_session_manager_noop_recovery_no_fs_effects(tmp_path, monkeypatch):
     """NoOpRecovery → create_session works and writes no liveness ref."""
     pinned = _mk_complete_version(tmp_path, "cafef00d")
     monkeypatch.setattr(sys, "prefix", str(pinned))
-    mgr = SessionManager(tmp_path, runs_dir=runs_dir(tmp_path), recovery=NoOpRecovery())
+    mgr = SessionManager(
+        tmp_path,
+        runs_dir=ProjectLayout.compute(tmp_path, os.environ).sessions.runs,
+        recovery=NoOpRecovery(),
+    )
     session = mgr.create_session()
     assert session.session_id
-    assert not (versions_root(tmp_path) / ".refs").exists()
+    assert not (ProjectLayout.at(tmp_path).versions.root / ".refs").exists()
 
 
 def test_run_path_seam_runs_real_recovery(tmp_path, monkeypatch):
@@ -257,19 +255,21 @@ def test_run_path_seam_runs_real_recovery(tmp_path, monkeypatch):
     from ai_hats.composition_seam import make_session_manager
 
     pinned = _mk_complete_version(tmp_path, "cafef00d")
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
     monkeypatch.setattr(sys, "prefix", str(pinned))
-    make_session_manager(tmp_path).create_session()
-    assert (versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json").exists()
+    make_session_manager(ProjectLayout.at(tmp_path)).create_session()
+    assert (ProjectLayout.at(tmp_path).versions.root / ".refs" / f"{os.getpid()}.json").exists()
 
 
 def test_session_manager_default_recovery_is_noop(tmp_path, monkeypatch):
     """HATS-948: the bare default no longer touches the version subsystem."""
     pinned = _mk_complete_version(tmp_path, "cafef00d")
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
     monkeypatch.setattr(sys, "prefix", str(pinned))
-    SessionManager(tmp_path, runs_dir=runs_dir(tmp_path)).create_session()
-    assert not (versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json").exists()
+    SessionManager(
+        tmp_path, runs_dir=ProjectLayout.compute(tmp_path, os.environ).sessions.runs
+    ).create_session()
+    assert not (ProjectLayout.at(tmp_path).versions.root / ".refs" / f"{os.getpid()}.json").exists()
 
 
 # ----- Cross-project key sweep (HATS-1473) -----
@@ -282,12 +282,12 @@ def _age(path, days):
 
 def test_key_older_than_ttl_is_reclaimed(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
-    stale = cache_home() / "gone-deadbeef"
+    stale = cache_home(os.environ) / "gone-deadbeef"
     (stale / "sessions").mkdir(parents=True)
     _age(stale / "sessions", 30)
     _age(stale, 30)
 
-    _sweep_orphan_project_keys(tmp_path)
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert not stale.exists()
 
@@ -300,14 +300,14 @@ def test_key_holding_a_worktree_is_never_reclaimed(tmp_path, monkeypatch):
     admin entry the engine refuses to auto-prune (manager.py, R-04).
     """
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
-    stale = cache_home() / "busy-deadbeef"
+    stale = cache_home(os.environ) / "busy-deadbeef"
     tree = stale / "worktrees" / "ai-hats-wt-task-x-abcd1234"
     tree.mkdir(parents=True)
     (tree / "uncommitted.txt").write_text("work nobody has merged yet\n")
     for path in (tree, stale / "worktrees", stale):
         _age(path, 30)
 
-    _sweep_orphan_project_keys(tmp_path)
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert stale.exists(), "a key holding worktrees must survive any age"
     assert (tree / "uncommitted.txt").exists()
@@ -316,26 +316,26 @@ def test_key_holding_a_worktree_is_never_reclaimed(tmp_path, monkeypatch):
 def test_key_with_an_empty_worktrees_dir_is_still_reclaimed(tmp_path, monkeypatch):
     """The guard keys on trees present, not on the directory existing."""
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
-    stale = cache_home() / "empty-deadbeef"
+    stale = cache_home(os.environ) / "empty-deadbeef"
     (stale / "worktrees").mkdir(parents=True)
     for path in (stale / "worktrees", stale):
         _age(path, 30)
 
-    _sweep_orphan_project_keys(tmp_path)
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert not stale.exists()
 
 
 def test_fresh_key_and_own_key_survive(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
-    fresh = cache_home() / "fresh-deadbeef"
+    fresh = cache_home(os.environ) / "fresh-deadbeef"
     (fresh / "sessions").mkdir(parents=True)
-    own = cache_root(tmp_path)
+    own = ProjectLayout.at(tmp_path).cache.root
     (own / "sessions").mkdir(parents=True)
     _age(own / "sessions", 30)
     _age(own, 30)
 
-    _sweep_orphan_project_keys(tmp_path)
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert fresh.exists()
     assert own.exists(), "the current project's own key must never be swept"
@@ -348,11 +348,11 @@ def test_deep_write_keeps_key_alive(tmp_path, monkeypatch):
     dir alone is exactly the shape a long-lived project has.
     """
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
-    live = cache_home() / "live-deadbeef"
+    live = cache_home(os.environ) / "live-deadbeef"
     (live / "sessions" / "sid-1").mkdir(parents=True)
     _age(live, 30)
 
-    _sweep_orphan_project_keys(tmp_path)
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert live.exists(), "a fresh direct child must protect the key"
 
@@ -360,18 +360,18 @@ def test_deep_write_keeps_key_alive(tmp_path, monkeypatch):
 def test_missing_cache_home_is_a_quiet_no_op(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "never-created"))
 
-    _sweep_orphan_project_keys(tmp_path)  # must not raise
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))  # must not raise
 
 
 def test_unreadable_cache_home_is_reported(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
-    cache_home().mkdir(parents=True)
-    cache_home().chmod(0o000)
+    cache_home(os.environ).mkdir(parents=True)
+    cache_home(os.environ).chmod(0o000)
     try:
         with caplog.at_level("WARNING"):
-            _sweep_orphan_project_keys(tmp_path)
+            _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
     finally:
-        cache_home().chmod(0o755)
+        cache_home(os.environ).chmod(0o755)
 
     assert "cache home unreadable" in caplog.text
 
@@ -429,7 +429,7 @@ def zombie_proc():
 
 def _session_dir(project_dir, pid, *, age_hours=0.0, counter=1):
     """A session cache dir named the way ``create_session`` names one."""
-    entry = session_cache_root(project_dir) / f"20260101-000000-{counter}-{pid}"
+    entry = ProjectLayout.at(project_dir).cache.sessions / f"20260101-000000-{counter}-{pid}"
     (entry / "plugin").mkdir(parents=True)
     (entry / "hooks.json").write_text("{}", encoding="utf-8")
     if age_hours:
@@ -444,7 +444,7 @@ def test_live_owner_survives_past_the_ttl(tmp_path):
     live = _session_dir(tmp_path, os.getpid(), age_hours=48)
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert (live / "hooks.json").exists()
     assert spy.calls == 0, "a running owner must be settled without reading ps"
@@ -456,7 +456,7 @@ def test_dead_owner_is_reaped_before_the_ttl(tmp_path):
     orphan = _session_dir(tmp_path, _dead_pid())
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert not orphan.exists()
     assert spy.calls == 0, "an absent pid is proof of death without any ps"
@@ -470,7 +470,7 @@ def test_a_dir_with_no_baseline_costs_no_process_table_read(tmp_path):
     plain = _session_dir(tmp_path, os.getpid(), counter=2)
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert not dead.exists()
     assert plain.exists()
@@ -486,7 +486,7 @@ def test_recorded_baselines_cost_one_process_table_read_for_the_whole_sweep(tmp_
     write_session_anchor(second)
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert first.exists() and second.exists(), "our own live baseline must match"
     assert spy.calls == 1
@@ -552,7 +552,7 @@ def test_a_zombie_wrapper_costs_no_process_table_read(tmp_path, zombie_proc):
     _rewrite_anchor(orphan, root_pid=zombie_proc.pid)
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert not orphan.exists(), "an unreaped wrapper pinned its cache dir"
     assert spy.calls == 0
@@ -581,7 +581,7 @@ def test_a_dir_whose_wrapper_died_but_whose_surface_lives_is_kept(tmp_path, live
     write_session_anchor(entry)
     _rewrite_anchor(entry, root_pid=_dead_pid(), start_time_utc=None, child_pid=live_proc.pid)
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert entry.exists(), "the cache of a LIVE surface child was reclaimed"
     assert (entry / "hooks.json").exists()
@@ -595,7 +595,7 @@ def test_both_owners_gone_reaps_and_names_the_surface_child(tmp_path, caplog):
     _rewrite_anchor(entry, root_pid=dead_wrapper, start_time_utc=None, child_pid=dead_child)
 
     with caplog.at_level(logging.WARNING):
-        _sweep_orphan_session_caches(tmp_path)
+        _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert not entry.exists()
     assert f"owner pid {dead_wrapper} is gone" in caplog.text
@@ -614,7 +614,7 @@ def test_an_anchor_written_before_the_child_field_reads_as_wrapper_only(tmp_path
         json.dumps({"root_pid": _dead_pid(), "start_time_utc": None}), encoding="utf-8"
     )
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert not entry.exists()
 
@@ -626,7 +626,7 @@ def test_a_live_wrapper_never_asks_about_the_child(tmp_path, live_proc):
     _rewrite_anchor(entry, child_pid=live_proc.pid, child_start_time_utc="Mon Jan  1 00:00:00 2001")
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert entry.exists()
     assert spy.calls == 1, "one memoized capture for our own baseline, none for the child"
@@ -640,7 +640,7 @@ def test_a_dir_whose_owner_pid_was_reused_is_reaped(tmp_path, live_proc):
         encoding="utf-8",
     )
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert not entry.exists()
 
@@ -652,7 +652,7 @@ def test_anchor_overrides_a_reused_dir_name_pid(tmp_path):
         json.dumps({"root_pid": _dead_pid(), "start_time_utc": None}), encoding="utf-8"
     )
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert not entry.exists()
 
@@ -670,7 +670,7 @@ def test_anchor_overrides_a_reused_dir_name_pid(tmp_path):
 )
 def test_dir_naming_no_owner_still_follows_the_ttl(tmp_path, aged_name, fresh_name):
     """``dry-run-materialize`` and legacy ids carry no pid — age is all there is."""
-    root = session_cache_root(tmp_path)
+    root = ProjectLayout.at(tmp_path).cache.sessions
     aged = root / aged_name
     aged.mkdir(parents=True)
     old = time.time() - 48 * 3600
@@ -679,7 +679,7 @@ def test_dir_naming_no_owner_still_follows_the_ttl(tmp_path, aged_name, fresh_na
     fresh.mkdir(parents=True)
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert not aged.exists()
     assert fresh.exists()
@@ -691,7 +691,7 @@ def test_reclaim_says_what_it_dropped_and_why(tmp_path, caplog):
     orphan = _session_dir(tmp_path, dead)
 
     with caplog.at_level("INFO"):
-        _sweep_orphan_session_caches(tmp_path)
+        _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert orphan.name in caplog.text
     assert f"owner pid {dead} is gone" in caplog.text
@@ -706,7 +706,7 @@ def test_every_deletion_line_is_loud_enough_to_survive_no_handler(tmp_path, capl
     _session_dir(tmp_path, _dead_pid())
 
     with caplog.at_level("INFO"):
-        _sweep_orphan_session_caches(tmp_path)
+        _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     reclaimed = [r for r in caplog.records if "reclaimed session cache" in r.message]
     assert reclaimed, "the sweep must say what it deleted"
@@ -717,10 +717,10 @@ def test_every_deletion_line_is_loud_enough_to_survive_no_handler(tmp_path, capl
 
 def test_nothing_to_reap_never_reads_the_process_table(tmp_path):
     """The hot-path contract: an empty cache root costs no ``ps`` (plan Q4)."""
-    session_cache_root(tmp_path).mkdir(parents=True)
+    ProjectLayout.at(tmp_path).cache.sessions.mkdir(parents=True)
     spy = _CountingCapture()
 
-    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert spy.calls == 0
 
@@ -729,7 +729,7 @@ def test_a_dir_that_vanished_mid_sweep_is_reported(tmp_path, caplog):
     """A peer's normal exit drops its cache dir between the listing and the stat."""
     from ai_hats.environment_recovery import _reap_reason
 
-    gone = session_cache_root(tmp_path) / "legacy-sid"
+    gone = ProjectLayout.at(tmp_path).cache.sessions / "legacy-sid"
 
     with caplog.at_level("WARNING"):
         assert _reap_reason(gone, time.time(), _LazyLiveness()) is None
@@ -740,12 +740,12 @@ def test_a_dir_that_vanished_mid_sweep_is_reported(tmp_path, caplog):
 def test_unreadable_session_dir_is_reported(tmp_path, caplog):
     """No silent ``except OSError: pass`` survives in the reaping path."""
     entry = _session_dir(tmp_path, os.getpid())
-    session_cache_root(tmp_path).chmod(0o000)
+    ProjectLayout.at(tmp_path).cache.sessions.chmod(0o000)
     try:
         with caplog.at_level("WARNING"):
-            _sweep_orphan_session_caches(tmp_path)
+            _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
     finally:
-        session_cache_root(tmp_path).chmod(0o755)
+        ProjectLayout.at(tmp_path).cache.sessions.chmod(0o755)
 
     assert entry.exists()
     assert "session-cache sweep skipped" in caplog.text
@@ -755,7 +755,7 @@ def test_unreadable_session_dir_is_reported(tmp_path, caplog):
 
 
 def _foreign_key(name, pid, *, age_days=30):
-    key = cache_home() / name
+    key = cache_home(os.environ) / name
     entry = key / "sessions" / f"20260101-000000-1-{pid}"
     entry.mkdir(parents=True)
     (entry / "hooks.json").write_text("{}", encoding="utf-8")
@@ -771,7 +771,7 @@ def test_foreign_key_holding_a_live_session_is_untouched(tmp_path, monkeypatch, 
     key, entry = _foreign_key("peer-deadbeef", os.getpid())
 
     with caplog.at_level("INFO"):
-        _sweep_orphan_project_keys(tmp_path)
+        _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert (entry / "hooks.json").exists()
     assert "is running" in caplog.text
@@ -781,7 +781,7 @@ def test_stale_key_whose_sessions_are_all_dead_is_reclaimed(tmp_path, monkeypatc
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
     key, _entry = _foreign_key("gone-deadbeef", _dead_pid())
 
-    _sweep_orphan_project_keys(tmp_path)
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert not key.exists()
 
@@ -792,7 +792,7 @@ def test_fresh_keys_never_read_the_process_table(tmp_path, monkeypatch):
     _foreign_key("peer-deadbeef", os.getpid(), age_days=0)
     spy = _CountingCapture()
 
-    _sweep_orphan_project_keys(tmp_path, liveness=_LazyLiveness(capture=spy))
+    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path), liveness=_LazyLiveness(capture=spy))
 
     assert spy.calls == 0
 
@@ -802,7 +802,7 @@ def test_fresh_keys_never_read_the_process_table(tmp_path, monkeypatch):
 
 def test_recovery_expires_aged_bulk_run_artifacts(tmp_path):
     """``sweep_runs`` rides the same chokepoint — no new command (card Scope §3)."""
-    run = runs_dir(tmp_path) / "session_20250101-000000-1-1"
+    run = ProjectLayout.compute(tmp_path, os.environ).sessions.runs / "session_20250101-000000-1-1"
     run.mkdir(parents=True)
     bulk = run / "transcript.jsonl"
     bulk.write_text("{}", encoding="utf-8")
@@ -810,7 +810,7 @@ def test_recovery_expires_aged_bulk_run_artifacts(tmp_path):
     facts.write_text("# audit", encoding="utf-8")
     _age(bulk, 90)
 
-    EnvironmentRecovery(tmp_path).run()
+    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
 
     assert not bulk.exists()
     assert facts.exists()
@@ -820,9 +820,9 @@ def test_claim_marks_the_cache_dir_with_this_process(tmp_path):
     """The runners' session-start seam; ``session_owners`` reads it back."""
     from ai_hats.runtime_common import _claim_session_cache
 
-    _claim_session_cache(tmp_path, "20260101-000000-1-999999")
+    _claim_session_cache(ProjectLayout.at(tmp_path).cache.session("20260101-000000-1-999999"))
 
-    cache_dir = session_cache_dir(tmp_path, "20260101-000000-1-999999")
+    cache_dir = ProjectLayout.at(tmp_path).cache.session("20260101-000000-1-999999")
     ((pid, start_time),) = session_owners(cache_dir)
     assert pid == os.getpid()
     assert start_time, "the claim must record a reuse baseline"
@@ -832,12 +832,12 @@ def test_claimed_cache_survives_a_sweep_by_a_peer(tmp_path):
     """End to end for the wiring: claim, age the dir, sweep — it must remain."""
     from ai_hats.runtime_common import _claim_session_cache
 
-    _claim_session_cache(tmp_path, "legacy-sid-without-a-pid")
-    cache_dir = session_cache_dir(tmp_path, "legacy-sid-without-a-pid")
+    _claim_session_cache(ProjectLayout.at(tmp_path).cache.session("legacy-sid-without-a-pid"))
+    cache_dir = ProjectLayout.at(tmp_path).cache.session("legacy-sid-without-a-pid")
     old = time.time() - 48 * 3600
     os.utime(cache_dir, (old, old))
 
-    _sweep_orphan_session_caches(tmp_path)
+    _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert cache_dir.exists(), "an anchored dir is never decided by age"
 

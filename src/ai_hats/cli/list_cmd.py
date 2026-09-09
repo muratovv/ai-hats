@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 import click
 
 from ._entry import resolve_project
@@ -66,7 +68,7 @@ def list_providers():
 
     for name in sorted(surface_names()):
         provider = get_surface(name)
-        sp_path = provider.system_prompt_path(Path("."))
+        sp_path = provider.system_prompt_path(ProjectLayout.at(Path(".")))
         sp_str = str(sp_path) if sp_path is not None else "(session cache)"
         console.print(f"  [cyan]{name}[/]  →  {sp_str}")
 

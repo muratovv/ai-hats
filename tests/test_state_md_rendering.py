@@ -11,6 +11,8 @@ wired kernel that drops the subscriber, or points it at the wrong STATE.md.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import subprocess
 from pathlib import Path
 
@@ -47,20 +49,22 @@ def project(tmp_path, monkeypatch):
     (p / "README.md").write_text("# t")
     _git(p, "add", ".")
     _git(p, "-c", "commit.gpgsign=false", "commit", "-m", "init")
-    tracker_paths(p).tasks_dir.mkdir(parents=True)
+    tracker_paths(ProjectLayout.at(p)).tasks_dir.mkdir(parents=True)
     return p
 
 
 def _kernel(project: Path):
     """No ``tasks_dir`` / ``state_md_path`` override — the kernel resolves the
     tracker layout itself, exactly as the ``rack`` binary gets it."""
-    return build_rack_kernel(project, backlog_owner=project, prefix="T")
+    return build_rack_kernel(
+        ProjectLayout.at(project), backlog_owner=ProjectLayout.at(project), prefix="T"
+    )
 
 
 def _root(project: Path) -> RackRoot:
     return RackRoot(
         project_dir=project,
-        tasks_dir=tracker_paths(project).tasks_dir,
+        tasks_dir=tracker_paths(ProjectLayout.at(project)).tasks_dir,
         backlog_owner=project,
         prefix="T",
     )
@@ -73,7 +77,7 @@ def test_created_tasks_render_with_priority_and_state(project):
         actor="test", caller_cwd=project, task_id="T-1", title="First task", priority="high"
     )
     result = kernel.create(actor="test", caller_cwd=project, task_id="T-2", title="Second task")
-    state_md = tracker_paths(project).state_md_path
+    state_md = tracker_paths(ProjectLayout.at(project)).state_md_path
     assert not state_md.exists(), "create takes no FSM edge — the view has not run yet"
 
     CliKernelProvider().after_create(_root(project), result)
@@ -97,7 +101,7 @@ def test_cancelled_task_renders_under_its_own_heading(project):
 
     kernel.transition("T-1", "cancelled", actor="test", caller_cwd=project, resolution="dup")
 
-    body = tracker_paths(project).state_md_path.read_text(encoding="utf-8")
+    body = tracker_paths(ProjectLayout.at(project)).state_md_path.read_text(encoding="utf-8")
     assert "## CANCELLED" in body
     assert "- T-1 [high] Show me in STATE.md" in body
     assert "## BRAINSTORM" not in body
@@ -109,7 +113,7 @@ def test_state_md_is_rebuilt_whole_from_the_cards_on_disk(project):
     kernel = _kernel(project)
     kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="Task 1")
     result = kernel.create(actor="test", caller_cwd=project, task_id="T-2", title="Task 2")
-    state_md = tracker_paths(project).state_md_path
+    state_md = tracker_paths(ProjectLayout.at(project)).state_md_path
     CliKernelProvider().after_create(_root(project), result)
     state_md.unlink()
 

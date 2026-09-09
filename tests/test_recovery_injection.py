@@ -9,22 +9,23 @@ RED-under-revert:
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from ai_hats_core.recovery import NoOpRecovery
 from ai_hats.environment_recovery import EnvironmentRecovery
 from ai_hats.composition_seam import make_session_manager
 from ai_hats_observe import SessionManager
-from ai_hats.paths import runs_dir
 
 
 def test_default_is_noop(tmp_path: Path) -> None:
     """Package-pure default: no version subsystem in the recovery collaborator."""
-    mgr = SessionManager(runs_dir=runs_dir(tmp_path))
+    mgr = SessionManager(runs_dir=ProjectLayout.at(tmp_path).sessions.runs)
     assert isinstance(mgr._recovery, NoOpRecovery)
 
 
 def test_factory_injects_real(tmp_path: Path) -> None:
     """The run-path seam wires the real recovery so create_session GC still fires."""
-    mgr = make_session_manager(tmp_path)
+    mgr = make_session_manager(ProjectLayout.at(tmp_path))
     assert isinstance(mgr._recovery, EnvironmentRecovery)

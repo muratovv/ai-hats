@@ -21,7 +21,8 @@ if TYPE_CHECKING:
 
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..libraries.models import CheckBindingError
-    from ..paths import NotAnAiHatsProjectError, ProjectConfigError
+    from ..paths import ProjectConfigError
+    from ..rack_workspace import NotAnAiHatsProjectError
     from ..surface_registry import UnknownSurfaceError
     from ..role_spec import RoleSpecError
 
@@ -161,7 +162,8 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         from ..libraries.models import CheckBindingError, ComponentKeyError
         from ai_hats_core.layout import ProjectNotFoundError
 
-        from ..paths import NotAnAiHatsProjectError, ProjectConfigError
+        from ..paths import ProjectConfigError
+        from ..rack_workspace import NotAnAiHatsProjectError
         from ..surface_registry import UnknownSurfaceError
         from ..role_spec import RoleSpecError
 
@@ -224,25 +226,6 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
     )
     console.print(f"[cyan]→ Handing off to claude with {label}: {rel}[/]")
     os.execvp(claude_bin, [claude_bin, prompt])  # noqa: S606
-
-
-class DeadCwdError(click.ClickException):
-    """The current working directory no longer exists (HATS-788).
-
-    Commonly: the linked worktree you were standing in was just torn down by
-    `rack transition <id> done` / `wt merge`. Resolving the project root from a
-    removed cwd would otherwise crash (`Path.cwd()` → FileNotFoundError on
-    macOS) or, on Linux where `os.getcwd()` can return a stale path string,
-    silently fall through to the cwd fallback and let `ai_hats_dir()`'s
-    `mkdir -p` resurrect a phantom `.agent/` tracker. Fail loud instead and
-    point the operator back to a real directory.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(
-            "Current directory no longer exists (a worktree you were in may "
-            "have just been removed). cd to your project root and re-run."
-        )
 
 
 def broken_install_notice(exc: Exception) -> str:

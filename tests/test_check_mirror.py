@@ -13,6 +13,8 @@ check resolves against, and the two leaf-naming conventions are now one.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 import pytest
@@ -82,43 +84,46 @@ class _MirrorSurface(Surface):
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         return ["stub-cli"]
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout) -> dict[str, str]:
         return {}
 
     def rules_dir(self, project_dir: Path) -> Path:
         return project_dir / ".stub" / "rules"
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        return project_dir / "STUB.md"
+    def system_prompt_path(self, layout) -> Path:
+        return layout.root / "STUB.md"
 
     def build_system_prompt(self, result) -> str:
         return "stub prompt"
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
-        from ai_hats.paths import session_cache_dir
+    def session_skills_root(self, layout, session_id: str) -> Path:
 
-        return session_cache_dir(project_dir, session_id) / "stub-skills"
+        return layout.cache.session(session_id) / "stub-skills"
 
-    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
         from ai_hats.skills_dir import materialize_skills_dir
 
         materialize_skills_dir(
-            self.session_skills_root(project_dir, session_id),
+            self.session_skills_root(layout, session_id),
             result.skills,
-            project_dir,
+            layout,
             artifacts.port,
         )
 
-    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
         artifacts.full_content = self.build_system_prompt(result)
 
 
 def _mirrored(project: Path, skill: ResolvedComponent, sid: str = SID) -> Path:
     """Build the session's artifacts and return the mirror's copy of ``skill``."""
     _MirrorSurface().build_session_artifacts(
-        project, _result(skills=[skill]), sid, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        _result(skills=[skill]),
+        sid,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
-    return _MirrorSurface().session_skills_root(project, sid) / skill.name
+    return _MirrorSurface().session_skills_root(ProjectLayout.at(project), sid) / skill.name
 
 
 def _identity(project: Path, sid: str = SID, skills_root: str | None = None):
@@ -131,7 +136,7 @@ def _identity(project: Path, sid: str = SID, skills_root: str | None = None):
     from ai_hats.session_identity import SessionIdentity
 
     if skills_root is None:
-        skills_root = str(_MirrorSurface().session_skills_root(project, sid))
+        skills_root = str(_MirrorSurface().session_skills_root(ProjectLayout.at(project), sid))
     return SessionIdentity(
         id=sid,
         role="stub-role",
@@ -184,16 +189,15 @@ def test_no_session_ever_gets_a_checks_dir(tmp_path: Path, run_mode: RunMode):
     policy gate. A literal path, not a helper: the helper is gone, and a test
     that imported one could not fail if the step came back under a new name.
     """
-    from ai_hats.paths import session_cache_dir
 
     skill = _skill(tmp_path)
     result = _result(skills=[skill], checks=[_check(skill)])
 
     _MirrorSurface().build_session_artifacts(
-        tmp_path, result, SID, run_mode=run_mode, artifacts=BuiltArtifacts()
+        ProjectLayout.at(tmp_path), result, SID, run_mode=run_mode, artifacts=BuiltArtifacts()
     )
 
-    assert not (session_cache_dir(tmp_path, SID) / "checks").exists()
+    assert not (ProjectLayout.at(tmp_path).cache.session(SID) / "checks").exists()
 
 
 def test_the_snapshot_writer_is_gone_from_the_module(tmp_path: Path):
@@ -273,7 +277,7 @@ def test_a_session_that_predates_the_binding_still_resolves(tmp_path: Path):
     project = _project(tmp_path)
     skill = _skill(project)
     _MirrorSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _result(skills=[skill]),  # no checks at session build time
         SID,
         run_mode=RunMode.HITL,
@@ -349,9 +353,9 @@ def test_the_mirror_lives_inside_what_session_teardown_drops(tmp_path: Path):
     skill = _skill(project)
     assert _mirrored(project, skill).is_dir()
 
-    _cleanup_session_cache(project, SID)
+    _cleanup_session_cache(ProjectLayout.at(project).cache.session(SID))
 
-    assert not _MirrorSurface().session_skills_root(project, SID).exists()
+    assert not _MirrorSurface().session_skills_root(ProjectLayout.at(project), SID).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -457,19 +461,18 @@ class _StaleSurface(_MirrorSurface):
     """A surface package older than the accessor: implements the ADR-0018 seam
     perfectly well, inherits the `Provider` default of ``None`` for the root."""
 
-    def session_skills_root(self, project_dir: Path, session_id: str):
-        return Surface.session_skills_root(self, project_dir, session_id)
+    def session_skills_root(self, layout, session_id: str):
+        return Surface.session_skills_root(self, layout, session_id)
 
-    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
         # It DOES write a mirror — it just will not say where. That asymmetry IS
         # the skew, so the fixture must not model it as "mirrors nothing".
-        from ai_hats.paths import session_cache_dir
         from ai_hats.skills_dir import materialize_skills_dir
 
         materialize_skills_dir(
-            session_cache_dir(project_dir, session_id) / "stub-skills",
+            layout.cache.session(session_id) / "stub-skills",
             result.skills,
-            project_dir,
+            layout,
             artifacts.port,
         )
 
@@ -487,7 +490,7 @@ def test_a_surface_that_cannot_root_a_bound_check_says_so_at_launch(tmp_path: Pa
     skill = _skill(tmp_path)
     result = _result(skills=[skill], checks=[_check(skill)])
 
-    notice = surface_skew_notice("agy", _StaleSurface(), tmp_path, result)
+    notice = surface_skew_notice("agy", _StaleSurface(), ProjectLayout.at(tmp_path), result)
 
     assert notice is not None
     assert "gate-skill" in notice
@@ -501,14 +504,16 @@ def test_a_surface_that_roots_checks_is_quiet(tmp_path: Path):
     skill = _skill(tmp_path)
     result = _result(skills=[skill], checks=[_check(skill)])
 
-    assert surface_skew_notice("stub", _MirrorSurface(), tmp_path, result) is None
+    assert surface_skew_notice("stub", _MirrorSurface(), ProjectLayout.at(tmp_path), result) is None
 
 
 def test_a_stale_surface_with_no_bindings_is_quiet(tmp_path: Path):
     """Nothing bound, nothing to root — the skew is harmless and stays silent."""
     from ai_hats.check_snapshot import surface_skew_notice
 
-    assert surface_skew_notice("agy", _StaleSurface(), tmp_path, _result()) is None
+    assert (
+        surface_skew_notice("agy", _StaleSurface(), ProjectLayout.at(tmp_path), _result()) is None
+    )
 
 
 # --- what the launch report says about the bindings (HATS-1548) ---
@@ -525,7 +530,7 @@ class _SkilllessSurface(_MirrorSurface):
     """Names a mirror root and delivers no skills into it — so a binding
     resolves against a tree this launch never writes."""
 
-    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
         return None
 
 
@@ -536,9 +541,9 @@ def _described(project: Path, result, provider=None, sid: str = SID):
     surface = provider or _MirrorSurface()
     artifacts = BuiltArtifacts(port=PlanMaterializer())
     surface.build_session_artifacts(
-        project, result, sid, run_mode=RunMode.HITL, artifacts=artifacts
+        ProjectLayout.at(project), result, sid, run_mode=RunMode.HITL, artifacts=artifacts
     )
-    return describe_checks(surface, project, result, sid, artifacts.port.plan)
+    return describe_checks(surface, ProjectLayout.at(project), result, sid, artifacts.port.plan)
 
 
 def test_a_planned_gate_is_reported_as_armed(tmp_path: Path):
@@ -552,7 +557,9 @@ def test_a_planned_gate_is_reported_as_armed(tmp_path: Path):
     (check,) = reported
     assert (
         check.runs_from
-        == _MirrorSurface().session_skills_root(project, SID) / skill.name / "check.sh"
+        == _MirrorSurface().session_skills_root(ProjectLayout.at(project), SID)
+        / skill.name
+        / "check.sh"
     )
     assert check.planned is True
     assert notes == ()
@@ -632,7 +639,7 @@ def test_a_dry_run_under_a_stale_surface_warns_before_the_session_starts(
         lambda *a, **kw: _preview(_StaleSurface(), result),
     )
 
-    report = dry_run_hitl(project)
+    report = dry_run_hitl(ProjectLayout.at(project))
 
     assert any("session_skills_root" in note for note in report.notes), report.notes
     assert [c.runs_from for c in report.checks] == [None]

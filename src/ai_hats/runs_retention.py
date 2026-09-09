@@ -58,7 +58,7 @@ from ai_hats_observe.artifacts import (
     session_start_dt,
 )
 
-from .paths import runs_dir, session_cache_dir
+from ai_hats_core.layout import ProjectLayout
 from .session_liveness import LazyLiveness, session_owners
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class RetentionReport:
 
 
 def sweep_runs(
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
     max_age_days: int = BULK_MAX_AGE_DAYS,
     min_interval_hours: float = SWEEP_MIN_INTERVAL_HOURS,
@@ -132,7 +132,7 @@ def sweep_runs(
     because the caller is the per-run ``create_session`` chokepoint.
     """
     report = RetentionReport()
-    root = runs_dir(project_dir)
+    root = layout.sessions.runs
     if not root.is_dir():
         return report
 
@@ -147,7 +147,7 @@ def sweep_runs(
         with os.scandir(root) as entries:
             for entry in entries:
                 if _is_sweepable_run(entry, cutoff) and not _session_is_live(
-                    project_dir, entry.name, liveness
+                    layout, entry.name, liveness
                 ):
                     _sweep_run_dir(Path(entry.path), cutoff, report)
     except OSError as exc:
@@ -178,7 +178,7 @@ def _touch(stamp: Path, report: RetentionReport) -> None:
         report.errors += 1
 
 
-def _session_is_live(project_dir: Path, run_name: str, liveness: LazyLiveness) -> bool:
+def _session_is_live(layout: ProjectLayout, run_name: str, liveness: LazyLiveness) -> bool:
     """Is the session that owns this run dir still going?
 
     The age bound alone is a guess with the same failure mode this card rejected
@@ -190,7 +190,7 @@ def _session_is_live(project_dir: Path, run_name: str, liveness: LazyLiveness) -
     dead owner's cache runs before this one in the same pass, so a cache dir still
     standing means live, or ownerless and inside its own TTL.
     """  # comment-length: allow — this gate is why the bound is not the only guard
-    cache_dir = session_cache_dir(project_dir, run_name[len(SESSION_PREFIX) :])
+    cache_dir = layout.cache.session(run_name[len(SESSION_PREFIX) :])
     if not cache_dir.is_dir():
         return False
     owners = session_owners(cache_dir)

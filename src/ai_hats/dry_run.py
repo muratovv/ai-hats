@@ -11,6 +11,8 @@ import contextlib
 import shutil
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from .check_snapshot import describe_checks
 from .consent_wrapper import materialize_consent_wrappers
 from .materialization import ApplyMaterializer, Materializer, PlanMaterializer
@@ -76,7 +78,7 @@ def _exclusive_rebuild(cache_dir: Path, port: Materializer, *, materialize: bool
 
 
 def dry_run_hitl(
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
     role: str | None = None,
     provider: str | None = None,
@@ -85,8 +87,8 @@ def dry_run_hitl(
     materialize: bool = False,
 ) -> SessionReport:
     """Build the HITL session in plan mode and report it."""
+    project_dir = layout.root
     from .composition_seam import build_preview_payload
-    from .paths import session_cache_dir
 
     # The seam's read-only payload: same compose facade, no ``set_role`` write.
     payload = build_preview_payload(project_dir, role=role, provider=provider)
@@ -94,14 +96,14 @@ def dry_run_hitl(
     eff_policy = policy or SessionPolicy()
 
     sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
-    cache_dir = session_cache_dir(project_dir, sid)
+    cache_dir = layout.cache.session(sid)
     port = ApplyMaterializer() if materialize else PlanMaterializer()
     artifacts = BuiltArtifacts(port=port)
     with _exclusive_rebuild(cache_dir, port, materialize=materialize):
         before = _files_under(cache_dir)
-        with prov.execution_context(project_dir):
+        with prov.execution_context(layout):
             prov.build_session_artifacts(
-                project_dir,
+                layout,
                 payload.result,
                 sid,
                 run_mode=RunMode.HITL,
@@ -109,11 +111,11 @@ def dry_run_hitl(
                 artifacts=artifacts,
             )
             if prov.supports_session_command_wrappers():
-                materialize_consent_wrappers(project_dir, payload.result, sid, prov, artifacts)
+                materialize_consent_wrappers(layout, payload.result, sid, prov, artifacts)
 
     env = assemble_launch_env(
         prov,
-        project_dir,
+        layout,
         cache_dir,
         session_id=sid,
         trace_path=AT_LAUNCH,
@@ -130,10 +132,8 @@ def dry_run_hitl(
         provider_session_id=AT_LAUNCH,
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
-    checks, check_notes = describe_checks(
-        prov, project_dir, payload.result, sid, artifacts.port.plan
-    )
-    notes = [*check_notes, *_launch_notices(prov, project_dir, payload.result, eff_policy)]
+    checks, check_notes = describe_checks(prov, layout, payload.result, sid, artifacts.port.plan)
+    notes = [*check_notes, *_launch_notices(prov, layout, payload.result, eff_policy)]
     if materialize:
         notes.append(f"materialized session tree written to disk at {cache_dir}")
         notes.append(
@@ -158,7 +158,7 @@ def dry_run_hitl(
     )
 
 
-def _launch_notices(prov, project_dir: Path, result, policy: SessionPolicy) -> list[str]:
+def _launch_notices(prov, layout: ProjectLayout, result, policy: SessionPolicy) -> list[str]:
     """What the runner would say at startup about THIS surface (HATS-1548).
 
     A dry-run that stays quiet where the launch warns is the same silence the
@@ -174,12 +174,12 @@ def _launch_notices(prov, project_dir: Path, result, policy: SessionPolicy) -> l
         )
     if not prov.handles_artifact_categories():
         return [*notices, *legacy_launch_notices(prov.name, result, policy)]
-    skew = surface_skew_notice(prov.name, prov, project_dir, result)
+    skew = surface_skew_notice(prov.name, prov, layout, result)
     return [*notices, *([skew] if skew else [])]
 
 
 def dry_run_automate(
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
     role: str | None = None,
     provider: str | None = None,
@@ -195,8 +195,8 @@ def dry_run_automate(
     report shows what a sub-agent really gets — including, today, the paths that
     go around the port (see ``escapes``).
     """
+    project_dir = layout.root
     from .composition_seam import build_preview_payload
-    from .paths import session_cache_dir
 
     # The seam's read-only payload: same compose facade, no ``set_role`` write.
     payload = build_preview_payload(project_dir, role=role, provider=provider)
@@ -204,14 +204,14 @@ def dry_run_automate(
     eff_policy = policy or SessionPolicy()
 
     sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
-    cache_dir = session_cache_dir(project_dir, sid)
+    cache_dir = layout.cache.session(sid)
     port = ApplyMaterializer() if materialize else PlanMaterializer()
     artifacts = BuiltArtifacts(port=port)
     with _exclusive_rebuild(cache_dir, port, materialize=materialize):
         before = _files_under(cache_dir)
-        with prov.execution_context(project_dir):
+        with prov.execution_context(layout):
             prov.build_session_artifacts(
-                project_dir,
+                layout,
                 payload.result,
                 sid,
                 run_mode=RunMode.AUTOMATE,
@@ -219,12 +219,10 @@ def dry_run_automate(
                 artifacts=artifacts,
             )
 
-    checks, check_notes = describe_checks(
-        prov, project_dir, payload.result, sid, artifacts.port.plan
-    )
+    checks, check_notes = describe_checks(prov, layout, payload.result, sid, artifacts.port.plan)
     env = assemble_launch_env(
         prov,
-        project_dir,
+        layout,
         cache_dir,
         session_id=sid,
         trace_path=AT_LAUNCH,
@@ -235,7 +233,7 @@ def dry_run_automate(
         claim=False,
     )
     described = prov.describe_automate_launch(
-        project_dir,
+        layout,
         payload.result,
         sid,
         artifacts,

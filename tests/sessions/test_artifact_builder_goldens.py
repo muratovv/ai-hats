@@ -17,6 +17,8 @@ skill would make these goldens tmp-path flaky.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 from pathlib import Path
@@ -26,7 +28,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.dry_run import dry_run_automate, dry_run_hitl
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG, cache_root
+from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.session_artifacts import SessionPolicy
 
 SURFACES = ["claude", "agy", "cline"]
@@ -83,7 +85,7 @@ def _payload(report, project: Path) -> dict:
     # <cache> first: it lives under <tmp> and carries a path-derived digest that
     # would otherwise pin a machine-specific key into the golden (HATS-1398).
     subs = [
-        (str(cache_root(project)), "<cache>"),
+        (str(ProjectLayout.at(project).cache.root), "<cache>"),
         (str(project), "<project>"),
         (str(project.parent / "home"), "<home>"),
         (str(project.parent), "<tmp>"),
@@ -108,7 +110,9 @@ def _assert_golden(name: str, payload: dict) -> None:
 
 @pytest.mark.parametrize("surface", SURFACES)
 def test_golden_hitl_default_policy(project: Path, surface: str):
-    report = dry_run_hitl(project, role="test-role", provider=surface, policy=SessionPolicy())
+    report = dry_run_hitl(
+        ProjectLayout.at(project), role="test-role", provider=surface, policy=SessionPolicy()
+    )
 
     _assert_golden(f"{surface}-hitl", _payload(report, project))
 
@@ -116,7 +120,11 @@ def test_golden_hitl_default_policy(project: Path, surface: str):
 @pytest.mark.parametrize("surface", SURFACES)
 def test_golden_automate_default_policy(project: Path, surface: str):
     report = dry_run_automate(
-        project, role="test-role", provider=surface, task="demo", policy=SessionPolicy()
+        ProjectLayout.at(project),
+        role="test-role",
+        provider=surface,
+        task="demo",
+        policy=SessionPolicy(),
     )
 
     _assert_golden(f"{surface}-automate", _payload(report, project))

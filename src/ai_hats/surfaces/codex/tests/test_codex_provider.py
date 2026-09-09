@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import sqlite3
 import tomllib
@@ -11,7 +13,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from ai_hats.paths import project_key, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.session_run import SessionRun
 from ai_hats.surfaces.codex import CodexSurface
@@ -70,7 +71,7 @@ def test_provider_identity_and_inline_only_contract(tmp_path: Path) -> None:
     assert provider.name == "codex"
     assert provider.detected_home_dirs() == [".codex"]
     assert provider.supports_session_command_wrappers() is True
-    assert provider.system_prompt_path(tmp_path) is None
+    assert provider.system_prompt_path(ProjectLayout.at(tmp_path)) is None
     assert provider.rules_dir(tmp_path / "session") == tmp_path / "session" / "rules"
 
 
@@ -154,7 +155,7 @@ def test_hitl_delivers_role_rules_and_skill_index_via_toml(tmp_path: Path) -> No
     rule = _make_rule(tmp_path)
 
     args, env, persisted = CodexSurface().build_session_prompt(
-        project, _fake_result(skills=[skill], rules=[rule]), "sid-a"
+        ProjectLayout.at(project), _fake_result(skills=[skill], rules=[rule]), "sid-a"
     )
 
     delivered = _developer_instructions(args)
@@ -162,22 +163,28 @@ def test_hitl_delivers_role_rules_and_skill_index_via_toml(tmp_path: Path) -> No
     assert "You are the repository maintainer." in delivered
     assert "Never bypass repository safety checks." in delivered
     assert "## AVAILABLE SKILLS" in delivered
-    skill_md = CodexSurface().session_skills_root(project, "sid-a") / "release" / "SKILL.md"
+    skill_md = (
+        CodexSurface().session_skills_root(ProjectLayout.at(project), "sid-a")
+        / "release"
+        / "SKILL.md"
+    )
     assert str(skill_md) in delivered
     assert "Prepare a safe release" in delivered
     # This fixture skill declares no runtime hook, so the surface must not make
     # the user trust an inert dispatcher or publish hook-only environment pins.
     assert "AI_HATS_SESSION_CACHE_DIR" not in env
     assert "AI_HATS_PYTHON" not in env
-    assert CodexSurface().get_env(tmp_path / "session", project)["AI_HATS_PROJECT_DIR"] == str(
-        project
-    )
+    assert CodexSurface().get_env(tmp_path / "session", ProjectLayout.at(project))[
+        "AI_HATS_PROJECT_DIR"
+    ] == str(project)
 
 
 def test_hitl_argv_has_safe_permissions_and_keeps_worktree_cwd(tmp_path: Path) -> None:
     project = tmp_path / "canonical-main"
     project.mkdir()
-    args, _, _ = CodexSurface().build_session_prompt(project, _fake_result(), "sid")
+    args, _, _ = CodexSurface().build_session_prompt(
+        ProjectLayout.at(project), _fake_result(), "sid"
+    )
     command = CodexSurface().get_cli_launch_args(["codex", *args], "sid", False)
 
     assert command[0] == "codex"
@@ -225,7 +232,9 @@ def test_explicit_safe_policy_replaces_defaults_without_duplicate_codex_flags(
     project = tmp_path / "project"
     project.mkdir()
     provider = CodexSurface()
-    session_args, _, _ = provider.build_session_prompt(project, _fake_result(), "sid")
+    session_args, _, _ = provider.build_session_prompt(
+        ProjectLayout.at(project), _fake_result(), "sid"
+    )
 
     command = provider.get_cli_launch_args(
         provider.get_cli_command(extra) + session_args,
@@ -260,9 +269,15 @@ def test_skill_materialization_is_session_scoped_and_clean_root(tmp_path: Path) 
     project.mkdir()
     skill = _make_skill(tmp_path, "release")
 
-    CodexSurface().build_session_prompt(project, _fake_result(skills=[skill]), "sid-a")
+    CodexSurface().build_session_prompt(
+        ProjectLayout.at(project), _fake_result(skills=[skill]), "sid-a"
+    )
 
-    delivered = CodexSurface().session_skills_root(project, "sid-a") / "release" / "SKILL.md"
+    delivered = (
+        CodexSurface().session_skills_root(ProjectLayout.at(project), "sid-a")
+        / "release"
+        / "SKILL.md"
+    )
     assert delivered.is_file()
     assert list(project.iterdir()) == []
 
@@ -286,20 +301,26 @@ def test_role_skills_activate_native_codex_home_with_shared_user_state(
     skill = _make_skill(tmp_path, "release")
 
     artifacts = CodexSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[skill]),
         "sid-native",
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
 
-    session_home = base_home / ".ai-hats" / "session-homes" / project_key(project) / "sid-native"
+    session_home = (
+        base_home
+        / ".ai-hats"
+        / "session-homes"
+        / ProjectLayout.at(project).cache.root.name
+        / "sid-native"
+    )
     assert artifacts.extra_env["CODEX_HOME"] == str(session_home)
     assert artifacts.extra_env["CODEX_SQLITE_HOME"] == str(base_home)
     assert artifacts.extra_env["AI_HATS_CODEX_BASE_HOME"] == str(base_home)
     assert json.loads((session_home / ".ai-hats-session.json").read_text()) == {
         "base_home": str(base_home),
-        "project_key": project_key(project),
+        "project_key": ProjectLayout.at(project).cache.root.name,
         "session_id": "sid-native",
         "sqlite_home": str(base_home),
         "version": 1,
@@ -312,7 +333,7 @@ def test_role_skills_activate_native_codex_home_with_shared_user_state(
     assert (session_home / "auth.json").stat().st_mode & 0o777 == 0o600
     assert (session_home / "config.toml").is_symlink()
     assert not any((session_home / path.name).exists() for path in sqlite_artifacts)
-    assert session_cache_dir(project, "sid-native") not in session_home.parents
+    assert ProjectLayout.at(project).cache.session("sid-native") not in session_home.parents
     assert list(project.iterdir()) == []
 
 
@@ -332,13 +353,13 @@ def test_session_run_normalizes_rollout_and_removes_home(
     run = SessionRun(SimpleNamespace(session_id="sid-cleanup", log_sys=lambda _message: None))
     with run:
         provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "sid-cleanup",
             run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(resources=run),
         )
-        session_home = provider.session_codex_home(project, "sid-cleanup")
+        session_home = provider.session_codex_home(ProjectLayout.at(project), "sid-cleanup")
         with sqlite3.connect(database) as connection:
             connection.execute(
                 "INSERT INTO threads VALUES (?, ?)",
@@ -363,13 +384,13 @@ def test_session_logout_removes_shared_auth(tmp_path: Path) -> None:
     run = SessionRun(SimpleNamespace(session_id="logout", log_sys=lambda _message: None))
     with run:
         provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "logout",
             run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(resources=run),
         )
-        session_home = provider.session_codex_home(project, "logout")
+        session_home = provider.session_codex_home(ProjectLayout.at(project), "logout")
         (session_home / "auth.json").unlink()  # safe-delete: ok synthetic logout fixture
 
     assert not (base_home / "auth.json").exists()
@@ -385,13 +406,13 @@ def test_session_without_auth_baseline_retains_credentials(tmp_path: Path) -> No
     run = SessionRun(SimpleNamespace(session_id="missing-baseline", log_sys=notices.append))
     with run:
         provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "missing-baseline",
             run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(resources=run),
         )
-        session_home = provider.session_codex_home(project, "missing-baseline")
+        session_home = provider.session_codex_home(ProjectLayout.at(project), "missing-baseline")
         (session_home / "auth.json").write_text('{"fixture": "new"}')
         baseline = session_home / ".ai-hats-auth-baseline.json"
         baseline.unlink()  # safe-delete: ok synthetic baseline fixture
@@ -412,13 +433,13 @@ def test_session_logout_preserves_a_newer_login(tmp_path: Path) -> None:
     run = SessionRun(SimpleNamespace(session_id="older", log_sys=notices.append))
     with run:
         provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "older",
             run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(resources=run),
         )
-        session_home = provider.session_codex_home(project, "older")
+        session_home = provider.session_codex_home(ProjectLayout.at(project), "older")
         (session_home / "auth.json").unlink()  # safe-delete: ok synthetic logout fixture
         (base_home / "auth.json").write_text('{"fixture": "newer"}')
 
@@ -441,13 +462,13 @@ def test_session_run_retains_home_when_rollout_target_is_missing(tmp_path: Path)
 
     with run:
         provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "sid-retained",
             run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(resources=run),
         )
-        session_home = provider.session_codex_home(project, "sid-retained")
+        session_home = provider.session_codex_home(ProjectLayout.at(project), "sid-retained")
         with sqlite3.connect(database) as connection:
             connection.execute(
                 "INSERT INTO threads VALUES (?, ?)",
@@ -473,13 +494,13 @@ def test_session_run_build_reconciles_crash_home_without_cache(
         connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)")
     provider = CodexSurface()
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[_make_skill(tmp_path, "release")]),
         "sid-crashed",
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
-    session_home = provider.session_codex_home(project, "sid-crashed")
+    session_home = provider.session_codex_home(ProjectLayout.at(project), "sid-crashed")
     with sqlite3.connect(database) as connection:
         connection.execute(
             "INSERT INTO threads VALUES (?, ?)",
@@ -488,12 +509,12 @@ def test_session_run_build_reconciles_crash_home_without_cache(
                 str(session_home / "sessions" / rollout.relative_to(base_home / "sessions")),
             ),
         )
-    session_cache_dir(project, "sid-crashed").rmdir()  # safe-delete: ok empty-dir
+    ProjectLayout.at(project).cache.session("sid-crashed").rmdir()  # safe-delete: ok empty-dir
 
     run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
     with run:
         provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(),
             "sid-current",
             run_mode=RunMode.HITL,
@@ -521,13 +542,13 @@ def test_session_run_build_skips_home_with_live_session_cache(
 
     provider = CodexSurface()
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[_make_skill(tmp_path, "release")]),
         "sid-running",
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
-    session_home = provider.session_codex_home(project, "sid-running")
+    session_home = provider.session_codex_home(ProjectLayout.at(project), "sid-running")
     stored_path = str(session_home / "sessions" / rollout.relative_to(base_home / "sessions"))
     with sqlite3.connect(database) as connection:
         connection.execute("INSERT INTO threads VALUES (?, ?)", ("thread", stored_path))
@@ -535,7 +556,7 @@ def test_session_run_build_skips_home_with_live_session_cache(
     run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
     with run:
         artifacts = provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(),
             "sid-current",
             run_mode=RunMode.HITL,
@@ -565,7 +586,7 @@ def test_session_run_build_surfaces_recovery_failure(tmp_path: Path) -> None:
     run = SessionRun(SimpleNamespace(session_id="sid-current", log_sys=lambda _message: None))
     with run:
         artifacts = provider.build_session_artifacts(
-            project,
+            ProjectLayout.at(project),
             _fake_result(),
             "sid-current",
             run_mode=RunMode.HITL,
@@ -587,9 +608,11 @@ def test_role_skills_override_collisions_and_preserve_other_base_skills(tmp_path
         (source / "SKILL.md").write_text(f"base {name}")
     role_skill = _make_skill(tmp_path, "release")
 
-    CodexSurface().build_session_prompt(project, _fake_result(skills=[role_skill]), "sid-merged")
+    CodexSurface().build_session_prompt(
+        ProjectLayout.at(project), _fake_result(skills=[role_skill]), "sid-merged"
+    )
 
-    skills_root = CodexSurface().session_skills_root(project, "sid-merged")
+    skills_root = CodexSurface().session_skills_root(ProjectLayout.at(project), "sid-merged")
     assert (skills_root / ".system").is_symlink()
     assert (skills_root / "personal").is_symlink()
     assert not (skills_root / "release").is_symlink()
@@ -603,7 +626,7 @@ def test_empty_role_skills_do_not_activate_codex_home_overlay(tmp_path: Path) ->
     provider = CodexSurface()
 
     artifacts = provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(),
         "sid-empty",
         run_mode=RunMode.HITL,
@@ -612,7 +635,7 @@ def test_empty_role_skills_do_not_activate_codex_home_overlay(tmp_path: Path) ->
 
     assert "CODEX_HOME" not in artifacts.extra_env
     assert "CODEX_SQLITE_HOME" not in artifacts.extra_env
-    assert not provider.session_codex_home(project, "sid-empty").exists()
+    assert not provider.session_codex_home(ProjectLayout.at(project), "sid-empty").exists()
 
 
 def test_nested_launch_keeps_original_base_home_and_explicit_sqlite_home(
@@ -632,14 +655,14 @@ def test_nested_launch_keeps_original_base_home_and_explicit_sqlite_home(
     monkeypatch.setenv("CODEX_SQLITE_HOME", str(sqlite_home))
 
     artifacts = CodexSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[_make_skill(tmp_path, "release")]),
         "sid-nested",
         run_mode=RunMode.AUTOMATE,
         artifacts=BuiltArtifacts(),
     )
 
-    session_home = CodexSurface().session_codex_home(project, "sid-nested")
+    session_home = CodexSurface().session_codex_home(ProjectLayout.at(project), "sid-nested")
     assert artifacts.extra_env["AI_HATS_CODEX_BASE_HOME"] == str(base_home)
     assert artifacts.extra_env["CODEX_SQLITE_HOME"] == str(sqlite_home)
     assert (session_home / "config.toml").resolve() == base_home / "config.toml"
@@ -660,7 +683,7 @@ def test_cache_backed_base_home_is_rejected_before_session_writes(
         RuntimeError, match="Codex base home must be disjoint from the ai-hats cache home"
     ) as raised:
         provider.build_session_prompt(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "sid-recursive",
         )
@@ -677,13 +700,13 @@ def test_cache_backed_sqlite_home_is_rejected_before_session_writes(
     cache_home = tmp_path / "cache-home"
     monkeypatch.setenv("CODEX_SQLITE_HOME", str(cache_home / "sqlite"))
     provider = CodexSurface()
-    session_home = provider.session_codex_home(project, "sid-cache-sqlite")
+    session_home = provider.session_codex_home(ProjectLayout.at(project), "sid-cache-sqlite")
 
     with pytest.raises(
         RuntimeError, match="Codex SQLite home must be outside the ai-hats cache home"
     ):
         provider.build_session_prompt(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "sid-cache-sqlite",
         )
@@ -700,13 +723,13 @@ def test_managed_session_sqlite_home_is_rejected_before_session_writes(
     sqlite_home = base_home / ".ai-hats" / "session-homes" / "sqlite"
     monkeypatch.setenv("CODEX_SQLITE_HOME", str(sqlite_home))
     provider = CodexSurface()
-    session_home = provider.session_codex_home(project, "sid-managed-sqlite")
+    session_home = provider.session_codex_home(ProjectLayout.at(project), "sid-managed-sqlite")
 
     with pytest.raises(
         RuntimeError, match="Codex SQLite home must be outside managed session homes"
     ):
         provider.build_session_prompt(
-            project,
+            ProjectLayout.at(project),
             _fake_result(skills=[_make_skill(tmp_path, "release")]),
             "sid-managed-sqlite",
         )
@@ -721,11 +744,15 @@ def test_parallel_sessions_have_disjoint_skill_trees(tmp_path: Path) -> None:
     skill_b = _make_skill(tmp_path, "skill-b")
     provider = CodexSurface()
 
-    provider.build_session_prompt(project, _fake_result(skills=[skill_a]), "sid-a")
-    provider.build_session_prompt(project, _fake_result(skills=[skill_b]), "sid-b")
+    provider.build_session_prompt(
+        ProjectLayout.at(project), _fake_result(skills=[skill_a]), "sid-a"
+    )
+    provider.build_session_prompt(
+        ProjectLayout.at(project), _fake_result(skills=[skill_b]), "sid-b"
+    )
 
-    root_a = provider.session_skills_root(project, "sid-a")
-    root_b = provider.session_skills_root(project, "sid-b")
+    root_a = provider.session_skills_root(ProjectLayout.at(project), "sid-a")
+    root_b = provider.session_skills_root(ProjectLayout.at(project), "sid-b")
     assert root_a != root_b
     assert (root_a / "skill-a" / "SKILL.md").is_file()
     assert not (root_a / "skill-b").exists()
@@ -739,7 +766,7 @@ def test_automate_uses_exec_json_ephemeral_and_never_approval(tmp_path: Path) ->
     project.mkdir()
     provider = CodexSurface()
     artifacts = provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(),
         "sid-auto",
         run_mode=RunMode.AUTOMATE,
@@ -747,7 +774,7 @@ def test_automate_uses_exec_json_ephemeral_and_never_approval(tmp_path: Path) ->
     )
 
     described = provider.describe_automate_launch(
-        project,
+        ProjectLayout.at(project),
         _fake_result(),
         "sid-auto",
         artifacts,
@@ -795,14 +822,14 @@ def test_automate_materializes_skills_without_project_writes(tmp_path: Path) -> 
     project.mkdir()
     skill = _make_skill(tmp_path, "review")
     artifacts = CodexSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result(skills=[skill]),
         "sid-auto",
         run_mode=RunMode.AUTOMATE,
         artifacts=BuiltArtifacts(),
     )
 
-    skills_root = CodexSurface().session_skills_root(project, "sid-auto")
+    skills_root = CodexSurface().session_skills_root(ProjectLayout.at(project), "sid-auto")
     assert (skills_root / "review" / "SKILL.md").is_file()
     assert skills_root in artifacts.materialized
     assert str(skills_root / "review" / "SKILL.md") in (artifacts.full_content or "")

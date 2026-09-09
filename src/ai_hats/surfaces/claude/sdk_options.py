@@ -27,6 +27,8 @@ with its full description, so a text index would be a 2-3x duplicate.
 from __future__ import annotations
 
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -47,7 +49,7 @@ if TYPE_CHECKING:
 
 def _build_system_prompt(
     composition_result: "CompositionResult",
-    project_dir: Path,
+    layout: ProjectLayout,
     provider: "Surface",
 ) -> "SystemPromptPreset":
     """Return the ``system_prompt`` payload as the SDK's preset+append shape.
@@ -62,13 +64,13 @@ def _build_system_prompt(
     from ai_hats.placeholders import expand_path_placeholders
 
     text = provider.build_system_prompt(composition_result)
-    text = expand_path_placeholders(text, project_dir)
+    text = expand_path_placeholders(text, layout)
     return {"type": "preset", "preset": "claude_code", "append": text}
 
 
 def _build_plugins(
     composition_result: "CompositionResult",
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
     provider: "Surface",
 ) -> list["SdkPluginConfig"]:
@@ -88,7 +90,7 @@ def _build_plugins(
         return []
 
     skill_args = provider.materialize_runtime_skills(
-        project_dir,
+        layout,
         composition_result,
         session_id,
     )
@@ -109,7 +111,7 @@ def build_options(
     composition_result: "CompositionResult",
     *,
     provider: "Surface",
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
     work_dir: Path | None = None,
     claude_session_id: str | None = None,
@@ -128,15 +130,16 @@ def build_options(
     plugins: Any = _UNSET,
 ) -> "ClaudeAgentOptions":
     """Build a :class:`ClaudeAgentOptions` from composition + per-call inputs."""
+    project_dir = layout.root
     from claude_agent_sdk import ClaudeAgentOptions
 
     eff_system_prompt = (
-        _build_system_prompt(composition_result, project_dir, provider)
+        _build_system_prompt(composition_result, layout, provider)
         if system_prompt is _UNSET
         else system_prompt
     )
     eff_plugins = (
-        _build_plugins(composition_result, project_dir, session_id, provider)
+        _build_plugins(composition_result, layout, session_id, provider)
         if plugins is _UNSET
         else plugins
     )
@@ -157,11 +160,10 @@ def build_options(
     if setting_sources is not None:
         kwargs["setting_sources"] = setting_sources
     env_dict = dict(extra_env) if extra_env else {}
-    from ai_hats.paths import session_cache_dir
 
     from ai_hats.skills_dir import inject_skill_paths_to_env
 
-    plugin_skills_dir = session_cache_dir(project_dir, session_id) / "plugin" / "skills"
+    plugin_skills_dir = layout.cache.session(session_id) / "plugin" / "skills"
     inject_skill_paths_to_env(env_dict, composition_result.skills, plugin_skills_dir)
     if env_dict:
         kwargs["env"] = env_dict
@@ -186,7 +188,7 @@ def automate_options(
     composition_result: "CompositionResult",
     *,
     provider: "Surface",
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
     artifacts: "BuiltArtifacts",
     work_dir: Path | None,
@@ -202,7 +204,7 @@ def automate_options(
     return build_options(
         composition_result,
         provider=provider,
-        project_dir=project_dir,
+        layout=layout,
         session_id=session_id,
         work_dir=work_dir,
         model=model or "",
@@ -269,7 +271,7 @@ def build_first_user_message(
     return "\n\n".join(sections)
 
 
-def assemble_first_user_message(project_dir: Path, *, task: str, ticket_id: str) -> str:
+def assemble_first_user_message(layout: ProjectLayout, *, task: str, ticket_id: str) -> str:
     """The SDK's first user turn — one expression for the engine and the audit.
 
     HATS-1552: the engine sent ``Ticket: <id>`` while the saved audit rendered
@@ -277,10 +279,9 @@ def assemble_first_user_message(project_dir: Path, *, task: str, ticket_id: str)
     message the SDK had never received.
     """
     from ai_hats.linked_context import ticket_sections
-    from ai_hats.paths import tasks_dir
 
     ticket_context, linked_context = ticket_sections(
-        tasks_root=tasks_dir(project_dir), ticket_id=ticket_id
+        tasks_root=layout.tracker.tasks_dir, ticket_id=ticket_id
     )
     return build_first_user_message(
         ticket_context=ticket_context,
@@ -291,7 +292,7 @@ def assemble_first_user_message(project_dir: Path, *, task: str, ticket_id: str)
 
 def render_sdk_prompt_audit(
     artifacts: "BuiltArtifacts",
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
     task: str,
     ticket_id: str,
@@ -299,7 +300,7 @@ def render_sdk_prompt_audit(
     """Human-readable record of the two things the SDK is actually handed."""
     sys_opt = artifacts.sdk_options.get("system_prompt")
     system_text = sys_opt.get("append", "") if isinstance(sys_opt, dict) else (sys_opt or "")
-    initial_message = assemble_first_user_message(project_dir, task=task, ticket_id=ticket_id)
+    initial_message = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
     return (
         "==== SDK system_prompt (preset=claude_code, append) ====\n"
         f"{system_text}\n"

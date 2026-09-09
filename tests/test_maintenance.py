@@ -68,7 +68,7 @@ def _uv_on_path(monkeypatch):
 def _seed_update_cache(project: Path) -> Path:
     """Write a minimal update-check cache and return its path."""
     write_cache(
-        project,
+        ProjectLayout.at(project).cache,
         CacheEntry(
             checked_at=datetime.now(timezone.utc),
             installed_sha="a" * 40,
@@ -78,7 +78,7 @@ def _seed_update_cache(project: Path) -> Path:
             ahead=0,
         ),
     )
-    return cache_path(project)
+    return cache_path(ProjectLayout.at(project).cache)
 
 
 # ---------- _invalidate_update_cache (HATS-781) ----------
@@ -88,15 +88,15 @@ def test_invalidate_update_cache_removes_file(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     p = _seed_update_cache(tmp_path)
     assert p.exists()
-    _invalidate_update_cache(tmp_path)
+    _invalidate_update_cache(ProjectLayout.at(tmp_path).cache)
     assert not p.exists()
 
 
 def test_invalidate_update_cache_idempotent_when_missing(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     # No cache written — must not raise.
-    _invalidate_update_cache(tmp_path)
-    _invalidate_update_cache(tmp_path)
+    _invalidate_update_cache(ProjectLayout.at(tmp_path).cache)
+    _invalidate_update_cache(ProjectLayout.at(tmp_path).cache)
 
 
 # ---------- degrade on missing update_check (HATS-987) ----------
@@ -109,14 +109,17 @@ def test_invalidate_update_cache_survives_missing_update_check(tmp_path, monkeyp
     # degrade to no-op, not raise (fail-under-revert: without the ImportError
     # wrap this raises ModuleNotFoundError on an already-successful update).
     monkeypatch.setitem(sys.modules, "ai_hats.update_check.cache", None)
-    _invalidate_update_cache(tmp_path)
+    _invalidate_update_cache(ProjectLayout.at(tmp_path).cache)
 
 
 def test_probe_remote_state_none_on_missing_update_check(tmp_path, monkeypatch):
     # The edge ahead/behind probe degrades to None (→ guard inactive → proceed)
     # rather than crashing when update_check is gone.
     monkeypatch.setitem(sys.modules, "ai_hats.update_check.checker", None)
-    assert _probe_remote_state(tmp_path, remote_url="https://x/y.git", ref="HEAD") is None
+    assert (
+        _probe_remote_state(ProjectLayout.at(tmp_path), remote_url="https://x/y.git", ref="HEAD")
+        is None
+    )
 
 
 # ---------- _format_install_source (HATS-779) ----------
@@ -742,13 +745,7 @@ from ai_hats.cli.maintenance import (  # noqa: E402
 )
 from ai_hats.channel import resolve_channel  # noqa: E402
 from ai_hats.models import Channel  # noqa: E402
-from ai_hats.paths import (  # noqa: E402
-    complete_sentinel,
-    current_pointer,
-    is_complete,
-    read_current_sha,
-    version_dir,
-)
+from ai_hats.version_refs import is_complete, read_current_sha  # noqa: E402
 
 
 def _edge_res(url: str, sha: str):
@@ -847,10 +844,10 @@ def test_build_install_cmd_passes_spec_through():
 def test_flip_current_atomic_write(tmp_path, monkeypatch):
     """_flip_current writes the sha to versions/current and is overwrite-safe."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
-    _flip_current(tmp_path, "aaaa1111")
-    assert current_pointer(tmp_path).read_text().strip() == "aaaa1111"
-    _flip_current(tmp_path, "bbbb2222")  # idempotent overwrite
-    assert current_pointer(tmp_path).read_text().strip() == "bbbb2222"
+    _flip_current(ProjectLayout.at(tmp_path).versions, "aaaa1111")
+    assert ProjectLayout.at(tmp_path).versions.current_pointer.read_text().strip() == "aaaa1111"
+    _flip_current(ProjectLayout.at(tmp_path).versions, "bbbb2222")  # idempotent overwrite
+    assert ProjectLayout.at(tmp_path).versions.current_pointer.read_text().strip() == "bbbb2222"
 
 
 def _versioned_fake_run(*, fail_at=None, bump_rec=None):
@@ -901,7 +898,7 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
     bump_rec: list[str] = []
     with patch("subprocess.run", side_effect=_versioned_fake_run(bump_rec=bump_rec)):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role="assistant",
@@ -909,11 +906,11 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
             migrate_force=False,
             check_branches=False,
         )
-    assert read_current_sha(tmp_path) == "cafef00d"
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
     # HATS-648: the .complete sentinel is written on a fully-successful install.
-    assert is_complete(tmp_path, "cafef00d")
+    assert is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
     # Bump ran with the NEW venv's python, not sys.executable.
-    expected_python = str(version_dir(tmp_path, "cafef00d") / "bin" / "python")
+    expected_python = str(ProjectLayout.at(tmp_path).versions.dir("cafef00d") / "bin" / "python")
     assert bump_rec == [expected_python]
 
 
@@ -924,7 +921,7 @@ def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="venv")):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
-                tmp_path,
+                ProjectLayout.at(tmp_path),
                 _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
                 old_version="1.0.0",
                 active_role=None,
@@ -933,7 +930,7 @@ def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
                 check_branches=False,
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
-    assert read_current_sha(tmp_path) is None  # never flipped
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None  # never flipped
 
 
 def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
@@ -946,7 +943,7 @@ def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
     ):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
-                tmp_path,
+                ProjectLayout.at(tmp_path),
                 _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
                 old_version="1.0.0",
                 active_role="assistant",
@@ -955,8 +952,8 @@ def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
                 check_branches=False,
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
-    assert read_current_sha(tmp_path) is None  # never flipped
-    assert not current_pointer(tmp_path).exists()
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None  # never flipped
+    assert not ProjectLayout.at(tmp_path).versions.current_pointer.exists()
     assert bump_rec == []  # bump skipped on failed install
 
 
@@ -968,7 +965,7 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="verify")):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
-                tmp_path,
+                ProjectLayout.at(tmp_path),
                 _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
                 old_version="1.0.0",
                 active_role=None,
@@ -977,10 +974,10 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
                 check_branches=False,
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
-    assert read_current_sha(tmp_path) is None
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None
     # The half-written dir exists but is incomplete — no sentinel.
-    assert version_dir(tmp_path, "cafef00d").is_dir()
-    assert not is_complete(tmp_path, "cafef00d")
+    assert ProjectLayout.at(tmp_path).versions.dir("cafef00d").is_dir()
+    assert not is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
 
 
 def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
@@ -990,11 +987,11 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
     # sentinel) and current → it. HATS-648: completeness requires the sentinel;
     # HATS-657: read_current_sha additionally requires bin/python. HATS-790
     # removed the bin/ai-hats console script, so it is no longer seeded.
-    vbin = version_dir(tmp_path, "cafef00d") / "bin"
+    vbin = ProjectLayout.at(tmp_path).versions.dir("cafef00d") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
     (vbin / "python").write_text("#!/bin/sh\n")
-    complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
-    _flip_current(tmp_path, "cafef00d")
+    ProjectLayout.at(tmp_path).versions.sentinel("cafef00d").write_text("", encoding="utf-8")
+    _flip_current(ProjectLayout.at(tmp_path).versions, "cafef00d")
     calls: list[list[str]] = []
 
     def rec_run(args, **kwargs):
@@ -1003,7 +1000,7 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
 
     with patch("subprocess.run", side_effect=rec_run):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role="assistant",
@@ -1036,11 +1033,13 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
     # host-python-upgrade symptom — and point current at it. HATS-790: bin/python
     # is the sole runnable marker now (no bin/ai-hats console script), so a
     # sentinel-only dir is precisely the complete-but-unrunnable case.
-    vbin = version_dir(tmp_path, "cafef00d") / "bin"
+    vbin = ProjectLayout.at(tmp_path).versions.dir("cafef00d") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
-    complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
-    _flip_current(tmp_path, "cafef00d")
-    assert read_current_sha(tmp_path) is None  # broken venv is not usable
+    ProjectLayout.at(tmp_path).versions.sentinel("cafef00d").write_text("", encoding="utf-8")
+    _flip_current(ProjectLayout.at(tmp_path).versions, "cafef00d")
+    assert (
+        read_current_sha(ProjectLayout.at(tmp_path).versions) is None
+    )  # broken venv is not usable
     _capture_prints(monkeypatch)
 
     # Record every subprocess call while delegating to the real fake (which
@@ -1054,7 +1053,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
 
     with patch("subprocess.run", side_effect=rec_run):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role=None,
@@ -1066,8 +1065,8 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
     assert any("venv" in c and "uv" in c for c in calls)
     assert any("pip" in c for c in calls)
     # The interpreter is restored and the sha is usable / current again.
-    assert (version_dir(tmp_path, "cafef00d") / "bin" / "python").exists()
-    assert read_current_sha(tmp_path) == "cafef00d"
+    assert (ProjectLayout.at(tmp_path).versions.dir("cafef00d") / "bin" / "python").exists()
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
 
 
 def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeypatch):
@@ -1081,7 +1080,7 @@ def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeyp
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     # Plant aged incomplete residue (no .complete sentinel) from a past crash.
-    residue = version_dir(tmp_path, "0ld0bad0")
+    residue = ProjectLayout.at(tmp_path).versions.dir("0ld0bad0")
     (residue / "bin").mkdir(parents=True, exist_ok=True)
     (residue / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
     old = time.time() - 48 * 3600
@@ -1089,7 +1088,7 @@ def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeyp
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role=None,
@@ -1098,7 +1097,9 @@ def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeyp
             check_branches=False,
         )
     assert not residue.exists()  # crash residue reclaimed
-    assert read_current_sha(tmp_path) == "cafef00d"  # new install is current
+    assert (
+        read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
+    )  # new install is current
 
 
 def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypatch):
@@ -1108,12 +1109,14 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     # Pre-seed a complete versions/cafef00d/ (sentinel) but point current ELSEWHERE.
-    vbin = version_dir(tmp_path, "cafef00d") / "bin"
+    vbin = ProjectLayout.at(tmp_path).versions.dir("cafef00d") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
     (vbin / "ai-hats").write_text("#!/bin/sh\n")
     (vbin / "python").write_text("#!/bin/sh\n")
-    complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
-    _flip_current(tmp_path, "0ldc0de0")  # current points at a different sha
+    ProjectLayout.at(tmp_path).versions.sentinel("cafef00d").write_text("", encoding="utf-8")
+    _flip_current(
+        ProjectLayout.at(tmp_path).versions, "0ldc0de0"
+    )  # current points at a different sha
     calls: list[list[str]] = []
 
     def rec_run(args, **kwargs):
@@ -1122,7 +1125,7 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
 
     with patch("subprocess.run", side_effect=rec_run):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role=None,
@@ -1133,8 +1136,8 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
     # Reused: no rebuild, but current re-flipped to the complete dir.
     assert not any("venv" in c and "uv" in c for c in calls)
     assert not any("pip" in c for c in calls)
-    assert read_current_sha(tmp_path) == "cafef00d"
-    assert is_complete(tmp_path, "cafef00d")
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
+    assert is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
 
 
 def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeypatch):
@@ -1144,13 +1147,13 @@ def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeyp
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     # This updater runs FROM versions/0ldc0de0 → current_run_sha resolves.
-    monkeypatch.setattr(sys, "prefix", str(version_dir(tmp_path, "0ldc0de0")))
+    monkeypatch.setattr(sys, "prefix", str(ProjectLayout.at(tmp_path).versions.dir("0ldc0de0")))
     legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
     (legacy / "bin").mkdir(parents=True, exist_ok=True)
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role=None,
@@ -1159,7 +1162,7 @@ def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeyp
             check_branches=False,
         )
     assert not legacy.exists()  # legacy .venv reclaimed
-    assert read_current_sha(tmp_path) == "cafef00d"
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
 
 
 def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
@@ -1174,7 +1177,7 @@ def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role=None,
@@ -1183,7 +1186,7 @@ def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
             check_branches=False,
         )
     assert legacy.exists()  # kept — we ran from it
-    assert read_current_sha(tmp_path) == "cafef00d"
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
 
 
 def _capture_prints(monkeypatch):
@@ -1211,7 +1214,7 @@ def _update_with_launcher(tmp_path, monkeypatch, stamp):
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0",
             active_role=None,
@@ -1235,7 +1238,7 @@ def test_managed_update_warns_when_launcher_is_behind(tmp_path, monkeypatch):
 def test_managed_update_silent_when_launcher_is_level(tmp_path, monkeypatch):
     printed = _update_with_launcher(tmp_path, monkeypatch, stamp=LAUNCHER_CONTRACT)
 
-    assert read_current_sha(tmp_path) == "cafef00d"  # update succeeded
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"  # update succeeded
     assert not any("host launcher is behind" in p for p in printed)
 
 

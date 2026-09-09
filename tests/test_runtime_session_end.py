@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats_observe import Session
-from ai_hats.paths import discover_recent_by_mtime, runs_dir, session_cache_dir
+from ai_hats.paths import discover_recent_by_mtime
 from ai_hats.paths import claude_transcripts_dir
 from ai_hats.runtime import (
     _finalize_session_basic,
@@ -225,7 +225,7 @@ def test_print_session_end_with_retro_one_line(tmp_path, capsys, action, expecte
         "mode": "llm",
         "background": True,
         "retro_path": str(tmp_path / "retros" / "llm" / "test.md"),
-        "log_path": str(runs_dir(tmp_path) / "session_test" / RETRO_LOG),
+        "log_path": str(ProjectLayout.at(tmp_path).sessions.runs / "session_test" / RETRO_LOG),
     }
     _print_session_end(session, trace_stats={"trace_size": 0, "req_count": 0}, retro=decision)
 
@@ -386,7 +386,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         runner = WrapRunner(
             ProjectLayout.at(project),
             payload,
-            session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+            session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
             tracer_factory=SidecarTracer,
         )
 
@@ -448,17 +448,17 @@ def test_wrap_runner_closes_session_resources_before_session_cache(
     events: list[str] = []
 
     class LifecycleProvider(ClaudeSurface):
-        def build_session_artifacts(self, project_dir, result, session_id, **kwargs):
+        def build_session_artifacts(self, layout, result, session_id, **kwargs):
             artifacts = kwargs["artifacts"]
             assert artifacts.resources is not None
 
             def finalize() -> None:
-                assert session_cache_dir(project_dir, session_id).is_dir()
+                assert layout.cache.session(session_id).is_dir()
                 events.append("provider")
 
             artifacts.resources.defer("provider artifacts", finalize)
             return super().build_session_artifacts(
-                project_dir,
+                layout,
                 result,
                 session_id,
                 **kwargs,
@@ -469,7 +469,7 @@ def test_wrap_runner_closes_session_resources_before_session_cache(
     _exit_code, session = runner.run()
 
     assert events == ["provider"]
-    assert not session_cache_dir(runner.project_dir, session.session_id).exists()
+    assert not ProjectLayout.at(runner.project_dir).cache.session(session.session_id).exists()
 
 
 def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(

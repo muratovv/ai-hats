@@ -17,12 +17,12 @@ from pathlib import Path
 import pytest
 
 from ai_hats_observe import SessionManager
-from ai_hats.paths import runs_dir
 from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
+from ai_hats_core.layout import ProjectLayout
 
 
 def _session_mgr(project_dir: Path) -> SessionManager:
-    return SessionManager(project_dir, runs_dir=runs_dir(project_dir))
+    return SessionManager(project_dir, runs_dir=ProjectLayout.at(project_dir).sessions.runs)
 
 
 def _make_session_dir(
@@ -32,7 +32,7 @@ def _make_session_dir(
     metrics: dict | None = None,
 ) -> Path:
     """Create .gitlog/session_<id>/ with optional metrics.json."""
-    sdir = runs_dir(project_dir) / session_dirname(session_id)
+    sdir = ProjectLayout.at(project_dir).sessions.runs / session_dirname(session_id)
     sdir.mkdir(parents=True)
     if metrics is not None:
         (sdir / METRICS_JSON).write_text(json.dumps(metrics))
@@ -41,7 +41,7 @@ def _make_session_dir(
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
-    runs_dir(tmp_path).mkdir(parents=True, exist_ok=True)
+    ProjectLayout.at(tmp_path).sessions.runs.mkdir(parents=True, exist_ok=True)
     return tmp_path
 
 
@@ -89,11 +89,11 @@ def fixture_sessions(project_dir: Path):
         },
     )
     # corrupt metrics.json
-    sdir = runs_dir(project_dir) / "session_20260423T160000Z_e5"
+    sdir = ProjectLayout.at(project_dir).sessions.runs / "session_20260423T160000Z_e5"
     sdir.mkdir()
     (sdir / METRICS_JSON).write_text("{broken json")
     # no metrics at all
-    (runs_dir(project_dir) / "session_20260423T170000Z_f6").mkdir()
+    (ProjectLayout.at(project_dir).sessions.runs / "session_20260423T170000Z_f6").mkdir()
 
 
 def test_no_filters_returns_all_sessions(project_dir, fixture_sessions):

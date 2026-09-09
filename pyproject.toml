@@ -27,7 +27,7 @@ dependencies = [
     # First-party workspace packages (uv sources below) — the kernel (HATS-862:
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
-    "ai-hats-core>=0.11.0",  # ProjectLayout/resolve_root — the one project resolver (0.11.0)
+    "ai-hats-core>=0.12.0",  # ProjectLayout views: library, versions, cache (0.12.0)
     # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
     # WorktreeMergeAborted); HATS-1603 to 0.6.0 (merge takes outer_deadline,
     # passed by wt_effects.teardown).
@@ -42,7 +42,7 @@ dependencies = [
     # card directory is gated); HATS-1642 to 0.3.3 (PlanConsentExtension takes the
     # integrator's ticket STORE and exposes the post-lock spender it pairs with).
     "ai-hats-rack>=0.4.0",  # ai_hats_rack.selectors — the arrow grammar rack_wiring binds by (HATS-1719)
-    "ai-hats-observe>=0.7.0",  # the seam takes a ProjectLayout slot (0.7.0)
+    "ai-hats-observe>=0.8.0",  # the session CLI takes a Host through attach() (0.8.0)
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
     # HATS-1755 the external session wrapper, not rack, consumes its tickets.
     "ai-hats-library>=0.7.0",  # journal_catch is new API (HATS-1634)

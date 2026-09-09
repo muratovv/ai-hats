@@ -37,6 +37,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from ._bootstrap import _normalise, expected_runtime_deps
 
 #: Retired distribution → the console scripts it installs. Explicit, not derived:
@@ -171,7 +173,7 @@ def strip_retired_scripts(venv_dir: Path, project_dir: Path | None = None) -> li
     return removed
 
 
-def prune_retired(project_dir: Path) -> list[str]:
+def prune_retired(layout: ProjectLayout) -> list[str]:
     """Both targets, in one call. Reports what it removed; never raises.
 
     The caller is a bump whose exit code must not depend on this — so every
@@ -188,11 +190,9 @@ def prune_retired(project_dir: Path) -> list[str]:
         if editable_install_root("ai-hats") is not None:
             return []
         removed += prune_running_interpreter()
-        from .paths import ai_hats_dir
-
-        legacy = ai_hats_dir(project_dir) / ".venv"
+        legacy = layout.default_venv
         if legacy.is_dir() and legacy.resolve() != Path(sys.prefix).resolve():
-            removed += strip_retired_scripts(legacy, project_dir)
+            removed += strip_retired_scripts(legacy, layout.root)
     except BaseException as exc:  # noqa: BLE001 - a prune must never fail an upgrade
         _warn(f"retired-distribution prune aborted: {type(exc).__name__}")
         return removed

@@ -9,13 +9,14 @@ doing its job.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 import time
 from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import session_cache_dir
 from ai_hats.runs_retention import (
     BULK_MAX_AGE_DAYS,
     EXPIRABLE_ARTIFACTS,
@@ -47,7 +48,7 @@ def _artifact(run_dir: Path, name: str, *, age_days: float, body: str = "x") -> 
 
 def _sweep(project_dir: Path, **kwargs):
     kwargs.setdefault("min_interval_hours", 0)
-    return sweep_runs(project_dir, **kwargs)
+    return sweep_runs(ProjectLayout.at(project_dir), **kwargs)
 
 
 def test_bulk_artifact_past_the_bound_is_dropped(tmp_path):
@@ -125,7 +126,7 @@ def _own_cache_home(tmp_path, monkeypatch):
 
 def _claim(project_dir: Path, run_name: str) -> Path:
     """Give the run's session a live owner — this very test process."""
-    cache = session_cache_dir(project_dir, run_name[len("session_") :])
+    cache = ProjectLayout.at(project_dir).cache.session(run_name[len("session_") :])
     cache.mkdir(parents=True, exist_ok=True)
     write_session_anchor(cache)
     return cache
@@ -252,7 +253,7 @@ def test_a_recent_stamp_short_circuits_the_walk(tmp_path):
     trace = _artifact(run, "trace.log", age_days=BULK_MAX_AGE_DAYS + 1)
     (_runs(tmp_path) / STAMP_NAME).touch()
 
-    report = sweep_runs(tmp_path, min_interval_hours=6)
+    report = sweep_runs(ProjectLayout.at(tmp_path), min_interval_hours=6)
 
     assert report.skipped
     assert trace.exists()
@@ -269,7 +270,7 @@ def test_an_unreadable_stamp_falls_through_to_a_real_sweep(tmp_path):
     trace = _artifact(run, "trace.log", age_days=BULK_MAX_AGE_DAYS + 1)
     (root / STAMP_NAME).symlink_to(tmp_path / "nowhere")
 
-    report = sweep_runs(tmp_path, min_interval_hours=6)
+    report = sweep_runs(ProjectLayout.at(tmp_path), min_interval_hours=6)
 
     assert not report.skipped
     assert not trace.exists()

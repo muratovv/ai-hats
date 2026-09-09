@@ -12,6 +12,8 @@ why: the chain was only ever driven on the Claude road, so two shipped guards â€
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import subprocess
@@ -52,7 +54,6 @@ def _session(project: Path, home: Path) -> Path:
     the user's own settings â€” hermetic here, not a write into whoever runs this.
     """
     from ai_hats.assembler import Assembler
-    from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.agy.provider import AgySurface
 
@@ -61,14 +62,18 @@ def _session(project: Path, home: Path) -> Path:
     os.environ["HOME"] = str(home)
     try:
         AgySurface().build_session_artifacts(
-            project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+            ProjectLayout.at(project),
+            result,
+            SESSION_ID,
+            run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(),
         )
     finally:
         if before is None:
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = before
-    return session_cache_dir(project, SESSION_ID)
+    return ProjectLayout.at(project).cache.session(SESSION_ID)
 
 
 def _agy_call(command: str) -> str:

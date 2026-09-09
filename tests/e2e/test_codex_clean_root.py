@@ -23,7 +23,8 @@ import pytest
 from _helpers.env import checkout_pythonpath, clean_env
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG, project_key
+from ai_hats.paths import PROJECT_CONFIG
+from ai_hats_core.layout import project_key
 
 pytestmark = pytest.mark.integration
 

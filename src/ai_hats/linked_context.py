@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def load_ticket(*, tasks_root: Path, ticket_id: str) -> str:
     """Return the raw ``task.yaml`` text for a ticket (``""`` if absent).
 
-    ``tasks_root`` is injected integrator policy (``paths.tasks_dir``, HATS-864);
+    ``tasks_root`` is injected integrator policy (``TrackerLayout.tasks_dir``, HATS-864);
     keyword-only so a ``project_dir`` can never silently slot in (both are Path
     and this module degrades gracefully instead of raising).
     """

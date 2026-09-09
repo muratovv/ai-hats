@@ -10,6 +10,8 @@ honour, warn instead of dropping it quietly.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from ai_hats.surfaces import Surface
@@ -25,19 +27,19 @@ class LegacySurface(Surface):
     def get_cli_command(self) -> list[str]:
         return ["legacy-cli"]
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout) -> dict[str, str]:
         return {}
 
     def rules_dir(self, project_dir: Path) -> Path:
         return project_dir / ".legacy" / "rules"
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        return project_dir / "LEGACY.md"
+    def system_prompt_path(self, layout) -> Path:
+        return layout.root / "LEGACY.md"
 
     def build_system_prompt(self, result) -> str:
         return f"LEGACY PROMPT for {result.name}"
 
-    def build_session_prompt(self, project_dir, result, session_id):
+    def build_session_prompt(self, layout, result, session_id):
         return (["--prompt", self.build_system_prompt(result)], {}, "meta")
 
 
@@ -53,7 +55,11 @@ def test_routing_a_legacy_surface_through_the_builder_would_deliver_nothing(tmp_
     result = CompositionResult(name="r", priorities=[], rules=[], skills=[], injections=[])
 
     artifacts = LegacySurface().build_session_artifacts(
-        tmp_path, result, "sid-1", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(tmp_path),
+        result,
+        "sid-1",
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
 
     assert artifacts.cli_args == []
@@ -65,7 +71,9 @@ def test_the_legacy_entry_point_still_carries_the_role(tmp_path: Path):
 
     result = CompositionResult(name="r", priorities=[], rules=[], skills=[], injections=[])
 
-    args, env, meta = LegacySurface().build_session_prompt(tmp_path, result, "sid-1")
+    args, env, meta = LegacySurface().build_session_prompt(
+        ProjectLayout.at(tmp_path), result, "sid-1"
+    )
 
     assert "LEGACY PROMPT for r" in args
     assert meta == "meta"

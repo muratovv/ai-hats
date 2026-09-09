@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats_core.layout import ProjectLayout
 
 SKILL = "two-guards"
 EVENT = "PreToolUse"
@@ -88,7 +89,7 @@ def _rows(tmp_path: Path, surface: str) -> list[dict]:
     project = tmp_path / "proj"
     project.mkdir(exist_ok=True)
     result = _result(_skill_with_two_bash_hooks(tmp_path / "skills"))
-    return SURFACES[surface](result, project, tmp_path / "skills-mirror")
+    return SURFACES[surface](result, ProjectLayout.at(project), tmp_path / "skills-mirror")
 
 
 @pytest.mark.parametrize("surface", sorted(SURFACES))

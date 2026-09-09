@@ -27,6 +27,8 @@ impossible.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 from typing import Any
 
@@ -180,7 +182,9 @@ def test_show_prompt_block_matches_session_prompt_block(project_with_maintainer:
     # ``click.testing.CliRunner`` appends a trailing newline that does
     # not appear inside the session file's marker block — strip both
     # sides before comparing.
-    show_body = expand_path_placeholders(show_prompt_text, project_with_maintainer).strip("\n")
+    show_body = expand_path_placeholders(
+        show_prompt_text, ProjectLayout.at(project_with_maintainer)
+    ).strip("\n")
 
     # The smoking-gun assertion: the injection block — composed of role
     # injection + trait injections + rule bodies + skill list — must be

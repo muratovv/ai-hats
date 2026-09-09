@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats_core.layout import (
+    cache_home,
+    project_key,
     ForeignPinPolicy,
     ForeignProjectPinError,
     ProjectLayout,
@@ -161,3 +163,60 @@ def test_consumer_views_split_the_tree(tmp_path: Path) -> None:
     assert layout.sessions.runs == base / "sessions" / "runs"
     assert layout.state_md == base / "STATE.md"
     assert layout.default_venv == base / ".venv"
+
+
+# -- the views that retire the paths leaf's derivations --------------------
+
+
+def test_library_and_versions_views_are_geometry(tmp_path: Path) -> None:
+    layout = ProjectLayout.at(tmp_path)
+    base = tmp_path / ".agent" / "ai-hats"
+    assert layout.library.root == base / "library"
+    assert layout.library.hooks == base / "library" / "hooks"
+    assert layout.versions.root == base / "versions"
+    assert layout.versions.current_pointer == base / "versions" / "current"
+    assert layout.versions.dir("abc") == base / "versions" / "abc"
+    assert layout.versions.sentinel("abc") == base / "versions" / "abc" / ".complete"
+    assert layout.pipeline_steps == base / "pipeline_steps"
+    assert layout.user_hooks == base / "user-hooks"
+    assert layout.user_rules == base / "user-rules"
+    assert layout.last_backup == base / ".last_backup"
+
+
+def test_cache_root_is_settled_when_the_layout_is_built(tmp_path: Path) -> None:
+    env = {"AI_HATS_CACHE_HOME": str(tmp_path / "cache")}
+    layout = ProjectLayout.compute(tmp_path / "proj", env)
+    key = project_key(tmp_path / "proj")
+    assert layout.cache.root == tmp_path / "cache" / key
+    assert layout.cache.session("s1") == tmp_path / "cache" / key / "sessions" / "s1"
+    assert layout.cache.worktree_checkouts == tmp_path / "cache" / key / "worktrees"
+    # built, not read at access: a later environment change does not move it
+    env["AI_HATS_CACHE_HOME"] = str(tmp_path / "elsewhere")
+    assert layout.cache.root == tmp_path / "cache" / key
+
+
+def test_at_takes_the_cache_home_from_the_environment_it_is_given(tmp_path: Path) -> None:
+    layout = ProjectLayout.at(tmp_path / "bare", {"AI_HATS_CACHE_HOME": str(tmp_path / "c")})
+    assert layout.cache.root.parent == tmp_path / "c"
+
+
+def test_bare_constructor_has_no_cache_and_says_so(tmp_path: Path) -> None:
+    layout = ProjectLayout(root=tmp_path, base=tmp_path / ".agent")
+    with pytest.raises(LookupError):
+        _ = layout.cache
+
+
+def test_cache_home_precedence(tmp_path: Path) -> None:
+    assert cache_home({"AI_HATS_CACHE_HOME": "/a", "XDG_CACHE_HOME": "/x"}) == Path("/a")
+    assert cache_home({"XDG_CACHE_HOME": "/x"}) == Path("/x") / "ai-hats"
+    assert cache_home({"AI_HATS_USER_HOME": str(tmp_path)}) == tmp_path / ".cache" / "ai-hats"
+    assert cache_home({"AI_HATS_CACHE_HOME": "~/c"}) == Path("~/c").expanduser()
+
+
+def test_project_key_is_stable_and_separates_same_basename_roots(tmp_path: Path) -> None:
+    a = tmp_path / "one" / "proj"
+    b = tmp_path / "two" / "proj"
+    assert project_key(a) == project_key(a)
+    assert project_key(a) != project_key(b)
+    assert project_key(a).startswith("proj-")
+    assert project_key(tmp_path / "we ird!name").startswith("we-ird-name-")

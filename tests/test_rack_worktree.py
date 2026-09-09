@@ -13,6 +13,8 @@ done-guard (PROP-056/057), and the HATS-979/818 pending-hunk-review reclaim.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import subprocess
 import time
 from pathlib import Path
@@ -21,7 +23,6 @@ import pytest
 
 from ai_hats_rack import OperationAborted
 from ai_hats_rack.dispatch import AbortOperation, Phase, Subscription
-from ai_hats.paths import worktrees_dir
 from ai_hats.rack_wiring import build_rack_kernel
 from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeBaseBranchError, WorktreeManager, WorktreeStateLostError
@@ -72,8 +73,8 @@ def project(tmp_path):
 
 def _kernel(project: Path, **kwargs):
     return build_rack_kernel(
-        project,
-        backlog_owner=project,
+        ProjectLayout.at(project),
+        backlog_owner=ProjectLayout.at(project),
         tasks_dir=project / ".agent" / "tasks",
         state_md_path=project / ".agent" / "STATE.md",
         prefix="T",
@@ -100,7 +101,9 @@ def _tr(kernel, task_id: str, *states: str, cwd: Path, **kwargs):
 
 
 def _active(project: Path, task_id: str):
-    return WorktreeManager.load_for_task(project, task_id, state_dir=worktrees_dir(project))
+    return WorktreeManager.load_for_task(
+        project, task_id, state_dir=ProjectLayout.at(project).sessions.worktrees
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -688,7 +691,7 @@ def test_done_hands_the_merge_point_the_rack_lock_budget(project):
     kernel = _kernel(
         project,
         lock_timeout=17.0,
-        worktree_effects=WtWorktreeEffects(project, lifecycle=spy),
+        worktree_effects=WtWorktreeEffects(ProjectLayout.at(project), lifecycle=spy),
     )
     _to_execute(kernel, project)
     wt = _active(project, "T-1").worktree_path
@@ -745,7 +748,7 @@ def test_failed_hands_the_teardown_point_the_rack_lock_budget(project):
     kernel = _kernel(
         project,
         lock_timeout=17.0,
-        worktree_effects=WtWorktreeEffects(project, lifecycle=spy),
+        worktree_effects=WtWorktreeEffects(ProjectLayout.at(project), lifecycle=spy),
     )
     _to_execute(kernel, project)
 
@@ -762,7 +765,7 @@ def test_execute_hands_the_create_point_the_rack_lock_budget(project):
     kernel = _kernel(
         project,
         lock_timeout=17.0,
-        worktree_effects=WtWorktreeEffects(project, lifecycle=spy),
+        worktree_effects=WtWorktreeEffects(ProjectLayout.at(project), lifecycle=spy),
     )
 
     _to_execute(kernel, project)

@@ -10,7 +10,6 @@ import logging
 import yaml
 
 from ai_hats.retro.auto_retro import should_run
-from ai_hats.paths import runs_dir
 from ai_hats.constants import ENV_SKIP_RETRO
 from ai_hats_observe.trace import ENV_SESSION_ID
 from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG, session_dirname
@@ -223,7 +222,7 @@ class TestEdgeCases:
 def _setup_project(tmp_path, session_id="SID", **config_kwargs):
     """Create project dir with ai-hats.yaml + metrics.json for make_decision tests."""
     _write_config(tmp_path / PROJECT_CONFIG, **config_kwargs)
-    metrics = runs_dir(tmp_path) / session_dirname(session_id) / METRICS_JSON
+    metrics = ProjectLayout.at(tmp_path).sessions.runs / session_dirname(session_id) / METRICS_JSON
     metrics.parent.mkdir(parents=True)
     return metrics
 
@@ -241,7 +240,7 @@ def _be_session(monkeypatch, session_id, project):
         role="maintainer",
         provider="claude",
         project_dir=project,
-        session_dir=runs_dir(project) / session_dirname(session_id),
+        session_dir=ProjectLayout.at(project).sessions.runs / session_dirname(session_id),
     )
     for key, value in identity.to_env().items():
         monkeypatch.setenv(key, value)
@@ -255,7 +254,7 @@ class TestWriteRetroLog:
             ProjectLayout.at(tmp_path), "SID", "runtime", "decision", "skip: below threshold"
         )
 
-        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
+        log = ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG
         assert log.exists()
         line = log.read_text().rstrip("\n")
         parts = line.split("\t")
@@ -273,7 +272,7 @@ class TestWriteRetroLog:
         write_retro_log(ProjectLayout.at(tmp_path), "SID", "hook", "spawn", "pid=1234")
         write_retro_log(ProjectLayout.at(tmp_path), "SID", "builder", "saved", "/path/to/retro.md")
 
-        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
+        log = ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG
         lines = log.read_text().strip().split("\n")
         assert len(lines) == 3
         assert "decision" in lines[0] and "runtime" in lines[0]
@@ -284,7 +283,11 @@ class TestWriteRetroLog:
         from ai_hats.retro.auto_retro import write_retro_log
 
         write_retro_log(ProjectLayout.at(tmp_path), "SID", "hook", "skip", "a\tb\nc")
-        line = (runs_dir(tmp_path) / "session_SID" / RETRO_LOG).read_text().rstrip("\n")
+        line = (
+            (ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG)
+            .read_text()
+            .rstrip("\n")
+        )
         # Split on the SEPARATOR tabs (4 parts), then check the last field.
         parts = line.split("\t")
         assert parts[3] == "a b c"
@@ -424,7 +427,7 @@ class TestMainHookWritesLog:
         _be_session(monkeypatch, "SID", tmp_path)
         auto_retro.main()
 
-        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
+        log = ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG
         assert log.exists()
         content = log.read_text()
         assert "hook" in content
@@ -441,7 +444,7 @@ class TestMainHookWritesLog:
         _be_session(monkeypatch, "SID", tmp_path)
         auto_retro.main()
 
-        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
+        log = ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG
         content = log.read_text()
         assert "hint" in content
         assert "threshold met" in content
@@ -480,7 +483,7 @@ class TestMainReadsTheIdentity:
 
         # Any step past the guard logs its outcome, so an empty session dir is
         # the proof nothing was decided under an id nobody can vouch for.
-        assert not (runs_dir(tmp_path) / "session_SID" / RETRO_LOG).exists()
+        assert not (ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG).exists()
         assert "AI_HATS_SESSION_IDENTITY" in caplog.text
 
     def test_no_session_is_inert_and_silent(self, tmp_path, monkeypatch, caplog):
@@ -493,7 +496,7 @@ class TestMainReadsTheIdentity:
         with caplog.at_level(logging.WARNING):
             auto_retro.main(tmp_path)
 
-        assert not (runs_dir(tmp_path) / "session_SID" / RETRO_LOG).exists()
+        assert not (ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG).exists()
         assert caplog.text == ""
 
 
@@ -518,7 +521,7 @@ class TestRecursionGuard:
         auto_retro.main()
 
         assert called == []
-        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
+        log = ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG
         content = log.read_text()
         assert "auto_retro\tskip\trecursion-guard" in content
 
@@ -543,5 +546,5 @@ class TestRecursionGuard:
         # ai_hats.cli.reflect_session_main is the harness entry-point.
         assert "ai_hats.cli.reflect_session_main" in captured["cmd"]
         assert "SID" in captured["cmd"]
-        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
+        log = ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG
         assert "session-reviewer\tspawn" in log.read_text()

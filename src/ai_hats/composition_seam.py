@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from functools import partial
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
@@ -25,7 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def make_session_manager(project_dir: Path):
+def make_session_manager(layout: ProjectLayout):
     """A run-path ``SessionManager`` with the real ``EnvironmentRecovery`` wired.
 
     observe defaults to a package-pure no-op recovery (HATS-948); the integrator
@@ -35,12 +37,11 @@ def make_session_manager(project_dir: Path):
     """
     from .environment_recovery import EnvironmentRecovery
     from ai_hats_observe import SessionManager
-    from .paths import runs_dir
 
     return SessionManager(
-        project_dir,
-        runs_dir=runs_dir(project_dir),
-        recovery=EnvironmentRecovery(project_dir),
+        layout.root,
+        runs_dir=layout.sessions.runs,
+        recovery=EnvironmentRecovery(layout),
     )
 
 

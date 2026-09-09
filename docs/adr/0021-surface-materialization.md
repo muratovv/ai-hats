@@ -875,10 +875,10 @@ findings §3).
 состояние, вне воркспейса, по ключу проекта, по каталогу на сессию** —
 потерять его безопасно, пересоздать дёшево.
 
-**Резолв корня** (`paths/_dirs.py`): `cache_home()` =
+**Резолв корня** (`ai_hats_core/layout.py`, ADR-0026): `cache_home()` =
 `AI_HATS_CACHE_HOME` → `XDG_CACHE_HOME/ai-hats` → `~/.cache/ai-hats`;
-`project_key()` = `<имя-каталога>-<sha256(abs path)[:8]>`; `cache_root()` =
-`cache_home()/project_key()`. Env-переменные задают **базу**, не финальный
+`project_key()` = `<имя-каталога>-<sha256(abs path)[:8]>`;
+`ProjectLayout.cache.root` = `cache_home()/project_key()`. Env-переменные задают **базу**, не финальный
 корень: утёкшая переменная не может слить кэши двух проектов (урок
 HATS-897). Переименование проекта ключ не переживает — осиротевший корень
 достаётся GC (HATS-1473).

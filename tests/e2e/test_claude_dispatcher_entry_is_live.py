@@ -13,6 +13,8 @@ why:    every hook-chain test now reads the composed rows from the manifest, so
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import subprocess
@@ -24,7 +26,6 @@ import pytest
 from _helpers.sessions import stand_in_session
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 
@@ -86,7 +87,11 @@ def session(tmp_path: Path, request):
         injections=[],
     )
     artifacts = ClaudeSurface().build_session_artifacts(
-        project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        result,
+        SESSION_ID,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
     env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="claude")
     env |= artifacts.extra_env | {"AI_HATS_PYTHON": sys.executable}
@@ -95,7 +100,9 @@ def session(tmp_path: Path, request):
 
 
 def _entry_command(project: Path) -> str:
-    settings = json.loads((session_cache_dir(project, SESSION_ID) / "settings.json").read_text())
+    settings = json.loads(
+        (ProjectLayout.at(project).cache.session(SESSION_ID) / "settings.json").read_text()
+    )
     entries = settings["hooks"]["PreToolUse"]
     assert len(entries) == 1, f"one entry per event is what HATS-1874 delivers; got: {entries}"
     return entries[0]["hooks"][0]["command"]

@@ -12,6 +12,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats_library.hooks.consent_gate import Operation, Outcome, Verdict, operations
 from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
 
@@ -305,7 +307,7 @@ def _consent_script() -> str:
 
 
 def materialize_consent_wrappers(
-    project_dir: Path,
+    layout: ProjectLayout,
     result,
     session_id: str,
     provider,
@@ -315,6 +317,7 @@ def materialize_consent_wrappers(
     which: Callable[..., str | None] = shutil.which,
 ) -> None:
     """Put role-declared command middleware first on this HITL session's PATH."""
+    project_dir = layout.root
     policy = policy_from(result.consent)
     if not policy:
         return
@@ -325,8 +328,6 @@ def materialize_consent_wrappers(
         raise RuntimeError(
             f"provider {provider.name!r} cannot enforce role-declared command consent"
         )
-
-    from .paths import session_cache_dir
 
     env = os.environ if environ is None else environ
     effective_path = artifacts.extra_env.get("PATH", env.get("PATH", ""))
@@ -343,7 +344,7 @@ def materialize_consent_wrappers(
             )
         originals[surface] = original
 
-    root = session_cache_dir(project_dir, session_id) / _WRAPPER_DIR_NAME
+    root = layout.cache.session(session_id) / _WRAPPER_DIR_NAME
     config_path = root / "config.json"
     artifacts.port.write_text(
         config_path,
