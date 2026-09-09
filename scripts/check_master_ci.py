@@ -23,10 +23,31 @@ import sys
 TAG = "[master-ci]"
 
 #: Supervisor override, for the one legitimate case: the card being closed is
-#: itself the fix for the redness.
+#: itself the fix for the redness. It must arrive from the launching environment —
+#: a prefix on the agent's own command line is refused by safety-guard.
 ENV_ALLOW_RED = "AI_HATS_RED_MASTER_ACK"
 
 QUERY_TIMEOUT_S = 30
+
+#: Where the bypass journal's single writer lives, relative to this script.
+_JOURNAL_DIR = "../packages/ai-hats-library/src/ai_hats_library/hooks"
+
+
+def _journal_allowed() -> None:
+    """Record the one use of the hatch, the way every PreToolUse guard records its own.
+
+    The flag was withheld from sub-agents and never written down; a supervisor's
+    approval that leaves no line is indistinguishable afterwards from one nobody gave.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), _JOURNAL_DIR))
+    try:
+        from bypass_journal import journal_bypass
+    except ImportError as exc:
+        print(f"{TAG} bypass NOT RECORDED ({ENV_ALLOW_RED}) — {exc}", file=sys.stderr)
+        return
+    finally:
+        sys.path.pop(0)
+    journal_bypass("hatch", ENV_ALLOW_RED, hook="check_master_ci.py")
 
 
 def _skip(reason: str) -> int:
@@ -102,9 +123,18 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"{TAG} {ENV_ALLOW_RED}=1 — allowed anyway, on the supervisor's word.", file=sys.stderr
         )
+        _journal_allowed()
         return 0
+    print(f"{TAG} Fix master first — this close waits on master, not on your branch.", file=sys.stderr)
     print(
-        f"{TAG} Fix master first. If THIS card is that fix, re-run with {ENV_ALLOW_RED}=1.",
+        f"{TAG} If THIS card is the fix, the supervisor sets {ENV_ALLOW_RED}=1 in the "
+        "environment that launches the agent. Writing it on the command line is refused "
+        "(safety-guard), because an approval you grant yourself is not one.",
+        file=sys.stderr,
+    )
+    print(
+        f"{TAG} If master's redness is not yours, say so with evidence rather than "
+        "asking for the flag: skill `red-attribution`.",
         file=sys.stderr,
     )
     return 1
