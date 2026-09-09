@@ -16,8 +16,9 @@ from collections.abc import Mapping, Sequence
 #: Never a prompt — always a user reaching for ai-hats' own help.
 HELP_FLAGS = frozenset({"--help", "-h", "--version"})
 
-# Each value says where the capability went: a bare "unknown command" would send
-# the user hunting for a spelling that no longer exists.
+# Detail, not the safety net: a lone unknown word is refused whether or not it is
+# listed here. An entry buys the reader the spelling that replaced it, and covers
+# the multi-token invocation (`ai-hats task list`) a lone word cannot.
 RESERVED: Mapping[str, str] = {
     "githooks": "It is not a CLI surface at all — installed git hooks call the module:\n"
     "    python -m ai_hats.cli.githooks_hook",
@@ -88,7 +89,9 @@ def classify(
         return f"`{first}` is not an ai-hats subcommand. {RESERVED[first]}\n\n{ways_out}"
 
     path = known_paths.get(first)
-    if path and path != first:
+    if path == first:
+        return None  # a live top-level command — click's own routing owns it
+    if path:
         return (
             f"`{first}` is not a top-level ai-hats command — did you mean:\n"
             f"    ai-hats {path}\n\n{ways_out}"
@@ -103,5 +106,11 @@ def classify(
             ]
         )
         return f"`{flag}` would be forwarded to the provider, not handled by ai-hats.\n\n{table}"
+
+    # Nothing above resolved, so a LONE bare word is a command the user expected
+    # to exist. Being mounted is what makes a name real, so refuse by default and
+    # let RESERVED add detail — rather than leaning on RESERVED to stay complete.
+    if len(leftover) == 1 and not first.startswith("-") and " " not in first:
+        return f"`{first}` is not an ai-hats command.\n\n{ways_out}"
 
     return None

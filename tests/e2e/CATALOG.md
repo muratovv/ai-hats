@@ -608,6 +608,7 @@ as a claim to check, not as evidence.
   ai-hats githooks --help  # no-resolve: pins the refusal, no session is launched
   ai-hats task list        # no-resolve: the retired backlog CLI names `rack`
   ai-hats -- githooks      # no-resolve: `--` still reaches the provider path
+  ai-hats deploy           # no-resolve: an unlisted lone word is refused too
   ```
 
 - **expect** — exit 2 with a message naming the real invocation, and no new session directory

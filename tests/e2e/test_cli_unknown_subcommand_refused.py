@@ -5,6 +5,7 @@ cmds:
     ai-hats githooks --help  # no-resolve: pins the refusal, no session is launched
     ai-hats task list        # no-resolve: the retired backlog CLI names `rack`
     ai-hats -- githooks      # no-resolve: `--` still reaches the provider path
+    ai-hats deploy           # no-resolve: an unlisted lone word is refused too
 expect: exit 2 with a message naming the real invocation, and no new session directory
 why:    without the guard the token reaches the provider as a prompt — five field
         sessions launched claude, printed claude's usage and were SIGTERM'd 6 s
@@ -87,6 +88,20 @@ def test_retired_backlog_cli_points_at_rack(project: Path) -> None:
     out = r.stdout + r.stderr
     assert r.returncode == 2, out
     assert "rack" in out
+
+
+def test_unlisted_lone_word_is_refused(project: Path) -> None:
+    """The fail-safe: a word nobody listed is still refused, not launched.
+
+    A command removed later without a RESERVED entry must not silently reopen the
+    defect for that word.
+    """
+    before = _session_dirs(project)
+    r = _run_ai_hats(project, "deploy")
+    out = r.stdout + r.stderr
+    assert r.returncode == 2, out
+    assert "deploy" in out
+    assert _session_dirs(project) == before
 
 
 def test_double_dash_is_not_refused(project: Path) -> None:

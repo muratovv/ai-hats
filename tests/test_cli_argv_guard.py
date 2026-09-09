@@ -138,7 +138,23 @@ def test_prose_passes_through() -> None:
     """R3: the documented primary surface — unquoted and quoted prose alike."""
     _allowed("hello", "world")
     _allowed("fix the bug in cli.py")
-    _allowed("deploy")
+    _allowed("write a deploy script")
+
+
+def test_lone_unknown_word_is_refused_without_being_listed() -> None:
+    """The default is refusal: RESERVED adds detail, it is not the safety net.
+
+    A command removed tomorrow without a RESERVED entry must still be refused,
+    or the original defect returns silently for that word.
+    """
+    assert "deploy" in _refusal("deploy")
+    assert "sesion" in _refusal("sesion")
+
+
+def test_prose_survives_the_default_refusal() -> None:
+    """The two shapes prose actually takes: several tokens, or one with spaces."""
+    _allowed("hello", "world")
+    _allowed("deploy the thing")
 
 
 def test_double_dash_escapes_every_rule() -> None:
