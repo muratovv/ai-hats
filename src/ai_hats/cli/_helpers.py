@@ -19,6 +19,7 @@ from ..constants import is_debug_mode
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from ai_hats_core.composition import CompositionIncompleteError
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..libraries.models import CheckBindingError
     from ..paths import ProjectConfigError
@@ -64,6 +65,21 @@ def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     for name in exc.available:
         click.echo(f"  - {name}", err=True)
     click.echo("\nHint: 'ai-hats list roles' shows the full table.", err=True)
+    sys.exit(2)
+
+
+def _handle_composition_incomplete(exc: "CompositionIncompleteError") -> NoReturn:
+    """Render a `CompositionIncompleteError` as friendly stderr + exit 2.
+
+    Role existence is checked ahead of composing only for an explicitly passed
+    ``--role``; a role read from ``ai-hats.yaml`` reaches the composer and is
+    refused there instead. That is the arm every session without ``-r`` takes,
+    and the one a role deleted from the library lands on — unregistered here it
+    printed a traceback, which is the fail-open this table exists to remove.
+    """
+    click.echo(f"Error: {exc}", err=True)
+    click.echo("\nHint: 'ai-hats list roles' shows what is available.", err=True)
+    click.echo("Pick one with: ai-hats config set -r <role>", err=True)
     sys.exit(2)
 
 
@@ -158,6 +174,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
     Imported lazily: this module loads on every CLI path, the seam does not.
     """
     with catch_broken_install():
+        from ai_hats_core.composition import CompositionIncompleteError
         from ..composition_seam import MissingProviderError, RoleNotFoundError
         from ..libraries.models import CheckBindingError, ComponentKeyError
         from ai_hats_core.layout import ProjectNotFoundError
@@ -170,6 +187,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
     return (
         (RoleSpecError, _handle_role_spec_error),
         (RoleNotFoundError, _handle_role_not_found),
+        (CompositionIncompleteError, _handle_composition_incomplete),
         (UnknownSurfaceError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),

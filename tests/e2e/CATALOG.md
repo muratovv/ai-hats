@@ -3773,6 +3773,7 @@ as a claim to check, not as evidence.
 
   ```console
   ai-hats --role definitely-not-a-real-role
+  ai-hats --dry-run            # role named only in ai-hats.yaml
   ```
 
 - **expect** — CLI exits with code 2 listing available roles without printing raw Python traceback
