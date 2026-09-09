@@ -43,11 +43,32 @@ def test_reserved_word_is_refused() -> None:
 
 @pytest.mark.parametrize(
     ("word", "remedy"),
-    [("task", "rack ls"), ("hyp", "rack hyp ls"), ("run", "ai-hats agent")],
+    [("task", "rack ls"), ("hyp", "rack ls --backlog hyp"), ("run", "ai-hats agent")],
 )
 def test_retired_surface_names_its_replacement(word: str, remedy: str) -> None:
     """A retired surface points at the command that replaced it, not just 'unknown'."""
     assert remedy in _refusal(word, "whatever")
+
+
+def test_every_ai_hats_remedy_resolves_in_the_real_tree() -> None:
+    """A remedy naming a command that does not exist repeats the defect being fixed.
+
+    Covers the `ai-hats …` spellings only; the `rack …` ones are another CLI's
+    surface and stay unchecked here.
+    """
+    from ai_hats.cli import main
+    from ai_hats.cli._argv_guard import RESERVED
+
+    real = command_paths(main)
+    for word, remedy in RESERVED.items():
+        for line in remedy.splitlines():
+            token = line.strip()
+            if not token.startswith("ai-hats "):
+                continue
+            named = token.removeprefix("ai-hats ").strip("`.")
+            assert real.get(named.split()[0]) == named, (
+                f"RESERVED[{word!r}] points at `ai-hats {named}`, which is not a command"
+            )
 
 
 def test_help_flag_never_reaches_the_provider() -> None:

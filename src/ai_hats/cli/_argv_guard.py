@@ -22,8 +22,8 @@ RESERVED: Mapping[str, str] = {
     "githooks": "It is not a CLI surface at all — installed git hooks call the module:\n"
     "    python -m ai_hats.cli.githooks_hook",
     "task": "The backlog moved to the `rack` CLI:\n    rack ls",
-    "hyp": "Hypotheses moved to the `rack` CLI:\n    rack hyp ls",
-    "proposal": "Proposals moved to the `rack` CLI:\n    rack proposal ls",
+    "hyp": "Hypotheses moved to the `rack` CLI:\n    rack ls --backlog hyp",
+    "proposal": "Proposals moved to the `rack` CLI:\n    rack ls --backlog proposal",
     "attach": "Attachments moved to the `rack` CLI:\n    rack transition --attach",
     "run": "It was renamed:\n    ai-hats agent",
     "bump": "It was removed — `ai-hats self update` runs the bump internally.",
