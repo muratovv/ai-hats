@@ -79,9 +79,9 @@ class _PassthroughGroup(click.Group):
         leftover = list(ctx.args)
         routed = list(protected or ()) or leftover
         if routed and self.get_command(ctx, routed[0]) is None:
-            from ._argv_guard import classify, command_paths
+            from ._argv_guard import classify, command_paths, own_flags
 
-            refusal = classify(raw, leftover, command_paths(self))
+            refusal = classify(raw, leftover, command_paths(self), own_flags(self))
             if refusal:
                 raise click.UsageError(refusal, ctx=ctx)
         return result

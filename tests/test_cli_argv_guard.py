@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_hats.cli._argv_guard import classify, command_paths
+from ai_hats.cli._argv_guard import classify, command_paths, own_flags
 
 #: A stand-in for the real tree: one top-level name that also exists nested
 #: (`list`), one purely nested (`init`), one leaf-only (`roles`).
@@ -23,14 +23,18 @@ PATHS = {
 }
 
 
+#: Stand-in for what the real group declares.
+FLAGS = frozenset({"--help", "-h", "--version", "--dry-run", "--provider", "-p", "--tag"})
+
+
 def _refusal(*leftover: str, raw: tuple[str, ...] | None = None) -> str:
-    msg = classify(list(raw if raw is not None else leftover), list(leftover), PATHS)
+    msg = classify(list(raw if raw is not None else leftover), list(leftover), PATHS, FLAGS)
     assert msg is not None, f"{leftover!r} must be refused, not launched"
     return msg
 
 
 def _allowed(*leftover: str, raw: tuple[str, ...] | None = None) -> None:
-    msg = classify(list(raw if raw is not None else leftover), list(leftover), PATHS)
+    msg = classify(list(raw if raw is not None else leftover), list(leftover), PATHS, FLAGS)
     assert msg is None, f"{leftover!r} must pass through, got refusal:\n{msg}"
 
 
@@ -112,6 +116,34 @@ def test_help_flag_never_reaches_the_provider() -> None:
 def test_help_flag_after_prose_is_still_refused() -> None:
     """R1 holds even when the first token is not a known word."""
     assert "--help" in _refusal("hello", "--help")
+
+
+def test_own_flags_are_read_off_the_group_not_listed() -> None:
+    """`--help` was the only one a hand-written list caught; the rest leaked.
+
+    `ai-hats hello --dry-run` used to launch a real session — the one thing
+    --dry-run promises not to do — because the flag landed after the prompt and
+    was forwarded verbatim.
+    """
+    from ai_hats.cli import main
+
+    flags = own_flags(main)
+    for declared in ("--dry-run", "--provider", "-p", "--role", "-r", "--tag", "--tree"):
+        assert declared in flags, f"{declared} is declared on the group but not owned"
+    assert "--help" in flags, "click injects --help at parse time rather than declaring it"
+    assert "--dangerously-skip-permissions" not in flags, "unknown flags stay the provider's"
+
+
+def test_a_leaked_own_flag_is_refused() -> None:
+    """The defect class `--help` was only one member of."""
+    assert "--dry-run" in _refusal("hello", "--dry-run")
+    assert "-p" in _refusal("hello", "-p", "agy")
+
+
+def test_provider_flags_still_pass_through() -> None:
+    """The passthrough surface is the point: a flag ai-hats does not own is prose."""
+    _allowed("--dangerously-skip-permissions")
+    _allowed("hello", "--some-provider-flag")
 
 
 def test_reserved_word_outranks_the_help_flag() -> None:

@@ -1,20 +1,21 @@
-"""Refuse an ai-hats word that would otherwise be launched as a provider prompt.
+"""Refuse an ai-hats word or flag that would otherwise reach the provider.
 
-Bare `ai-hats` forwards positional text to the provider (`_PassthroughGroup`,
-HATS-1202) — right for prose, wrong for a mistyped command: HATS-1932 recorded
+Bare `ai-hats` forwards positionals to the provider (`_PassthroughGroup`,
+HATS-1202) — right for prose, wrong for anything ai-hats owns: HATS-1932 recorded
 five sessions where `ai-hats githooks --help` reached `claude` as a prompt,
-printed claude's usage and was SIGTERM'd 6 s later, leaving a dead session
-directory instead of an error.
-
-Pure by construction — no click, no I/O; the caller supplies the command tree.
+printed claude's usage and was SIGTERM'd 6 s later.
+Ownership is read off the live group, never listed here: a word is real when it
+is mounted, a flag is ai-hats' own when the group declares it. Pure by
+construction — no click, no I/O; the caller supplies both sets.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-#: Never a prompt — always a user reaching for ai-hats' own help.
-HELP_FLAGS = frozenset({"--help", "-h", "--version"})
+#: click injects `--help` at parse time rather than declaring it, and `-h` is the
+#: spelling users reach for; every other owned flag is read off the group.
+_UNDECLARED_HELP = frozenset({"--help", "-h"})
 
 # Detail, not the safety net: a lone unknown word is refused whether or not it is
 # listed here. An entry buys the reader the spelling that replaced it, and covers
@@ -41,6 +42,20 @@ def _two_columns(rows: Sequence[tuple[str, str]]) -> str:
     return "\n".join(f"  {left:<{width}}{right}" for left, right in rows)
 
 
+def own_flags(group: object) -> frozenset[str]:
+    """Every flag ai-hats itself declares on its root group.
+
+    The mirror of :func:`command_paths`: a word is real when it is mounted, a flag
+    is ai-hats' own when the group declares it. Unknown flags stay the provider's,
+    which is what the passthrough surface promises.
+    """
+    flags = set(_UNDECLARED_HELP)
+    for param in getattr(group, "params", ()):
+        flags.update(getattr(param, "opts", ()))
+        flags.update(getattr(param, "secondary_opts", ()))
+    return frozenset(flags)
+
+
 def command_paths(group: object) -> dict[str, str]:
     """Map every command name in the tree to its full path (``"init"`` → ``"self init"``).
 
@@ -64,13 +79,15 @@ def classify(
     raw_argv: Sequence[str],
     leftover: Sequence[str],
     known_paths: Mapping[str, str],
+    known_flags: frozenset[str] = frozenset(),
 ) -> str | None:
     """The refusal for this invocation, or ``None`` to let it through.
 
     ``raw_argv`` is argv as typed — the only place ``--`` survives, since click
     consumes the separator while parsing. ``leftover`` is what click left for the
     provider. ``known_paths`` maps each command name to its full path
-    (``"init" -> "self init"``).
+    (``"init" -> "self init"``) and ``known_flags`` is what ai-hats declares for
+    itself — both read off the live group rather than written out here.
     """
     if "--" in raw_argv:
         return None  # passthrough asked for explicitly
@@ -97,15 +114,17 @@ def classify(
             f"    ai-hats {path}\n\n{ways_out}"
         )
 
-    flag = next((a for a in leftover if a in HELP_FLAGS), None)
+    flag = next((a for a in leftover if a in known_flags), None)
     if flag:
         table = _two_columns(
             [
-                ("ai-hats --help", "ai-hats' own help"),
+                (f"ai-hats {flag} ...", "ai-hats' own flags go before the prompt"),
                 (f"ai-hats -- {flag}", f"forward `{flag}` to the provider"),
             ]
         )
-        return f"`{flag}` would be forwarded to the provider, not handled by ai-hats.\n\n{table}"
+        return (
+            f"`{flag}` is an ai-hats flag, but here it would reach the provider instead.\n\n{table}"
+        )
 
     # Nothing above resolved, so a LONE bare word is a command the user expected
     # to exist. Being mounted is what makes a name real, so refuse by default and
