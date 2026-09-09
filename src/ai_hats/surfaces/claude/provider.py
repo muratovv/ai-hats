@@ -33,7 +33,7 @@ from .sdk_options import (
 )
 from . import sdk_runner
 from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG
-from .runtime_hooks import composed_rows, materialize_hook_manifest
+from .runtime_hooks import materialize_hook_manifest
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
@@ -283,7 +283,7 @@ class ClaudeSurface(Surface):
         # SKILLS precedes HOOKS in ArtifactCategory, so the mirror this points
         # into is already written (scripts before wiring, HATS-1123).
         skills_dir = claude_plugin_skills_dir(cache_dir / "plugin")
-        materialize_hook_manifest(
+        rows = materialize_hook_manifest(
             result,
             artifacts,
             cache_dir=cache_dir,
@@ -293,7 +293,7 @@ class ClaudeSurface(Surface):
         artifacts.port.write_text(
             cache_settings,
             json.dumps(
-                {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(result, skills_dir)},
+                {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)},
                 indent=2,
             ),
         )
@@ -477,9 +477,9 @@ class ClaudeSurface(Surface):
         return parts[1] if len(parts) > 1 else tag
 
     def _desired_runtime_entries(
-        self, result: CompositionResult | None, skills_dir: Path
+        self, rows: dict[str, list[dict[str, str]]]
     ) -> dict[str, list[dict]]:
-        """``{event: [the dispatcher entry]}`` the composition should produce.
+        """``{event: [the dispatcher entry]}`` for the rows the manifest holds.
 
         One entry per event: WHICH gates a call matched is the dispatcher's to
         answer from the manifest, and the harness only has to deliver the call.
@@ -488,12 +488,12 @@ class ClaudeSurface(Surface):
         return {
             event: [
                 {
-                    "matcher": _entry_matcher(rows),
+                    "matcher": _entry_matcher(event_rows),
                     "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
                     self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
                 }
             ]
-            for event, rows in composed_rows(result, skills_dir).items()
+            for event, event_rows in rows.items()
         }
 
     @staticmethod

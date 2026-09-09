@@ -11,27 +11,19 @@ from ai_hats_core.layout import ProjectLayout
 
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 from .profile import PROFILE
-from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
+from ai_hats.hook_collection import composed_rows
 from ai_hats.session_artifacts import BuiltArtifacts
 
 CLINE_HOOK_EVENTS: tuple[str, ...] = PROFILE.native_events
 MANIFEST_VERSION = 1
 
 
-def _manifest(layout: ProjectLayout, result, session_id: str, *, skills_dir: Path) -> dict:
-    hooks: dict[str, list[dict[str, str]]] = {}
-    collected = collect_runtime_hooks(result)
-    for event in CLINE_HOOK_EVENTS:
-        for skill_name, hook in collected.get(event, []):
-            if resolve_skill_script(result, skill_name, hook.script) is None:
-                continue
-            hooks.setdefault(event, []).append(
-                {
-                    "matcher": hook.matcher,
-                    "command": str(skills_dir / skill_name / hook.script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
-                }
-            )
+def _manifest(
+    layout: ProjectLayout, result, session_id: str, *, skills_dir: Path, artifacts: BuiltArtifacts
+) -> dict:
+    rows, notices = composed_rows(result, skills_dir, port=artifacts.port)
+    artifacts.notices.extend(notices)
+    hooks = {event: rows[event] for event in CLINE_HOOK_EVENTS if event in rows}
     return {
         "version": MANIFEST_VERSION,
         "session": {
@@ -51,7 +43,7 @@ def materialize_runtime_hooks(
     skills_dir: Path,
 ) -> Path | None:
     """Materialize the composed Cline chain; return its hook directory."""
-    manifest = _manifest(layout, result, session_id, skills_dir=skills_dir)
+    manifest = _manifest(layout, result, session_id, skills_dir=skills_dir, artifacts=artifacts)
     if not manifest["hooks"]:
         return None
 

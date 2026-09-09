@@ -363,3 +363,83 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     assert res == 0
     assert marker.is_file()
     assert marker.read_text().strip() == "FIRED"
+
+
+# --- a declared hook whose script is not where it should be (HATS-1862) ---
+
+
+def _hooked_skill(root: Path, name: str = "guard") -> Path:
+    source = root / "sources" / name
+    (source / "hooks").mkdir(parents=True)
+    script = source / "hooks" / "guard.sh"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    (source / "SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        "description: guard\n"
+        "ai_hats:\n"
+        "  runtime_hooks:\n"
+        "    PreToolUse:\n"
+        "      - matcher: Edit\n"
+        "        script: hooks/guard.sh\n"
+        "---\n"
+        "# guard\n"
+    )
+    return source
+
+
+def _result_with(*skills: Path):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        name="r",
+        priorities=[],
+        merged_injection="role",
+        rules=[],
+        user_rules=(),
+        skills=[SimpleNamespace(name=p.name, source_path=p) for p in skills],
+        checks=(),
+    )
+
+
+def test_a_script_missing_from_the_skill_is_a_notice_not_a_dead_command(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    skill = _hooked_skill(tmp_path)
+    (skill / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
+    artifacts = BuiltArtifacts()
+
+    layout = ProjectLayout.at(project)
+    AgySurface().build_session_artifacts(
+        layout, _result_with(skill), "sid-gone", run_mode=RunMode.HITL, artifacts=artifacts
+    )
+
+    data = json.loads((layout.cache.session("sid-gone") / "hooks.json").read_text())
+    assert data.get("PreToolUse", []) == [], "no command may point at a file that is not there"
+    [notice] = artifacts.notices
+    assert "guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
+
+
+def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path, monkeypatch) -> None:
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.session_artifacts import BuiltArtifacts
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    skill = _hooked_skill(tmp_path)
+
+    with pytest.raises(RuntimeHookMirrorError, match="guard"):  # the mirror was never written
+        AgySurface()._deliver_hooks(
+            ProjectLayout.at(project), _result_with(skill), "sid-unmirrored", BuiltArtifacts()
+        )

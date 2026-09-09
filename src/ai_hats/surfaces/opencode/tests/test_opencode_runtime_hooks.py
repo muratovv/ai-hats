@@ -140,7 +140,7 @@ def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> No
     assert config.get("plugin"), "permission dispatcher must stay registered"
 
 
-def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
+def test_a_script_missing_from_the_skill_is_a_notice_not_a_silent_drop(tmp_path: Path) -> None:
     source = _make_hooked_skill(tmp_path)
     (source / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
 
@@ -157,9 +157,29 @@ def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
 
     cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
     manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
-    assert manifest["hooks"]["PreToolUse"] == []
+    assert manifest["hooks"].get("PreToolUse", []) == []
+    [notice] = artifacts.notices
+    assert "safety-guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
     config = _config(project, provider)
     assert "plugin" in config, "dispatcher stays registered; empty lists dispatch nothing"
+
+
+def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path) -> None:
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.surfaces.opencode.runtime_hooks import materialize_hook_manifest
+
+    source = _make_hooked_skill(tmp_path)
+    unwritten_mirror = tmp_path / "session" / "skills"
+
+    with pytest.raises(RuntimeHookMirrorError, match="safety-guard"):
+        materialize_hook_manifest(
+            ProjectLayout.at(_project(tmp_path)),
+            _fake_result([source]),
+            SESSION_ID,
+            BuiltArtifacts(),
+            skills_dir=unwritten_mirror,
+            permission_rules=[],
+        )
 
 
 def test_plugin_asset_is_fail_open_on_missing_pin_and_maps_tools() -> None:

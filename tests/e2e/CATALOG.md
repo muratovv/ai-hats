@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**312 of 312 files catalogued — 320 flows.**
+**313 of 313 files catalogued — 321 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2771,6 +2771,20 @@ as a claim to check, not as evidence.
 
 - **expect** — runtime hooks are wired into settings.json and materialized executable scripts return correct codes
 - **why** — without end-to-end hook propagation, skill runtime hooks are dropped during session initialization
+
+## `test_runtime_hook_script_missing_warns.py`
+
+*pins HATS-1862*
+
+- **flow** — a developer launching a session whose role composes a skill that declares a runtime hook, but the skill no longer ships the script
+- **cmds**
+
+  ```console
+  ai-hats -r hook-role
+  ```
+
+- **expect** — the session starts, and the pre-launch banner says which gate will not run and which file the skill is missing
+- **why** — the manifest writers used to drop such a row in silence, so the session ran with the gate off and nothing but a harness stderr line said so
 
 ## `test_runtime_hooks_execute_from_session_tree.py`
 

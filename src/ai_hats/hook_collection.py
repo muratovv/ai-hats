@@ -7,12 +7,17 @@ leaf that never imports the composition layer (``test_import_hygiene`` gates).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult
 from ai_hats_wt import WorktreeHook, parse_worktree_carry
 
 from .models import RuntimeHook, SkillMetadata
+
+if TYPE_CHECKING:
+    from .materialization import Materializer
 
 
 def collect_runtime_hooks(
@@ -64,8 +69,8 @@ def resolve_skill_script(
     """Resolve a script declared in a skill's metadata to an absolute path.
 
     Returns ``None`` when the declaring skill is absent from ``result`` or the
-    file does not exist — callers (materialize, provider wiring) MUST skip such
-    a hook so a settings.json entry never points at a non-existent script.
+    file does not exist. The git and worktree channels skip such a hook; the
+    runtime channel goes through :func:`composed_rows`, which reports instead.
     """
     for skill in result.skills:
         if skill.name != skill_name:
@@ -74,3 +79,68 @@ def resolve_skill_script(
         if candidate.exists():
             return candidate
     return None
+
+
+class RuntimeHookMirrorError(RuntimeError):
+    """A declared hook script is in its skill but not executable in the session mirror.
+
+    The mirror is ai-hats's own write, so this is never the skill author's to
+    fix — and a gate that cannot run must not be wired as if it could.
+    """
+
+
+def composed_rows(
+    result: CompositionResult | None,
+    skills_dir: Path,
+    *,
+    port: Materializer,
+) -> tuple[dict[str, list[dict[str, str]]], list[str]]:
+    """``({event: [row, ...]}, notices)`` — the rows every surface's manifest holds.
+
+    Commands are absolute and point into the session's own skill mirror, so a
+    hook runs beside the files its skill ships from any cwd. A declared script
+    that is not there is never dropped in silence: absent from the skill itself
+    is the author's to fix, so it becomes a notice and no row; present in the
+    skill but not in the mirror is ours, so it raises.
+    """
+    rows: dict[str, list[dict[str, str]]] = {}
+    notices: list[str] = []
+    if result is None:
+        return rows, notices
+    sources = {skill.name: skill.source_path for skill in result.skills}
+    for event, entries in collect_runtime_hooks(result).items():
+        for skill_name, hook in entries:
+            declared = sources[skill_name] / hook.script
+            if not declared.is_file():
+                notices.append(_not_running(skill_name, event, hook, f"missing at {declared}"))
+                continue
+            if not os.access(declared, os.X_OK):
+                notices.append(_not_running(skill_name, event, hook, f"not executable: {declared}"))
+                continue
+            command = skills_dir / skill_name / hook.script
+            if not port.executable_at(command):
+                raise RuntimeHookMirrorError(
+                    f"{_hook_label(skill_name, event, hook)}: {hook.script} is in the skill "
+                    f"({sources[skill_name]}) but not an executable file in the session "
+                    f"mirror at {command}; ai-hats did not materialize it, and a gate "
+                    "that cannot run is not wired"
+                )
+            rows.setdefault(event, []).append(
+                {
+                    "matcher": hook.matcher,
+                    "command": str(command),
+                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
+                }
+            )
+    return rows, notices
+
+
+def _hook_label(skill_name: str, event: str, hook: RuntimeHook) -> str:
+    return f"runtime hook {event}/{hook.matcher} of skill {skill_name!r}"
+
+
+def _not_running(skill_name: str, event: str, hook: RuntimeHook, what: str) -> str:
+    return (
+        f"{_hook_label(skill_name, event, hook)}: {hook.script} is {what}; this gate "
+        "will not run in this session. Fix the script or drop its declaration in SKILL.md"
+    )

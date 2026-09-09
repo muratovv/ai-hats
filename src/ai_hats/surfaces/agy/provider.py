@@ -183,30 +183,21 @@ class AgySurface(Surface):
     # -- hooks -----------------------------------------------------------------
 
     def _hooks_manifest(
-        self, layout: ProjectLayout, result, session_id: str
+        self, layout: ProjectLayout, result, session_id: str, artifacts: BuiltArtifacts
     ) -> dict[str, list[dict]]:
-        from ai_hats.hook_collection import collect_runtime_hooks
+        """The flat ``{event: [row, ...]}`` the global dispatcher reads.
 
-        skills_dir = self._session_skills_dir(layout, session_id)
-        manifest: dict[str, list[dict]] = {}
-        for event, entries in collect_runtime_hooks(result).items():
-            event_list = manifest.setdefault(event, [])
-            for skill_name, hook in entries:
-                # Kept in the row's own (Claude) vocabulary. Translating it here
-                # covered one class and left `Bash` alone, so the shared-state
-                # guard never fired on this surface; the dispatcher now asks
-                # `claude_hook_adapter` instead, which knows every class
-                # (HATS-1776).
-                matcher = getattr(hook, "matcher", "")
-                script = getattr(hook, "script", "")
-                event_list.append(
-                    {
-                        "matcher": matcher,
-                        "command": str(skills_dir / skill_name / script),
-                        "tag": f"ai-hats:{skill_name}:{event}:{matcher}:{Path(script).stem}",
-                    }
-                )
-        return manifest
+        Rows keep the Claude matcher vocabulary: translating it here once covered
+        one class and left ``Bash`` alone, so the shared-state guard never fired
+        on this surface; the dispatcher asks ``claude_hook_adapter`` instead.
+        """
+        from ai_hats.hook_collection import composed_rows
+
+        rows, notices = composed_rows(
+            result, self._session_skills_dir(layout, session_id), port=artifacts.port
+        )
+        artifacts.notices.extend(notices)
+        return rows
 
     def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
         """Global dispatcher registration (HATS-1166) plus the session manifest it reads."""
@@ -218,7 +209,7 @@ class AgySurface(Surface):
         artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
         ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
 
-        manifest = self._hooks_manifest(layout, result, session_id)
+        manifest = self._hooks_manifest(layout, result, session_id, artifacts)
         hooks_json = cache_dir / "hooks.json"
         artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
         artifacts.materialized.append(hooks_json)

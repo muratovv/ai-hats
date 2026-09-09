@@ -12,6 +12,7 @@ import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.codex.hook_dispatcher import DISPATCHER_COMMAND, dispatch_hook
 from ai_hats.surfaces.codex.provider import CodexSurface
@@ -37,6 +38,7 @@ def _skill(tmp_path: Path, *, matcher: str = "Bash") -> SimpleNamespace:
         "# Guard\n"
     )
     (root / "hooks" / "guard.sh").write_text("#!/bin/sh\nexit 0\n")
+    (root / "hooks" / "guard.sh").chmod(0o755)
     return SimpleNamespace(name="guard", source_path=root)
 
 
@@ -158,6 +160,7 @@ def test_materializes_composed_manifest_only_in_the_session_cache(
     mirrored = skills_dir / "guard" / "hooks" / "guard.sh"
     mirrored.parent.mkdir(parents=True)
     mirrored.write_text("#!/bin/sh\nexit 0\n")
+    mirrored.chmod(0o755)  # the mirror is a copy of the source, mode included
     artifacts = BuiltArtifacts()
 
     path = materialize_hook_manifest(
@@ -180,6 +183,46 @@ def test_materializes_composed_manifest_only_in_the_session_cache(
     assert path in artifacts.materialized
     assert not (project / ".codex").exists()
     assert not (tmp_path / "home" / ".codex").exists()
+
+
+def test_a_script_missing_from_the_skill_is_a_notice_not_a_silent_drop(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    skill = _skill(tmp_path)
+    (skill.source_path / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
+    skills_dir = tmp_path / "mirror" / "skills"
+    (skills_dir / "guard" / "hooks").mkdir(parents=True)
+    artifacts = BuiltArtifacts()
+
+    path = materialize_hook_manifest(
+        ProjectLayout.at(tmp_path / "project"),
+        SimpleNamespace(skills=[skill]),
+        "sid-gone",
+        artifacts,
+        skills_dir=skills_dir,
+    )
+
+    assert json.loads(path.read_text())["hooks"].get("PreToolUse", []) == []
+    [notice] = artifacts.notices
+    assert "guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
+
+
+def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path, monkeypatch) -> None:
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    skill = _skill(tmp_path)
+    unwritten_mirror = tmp_path / "mirror" / "skills"
+
+    with pytest.raises(RuntimeHookMirrorError, match="guard"):
+        materialize_hook_manifest(
+            ProjectLayout.at(tmp_path / "project"),
+            SimpleNamespace(skills=[skill]),
+            "sid-unmirrored",
+            BuiltArtifacts(),
+            skills_dir=unwritten_mirror,
+        )
 
 
 def test_provider_artifact_pipeline_delivers_manifest_and_static_hook_config(
