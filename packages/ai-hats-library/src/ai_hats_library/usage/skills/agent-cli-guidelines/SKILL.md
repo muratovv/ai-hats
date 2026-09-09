@@ -53,7 +53,26 @@ Applied:
 
 Worked pairs, good and bad, with the reason each way: `examples/`.
 
-### 3. Fire only when you should
+### 3. Print nothing the reader cannot use
+
+Your output lands in another agent's context window and stays there. A progress
+bar, per-test dots, a banner, a re-print of the command just run — each costs the
+reader capacity and returns nothing, and the more of it there is, the further the
+part that matters drifts from where it will be seen.
+
+- **Ornament is for a tty.** Progress indicators, spinners and colour exist for a
+  human watching in real time. Emit them when the output is a terminal; a
+  non-interactive caller gets the result.
+- **Both ends are read; the middle is not.** Put the verdict first and the one
+  command last — the two positions that survive a long message. Nothing that
+  matters belongs in between, which is also the reason there should not be much
+  in between.
+
+Before shipping, read your own output whole and ask what each line buys the
+reader. A line that does not change what the reader does next is a line you are
+charging them for.
+
+### 4. Fire only when you should
 
 The failure this project records is not a terse refusal — blocking guards are
 honoured routinely. It is a guard that fires on what it should not: one that
@@ -64,7 +83,7 @@ scrolled past is unavailable for the real error it was built for.
 A false positive is not cosmetic. It spends the reader's attention, which is the
 resource every other rule here depends on.
 
-### 4. Every remedy must run AS PRINTED
+### 5. Every remedy must run AS PRINTED
 
 The recurring defect is not a missing remedy — it is one that does not work.
 Shapes that cost real sessions here: a hint naming a verb the CLI does not have;
@@ -75,7 +94,7 @@ refused; a message claiming state it had not left behind.
 Run your own remedy, from the state that triggers it, before shipping the
 message. A remedy is executable content and rots like code, not like prose.
 
-### 5. The exit code is the contract
+### 6. The exit code is the contract
 
 - Return the **runner's own** status, never a filter's or a wrapper's.
 - A run that produced no artifact must not exit 0 because the failure was
@@ -87,13 +106,13 @@ message. A remedy is executable content and rots like code, not like prose.
   read and journal it — and keep the journal free of your own test traffic, or
   it stops being readable as evidence.
 
-### 6. Say the invariant, not the catalogue
+### 7. Say the invariant, not the catalogue
 
 A refusal that enumerates forbidden spellings teaches the reader to find an
 unlisted one, and the unlisted ones outnumber the listed. Name the property that
 makes the action wrong; the list is illustration.
 
-### 7. Keep one home for the policy
+### 8. Keep one home for the policy
 
 The message the tool prints IS the documentation of its rule. Restating it in
 prose elsewhere gives it two homes and the copy drifts — and when they conflict,
@@ -103,6 +122,8 @@ Point at the tool; let it speak.
 ## Completion
 
 - The three questions in step 1 are answerable from the output alone.
+- Every line was justified: the verdict is first, the command is last, and
+  nothing between them is ornament.
 - The guard fires only on what it means to catch; negative cases were checked.
 - Every printed command was executed from the failing state, and worked.
 - The exit code matches the body, and a check that could not run says so.
@@ -118,6 +139,7 @@ wrong — the reading had already been spent.
 ## Anti-Patterns
 
 - Writing for the tool's author instead of for an agent mid-task.
+- Spending the reader's context on progress output nobody is watching.
 - Tuning the wording of a guard that fires when it should not.
 - A refusal that explains why and not what to do.
 - A remedy nobody ran: a verb, flag, or path that does not exist.

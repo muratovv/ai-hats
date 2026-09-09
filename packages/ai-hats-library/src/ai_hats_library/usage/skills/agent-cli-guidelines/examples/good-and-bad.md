@@ -137,3 +137,50 @@ name appears inside a quoted argument)*
 command it recommends, or on a name inside a string, spends the reader's
 attention on a non-problem — and the same guard's real refusal is then scrolled
 past. Precision is not a nicety here; it is what keeps the channel worth reading.
+
+---
+
+## 6. A test run reports back
+
+**Bad**
+
+```
+$ project-test
+running 6157 tests
+............................................................ [  1%]
+............................................................ [  2%]
+        … 96 more lines of dots …
+F........................................................... [ 99%]
+============================== FAILURES ==============================
+        … 60 lines of traceback …
+1 failed, 6156 passed in 41.02s
+```
+
+**Good**
+
+```
+$ project-test
+FAILED: 1 of 6157 in 41.0s
+
+    tests/test_gate.py::test_refusal_names_missing_stages
+    AssertionError: refusal did not name the missing stage 'unit'
+
+Full output: /tmp/project-test-8f2a.log
+
+Re-run just this one:
+
+    project-test tests/test_gate.py::test_refusal_names_missing_stages
+```
+
+**Why.** The dots are a progress indicator, and nobody is watching. They exist
+for a human at a terminal; delivered to an agent they are a hundred lines of
+context spent to say "still working", and they push the one line that matters
+away from both ends of the message, which are the parts that get read. The
+traceback is not deleted — it is moved to a file the reader can open **if** the
+summary is not enough, which it usually is.
+
+Note the two ends doing their jobs: the verdict opens the message so it survives
+any truncation, and the runnable command closes it so it is the last thing seen.
+Between them sits only what identifies the failure. Ask of every other line what
+it changes about the reader's next move; if the answer is nothing, it is being
+charged to their context for free.
