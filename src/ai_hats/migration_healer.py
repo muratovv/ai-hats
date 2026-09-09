@@ -655,7 +655,7 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
     return out_path
 
 
-# ---------- Phase 2 (HATS-549) — destination-existence check ----------
+# ---------- Phase 2 — destination-existence check ----------
 
 # Local aliases — shared canonical definitions live in ``paths`` so
 # the healer / asserter / future callers stay in sync (HATS-549 Q.1).
@@ -703,7 +703,7 @@ def _retag(ref: LegacyRef, reason: str) -> LegacyRef:
     return _dc_replace(ref, reason=reason)
 
 
-# ---------- Phase 4 (HATS-549) — disable user-owned hook entries ----------
+# ---------- Phase 4 — disable user-owned hook entries ----------
 
 
 # Path prefixes the Phase 4 disable pre-pass treats as candidate user-owned-hook
@@ -800,7 +800,7 @@ def _disable_user_hooks_in_settings(
                 new_matchers.append(matcher)
                 continue
             if matcher.get("_ai_hats_managed"):
-                # R3 (HATS-1463 / HATS-1480): Matchers tagged with _ai_hats_managed are
+                # R3: Matchers tagged with _ai_hats_managed are
                 # ai-hats owned and must NEVER be disabled as user hooks.
                 new_matchers.append(matcher)
                 continue

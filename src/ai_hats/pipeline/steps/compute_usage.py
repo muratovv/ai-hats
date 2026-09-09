@@ -57,8 +57,8 @@ class ComputeUsage(Step):
                 }
             ),
             # Runner-threaded carve-outs, absent on paths that don't inject them:
-            # role + static_cost_analyzer (HATS-865) drive the static cross-check;
-            # audit_writer_factory (HATS-953) carries the surface parser (.parser).
+            # role + static_cost_analyzer drive the static cross-check;
+            # audit_writer_factory carries the surface parser (.parser).
             optional=frozenset(
                 {
                     "role",
@@ -86,7 +86,7 @@ class ComputeUsage(Step):
         project_dir = layout.root
         from ai_hats_observe.parsers.claude import ClaudeParser
 
-        # usage/v1 rides the surface's transcript parser (HATS-953); the seam
+        # usage/v1 rides the surface's transcript parser; the seam
         # injects it via audit_writer_factory, standalone defaults to Claude.
         parser = (
             audit_writer_factory().parser if audit_writer_factory is not None else ClaudeParser()
@@ -94,7 +94,7 @@ class ComputeUsage(Step):
 
         usage_path = session_dir / USAGE_JSON
         try:
-            # HATS-1087: provider owns discovery; no resolver → empty.
+            # Provider owns discovery; no resolver → empty.
             jsonl_path = (
                 transcript_resolver(
                     project_dir,

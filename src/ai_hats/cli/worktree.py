@@ -70,8 +70,8 @@ def _resolve_worktree(branch: str | None = None):
         )
 
     # CWD is inside a linked worktree → detect branch automatically.
-    # HATS-788: detect on the RAW cwd — `project_dir` has hopped to MAIN
-    # (HATS-524) so `is_inside_linked_worktree(project_dir)` is always False
+    # Detect on the RAW cwd — `project_dir` has hopped to MAIN
+    # so `is_inside_linked_worktree(project_dir)` is always False
     # from inside a worktree. In practice the lifecycle guard refuses
     # merge/discard from inside a worktree before this runs; the raw-cwd check
     # keeps it correct for any unguarded caller. The tracker lookup
@@ -199,11 +199,11 @@ def wt_create(branch: str):
     layout = resolve_project().layout
     project_dir = layout.root
 
-    # HATS-060: refuse to create from inside a linked worktree
+    # Refuse to create from inside a linked worktree
     # (helper-extracted in HATS-482 / B-08 so merge/discard/list share it).
     _guard_not_inside_linked_worktree()
 
-    # HATS-942: resolve the configured base/merge-target (both None => today's
+    # Resolve the configured base/merge-target (both None => today's
     # canonical behavior); fail loud on a configured-but-absent branch.
     from ..wt_config import WorktreeConfigError, resolve_worktree_branches
 
@@ -222,13 +222,13 @@ def wt_create(branch: str):
         console.print(f"[red]{exc}[/]")
         sys.exit(1)
 
-    # HATS-479: the previous pre-check (load_for_branch outside any lock) was
+    # The previous pre-check (load_for_branch outside any lock) was
     # the TOCTOU surface — two concurrent `wt create <same-branch>` callers
     # both saw `existing is None`, then both ran `git worktree add -b`, and
     # the loser got an opaque CalledProcessError + a leaked tempdir.
     # WorktreeManager.create() now re-checks under the repo-scoped L1 lock
     # and raises WorktreeCreateError with a friendly message; we just relay.
-    # HATS-823: thread the project's effective-role worktree carry (wt_in/wt_out
+    # Thread the project's effective-role worktree carry (wt_in/wt_out
     # hooks) in at create; persisted to state for teardown (D3).
     from ..wt_effects import collect_carry_for_project
     from ..wt_lifecycle import HOOK_LIFECYCLE
@@ -358,7 +358,7 @@ def wt_merge(
         console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
         sys.exit(1)
     except WorktreeMergeAborted as e:
-        # HATS-1540: a `wt:pre-merge` check refused. Nothing was merged and the
+        # A `wt:pre-merge` check refused. Nothing was merged and the
         # worktree is intact, so the recipe is the check's own words — it names
         # the command that clears it (ADR-0019: a refusal is an action).
         from rich.markup import escape as _escape
@@ -371,7 +371,7 @@ def wt_merge(
         _print_blockers(other_blockers("dirty"))
         sys.exit(1)
     except WorktreeStateIncompleteError as e:
-        # HATS-714: the state file is present but lacks `original_branch`
+        # The state file is present but lacks `original_branch`
         # (corrupt / hand-edited / legacy). Surface the typed refusal instead
         # of the pre-714 `git rev-parse None` traceback. The message already
         # carries the recovery recipe; escape defensively (branch names can
@@ -381,7 +381,7 @@ def wt_merge(
         console.print(f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}")
         sys.exit(1)
     except WorktreeBaseBranchMismatchError as e:
-        # HATS-533: main-repo HEAD wandered off `_original_branch` between
+        # Main-repo HEAD wandered off `_original_branch` between
         # `wt create` and `wt merge`. The merge would otherwise silently
         # land on `e.current` instead of `e.expected` — same wrong-branch
         # class as HATS-486. Refuse before any mutation; surface a
@@ -421,7 +421,7 @@ def wt_merge(
         console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
         sys.exit(1)
     except WorktreeMergeConflictError as e:
-        # HATS-1651: the rollback was verified before this was raised, so the
+        # The rollback was verified before this was raised, so the
         # recipe can send the operator straight at the conflict. Resolve on the
         # BRANCH, not in main: a hand-merge in the main checkout produces a merge
         # commit outside the worktree bookkeeping this command owns.
@@ -434,7 +434,7 @@ def wt_merge(
         console.print(f"  [cyan]ai-hats wt merge {name}[/]", soft_wrap=True)
         sys.exit(1)
     except WorktreeMergeLeftoverError as e:
-        # HATS-1651: the rollback did NOT restore the main checkout. Nothing is
+        # The rollback did NOT restore the main checkout. Nothing is
         # claimed about it here beyond what was observed, and the cleanup is the
         # operator's call — this command will not guess with `reset --hard` over
         # a checkout that may hold their uncommitted work.
@@ -462,7 +462,7 @@ def wt_merge(
         from rich.markup import escape as _escape
 
         console.print(f"[red]Refused (drift)[/]:\n{_escape(str(e))}")
-        # HATS-509: the recipe (full command form) lives here, not in the
+        # The recipe (full command form) lives here, not in the
         # exception body, so the sibling `rack transition done` handler
         # can name its own surface without inheriting a misleading
         # `--accept-drift` hint that points at the wrong command.
@@ -470,7 +470,7 @@ def wt_merge(
         if e.worktree_path:
             console.print(f"  [cyan]cd {_escape(str(e.worktree_path))}[/]", soft_wrap=True)
         console.print(f"  [cyan]git rebase {base}[/]", soft_wrap=True)
-        # HATS-1307: the rebase IS the fix — drift is containment, so a rebased
+        # The rebase IS the fix — drift is containment, so a rebased
         # branch passes the guard. --accept-drift stays for a stale baseline
         # the operator merges knowingly.
         console.print(
@@ -675,7 +675,7 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
         ai-hats wt exec task/hats-1 python -c 'import ai_hats'
     """
     args = list(cmd_args)
-    # HATS-1213: peel the selector BEFORE resolving — cwd (and the sole-active
+    # Peel the selector BEFORE resolving — cwd (and the sole-active
     # convenience) used to silently beat an explicit `wt exec <branch>`. With no
     # selector this is the old no-arg call, ambiguity refusal included.
     mgr = _resolve_worktree(_peel_selector(args))
@@ -691,13 +691,13 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
 
     from ai_hats_wt import workspace_pythonpath
 
-    # HATS-887: strip GIT_* plumbing so `ai-hats wt exec -- git …` resolves from
+    # Strip GIT_* plumbing so `ai-hats wt exec -- git …` resolves from
     # the worktree (cwd), not an ambient GIT_DIR a merge/hook context exports.
     env = os.environ.copy()
     for _var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(_var, None)
     run_dir = _effective_dir(wt_path, subdir)
-    # HATS-913: src alone Franken-mixes — packages/*/src must come from the
+    # src alone Franken-mixes — packages/*/src must come from the
     # worktree. HATS-1205: rooted at whichever project owns run_dir.
     env["PYTHONPATH"] = workspace_pythonpath(
         _owner_root(run_dir, wt_path), env.get("PYTHONPATH", "")

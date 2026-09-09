@@ -153,7 +153,7 @@ class ClaudeSurface(Surface):
         ]
 
     def transcript_parser(self) -> TranscriptParser:
-        # HATS-948: Claude emits a structured JSONL session log → richer parse.
+        # Claude emits a structured JSONL session log → richer parse.
         return ClaudeParser()
 
     def resolve_transcript(
@@ -190,7 +190,7 @@ class ClaudeSurface(Surface):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        # HATS-701: skills reach the agent via the native --plugin-dir (HITL) / SDK
+        # Skills reach the agent via the native --plugin-dir (HITL) / SDK
         # plugin (sub-agent) registry materialized in build_session_prompt /
         # sdk_options, so the sections carry no skill index — it would be a 2-3x
         # duplicate listing (~1.5k tok/session).
@@ -425,13 +425,13 @@ class ClaudeSurface(Surface):
         return HookServer(session_cache_dir(project_dir, session_id), dict(environ)).start()
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        # HATS-819: hand every runtime hook a clean writable anchor so it need
+        # Hand every runtime hook a clean writable anchor so it need
         # not derive WRITE paths from ``__file__`` depth — materialization
         # relocates the script, so a ``__file__``-relative write can land in a
         # source tree (the secret-guard ``.log`` incident). Inherited by hook
         # subprocesses via the launched provider env (``wrap_runner``). Honours
         # an ambient ``AI_HATS_DIR`` override (precedence lives in ``ai_hats_dir``).
-        # HATS-897: pair var scopes the pin to THIS project — the resolver
+        # Pair var scopes the pin to THIS project — the resolver
         # drops a leaked foreign pair, so get_env re-pins fresh values here.
         return {
             ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),

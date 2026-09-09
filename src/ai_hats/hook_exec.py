@@ -38,7 +38,7 @@ from .env import (
 # Big enough for a multi-line instruction, not just a verdict line.
 REASON_TAIL_BYTES = 4096
 
-#: The call envelope's version (HATS-1724). Bumped only when a field is removed,
+#: The call envelope's version. Bumped only when a field is removed,
 #: retyped or changes meaning — an ADDED field does not bump it, because readers
 #: ignore what they do not know. Same discipline as ``IDENTITY_VERSION``.
 HOOK_CALL_VERSION = 1
@@ -94,7 +94,7 @@ class HookRun:
     said: str = ""
     #: The FACT behind the outcome — a path, an errno, a signal, a budget — with
     #: none of this module's vocabulary in it. A channel that rewords the outcome
-    #: keeps the fact; without this it could only reword by discarding (HATS-1572).
+    #: keeps the fact; without this it could only reword by discarding.
     detail: str = ""
     stderr: str = ""
     log_path: Path | None = None
@@ -464,7 +464,7 @@ def _hook_env(
     (ADR-0019 D5/D7).
     """
     env = dict(os.environ if base is None else base)
-    # HATS-1161: an agent session carries FORCE_COLOR=3, and Rich honours it even
+    # An agent session carries FORCE_COLOR=3, and Rich honours it even
     # when stdout is no tty — every hook would then answer in escape sequences.
     for forcing in ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR"):
         env.pop(forcing, None)
@@ -476,7 +476,7 @@ def _hook_env(
     _put(env, ENV_FORCE, "1" if force else None)
     _put(env, ENV_TASK_ID, task_id)
     _put(env, ENV_WORKTREE_PATH, str(worktree_path) if worktree_path else None)
-    # HATS-1540: the primitive OWNS this one too, so a point that does not resolve
+    # The primitive OWNS this one too, so a point that does not resolve
     # a backlog (`wt:pre-merge`) removes it rather than inheriting whatever the
     # ambient environment carries. Left to `extra`, which can only add, a stale
     # value reached the gate and a script comparing it to its own tracker read

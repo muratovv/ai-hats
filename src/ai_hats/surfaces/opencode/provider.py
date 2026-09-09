@@ -101,7 +101,7 @@ class OpenCodeSurface(Surface):
 
     def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
         # Inside the redirected config dir: <XDG>/opencode/skills is a native
-        # discovery path (HATS-1791), so the mirror doubles as real skills.
+        # discovery path, so the mirror doubles as real skills.
         return self.session_xdg_config_home(project_dir, session_id) / "opencode" / "skills"
 
     def _base_config_home(self) -> Path:
@@ -130,7 +130,7 @@ class OpenCodeSurface(Surface):
         try:
             for source in sorted(base_config_dir.iterdir(), key=lambda path: path.name):
                 if source.name == "skills":
-                    continue  # owned by the session mirror (HATS-1791)
+                    continue  # owned by the session mirror
                 artifacts.port.symlink(source, session_config_dir / source.name)
         except OSError:
             raise RuntimeError("OpenCode base config projection failed") from None
@@ -237,7 +237,7 @@ class OpenCodeSurface(Surface):
             "mode": "primary",
             "prompt": prompt,
         }
-        # HATS-1792: no permission keys here — work policy belongs to the role's
+        # No permission keys here — work policy belongs to the role's
         # manifest-driven plugin, not to the generated config.
         artifacts.cli_args.extend(["--agent", AGENT_NAME])
         artifacts.extra_env[ENV_OPENCODE_CONFIG] = str(
@@ -258,7 +258,7 @@ class OpenCodeSurface(Surface):
         session_config_dir = xdg_root / "opencode"
         skills_root = self.session_skills_root(project_dir, session_id)
         # Wipe-and-copy first: the mirror is the native discovery dir, and base
-        # entries are projected into it afterwards (HATS-1791).
+        # entries are projected into it afterwards.
         materialize_skills_dir(skills_root, result.skills, project_dir, artifacts.port)
         artifacts.port.mkdir(session_config_dir)
         self._project_base_home(session_config_dir, artifacts)
@@ -295,7 +295,7 @@ class OpenCodeSurface(Surface):
         ]
 
     def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
-        # HATS-1792: the manifest also carries the role's permission rules, so
+        # The manifest also carries the role's permission rules, so
         # it materializes for every composition — hookless roles still touch
         # session-cache paths that external_directory gating would ask about.
         manifest_path, plugin_path = materialize_hook_manifest(

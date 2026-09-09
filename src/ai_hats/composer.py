@@ -163,7 +163,7 @@ class Composer:
             )
         )
 
-        # HATS-1046: resolve deferred removals against the composed set so an
+        # Resolve deferred removals against the composed set so an
         # overlay can drop a TRAIT-brought skill. A skill re-added to the role's
         # own list (remove+add reorder, HATS-421) is exempt; an unknown errors.
         effective_removes = requested_skill_removes - set(config.composition.skills)
@@ -262,7 +262,7 @@ class Composer:
                 comp.rules.remove(rule)
                 role_level_rule_removes.add(rule)
         # Skill removals are deferred: a trait may bring the skill later, so the
-        # verdict is resolved post-resolution in compose() (HATS-1046).
+        # verdict is resolved post-resolution in compose().
         for skill in overlay.remove_skills:
             requested_skill_removes.add(skill)
             if skill in comp.skills:
@@ -358,7 +358,7 @@ class Composer:
                 errors.append(CompositionError(f"Rule '{rule_name}' not found", lossy=True))
                 continue
 
-            # HATS-700: do NOT eager-load the rule.md body here. Only the 6
+            # Do NOT eager-load the rule.md body here. Only the 6
             # always-on rules reach the prompt; the provider reads their body on
             # demand from ``source_path`` (read_rule_body). Non-always-on bodies
             # are intentionally undelivered (trait/role summaries are the
@@ -390,7 +390,7 @@ class Composer:
                 errors.append(CompositionError(f"Skill '{skill_name}' not found", lossy=True))
                 continue
 
-            # HATS-706: do NOT eager-load the SKILL.md body here. Its only
+            # Do NOT eager-load the SKILL.md body here. Its only
             # consumer is reflect mode, which reads it on demand from
             # ``source_path``. Loading every skill's full body on every compose
             # was dead work for every non-reflect session.
@@ -403,7 +403,7 @@ class Composer:
             )
 
 
-# HATS-865: collect_runtime_hooks / collect_worktree_hooks /
+# collect_runtime_hooks / collect_worktree_hooks /
 # resolve_skill_script moved to the neutral leaf ``hook_collection`` so runtime
 # bricks reach them without importing the composition layer.
 

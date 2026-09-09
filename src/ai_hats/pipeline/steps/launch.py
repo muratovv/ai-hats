@@ -49,9 +49,9 @@ class Provider(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="provider",
-            # HATS-865: funnel-seeded CompositionPayload, handed to the runner
+            # Funnel-seeded CompositionPayload, handed to the runner
             # as-is — this step never composes nor resolves providers.
-            # HATS-867: observe writer handles are funnel-seeded too.
+            # Observe writer handles are funnel-seeded too.
             requires=frozenset(
                 {
                     "interactive",
@@ -61,7 +61,7 @@ class Provider(Step):
                     "tracer_factory",
                 }
             ),
-            # HATS-505: ``system_prompt`` is deliberately NOT read here —
+            # ``system_prompt`` is deliberately NOT read here —
             # prompt delivery goes through the payload, not a funnel string.
             optional=frozenset(
                 {
@@ -71,7 +71,7 @@ class Provider(Step):
                     "ticket",
                     "tags",
                     "extra_args",
-                    # HATS-1192: an optional PtyTap factory seeded upstream (the
+                    # An optional PtyTap factory seeded upstream (the
                     # pty_tee step, HATS-1197); forwarded to the HITL PTY seam.
                     "pty_tap_factory",
                 }
@@ -132,7 +132,7 @@ class Provider(Step):
                 tags=tags,
                 pty_tap_factory=pty_tap_factory,
             )
-            # HATS-378: universal zero-output guard for reporting steps.
+            # Universal zero-output guard for reporting steps.
             # Interactive (main) sessions have trace-enriched metrics by
             # the time WrapRunner returns, so the token/tool_calls
             # criterion is reliable here.
@@ -145,10 +145,10 @@ class Provider(Step):
             }
 
         runner = SubAgentRunner(layout, composition, session_mgr=session_mgr)
-        # HATS-378: SubAgentRunner internally applies timeout retry and
+        # SubAgentRunner internally applies timeout retry and
         # zero-output guard when ``harness_policy`` is supplied — no
         # external guard call needed for the sub-agent branch.
-        # HATS-505: no funnel-supplied ``system_prompt_override`` — the
+        # No funnel-supplied ``system_prompt_override`` — the
         # override channel stays reserved for explicit HATS-267 callers.
         session = runner.run(
             task=prompt_text,
@@ -180,7 +180,7 @@ class Provider(Step):
         }
 
 
-# HATS-535: ``LaunchProvider`` kept as a deprecated alias so external YAML
+# ``LaunchProvider`` kept as a deprecated alias so external YAML
 # pipelines referencing ``id: launch_provider`` keep loading. The class
 # is identical to ``Provider`` (just a re-export); the registry maps both
 # names to it. Prefer ``Provider`` / ``id: provider`` in new code.

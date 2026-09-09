@@ -68,7 +68,7 @@ class AiHatsCheckPort:
         catalog: Path,
         resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
     ) -> None:
-        #: The backlog's own project — the ONLY one this channel knows (HATS-1573):
+        #: The backlog's own project — the ONLY one this channel knows:
         #: it composes the role, it is the gate's cwd, and it is the
         #: ``AI_HATS_PROJECT_DIR`` the gate reads as "this project".
         self.backlog_owner = backlog_owner

@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    # HATS-1280: converge the venv to what the new version actually declares.
+    # Converge the venv to what the new version actually declares.
     # Before do_bump, so a bump failure cannot leave a retired CLI reachable.
     # The import is inside the guard too: `retired_dists` reaches `_bootstrap`,
     # and an ImportError here would skip the re-assembly entirely.

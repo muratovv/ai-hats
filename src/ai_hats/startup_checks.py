@@ -101,7 +101,7 @@ def _run_one(
         project_dir=project_dir,
         extra_env=dict(extra_env or {}),
         # The dedup identity, not the basename: run_hook truncates the log it is
-        # handed, so a coarser name lets one row wipe another's (HATS-1137).
+        # handed, so a coarser name lets one row wipe another's.
         log_path=session_dir / "checks" / check_log_name(STARTUP_POINT, check),
     )
 

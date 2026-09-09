@@ -16,7 +16,7 @@ import os
 
 import pytest
 
-# HATS-1429: dropped at import, not in the fixture — ``load_core_pipeline``
+# Dropped at import, not in the fixture — ``load_core_pipeline``
 # resolves library layers at COLLECTION time. Both halves, never one: HATS-897
 # scopes AI_HATS_DIR *by* the pin.
 for _pinned in ("AI_HATS_PROJECT_DIR", "AI_HATS_DIR"):

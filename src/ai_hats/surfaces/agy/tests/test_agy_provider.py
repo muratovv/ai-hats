@@ -81,7 +81,7 @@ def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
     assert args[0] == "--add-dir"
     session_md = Path(args[1]) / "GEMINI.md"
     assert session_md.read_text() == prompt
-    # The only env the prompt channel carries: the dispatcher's cache-dir pin (HATS-1398).
+    # The only env the prompt channel carries: the dispatcher's cache-dir pin.
     assert env == {"AI_HATS_SESSION_CACHE_DIR": str(session_cache_dir(project, "sid-4"))}
 
 
@@ -330,7 +330,7 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
 
     # 3. Acceptance proof: agy global dispatcher fires the session hook in AUTOMATE session.
     #    The env comes from the builder, so the pin the dispatcher reads is the one the
-    #    session actually exports (HATS-1398) — not a value this test invented.
+    #    session actually exports — not a value this test invented.
     from ai_hats.session_identity import SessionIdentity
 
     identity = SessionIdentity(

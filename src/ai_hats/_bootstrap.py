@@ -48,12 +48,12 @@ _IMPORT_NAME_OVERRIDES: dict[str, str] = {
 _PEP508_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 
 # Importing these proves the installed tree agrees with itself: the CLI entry
-# the launcher exec's into, and the assembler it reaches for first (HATS-1116).
+# the launcher exec's into, and the assembler it reaches for first.
 _INTEGRITY_MODULES = ("ai_hats.cli", "ai_hats.assembler")
 _STEP_ENTRY_POINT_GROUP = "ai_hats.steps"
 _PROVIDER_ENTRY_POINT_GROUP = "ai_hats.providers"
 # Groups ai-hats declares for ITSELF. Both reach a process only through installed
-# metadata, so on an editable checkout both go stale the same way (HATS-1810).
+# metadata, so on an editable checkout both go stale the same way.
 _FIRST_PARTY_ENTRY_POINT_GROUPS = (_STEP_ENTRY_POINT_GROUP, _PROVIDER_ENTRY_POINT_GROUP)
 
 
@@ -313,7 +313,7 @@ def bootstrap_or_die() -> None:
         sys.stderr.write("ai-hats: self-heal failed. Run the manual command above, then retry.\n")
         sys.exit(1)
 
-    # HATS-1359: uv can exit 0 as a no-op (stale dist-info, import still
+    # uv can exit 0 as a no-op (stale dist-info, import still
     # broken) — recheck before re-exec'ing forever into the same state.
     still_missing = find_missing_runtime_deps()
     still_drift = find_editable_entry_point_drift()
@@ -369,7 +369,7 @@ def _first_party_entry_point_failures(group: str) -> list[str]:
             continue
         try:
             # ep.load() resolves the ATTRIBUTE; find_spec would only prove the
-            # module exists and would pass on a retired provider (HATS-1116).
+            # module exists and would pass on a retired provider.
             ep.load()
         except Exception as exc:  # noqa: BLE001 - collect, don't abort the sweep
             failures.append(

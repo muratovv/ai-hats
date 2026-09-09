@@ -17,26 +17,26 @@ from .env import ENV_ROLE as ENV_ROLE, ENV_ROOT_PID as ENV_ROOT_PID
 AGENT_DIR = ".agent"
 GITIGNORE_FILE = ".gitignore"
 
-# HATS-1521: the interpreter `self init` / `self update` provision. A leaf home so
+# The interpreter `self init` / `self update` provision. A leaf home so
 # the venv builder and the session-start check share one value; the hand-written
 # copies (launcher, floors, CI) are held to it by scripts/check_python_pin.py.
 PINNED_PYTHON = "3.13"
 
-# HATS-282 — canonical layered layer
+# Canonical layered layer
 CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
-# HATS-1617: resolution contract the host launcher must implement. Bump only when
+# Resolution contract the host launcher must implement. Bump only when
 # the launcher's resolution behaviour changes — never for comments or a release.
 # Paired with the `LAUNCHER_CONTRACT=` literal in scripts/ai-hats-launcher.
 LAUNCHER_CONTRACT = 1
 LAUNCHER_CONTRACT_FILE = "launcher-contract"
 
 
-# Env-var names shared across modules (HATS-917); single-file knobs stay local.
+# Env-var names shared across modules; single-file knobs stay local.
 # (ENV_SESSION_ID lives in ai_hats_observe.trace — observe's schema, HATS-948.)
 ENV_REPO_URL = "AI_HATS_REPO_URL"
-# HATS-938: launcher → `self init` channel for the editable host source, so init
+# Launcher → `self init` channel for the editable host source, so init
 # seeds `harness.channel: local` without depending on which interpreter it runs under.
 ENV_AI_HATS_INIT_SRC = "AI_HATS_INIT_SRC"
 ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
@@ -48,7 +48,7 @@ ENV_PTY_OUT_FD = "AI_HATS_PTY_OUT_FD"
 DEBUG_FLAGS = frozenset({"--debug", "--verbose", "-v"})
 
 # Consent's own artefacts. Whether one of these crosses into a child is the consent
-# engine's answer, not this seam's (HATS-1738 / HATS-1739), so the shape test below
+# engine's answer, not this seam's, so the shape test below
 # carves them out rather than withholding them.
 CONSENT_OWNED_KEYS = frozenset(
     {
@@ -130,7 +130,7 @@ def is_debug_mode(argv: list[str] | None = None) -> bool:
     return any(arg in DEBUG_FLAGS for arg in args)
 
 
-# Claude Code hook-event names (HATS-917). Engine vocabularies (HATS-915)
+# Claude Code hook-event names. Engine vocabularies
 # compose from these; leaf home so libraries/models needs no providers import.
 HOOK_PRE_TOOL_USE = "PreToolUse"
 HOOK_POST_TOOL_USE = "PostToolUse"
@@ -142,14 +142,14 @@ HOOK_SUBAGENT_STOP = "SubagentStop"
 HOOK_NOTIFICATION = "Notification"
 
 
-# Surface registry names (HATS-917) — leaf home: runners must not import providers.
+# Surface registry names — leaf home: runners must not import providers.
 # Only the builtin lives here; agy/cline are out-of-tree surfaces (own their names).
 PROVIDER_CLAUDE = "claude"
 
 INJECTION_START = "<!-- AI-HATS:START -->"
 INJECTION_END = "<!-- AI-HATS:END -->"
 
-# HATS-284: lowercase scaffold markers — used in `./CLAUDE.md` to delimit the
+# Lowercase scaffold markers — used in `./CLAUDE.md` to delimit the
 # user-owned ai-hats block. PUBLISH_AGGREGATOR_* names kept for backwards
 # compatibility of imports across the codebase; functionally these are the
 # scaffold markers.

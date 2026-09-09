@@ -38,7 +38,7 @@ def materialize_plugin_dir(
     Returns ``plugin_dir`` for caller convenience.
     """
     # The lock lives beside the target — never inside it — so the rmtree cannot
-    # remove it, and the session-cache sweep takes it (HATS-604).
+    # remove it, and the session-cache sweep takes it.
     lock_path = plugin_dir.parent / f"{plugin_dir.name}.lock"
     port.mkdir(plugin_dir.parent)
     with port.lock(lock_path):

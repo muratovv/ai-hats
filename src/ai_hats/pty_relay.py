@@ -172,7 +172,7 @@ class FdPtyTap:
                 self._pending_r = False
                 # Deliberately unguarded, like the direct _inject calls in
                 # _handle_raw_input — a swallowed failure here drops the user's
-                # Enter with no trace (HATS-1373).
+                # Enter with no trace.
                 self._inject(b"\r")
             return
 

@@ -40,7 +40,7 @@ from ai_hats_wt.locks import _state_key
 
 logger = logging.getLogger(__name__)
 
-#: The point ``merge()`` fires, in the ``wt`` app's own grammar (HATS-1545).
+#: The point ``merge()`` fires, in the ``wt`` app's own grammar.
 WT_PRE_MERGE = "pre-merge"
 
 
@@ -193,7 +193,7 @@ class HookRunningLifecycle:
                 ctx.project_dir,
                 WT_APP,
                 WT_PRE_MERGE,
-                # Unscoped, another project's session chose the bindings (HATS-1631).
+                # Unscoped, another project's session chose the bindings.
                 identity=session_identity_for(ctx.project_dir),
             )
         except CheckResolutionError as exc:

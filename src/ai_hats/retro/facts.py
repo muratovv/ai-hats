@@ -50,7 +50,7 @@ class SessionFacts:
     links: SessionLinks
     session_start: datetime
     session_end: datetime
-    # HATS-442: effective composition snapshot captured at session start.
+    # Effective composition snapshot captured at session start.
     # ``None`` for sessions written before this field landed (backwards compat).
     composition: dict | None = None
 

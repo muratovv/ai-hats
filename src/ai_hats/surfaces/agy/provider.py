@@ -111,7 +111,7 @@ class AgySurface(Surface):
         yield
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        # HATS-993: skills reach agy via the native .agy/skills/ registry
+        # Skills reach agy via the native .agy/skills/ registry
         return self._compose_sections(result)
 
     def _session_skills_dir(self, project_dir: Path, session_id: str) -> Path:
@@ -208,7 +208,7 @@ class AgySurface(Surface):
 
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         # The dispatcher is a standalone process on every tool call — hand it the
-        # resolved dir rather than have it import ai-hats to re-derive it (HATS-1398).
+        # resolved dir rather than have it import ai-hats to re-derive it.
         artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
         ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
 

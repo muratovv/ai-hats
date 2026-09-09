@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from ..channel import ChannelResolution
     from ..self_heal import HealResult
 
-# HATS-496: accept tag / branch / full-or-short SHA as a --revision argument.
+# Accept tag / branch / full-or-short SHA as a --revision argument.
 # Bare SHA detection skips the ls-remote pre-flight (git ls-remote returns
 # tags/branches keyed by refspec, not arbitrary commit ids — for raw SHA we
 # defer to pip's own resolution downstream).
@@ -50,10 +50,10 @@ def _require_uv() -> None:
         sys.exit(1)
 
 
-# HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
-# the bash launcher (HATS-339) so a single env var pins the install source
+# AI_HATS_REPO_URL env overrides the default git URL, mirroring
+# the bash launcher so a single env var pins the install source
 # end-to-end (CI, airgapped mirrors, custom forks).
-# HATS-766: public default is anonymous git+https (override still accepts ssh/local).
+# Public default is anonymous git+https (override still accepts ssh/local).
 def _git_install_url() -> str:
     return os.environ.get(ENV_REPO_URL, "git+https://github.com/muratovv/ai-hats.git")
 
@@ -85,7 +85,7 @@ def _build_update_cmd(ref: str | None = None, target_python: str | Path | None =
         target = f"{url}@{ref}"
     else:
         target = f"ai-hats @ {url}" if "://" in url else url
-    # B1 (HATS-763): pin --python or `uv pip install` targets the nearest cwd
+    # B1: pin --python or `uv pip install` targets the nearest cwd
     # venv, not this interpreter. `--reinstall` == pip's `--force-reinstall`.
     python_bin = str(target_python) if target_python is not None else sys.executable
     return [
@@ -421,7 +421,7 @@ def _flip_current(project_dir: Path, sha: str) -> None:
     from ..paths import current_pointer
 
     # atomic_write_text creates the parent (versions/) and writes via a unique
-    # tmp + os.replace — same atomicity as the prior inline form (HATS-716).
+    # tmp + os.replace — same atomicity as the prior inline form.
     atomic_write_text(current_pointer(project_dir), f"{sha}\n")
 
 
@@ -498,7 +498,7 @@ def _run_managed_versioned_update(
         version_dir,
     )
 
-    # HATS-764: version_id is resolved upstream (edge head sha / stable tag) and
+    # version_id is resolved upstream (edge head sha / stable tag) and
     # is authoritative — names versions/<version_id>/. The caller fails loud on
     # an unresolvable edge sha BEFORE building the resolution, so a None here is
     # a contract violation, not an offline case.
@@ -605,7 +605,7 @@ def _run_managed_versioned_update(
                 )
             if venv_proc.returncode != 0:
                 console.print(f"[red]Update failed[/] (venv create): {venv_proc.stderr}")
-                # HATS-718: non-zero exit so scripted chains
+                # Non-zero exit so scripted chains
                 # (`self update && self init`), CI, and agents reading exit
                 # codes detect the install never completed — mirrors the
                 # HATS-549 contract (exit 1 == "failed"). current untouched.
@@ -625,7 +625,7 @@ def _run_managed_versioned_update(
                 # current is untouched → the tool still runs on the old sha. The
                 # incomplete dir (no sentinel) is swept by version_recovery.
                 console.print(f"[red]Update failed[/]: {install.stderr}")
-                sys.exit(1)  # HATS-718: failed install must be machine-detectable
+                sys.exit(1)  # Failed install must be machine-detectable
             with console.status("[cyan]Verifying install …[/]", spinner="dots"):
                 verify = subprocess.run(
                     [new_python, "-m", "ai_hats._bootstrap", "verify"],
@@ -635,12 +635,12 @@ def _run_managed_versioned_update(
             if verify.returncode != 0:
                 warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
                 console.print(f"[red]Update failed[/] (verify): {warning}")
-                # HATS-718: verify runs BEFORE the .complete sentinel + current
+                # Verify runs BEFORE the .complete sentinel + current
                 # flip, so a failure means the new version is abandoned (current
                 # still old). Exit non-zero so callers know it did not complete.
                 sys.exit(1)
             # Sentinel written LAST, only after a fully-successful install+verify
-            # — the authoritative completeness marker (HATS-648). Only then is
+            # — the authoritative completeness marker. Only then is
             # the atomic flip allowed; current never points at a dir lacking
             # .complete.
             complete_sentinel(project_dir, target_sha).write_text("", encoding="utf-8")
@@ -692,7 +692,7 @@ def _run_managed_versioned_update(
                 f"— review output above[/]"
             )
 
-    # HATS-1617: the host launcher is a copy that never self-updates, so it drifts
+    # The host launcher is a copy that never self-updates, so it drifts
     # behind the package silently. Replaces the HATS-655 check, which read ONE
     # symptom of that drift (a dormant versioned layout) and was mute on every other.
     # NEVER auto-write the launcher: it is host-global (one entry point for ALL
@@ -717,7 +717,7 @@ def _run_managed_versioned_update(
         )
 
 
-# HATS-497: Install diagnostics for ``ai-hats config status`` Health section.
+# Install diagnostics for ``ai-hats config status`` Health section.
 # Helpers below produce a flat dict of display-key → display-value. Layer
 # boundary: install-level (interpreter, venv, source); does NOT touch the
 # Assembler (which is project-level).
@@ -746,7 +746,7 @@ def _format_install_source() -> str:
     """
     data = _read_direct_url()
     if data is None:
-        # No PEP 610 direct_url. Two sub-cases (HATS-779): ai-hats was installed
+        # No PEP 610 direct_url. Two sub-cases: ai-hats was installed
         # BY NAME from an index (the stable channel — `uv pip install
         # ai-hats==<tag>`; pip/uv never write direct_url.json for index-by-name
         # installs), or ai-hats has no installed dist at all. The package's own
@@ -924,7 +924,7 @@ def _get_installed_version() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-# HATS-766: anonymous GitHub Commits API read replaces a per-update shallow clone.
+# Anonymous GitHub Commits API read replaces a per-update shallow clone.
 _CHANGELOG_API_URL = "https://api.github.com/repos/muratovv/ai-hats/commits"
 _CHANGELOG_COUNT = 7
 
@@ -1016,7 +1016,7 @@ def _snapshot_library() -> dict[str, set[str]]:
     from ..models import ComponentType
 
     paths = list(builtin_library_layers())
-    # HATS-532: ``user_home()`` honours ``AI_HATS_USER_HOME`` so the
+    # ``user_home()`` honours ``AI_HATS_USER_HOME`` so the
     # snapshot reflects the same global slice the assembler resolved.
     global_lib = user_home() / ".ai-hats"
     if global_lib.is_dir():
@@ -1068,7 +1068,7 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
         return set(), set()
 
 
-# HATS-441: refusal exit code for state-guard failures (installed ahead of
+# Refusal exit code for state-guard failures (installed ahead of
 # remote master, or diverged history). Distinct from click's 0 (success),
 # 1 (UsageError), 2 (BadParameter) so scripts can disambiguate.
 DOWNGRADE_REFUSAL_EXIT_CODE = 3
@@ -1096,7 +1096,7 @@ def _probe_remote_state(
         return run_check(project_dir, remote_url=remote_url, ref=ref)
     except (ImportError, OSError, ValueError):
         # ImportError: update_check missing (packaging regression) → guard
-        # inactive, never brick the recovery path (HATS-987).
+        # inactive, never brick the recovery path.
         logger.debug("update-check probe failed", exc_info=True)
         return None
 
@@ -1188,7 +1188,7 @@ def _read_harness(project_dir: Path):
         # File EXISTS but the installed code can't parse it → edge recovery
         # (install from the configured source / upstream, NOT an
         # unreachable/unpublished PyPI release — HATS-581 self-heal).
-        # DECIDED (HATS-778): the one-cycle edge drift this causes on a stable
+        # DECIDED: the one-cycle edge drift this causes on a stable
         # project is ACCEPTED, not worked around. edge == master HEAD, gated
         # green by the maintainer e2e gate (no-broken-master, HATS-550), so
         # recovering there is low-risk; the scenario is rare and self-heals (the
@@ -1293,7 +1293,7 @@ def _run_editable_update(
         result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
     if result.returncode != 0:
         console.print(f"[red]Update failed[/]: {result.stderr}")
-        sys.exit(1)  # HATS-718: failed install must be machine-detectable
+        sys.exit(1)  # Failed install must be machine-detectable
     ok, detail = _run_post_install_verify(sys.executable)
     if not ok:
         console.print(f"[red]Post-install verify failed[/]: {detail}")
@@ -1372,7 +1372,7 @@ def _invalidate_update_cache(project_dir: Path) -> None:
             missing_ok=True
         )  # safe-delete: ok update-check cache (ephemeral, re-probed next session)
     except (ImportError, OSError):
-        pass  # ImportError: update_check missing → nothing to invalidate (HATS-987)
+        pass  # ImportError: update_check missing → nothing to invalidate
 
 
 @click.command()
@@ -1453,7 +1453,7 @@ def update(
         sys.exit(2)
 
     console.print(f"Current version: [bold]{old_version}[/]")
-    # HATS-318: surface which interpreter we're updating. When the wrapper has
+    # Surface which interpreter we're updating. When the wrapper has
     # already re-exec'd into <ai_hats_dir>/.venv, the install goes to that env
     # by virtue of sys.executable; this banner makes the target unambiguous.
     if "/.venv/bin/python" in sys.executable or "/versions/" in sys.executable:
@@ -1464,19 +1464,19 @@ def update(
     layout = resolve_project_lenient().layout
     project_dir = layout.root
 
-    # HATS-595: triage before any write, so --check can short-circuit here.
+    # Triage before any write, so --check can short-circuit here.
     reports = health.triage(project_dir)
     _render_triage(reports)
     if check:
         sys.exit(1 if health.worst_status(reports) is health.Status.BROKEN else 0)
 
-    # HATS-966: repair a stale surface-plugin editable (e.g. a `cline` `.pth` left
+    # Repair a stale surface-plugin editable (e.g. a `cline` `.pth` left
     # dangling by a torn-down worktree) as part of the canonical "fix my env" run.
     from ..self_heal import run_editable_heal
 
     _render_heal_result(run_editable_heal())
 
-    # HATS-764: the harness channel (config) selects BOTH the install source and
+    # The harness channel (config) selects BOTH the install source and
     # the downgrade guard. Read it up front, degrading to the stable default if
     # the installed code can't parse the config (`self update` self-heals).
     channel, harness_repo, harness_path = _read_harness(project_dir)
@@ -1489,7 +1489,7 @@ def update(
     revision_url: str | None = None
     revision_sha: str | None = None
     if revision:
-        # HATS-496: --revision is an explicit, channel-agnostic pin. It
+        # --revision is an explicit, channel-agnostic pin. It
         # short-circuits the guard machinery (the user named the ref), refuses
         # an editable target unless --force, and pre-flights `git ls-remote`.
         revision_url = _git_install_url()
@@ -1530,7 +1530,7 @@ def update(
         # local: editable working-tree install — no remote probe / guard.
         pass
     elif channel is Channel.STABLE:
-        # HATS-764: stable is pinned + semver-monotonic. Skip the git
+        # Stable is pinned + semver-monotonic. Skip the git
         # ahead/diverged probe (a PyPI release has no master divergence) and
         # instead refuse a published tag whose semver is LOWER than installed.
         try:
@@ -1555,7 +1555,7 @@ def update(
         # edge: moving target → keep the HATS-441 git ahead/diverged guard.
         # ``--force-downgrade`` opts back into the destructive replace for
         # callers who know what they're doing (discarding a stale dev branch).
-        # HATS-766: probe the edge repo's HEAD (bare url; env > harness.repo >
+        # Probe the edge repo's HEAD (bare url; env > harness.repo >
         # upstream), not hardwired master — else a custom edge repo silently
         # disables the guard.
         from ..channel import resolve_edge_probe_url
@@ -1590,7 +1590,7 @@ def update(
     # raise or any AssemblyError/OSError from the bump pipeline).
     # Used at the bottom of the function to surface a non-zero exit.
     bump_in_process_failed = False
-    # HATS-581: set when the INSTALLED code can't parse ai-hats.yaml. The
+    # Set when the INSTALLED code can't parse ai-hats.yaml. The
     # recovery command (``self update``) must not be blocked by a config the
     # current code rejects — degrade and let the fresh-interpreter bump (new
     # code) heal it.
@@ -1604,7 +1604,7 @@ def update(
         try:
             asm = _assembler(project_dir)
         except ProjectConfigError as e:
-            # HATS-581: degrade instead of crashing. Install the new package,
+            # Degrade instead of crashing. Install the new package,
             # then force the fresh-interpreter bump below — new code may heal
             # the config (forward-compat strip) or report it cleanly.
             console.print(
@@ -1616,7 +1616,7 @@ def update(
             config_unreadable = True
         else:
             cfg = asm.project_config
-            # HATS-407: active_role is the runtime cache (empty until first
+            # active_role is the runtime cache (empty until first
             # session). For a freshly-installed project where only default_role
             # is set, we still want auto-bump to run so migrations and the
             # canonical aggregator refresh. Fall back to default_role for the
@@ -1625,9 +1625,9 @@ def update(
             if active_role:
                 before_rules, before_skills = _snapshot_composition(asm)
 
-    # HATS-764: route by channel.
+    # Route by channel.
     #  - local → editable in-place install of the working tree (no versioned
-    #    dir, no current flip). --revision overrides the channel (HATS-496).
+    #    dir, no current flip). --revision overrides the channel.
     if channel is Channel.LOCAL and not revision:
         _run_editable_update(
             project_dir,
@@ -1682,7 +1682,7 @@ def update(
     # garbage on both sides (ahead/behind only hit (0, 0) when `git rev-list`
     # walked real commits). Skips pip's 10-15s re-download for a no-op; bump()
     # below still applies pending migrations.
-    # HATS-496: --revision always re-installs — force the pip call so
+    # --revision always re-installs — force the pip call so
     # direct_url.json's requested_revision is rewritten to the literal ref the
     # user typed (HATS-497 reads this), even if the SHA already matches.
     skip_install = (
@@ -1697,8 +1697,8 @@ def update(
         console.print(f"[green]Already up to date[/] ({old_version}) [dim]— skipping reinstall[/]")
         new_version = old_version
     else:
-        _require_uv()  # HATS-763: legacy in-place path also runs uv
-        # HATS-764: stable on a non-managed (override) venv → install the
+        _require_uv()  # Legacy in-place path also runs uv
+        # Stable on a non-managed (override) venv → install the
         # pinned PyPI release in place; edge / --revision keep the git source.
         if channel is Channel.STABLE and latest_stable:
             cmd = _build_install_cmd(sys.executable, f"ai-hats=={latest_stable}")
@@ -1715,7 +1715,7 @@ def update(
             result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
         if result.returncode != 0:
             console.print(f"[red]Update failed[/]: {result.stderr}")
-            # HATS-718: legacy in-place install failed → exit non-zero so
+            # Legacy in-place install failed → exit non-zero so
             # `self update && self init` stops instead of running init against a
             # half-updated env.
             sys.exit(1)
@@ -1741,14 +1741,14 @@ def update(
             for line in changelog.splitlines()[:7]:
                 console.print(f"  {line}")
 
-    # HATS-781: legacy in-place path reached on success (incl. the "already up
+    # Legacy in-place path reached on success (incl. the "already up
     # to date" no-op). Drop the stale update-check cache so the next session
     # re-probes instead of nagging with the pre-update delta.
     _invalidate_update_cache(project_dir)
 
     # 3b. Dep activation banner — flag the chicken-and-egg cycle: new in-
     # memory code is still the OLD one, so any changed dep won't be wired
-    # until the next ai-hats invocation. (HATS-213)
+    # until the next ai-hats invocation.
     after_deps = _snapshot_dep_versions()
     dep_changes: list[str] = []
     for name, ver in after_deps.items():
@@ -1782,13 +1782,13 @@ def update(
     # user manually re-runs the bump-internal entry. HATS-470: the
     # subprocess entry-point moved from `ai-hats self bump` (CLI command
     # removed) to `python -m ai_hats._bump_internal` (hidden module).
-    # HATS-581: also run the bump when the pre-install config read failed —
+    # Also run the bump when the pre-install config read failed —
     # the fresh-interpreter bump (new code) is exactly what heals the config.
     if active_role or config_unreadable:
         role_label = active_role or "(config unreadable — healing)"
         console.print(f"\n[bold]Re-assembling:[/] {role_label}")
         version_changed = new_version != old_version
-        # HATS-581: force the fresh-interpreter subprocess whenever the config
+        # Force the fresh-interpreter subprocess whenever the config
         # was unreadable in-process — the in-process branch would re-run
         # ``_assembler`` with the same un-parsing code and re-crash.
         if version_changed or config_unreadable:
@@ -1821,7 +1821,7 @@ def update(
                         "stalled.[/]"
                     )
             # Snapshot composition AFTER bump to compute rule/skill diff.
-            # HATS-581: the bump may not have healed a non-strippable error
+            # The bump may not have healed a non-strippable error
             # (e.g. a wrong-type value, not an unknown key). The package is
             # already installed; tolerate the re-read failure and report no
             # diff rather than crashing the recovery command.
@@ -1839,14 +1839,14 @@ def update(
             # users have mistaken the quiet pause for a hang.
             try:
                 asm = _assembler(project_dir)
-                # HATS-469: ``Assembler.bump`` was replaced by ``_refresh``;
+                # ``Assembler.bump`` was replaced by ``_refresh``;
                 # the bump pipeline is now an explicit composition (same
                 # as ``cli/assembly.py::do_bump``).
                 from ..materialize import compose_to_heal
                 from ..migration_assert import assert_runtime_hooks_resolve
                 from ..migration_backup import snapshot_pre_bump
 
-                # HATS-549: pre-bump snapshot for the no-version-change
+                # Pre-bump snapshot for the no-version-change
                 # in-process branch. The version-change branch above
                 # delegates to ``_bump_internal``, which itself calls
                 # ``do_bump`` and snapshots there. Without the explicit
@@ -1928,11 +1928,11 @@ def update(
     _reverify_layers(project_dir, reports)
 
 
-# HATS-285: `ai-hats self migrate` removed. Migration is transparent inside
+# `ai-hats self migrate` removed. Migration is transparent inside
 # `Assembler.set_role` / `Assembler._refresh(install_time=True)` (HATS-469;
 # the latter is reached via init and the do_bump CLI pipeline). Yaml-side
 # migration lives in `ProjectConfig.from_yaml`. Cleanup of obsolete files
-# is registry step=3 (HATS-471).
+# is registry step=3.
 
 # HATS-415/469: `ai-hats self migrate-v07` removed. The v0.6 → v0.7 layout
 # migration runs inline in the `do_bump` CLI pipeline (and on `Assembler.init`

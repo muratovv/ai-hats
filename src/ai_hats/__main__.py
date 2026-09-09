@@ -6,7 +6,7 @@ from .constants import is_debug_mode
 
 
 def main() -> None:
-    # HATS-1368: the gate runs BEFORE `.cli` is imported. Its subcommand package
+    # The gate runs BEFORE `.cli` is imported. Its subcommand package
     # imports workspace members at module level, so a venv missing one of them
     # never reaches the in-CLI gate — it dies importing the module that holds it.
     from ._bootstrap import bootstrap_or_die

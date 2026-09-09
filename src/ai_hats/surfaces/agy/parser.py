@@ -245,7 +245,7 @@ class AgyParser:
             )
 
         turns = self._parse_lines(lines)
-        # HATS-1397 / HATS-1400: agy rotates its brain segment on a checkpoint.
+        # agy rotates its brain segment on a checkpoint.
         # Now that we resolve all segments in the window, if trace still carries more
         # turns (e.g. unpersisted trace turns), trace wins and trace.log MUST be kept.
         traced = self._trace.parse(None, trace_path).turns

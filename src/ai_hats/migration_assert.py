@@ -58,7 +58,7 @@ SETTINGS_TARGETS: tuple[str, ...] = (
 
 _GEMINI_SETTINGS_REL = str(gemini_settings_path(Path(".")))
 
-# HATS-1509: the WARN reports and never deletes, so it may also read agy's
+# The WARN reports and never deletes, so it may also read agy's
 # remnant — which the assert must not, or a broken agy ref hard-fails bump.
 SESSION_SCAN_TARGETS: tuple[str, ...] = (*SETTINGS_TARGETS, _GEMINI_SETTINGS_REL)
 
@@ -272,7 +272,7 @@ def assert_runtime_hooks_resolve(
     if not broken:
         return
 
-    # HATS-1513: name the files that actually hold the findings — a hardcoded
+    # Name the files that actually hold the findings — a hardcoded
     # settings.json sent whoever hit an overlay ref to edit an innocent file.
     where = ", ".join(sorted({ref.settings_file for ref in broken}))
     lines = [

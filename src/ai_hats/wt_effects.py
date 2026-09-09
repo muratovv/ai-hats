@@ -91,8 +91,8 @@ class WtWorktreeEffects:
         from .paths import worktree_checkouts_dir, worktrees_dir
 
         # Probe order: adopt the worktree the caller is in (HATS-060/840) → reuse
-        # the task's existing one (HATS-061) → guard canonical base (HATS-518) →
-        # create with the role's carry (HATS-823); racing peer wins by adoption (479).
+        # the task's existing one → guard canonical base →
+        # create with the role's carry; racing peer wins by adoption (479).
         wt_state_dir = worktrees_dir(self.project_dir)
 
         adopt_probe = caller_cwd if caller_cwd is not None else self.project_dir
@@ -167,7 +167,7 @@ class WtWorktreeEffects:
         from .paths import worktrees_dir
 
         # Manager rebuilt with the hook bundle + injected state-dir (ADR-0013 D3/D4).
-        # State lost: branch already merged → finalize without re-merge (HATS-697),
+        # State lost: branch already merged → finalize without re-merge,
         # genuinely un-merged → fail-loud (WorktreeStateLostError).
         active = WorktreeManager.load_for_task(
             self.project_dir,
@@ -209,7 +209,7 @@ class WtWorktreeEffects:
                     outer_deadline=outer_deadline,
                 )
                 return "merged"
-            # failed → intentional discard; same ceiling as merge (HATS-1603)
+            # failed → intentional discard; same ceiling as merge
             active.discard(force=True, outer_deadline=outer_deadline)
             return "discarded"
         except OriginalBranchMissingError as exc:
@@ -227,7 +227,7 @@ class WtWorktreeEffects:
                 raise
             # merge=False (failed / cancelled administrative close): swallowed,
             # so the transition succeeds — a stack trace here reads as a crash
-            # for work that completed (HATS-1332). Name the cause on one line.
+            # for work that completed. Name the cause on one line.
             logger.warning(
                 "Worktree discard failed, branch '%s' preserved: %s: %s",
                 active.branch_name,
@@ -256,7 +256,7 @@ class WtWorktreeEffects:
         if active is None:
             return False
         try:
-            # HATS-818: `git status` (reclaim's own check) can't see the
+            # `git status` (reclaim's own check) can't see the
             # gitignored `.hunk/notes.json`, so inject the pending-review probe as
             # an extra hold — a worktree under un-addressed review is kept.
             return bool(active.reclaim_if_clean(has_extra_hold=_has_pending_hunk_review))

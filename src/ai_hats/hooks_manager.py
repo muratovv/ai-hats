@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# HATS-905: retiring this mechanism = dropping this line; the unclaimed-marker
+# Retiring this mechanism = dropping this line; the unclaimed-marker
 # sweeper then reclaims marker-listed .githooks/ artifacts on next init/bump.
 owners.register_owner("git-hooks", module=__name__)
 
@@ -103,13 +103,13 @@ class HooksManager:
 
 GITHOOKS_DIR = ".githooks"
 GITHOOKS_MANIFEST = ".ai-hats-manifest"
-# HATS-999: takeover records the displaced hooks dir here; the dispatcher
+# Takeover records the displaced hooks dir here; the dispatcher
 # chains to it live so the repo's own hook manager keeps running.
 PREVIOUS_HOOKS_PATH_KEY = "ai-hats.previousHooksPath"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 #: Lives in `.githooks/`, not `<event>.d/` — the dispatcher executes everything
-#: in `<event>.d/`, and this file is sourced, not run (HATS-1407).
+#: in `<event>.d/`, and this file is sourced, not run.
 GITHOOKS_BYPASS_JOURNAL = "bypass_journal.sh"
 
 
@@ -310,7 +310,7 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
         return
 
     existing = current.stdout.strip() if current.returncode == 0 else ""
-    # ABSOLUTE, not `.githooks` (HATS-1337). Git resolves a relative hooksPath
+    # ABSOLUTE, not `.githooks`. Git resolves a relative hooksPath
     # against the working tree it is invoked in, and `.githooks/` is generated +
     # gitignored, so it never exists in a linked worktree — every gate was
     # silently off in every worktree. Worktrees share `.git/config`, so one
@@ -339,7 +339,7 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
 
     try:
         if existing:
-            # HATS-999: record the displaced dir so the dispatcher chains to it.
+            # Record the displaced dir so the dispatcher chains to it.
             subprocess.run(
                 ["git", "config", PREVIOUS_HOOKS_PATH_KEY, existing],
                 cwd=str(project_dir),

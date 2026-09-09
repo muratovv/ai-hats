@@ -35,14 +35,14 @@ def is_zero_output(metrics: dict[str, Any]) -> bool:
     remains the safety net until sub-agent enrichment lands as a
     follow-up.
     """
-    # HATS-1374: gate on `measured` first. Key-absence alone was not enough — a
+    # Gate on `measured` first. Key-absence alone was not enough — a
     # pre-fix record carries stale fabricated zeros, so a productive session
     # whose transcript was unreachable raised a bogus incident.
     if not is_measured(metrics):
         return False
-    # HATS-1397: this step discards the sub-agent's output, so it asks the flag
+    # This step discards the sub-agent's output, so it asks the flag
     # itself rather than trusting the writer to have withheld the counter.
-    # HATS-1433: an estimate is not a measurement either — this step destroys the
+    # An estimate is not a measurement either — this step destroys the
     # sub-agent's output, and a guess about token counts must never be the reason.
     flags = metrics.get("flags")
     if isinstance(flags, list) and (

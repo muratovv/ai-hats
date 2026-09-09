@@ -85,7 +85,7 @@ class RenderUpdateBanner(Step):
         if is_disabled():
             return {}
         # The behind-upstream predicate (LOCAL channel + has_update + running-SHA
-        # match) is centralized in ``upstream_update`` (HATS-846), shared with hook
+        # match) is centralized in ``upstream_update``, shared with hook
         # self-heal so the guard set can't diverge per-consumer. ``is_disabled`` is
         # the banner's own UI opt-out and stays here, above the predicate.
         entry = upstream_update(project_dir)

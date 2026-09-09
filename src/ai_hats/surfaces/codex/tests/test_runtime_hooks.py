@@ -373,7 +373,7 @@ def test_apply_patch_is_adapted_to_claude_style_file_path(
 
     assert code == 0, stderr
     assert stdout == ""
-    # Sorted: the two payloads are judged together now (HATS-1868), so which of
+    # Sorted: the two payloads are judged together now, so which of
     # them appends first is a race. WHICH files the gate was handed is the
     # assertion — one row per patched file — and that is unchanged.
     assert sorted(marker.read_text().splitlines()) == [

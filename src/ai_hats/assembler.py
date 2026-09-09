@@ -97,7 +97,7 @@ def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozense
             names |= {entry.name for entry in hooks.iterdir() if entry.is_file()}
     except OSError:
         pass
-    # HATS-1268: guards moved from package data into the skills that declare
+    # Guards moved from package data into the skills that declare
     # them. A pre-v4 project still has the old basenames on disk, so the
     # whitelist has to keep recognising them wherever the library now ships them.
     try:
@@ -125,7 +125,7 @@ class Assembler:
         cwd: Path | None = None,
     ) -> None:
         # Read-only callers ONLY: nothing is written on that path, so the
-        # checkout you stand in cannot contaminate a target (HATS-1911).
+        # checkout you stand in cannot contaminate a target.
         # `cwd` names that checkout — told, not resolved three frames down.
         self.prefer_cwd = prefer_cwd
         self.cwd = cwd
@@ -138,7 +138,7 @@ class Assembler:
         if self.project_config.provider:
             self._validate_provider(self.project_config.provider)
 
-        # HATS-421: user-level customizations layer. Loaded lazily-eagerly here
+        # User-level customizations layer. Loaded lazily-eagerly here
         # so the global overlay applies to every composer invocation through
         # this assembler. Missing file → empty (silent default); malformed
         # raises UserConfigError up-front, before any composition runs.
@@ -149,14 +149,14 @@ class Assembler:
         self.resolver = LibraryResolver(self.library_paths)
         self.composer = Composer(self.resolver)
 
-        # HATS-837: managed-hook materialize + drift-sync. Injectable for tests.
+        # Managed-hook materialize + drift-sync. Injectable for tests.
         self.hooks = (
             hooks
             if hooks is not None
             else HooksManager(
                 self.project_dir,
                 self.project_config,
-                resolve_provider=get_surface,  # HATS-865: DI so the brick never imports providers
+                resolve_provider=get_surface,  # DI so the brick never imports providers
             )
         )
 
@@ -179,7 +179,7 @@ class Assembler:
         return build_library_paths(
             self.project_dir,
             config_paths=self.project_config.library_paths,
-            # Re-pointed to the worktree when composing inside one (HATS-831).
+            # Re-pointed to the worktree when composing inside one.
             local_libraries=self._worktree_local_libraries(),
             extra=extra,
             prefer_cwd=self.prefer_cwd,
@@ -228,7 +228,7 @@ class Assembler:
             )
             actions.append(reason)
 
-        # HATS-407: sweep stale .last_backup pointer + referenced /tmp dir.
+        # Sweep stale .last_backup pointer + referenced /tmp dir.
         # Local import avoids a top-level cycle with paths.py at module load.
         from .paths import last_backup_path as _last_backup_path
 
@@ -239,7 +239,7 @@ class Assembler:
         ):
             if not backup_ref.exists():
                 continue
-            # HATS-1128: skip backup references outside project_dir
+            # Skip backup references outside project_dir
             try:
                 if not backup_ref.resolve().is_relative_to(resolved_project):
                     continue
@@ -345,7 +345,7 @@ class Assembler:
             venv_path = normalize_venv_path(venv_path)
 
         # Collect path overrides as a delta; save_config applies them to a
-        # fresh on-disk read AND refreshes the in-memory config (HATS-526).
+        # fresh on-disk read AND refreshes the in-memory config.
         early_delta: dict[str, Any] = {}
         if ai_hats_dir is not None:
             existing_dir = self.project_config.ai_hats_dir
@@ -372,7 +372,7 @@ class Assembler:
                 early_delta["provider"] = provider or PROVIDER_CLAUDE
             self.save_config(**early_delta)
 
-        # HATS-312 / HATS-313 / HATS-314: all framework roots live under
+        # All framework roots live under
         # <ai_hats_dir>/. .agent/ itself is no longer populated by ai-hats.
         from .paths import runs_dir, tasks_dir
 
@@ -395,7 +395,7 @@ class Assembler:
             delta["provider"] = provider or PROVIDER_CLAUDE
             if role:
                 delta["default_role"] = role
-            # HATS-471: greenfield projects start at the latest migration
+            # Greenfield projects start at the latest migration
             # step. No registry entry needs to run — the directory is fresh.
             from .migrations import latest_step
 
@@ -407,7 +407,7 @@ class Assembler:
         if delta:
             self.save_config(**delta)
 
-        # HATS-938: seed harness.channel:local when the host ai-hats is editable,
+        # Seed harness.channel:local when the host ai-hats is editable,
         # so a fresh project heals editable-from-local, not the remote release.
         # Auto-detect is greenfield-only; an explicit --channel always applies.
         harness_seed = self._resolve_init_harness(channel, harness_path, greenfield)
@@ -458,7 +458,7 @@ class Assembler:
         if not greenfield:
             self._run_v07_migration(force=False, check_branches=False)
 
-        # HATS-317: one-shot .gitignore entry. Idempotent; no managed block.
+        # One-shot .gitignore entry. Idempotent; no managed block.
         if self.project_config.manage_gitignore:
             self._ensure_gitignore_entry()
 
@@ -482,7 +482,7 @@ class Assembler:
             compose_to_install(self, effective_role) if effective_role else None
         )
 
-        # HATS-469: single entry-point for all heal/install work.
+        # Single entry-point for all heal/install work.
         # install_time=True → registry fires (gated by migration_step;
         # greenfield no-ops via the R2 seed above).
         self._refresh(install_time=True, result=result)
@@ -636,7 +636,7 @@ class Assembler:
                 provenance["skills"][s.name] = self._classify_component_layer(p).value
         except Exception as exc:
             # A partial failure leaves some components tagged and the rest not,
-            # which `config status` renders as "role has no rules" (HATS-1373).
+            # which `config status` renders as "role has no rules".
             logger.warning("provenance for role %r is incomplete: %r", role_name, exc)
 
         effective_traits = self._effective_traits(role_name, runtime_overlay=runtime_overlay)
@@ -743,16 +743,16 @@ class Assembler:
             self._validate_provider(provider_name)
 
         provider = get_surface(provider_name or self.project_config.provider)
-        # HATS-456: single derivation point — used for hooks install
+        # Single derivation point — used for hooks install
         # AND build_system_prompt for Agy scaffold-less branch (below).
-        # HATS-1435: the caller's composition OF role_name, when it has one.
+        # The caller's composition OF role_name, when it has one.
         result = result if result is not None else compose_to_install(self, role_name)
 
-        # HATS-1201: sweeps the registry cannot cover — a first session may
+        # Sweeps the registry cannot cover — a first session may
         # predate any bump. Idempotent.
         self._cleanup_legacy_claude_publish()
 
-        # HATS-469: single entry-point. install_time=False → skip registry
+        # Single entry-point. install_time=False → skip registry
         # (migrations replay only via init/do_bump). _refresh handles
         # write_canonical, ensure_runtime_hooks, and the HooksManager
         # materializers (runtime / worktree / git). Diagnostics are NOT
@@ -829,13 +829,13 @@ class Assembler:
         refresh — they live in :meth:`_run_diagnostics`, firing only on
         user-initiated paths (HATS-469 R3: per-session orphan spam = bad UX).
         """
-        # 1. Migration registry — install_time only (HATS-471).
+        # 1. Migration registry — install_time only.
         if install_time:
             from .migrations import run_pending
 
             run_pending(self)
 
-        # 1b. Unclaimed-marker sweep — install_time only (HATS-905): dead
+        # 1b. Unclaimed-marker sweep — install_time only: dead
         # mechanisms' leftovers reclaimed on init/bump, never on set_role.
         if install_time:
             self._sweep_unclaimed_markers()
@@ -844,7 +844,7 @@ class Assembler:
         self.write_canonical()
 
         # 3. Managed hooks — provider settings.json wiring + the three surfaces,
-        # delegated to the HooksManager facade (HATS-837). The .git guard lives
+        # delegated to the HooksManager facade. The.git guard lives
         # inside materialize(), so non-git project dirs skip git hooks silently.
         # All idempotent and REQUIRED on set_role first-session bootstrap.
         self.hooks.materialize(result, warnings_sink=warnings_sink)
@@ -1086,7 +1086,7 @@ class Assembler:
         except Exception as exc:
             # An unresolvable provider used to drop the key entirely, so the
             # report read as "nothing to check" — the one failure this check
-            # exists to catch (HATS-1373).
+            # exists to catch.
             logger.warning(
                 "health: provider %r did not resolve: %r", self.project_config.provider, exc
             )
@@ -1108,7 +1108,7 @@ class Assembler:
         """
         return discover_user_rules(self.project_dir)
 
-    # ----- Canonical layered layer (HATS-282) -----
+    # ----- Canonical layered layer -----
 
     @property
     def _canonical_dir(self) -> Path:
@@ -1152,7 +1152,7 @@ class Assembler:
 
         self._write_canonical_manifest(canonical / CANONICAL_MANIFEST, sorted(new_paths))
 
-        # HATS-1617: the bash launcher fails before any interpreter runs when the
+        # The bash launcher fails before any interpreter runs when the
         # venv is missing, so the contract it must match is left here for it to read.
         # Untracked by the manifest, like versions/ and library/ beside it.
         self._atomic_write_if_changed(
@@ -1164,7 +1164,7 @@ class Assembler:
         """Write `content` to `path` only if it would change. Returns True on write."""
         if path.exists() and path.read_bytes() == content:
             return False
-        atomic_write_bytes(path, content)  # HATS-716: canonical atomic write
+        atomic_write_bytes(path, content)  # Canonical atomic write
         return True
 
     def _run_v07_migration(self, *, force: bool, check_branches: bool) -> None:
@@ -1417,7 +1417,7 @@ class Assembler:
             body += "\n".join(names) + "\n"
         Assembler._atomic_write_if_changed(path, body.encode())
 
-    # ----- .gitignore management (HATS-317) -----
+    # -----.gitignore management -----
 
     def _ensure_gitignore_entry(self) -> None:
         """Ensure <ai_hats_dir>/ is gitignored (logic in relocation.py, HATS-715)."""

@@ -161,7 +161,7 @@ def _spawn(command: list[str], environ: Mapping[str, str]) -> int:
 
 # One spelling of the wrapper's layout. The predicate below recognises what
 # `materialize_consent_wrappers` writes, so the two must never drift: a rename
-# on one side alone silently disarms BOTH recursion barriers (HATS-1809).
+# on one side alone silently disarms BOTH recursion barriers.
 _WRAPPER_DIR_NAME = "consent-wrapper"
 _WRAPPER_BIN_NAME = "bin"
 

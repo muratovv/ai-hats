@@ -34,7 +34,7 @@ from pathlib import Path
 import ai_hats
 
 from ai_hats_core import scrubbed_git_env
-from ..channel import FALLBACK_REMOTE_URL, _coerce_to_https  # HATS-987: primitives homed in channel
+from ..channel import FALLBACK_REMOTE_URL, _coerce_to_https  # Primitives homed in channel
 from ..constants import ENV_REPO_URL
 from .cache import CacheEntry, write_cache
 
@@ -152,7 +152,7 @@ def _read_baked_commit_sha() -> str | None:
         if isinstance(value, str) and value and value != "unknown":
             # ``g<sha>`` → ``<sha>`` (setuptools-scm describe prefix).
             return value[1:] if value.startswith("g") else value
-    # HATS-861: hatch-vcs leaves __commit_id__ = None; recover the SHA from the
+    # Hatch-vcs leaves __commit_id__ = None; recover the SHA from the
     # __version__ PEP 440 local segment (…+g<sha>[.dYYYYMMDD]) so edge-channel
     # detection still works for hatchling-built wheels.
     node = (getattr(_version, "__version__", "") or "").partition("+")[2]

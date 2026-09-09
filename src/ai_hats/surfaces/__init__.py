@@ -37,7 +37,7 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     from .profiles import hook_profile  # noqa: F401
 
 # comment-length: allow — an alias has to say what it does NOT cover
-# HATS-1826: deprecated aliases, so an out-of-tree surface written against
+# Deprecated aliases, so an out-of-tree surface written against
 # `Provider` keeps importing (the `LaunchProvider` precedent). Names only — a
 # subclass overriding `provider_hints` is no longer called, which is a real
 # break the CHANGELOG names.

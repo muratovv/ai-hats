@@ -43,7 +43,7 @@ class RunSessionEnd(Step):
         return StepIO(
             name="run_session_end",
             requires=frozenset(),
-            # HATS-530: ``retro_decision`` is produced by
+            # ``retro_decision`` is produced by
             # ``maybe_spawn_session_reviewer`` upstream. It's optional
             # so a finalize pipeline that skips that step (or where the
             # decision crashed) still runs cleanly — the banner is just

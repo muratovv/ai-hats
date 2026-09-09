@@ -284,19 +284,19 @@ def init(
         )
 
     # init anchors HERE when nothing resolves: a bare directory has no markers,
-    # and the silent cwd fallback lives nowhere else any more (HATS-1606).
+    # and the silent cwd fallback lives nowhere else any more.
     try:
         project_dir = resolve_project().layout.root
     except ProjectNotFoundError:
         project_dir = Path.cwd()
 
-    # HATS-938: mirror the `config --channel` guard — a path only means the
+    # Mirror the `config --channel` guard — a path only means the
     # local channel.
     if harness_path is not None and channel != "local":
         console.print("[red]Error[/]: --harness-path is only valid with --channel local.")
         raise SystemExit(2)
 
-    # HATS-1215: wizard choice moved into the pipeline — no local branch here.
+    # Wizard choice moved into the pipeline — no local branch here.
     from ..pipeline import run_pipeline
     from ..pipeline_catalog import INIT
     from ..session_policy import InitOutcome
@@ -335,7 +335,7 @@ def init(
         _launch_wizard_session(cmd)
 
 
-# HATS-833: `self sync-hooks` removed — hook drift healing is session-start only.
+# `self sync-hooks` removed — hook drift healing is session-start only.
 
 
 @click.command("set")
@@ -498,7 +498,7 @@ def set_role(
             label = new_venv if new_venv is not None else "managed (default)"
             console.print(f"[green]Updated[/]: venv_path = [bold]{label}[/]")
 
-    # --channel / --repo / --path — harness source (HATS-764). Mirrors --venv:
+    # --channel / --repo / --path — harness source. Mirrors --venv:
     # pure yaml, no filesystem state. The initial-wizard applies the channel via
     # this flag — it never edits ai-hats.yaml directly.
     if channel is not None or repo is not None or harness_path is not None:
@@ -562,7 +562,7 @@ def set_role(
                 )
 
     if role:
-        # HATS-407: yaml-only update — composition validates but does not
+        # Yaml-only update — composition validates but does not
         # materialize. ``active_role`` stays untouched (it's a runtime
         # cache, written by ``runtime._launch_session`` at session start).
         try:
@@ -835,13 +835,13 @@ def customize(
 @click.command()
 def status():
     """Show current role, dependency tree, and health."""
-    # Two questions, two sources (HATS-1911): the tree answers "what am I
+    # Two questions, two sources: the tree answers "what am I
     # editing" and follows cwd; Health answers "what is installed in this
     # project" and stays project-keyed.
     asm = _assembler(resolve_project_lenient().layout.root, prefer_cwd=True)
     st = asm.status()
 
-    # HATS-497: the role + tree section is role-dependent, but install
+    # The role + tree section is role-dependent, but install
     # diagnostics in the Health section below are useful regardless of
     # whether a role is composed (e.g. answering "what version am I
     # running, where does it live" before init). Don't early-return on
@@ -852,7 +852,7 @@ def status():
         console.print(f"Role: [bold]{st['role']}[/]")
         console.print(f"Provider: {st['provider']}")
 
-    # HATS-764: harness channel — a config-side read (NOT _gather_install_info,
+    # Harness channel — a config-side read (NOT _gather_install_info,
     # which is install-level with no config access). The full install-Source
     # line redesign stays HATS-767; this is the minimal config view.
     from ..models import Channel
@@ -918,7 +918,7 @@ def status():
             icon = "[green]OK[/]" if status_val == HealthStatus.OK else "[red]Missing[/]"
             console.print(f"  {component}: {icon}", highlight=False)
 
-    # HATS-791: stray-shadow detector. WARN (never delete) if any ai-hats on
+    # Stray-shadow detector. WARN (never delete) if any ai-hats on
     # PATH lives outside the sanctioned host launcher — these shadow it and may
     # run stale/mis-resolved. In-band visibility for the same scan bootstrap.sh
     # --repair does out-of-band.
@@ -991,7 +991,7 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
         name="preview",
     )
     try:
-        # HATS-865: compose at the seam, seed the payload into the pipeline.
+        # Compose at the seam, seed the payload into the pipeline.
         pipeline.run(
             composition=build_preview_payload(
                 project_dir,
@@ -1072,7 +1072,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
         # user has a one-liner recovery handle.
         assert_runtime_hooks_resolve(asm.project_dir, backup_path=backup_path)
     except AssemblyError as e:
-        # HATS-415: render the user-edits refusal message via Rich so the
+        # Render the user-edits refusal message via Rich so the
         # per-file guidance markup (`[bold]…[/]`, `[yellow]…[/]`) inside
         # ``render_user_edits_refusal`` displays cleanly. ``console.print``
         # auto-renders newline-separated Rich markup.
@@ -1086,7 +1086,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
         "  [dim]💡 A direct provider session reads no ai-hats content. "
         "Run `ai-hats execute [-r ROLE]` for role + user-rules.[/]"
     )
-    # HATS-470: surface the trash-bin banner so the user knows where
+    # Surface the trash-bin banner so the user knows where
     # snapshots from this bump live (if any).
     from ai_hats_core.safe_delete import session_summary as _trash_summary
 

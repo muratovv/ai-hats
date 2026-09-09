@@ -16,7 +16,7 @@ class SessionMetrics(BaseModel):
 
     exit_code: int
     # False ⇒ the counters below are placeholders, not observations: this
-    # session's transcript was unreachable (HATS-1374). Aggregate over measured
+    # session's transcript was unreachable. Aggregate over measured
     # records only and report the unmeasured count — never sum the zeros.
     measured: bool = True
     turns: int = Field(..., ge=0)

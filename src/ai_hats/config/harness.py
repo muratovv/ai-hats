@@ -40,7 +40,7 @@ class SessionRetroConfig(_YamlModel):
     policy: FeedbackPolicy = FeedbackPolicy.SMART
     smart_threshold: SmartThreshold = Field(default_factory=SmartThreshold)
     background: bool = True
-    # Optional model override for the single session-reviewer LLM call (HATS-252).
+    # Optional model override for the single session-reviewer LLM call.
     # When None, the provider CLI's default model is used.
     review_model: str | None = None
     # Deprecated alias retained for back-compat with pre-HATS-252 ai-hats.yaml

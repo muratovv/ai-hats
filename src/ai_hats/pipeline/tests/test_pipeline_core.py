@@ -182,7 +182,7 @@ def test_run_failure_policy_continue_captures_and_advances() -> None:
     assert capture == [("b", {})]
 
 
-# ---------- runtime-absent required key (HATS-739) ----------
+# ---------- runtime-absent required key ----------
 # A producer may legally OMIT a declared ``produces`` key at runtime (ADR-0005
 # value contract: None-filtered merge, ``ComposeRole`` returns ``{}`` for no
 # role). Build-time validation trusts the *declared* produces, so it passes; the

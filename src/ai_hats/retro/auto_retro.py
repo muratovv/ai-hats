@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 #: Sessions of this role ARE the auditor's output; auto-reviewing one makes the
-#: reviewer its own subject (HATS-1483).
+#: reviewer its own subject.
 REVIEWER_ROLE = "session-reviewer"
 
 
@@ -66,7 +66,7 @@ def should_run(
 
     metrics, metrics_issue = _read_metrics(metrics_path)
 
-    # HATS-1483: recursion guard as a property of the SESSION — the env guard
+    # Recursion guard as a property of the SESSION — the env guard
     # (HATS-252/1402/1481) protects a process and leaked at every new entry point.
     if metrics is not None and metrics.get("role") == REVIEWER_ROLE:
         return "skip", f"role={REVIEWER_ROLE} (the auditor's own session)"
@@ -78,7 +78,7 @@ def should_run(
     if metrics is None:
         return "skip", metrics_issue
 
-    # HATS-1374: the fabricated zeros used to read as a measured miss, so
+    # The fabricated zeros used to read as a measured miss, so
     # retro.log claimed "turns=0<5" about a session nobody measured.
     if not is_measured(metrics):
         return "skip", "unmeasured (no structured transcript — threshold unevaluable)"
@@ -133,7 +133,7 @@ def make_decision(
 
     retro_path = layout.sessions.retros / "sessions" / f"{session_id}.md"
 
-    # Wrap-up nudge (HATS-214) — pure side-effect-free; any error collapses to None.
+    # Wrap-up nudge — pure side-effect-free; any error collapses to None.
     wrap_up_info = None
     try:
         from . import reminder as reminder_mod
@@ -251,7 +251,7 @@ def main(layout: ProjectLayout | None = None) -> None:
     try:
         identity = SessionIdentity.from_env()
     except SessionIdentityError as exc:
-        # HATS-1613: soft, because a session end must not raise at the shell hook
+        # Soft, because a session end must not raise at the shell hook
         # — but named, because the id this would log under cannot be vouched for.
         logger.warning("session retro skipped — %s", exc)
         return

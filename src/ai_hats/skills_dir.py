@@ -136,7 +136,7 @@ def materialize_skills_dir(
             continue
         dest = skills_dir / skill.name
         port.copy_tree(skill.source_path, dest)
-        # Expand <ai_hats_dir> (HATS-380) + inject the FSM edge table (HATS-1051).
+        # Expand <ai_hats_dir> + inject the FSM edge table.
         # Read the SOURCE: under a PlanMaterializer the copy does not exist.
         source_md = skill.source_path / "SKILL.md"
         if source_md.exists():

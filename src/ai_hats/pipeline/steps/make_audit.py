@@ -46,7 +46,7 @@ class MakeAudit(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="make_audit",
-            # HATS-867: Session/AuditWriter arrive injected — no observe import.
+            # Session/AuditWriter arrive injected — no observe import.
             requires=frozenset(
                 {
                     "session_id",
@@ -80,7 +80,7 @@ class MakeAudit(Step):
 
         session = session_factory(session_id=session_id, session_dir=session_dir)
 
-        # HATS-1087: provider owns discovery; no resolver → trace.log fallback.
+        # Provider owns discovery; no resolver → trace.log fallback.
         try:
             jsonl_path = (
                 transcript_resolver(
@@ -91,7 +91,7 @@ class MakeAudit(Step):
                 if transcript_resolver is not None
                 else None
             )
-            # HATS-1397: holding the id is the whole difference between "this
+            # Holding the id is the whole difference between "this
             # transcript is ours" and "this one was the freshest". Only the
             # former may cost the trace — agy has no id and rotates its brain
             # segment mid-session, so the freshest is often a tail fragment.

@@ -188,7 +188,7 @@ class FinalizeRunParams:
     # Builds the writer ``make_audit`` rewrites ``audit.md`` through.
     audit_writer_factory: AuditWriterFactory | None = None
     # Locates the provider's transcript for ``make_audit``; absent, it degrades to
-    # the trace log (HATS-1087).
+    # the trace log.
     transcript_resolver: TranscriptResolver | None = None
     # Lets ``compute_usage`` cross-check cost when the provider reports none.
     static_cost_analyzer: StaticCostAnalyzer | None = None

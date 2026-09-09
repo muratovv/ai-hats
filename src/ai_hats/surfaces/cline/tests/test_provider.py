@@ -31,7 +31,7 @@ def _fake_result(skills: list[Path] | None = None) -> SimpleNamespace:
         merged_injection="## ROLE\nbody",
         rules=[],
         skills=skill_objs,
-        checks=(),  # HATS-1241: the builder snapshots bindings before any category
+        checks=(),  # The builder snapshots bindings before any category
     )
 
 
@@ -115,27 +115,27 @@ def test_get_run_command_preserves_passthrough_args() -> None:
     assert cmd == ["cline", "--config", "/x", "--yolo", "--json", "task"]
 
 
-# ---- get_env (HATS-1171) ---------------------------------------------------
+# ---- get_env ---------------------------------------------------
 
 
 def test_get_env_pins_cline_data_dir(tmp_path, monkeypatch) -> None:
-    # HATS-1171: --config relocates cline's base dir → data (auth/sessions/db)
+    # --config relocates cline's base dir → data (auth/sessions/db)
     # must be pinned back to the real cline home, else auth is lost.
     monkeypatch.delenv("CLINE_DATA_DIR", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     env = ClineSurface().get_env(tmp_path / "session", tmp_path)
     assert env["CLINE_DATA_DIR"] == str(tmp_path / "home" / ".cline" / "data")
-    # R7 (HATS-964): AI_HATS_DIR is needed by runtime hooks / skills.
+    # R7: AI_HATS_DIR is needed by runtime hooks / skills.
     assert env["AI_HATS_DIR"]
     assert env["AI_HATS_PROJECT_DIR"] == str(tmp_path)
-    # HATS-973: per-session hub port to avoid EADDRINUSE on parallel sessions.
+    # Per-session hub port to avoid EADDRINUSE on parallel sessions.
     assert env["CLINE_HUB_PORT"]
-    # HATS-1171: the dead TS plugin is dropped — no root plugins dir to point at.
+    # The dead TS plugin is dropped — no root plugins dir to point at.
     assert "CLINE_HOOKS_DIR" not in env
 
 
 def test_claim_launch_env_sets_cline_hub_port(tmp_path) -> None:
-    # HATS-973: per-session CLINE_HUB_PORT moves each ai-hats cline session off
+    # Per-session CLINE_HUB_PORT moves each ai-hats cline session off
     # the default hub port (25463) so parallel sessions don't collide.
     env = ClineSurface().claim_launch_env(tmp_path / "session", tmp_path)
     port = int(env["CLINE_HUB_PORT"])
@@ -173,14 +173,14 @@ def test_build_system_prompt_composes_sections() -> None:
 
 
 def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
-    # HATS-963: skills delivered via the native <cache>/skills registry, so the
+    # Skills delivered via the native <cache>/skills registry, so the
     # composed sections carry no text index (HATS-1826 removed the toggle).
     skill_path = _make_skill(tmp_path, "my-skill")
     out = ClineSurface().build_system_prompt(_fake_result(skills=[skill_path]))
     assert "## AVAILABLE SKILLS" not in out
 
 
-# ---- HITL build_session_prompt through the builder (HATS-1171) --------------
+# ---- HITL build_session_prompt through the builder --------------
 
 
 def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
@@ -195,7 +195,7 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     assert "-i" in provider.get_cli_launch_args(["cline", *args], "sid-1", False)
     assert "## PRIORITIES" in meta_prompt
     assert env == {}
-    # HATS-1171: skills reach cline via --config <cache> (not a root .cline dir)
+    # Skills reach cline via --config <cache> (not a root .cline dir)
     assert "--config" in args
     cache_arg = args[args.index("--config") + 1]
     assert cache_arg == str(session_cache_dir(tmp_path, "sid-1"))
@@ -291,7 +291,7 @@ def test_hookless_role_and_settings_category_add_no_launch_args(tmp_path) -> Non
     assert not (tmp_path / ".cline").exists()
 
 
-# ---- Automate materialize_runtime_skills through the builder (HATS-1171) -----
+# ---- Automate materialize_runtime_skills through the builder -----
 
 
 def test_materialize_returns_config_flag_and_writes_cache(tmp_path) -> None:
@@ -322,7 +322,7 @@ def test_materialize_is_idempotent(tmp_path) -> None:
 
 
 def test_materialize_sessions_are_isolated(tmp_path) -> None:
-    # HATS-1171: each session owns its own cache skills dir — no cross-session
+    # Each session owns its own cache skills dir — no cross-session
     # sharing, so no refcount/lock dance is needed.
     skill_a = _make_skill(tmp_path, "skill-a")
     skill_b = _make_skill(tmp_path, "skill-b")
@@ -351,7 +351,7 @@ def test_materialize_expands_the_fsm_edges_token(tmp_path) -> None:
     assert "brainstorm" in delivered  # a real FSM state reached the file
 
 
-# -- resolve_transcript (HATS-1087) ------------------------------------------
+# -- resolve_transcript ------------------------------------------
 
 
 def test_resolve_transcript_returns_none_when_dir_absent(tmp_path, monkeypatch) -> None:

@@ -129,7 +129,7 @@ class SessionIdentity:
     skills_root: str = ""
     #: This session's cache dir, where the consent store sits beside ``plugin/``.
     #: Carried, never recomputed: the path runs through a hashed ``project_key()``
-    #: that a stdlib hook could only copy, and a copy drifts (HATS-1735).
+    #: that a stdlib hook could only copy, and a copy drifts.
     session_cache_dir: str = ""
 
     def to_env(self) -> dict[str, str]:

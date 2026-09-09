@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from .constants import PIPELINES_SUBPATH, REQUIRED_LIBRARY_LAYERS
 
 # What a root must SERVE, not merely contain: `core/`+`usage/` alone is satisfied
-# by a __pycache__ shadow of a half-removed worktree (HATS-1157). `hooks/` stays
+# by a __pycache__ shadow of a half-removed worktree. `hooks/` stays
 # out — a source tree without it is legal (callers degrade on None).
 _LIBRARY_ROOT_MANIFEST: tuple[tuple[str, ...], ...] = (
     *((layer,) for layer in REQUIRED_LIBRARY_LAYERS),

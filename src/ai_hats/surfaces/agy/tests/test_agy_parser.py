@@ -63,7 +63,7 @@ def test_agy_parser_parses_transcript_jsonl(tmp_path: Path) -> None:
 
     usage = parser.parse_usage(jsonl_path, trace_path)
     assert usage["aggregates"]["tool_calls"] == 2
-    # HATS-1433: counts exist here (estimated off turn text), so the record says
+    # Counts exist here (estimated off turn text), so the record says
     # "estimated" rather than "unavailable" — the number is not absent, just unmeasured.
     assert "token-telemetry-estimated" in usage["flags"]
     assert usage["aggregates"]["input_tokens"] > 0 or usage["aggregates"]["output_tokens"] > 0
@@ -360,7 +360,7 @@ def test_agy_parser_filters_records_before_session_start(tmp_path: Path) -> None
 
 
 # ---------------------------------------------------------------------------
-# Token provenance: measured vs estimated (HATS-1433)
+# Token provenance: measured vs estimated
 # ---------------------------------------------------------------------------
 
 
