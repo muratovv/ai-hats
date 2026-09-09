@@ -19,7 +19,7 @@ import pytest
 from _helpers.hitl import drive_bare_hitl
 from ai_hats_core.layout import ProjectLayout
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def _files_under(root: Path) -> set[Path]:

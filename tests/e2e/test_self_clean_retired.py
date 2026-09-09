@@ -12,6 +12,8 @@ import subprocess
 
 import pytest
 
+pytestmark = pytest.mark.install
+
 
 def _run(cmd, *, cwd, env, timeout=120):
     return subprocess.run(

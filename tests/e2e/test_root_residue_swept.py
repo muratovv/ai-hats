@@ -18,6 +18,8 @@ import pytest
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
+pytestmark = pytest.mark.install
+
 # A user-authored entry, byte-identical before and after. Carries no ai-hats
 # tag under any key — the sole thing that distinguishes it from the residue.
 USER_ENTRY = {

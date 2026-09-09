@@ -18,6 +18,8 @@ import pytest
 from _helpers.project import pin_edge_channel
 from ai_hats.paths import PROJECT_CONFIG
 
+pytestmark = pytest.mark.guards
+
 
 def _seed(project_path: Path) -> None:
     (project_path / PROJECT_CONFIG).write_text(

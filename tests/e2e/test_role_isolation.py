@@ -87,7 +87,7 @@ def _claude_authenticated() -> bool:
     return "not logged in" not in blob and "please run /login" not in blob
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 @pytest.fixture(scope="module")

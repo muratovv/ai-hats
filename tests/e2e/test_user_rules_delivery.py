@@ -45,7 +45,7 @@ RULE_BODY = f"# Team rule\n\nAlways cite the ledger id: {SENTINEL}\n"
 
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
+pytestmark = [pytest.mark.integration, pytest.mark.smoke, pytest.mark.library]
 
 
 # --------------------------------------------------------------------- #

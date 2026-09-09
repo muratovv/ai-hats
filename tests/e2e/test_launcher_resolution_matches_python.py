@@ -22,7 +22,7 @@ import pytest
 
 from _helpers.git import git
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = REPO_ROOT / "scripts" / "ai-hats-launcher"

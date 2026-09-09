@@ -23,7 +23,7 @@ import pytest
 
 from _helpers.codex_consent import session
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.consent, pytest.mark.surfaces]
 TASK = "HATS-1897"
 
 

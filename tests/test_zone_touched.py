@@ -120,20 +120,35 @@ def test_a_change_inside_a_zone_demands_that_zones_stage(repo: Path):
     assert out.stdout.split() == [ZONE_STAGE]
 
 
-@pytest.mark.parametrize("row", _rows(), ids=lambda row: f"{row[2]}:{row[0]}")
-def test_every_prefix_the_table_declares_demands_its_stage(row: tuple[str, str, str], repo: Path):
+def test_every_prefix_the_table_declares_demands_its_stage(repo: Path):
     """One row is one prefix, and a zone is every row naming its marker. A prefix
     wired nowhere is a path the table promises to watch and does not — invisible,
-    because the zone keeps working through its other rows."""
-    prefix, _marker, stage = row
-    _git(repo, "checkout", "-q", "-b", "task/x")
-    _write(repo, _probe_for(prefix), "x = 2\n")
-    _commit(repo, f"touch {prefix}")
+    because the zone keeps working through its other rows.
 
-    out = _touched(repo)
+    One repository, and one commit per ROUND rather than per row: a round takes
+    at most one prefix from each zone, so a prefix wired nowhere still shows as
+    a stage missing from that round's answer. One commit per row says the same
+    thing five times slower, and this runs in the unit tier."""
+    by_stage: dict[str, list[str]] = {}
+    for prefix, _marker, stage in _rows():
+        by_stage.setdefault(stage, []).append(prefix)
 
-    assert out.returncode == 0, out.stderr
-    assert stage in out.stdout.split(), (out.stdout, out.stderr)
+    unwired = []
+    for round_no in range(max(len(prefixes) for prefixes in by_stage.values())):
+        batch = {
+            stage: prefixes[round_no]
+            for stage, prefixes in by_stage.items()
+            if round_no < len(prefixes)
+        }
+        _git(repo, "checkout", "-q", "-B", "task/x", "master")
+        for prefix in batch.values():
+            _write(repo, _probe_for(prefix), f"x = {round_no + 2}\n")
+        _commit(repo, f"round {round_no}")
+        out = _touched(repo)
+        if out.returncode != 0 or set(out.stdout.split()) != set(batch):
+            unwired.append((batch, out.returncode, out.stdout.strip(), out.stderr.strip()))
+
+    assert not unwired, unwired
 
 
 def test_a_stage_two_touched_prefixes_share_is_named_once(repo: Path):

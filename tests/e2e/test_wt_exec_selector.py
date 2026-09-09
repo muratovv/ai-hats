@@ -20,7 +20,7 @@ from _helpers.wt import (
     worktree_branches as _worktree_branches,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 
 def test_wt_exec_selector_routes_to_named_worktree(tmp_project, repo_root):

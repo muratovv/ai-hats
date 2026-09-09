@@ -29,7 +29,7 @@ from ai_hats.paths import PROJECT_CONFIG
 # Without this, the pre-push gate's `-m "(integration or smoke) and not
 # quarantine"` selection deselects the file — a regression in the guard would
 # ship to master silently.
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

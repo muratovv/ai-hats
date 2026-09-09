@@ -21,6 +21,8 @@ import pytest
 
 from _helpers.venv import REQUIRE_VENV_ENV
 
+pytestmark = pytest.mark.gates
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 # A representative venv-tier test: it requests ``_shared_launcher_venv`` (via the

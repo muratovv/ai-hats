@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.consent]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPAWNED = 0  # the stub ran: the wrapper did NOT recognize the operation

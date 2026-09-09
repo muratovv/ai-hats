@@ -90,6 +90,14 @@ merge-smoke      | the curated smoke subset of tests/e2e
 e2e              | the full tier: integration or smoke, quarantine and live agents excluded
 e2e-default      | the half of the tier no zone claims — an unexpected regression
 e2e-rack         | the rack zone of the tier: what a change to the rack surface is expected to break
+e2e-guards       | the guards zone of the tier: what a change to the agent guards and the git hooks is expected to break
+e2e-gates        | the gates zone of the tier: what a change to the quality gate machinery is expected to break
+e2e-wt           | the wt zone of the tier: what a change to the worktree lifecycle is expected to break
+e2e-install      | the install zone of the tier: what a change to the install road — launcher, bootstrap, self update is expected to break
+e2e-surfaces     | the surfaces zone of the tier: what a change to a provider surface or the session runtime is expected to break
+e2e-consent      | the consent zone of the tier: what a change to the consent engine is expected to break
+e2e-library      | the library zone of the tier: what a change to the library content or its composition is expected to break
+e2e-observe      | the observe zone of the tier: what a change to session observation — transcript, retro, reflect is expected to break
 coverage         | the tests outside tests/e2e in one process, at the coverage floor (CI)
 security         | pip-audit over the interpreter's whole environment (CI-authoritative)
 version-skew     | every workspace package is ahead of what PyPI has (network)
@@ -276,17 +284,111 @@ ci_gate_table() {
 # today's level, never less.
 zone_table() {
     cat <<'TABLE'
-packages/ai-hats-rack/        | rack
-src/ai_hats/rack_             | rack
+packages/ai-hats-rack/ | rack
+src/ai_hats/rack_ | rack
 src/ai_hats/tracker_wiring.py | rack
+packages/ai-hats-library/src/ai_hats_library/core/skills/hatrack/ | rack
+
+packages/ai-hats-library/src/ai_hats_library/hooks/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/safety-guard/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/tool-call-hygiene/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/command-lifetime/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/comment-length-lint/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/py-security-lint/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/rule-delivery-gate/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/skill-lint-gate/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/ | guards
+src/ai_hats/hook_collection.py | guards
+src/ai_hats/hook_exec.py | guards
+src/ai_hats/hooks_manager.py | guards
+src/ai_hats/githooks_ | guards
+src/ai_hats/cli/githooks_hook.py | guards
+
+scripts/gates.sh | gates
+scripts/check_ | gates
+scripts/gen_ | gates
+scripts/run-e2e-gate.sh | gates
+scripts/clean-tmp-cruft.sh | gates
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/ | gates
+src/ai_hats/check_ | gates
+.github/workflows/ | gates
+
+packages/ai-hats-wt/ | wt
+src/ai_hats/wt_ | wt
+src/ai_hats/worktree_hooks.py | wt
+src/ai_hats/cli/worktree.py | wt
+src/ai_hats/config/worktree.py | wt
+packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/ | wt
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/worktree-venv/ | wt
+
+scripts/bootstrap.sh | install
+scripts/install-launcher.sh | install
+scripts/ai-hats-launcher | install
+src/ai_hats/_bootstrap.py | install
+src/ai_hats/_bump_internal.py | install
+src/ai_hats/channel.py | install
+src/ai_hats/env.py | install
+src/ai_hats/env_drift.py | install
+src/ai_hats/environment_recovery.py | install
+src/ai_hats/migration | install
+src/ai_hats/provider_entry_points.py | install
+src/ai_hats/relocation.py | install
+src/ai_hats/retired_dists.py | install
+src/ai_hats/self_heal.py | install
+src/ai_hats/self_location.py | install
+src/ai_hats/update_check/ | install
+src/ai_hats/version_ | install
+src/ai_hats/cli/maintenance.py | install
+
+src/ai_hats/surfaces/ | surfaces
+src/ai_hats/pty_ | surfaces
+src/ai_hats/wrap_runner.py | surfaces
+src/ai_hats/subagent_runner.py | surfaces
+src/ai_hats/runtime | surfaces
+src/ai_hats/session_artifacts.py | surfaces
+src/ai_hats/session_run.py | surfaces
+src/ai_hats/cli/execute.py | surfaces
+src/ai_hats/cli/agent.py | surfaces
+
+src/ai_hats/consent_ | consent
+src/ai_hats/consent_mcp/ | consent
+packages/ai-hats-library/src/ai_hats_library/hooks/consent_gate/ | consent
+packages/ai-hats-library/src/ai_hats_library/hooks/consent_ticket.py | consent
+
+packages/ai-hats-library/src/ai_hats_library/core/ | library
+packages/ai-hats-library/src/ai_hats_library/usage/ | library
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/ | library
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/rules/ | library
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ | library
+src/ai_hats/assembler.py | library
+src/ai_hats/composer.py | library
+src/ai_hats/composition_ | library
+src/ai_hats/libraries/ | library
+src/ai_hats/library_ | library
+src/ai_hats/materializ | library
+src/ai_hats/role_ | library
+src/ai_hats/rule_delivery.py | library
+src/ai_hats/skill | library
+
+packages/ai-hats-observe/ | observe
+src/ai_hats/retro/ | observe
+src/ai_hats/runs_retention.py | observe
+src/ai_hats/session_report.py | observe
+src/ai_hats/cli/reflect.py | observe
+src/ai_hats/cli/reflect_session_main.py | observe
+src/ai_hats/cli/session.py | observe
 TABLE
 }
 
 # A zone's stage name, spelled in ONE place: the verb that demands it and the
 # renderer that documents it must agree, and a convention spread over two files
-# is a convention that drifts.
+# is a convention that drifts. Answers in a variable rather than on stdout: the
+# table is ~90 rows and every road through it asks, so a command substitution
+# here is a fork per row per road.
+_ZONE_STAGE=''
 _zone_stage() {
-    printf 'e2e-%s' "$1"
+    _ZONE_STAGE="e2e-$1"
 }
 
 # Every zone as one pytest expression: `rack`, then `rack or wt`, and so on.
@@ -365,6 +467,46 @@ ci_e2e_rack() {
     _run_tier "$E2E_SELECT and rack"
 }
 
+ci_e2e_guards() {
+    echo "[gates] e2e-guards (the guards zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and guards"
+}
+
+ci_e2e_gates() {
+    echo "[gates] e2e-gates (the gates zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and gates"
+}
+
+ci_e2e_wt() {
+    echo "[gates] e2e-wt (the wt zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and wt"
+}
+
+ci_e2e_install() {
+    echo "[gates] e2e-install (the install zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and install"
+}
+
+ci_e2e_surfaces() {
+    echo "[gates] e2e-surfaces (the surfaces zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and surfaces"
+}
+
+ci_e2e_consent() {
+    echo "[gates] e2e-consent (the consent zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and consent"
+}
+
+ci_e2e_library() {
+    echo "[gates] e2e-library (the library zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and library"
+}
+
+ci_e2e_observe() {
+    echo "[gates] e2e-observe (the observe zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and observe"
+}
+
 # Make THIS checkout runnable, so `$PY` resolves to an interpreter that imports
 # this tree and not another one. NOT a stage: it asserts nothing. Asked before a
 # run inside a scratch checkout, which has no `.venv` at all; the hook it
@@ -425,7 +567,7 @@ ci_master_ci() {
 # found — before the first of these it reaches, so a checker-only run stays
 # silent about xdist. Hand-kept; `tests/test_gates_table.py` holds it equal to
 # the functions above that invoke pytest.
-PYTEST_STAGES='unit integration coverage merge-smoke e2e e2e-default e2e-rack'
+PYTEST_STAGES='unit integration coverage merge-smoke e2e e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe'
 
 _is_pytest_stage() {
     case " $PYTEST_STAGES " in
@@ -698,8 +840,14 @@ _base_branch() {
 # caller appends this list to a gate's, and a stage named twice is a stage the
 # gate then looks up twice.
 _demanded=''
-_demand() {
+_already() {
     case " $_demanded " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+_demand() {
+    if _already "$1"; then
+        return 0
+    fi
     _demanded="$_demanded $1"
     printf '%s\n' "$1"
 }
@@ -764,6 +912,13 @@ cmd_touched() {
         prefix="${prefix//[[:space:]]/}"
         zone="${zone//[[:space:]]/}"
         [[ -n "$prefix" && -n "$zone" ]] || continue
+        _zone_stage "$zone"
+        # A zone is several rows; once one of them has named the stage the rest
+        # have nothing left to add, and this is what keeps the scan below linear
+        # in the diff rather than in the diff times the table.
+        if _already "$_ZONE_STAGE"; then
+            continue
+        fi
         # A prefix owning nothing is a zone that can never be demanded, and it is
         # NOT checked here: this table belongs to the repository that ships it,
         # while `touched` runs against whatever tree is being judged — a scratch
@@ -776,7 +931,7 @@ cmd_touched() {
             case "$path" in "$prefix"*) hit=1; break ;; esac
         done <<< "$changed"
         [[ -n "$hit" ]] || continue
-        _demand "$(_zone_stage "$zone")"
+        _demand "$_ZONE_STAGE"
     done < <(zone_table)
 
     # The second road into a zone: a test the card edits itself. The table's
@@ -789,19 +944,31 @@ cmd_touched() {
     # neither end is not something `git diff` produces between those two
     # commits; if it ever is, the verb refuses rather than reading it as
     # "no zone" — the same rule the base resolution above follows.
-    local body
+    local body marks rc
     while IFS= read -r path; do
         [[ -n "$path" ]] || continue
         _under_tier "$path" || continue
         body="$(git -C "$repo_root" show "$sha:$path" 2>/dev/null)" \
             || body="$(git -C "$repo_root" show "$base:$path" 2>/dev/null)" \
             || _die 70 "cannot read $path at $rev or at $base — cannot tell which zone it declares"
+        # Every marker the file wears, read ONCE. Asking the file per zone row
+        # instead is a grep per row per file, and the table is ~90 rows.
+        # grep answers 1 for a file wearing no marker at all — the ordinary case
+        # for the unzoned half of the tier, and the one status that is not an
+        # error. Anything else is grep failing, and a failure read as "no zone"
+        # is the silence this verb exists to refuse.
+        rc=0
+        marks="$(printf '%s' "$body" | grep -oE 'pytest\.mark\.[A-Za-z0-9_]+' | sort -u)" || rc=$?
+        [[ $rc -le 1 ]] || _die 70 "cannot read the markers of $path (grep exited $rc)"
+        marks=$'\n'"$marks"$'\n'
         while IFS='|' read -r prefix zone; do
             zone="${zone//[[:space:]]/}"
             [[ -n "$zone" ]] || continue
-            if printf '%s' "$body" | grep -qE "pytest\.mark\.$zone([^A-Za-z0-9_]|\$)"; then
-                _demand "$(_zone_stage "$zone")"
+            _zone_stage "$zone"
+            if _already "$_ZONE_STAGE"; then
+                continue
             fi
+            case "$marks" in *$'\n'"pytest.mark.$zone"$'\n'*) _demand "$_ZONE_STAGE" ;; esac
         done < <(zone_table)
     done <<< "$changed"
     return 0
@@ -818,7 +985,8 @@ cmd_zones() {
         prefix="${prefix//[[:space:]]/}"
         zone="${zone//[[:space:]]/}"
         [[ -n "$prefix" && -n "$zone" ]] || continue
-        printf '%s | %s | %s\n' "$prefix" "$zone" "$(_zone_stage "$zone")"
+        _zone_stage "$zone"
+        printf '%s | %s | %s\n' "$prefix" "$zone" "$_ZONE_STAGE"
     done < <(zone_table)
 }
 

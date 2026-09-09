@@ -40,6 +40,8 @@ from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.hook_server import HookServer, socket_path
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
+
 SESSION_ID = "sid-resident"
 DENY = '#!/bin/sh\ncat >/dev/null\nprintf "%s\\n" "the gate itself spoke" >&2\nexit 2\n'
 ALLOW = "#!/bin/sh\ncat >/dev/null\nexit 0\n"

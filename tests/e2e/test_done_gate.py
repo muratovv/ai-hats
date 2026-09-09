@@ -24,7 +24,7 @@ import yaml
 from _helpers.env import consented
 from _helpers.git import git, init_repo
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.gates, pytest.mark.rack]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL = "quality-gate"

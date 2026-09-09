@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.integration]
+pytestmark = [pytest.mark.integration, pytest.mark.gates]
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 

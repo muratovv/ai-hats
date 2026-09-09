@@ -30,7 +30,7 @@ from ai_hats.session_liveness import ANCHOR_NAME
 
 from _helpers.fake_surface import install
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 @pytest.fixture

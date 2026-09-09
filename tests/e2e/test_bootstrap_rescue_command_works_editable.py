@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.install_heavy
+pytestmark = [pytest.mark.install_heavy, pytest.mark.install]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RESCUE_RE = re.compile(r"^\s*manual command(?: if this fails)?: (uv pip install .+)$", re.M)

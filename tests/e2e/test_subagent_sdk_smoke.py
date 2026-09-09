@@ -27,7 +27,7 @@ from ai_hats_observe.artifacts import METRICS_JSON, TRANSCRIPT_TXT
 from ai_hats.paths import PROJECT_CONFIG
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 PROBE_MODEL = "claude-haiku-4-5"

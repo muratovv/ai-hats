@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 AI_HATS_PYTHON = Path(sys.executable)
 AI_HATS_CMD = (str(AI_HATS_PYTHON), "-m", "ai_hats")
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards]
 
 
 def _binary_env() -> dict[str, str]:

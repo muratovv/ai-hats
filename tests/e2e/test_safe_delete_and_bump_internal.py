@@ -19,6 +19,8 @@ import pytest
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
+pytestmark = pytest.mark.install
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

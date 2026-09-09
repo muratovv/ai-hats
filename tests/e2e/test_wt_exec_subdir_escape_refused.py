@@ -12,7 +12,7 @@ import pytest
 
 from _helpers.wt import ai_hats, child_env, two_worktrees
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 
 @pytest.mark.parametrize("escape", ["../..", "../../..", "sub/../..", "/tmp"])

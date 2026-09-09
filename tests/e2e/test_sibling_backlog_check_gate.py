@@ -24,7 +24,7 @@ import pytest
 
 from _helpers.git import git, init_repo
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.gates, pytest.mark.rack]
 
 TRACKER = Path(".agent") / "ai-hats" / "tracker" / "backlog"
 TASKS_SUB = TRACKER / "tasks"

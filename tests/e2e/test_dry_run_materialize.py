@@ -23,7 +23,7 @@ import pytest
 from ai_hats.dry_run import DRY_RUN_MATERIALIZE_SESSION_ID, DRY_RUN_SESSION_ID
 from ai_hats_core.layout import ProjectLayout
 
-pytestmark = [pytest.mark.integration]
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 def _seed_role(project_path: Path) -> None:

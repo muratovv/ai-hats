@@ -28,7 +28,7 @@ set -uo pipefail
 zero='0000000000000000000000000000000000000000'
 
 GATE='push-gate'
-STAGES='e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack'
+STAGES='e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe'
 CHANNEL='githook'
 RUN_CMD='scripts/run-e2e-gate.sh'
 # A script takes a commit as a flag, not as a make variable. Read by gate.sh.
