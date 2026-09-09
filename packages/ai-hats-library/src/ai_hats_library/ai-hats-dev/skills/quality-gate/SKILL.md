@@ -159,22 +159,17 @@ suite stubbed the very contracts the change broke.
    knob (see "No bypass") is the supervisor's to set, never yours.
 5. **Touched what the gate does not name?** No card gate runs the `e2e`
    stage, the full tier (`done-gate` runs `merge-smoke`, a curated subset).
-   Run it yourself and say so: `bash scripts/gates.sh e2e`. Nothing refuses
-   here, which is why that command is not optional.
-
-   The tier outlives a foreground Bash call, so it is run in the background —
-   and there the completion notice reports the whole command's status, which
-   is the trailing `echo` of a hand-rolled capture rather than the tier. Two
-   red runs were announced as `exit code 0` that way. Hand the run to the
-   wrapper instead, which exits with the tier's own status:
+   Run it yourself and say so. Nothing refuses here, which is why it is not
+   optional. It outlives a foreground call, so run it in the background through
+   the wrapper, which exits with the tier's own status:
 
        timeout 1800 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh \
            --log /tmp/e2e.log -- bash scripts/gates.sh e2e
 
-   Then read `/tmp/e2e.log.rc`. Absent means the bound fired before the tier
-   finished — never last run's verdict, which is why the wrapper clears it up
-   front. Report the number from that file; a completion notice is not evidence
-   of a run. What a gate requires:
+   Report the number in `/tmp/e2e.log.rc`, never the completion notice: that
+   notice reports the whole command, so a hand-rolled `; echo $?` is what it
+   announces — two red tiers arrived as `exit code 0` that way. What a gate
+   requires:
 
        bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/done-gate.sh --stages
 
