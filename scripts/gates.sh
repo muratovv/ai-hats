@@ -76,7 +76,7 @@ dependency-floor | every pin on a workspace package tracks that package's versio
 silent-fallback  | no broad except swallows a failure without reporting it
 test-isolation   | the suite patches its own units no more than the recorded baseline
 prose-refs       | paths, library prefixes, sections and symbols named in library prose resolve
-ticket-ids       | no tracker id in shipped library prose
+ticket-ids       | no tracker id in library prose or in a doc a reader opens
 consumer-refs    | no library component names a component that composes it
 env-reference    | docs/reference-env.md matches the env declarations the code reads
 gate-table       | ADR-0023's stage and gate tables match this file and the gates
