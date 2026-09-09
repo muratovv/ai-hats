@@ -31,9 +31,11 @@ mark — the SAFE / FActScore pattern, applied by hand.
    source found or not checked; `contradicted` — the source says otherwise,
    quoted. A contradicted claim is reported, never fixed on the quiet: the
    author decides.
-4. **Check the links.** Run `scripts/check_links.py <file>`: it prints every
-   link with its status and exits non-zero on a dead one. `UNREACHABLE` is
-   the network, not the link — report it, do not count it as dead.
+4. **Check the links.** Run the checker that ships with this skill —
+   `scripts/check_links.py <file>`, resolved against **this skill's own
+   directory**, not the project's `scripts/`. It prints every link with its
+   status and exits non-zero on a dead one. `UNREACHABLE` is the network, not
+   the link — report it, do not count it as dead.
 5. **Report** the table and the link-check output. The text stays untouched.
 
 ## Output
@@ -59,3 +61,5 @@ mark — the SAFE / FActScore pattern, applied by hand.
 - Softening a contradicted claim in the text instead of reporting it.
 - A row bundling two facts — one can hold and the other not.
 - Counting `UNREACHABLE` as dead, or a 403 from a bot filter as a fact check.
+- Running `scripts/check_links.py` from the project root and reporting "no
+  such file" — that path is the project's `scripts/`, not this skill's.
