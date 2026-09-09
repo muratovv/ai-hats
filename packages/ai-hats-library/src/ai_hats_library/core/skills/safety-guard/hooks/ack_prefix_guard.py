@@ -3,11 +3,11 @@
 
 Flags held by a PreToolUse guard are read from the LAUNCHING environment, so a
 prefix never reaches them. Flags read by a script inside ``make`` or a git hook do
-get reached: ``AI_HATS_RED_MASTER_ACK=1 make done-gate`` lands in
-``check_master_ci.py`` by plain shell semantics. That asymmetry was never a policy,
-only which side of a process boundary the flag was read on; it is closed here, where
-every flag crosses. Shape not roster (mirrors ``constants.withheld_from_subagent``);
-no hatch, since one would be the same self-grant a level up.
+get reached — ``check_master_ci.py``'s hatch was self-servable by plain shell
+semantics, and the smoke gate's was skipped on four commits that way. That asymmetry
+was never a policy, only which side of a process boundary the flag was read on, and it
+is closed here where every flag crosses. Shape not roster (mirrors
+``constants.withheld_from_subagent``); no hatch, since one would self-grant a level up.
 """
 
 from __future__ import annotations
@@ -48,9 +48,9 @@ BYPASS_FLAG_SUFFIXES = ("_ACK", "_OFF", "_SKIP")
 #: Mirrors ``ai_hats.constants.BYPASS_FLAGS_OFF_CONVENTION``. Pinned by a contract test.
 BYPASS_FLAGS_OFF_CONVENTION = frozenset({"AI_HATS_SKIP_SELF_LOCATION_GUARD", "AI_HATS_YOLO"})
 
-#: Consent's own artefacts, placed by the consent engine and gated by
-#: ``safety_gate.py``. Excluded here for the reason safety-guard states about
-#: ``git push``: two gates on one concern means the coarser one silently wins.
+#: Consent's own, and ``safety_gate.py`` REWRITES an approved command to carry
+#: ``AI_HATS_CONSENT_TICKET=<nonce>`` as a prefix — refusing that shape here would
+#: deny the supervisor's own answer. Mirrors ``constants.CONSENT_OWNED_KEYS``.
 CONSENT_OWNED_KEYS = frozenset(
     {
         "AI_HATS_CONSENT_ACK",
