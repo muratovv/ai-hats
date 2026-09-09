@@ -86,6 +86,8 @@ unit             | every test not marked integration
 integration      | the real-subprocess tests outside tests/e2e
 merge-smoke      | the curated smoke subset of tests/e2e
 e2e              | the full tier: integration or smoke, quarantine and live agents excluded
+e2e-default      | the half of the tier no zone claims — an unexpected regression
+e2e-rack         | the rack zone of the tier: what a change under packages/ai-hats-rack/ is expected to break
 coverage         | the tests outside tests/e2e in one process, at the coverage floor (CI)
 security         | pip-audit over the interpreter's whole environment (CI-authoritative)
 version-skew     | every workspace package is ahead of what PyPI has (network)
@@ -254,11 +256,71 @@ ci_gate_table() {
     run_py scripts/gen_gate_table.py --check
 }
 
-# The full maintainer tier (the slow one). Excluded from `all`; the push gate's
-# selection, kept here so `make e2e` cannot mean something narrower.
+# ZONES: which change makes which part of the tier expected to break.
+#
+# A zone is a marker on the tests and the path prefix that owns them. `touched`
+# turns a diff into the zone stages it demands, so a card editing a zone runs it
+# at `->merge`, where a refusal points at the agent's own branch. What no zone
+# claims is `e2e-default`, and it stands at `->done`, where a supervisor is
+# present for the breakage two green branches made together (ADR-0023 D3).
+#
+# A zone marker MOVES a test between gates; it never removes it from the tier.
+# `push-gate` and CI run the whole of it either way, so a row missing here costs
+# today's level, never less.
+zone_table() {
+    cat <<'TABLE'
+packages/ai-hats-rack/ | rack
+TABLE
+}
+
+# Every zone as one pytest expression: `rack`, then `rack or wt`, and so on.
+# Empty while no zone exists, which is what makes `e2e-default` the whole tier
+# until the first row lands.
+_zone_expr() {
+    zone_table | awk -F'|' '
+        { gsub(/[[:space:]]/, "", $2); if ($2 != "") printf "%s%s", (n++ ? " or " : ""), $2 }
+        END { printf "\n" }'
+}
+
+# The tier's selection lives HERE and nowhere else: `e2e` is the whole of it and
+# the zone stages are it narrowed. Hand-kept copies of this expression is the
+# defect that already cost this repo once — the tier's selection lived in two
+# copies with no test holding them equal — so `tests/test_e2e_zone_partition.py`
+# holds the parts equal to the whole.
+E2E_SELECT='(integration or smoke) and not quarantine and not live_agy'
+E2E_PATHS='tests/e2e/ tests/smoke/'
+
+# The full maintainer tier (the slow one). Excluded from `all`; what CI runs and
+# what the zone stages partition, kept here so `make e2e` cannot mean something
+# narrower.
 ci_e2e() {
     echo "[gates] e2e (integration + smoke, quarantine and live agy excluded)" >&2
-    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine and not live_agy" tests/e2e/ tests/smoke/ -q
+    # shellcheck disable=SC2086 # E2E_PATHS is two paths and must split
+    "$PY" -B -m pytest -m "$E2E_SELECT" $E2E_PATHS -q
+}
+
+# The half no zone claims — an unexpected regression, judged where a supervisor
+# is present. It shrinks as zones are declared; an empty zone table makes it the
+# whole tier.
+ci_e2e_default() {
+    echo "[gates] e2e-default (the tier outside every zone)" >&2
+    local zones select
+    zones="$(_zone_expr)"
+    if [[ -n "$zones" ]]; then
+        select="$E2E_SELECT and not ($zones)"
+    else
+        select="$E2E_SELECT"
+    fi
+    # shellcheck disable=SC2086
+    "$PY" -B -m pytest -m "$select" $E2E_PATHS -q
+}
+
+# One function per zone row, by hand: the stage set is `declare -F`, so a
+# generated name would be a stage nothing can list.
+ci_e2e_rack() {
+    echo "[gates] e2e-rack (the rack zone of the tier)" >&2
+    # shellcheck disable=SC2086
+    "$PY" -B -m pytest -m "$E2E_SELECT and rack" $E2E_PATHS -q
 }
 
 # Make THIS checkout runnable, so `$PY` resolves to an interpreter that imports
@@ -321,7 +383,7 @@ ci_master_ci() {
 # found — before the first of these it reaches, so a checker-only run stays
 # silent about xdist. Hand-kept; `tests/test_gates_table.py` holds it equal to
 # the functions above that invoke pytest.
-PYTEST_STAGES='unit integration coverage merge-smoke e2e'
+PYTEST_STAGES='unit integration coverage merge-smoke e2e e2e-default e2e-rack'
 
 _is_pytest_stage() {
     case " $PYTEST_STAGES " in

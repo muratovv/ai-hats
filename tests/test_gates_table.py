@@ -30,7 +30,17 @@ GATE_SCRIPTS = {
 
 #: Stages no gate requires, each a decision: CI-only, network, housekeeping, a
 #: precondition. A new stage must join a gate or this list — never neither.
-KNOWN_UNGATED = {"coverage", "security", "version-skew", "python-pin", "tmp-sweep", "prepare"}
+KNOWN_UNGATED = {
+    "coverage",
+    "security",
+    "version-skew",
+    "python-pin",
+    "tmp-sweep",
+    "prepare",
+    # TRANSIENT (HATS-1921 S1): the zone stages exist but no gate names them yet.
+    "e2e-default",
+    "e2e-rack",
+}
 
 
 def _run(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
