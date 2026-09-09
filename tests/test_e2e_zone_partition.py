@@ -1,4 +1,4 @@
-"""The zone stages partition the e2e tier: nothing falls out, nothing counts twice.
+"""The zone stages cover the e2e tier: nothing falls out, and the default holds no zone.
 
 The card gates ask for the halves and `push-gate` for their union, so a zone
 expression that dropped a test would narrow all of them at once and nothing
@@ -21,9 +21,23 @@ PUSH_GATE = (
     "/quality-gate/git_hooks/pre-push-e2e-master.sh"
 )
 
-#: The whole tier and the two halves that must add back up to it.
+#: The whole tier, and the parts that must add back up to it: the default and
+#: every zone the table declares. Asked of the script, never listed here — a
+#: hand-kept list would leave the next zone out of the union it must satisfy,
+#: and out of the push gate that must require it.
 WHOLE = "e2e"
-PARTS = ("e2e-default", "e2e-rack")
+
+
+def _parts() -> tuple[str, ...]:
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(GATES), "zones"], capture_output=True, text=True, check=True
+    )
+    stages = {line.split("|")[2].strip() for line in out.stdout.splitlines() if line.strip()}
+    assert stages, "gates.sh declares no zone"
+    return ("e2e-default", *sorted(stages))
+
+
+PARTS = _parts()
 
 
 @functools.lru_cache(maxsize=None)
@@ -55,7 +69,8 @@ def _selected(stage: str) -> frozenset[str]:
 
 def test_the_zone_stages_add_back_up_to_the_whole_tier():
     """Set equality, both directions: a test in no part would never run on a card
-    gate, and one in two parts would be paid for twice."""
+    gate, and one claimed by a part the tier does not hold is a part selecting
+    something the tier's own expression does not."""
     whole = _selected(WHOLE)
     parts = {stage: _selected(stage) for stage in PARTS}
     union: set[str] = set().union(*parts.values())
@@ -66,15 +81,20 @@ def test_the_zone_stages_add_back_up_to_the_whole_tier():
     }
 
 
-def test_no_test_belongs_to_two_parts():
+def test_the_default_claims_nothing_a_zone_claims():
     """`e2e-default` is defined as the tier minus every zone, so an overlap means
-    that subtraction stopped matching the zone it subtracts."""
-    parts = {stage: _selected(stage) for stage in PARTS}
-    names = list(parts)
-    for i, left in enumerate(names):
-        for right in names[i + 1 :]:
-            both = parts[left] & parts[right]
-            assert not both, f"{left} and {right} both claim: {sorted(both)}"
+    that subtraction stopped matching the zones it subtracts — and the tests in
+    it would move to `->done` while still being demanded at `->merge`.
+
+    Two ZONES may overlap: a test can assert two surfaces, and each of them is
+    then expected to break it. Paying for it twice is what the tier memo
+    prevents (`tests/test_tier_memo.py`), not what this law forbids."""
+    default = _selected("e2e-default")
+    for stage in PARTS:
+        if stage == "e2e-default":
+            continue
+        both = default & _selected(stage)
+        assert not both, f"e2e-default and {stage} both claim: {sorted(both)}"
 
 
 def test_the_push_gate_requires_every_part_of_the_partition():
