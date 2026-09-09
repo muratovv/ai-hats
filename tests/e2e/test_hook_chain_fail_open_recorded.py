@@ -105,6 +105,7 @@ def test_an_unparsable_payload_fails_open_across_the_whole_chain(hooked_project)
 GUARDED = (
     ("Bash", "safety_gate.py"),
     ("Bash", "wt_interpreter_gate.py"),
+    ("Bash", "wt_git_gate.py"),
     ("EnterWorktree", "wt_entry_gate.py"),
     ("Write", "backlog_write_gate.py"),
     ("Write", "wt_gate.py"),
