@@ -29,7 +29,7 @@ does not change with the language: the axes, their order, and the quoted line.
 | ------- | ----------- | ---------------------------- |
 | <h2>    | <one line>  | keep / merge into <h2> / cut |
 
-## Style — <style-ru | style-en>
+## Style — <style-ru | style-en | none — no reference for <language>, axis skipped>
 
 - "…" — <rule from the reference>
 

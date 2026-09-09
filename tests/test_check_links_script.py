@@ -7,6 +7,7 @@ them may stop the links that follow from being checked.
 
 from __future__ import annotations
 
+import socket
 import subprocess
 import sys
 import threading
@@ -33,6 +34,9 @@ class _Handler(BaseHTTPRequestHandler):
         # /head-refused answers 405 to HEAD only, so GET is the retry that works.
         if self.path == "/head-refused":
             return 405 if self.command == "HEAD" else 200
+        # /both-refused refuses the method whichever one is asked.
+        if self.path == "/both-refused":
+            return 405
         return 404
 
     def _answer(self) -> None:
@@ -150,15 +154,67 @@ def test_head_refused_retries_with_get(tmp_path: Path, base_url: str) -> None:
     assert f"OK 200 {base_url}/head-refused" in result.stdout
 
 
-def test_malformed_url_is_reported_and_the_run_continues(tmp_path: Path, base_url: str) -> None:
-    """One typo used to abort the whole run with a traceback, hiding later links."""
+@pytest.mark.parametrize(
+    "bad",
+    [
+        pytest.param("https://[bad/x", id="unclosed-ipv6"),
+        pytest.param("https://example.com:abc/", id="nonnumeric-port"),
+        pytest.param("http://user@:80/x", id="empty-host"),
+    ],
+)
+def test_a_bad_url_never_hides_the_links_after_it(tmp_path: Path, base_url: str, bad: str) -> None:
+    """Two rounds fixed one raising type each while the next still aborted the run.
+
+    Parametrized on purpose: a single form only proves the form was patched.
+    """
     md = tmp_path / "draft.md"
-    md.write_text(f"Typo: https://[bad/x and good: {base_url}/ok\n")
+    md.write_text(f"Bad: {bad} and good: {base_url}/ok\n")
 
     result = _run(md)
 
     assert result.returncode == 0, result.stderr
     assert "Traceback" not in result.stderr
-    assert "MALFORMED " in result.stdout
     assert f"OK 200 {base_url}/ok" in result.stdout, "the link after the bad one was skipped"
-    assert "checked 2 link(s), dead 0, malformed 1" in result.stdout
+    assert "checked 2 link(s)" in result.stdout, "the summary line never printed"
+
+
+def test_a_peer_that_does_not_speak_http_is_unreachable(tmp_path: Path) -> None:
+    """http.client.HTTPException descends from neither OSError nor ValueError."""
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+
+    def serve() -> None:
+        try:
+            conn, _ = server.accept()
+            conn.recv(4096)
+            conn.sendall(b"NOT-HTTP garbage line\r\n\r\n")
+            conn.close()
+        except OSError:  # silent-ok: the socket is closed under us at teardown
+            pass
+
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        md = tmp_path / "draft.md"
+        md.write_text(f"Garbage: http://127.0.0.1:{port}/x\n")
+
+        result = _run(md)
+
+        assert result.returncode == 0, result.stderr
+        assert "Traceback" not in result.stderr
+        assert "UNREACHABLE" in result.stdout
+        assert "checked 1 link(s)" in result.stdout
+    finally:
+        server.close()
+
+
+def test_both_methods_refused_is_a_warn(tmp_path: Path, base_url: str) -> None:
+    """The tail of probe(): reachable only when GET is refused too."""
+    md = tmp_path / "draft.md"
+    md.write_text(f"Picky: {base_url}/both-refused\n")
+
+    result = _run(md)
+
+    assert result.returncode == 0, result.stdout
+    assert "WARN HEAD and GET both refused" in result.stdout

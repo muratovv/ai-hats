@@ -12,6 +12,7 @@ going, so one bad link never hides the ones after it.
 
 from __future__ import annotations
 
+import http.client
 import re
 import sys
 import urllib.error
@@ -55,11 +56,25 @@ def _attempt(url: str, method: str) -> tuple[str, str] | None:
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         return "UNREACHABLE", str(reason)
+    except http.client.HTTPException as exc:
+        # The peer answered, but not in HTTP — a non-HTTP port, a broken proxy.
+        # HTTPException descends from neither OSError nor ValueError, so the two
+        # clauses above miss the whole family (BadStatusLine, InvalidURL, …).
+        return "UNREACHABLE", f"{type(exc).__name__}: {exc}"
 
 
 def probe(url: str) -> tuple[str, str]:
-    """Return (verdict, detail) — OK/DEAD/WARN/UNREACHABLE/MALFORMED."""
-    verdict = _attempt(url, "HEAD") or _attempt(url, "GET")
+    """Return (verdict, detail) — OK/DEAD/WARN/UNREACHABLE/MALFORMED.
+
+    Total by construction. Two releases in a row shipped a fix for one escaping
+    exception type while the next one still aborted the whole run, so the
+    invariant "one bad link never hides the ones after it" is held here rather
+    than by enumerating what urllib can raise.
+    """
+    try:
+        verdict = _attempt(url, "HEAD") or _attempt(url, "GET")
+    except Exception as exc:  # noqa: BLE001 — reported below, never swallowed
+        return "UNREACHABLE", f"{type(exc).__name__}: {exc}"
     return verdict or ("WARN", "HEAD and GET both refused")
 
 

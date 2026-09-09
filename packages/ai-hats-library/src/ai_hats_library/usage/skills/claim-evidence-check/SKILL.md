@@ -36,8 +36,9 @@ mark — the SAFE / FActScore pattern, applied by hand.
    directory**, not the project's `scripts/`. It matches `http://` and
    `https://` only — a bare `example.com/x`, a relative path and a `#fragment`
    are invisible to it, so `checked 0 link(s)` means "nothing it can see",
-   never "nothing to check". It exits non-zero on a dead one. `UNREACHABLE` is the network, not
-   the link — report it, do not count it as dead.
+   never "nothing to check". Read the verdicts, not the exit code: only `DEAD`
+   sets it. `UNREACHABLE` is the network, not the link; `MALFORMED` is a typo in
+   the text — the run carries on past both, and the summary line counts them.
 5. **Report** the table and the link-check output. The text stays untouched.
 
 ## Output
