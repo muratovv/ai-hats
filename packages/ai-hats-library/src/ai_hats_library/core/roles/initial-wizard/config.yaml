@@ -183,6 +183,12 @@ injection: |
   - `package.json` / `Cargo.toml` only → **assistant** (universal)
   - empty → **assistant** as safe default
 
+  Stack does not decide one case: if the user says the project's agents
+  themselves are the work — writing or fixing their prompts, rules, skills and
+  hooks — recommend **behaviorist** regardless of what the root holds. It is
+  the role for managing agent behavior, and it ships the gear to automate
+  rather than only to reword.
+
   Tell the user: "found X — recommending role Y because Z". Ask for
   agreement. If they push back — list the alternatives above and ask
   which one fits.

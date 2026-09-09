@@ -458,3 +458,82 @@ def test_initial_wizard_recommends_dev_python_for_setup_py() -> None:
 def test_doc_catalog_mentions_dev_python(doc_rel: str) -> None:
     body = _read(doc_rel)
     assert "dev-python" in body, f"{doc_rel} must mention dev-python in its catalog/mapping"
+
+
+# --- HATS-1909: the authoring craft is portable, and behaviorist can reach
+# --- the top of the mechanism ladder it is told to prefer -------------------
+
+BEHAVIORIST = "packages/ai-hats-library/src/ai_hats_library/usage/roles/behaviorist/config.yaml"
+SKILL_ENGINEER = (
+    "packages/ai-hats-library/src/ai_hats_library/usage/traits/skill-engineer/config.yaml"
+)
+ROLE_CURATOR = (
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml"
+)
+HYP_PROTOCOL = (
+    "packages/ai-hats-library/src/ai_hats_library/usage/skills/"
+    "library-change-hypothesis-protocol/SKILL.md"
+)
+
+
+def test_behaviorist_carries_the_gear_to_automate() -> None:
+    """The ladder ranks automation above prose, and automation is a script.
+    A role told to prefer hooks without the gear to write one can only reword."""
+    traits = _load(BEHAVIORIST).composition.traits
+    assert "dev::shell" in traits and "dev::python" in traits
+
+
+@pytest.mark.parametrize(
+    "heading", ["### Start from an observation", "### Confirm it reached the prompt"]
+)
+def test_craft_entry_and_exit_live_in_the_shared_trait(heading: str) -> None:
+    """Moved, not copied: the trait owns both ends of the craft, so every role
+    composing it gets them — and the role injection does not repeat them."""
+    assert heading in _load(SKILL_ENGINEER).injection
+    assert heading not in _load(BEHAVIORIST).injection
+
+
+def test_verification_is_a_skill_not_an_inline_recipe() -> None:
+    """A procedure with branches is a skill (loaded on trigger), not always-on
+    prose duplicated per role."""
+    assert "composition-verification" in _load(SKILL_ENGINEER).composition.skills
+    curator = _load(ROLE_CURATOR).injection
+    assert "composition-verification" in curator
+    assert "a.composer.compose(" not in curator
+
+
+def test_hypothesis_protocol_reaches_any_project() -> None:
+    """Filing the prediction is part of the craft, so it rides the trait — and
+    its body must not name this repository, or consumers cannot follow it."""
+    assert "library-change-hypothesis-protocol" in _load(SKILL_ENGINEER).composition.skills
+    assert "library-change-hypothesis-protocol" not in _load(ROLE_CURATOR).composition.skills
+    body = _read(HYP_PROTOCOL)
+    for repo_path in ("packages/ai-hats-library", "src/ai_hats/", "cli/maintenance.py"):
+        assert repo_path not in body, repo_path
+
+
+@pytest.mark.parametrize(
+    "skill",
+    ["prompt-authoring", "library-editing", "composition-verification", "agent-cli-guidelines"],
+)
+def test_the_authoring_chain_is_wired_to_the_trait(skill: str) -> None:
+    """Decide (prose or machine), wire, verify — one skill each, all three
+    riding the trait so any project composing it gets the whole chain."""
+    assert skill in _load(SKILL_ENGINEER).composition.skills
+    assert (LIBRARY / "usage" / "skills" / skill / "SKILL.md").is_file()
+
+
+def test_behaviorist_names_the_chain_in_order() -> None:
+    """A role that lists its skills out of order teaches the wrong sequence:
+    verifying before deciding is how a reworded rule ships twice."""
+    injection = _load(BEHAVIORIST).injection
+    order = [
+        injection.index(name)
+        for name in (
+            "prompt-authoring",
+            "library-editing",
+            "composition-verification",
+            "library-change-hypothesis-protocol",
+        )
+    ]
+    assert order == sorted(order), order

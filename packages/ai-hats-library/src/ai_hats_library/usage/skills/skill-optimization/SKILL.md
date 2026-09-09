@@ -27,12 +27,9 @@ skill optimises what already exists.
    - Verbosity: rules that can be condensed without losing meaning
    - Misplaced content: rule that should be a skill (has a procedure),
      or skill that should be a rule (is just a constraint)
-   - Prohibition-led wording: state the target behavior positively; a
-     prohibition survives only as a hard guardrail paired with its
-     replacement (model: "Redirect instead: `pytest > /tmp/gate.log`")
-   - Unowned silences: each decision a component leaves unstated is delegated
-     to model priors — make every omission deliberate (fill it, or mark it
-     an open question)
+   - Prohibition-led wording, and unowned silences — both are debt here, and
+     `skill-template`'s validation checklist is where they are stated as
+     authoring rules; audit against it, so the two do not drift apart
 
 3. **Refactor:**
    - Merge fragmented rules into existing traits or skills

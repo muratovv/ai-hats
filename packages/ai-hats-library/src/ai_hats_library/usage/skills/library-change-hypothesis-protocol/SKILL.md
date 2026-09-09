@@ -11,10 +11,11 @@ license: MIT
 > here. If the PoC produces signal that curators skip the step, a future
 > task may lift enforcement into the engine.
 
-> **Harness shell prelude.** Before any `ai-hats` invocation:
+> **Shell prelude.** Where `ai-hats` is not on `PATH` (a source checkout
+> without the console script), fall back to the module:
 >
 > ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # no bin/ai-hats console script
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
 > ```
 
 ## Timing — read this first
@@ -56,16 +57,22 @@ The HYP must describe what shipped — not what was
 ## When to Use
 
 Triggered when transitioning a library-curation task from **execute**
-to **document** (i.e. after the implementing commits exist on
-`task/<id>` and diff is final). Library-curation = any change to
-`packages/ai-hats-library/src/ai_hats_library/`
-(`{core,usage}/roles/`, `traits/`, `skills/`, or `core/rules/`). Typically
-parented to the agent-behavior library-curation epic.
+to **document** — after the implementing commits exist and the diff is
+final. Library-curation = any change to a component an agent composes:
+a `roles/`, `traits/`, `skills/` or `rules/` entry under one of this
+project's library roots (`<project>/libraries/`, `~/.ai-hats/`, or the
+shipped library if you are editing that).
 
-Skip when: harness-only edits (`src/ai_hats/`, `cli/`, `scripts/`,
-`_bootstrap.py`, `cli/maintenance.py`), tasks outside that epic, or
-changes already declared "no behavior change — pure refactor" at the
-plan-stage check (see Step 1).
+Skip when: the change is to engine or harness code rather than to a
+composed component, or the change was already declared "no behavior
+change — pure refactor" at the plan-stage check (see Step 1).
+
+If this project has no hypotheses backlog yet, `ai-hats reflect issue`
+seeds one from the packaged definition on first write. Do not reach for
+`rack hyp` first: until the backlog is mounted that group does not
+exist, and the answer is `No such command 'hyp'` — the subcommands are
+registered from the backlogs found in the tracker, so a missing one
+looks like a missing feature rather than a missing directory.
 
 ## Why companion HYPs at all
 
@@ -251,7 +258,7 @@ Task: rewrite `review-session` skill to add a new output field.
   `task/<id>`.
 - **Document-stage:** diff final. `rack hyp create "…" --hypothesis "…"`,
   then `rack transition HYP-NNN --set verification_protocol="…" --link
-  source_task:HATS-XXX`, the protocol reading "Evidence MUST quote the
+  source_task:<TASK-ID>`, the protocol reading "Evidence MUST quote the
   field name from session retro YAML and confirm it appears under
   hypothesis_verdicts[*]".
 

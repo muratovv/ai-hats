@@ -145,6 +145,14 @@ its description resident and a hook costs nothing at all. If the invariant can b
 checked by a machine — a PreToolUse hook, a git hook, a CLI gate — write that
 instead. Re-derive the numbers for your own library with `ai-hats list tokens <role>`.
 
+Making that choice — and proving it reached the prompt afterwards — is what the
+`behaviorist` role is for: `ai-hats -r behaviorist`. It carries the authoring
+craft, the verification procedure, and the shell and Python gear a hook needs,
+because the first answer to a misbehaving agent is automation and only the
+second is prose. To stay in the role you are already wearing,
+`ai-hats config customize <role> --add-trait skill-engineer` brings the craft
+without the gear.
+
 A rule is pure behavioral constraint — no decision logic, no procedure. One file:
 
 ```

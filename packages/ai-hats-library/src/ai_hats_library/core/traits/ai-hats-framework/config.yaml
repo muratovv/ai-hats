@@ -25,7 +25,11 @@ injection: |
   `libraries/`), which win by the same last-wins rule.
 
   When creating a rule / skill / trait, the layer is a **plan-stage** answer,
-  not a post-hoc one. Curating agent behavior is the `behaviorist` role —
-  hand off non-trivial library changes there, or pull its craft into the role
-  you already wear:
-  `ai-hats config customize <role> --add-trait skill-engineer`.
+  not a post-hoc one. Managing agent behavior is the `behaviorist` role: it
+  carries the authoring craft, the verification, and the shell/python gear a
+  hook needs, because the first answer to a misbehaving agent is automation and
+  only the second is prose. Run it with `ai-hats -r behaviorist`.
+
+  To stay in the role you are already wearing, pull the craft alone —
+  `ai-hats config customize <role> --add-trait skill-engineer` — knowing it
+  brings the craft without the gear.
