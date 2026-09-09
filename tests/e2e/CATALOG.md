@@ -12,7 +12,22 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**313 of 313 files catalogued — 321 flows.**
+**314 of 314 files catalogued — 322 flows.**
+
+## `test_ack_self_grant_chain.py`
+
+*pins HATS-1944*
+
+- **flow** — an agent handing itself a GATE flag inline, the way the gate's own red verdict used to invite, and the reading of that same flag it must keep
+- **cmds**
+
+  ```console
+  AI_HATS_RED_MASTER_ACK=1 make done-gate
+  grep -rn AI_HATS_RED_MASTER_ACK scripts/
+  ```
+
+- **expect** — the composed PreToolUse chain refuses the grant and leaves the grep alone
+- **why** — gate flags read by a script inside `make` or a git hook are reached by an inline prefix (unlike hook-read flags), so `master-ci`'s hatch was self-servable and the smoke gate's was skipped on four commits that way
 
 ## `test_adr_integrity_gate.py`
 
