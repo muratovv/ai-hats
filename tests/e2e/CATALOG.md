@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**313 of 313 files catalogued — 321 flows.**
+**314 of 314 files catalogued — 322 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -4633,3 +4633,19 @@ as a claim to check, not as evidence.
 
 - **expect** — a virtual environment is provisioned inside worktree .venv and imports worktree source
 - **why** — worktrees must provision isolated venvs to prevent importing main repository packages
+
+## `test_zone_gate_refusal.py`
+
+*pins HATS-1921*
+
+- **flow** — an agent merging a branch that changed a zone of the codebase
+- **cmds**
+
+  ```console
+  ai-hats wt merge HATS-1921
+  scripts/gates.sh touched
+  make merge-gate
+  ```
+
+- **expect** — the merge gate refuses naming `e2e-rack` — a stage no gate declares, demanded because the branch changed `packages/ai-hats-rack/` — and the same branch with that one stage earned is let through; a branch that changed nothing zoned is never asked for it
+- **why** — without it a change lands in master with only the tier that runs after the merge, so the tests its own area owns are first run when the breakage is already shared
