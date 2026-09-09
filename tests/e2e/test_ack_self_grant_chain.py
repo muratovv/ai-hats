@@ -14,7 +14,6 @@ why:    gate flags read by a script inside `make` or a git hook are reached by a
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 
 import pytest
 
