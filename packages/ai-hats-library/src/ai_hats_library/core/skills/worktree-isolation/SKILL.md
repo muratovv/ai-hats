@@ -8,6 +8,8 @@ ai_hats:
         script: hooks/wt_gate.py
       - matcher: Bash
         script: hooks/wt_interpreter_gate.py
+      - matcher: Bash
+        script: hooks/wt_git_gate.py
       # Claude-surface tool; inert where it does not exist.
       - matcher: EnterWorktree
         script: hooks/wt_entry_gate.py
@@ -61,6 +63,13 @@ Isolated development using git worktrees. Each task gets its own working copy â€
    direct-master change. Bypass is supervisor-only (`AI_HATS_WT_GATE_OFF=1`, never
    agent-set). Docs, non-trigger extensions, and gitignored paths (tracker, `ai-hats.yaml`)
    are exempt (trigger set: `hooks/code_extensions.json`).
+
+   A second gate (`hooks/wt_git_gate.py`) does the same for **git state**: a
+   command that discards uncommitted work or moves a branch ref is denied where
+   it would act on the main checkout. A leading `cd` and a `git -C` are read
+   first, so the same command aimed at a worktree runs, and the refusal names
+   the recipe. Bypass is supervisor-only (`AI_HATS_WT_GIT_OFF=1`, never
+   agent-set).
 
 2. **Work** â€” commit freely in the worktree. Main tree is untouched.
 

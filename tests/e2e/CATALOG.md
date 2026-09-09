@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**310 of 310 files catalogued — 318 flows.**
+**312 of 312 files catalogued — 320 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2627,6 +2627,20 @@ as a claim to check, not as evidence.
 - **expect** — deprecated library/hooks/ directory is never re-created during project initialization or role switches
 - **why** — without enforcing hook path retirement, role switches recreate deprecated flat hook directories
 
+## `test_revert_proof_sh.py`
+
+*pins HATS-1899*
+
+- **flow** — an agent proving a fix is covered — temp-commit, run, reset — instead of typing that loop by hand
+- **cmds**
+
+  ```console
+  scripts/revert-proof.sh --from <ref> <path> -- <pytest node id>
+  ```
+
+- **expect** — green-then-red exits 0 and puts HEAD and the tree back; a dirty tree and the main checkout are refused before anything is touched
+- **why** — the loop ends in `git reset --hard`, and the third hand-run of it in one session is what moved master by a commit
+
 ## `test_role_isolation.py`
 
 *pins HATS-294, HATS-1170, HATS-1203*
@@ -4293,6 +4307,23 @@ as a claim to check, not as evidence.
 
 - **expect** — pre-push gate hook validates commit rules and permits push when checks pass
 - **why** — pre-push gate hooks must validate commit hygiene before pushing to remote repository
+
+## `test_wt_git_gate_hook.py`
+
+*pins HATS-1899*
+
+- **flow** — an agent whose working directory has slipped back to the MAIN checkout while a task worktree is live
+- **cmds**
+
+  ```console
+  git reset --hard HEAD~1          (in main)          -> denied
+  git reset --hard HEAD~1          (in the worktree)  -> allowed
+  cd <worktree> && git reset --hard HEAD~1            -> allowed
+  git -C <main> reset --hard HEAD~1 (from a worktree) -> denied
+  ```
+
+- **expect** — the composed PreToolUse Bash chain denies only where the command would destroy state in the main checkout
+- **why** — edits in main are already denied and git state was not, so `git reset --hard HEAD~1` moved master by a commit; the reflog is what saved it, and that was the timing rather than the system
 
 ## `test_wt_hook_inplace.py`
 

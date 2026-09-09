@@ -32,17 +32,27 @@ MARKER = "GUARDRAIL (worktree-isolation)"
 def _fake_venv(root: Path) -> None:
     """A venv shaped like the real one: what the guard resolves are these files.
 
-    ``python``/``python3`` forward to a real interpreter rather than exiting 0.
-    A stub there is not merely unrealistic — putting this bin on PATH would then
-    shadow the ``python3`` the hook's own shebang resolves, and the guard would
-    go silent for a reason that has nothing to do with its verdict.
+    ``python``/``python3`` are SYMLINKS to the base interpreter, which is what
+    ``python -m venv`` writes and the single property that decides this guard's
+    verdict — a stub file resolves to itself and makes every symlink-resolution
+    bug invisible. They point at a working interpreter rather than exiting 0
+    because putting this bin on PATH would otherwise shadow the ``python3`` the
+    hook's own shebang resolves, and the guard would go silent for a reason that
+    has nothing to do with its verdict.
+
+    ``pyvenv.cfg`` is the marker CPython itself reads to decide ``sys.prefix``.
     """
-    bindir = root / ".venv" / "bin"
+    venv = root / ".venv"
+    bindir = venv / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
+    base = Path(sys.executable).resolve()  # what `python -m venv` links bin/python to
+    (venv / "pyvenv.cfg").write_text(
+        f"home = {base.parent}\ninclude-system-site-packages = false\n"
+    )
     for name in ("python", "python3"):
         exe = bindir / name
-        exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
-        exe.chmod(0o755)
+        exe.unlink(missing_ok=True)
+        exe.symlink_to(base)
     for name in ("pytest", "ruff"):
         exe = bindir / name
         exe.write_text("#!/bin/sh\nexit 0\n")
@@ -263,6 +273,61 @@ def test_the_main_checkouts_own_interpreter_is_silent(chain):
         cwd=project,
     )
     assert MARKER not in verdict.context, f"main-checkout run nudged: {verdict.context!r}"
+
+
+def _prescribed_commands() -> list[str]:
+    """Every command line the skill marks `# CORRECT`, read from the skill itself.
+
+    Parsed rather than restated: a list copied into this file would keep passing
+    the day the doc changed, which is the failure the whole case is about."""
+    from ai_hats.paths import builtin_library_root
+
+    root = builtin_library_root()
+    assert root is not None, "no builtin library root — the install under test is broken"
+    lines = (root / "core" / "skills" / "worktree-isolation" / "SKILL.md").read_text().splitlines()
+
+    commands: list[str] = []
+    collecting = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("# CORRECT"):
+            collecting = True
+            continue
+        if not collecting:
+            continue
+        if not stripped or stripped.startswith("```"):
+            collecting = False
+            continue
+        if stripped.startswith("#"):
+            continue
+        commands.append(stripped)
+    return commands
+
+
+@pytest.mark.integration
+def test_the_skill_prescribes_commands_this_test_can_read(chain):
+    """Positive control for the anti-wolf case below.
+
+    No sample means the loop asserts nothing, and a guard that nudged every
+    prescribed command would pass an empty parametrization just as quietly."""
+    assert len(_prescribed_commands()) >= 3, _prescribed_commands()
+
+
+@pytest.mark.integration
+def test_every_spelling_the_skill_prescribes_draws_silence(chain):
+    """The anti-wolf invariant (HATS-1899 AC-5).
+
+    A guard that nudges the command its own skill tells you to type teaches the
+    agent to skip guardrail text — and the text it then skips is the class that
+    moved master by a commit. So the doc is the fixture: whatever it prescribes
+    has to be silent."""
+    _project, worktree, settings, env = chain
+    noisy = []
+    for command in _prescribed_commands():
+        verdict = run_chain(worktree, command, settings=settings, env=env, cwd=worktree)
+        if MARKER in verdict.context:
+            noisy.append((command, verdict.context))
+    assert not noisy, f"the guard nudged what SKILL.md prescribes: {noisy}"
 
 
 @pytest.mark.integration

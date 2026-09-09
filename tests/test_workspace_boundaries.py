@@ -96,6 +96,9 @@ def _top_level_import_roots(tree: ast.Module) -> set[str]:
 #: install time, so this resolves to a sibling file, never a distribution.
 FLATTENED_HOOK_SIBLINGS = {
     "bypass_journal",
+    # The command walk both worktree Bash guards read; extracted so the two
+    # cannot drift on the first fix.
+    "shell_walk",
     "backlog_write_gate",
     "consent_ticket",
     # HATS-1754 — the spellings table, read by the guard and by the D6 boundary.
