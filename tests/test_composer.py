@@ -659,6 +659,7 @@ def _all_library_roles() -> list[str]:
 # Every role that composes trait-agent — each inherits the flipped default.
 _AGENT_ROLES = [
     "assistant",
+    "behaviorist",
     "maintainer",
     "role-curator",
     "dev-python",
@@ -668,6 +669,7 @@ _AGENT_ROLES = [
     "go-dev",
     "judge",
     "test-agent",
+    "tech-writer",
 ]
 
 
