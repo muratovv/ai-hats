@@ -85,11 +85,9 @@ The `TOTAL` column sums skill bodies too, and those are **not** resident. The
 always-on figure is injections plus rule bodies — read those rows, not the
 total. Quote the number this run produced.
 
-**`list tokens` does not follow cwd** the way `show-prompt` does: it resolves
-the project root, so run from a worktree — or any checkout that is not the
-project — it silently prices the OTHER tree and returns 0. Set
-`AI_HATS_LIBRARY_ROOT` to the library you mean before pricing, and confirm the
-table lists a component you know is only in that tree.
+Confirm you priced the tree you meant: the table should list a component that
+exists only there. Pricing the wrong library returns a plausible number with no
+error, which is the one failure this step cannot detect on its own.
 
 ### 6. When you need the object graph, compose in-process
 
@@ -110,9 +108,16 @@ export AI_HATS_LIBRARY_ROOT=<path to a library root>
 
 ### 7. From a worktree, read-only and writing commands disagree
 
-`show-prompt` run inside a worktree composes THAT worktree's library: it keys
-off cwd, so your edit is what you see. Do not generalize that to every
-read-only command — `list tokens` does not (step 5).
+A read-only command run inside a worktree composes THAT worktree's library, so
+your edit is what you see. That is the whole read-only family: `config
+show-prompt`, `--dry-run`, `config status`'s role tree, and every `list`
+subcommand that reads the library (`list providers` reads none).
+
+Two things in that output still answer about the PROJECT, and are not bugs:
+`config status`'s **Health** block (version, venv, materialized prompt) reports
+what is installed here, and its `Library:` line comes from `importlib` rather
+than the resolver — so it can disagree with the tree the same command just
+composed from.
 
 A command that **writes** — init, anything materializing into the agent
 directory — deliberately still keys off the project, which for a linked
