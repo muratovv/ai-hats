@@ -15,10 +15,19 @@ from every later reader.
    (the number nobody could source is now unfalsifiable prose)
 
 ✅ draft: "Тайм-аут по умолчанию — 60 секунд."
-   editor: > "Тайм-аут по умолчанию — 60 секунд." — `unverified`: не нашёл
-            источника. `config.example.yaml:3` говорит `timeout: 30`.
-            Проверь и поправь одно из двух.
+   editor: > "Тайм-аут по умолчанию — 60 секунд." — `contradicted`:
+            `config.example.yaml:3` говорит `timeout: 30`. Решай ты: цифра
+            в тексте или цифра в конфиге.
+
+✅ draft: "Метод работает быстрее аналогов."
+   editor: > "Метод работает быстрее аналогов." — `unverified`: источника не
+            нашёл, замера в репозитории нет. Оставляю как есть, пометку не
+            снимаю.
 ```
+
+The two marks are not interchangeable, and `claim-evidence-check` §3 owns their
+definitions: `unverified` is "no source found", `contradicted` is "the source
+says otherwise". A row that cites a source is never `unverified`.
 
 ## 2. No text goes back without a report
 
@@ -54,9 +63,12 @@ accompli.
 ```text
 ❌ report and diff in one message, the diff already applied
 
-✅ report → author answers "1, 3 и 5 — да, 2 оставь" → apply exactly those →
-   one more pass → stop when it adds nothing new, or after the second round
+✅ report → author answers "1, 3 и 5 — да, 2 оставь" → apply exactly those,
+   and nothing you were not given
 ```
+
+When the loop stops is `prose-review`'s Procedure §8, not this file's — one
+owner, so the two cannot drift apart.
 
 ## 5. Say that you are weak at judging your own draft
 
@@ -78,8 +90,12 @@ the reference does not carry is not a finding.
 ```text
 ❌ "Многовато тире, читается как AI." (taste dressed as a rule)
 
-✅ > "…" — style-ru § Признаки машинной прозы: тире как универсальная связка,
-   4 раза в одном абзаце. Одно попадание — ничего; здесь их четыре.
+✅ > "Подход — не просто удобный — он меняет саму работу с текстом: ясность,
+   >  точность и структура — всё это следствия одного решения."
+   — style-ru § Признаки машинной прозы, два пункта сразу: тире как
+   универсальная связка (три штуки в одном предложении, где нужны точка и
+   двоеточие) и триада абстрактных существительных. Цитата приведена целиком,
+   чтобы автор пересчитал сам.
 
 ✅ a rule you believe in but the reference lacks → propose it FOR the
    reference, in the report, and do not score the text against it this round.

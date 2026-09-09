@@ -33,8 +33,10 @@ mark — the SAFE / FActScore pattern, applied by hand.
    author decides.
 4. **Check the links.** Run the checker that ships with this skill —
    `scripts/check_links.py <file>`, resolved against **this skill's own
-   directory**, not the project's `scripts/`. It prints every link with its
-   status and exits non-zero on a dead one. `UNREACHABLE` is the network, not
+   directory**, not the project's `scripts/`. It matches `http://` and
+   `https://` only — a bare `example.com/x`, a relative path and a `#fragment`
+   are invisible to it, so `checked 0 link(s)` means "nothing it can see",
+   never "nothing to check". It exits non-zero on a dead one. `UNREACHABLE` is the network, not
    the link — report it, do not count it as dead.
 5. **Report** the table and the link-check output. The text stays untouched.
 
@@ -43,7 +45,7 @@ mark — the SAFE / FActScore pattern, applied by hand.
 | # | Claim                                             | Source                   | Seen                | Status     |
 | - | ------------------------------------------------- | ------------------------ | ------------------- | ---------- |
 | 1 | The CLI's default timeout is 30 seconds           | `src/cli/main.py:41`     | `timeout: int = 30` | verified   |
-| 2 | SAFE agrees with human annotators 72% of the time | arxiv.org/abs/2403.18802 | "72% of the time"   | verified   |
+| 2 | SAFE agrees with human annotators 72% of the time | https://arxiv.org/abs/2403.18802 | "72% of the time" | verified |
 | 3 | The linter ships a Russian style package          | —                        | —                   | unverified |
 
 ## Completion

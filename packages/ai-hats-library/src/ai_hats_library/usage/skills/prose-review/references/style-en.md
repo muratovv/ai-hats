@@ -35,8 +35,9 @@ quote, no finding.
 
 ## Tells of machine-written prose
 
-From the Vale package that flags AI-written prose and from reading model
-output. One hit is nothing; five on a page mean the text has no author.
+Collected from reading model output against human drafts. One hit means
+nothing on its own; a cluster of them in one section is worth raising as a
+question to the author — never as a verdict about who wrote the text.
 
 - Em-dash as the all-purpose connector, several per paragraph, where a
   period, comma or conjunction was due.

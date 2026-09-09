@@ -7,14 +7,16 @@ license: MIT
 # Prose Review
 
 An editor's report on a finished draft: findings with quoted lines, in a fixed
-order, before a single edit is proposed.
+order. The report proposes; nothing is applied until the author has answered.
 
 ## When to Use
 
 - A draft exists — yours or the author's — and it should be better, shorter,
   or checked. The text that does not exist yet is `article-outline`'s job;
   the facts in it are `claim-evidence-check`'s — run that one alongside.
-- Any language; the style checks live in per-language references.
+- Any language, but the style axis only has references for Russian and
+  English. In another language, run axes 1-4 and say the style axis was
+  skipped for want of a reference — do not improvise one.
 - How the editor behaves — six rules, each with the careless move it replaces —
   is `references/editor-conduct.md`. Read it before the first report of a
   session; it is what separates a proposal from a fait accompli.
