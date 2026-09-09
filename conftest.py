@@ -49,6 +49,97 @@ def pytest_configure(config):
     to report green.
     """
     signal.signal(signal.SIGTERM, _sigterm_as_keyboard_interrupt)
+    _tier_memo_open(config)
+
+
+#: Where the gate keeps what this tree has already proven, if a gate is running
+#: us. ``scripts/gates.sh`` sets it for the stages that PARTITION the e2e tier
+#: and for nothing else.
+TIER_MEMO_ENV = "AI_HATS_GATE_TIER_MEMO"
+_tier_memo_seen: set[str] = set()
+_tier_memo_sink = None
+_tier_memo_deselected = 0
+
+
+def _tier_memo_path(config) -> Path | None:
+    """The memo this run may use, or ``None``.
+
+    Never under ``--collect-only``: the partition laws are asked by collecting
+    each stage, and a memo answering there would shrink the sets that must add
+    up to the whole tier — the laws would go green while the tier lost tests.
+    """
+    raw = os.environ.get(TIER_MEMO_ENV)
+    if not raw or config.option.collectonly:
+        return None
+    return Path(raw)
+
+
+def _tier_memo_open(config) -> None:
+    """Read what this tree has passed, and open the sink for what it passes now.
+
+    Overlapping zones are the point: one gate run can name two stages that share
+    tests, and the test is the same test on the same tree. It runs in the first
+    and is deselected in the second.
+    """
+    global _tier_memo_sink
+    memo = _tier_memo_path(config)
+    if memo is None:
+        return
+    if memo.exists():
+        try:
+            _tier_memo_seen.update(memo.read_text(encoding="utf-8").split())
+        except OSError as exc:
+            warnings.warn(
+                f"tier memo {memo} unreadable ({exc!r}) — running all of it", stacklevel=1
+            )
+    # xdist: reports reach the controller, so the controller alone writes. A
+    # worker opening this too would interleave lines into the same file.
+    if hasattr(config, "workerinput"):
+        return
+    try:
+        memo.parent.mkdir(parents=True, exist_ok=True)
+        _tier_memo_sink = memo.open("a", encoding="utf-8", buffering=1)
+    except OSError as exc:
+        warnings.warn(f"tier memo {memo} not writable ({exc!r}) — recording nothing", stacklevel=1)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Drop what this tree has already passed under another stage's name."""
+    global _tier_memo_deselected
+    if _tier_memo_path(config) is None or not _tier_memo_seen:
+        return
+    keep = [item for item in items if item.nodeid not in _tier_memo_seen]
+    dropped = [item for item in items if item.nodeid in _tier_memo_seen]
+    if not dropped:
+        return
+    _tier_memo_deselected += len(dropped)
+    config.hook.pytest_deselected(items=dropped)
+    items[:] = keep
+
+
+def pytest_runtest_logreport(report):
+    """Record a test that PASSED, and only that.
+
+    A failure left in the memo would let the next stage report green for the red
+    it never ran — the one way this optimisation could lie."""
+    if _tier_memo_sink is None or report.when != "call" or not report.passed:
+        return
+    _tier_memo_sink.write(f"{report.nodeid}\n")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """A stage whose every test was already green on this tree ran nothing, and
+    pytest spells that 5. It is not a failure here: the tests exist, they passed,
+    and the stage is about to be stamped for the same tree they passed on."""
+    if _tier_memo_deselected and exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED:
+        session.exitstatus = pytest.ExitCode.OK
+
+
+def pytest_unconfigure(config):
+    global _tier_memo_sink
+    if _tier_memo_sink is not None:
+        _tier_memo_sink.close()
+        _tier_memo_sink = None
 
 
 @pytest.fixture(autouse=True)

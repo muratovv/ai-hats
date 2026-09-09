@@ -33,7 +33,11 @@ def _rows() -> list[tuple[str, str, str]]:
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
         ["bash", str(GATES), "zones"], capture_output=True, text=True, check=True
     )
-    rows = [tuple(cell.strip() for cell in ln.split("|")) for ln in out.stdout.splitlines() if ln.strip()]
+    rows = [
+        tuple(cell.strip() for cell in ln.split("|"))
+        for ln in out.stdout.splitlines()
+        if ln.strip()
+    ]
     assert rows, "gates.sh declares no zone"
     for row in rows:
         assert len(row) == 3, f"not a `prefix | marker | stage` row: {row!r}"

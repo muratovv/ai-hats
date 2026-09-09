@@ -155,7 +155,9 @@ def read_zones(repo: Path) -> dict[str, list[str]]:
     return zones
 
 
-def render_stages(stages: list[tuple[str, str]], gates: list[Gate], zones: dict[str, list[str]]) -> str:
+def render_stages(
+    stages: list[tuple[str, str]], gates: list[Gate], zones: dict[str, list[str]]
+) -> str:
     body = []
     for stage, desc in stages:
         required = " ".join(g.name for g in gates if stage in g.stages)

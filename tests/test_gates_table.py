@@ -212,6 +212,19 @@ def test_the_pytest_stages_are_exactly_the_functions_that_invoke_pytest():
     assert declared, "no PYTEST_STAGES line in gates.sh"
     bodies = re.findall(r"^ci_(\w+)\(\) \{\n(.*?)^\}", src, re.S | re.M)
     assert bodies, "no ci_* function parsed"
-    invoking = {name.replace("_", "-") for name, body in bodies if "pytest" in body}
+    # One level of indirection, resolved rather than named: the stages that
+    # partition the tier invoke it through a helper so that the memo they share
+    # cannot be forgotten by the next zone, and a rule reading only the stage
+    # body would call each of them checker-only.
+    helpers = {
+        name
+        for name, body in re.findall(r"^(_\w+)\(\) \{\n(.*?)^\}", src, re.S | re.M)
+        if "pytest" in body
+    }
+    invoking = {
+        name.replace("_", "-")
+        for name, body in bodies
+        if "pytest" in body or any(helper in body for helper in helpers)
+    }
 
     assert set(declared.group(1).split()) == invoking

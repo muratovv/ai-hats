@@ -312,11 +312,35 @@ E2E_PATHS='tests/e2e/ tests/smoke/'
 
 # The full maintainer tier (the slow one). Excluded from `all`; what CI runs and
 # what the zone stages partition, kept here so `make e2e` cannot mean something
-# narrower.
+# narrower. It runs the whole of it — no memo, because `make e2e` means all of
+# it and a reader asking for that is not asking for what a stage happened to
+# cover an hour ago.
 ci_e2e() {
     echo "[gates] e2e (integration + smoke, quarantine and live agy excluded)" >&2
     # shellcheck disable=SC2086 # E2E_PATHS is two paths and must split
     "$PY" -B -m pytest -m "$E2E_SELECT" $E2E_PATHS -q
+}
+
+# A TEST RUNS ONCE PER TREE, however many zones claim it. Zones overlap on
+# purpose — a consent test on the codex surface belongs to both — so one gate run
+# can name two stages that share tests, and the second would pay for them again.
+# `cmd_run` names the store and the tree; the memo lives beside the stage markers
+# and is keyed the same way, so "already green" means green on THIS content.
+#
+# Only the stages that PARTITION the tier share it. `unit`, `integration` and
+# `merge-smoke` keep their full runs: `merge-smoke` is the floor `->done` stands
+# on, and a floor that skips what another stage happened to run is not a floor.
+_tier_memo_env() {
+    [[ -n "${AI_HATS_GATE_STORE:-}" && -n "${AI_HATS_GATE_TREE:-}" ]] || return 0
+    export AI_HATS_GATE_TIER_MEMO="$AI_HATS_GATE_STORE/$AI_HATS_GATE_TREE/tier-passed"
+}
+
+# The one place a partition stage invokes the tier, so a zone stage is its marker
+# expression and nothing else — and so the next zone cannot forget the memo.
+_run_tier() {
+    _tier_memo_env
+    # shellcheck disable=SC2086 # E2E_PATHS is two paths and must split
+    "$PY" -B -m pytest -m "$1" $E2E_PATHS -q
 }
 
 # The half no zone claims — an unexpected regression, judged where a supervisor
@@ -331,16 +355,14 @@ ci_e2e_default() {
     else
         select="$E2E_SELECT"
     fi
-    # shellcheck disable=SC2086
-    "$PY" -B -m pytest -m "$select" $E2E_PATHS -q
+    _run_tier "$select"
 }
 
 # One function per zone row, by hand: the stage set is `declare -F`, so a
 # generated name would be a stage nothing can list.
 ci_e2e_rack() {
     echo "[gates] e2e-rack (the rack zone of the tier)" >&2
-    # shellcheck disable=SC2086
-    "$PY" -B -m pytest -m "$E2E_SELECT and rack" $E2E_PATHS -q
+    _run_tier "$E2E_SELECT and rack"
 }
 
 # Make THIS checkout runnable, so `$PY` resolves to an interpreter that imports
@@ -895,6 +917,13 @@ cmd_run() {
     tree="$(_tree_of "$repo_root" "$sha")" || _die 70 "cannot resolve the tree of $sha"
     sha_s="$(_short "$repo_root" "$sha")"
     tree_s="$(_short "$repo_root" "$tree")"
+
+    # What a partition stage needs to find the memo it shares with its siblings.
+    # `--fresh` asked for the runs again, so it starts from an empty one: a memo
+    # left from an earlier run of this tree would hand back exactly what was
+    # asked to be repeated.
+    export AI_HATS_GATE_STORE="$store" AI_HATS_GATE_TREE="$tree"
+    [[ -z "$FRESH" ]] || rm -f "$store/$tree/tier-passed"
 
     local -a cached=() todo=() ran_green=() notes=()
     for stage in "${STAGES[@]}"; do
