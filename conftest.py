@@ -58,6 +58,10 @@ def pytest_configure(config):
 TIER_MEMO_ENV = "AI_HATS_GATE_TIER_MEMO"
 #: The key the controller hands its xdist workers the same path under.
 TIER_MEMO_WORKERINPUT = "ai_hats_tier_memo"
+#: The key a worker sends its deselect count home under. The controller collects
+#: nothing of its own under xdist, so without this it never learns that a stage
+#: ran nothing BECAUSE everything in it was already proven.
+TIER_MEMO_WORKEROUTPUT = "ai_hats_tier_deselected"
 _tier_memo_path_for_this_run: Path | None = None
 _tier_memo_seen: set[str] = set()
 _tier_memo_sink = None
@@ -85,6 +89,20 @@ def _tier_memo_path(config) -> Path | None:
     if not raw or config.option.collectonly:
         return None
     return Path(raw)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node, error):
+    """Add a finished worker's deselect count to the controller's own.
+
+    `optionalhook` for the same reason as the hook below: the name is xdist's.
+    Workers shut down before the controller's `pytest_sessionfinish`, so the sum
+    is complete by the time the exit code is judged.
+    """
+    global _tier_memo_deselected
+    _tier_memo_deselected += (getattr(node, "workeroutput", None) or {}).get(
+        TIER_MEMO_WORKEROUTPUT, 0
+    )
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -161,6 +179,9 @@ def pytest_sessionfinish(session, exitstatus):
     """A stage whose every test was already green on this tree ran nothing, and
     pytest spells that 5. It is not a failure here: the tests exist, they passed,
     and the stage is about to be stamped for the same tree they passed on."""
+    output = getattr(session.config, "workeroutput", None)
+    if output is not None:
+        output[TIER_MEMO_WORKEROUTPUT] = _tier_memo_deselected
     if _tier_memo_deselected and exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED:
         session.exitstatus = pytest.ExitCode.OK
 

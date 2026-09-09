@@ -163,6 +163,20 @@ def test_the_workers_of_a_parallel_run_deselect_what_the_controller_consumed(pro
     ]
 
 
+def test_a_parallel_stage_whose_every_test_is_already_green_still_passes(probe: Path):
+    """The serial case above, under xdist — where the deselecting happens in the
+    workers and the exit code is the controller's. A controller counting only
+    its own deselections sees none, leaves the 5 standing, and the gate reads a
+    fully-proven zone as a red one."""
+    pytest.importorskip("xdist")
+    memo = probe / "memo"
+    _run(probe, memo, "-n", "2", "test_probe.py::test_green")
+
+    second = _run(probe, memo, "-n", "2", "test_probe.py::test_green")
+
+    assert second.returncode == 0, second.stdout + second.stderr
+
+
 def test_without_the_gate_there_is_no_memo_at_all(probe: Path):
     """The negative control: the hooks are inert unless a gate names the file,
     so an ordinary `pytest` run neither reads nor writes one."""
