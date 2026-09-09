@@ -15,8 +15,9 @@ order, before a single edit is proposed.
   or checked. The text that does not exist yet is `article-outline`'s job;
   the facts in it are `claim-evidence-check`'s — run that one alongside.
 - Any language; the style checks live in per-language references.
-- The report goes to the author. Edits follow the author's decision on it,
-  never the report itself.
+- How the editor behaves — six rules, each with the careless move it replaces —
+  is `references/editor-conduct.md`. Read it before the first report of a
+  session; it is what separates a proposal from a fait accompli.
 
 ## Procedure
 
