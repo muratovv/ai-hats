@@ -40,6 +40,13 @@ def _rows() -> list[tuple[str, str, str]]:
     return rows  # type: ignore[return-value]
 
 
+#: A tier test carrying a zone marker, one carrying none, and one carrying the
+#: marker from outside the tier's own roots (`E2E_PATHS`).
+ZONED_TEST = "tests/e2e/test_zoned_probe.py"
+UNZONED_TEST = "tests/e2e/test_unzoned_probe.py"
+OFF_TIER_TEST = "tests/test_off_tier_probe.py"
+
+
 def _probe_for(prefix: str) -> str:
     """A path this prefix owns — a file to plant so the prefix has something to
     match. Prefixes come in three shapes: a directory (`packages/ai-hats-rack/`),
@@ -91,6 +98,9 @@ def repo(tmp_path: Path) -> Path:
     for prefix, _marker, _stage in _rows():
         _write(repo, _probe_for(prefix), "x = 1\n")
     _write(repo, "src/other.py", "y = 1\n")
+    _write(repo, ZONED_TEST, f"pytestmark = pytest.mark.{_rows()[0][1]}\n")
+    _write(repo, UNZONED_TEST, "pytestmark = pytest.mark.integration\n")
+    _write(repo, OFF_TIER_TEST, f"pytestmark = pytest.mark.{_rows()[0][1]}\n")
     _commit(repo, "base")
     return repo
 
@@ -146,6 +156,63 @@ def test_a_stage_two_touched_prefixes_share_is_named_once(repo: Path):
     assert len(named) == len(set(named)), named
     for stage in shared:
         assert named.count(stage) == 1, (stage, named)
+
+
+def test_a_card_editing_a_zoned_test_demands_that_zone(repo: Path):
+    """The second road in. The table's prefixes name source, and a zoned test is
+    already subtracted from `e2e-default` — so without this the test a card
+    writes runs on no card gate at all, and first executes on `push-gate`, after
+    the merge it was written for."""
+    stage = _rows()[0][2]
+    _git(repo, "checkout", "-q", "-b", "task/x")
+    _write(repo, ZONED_TEST, "pytestmark = pytest.mark.%s  # edited\n" % _rows()[0][1])
+    _commit(repo, "edit a zoned test")
+
+    out = _touched(repo)
+
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == [stage]
+
+
+def test_a_deleted_zoned_test_is_read_from_the_base(repo: Path):
+    """It is gone at the subject, so the zone it declared can only be read where
+    it still stands. Refusing here would refuse a legal card."""
+    stage = _rows()[0][2]
+    _git(repo, "checkout", "-q", "-b", "task/x")
+    (repo / ZONED_TEST).unlink()
+    _commit(repo, "delete a zoned test")
+
+    out = _touched(repo)
+
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == [stage]
+
+
+def test_an_unmarked_tier_test_demands_nothing(repo: Path):
+    """It is what `e2e-default` is made of, and that stage stands on `->done`
+    already — demanding a zone for it would name a stage no marker claims."""
+    _git(repo, "checkout", "-q", "-b", "task/x")
+    _write(repo, UNZONED_TEST, "pytestmark = pytest.mark.integration  # edited\n")
+    _commit(repo, "edit an unmarked tier test")
+
+    out = _touched(repo)
+
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == ""
+
+
+def test_a_marked_file_outside_the_tier_demands_nothing(repo: Path):
+    """The zone stages select over `E2E_PATHS` and nothing else, so a marker
+    written elsewhere selects no test — demanding a stage for it would ask a gate
+    to run a set that cannot contain the file that asked."""
+    _git(repo, "checkout", "-q", "-b", "task/x")
+    _write(repo, OFF_TIER_TEST, "pytestmark = pytest.mark.%s  # edited\n" % _rows()[0][1])
+    _commit(repo, "edit a marked file outside the tier")
+
+    out = _touched(repo)
+
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == ""
 
 
 def test_a_change_outside_every_zone_demands_nothing(repo: Path):

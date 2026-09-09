@@ -672,6 +672,26 @@ _base_branch() {
     return 1
 }
 
+# The stages named so far, so a stage two roads demand is printed once: the
+# caller appends this list to a gate's, and a stage named twice is a stage the
+# gate then looks up twice.
+_demanded=''
+_demand() {
+    case " $_demanded " in *" $1 "*) return 0 ;; esac
+    _demanded="$_demanded $1"
+    printf '%s\n' "$1"
+}
+
+# Is this path part of the tier? Asked of `E2E_PATHS`, the tier's own roots, so
+# a tier that grows a third directory does not leave this rule behind.
+_under_tier() {
+    local path="$1" root
+    for root in $E2E_PATHS; do
+        case "$path" in "$root"*) return 0 ;; esac
+    done
+    return 1
+}
+
 # Which zone stages a change demands — the diff turned into stage names, one per
 # line. NEVER SILENT ABOUT NOT KNOWING: a base it cannot name exits non-zero,
 # because "nothing changed" and "I could not tell" are the same empty output,
@@ -716,7 +736,8 @@ cmd_touched() {
     changed="$(git -C "$repo_root" diff --name-only "$base" "$sha" 2>/dev/null)" \
         || _die 70 "cannot diff $base..$sha — cannot tell what changed"
 
-    local prefix zone path hit stage demanded=''
+    _demanded=''
+    local prefix zone path hit
     while IFS='|' read -r prefix zone; do
         prefix="${prefix//[[:space:]]/}"
         zone="${zone//[[:space:]]/}"
@@ -733,14 +754,34 @@ cmd_touched() {
             case "$path" in "$prefix"*) hit=1; break ;; esac
         done <<< "$changed"
         [[ -n "$hit" ]] || continue
-        # Once per stage, not once per prefix that matched: the caller appends
-        # this to a gate's stage list, and a stage named twice is a stage the
-        # gate then looks up twice.
-        stage="$(_zone_stage "$zone")"
-        case " $demanded " in *" $stage "*) continue ;; esac
-        demanded="$demanded $stage"
-        printf '%s\n' "$stage"
+        _demand "$(_zone_stage "$zone")"
     done < <(zone_table)
+
+    # The second road into a zone: a test the card edits itself. The table's
+    # prefixes name SOURCE, and a zoned test is already subtracted from
+    # `e2e-default` — so nothing here would demand it and the card's own test
+    # would first run on `push-gate`, after the merge it was written for.
+    #
+    # The zone is written ON the file, so read it there: at the subject
+    # normally, at the base when the card deleted it. A path readable at
+    # neither end is not something `git diff` produces between those two
+    # commits; if it ever is, the verb refuses rather than reading it as
+    # "no zone" — the same rule the base resolution above follows.
+    local body
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        _under_tier "$path" || continue
+        body="$(git -C "$repo_root" show "$sha:$path" 2>/dev/null)" \
+            || body="$(git -C "$repo_root" show "$base:$path" 2>/dev/null)" \
+            || _die 70 "cannot read $path at $rev or at $base — cannot tell which zone it declares"
+        while IFS='|' read -r prefix zone; do
+            zone="${zone//[[:space:]]/}"
+            [[ -n "$zone" ]] || continue
+            if printf '%s' "$body" | grep -qE "pytest\.mark\.$zone([^A-Za-z0-9_]|\$)"; then
+                _demand "$(_zone_stage "$zone")"
+            fi
+        done < <(zone_table)
+    done <<< "$changed"
     return 0
 }
 
