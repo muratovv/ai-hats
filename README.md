@@ -135,20 +135,23 @@ Alternative install paths (bash bootstrap from a clone, override venv, developin
 > (equivalent to `ai-hats --help --tree`).
 >
 > Subtrees: `ai-hats --tree <group>` (e.g. `ai-hats --tree wt`)
-> or deeper: `ai-hats --tree task hyp`.
+> or deeper: `ai-hats --tree config feedback`.
 
-Eight top-level groups:
+Nine top-level groups:
 
-| Group     | What it does                                                               |
-| --------- | -------------------------------------------------------------------------- |
-| `agent`   | Run a role as a sub-agent inside an isolated worktree                      |
-| `config`  | Read / edit `ai-hats.yaml` (provider, role, customizations, feedback)      |
-| `list`    | Discovery: roles / skills / rules / traits / providers / tokens            |
-| `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP             |
-| `self`    | Tool lifecycle: init / update / clean / rollback                           |
-| `session` | Observability: list / show / audit / retro for sessions                    |
-| `task`    | Backlog: task / hyp / proposal cards with a state machine — recipes in [4] |
-| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in [5] §2   |
+| Group     | What it does                                                          |
+| --------- | --------------------------------------------------------------------- |
+| `agent`   | Run a role as a sub-agent inside an isolated worktree                 |
+| `config`  | Read / edit `ai-hats.yaml` (provider, role, customizations, feedback) |
+| `execute` | Launch a provider session with a composed role + optional prompt      |
+| `list`    | Discovery: roles / skills / rules / traits / providers / tokens       |
+| `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP        |
+| `self`    | Tool lifecycle: init / update                                         |
+| `session` | Observability: list / show / audit / retro for sessions               |
+| `wait`    | Block until an event happens, then continue in the same session       |
+| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in [5] §2 |
+
+The backlog is not an `ai-hats` group: cards live behind the `rack` CLI — recipes in [4].
 
 Common scenarios:
 
