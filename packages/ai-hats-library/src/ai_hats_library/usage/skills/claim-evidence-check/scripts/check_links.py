@@ -7,6 +7,7 @@ One line per link: ``OK``, ``DEAD <status>`` (404/410), ``WARN <status>``
 (any other non-2xx/3xx — a bot filter's 403 is not a dead link), or
 ``UNREACHABLE <reason>`` (network, DNS, timeout — not the link's fault).
 Exit 1 iff at least one link is DEAD; UNREACHABLE and WARN never fail the run.
+Exit 2 on bad input: no argument, or a file that cannot be read.
 """
 
 from __future__ import annotations
@@ -61,7 +62,12 @@ def main(argv: list[str]) -> int:
     dead = 0
     total = 0
     for name in argv:
-        text = Path(name).read_text(encoding="utf-8")
+        try:
+            text = Path(name).read_text(encoding="utf-8")
+        except OSError as exc:
+            # Exit 2 is the input's fault; 1 is reserved for a dead link.
+            print(f"cannot read {name}: {exc}", file=sys.stderr)
+            return 2
         for url in extract_urls(text):
             total += 1
             verdict, detail = probe(url)

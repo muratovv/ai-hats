@@ -46,10 +46,10 @@ def base_url() -> Iterator[str]:
         server.shutdown()
 
 
-def _run(md: Path) -> subprocess.CompletedProcess[str]:
-    # argv is the interpreter and two paths this test owns.
+def _run(*args: str | Path) -> subprocess.CompletedProcess[str]:
+    # argv is the interpreter and paths this test owns.
     return subprocess.run(  # noqa: S603
-        [sys.executable, str(SCRIPT), str(md)],
+        [sys.executable, str(SCRIPT), *(str(a) for a in args)],
         capture_output=True,
         text=True,
         timeout=60,
@@ -97,3 +97,20 @@ def test_no_links_is_a_clean_run(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert "checked 0 link(s), dead 0" in result.stdout
+
+
+def test_unreadable_file_is_exit_2_not_a_traceback(tmp_path: Path) -> None:
+    missing = tmp_path / "nope.md"
+
+    result = _run(missing)
+
+    assert result.returncode == 2, result.stderr
+    assert f"cannot read {missing}" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_no_argument_is_exit_2() -> None:
+    result = _run()
+
+    assert result.returncode == 2, result.stderr
+    assert "Usage: check_links.py" in result.stderr
