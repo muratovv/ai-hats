@@ -190,8 +190,9 @@ def test_e2e_gc_lock_serializes_complete_flip_window(tmp_path: Path) -> None:
         # Reverted (no lock) it reclaims sha_b out from under the pending flip.
         gc_snippet = (
             "from pathlib import Path;"
+            "from ai_hats_core.layout import ProjectLayout;"
             "from ai_hats.environment_recovery import EnvironmentRecovery;"
-            f"EnvironmentRecovery(Path(r'{project}')).run()"
+            f"EnvironmentRecovery(ProjectLayout.at(Path(r'{project}'))).run()"
         )
         _run([versioned_python, "-c", gc_snippet], cwd=project, env=env, timeout=60)
 
