@@ -118,7 +118,8 @@ suite stubbed the very contracts the change broke.
    that assert it. The gates BEFORE the merge (`review`, `merge`) require what
    they declare PLUS the zones your diff touches, so the set depends on what you
    changed and cannot be declared in advance; `->done` never asks for them, so
-   you pay for your zone once. Which gate asks: `<gate>.sh --zones`. `bash scripts/gates.sh touched` prints what your change adds and
+   you pay for your zone once — `<gate>.sh --zones` says which gate asks.
+   `bash scripts/gates.sh touched` prints what your change adds and
    `bash scripts/gates.sh zones` the whole table; `make <gate>` earns them like
    any other stage. Nothing is wrong with the gate — read it as the tests your
    own area owns, asked for where you can still fix them alone.
@@ -126,7 +127,7 @@ suite stubbed the very contracts the change broke.
    the transition after this one will additionally demand, so you can earn it
    now instead of being refused for it later:
 
-       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, master-ci
+       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, e2e-default, master-ci
 
    `next: nothing` means no gate on the road is short of anything. Transition.
 4. **Red** — the run's block, verdict first:
