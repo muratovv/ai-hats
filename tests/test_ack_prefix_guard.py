@@ -22,7 +22,9 @@ from ai_hats.constants import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-HOOKS_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/hooks"
+HOOKS_DIR = (
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/safety-guard/hooks"
+)
 GUARD = HOOKS_DIR / "ack_prefix_guard.py"
 
 #: Assembled rather than spelled: a literal consent flag on a command line is itself
