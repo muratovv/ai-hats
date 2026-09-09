@@ -221,7 +221,7 @@ def _app_row(
         if "on_error" in row:
             # Refused here, not downstream: left standing it reached the
             # owned-point policy check and was refused there for endangering
-            # data a row that spawns nothing cannot touch (HATS-1682).
+            # data a row that spawns nothing cannot touch.
             raise CheckBindingError(
                 f"{label}: 'on_error:' is the failure policy of a script, and this row "
                 f"carries no 'run:' — nothing here can fail. Drop the key, or give the "
@@ -263,7 +263,7 @@ def _app_row(
 
 
 class Composition(_YamlModel):
-    # HATS-1152: guards construction paths that bypass ``from_yaml``; the
+    # Guards construction paths that bypass ``from_yaml``; the
     # user-facing channel for a yaml typo is the pre-strip WARN below.
     model_config = ConfigDict(extra="forbid")
 
@@ -461,7 +461,7 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
 )
 
 
-# Surface runtime-hook events recognized by the framework (HATS-597).
+# Surface runtime-hook events recognized by the framework.
 # Skills declare hooks under one of these keys in metadata.yaml's
 # `runtime_hooks:` block. Names match Claude Code's native hook event names
 # so the provider can wire them into `.claude/settings.json` verbatim. v1

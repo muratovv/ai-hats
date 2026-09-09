@@ -26,7 +26,7 @@ from .constants import ENV_REPO_URL
 PYPI_JSON_URL = "https://pypi.org/pypi/ai-hats/json"
 
 # Last-resort edge target (env > yaml > this). Homed here, not in update_check,
-# so edge resolution never depends on that optional module (HATS-987).
+# so edge resolution never depends on that optional module.
 FALLBACK_REMOTE_URL = "https://github.com/muratovv/ai-hats.git"
 
 

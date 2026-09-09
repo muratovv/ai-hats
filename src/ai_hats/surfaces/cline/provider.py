@@ -79,7 +79,7 @@ class ClineSurface(Surface):
         )
 
     def system_prompt_path(self, project_dir: Path) -> Path | None:
-        # HATS-1238: Inline-only surface — no root file managed.
+        # Inline-only surface — no root file managed.
         del project_dir
         return None
 
@@ -153,7 +153,7 @@ class ClineSurface(Surface):
 
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         skills_dir = self.session_skills_root(project_dir, session_id)
-        # Shared with agy (HATS-1271): a private copy drifted and lost the
+        # Shared with agy: a private copy drifted and lost the
         # {{backlog_fsm_edges}} expansion the shared one has done since HATS-1051.
         materialize_skills_dir(skills_dir, result.skills, project_dir, artifacts.port)
         # cline scans <T()>/skills; --config sets T()=cache_dir (spike HATS-1191).
@@ -264,9 +264,9 @@ class ClineSurface(Surface):
         return {
             ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
-            # Per-session hub port — parallel sessions EADDRINUSE on the default (HATS-973).
+            # Per-session hub port — parallel sessions EADDRINUSE on the default.
             "CLINE_HUB_PORT": hub_port,
-            # HATS-1171: --config relocates cline's base dir; pin data (auth /
+            # --config relocates cline's base dir; pin data (auth /
             # sessions / db) back to the real cline home so auth survives and
             # resolve_transcript still finds the transcript.
             "CLINE_DATA_DIR": str(tool_home("cline", "CLINE_DATA_DIR") / "data"),

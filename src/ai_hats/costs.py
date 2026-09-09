@@ -14,7 +14,7 @@ class ComponentCost:
     category: str  # "injection", "rule", "skill"
     tokens: int  # full-text tokens
     chars: int
-    # HATS-957: rule/injection bodies are inlined in the base prompt (always-on);
+    # rule/injection bodies are inlined in the base prompt (always-on);
     # a skill keeps only its name+description resident, its body loads on demand.
     always_on_tokens: int = 0
     on_demand_tokens: int = 0

@@ -76,7 +76,7 @@ def resolve_git_gates(result: CompositionResult, event: str) -> Resolution:
                 # one gate into two unrunnable halves.
                 refusals.append(f"{skill.name}: '{script}' resolves to a path with a newline")
                 continue
-            # HATS-1597: only our own gates reached execve unchecked; the
+            # Only our own gates reached execve unchecked; the
             # neighbours on this chain have always checked.
             if not os.access(candidate, os.X_OK):
                 refusals.append(f"{skill.name}: '{script}' is not executable — chmod +x it")

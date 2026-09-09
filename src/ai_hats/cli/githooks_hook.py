@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
     raw = list(sys.argv[1:] if argv is None else argv)
     # The stub's `--` guards a hook argument starting with `-`; argparse honours
-    # that separator only on 3.13+, so the split is ours to make (HATS-1519).
+    # that separator only on 3.13+, so the split is ours to make.
     passthrough: list[str] | None = None
     if "--" in raw:
         cut = raw.index("--")
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
 
     project_dir: Path = args.project_dir
 
-    # Resolved FIRST, before anything that can refuse (HATS-1828): every branch
+    # Resolved FIRST, before anything that can refuse: every branch
     # below either records a skip or refuses, and one resolved after them could
     # not record its own. HATS-1597 already wanted it before composition.
     journal: Path | None = None
@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         journal = candidate
     else:
         # Every hatch branch sources this; without it the gates still run
-        # but stop recording bypasses (HATS-1407).
+        # but stop recording bypasses.
         print(
             f"ai-hats: bypass journal not found — gate bypasses, including "
             f"{GATE_BROKEN_ACK_ENV}, will NOT be recorded",
@@ -122,14 +122,14 @@ def main(argv: list[str] | None = None) -> int:
     scoped_env = dict(os.environ)
     _drop_foreign_pin(scoped_env, project_dir)
     assembler = Assembler(project_dir)
-    # HATS-1594: in a session the role is what THAT session composed; the config
+    # In a session the role is what THAT session composed; the config
     # is the answer only outside one. Reading it unconditionally ran maintainer's
     # git gates inside a judge session, which never declared them.
     identity = None
     try:
         identity = SessionIdentity.from_env(scoped_env)
     except SessionIdentityError as exc:
-        # HATS-1643: one condition, two reactions. Nothing is torn when the
+        # One condition, two reactions. Nothing is torn when the
         # session simply predates the envelope, so the configured role is a
         # sound answer and the gates still run — degraded, and recorded as such.
         # A torn or version-drifted envelope is a trust failure, and this type's

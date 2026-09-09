@@ -35,7 +35,7 @@ import shutil
 import time
 from pathlib import Path
 
-# HATS-948: RecoveryProtocol + NoOpRecovery promoted to core; re-exported here so
+# RecoveryProtocol + NoOpRecovery promoted to core; re-exported here so
 # consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 

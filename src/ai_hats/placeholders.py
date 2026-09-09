@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 PLACEHOLDER = "<ai_hats_dir>"
 
-# HATS-1479: absolute anchor for a sub-agent whose tool cwd is not the project.
+# Absolute anchor for a sub-agent whose tool cwd is not the project.
 PROJECT_DIR_PLACEHOLDER = "<project_dir>"
 
 
@@ -54,7 +54,7 @@ def expand_path_placeholders(text: str, project_dir: Path) -> str:
     return text.replace(PLACEHOLDER, rel)
 
 
-# HATS-1051: single-token injection of the backlog FSM edge set into skill
+# Single-token injection of the backlog FSM edge set into skill
 # bodies. One token, one need — NOT a generic templating engine. Rendered from
 # the live FSM so the in-prompt edge set is authoritative and never rots into a
 # hand-maintained table. Applied at the SAME materialization gates as the
@@ -65,7 +65,7 @@ FSM_EDGES_TOKEN = "{{backlog_fsm_edges}}"  # noqa: S105 — a placeholder name, 
 
 
 #: Rendered in place of the table when the project's backlog will not load. Names
-#: the loud channel: every rack verb fails on that same file (HATS-1257).
+#: the loud channel: every rack verb fails on that same file.
 FSM_EDGES_UNAVAILABLE = (
     "_FSM edge table unavailable: this project's `backlog.yaml` did not load. "
     "Run `rack ls` to see the error._"

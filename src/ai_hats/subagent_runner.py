@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from .composition_payload import CompositionPayload
 from .constants import PROVIDER_CLAUDE
 
-# HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
+# The session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
@@ -264,7 +264,7 @@ class SubAgentRunner:
             lambda: _cleanup_session_cache(self.project_dir, session.session_id),
         )
 
-        # HATS-865: the ONE composition arrived in the payload (compose seam).
+        # The ONE composition arrived in the payload (compose seam).
         role_name = self.payload.effective_role
         result = self.payload.result
         # HATS-505 / HATS-452 trap: ``with_injection_override`` REPLACES
@@ -276,7 +276,7 @@ class SubAgentRunner:
         # everything the role would compose — or compose first and pass an
         # *augmented* (not replacement) string. Layered ``result`` is above.
         if system_prompt_override is not None:
-            # HATS-452: explicit immutable transformation via the typed
+            # Explicit immutable transformation via the typed
             # ``with_*`` API on ``CompositionResult`` (D1 in ADR-0005).
             result = result.with_injection_override(system_prompt_override)
         provider = self.payload.provider
@@ -298,23 +298,23 @@ class SubAgentRunner:
 
         # The gates this sub-agent runs under. Every AUTOMATE record ever written
         # said `checks: []`, so the reflect loop could not see whether a
-        # sub-agent had its gates at all (HATS-1552).
+        # sub-agent had its gates at all.
         reported_checks, notes = describe_checks(
             provider, self.project_dir, result, session.session_id, artifacts.port.plan
         )
         # Everything ai-hats adds to the child's environment, expressed once
-        # (HATS-1548) — the sub-agent path merged its own subset and reported a
+        # — the sub-agent path merged its own subset and reported a
         # different one: `extra_env` was reported and never delivered, while the
-        # six keys it did deliver appeared in no record (HATS-1552).
+        # six keys it did deliver appeared in no record.
         launch_env = assemble_launch_env(
             provider,
             self.project_dir,
             session.session_dir,
             session_id=session.session_id,
             trace_path=str(session.trace_path),
-            # HATS-1594: the expression, not the base name `role_name` reports.
+            # The expression, not the base name `role_name` reports.
             role=self.payload.role_expression,
-            root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
+            root_pid=str(os.getpid()),  # Ownership liveness anchor
             extra_env=artifacts.extra_env,
             run_mode=RunMode.AUTOMATE,
         )
@@ -338,7 +338,7 @@ class SubAgentRunner:
             composition=self.payload.snapshot,
         )
 
-        # HATS-1216: persist launch record as role_materialization.json
+        # Persist launch record as role_materialization.json
         prompt_file = next(
             (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
             session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
@@ -392,7 +392,7 @@ class SubAgentRunner:
             t0 = time.monotonic()
 
             # One bundle for all four finalize paths — per-site spelling let the
-            # timeout/error paths drift and lose enrichment entirely (HATS-1374).
+            # timeout/error paths drift and lose enrichment entirely.
             observe_kwargs = {
                 "work_dir": work_dir,
                 "static_cost_analyzer": self.payload.static_cost_analyzer,
@@ -442,7 +442,7 @@ class SubAgentRunner:
                     # Legacy subprocess path (Agy and future non-SDK providers).
                     # The reported argv IS the executed one — this used to
                     # re-derive it from materialize_runtime_skills, and matched
-                    # what was reported only by coincidence (HATS-1552).
+                    # what was reported only by coincidence.
                     with provider.execution_context(self.project_dir):
                         proc = _run_surface(
                             described.launch,
@@ -528,7 +528,7 @@ class SubAgentRunner:
                     **observe_kwargs,
                 )
             finally:
-                # HATS-1045: release-on-finish BEFORE the cache sweep, so a
+                # Release-on-finish BEFORE the cache sweep, so a
                 # sibling sub-agent sharing this runner's pid can reclaim the
                 # task. Fail-open, so the sweep below always runs.
                 self._release_ownership_on_finish(session)

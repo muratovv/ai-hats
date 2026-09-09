@@ -182,7 +182,7 @@ def test_positive_budget_override_is_honoured(monkeypatch) -> None:
     assert resolve_hook_timeout() == 2.5
 
 
-# --- the claude bridge, driven through the dispatcher (HATS-1776) -----------
+# --- the claude bridge, driven through the dispatcher -----------
 
 
 def _agy_payload(tool: str = "run_command", command: str = "git push --force") -> str:

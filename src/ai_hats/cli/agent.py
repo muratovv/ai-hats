@@ -87,7 +87,7 @@ def run_subagent(
 
         from ..dry_run import dry_run_automate
 
-        # HATS-1228: the seam's typed errors render at the root group —
+        # The seam's typed errors render at the root group —
         # cli/_helpers.dispatch_friendly_error.
         report = dry_run_automate(
             resolve_project().layout.root,

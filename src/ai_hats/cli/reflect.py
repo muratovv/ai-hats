@@ -388,7 +388,7 @@ def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
     project_dir = layout.root
     assembler = Assembler(project_dir)
     composer = assembler.composer
-    # HATS-505: deliberately no ``overlays=`` — ``reflect`` shows the
+    # Deliberately no ``overlays=`` — ``reflect`` shows the
     # role's BUILT-IN composition for inspection (what the library
     # ships), excluding the project / global overlay layering that
     # runtime consumers apply. This is the whole point of ``reflect``;
@@ -515,7 +515,7 @@ def _materialize_target_composition(
         skills_dir = target_dir / "skills"
         skills_dir.mkdir()
         for s in composition.skills:
-            # HATS-706: read the body on demand from source_path. The composer
+            # Read the body on demand from source_path. The composer
             # no longer eager-loads it into ``injection`` (reflect is its sole
             # consumer), so reading ``s.injection`` here would write an empty
             # file.
@@ -926,7 +926,7 @@ def _build_handoff(layout: ProjectLayout) -> Path:
                 f"- observation_window: {h.observation_window!r}\n"
                 f"- validation_log entries: {len(h.validation_log)}\n"
             )
-            # HATS-534 — surface verification_protocol as a literal block scalar
+            # Surface verification_protocol as a literal block scalar
             # so multi-line protocols stay verbatim for judge consumption.
             vp = h.verification_protocol
             if vp:

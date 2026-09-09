@@ -42,7 +42,7 @@ import yaml
 
 from .. import env
 from .constants import (
-    # Pair var pinned alongside AI_HATS_DIR at spawn (HATS-897); spelling homed
+    # Pair var pinned alongside AI_HATS_DIR at spawn; spelling homed
     # in the env leaf since HATS-1613.
     AI_HATS_PROJECT_DIR_ENV as AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR as ENV_AI_HATS_DIR,
@@ -413,7 +413,7 @@ def worktree_checkouts_dir(project_dir: Path) -> Path:
     return cache_root(project_dir) / "worktrees"
 
 
-# HATS-1540: `session_checks_dir` is gone. A bound check resolves from the
+# `session_checks_dir` is gone. A bound check resolves from the
 # surface's own skill mirror (`Surface.session_skills_root`) — the channel keeps
 # no private copy, so there is no second root to name here.
 
@@ -501,7 +501,7 @@ def venv_path(project_dir: Path) -> Path:
     if raw_yaml:
         p = Path(raw_yaml).expanduser()
         return p if p.is_absolute() else (project_dir / p)
-    # HATS-647: managed blue-green resolution. When versions/current
+    # Managed blue-green resolution. When versions/current
     # resolves to a present versions/<sha>/, that is the active venv;
     # otherwise fall back to the legacy default .venv (lazy migration —
     # existing single-venv installs keep working until the first managed
@@ -512,7 +512,7 @@ def venv_path(project_dir: Path) -> Path:
     return ai_hats_dir(project_dir) / ".venv"
 
 
-# ---------- Versioned install layout (HATS-647) ----------
+# ---------- Versioned install layout ----------
 
 
 def _is_safe_sha_component(raw: str) -> bool:
@@ -629,7 +629,7 @@ def read_current_sha(project_dir: Path) -> str | None:
         return None
     if not _is_safe_sha_component(raw):
         return None
-    # Usability is the single gate (HATS-657): sentinel (completeness authority,
+    # Usability is the single gate: sentinel (completeness authority,
     # written last post-verify — HATS-648) + bin/python (interpreter — the
     # launcher execs `bin/python -m ai_hats`, HATS-790). The corruption guard
     # (HATS-647 review-finding #1) folds in here: a complete-but-later-broken venv

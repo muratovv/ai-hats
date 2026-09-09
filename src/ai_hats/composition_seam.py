@@ -248,7 +248,7 @@ def build_composition_payload(
     from .surface_registry import get_surface
 
     asm, cfg, effective_role, runtime_overlay, spec = _project_context(project_dir, role_override)
-    # HATS-1753: allocated BEFORE the compose it collects from — the hooks
+    # Allocated BEFORE the compose it collects from — the hooks
     # sink below is filled later, by a different producer.
     diagnostics: list[Diagnostic] = []
     result = _compose_validated(
@@ -260,7 +260,7 @@ def build_composition_payload(
         diagnostics=diagnostics,
     )
 
-    # HATS-1218: the batch arm used to hard-read cfg and drop the override here.
+    # The batch arm used to hard-read cfg and drop the override here.
     eff_provider = _effective_provider(cfg, provider_name)
     provider = get_surface(eff_provider)
 
@@ -295,11 +295,11 @@ def build_composition_payload(
         channel=cfg.harness.channel.value,
         startup_warnings=tuple(startup_warnings),
         diagnostics=tuple(diagnostics),
-        # HATS-867: observe factories threaded runner→finalize pipelines.
-        # HATS-948: the audit writer carries the provider's transcript parser.
+        # Observe factories threaded runner→finalize pipelines.
+        # The audit writer carries the provider's transcript parser.
         session_factory=Session,
         audit_writer_factory=partial(AuditWriter, parser=provider.transcript_parser()),
-        # HATS-1087: the provider knows WHERE its transcript lives; the parser
+        # The provider knows WHERE its transcript lives; the parser
         # (above) knows HOW to read it. Both ride the payload to the finalize steps.
         transcript_resolver=provider.resolve_transcript,
     )
@@ -461,7 +461,7 @@ def _static_cost_analyzer(project_dir: Path):
         return {
             "role": role,
             "total_tokens": breakdown.total_tokens,
-            # HATS-957: skill bodies load on demand, not always-on. Split so the
+            # Skill bodies load on demand, not always-on. Split so the
             # reported "always-on" figure excludes them (they show separately).
             "always_on_tokens": breakdown.always_on_tokens,
             "on_demand_tokens": breakdown.on_demand_tokens,

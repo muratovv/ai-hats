@@ -25,7 +25,7 @@ import yaml
 # ``worktree`` is the HATS-823 carry block (wt_in / wt_out) — frontmatter-only
 # from day one, so a leftover ``worktree:`` in metadata.yaml is the same
 # silent-drop hazard the guard exists to catch.
-# ``lifecycle_hooks`` (HATS-1147) and ``plan_sections`` (HATS-1160) name RETIRED
+# ``lifecycle_hooks`` and ``plan_sections`` name RETIRED
 # channels, kept listed on purpose: the frontmatter tombstone cannot see a sidecar,
 # so without them a leftover ``metadata.yaml`` declaration goes silently unreported.
 _HOOK_KEYS = ("git_hooks", "runtime_hooks", "worktree", "lifecycle_hooks", "plan_sections")

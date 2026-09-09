@@ -145,7 +145,7 @@ def drop_legacy_claude_publish(project_dir: Path) -> list[str]:
             continue
         discard(target, reason="claude-legacy-publish", project_dir=project_dir)
         removed.append(rel)
-    # Well-known publish artefacts — belt-and-suspenders (HATS-289).
+    # Well-known publish artefacts — belt-and-suspenders.
     for rel in ("CLAUDE.md", "priorities.md", "role.md", "skills_index.md", "traits", "rules"):
         target = base / rel
         if not target.exists():

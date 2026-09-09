@@ -15,7 +15,7 @@ LIBRARY_PKG = "ai_hats_library"
 # Composition layers under the library root, lowest priority first.
 LIBRARY_LAYERS = ("core", "usage", "ai-hats-dev")
 
-# The subset a dir must hold to BE a library root (HATS-1834). Kept apart from
+# The subset a dir must hold to BE a library root. Kept apart from
 # LIBRARY_LAYERS so a newer integrator still validates an older library wheel
 # that predates a layer — `is_library_root` is an all() over this tuple.
 REQUIRED_LIBRARY_LAYERS = ("core", "usage")
@@ -33,7 +33,7 @@ PIPELINES_SUBPATH = ("core", "pipelines")
 # Project config filename (moved from ai_hats.constants, HATS-917)
 PROJECT_CONFIG = "ai-hats.yaml"
 
-# HATS-1613: re-exported from the env leaf, not re-declared — one spelling, one
+# Re-exported from the env leaf, not re-declared — one spelling, one
 # home (ADR-0025 D1). Kept importable from here so existing callers are unchanged.
 from ..env import (  # noqa: E402
     AI_HATS_PROJECT_DIR_ENV,
@@ -43,7 +43,7 @@ from ..env import (  # noqa: E402
     ENV_LIBRARY_ROOT,
 )
 
-# HATS-792: highest ai-hats.yaml ``schema_version`` this binary understands. A
+# Highest ai-hats.yaml ``schema_version`` this binary understands. A
 # higher value was written by a NEWER ai-hats whose format we cannot read; every
 # reader — the full pydantic one and the bootstrap raw readers alike — refuses
 # it. Lives in the leaf so both can import it without a config dependency.

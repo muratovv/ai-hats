@@ -76,7 +76,7 @@ def _recorded_move(src: "Path", dst: "Path", *, reason: str, project_dir: "Path"
     _safe_discard(src, reason=reason, project_dir=project_dir)
 
 
-# Stable banner format — the E2E gate test (HATS-471) greps stderr for
+# Stable banner format — the E2E gate test greps stderr for
 # this prefix to assert the registry actually advanced (or didn't).
 # Do not change without updating ``tests/e2e/test_migration_registry_gate.py``
 # and the docstring of :func:`run_pending`.
@@ -334,7 +334,7 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
     # any future framework-side sweep could mistake it for managed
     # content and discard it. Move it out NOW, while we're already
     # in a "rearrange hooks" frame.
-    # HATS-1123: this pass is the ONLY one keyed on ai_hats_dir rather than
+    # This pass is the ONLY one keyed on ai_hats_dir rather than
     # project_dir, so an AI_HATS_DIR override aimed at another checkout made it
     # evict THAT project's hooks. providers.py computes the same containment
     # predicate but only warns; here it must skip.

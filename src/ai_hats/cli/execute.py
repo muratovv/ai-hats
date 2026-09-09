@@ -182,7 +182,7 @@ def execute_cmd(
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
 
-    # HATS-827: empty role builds the git-invalid branch agent//<sid>; fail at
+    # Empty role builds the git-invalid branch agent//<sid>; fail at
     # the boundary instead of crashing deep in worktree creation.
     if not interactive and not role:
         raise click.BadParameter(
@@ -202,7 +202,7 @@ def execute_cmd(
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
     if not interactive:
-        # HATS-1218: one Automate wiring, shared with ``ai-hats agent``.
+        # One Automate wiring, shared with ``ai-hats agent``.
         run_batch(
             layout,
             role=role,
@@ -215,7 +215,7 @@ def execute_cmd(
             as_json=as_json,
         )
 
-    # HATS-1228: the seam's typed errors render at the root group —
+    # The seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     result = run_pipeline(
         EXECUTE,
@@ -230,7 +230,7 @@ def execute_cmd(
                     interactive=True,
                 ),
             ),
-            # HATS-867: the CLI (integrator) injects the observe writer handles —
+            # The CLI (integrator) injects the observe writer handles —
             # runners no longer construct them.
             recording=SessionRecording(
                 manager=make_session_manager(project_dir),

@@ -74,7 +74,7 @@ class _PassthroughGroup(click.Group):
     def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         super().format_help(ctx, formatter)
 
-        # HATS-1112: append provider-specific hints if a provider or role is resolvable.
+        # Append provider-specific hints if a provider or role is resolvable.
         # Since --help is eager, ctx.params might not have parsed trailing flags, so we
         # fallback to a naive sys.argv scan to provide contextual help even for `ai-hats --help -p agy`.
         import sys
@@ -270,7 +270,7 @@ def _dry_run_session(
     from ..dry_run import dry_run_hitl
     from ._entry import resolve_project
 
-    # HATS-1228: the seam's typed errors render at the root group —
+    # The seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     report = dry_run_hitl(
         resolve_project().layout.root,
@@ -309,13 +309,13 @@ def _launch_session(
     layout = resolve_project().layout
     project_dir = layout.root
 
-    # HATS-1228: the seam's typed errors render at the root group —
+    # The seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     result = run_pipeline(
         HUMAN,
         SessionRunParams(
             layout=layout,
-            # HATS-865: compose ONCE here (effective-role resolution + the
+            # Compose ONCE here (effective-role resolution + the
             # first-run set_role side effect live in the seam) and seed the
             # payload into the funnel; the launch step hands it to WrapRunner.
             role=MaterializedRole(
@@ -327,7 +327,7 @@ def _launch_session(
                     interactive=True,
                 ),
             ),
-            # HATS-867: the CLI (integrator) injects the observe writer
+            # The CLI (integrator) injects the observe writer
             # handles — runners no longer construct them.
             recording=SessionRecording(
                 manager=make_session_manager(project_dir),
@@ -358,7 +358,7 @@ from . import (  # noqa: E402
     worktree,
 )
 
-# Config — set + customize + status nest under it (HATS-241, HATS-242).
+# Config — set + customize + status nest under it.
 # All four touch ai-hats.yaml composition; status is the readout.
 config_mod.config.add_command(assembly.set_role)
 config_mod.config.add_command(assembly.customize)
@@ -367,7 +367,7 @@ config_mod.config.add_command(assembly.show_prompt)  # HATS-452 Phase 1
 main.add_command(config_mod.config)
 
 
-# 'self' — framework lifecycle (HATS-241). Convention: rustup self update,
+# 'self' — framework lifecycle. Convention: rustup self update,
 # gh extension self ... — instantly signals 'operations on the tool itself,
 # not on your project'.
 #
@@ -381,13 +381,13 @@ def self_group():
 
 
 self_group.add_command(assembly.init)
-# HATS-833: ``self sync-hooks`` removed — drift healing consolidated to session start.
+# ``self sync-hooks`` removed — drift healing consolidated to session start.
 self_group.add_command(maintenance.update)
-# HATS-966: hidden self-heal for stale surface-plugin editables; the launcher
+# Hidden self-heal for stale surface-plugin editables; the launcher
 # calls it before exec when its probe flags a broken plugin (also runs in `update`).
 self_group.add_command(maintenance.heal_editables)
-# HATS-415: ``self migrate-v07`` removed — migration is inline in ``bump``.
-# HATS-470: ``self bump`` removed from CLI surface; the operation now runs
+# ``self migrate-v07`` removed — migration is inline in ``bump``.
+# ``self bump`` removed from CLI surface; the operation now runs
 # via :mod:`ai_hats._bump_internal` (subprocess from ``self update``,
 # preserves HATS-400 fresh-interpreter semantics) and inline from ``init``.
 main.add_command(self_group)
@@ -395,7 +395,7 @@ main.add_command(self_group)
 # List
 main.add_command(list_cmd.list_cmd)
 
-# Execute — unified launch primitive (HATS-260). Wraps WrapRunner / SubAgentRunner.
+# Execute — unified launch primitive. Wraps WrapRunner / SubAgentRunner.
 main.add_command(execute_mod.execute_cmd)
 
 # Agent — sub-agent launcher (HATS-242, was 'run'). Now a thin wrapper over execute.
@@ -407,13 +407,13 @@ main.add_command(worktree.wt)
 # Session (observability + retro generation)
 main.add_command(session.session)
 
-# Wait — block-in-session until an event happens (HATS-986)
+# Wait — block-in-session until an event happens
 main.add_command(wait_mod.wait_cmd)
 
-# HATS-1260: the legacy `ai-hats task` groups (task/hyp/proposal/attach) are
+# The legacy `ai-hats task` groups (task/hyp/proposal/attach) are
 # unmounted — rack is the only backlog surface; the tracker package dies at HATS-1262.
 
-# HATS-952: observe session-browse CLI (list/show/audit) defaults to wt-free
+# Observe session-browse CLI (list/show/audit) defaults to wt-free
 # resolvers; inject the integrator's AI_HATS_DIR/yaml-aware layout so
 # `ai-hats session` keeps its exact paths + tag semantics.
 from ai_hats_core.layout import ProjectLayout  # noqa: E402
@@ -563,7 +563,7 @@ def _guard_self_location() -> None:
         from ._entry import resolve_project
 
         project = resolve_project()
-        # Only a venv that ACTUALLY EXISTS can be shadowed (HATS-791).
+        # Only a venv that ACTUALLY EXISTS can be shadowed.
         resolved_venv = str(project.venv) if project.venv.exists() else None
     except Exception:  # silent-ok: fail open on ANY resolution error, per docstring
         resolved_venv = None
@@ -614,7 +614,7 @@ def main_entry() -> None:
             path = _extract_tree_path(sys.argv[1:])
             print_subtree(main, path, console)
             sys.exit(0)
-        # HATS-1228: same registry the root group dispatches through, kept here
+        # Same registry the root group dispatches through, kept here
         # too because this boundary also covers the pre-click phase above
         # (HATS-839: a write op resolved to a non-project root).
         from ._helpers import dispatch_friendly_error

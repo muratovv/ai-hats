@@ -30,7 +30,7 @@ from ..retro.session_review_runner import SessionReviewError
 logger = logging.getLogger(__name__)
 
 
-# HATS-378: meta-PROP targets. session-reviewer = role's own output failed
+# Meta-PROP targets. session-reviewer = role's own output failed
 # validation (schema, empty frontmatter). harness-incident = the harness
 # layer detected a failure independent of the role's logic
 # (subprocess timeout, zero-output silent run).
@@ -78,7 +78,7 @@ def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout)
         )
         saved_path = SessionReviewOutcome.of(result).review_path
     except HarnessReliabilityError as exc:
-        # HATS-378: harness-layer failure (timeout, zero-output guard) →
+        # Harness-layer failure (timeout, zero-output guard) →
         # file under target=harness-incident, NOT session-reviewer.
         harness_error = exc
         print(
@@ -92,13 +92,13 @@ def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout)
             file=sys.stderr,
         )
 
-    # HATS-1369 / HATS-1422: parse the doc ONCE — shared by the harvest below and
+    # Parse the doc ONCE — shared by the harvest below and
     # _harness_check, instead of each re-reading/re-parsing it independently.
     raw, parse_issues = _load_review_doc(_review_doc_path(retros, session_id))
 
     # Harvest whatever verdicts the doc carries into validation_log,
     # independent of _harness_check's full-active-coverage gate below or
-    # harness-reliability failures above (HATS-1422).
+    # harness-reliability failures above.
     persisted = _maybe_harvest_verdicts(project_dir, session_id, raw)
 
     if harness_error is not None:
@@ -232,7 +232,7 @@ def _load_active_hyp_ids(layout: ProjectLayout, session_id: str) -> set[str]:
     return {h.id for h in kept}
 
 
-# ---- verdict harvest (HATS-1369) ----
+# ---- verdict harvest ----
 
 
 def _maybe_harvest_verdicts(project_dir: Path, session_id: str, raw: dict | None) -> list[str]:

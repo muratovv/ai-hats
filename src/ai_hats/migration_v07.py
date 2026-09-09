@@ -427,7 +427,7 @@ def plan_migration(
     """
     report = MigrationReport()
     trait_baseline = composition.trait_injections
-    # HATS-700: rule bodies are no longer eager-loaded into ``injection``; read
+    # Rule bodies are no longer eager-loaded into ``injection``; read
     # the deliverable text on demand from the resolved ``source_path`` (same
     # bytes the v0.6 canonical writer materialised) so edit-detection stays
     # byte-accurate.

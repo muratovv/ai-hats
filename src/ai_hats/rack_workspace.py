@@ -33,7 +33,7 @@ from .paths import ensure_ai_hats_dir, tasks_dir
 #: Actor stamped on integrator-side rack writes (reflect/judge provenance).
 REFLECT_ACTOR = "rack:reflect"
 
-#: Actor stamped on the automatic post-session verdict harvest (HATS-1369) —
+#: Actor stamped on the automatic post-session verdict harvest —
 #: distinct from REFLECT_ACTOR (interactive judge) so a validation_log entry
 #: shows which mechanism wrote it.
 SESSION_REVIEWER_ACTOR = "rack:session-reviewer"
@@ -51,7 +51,7 @@ def rack_workspace(project_dir: Path) -> Workspace:
     from .rack_consumers import check_port_factory
 
     # Anchor and owner coincide by construction here: the caller named the
-    # project, and the backlog is that project's own (HATS-1573).
+    # project, and the backlog is that project's own.
     root = RackRoot(
         project_dir=project_dir, tasks_dir=tasks_dir(project_dir), backlog_owner=project_dir
     )

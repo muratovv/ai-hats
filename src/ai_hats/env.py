@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 
-# Env-var names read across ai-hats (HATS-917, HATS-1414)
+# Env-var names read across ai-hats
 ENV_AI_HATS_USER_HOME = "AI_HATS_USER_HOME"
 ENV_AI_HATS_DIR = "AI_HATS_DIR"
 AI_HATS_PROJECT_DIR_ENV = "AI_HATS_PROJECT_DIR"
@@ -35,7 +35,7 @@ ENV_XDG_CACHE_HOME = "XDG_CACHE_HOME"
 ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
 
 # Session identity written at spawn (ADR-0025 D1). `AI_HATS_SESSION_ID` is
-# absent on purpose — its home is `ai_hats_observe.trace` (HATS-948).
+# absent on purpose — its home is `ai_hats_observe.trace`.
 ENV_ROLE = "AI_HATS_ROLE"
 ENV_ROOT_PID = "AI_HATS_ROOT_PID"
 #: The session process's own interpreter. A second pin beside ENV_AI_HATS_VENV

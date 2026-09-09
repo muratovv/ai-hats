@@ -104,7 +104,7 @@ class TranscriptResolver(Protocol):
         # session: held, it names the transcript exactly instead of guessing by time.
         provider_session_id: str | None = None,
         # Upper bound of the mtime window when there is no id to match on — without
-        # it a file written after the session ended matches (HATS-1400).
+        # it a file written after the session ended matches.
         end_ts: float | None = None,
     ) -> list[Path]: ...
 
@@ -237,7 +237,7 @@ class Surface(abc.ABC):
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
         artifacts.policy = policy
-        # HATS-1540: no second copy here. The SKILLS category already writes an
+        # No second copy here. The SKILLS category already writes an
         # unconditional mirror of every composed skill (SessionPolicy has no
         # skills field), and `session_skills_root` is what a check resolves off.
         for category in ArtifactCategory:

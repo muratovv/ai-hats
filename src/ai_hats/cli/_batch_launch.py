@@ -52,7 +52,7 @@ def run_batch(
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import build_composition_payload, make_session_manager
 
-    # HATS-1228: the seam's typed errors (unknown role / unknown provider / no
+    # The seam's typed errors (unknown role / unknown provider / no
     # provider) render at the root group — cli/_helpers.dispatch_friendly_error.
     result = run_pipeline(
         EXECUTE,
@@ -67,7 +67,7 @@ def run_batch(
                     interactive=False,
                 ),
             ),
-            # HATS-867: the CLI (integrator) injects the observe writer handles —
+            # The CLI (integrator) injects the observe writer handles —
             # runners no longer construct them.
             recording=SessionRecording(
                 manager=make_session_manager(project_dir),

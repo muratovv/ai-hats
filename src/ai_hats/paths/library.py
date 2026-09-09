@@ -203,8 +203,8 @@ def builtin_library_root(
         if _is_surprising_divergence(cwd_root, pinned_root, project_named):
             _warn_library_divergence(cwd_root, pinned_root, prefer_cwd)
 
-    # cwd is the fallback when the project names no source library (HATS-826);
-    # prefer_cwd promotes it above one that does (HATS-1501).
+    # cwd is the fallback when the project names no source library;
+    # prefer_cwd promotes it above one that does.
     order = (cwd_root, pinned_root) if prefer_cwd else (pinned_root, cwd_root)
     for root in order:
         if root is not None and is_library_root(root):

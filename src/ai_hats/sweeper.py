@@ -13,7 +13,7 @@ Marker convention (HATS-911): new line-manifest markers are written via
 ``fs_digest.dir_digest``). The hash is the content-proof: sweep discards an
 entry only while its on-disk content still matches; user-modified files are
 kept with a WARN. ``#`` lines are comments, so hash-less readers stay compatible.
-"""  # comment-length: allow — marker-format contract (HATS-911)
+"""  # comment-length: allow — marker-format contract
 
 from __future__ import annotations
 
@@ -125,7 +125,7 @@ def default_surfaces() -> tuple[Surface, ...]:
             embedded_marker=GITHOOKS_DISPATCHER_MARKER,
         ),
         SettingsTagsSurface(owner_key="runtime-hooks"),
-        # HATS-1513: the asserter has always read the user-private overlay
+        # The asserter has always read the user-private overlay
         # (migration_assert.SETTINGS_TARGETS), so leaving it unswept meant a
         # tagged broken ref there refused every bump with no CLI way out.
         SettingsTagsSurface(

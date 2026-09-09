@@ -135,7 +135,7 @@ def _previous_hook(project_dir: Path, githooks_dir: Path, event: str) -> Path | 
             text=True,
             check=False,
             # A hook runs with git's own GIT_DIR exported; unscrubbed it would
-            # retarget the lookup away from project_dir (HATS-887).
+            # retarget the lookup away from project_dir.
             env=scrubbed_git_env(),
         )
     except OSError as exc:
@@ -202,7 +202,7 @@ def record_fail_open(
             env={**os.environ, ENV_HOOK_EVENT: event},
             # The writer resolves `--git-common-dir` from where it stands, so the
             # project must be TOLD, not inferred: inferring put a test's synthetic
-            # skips in the maintainer's own audit journal (HATS-1686).
+            # skips in the maintainer's own audit journal.
             cwd=None if project_dir is None else str(project_dir),
             check=False,
         )
@@ -294,7 +294,7 @@ def run_chain(
     drops = foreign_pin_drops(os.environ, project_dir)
 
     # Read the ref protocol ONCE and replay it into each script — one shared
-    # stdin would let the first consumer drain it (HATS-654). Never read on a
+    # stdin would let the first consumer drain it. Never read on a
     # stdin-less event: an open pipe on fd 0 would block forever.
     replay = event in STDIN_PROTOCOL_EVENTS
     payload = sys.stdin.buffer.read() if replay else None
@@ -318,7 +318,7 @@ def run_chain(
             argv=argv,
             stdin_payload=payload,
             # The human ran `git commit` and is watching; capture alone would go
-            # silent until the gate finished (HATS-1828).
+            # silent until the gate finished.
             tee=True,
             extra_env=extra,
             drop_env=drops,

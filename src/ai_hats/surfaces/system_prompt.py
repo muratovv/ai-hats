@@ -64,7 +64,7 @@ def compose_sections(result: CompositionResult) -> str:
             rules_section += f"\n### {rule.name}\n{body}\n"
         sections.append(rules_section)
 
-    # HATS-1203: project-authored rules, after the framework's own so they
+    # Project-authored rules, after the framework's own so they
     # read as the more specific layer. Unfiltered — see discover_user_rules.
     user_rules_section = "## USER RULES\n"
     emitted = False
@@ -94,7 +94,7 @@ def write_managed_block(prompt_path: Path, content: str, *, project_dir: Path) -
 
     if prompt_path.exists():
         existing = prompt_path.read_text()
-        # HATS-284: lowercase scaffold markers signal the project is on
+        # Lowercase scaffold markers signal the project is on
         # the canonical-publish layout — `./CLAUDE.md` is user-owned and
         # the framework injection lives in `.claude/CLAUDE.md`.
         if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:

@@ -70,7 +70,7 @@ class MaybeSpawnSessionReviewer(Step):
 
         retro_decision: dict | None = None
         try:
-            # HATS-1426: the breadcrumb lands BEFORE the decision — the incident
+            # The breadcrumb lands BEFORE the decision — the incident
             # died inside make_decision and left no retro.log at all.
             write_retro_log(layout, session_id, "runtime", "start", "deciding")
             retro_decision = make_decision(layout, session_id)
@@ -90,7 +90,7 @@ class MaybeSpawnSessionReviewer(Step):
             if guard == "1":
                 _write_outcome(layout, session_id, f"suppressed-by-guard ({observed})")
             elif retro_decision.get("background") is False:
-                # HATS-1402: sync in-process run; recursion guard scoped via
+                # Sync in-process run; recursion guard scoped via
                 # try/finally since there's no child process to scope it to.
                 _write_outcome(layout, session_id, f"sync-start ({observed})")
                 try:

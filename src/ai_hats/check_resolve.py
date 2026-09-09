@@ -36,7 +36,7 @@ _CHECKS_KEY = re.compile(rb"""^[ \t]*['"]?(?:apps|checks)['"]?[ \t]*:""", re.MUL
 #: "the caller did not supply one" — distinct from ``None``, which is a caller
 #: stating there IS no session. Read from the environment only when a binding
 #: actually needs rooting, so a project declaring no gates never pays and, more
-#: importantly, never REFUSES on an environment it has no use for (HATS-1594).
+#: importantly, never REFUSES on an environment it has no use for.
 FROM_ENV: Any = object()
 
 
@@ -233,7 +233,7 @@ def rebase_onto_mirror(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
             f"checks: {check.declared_by!r} binds {check.skill}/{check.script}, which "
             f"resolves to {script_path} — outside this session's mirror root {root}"
         )
-    # HATS-1651: the one place both paths exist at once. Keeping the live one
+    # The one place both paths exist at once. Keeping the live one
     # does not soften R10 — nothing re-resolves against it — it only lets a
     # refusal say whether the frozen bytes still match the library's.
     return replace(check, script_path=script_path, source_path=check.script_path)
@@ -417,7 +417,7 @@ def _compose_fail_closed(
         ) from exc
     if not declared:
         # Nothing to root, so nothing to be told: a project with no bindings must
-        # not be refused over a session envelope it has no use for (HATS-1594).
+        # not be refused over a session envelope it has no use for.
         return None, None
     if identity is FROM_ENV:
         identity = session_identity()

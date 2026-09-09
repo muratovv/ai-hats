@@ -119,7 +119,7 @@ class SelectProviderStep(Step):
                 except Exception as exc:
                     # Swallowing this reset an existing project to claude with no
                     # message — an agy/cline project silently reconfigured by a
-                    # re-run of init (HATS-1373).
+                    # re-run of init.
                     raise InitConfigUnreadableError(repr(exc)) from exc
             if res_provider is None:
                 res_provider = PROVIDER_CLAUDE

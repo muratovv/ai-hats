@@ -234,7 +234,7 @@ def _expire(child: os.DirEntry[str], cutoff: float, report: RetentionReport) -> 
         # A symlink wearing a bulk artifact's name would resolve outside the run dir.
         if not stat.S_ISREG(info.st_mode) or info.st_mtime >= cutoff:
             return
-        os.unlink(child.path)  # safe-delete: ok bulk artifact past retention (HATS-1339)
+        os.unlink(child.path)  # safe-delete: ok bulk artifact past retention
     except OSError as exc:
         logger.warning("runs retention: cannot drop %s: %s", child.path, exc)
         report.errors += 1

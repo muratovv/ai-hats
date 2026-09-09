@@ -22,7 +22,7 @@ from .composition_payload import CompositionPayload
 from .consent_wrapper import materialize_consent_wrappers
 from .constants import PINNED_PYTHON
 
-# HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
+# The session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
@@ -302,7 +302,7 @@ class WrapRunner:
             return []
         if not collisions:
             return []
-        # HATS-931: every project-scope collision is heal-eligible — a name in
+        # Every project-scope collision is heal-eligible — a name in
         # project .claude/skills that matches a composed skill is ai-hats-owned
         # (not a user-authoring surface), marker or not. Home scope → warn only.
         healable = [c for c in collisions if c.scope == "project"]
@@ -430,7 +430,7 @@ class WrapRunner:
         if broken:
             session.log_sys(f"broken hook refs: {len(broken)} finding(s)")
         # One instruction per ownership, not per finding: the remedy differs by
-        # ownership and only by that (HATS-1522).
+        # ownership and only by that.
         notices = []
         for ours in (True, False):
             group = [ref for ref in broken if bool(ref.managed) is ours]
@@ -595,7 +595,7 @@ class WrapRunner:
         # WrapRunner and SubAgentRunner traverse — so the previously
         # WrapRunner-only inline sweeps are gone from here. Create the session
         # before build_session_prompt so we can key the per-session cache dir on
-        # session.session_id (HATS-294).
+        # session.session_id.
         session = run.session
         run.defer(
             "session cache",
@@ -620,7 +620,7 @@ class WrapRunner:
                 session_args = artifacts.cli_args
                 session_env = artifacts.extra_env
                 meta_prompt = artifacts.full_content or ""
-                # HATS-1540: a surface older than `session_skills_root` handles
+                # A surface older than `session_skills_root` handles
                 # this seam fine and still cannot root a bound check. Said here,
                 # at launch, not at the first refused transition.
                 skew = surface_skew_notice(provider_name, provider, self.project_dir, result)
@@ -648,7 +648,7 @@ class WrapRunner:
             provider=provider_name,
             composition=payload.snapshot,
         )
-        # HATS-523: persist materialized system prompt to
+        # Persist materialized system prompt to
         # <session_dir>/meta_prompt.txt — symmetric with SubAgentRunner
         # (runtime.py ~1091). Exact bytes that reached the provider (post
         # HATS-380 placeholder expansion). Saved before hooks / _pty_spawn so
@@ -663,23 +663,23 @@ class WrapRunner:
             session_args=session_args,
             provider_session_id=claude_session_id,
         )
-        # HATS-1397: the argv the provider built is the only honest answer to
+        # The argv the provider built is the only honest answer to
         # "is this id ours?", and the link is persisted here rather than at
         # teardown so a killed session still names its transcript.
         claude_session_id = consumed_session_id(cmd, claude_session_id)
         session.record_provider_session_id(claude_session_id)
 
-        # HATS-1216: persist launch record as role_materialization.json
+        # Persist launch record as role_materialization.json
         env_map = assemble_launch_env(
             provider,
             self.project_dir,
             session.session_dir,
             session_id=session.session_id,
             trace_path=str(session.trace_path),
-            # HATS-1594: the expression, not the base name — a check bound by a
+            # The expression, not the base name — a check bound by a
             # runtime-added trait must resolve for the gate too.
             role=payload.role_expression,
-            root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
+            root_pid=str(os.getpid()),  # Ownership liveness anchor
             extra_env=session_env,
             run_mode=RunMode.HITL,
         )
@@ -687,7 +687,7 @@ class WrapRunner:
             (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
             session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
         )
-        # HATS-1548: the same section --dry-run shows, on the launch record — one
+        # The same section --dry-run shows, on the launch record — one
         # call site would be a report about a session nobody can compare against.
         reported_checks, check_notes = describe_checks(
             provider, self.project_dir, result, session.session_id, artifacts.port.plan
@@ -723,7 +723,7 @@ class WrapRunner:
         # expression, so the report cannot under-state what the child receives.
         env = {**os.environ, **env_map}
 
-        # HATS-833: fail-open session-start drift net for all managed-hook
+        # Fail-open session-start drift net for all managed-hook
         # surfaces; reuses the composition above and returns startup notices.
         startup_notices: list[StartupNotice] = []
         startup_notices.extend(builder_notices)
@@ -743,7 +743,7 @@ class WrapRunner:
             run_startup_checks(
                 self.project_dir,
                 session_dir=session.session_dir,
-                # HATS-1594: parsed back out of the env just written, so the gate
+                # Parsed back out of the env just written, so the gate
                 # is judged by the very bytes the children will read — and the
                 # composition is handed over rather than composed a second time.
                 identity=SessionIdentity.from_env(env_map),
@@ -755,7 +755,7 @@ class WrapRunner:
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 
-        # HATS-566: build the finalize pipeline NOW, against the YAML and the step
+        # Build the finalize pipeline NOW, against the YAML and the step
         # modules this process holds today. Left to the `finally` block (where
         # ``_run_finalize_hitl`` runs), a session that straddles a working-tree
         # update — editable install plus a mid-session ``git pull`` — reads the
@@ -784,12 +784,12 @@ class WrapRunner:
         )
 
         # PTY proxy via pty.spawn with sidecar trace.
-        # HATS-086: wrap _pty_spawn so SIGINT during the interactive part
+        # Wrap _pty_spawn so SIGINT during the interactive part
         # routes through the finalize chain in the finally block, ensuring
         # the session-end summary (with the all-important session id) is
         # always printed.
         #
-        # HATS-535: finalize is now a three-step chain:
+        # Finalize is now a three-step chain:
         #   1. _finalize_session_basic — metrics.json, trace stats, smoke
         #   2. finalize-hitl pipeline — make_audit + run_session_end
         #   3. _print_session_end — green summary (outer finally; SIGINT-safe)
@@ -799,7 +799,7 @@ class WrapRunner:
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         t0 = time.monotonic()
         try:
-            # HATS-1221: Save structured startup notices to diagnostics.json
+            # Save structured startup notices to diagnostics.json
             save_session_diagnostics(
                 session.session_dir,
                 "startup",
@@ -818,7 +818,7 @@ class WrapRunner:
                     ],
                 },
             )
-            # HATS-825: brief pre-launch hold so the start banner + any
+            # Brief pre-launch hold so the start banner + any
             # fail-open startup warning are readable before the TUI clobbers
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
             self._hold_before_launch(startup_notices, env=env)
@@ -826,7 +826,7 @@ class WrapRunner:
                 provider.execution_context(self.project_dir),
                 self._serving_hooks(provider, session, env),
             ):
-                # HATS-1339: the anchor names the cache's real READER. Redundant
+                # The anchor names the cache's real READER. Redundant
                 # here (the pty hangup already ties the child to us), but it makes
                 # "keep while EITHER owner lives" hold on every runner.
                 exit_code = self._pty_spawn(
@@ -844,7 +844,7 @@ class WrapRunner:
             duration_s = time.monotonic() - t0
             trace_stats: dict = {}
             try:
-                # HATS-1426: the terminal is back in cooked mode here, so a
+                # The terminal is back in cooked mode here, so a
                 # stray Ctrl-C would land inside whichever step is running.
                 with sigint_shield():
                     try:
@@ -870,7 +870,7 @@ class WrapRunner:
                                 transcript_resolver=payload.transcript_resolver,
                             )
                         except (Exception, KeyboardInterrupt):
-                            # HATS-1374: parity with the sub-agent path — a dead sensor
+                            # Parity with the sub-agent path — a dead sensor
                             # is recorded in the artifact, not only whispered to a log.
                             logger.error("finalize-hitl pipeline failed", exc_info=True)
                             _flag_sensor_error(session)
@@ -956,7 +956,7 @@ class WrapRunner:
 
         from ptyprocess import PtyProcess
 
-        # HATS-713: pass the per-session env to the child via PtyProcess.spawn's
+        # Pass the per-session env to the child via PtyProcess.spawn's
         # env= rather than mutating os.environ. Mutating os.environ permanently
         # polluted the PARENT process with per-session keys (AI_HATS_SESSION_ID,
         # AI_HATS_ROLE, provider vars) that then leaked into the finalize
@@ -965,7 +965,7 @@ class WrapRunner:
         # (callers may pass a partial env), without writing back to it.
         child_env = {**os.environ, **env}
 
-        # HATS-215: defensive reset of DEC private modes that the previous
+        # Defensive reset of DEC private modes that the previous
         # session may have leaked. Without this, leftover state (notably the
         # kitty-keyboard stack push left by an Ink-based TUI on ungraceful
         # exit) makes Enter encode as `\x1b[13u` in the next session — Claude
@@ -1033,19 +1033,19 @@ class WrapRunner:
         # input) without breaking the loop — child may still be producing
         # output that we need to drain until master EOF.
         read_fds = [master_fd, stdin_fd]
-        # HATS-679: parent escape-hatch state — timestamps of consecutive
+        # Parent escape-hatch state — timestamps of consecutive
         # Ctrl-C presses and the force-exit flag (checked after the finally so
         # a hatch-triggered exit returns 130).
         escape_presses: deque[float] = deque()
         forced_exit = False
-        # HATS-1192: one PtyTap per session (single creation, fail-open). Null-object
-        # default → no None-guards; a composed plugin (HATS-1197) gets the real tap.
+        # One PtyTap per session (single creation, fail-open). Null-object
+        # default → no None-guards; a composed plugin gets the real tap.
         try:
             self._tap = (
                 pty_tap_factory(
                     inject=lambda b: os.write(master_fd, b),
                     # resize drives the CHILD pty window (same call as _on_winch);
-                    # local-vs-remote precedence is relay policy (HATS-1197).
+                    # local-vs-remote precedence is relay policy.
                     resize=proc.setwinsize,
                     session=tracer.session,
                 )
@@ -1098,7 +1098,7 @@ class WrapRunner:
                         _drop("on_output", exc)
 
                 if stdin_fd in rlist:
-                    # HATS-220: self-heal termios drift on parent stdin.
+                    # Self-heal termios drift on parent stdin.
                     # Production session 175557 captured two consecutive Enter
                     # presses in the same Claude session: first arrived as \r
                     # (working), second as \n (broken submit). Mechanism: the
@@ -1128,7 +1128,7 @@ class WrapRunner:
                     if not data:
                         read_fds = [master_fd]
                         continue
-                    # HATS-679: count consecutive Ctrl-C. Forward everything up
+                    # Count consecutive Ctrl-C. Forward everything up
                     # to the triggering byte (so the 1st/2nd still reach the
                     # child); on the 3rd within the window, withhold it, print
                     # the notice, and break out to the bounded shutdown.
@@ -1174,7 +1174,7 @@ class WrapRunner:
                 signal.signal(signal.SIGWINCH, prev_winch)
             except (ValueError, OSError):
                 pass
-            # HATS-411: bounded shutdown — ptyprocess.wait() blocks on
+            # Bounded shutdown — ptyprocess.wait() blocks on
             # os.waitpid(pid, 0) which hangs forever when the child is
             # stuck in macOS exit-pending state (`?Es`, libuv handle
             # leak). Escalate grace → SIGTERM-pgroup → SIGKILL → WNOHANG
@@ -1186,7 +1186,7 @@ class WrapRunner:
             # shell when the child crashed without disabling them.
             emit_terminal_reset(stdout_fd)
 
-        # HATS-679: the parent escape-hatch fired (triple Ctrl-C against a
+        # The parent escape-hatch fired (triple Ctrl-C against a
         # wedged child). bounded_proc_shutdown (above) already killed the child,
         # which would otherwise surface as signalstatus=SIGKILL → 137; check
         # forced_exit FIRST so a hatch-triggered exit is the canonical 130
@@ -1197,7 +1197,7 @@ class WrapRunner:
             return int(proc.exitstatus)
         if proc.signalstatus is not None:
             return 128 + int(proc.signalstatus)
-        # HATS-411: bounded_proc_shutdown could not confirm clean exit
+        # bounded_proc_shutdown could not confirm clean exit
         # (child stuck in `?Es` — WNOHANG reap returned (0, 0)). Surface
         # this as 124 (GNU coreutils `timeout` convention, also used by
         # SUBAGENT_EXIT_TIMEOUT) instead of silently returning success.

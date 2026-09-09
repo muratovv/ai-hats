@@ -121,7 +121,7 @@ def assemble_launch_env(
     from .paths import session_cache_dir
     from .session_identity import SessionIdentity
 
-    # HATS-1594: the ONE place a session's identity is produced. Gates running in
+    # The ONE place a session's identity is produced. Gates running in
     # the processes this launches used to re-derive it from ai-hats.yaml, which
     # does not hold it whenever --role/-p override.
     identity = SessionIdentity(
@@ -133,13 +133,13 @@ def assemble_launch_env(
         # Resolved where the provider object is in hand, so no consumer takes a
         # second surface lookup that could answer differently.
         skills_root=str(provider.session_skills_root(project_dir, session_id) or ""),
-        # HATS-1735: the consent store's home, published so a stdlib hook never
+        # The consent store's home, published so a stdlib hook never
         # has to re-derive a hashed path.
         session_cache_dir=str(session_cache_dir(project_dir, session_id)),
     )
     # ``claim`` separates a report from a launch: only the launch may take a
     # resource (cline binds a hub port). Same keys either way — a key set that
-    # depended on the mode would be the reporting defect, moved (HATS-1554).
+    # depended on the mode would be the reporting defect, moved.
     withheld = _withheld_from_child() if run_mode is RunMode.AUTOMATE else {}
     return {
         **withheld,
@@ -190,7 +190,7 @@ def assemble_meta_prompt(
     sections = []
     if role_context:
         sections.append(role_context)
-    # HATS-1479: a surface whose tool picks its own cwd otherwise resolves the
+    # A surface whose tool picks its own cwd otherwise resolves the
     # project to whatever absolute path the prompt happens to name.
     sections.append(
         "# WORKING_DIRECTORY\n"
@@ -245,10 +245,10 @@ class BuiltArtifacts:
     )  # Automate: {"settings":..., "setting_sources":[]}
     materialized: list[Path] = field(default_factory=list)  # for tests/audit
     full_content: str | None = None  # composed prompt bytes (meta_prompt.txt)
-    # HATS-1211: every session write goes through here; a PlanMaterializer turns
+    # Every session write goes through here; a PlanMaterializer turns
     # the whole build into a dry-run. Appended last — positional ctor stays safe.
     port: Materializer = field(default_factory=ApplyMaterializer)
-    # HATS-1207: policy rides here so per-category handlers read it without a
+    # Policy rides here so per-category handlers read it without a
     # published signature change (ADR-0018 §1). Same rule — append last.
     policy: SessionPolicy = field(default_factory=SessionPolicy)
     resources: SessionRun | None = None

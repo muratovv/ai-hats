@@ -75,7 +75,7 @@ def _rack_lock_deadline(ctx: DispatchContext) -> Deadline | None:
 # The three hand-rolled products these replaced (`_exact`, `_edges_into`,
 # `_edges_leaving_execute_or_terminal`) each rebuilt the topology's state product
 # to say what one selector says — which is why every subscriber below had to be
-# handed a topology it never read for any other purpose (HATS-1720).
+# handed a topology it never read for any other purpose.
 
 
 def _into(state: str) -> Selector:
@@ -128,7 +128,7 @@ class OwnershipSingleSlot:
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         session_id = _session_id()
-        if not session_id or ctx.is_epic:  # epics are trackers (HATS-794)
+        if not session_id or ctx.is_epic:  # epics are trackers
             return None
         dangling = [
             t for t in ownership.held_by(self.registry_path, session_id) if t != ctx.task.id
@@ -199,7 +199,7 @@ class OwnershipRelease:
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if isinstance(ctx.event, EpicifyEvent):
-            # HATS-977: a task that gained a child is a tracker now — drop its hold.
+            # A task that gained a child is a tracker now — drop its hold.
             ownership.finish(self.registry_path, ctx.event.epic_id)
             return None
         if (
@@ -268,7 +268,7 @@ class WorktreeExtension:
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if isinstance(ctx.event, EpicifyEvent):
-            # HATS-979: reclaim the now-epic parent's worktree iff empty/merged.
+            # Reclaim the now-epic parent's worktree iff empty/merged.
             self._effects.discard_if_empty(ctx.event.epic_id)
             return None
         if not isinstance(ctx.event, EdgeEvent):
@@ -283,14 +283,14 @@ class WorktreeExtension:
 
     def _on_execute(self, ctx: DispatchContext) -> Delta | None:
         if ctx.is_epic:
-            return None  # epics never get a worktree (HATS-794)
+            return None  # epics never get a worktree
         if ctx.event.from_state == "done":
-            return None  # reopen: the operator owns the worktree decision (HATS-328)
+            return None  # reopen: the operator owns the worktree decision
         if ctx.force:
-            # HATS-518: force relaxes the FSM arrow, NOT the canonical-base
+            # Force relaxes the FSM arrow, NOT the canonical-base
             # contract — the guard must run explicitly on the force path.
             self._effects.assert_canonical_base()
-            # HATS-697: a forced execute is a manual state correction — no
+            # A forced execute is a manual state correction — no
             # fresh worktree (one spun off HEAD orphaned retro work, PROX-287).
             return Delta(work_log=("Forced → execute: no worktree created (manual override)",))
         wt_path = self._effects.setup(
@@ -386,7 +386,7 @@ class WorktreeExtension:
             caller_cwd=ctx.caller_cwd,
             force=ctx.force,
             reason=ctx.reason,
-            lock_expires_at=ctx.lock_expires_at,  # HATS-1603: still in-lock here
+            lock_expires_at=ctx.lock_expires_at,  # Still in-lock here
         )
 
     @staticmethod
@@ -397,7 +397,7 @@ class WorktreeExtension:
                 cwd=str(wt_path),
                 capture_output=True,
                 text=True,
-                env=scrubbed_git_env(),  # HATS-890: never inherit ambient GIT_DIR
+                env=scrubbed_git_env(),  # Never inherit ambient GIT_DIR
                 timeout=budget,
             )
         except (OSError, subprocess.SubprocessError):
@@ -432,7 +432,7 @@ def build_rack_kernel(
         state_md_path = state_md_path if state_md_path is not None else paths.state_md_path
 
     # One definition feeds the kernel AND every subscriber (HATS-1042, ADR-0017
-    # §1). The legacy links.yaml is the OWNER's (HATS-1573); with no owner the
+    # §1). The legacy links.yaml is the OWNER's; with no owner the
     # anchor is still probed, so R6 never gets weaker than it was.
     defn = resolve_definition(
         tasks_dir, prefix_alias=prefix, project_dir=backlog_owner or project_dir
@@ -443,7 +443,7 @@ def build_rack_kernel(
     registry = tasks_dir.parent / "ownership.json"
     worktree = WorktreeExtension(project_dir, effects=worktree_effects)
     automation = EpicAutomationExtension(topology=topology, registry=links_registry)
-    # Declaration channel (HATS-1043): frozen-integrity (ambient) + scaffold/
+    # Declaration channel: frozen-integrity (ambient) + scaffold/
     # plan-gate/stamp/clear (declaration-bound) come from the definition slots.
     # derived-views stays code-channel — it needs the STATE.md path (ADR-0017 §4).
     factories = stock_factories(sections)

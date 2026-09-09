@@ -81,7 +81,7 @@ def _consent_key(consent: dict) -> str:
         return f"entering {consent['to']!r}"
     # The owner, not the key the row stands under: since HATS-1755 every row
     # stands under the gate, so asking `app` alone answered "operation type" for
-    # the wt point too (HATS-1790).
+    # the wt point too.
     if point_owner(consent["app"], consent["path"]) == WT_APP:
         return "wt point"
     if consent["app"] == CONSENT_GATE_APP:
@@ -109,7 +109,7 @@ class SessionReport:
     # Known gaps between what this report can observe and what the surface
     # actually delivers — never leave such a gap silent.
     notes: tuple[str, ...] = ()
-    # HATS-1548: the gates this launch arms. Not derivable from the plan — the
+    # The gates this launch arms. Not derivable from the plan — the
     # skill mirror a check runs from is written per SKILL, not per binding.
     checks: tuple[ReportedCheck, ...] = ()
     #: HATS-1682: where this role wants the supervisor asked. The guard on the

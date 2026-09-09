@@ -18,7 +18,7 @@ from ai_hats_core.layout import ProjectLayout
 
 from typing import TYPE_CHECKING
 
-# HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
+# The session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
@@ -32,7 +32,7 @@ from .pipeline import PipelineConfig, PipelineResult, SessionRef, run_subpipelin
 from .pipeline_catalog import FINALIZE_HITL, FINALIZE_SUBAGENT
 from .session_policy import FinalizeRunParams
 
-# HATS-970: the pre-launch startup-notice surface moved to its own module;
+# The pre-launch startup-notice surface moved to its own module;
 # re-exported here so existing ``from .runtime_common import …`` sites keep working.
 from .startup_notices import (  # noqa: F401
     STARTUP_WARN_HOLD_SECONDS,
@@ -59,7 +59,7 @@ SUBAGENT_SUBPROCESS_TIMEOUT_S = 600
 SUBAGENT_EXIT_TIMEOUT = 124
 SUBAGENT_EXIT_ERROR = 1
 
-# HATS-215 / HATS-220: emitted on stdout before each PTY child spawn to
+# Emitted on stdout before each PTY child spawn to
 # neutralise terminal state a prior TUI session may have leaked (idempotent on a
 # clean terminal). HATS-220: a leaked modifyOtherKeys=2 re-encoded plain Enter —
 # see the ticket. Each sequence:
@@ -74,7 +74,7 @@ SUBAGENT_EXIT_ERROR = 1
 _TERM_RESET_PRELUDE = "\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
 
 
-# HATS-679: parent escape-hatch for a wedged PTY provider. When the child
+# Parent escape-hatch for a wedged PTY provider. When the child
 # (claude) wedges un-exitably — ignores Ctrl-C, never EOFs — the raw-mode
 # passthrough in ``_pty_spawn`` forwards Ctrl-C as a byte, so the parent has no
 # exit and the user is trapped. We can't reliably tell wedged from healthy-busy
@@ -305,7 +305,7 @@ def _finalize_sub_agent(
     model: str,
     isolation_mode: str,
     exit_code: int,
-    # HATS-561: ``provider`` is keyword-only with a sentinel default so
+    # ``provider`` is keyword-only with a sentinel default so
     # legacy unit tests that exercise the function in isolation (and
     # don't care about provider — e.g. timeout / error / tags plumbing
     # tests) keep working without churn. EVERY production call site in
@@ -352,7 +352,7 @@ def _finalize_sub_agent(
     keep producing the meta-only ``audit.md`` they always did — opt-in
     enrichment, no behaviour change for the unfixed callsites.
     """
-    # HATS-1426: same shield as the HITL arm — a stray Ctrl-C here costs
+    # Same shield as the HITL arm — a stray Ctrl-C here costs
     # audit.md and metrics for the whole sub-agent run.
     try:
         with sigint_shield():
@@ -364,7 +364,7 @@ def _finalize_sub_agent(
             metrics: dict = {
                 "exit_code": exit_code,
                 "role": role,
-                # HATS-561: provider was previously omitted from the SubAgent
+                # Provider was previously omitted from the SubAgent
                 # finalize path's base metrics dict (only the HITL counterpart
                 # `_finalize_session_basic` wrote it). The downstream
                 # `AuditWriter._render_audit` then read `metrics.get("provider",
@@ -391,7 +391,7 @@ def _finalize_sub_agent(
 
             session.finalize_audit(metrics)
 
-            # HATS-1221: Persist completion metrics to diagnostics.json for subagents
+            # Persist completion metrics to diagnostics.json for subagents
             save_session_diagnostics(
                 session.session_dir,
                 "completion",
@@ -424,7 +424,7 @@ def _finalize_sub_agent(
                         transcript_resolver=transcript_resolver,
                     )
                 except (Exception, KeyboardInterrupt):
-                    # HATS-1374: escalated from warning, and recorded in the artifact —
+                    # Escalated from warning, and recorded in the artifact —
                     # a broken sensor that only whispers into a log is how RC-C stayed
                     # invisible across 74 sessions.
                     logger.error("finalize-subagent pipeline failed", exc_info=True)
@@ -462,8 +462,8 @@ def _print_session_start(
     print(line + "\n")
 
 
-# ----- Pre-launch startup hold (HATS-825 / HATS-833) -----
-# Moved to ``startup_notices.py`` (HATS-970); re-exported from the module top
+# ----- Pre-launch startup hold -----
+# Moved to ``startup_notices.py``; re-exported from the module top
 # so existing ``from .runtime_common import …`` call sites keep working.
 
 
@@ -541,7 +541,7 @@ def _print_session_end(
 
     duration = _fmt_duration(session.session_id)
 
-    # HATS-1221: Persist completion diagnostics to diagnostics.json
+    # Persist completion diagnostics to diagnostics.json
     save_session_diagnostics(
         session.session_dir,
         "completion",
@@ -601,7 +601,7 @@ def _finalize_session_basic(
     """
     trace_stats: dict = {}
     try:
-        # HATS-529: Path A (live PTY ⏺-marker audit) removed. The
+        # Path A (live PTY ⏺-marker audit) removed. The
         # surrounding try/except is reserved as a scaffold for future
         # finalize-time tracer cleanup hooks — the HATS-086 SIGINT-safety
         # pattern (catch both Exception and KeyboardInterrupt so a second
@@ -627,7 +627,7 @@ def _finalize_session_basic(
         # The link back to the provider's transcript. Only the sub-agent path
         # used to persist it, so a HITL session's metrics could never be
         # re-derived later — 947 sessions are permanently unmeasurable for want
-        # of this one field (HATS-1374).
+        # of this one field.
         if claude_session_id:
             metrics["claude_session_id"] = claude_session_id
         if tags:

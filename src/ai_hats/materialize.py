@@ -90,7 +90,7 @@ def compose_for_role(
     # problem (a bad `-p`, no role set).
     if role and not tolerate_lossy and result.lost:
         raise CompositionIncompleteError(role, result.lost)
-    # HATS-1203: the composer sees library_paths only, so user-rules attach
+    # The composer sees library_paths only, so user-rules attach
     # here — the one funnel — and reach every consumer. Discovery is delegated
     # to the assembler: this facade stays free of filesystem work.
     return result.with_user_rules(assembler.user_rules())

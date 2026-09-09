@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from ..paths._dirs import ProjectConfigError  # one family for every reader (HATS-1606)
+from ..paths._dirs import ProjectConfigError  # one family for every reader
 from ..paths.constants import KNOWN_SCHEMA_VERSION
 from pydantic import (
     ConfigDict,
@@ -58,20 +58,18 @@ class ProjectConfig(_YamlModel):
     default_role: str = ""
     active_role: str = ""
     schema_version: int = 4
-    migration_step: int = 0  # HATS-471: one-shot-migration counter, orthogonal to schema_version
-    ai_hats_dir: str = (
-        ".agent/ai-hats"  # HATS-316: default is bootstrap-only; v4 yaml must carry it
-    )
-    venv_path: str | None = None  # HATS-334: user-owned venv override; None → <ai_hats_dir>/.venv
+    migration_step: int = 0  # One-shot-migration counter, orthogonal to schema_version
+    ai_hats_dir: str = ".agent/ai-hats"  # Default is bootstrap-only; v4 yaml must carry it
+    venv_path: str | None = None  # User-owned venv override; None → <ai_hats_dir>/.venv
     library_paths: list[str] = Field(default_factory=list)
     customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     manage_gitignore: bool = True
     task_prefix: str = "TASK"
-    harness: HarnessConfig = Field(default_factory=HarnessConfig)  # HATS-764: self-update channel
-    worktree: WorktreeConfig = Field(default_factory=WorktreeConfig)  # HATS-942: base/merge-target
+    harness: HarnessConfig = Field(default_factory=HarnessConfig)  # Self-update channel
+    worktree: WorktreeConfig = Field(default_factory=WorktreeConfig)  # base/merge-target
 
-    # HATS-792: unknown top-level keys preserved for round-trip. PrivateAttr, not
+    # Unknown top-level keys preserved for round-trip. PrivateAttr, not
     # a field: extra="forbid" pre-strips them in from_yaml before validation.
     _extra: dict[str, Any] = PrivateAttr(default_factory=dict)
 
@@ -86,7 +84,7 @@ class ProjectConfig(_YamlModel):
             }
         return data
 
-    # ``provider`` is deliberately NOT schema-validated (HATS-863): the known
+    # ``provider`` is deliberately NOT schema-validated: the known
     # set lives in the providers registry, and schema→providers is the severed
     # back-edge. Write paths and the assembler load validate via
     # Assembler._validate_provider.
@@ -112,7 +110,7 @@ class ProjectConfig(_YamlModel):
         if not path.exists():
             return cls()
         data = yaml.safe_load(path.read_text()) or {}
-        # HATS-792: fail loud on a schema_version this binary cannot understand.
+        # Fail loud on a schema_version this binary cannot understand.
         # Migrations below run upward ONLY to KNOWN_SCHEMA_VERSION; a higher
         # value was written by a NEWER ai-hats. Silently treating it as v4 would
         # both misread its (unknown) format AND risk clobbering future fields on
@@ -129,7 +127,7 @@ class ProjectConfig(_YamlModel):
             data = _migrate_v2_to_v3(data)
         if data.get("schema_version", 1) < 4:
             data = _migrate_v3_to_v4(path, data)
-        # HATS-316: v4 yaml must contain ai_hats_dir explicitly. The pydantic
+        # v4 yaml must contain ai_hats_dir explicitly. The pydantic
         # default is a bootstrap-only safety net for `ProjectConfig()` without
         # a yaml; on-disk yaml is strict so the path stays visible to users.
         if "ai_hats_dir" not in data:
@@ -137,20 +135,20 @@ class ProjectConfig(_YamlModel):
                 f"Invalid {path}:\n  - ai_hats_dir: field required "
                 "(add 'ai_hats_dir: .agent/ai-hats' to ai-hats.yaml)"
             )
-        # HATS-408: drop known-deprecated ghosts BEFORE strict pydantic
+        # Drop known-deprecated ghosts BEFORE strict pydantic
         # validation so v0.6 projects do not crash every ai-hats command
         # before the inline v0.6 → v0.7 migration (HATS-415, runs in
         # ``Assembler.bump``) gets a chance. Mutates ``data`` in-place
         # (the healed shape is what we'd want to persist on a save anyway).
         cls._strip_deprecated_fields(data, path)
-        # HATS-581: forward-compat — drop unknown keys (warn, don't crash) so
+        # Forward-compat — drop unknown keys (warn, don't crash) so
         # an OLDER binary survives a yaml a NEWER binary wrote (e.g.
         # ``migration_step``, added without a schema_version bump). Runs AFTER
         # the deprecated strip so known ghosts keep their specific message.
-        # HATS-792: the popped keys are returned so they can be PRESERVED (not
+        # The popped keys are returned so they can be PRESERVED (not
         # silently lost) on the next save — same-version round-trip.
         extra = cls._strip_unknown_fields(data, path)
-        # HATS-408: heal empty default_role from active_role on load. Any
+        # Heal empty default_role from active_role on load. Any
         # ai-hats command that needs an "effective role" already falls back
         # to (active_role or default_role); persisting the heal makes the
         # downstream contract — default_role is the source of truth — true.
@@ -159,7 +157,7 @@ class ProjectConfig(_YamlModel):
             cfg = cls.model_validate(data)
         except ValidationError as e:
             raise ProjectConfigError(_format_project_config_error(path, e)) from e
-        # HATS-792: stash the popped unknown top-level keys so to_dict can
+        # Stash the popped unknown top-level keys so to_dict can
         # round-trip them. Set after validation because the PrivateAttr stash
         # is not a model field (extra="forbid" would re-trip on it).
         cfg._extra = extra
@@ -241,10 +239,10 @@ class ProjectConfig(_YamlModel):
         d: dict[str, Any] = {
             "schema_version": 4,
             "provider": self.provider,
-            # HATS-316: ai_hats_dir is unconditionally serialized so users
+            # ai_hats_dir is unconditionally serialized so users
             # see the configurable path in their ai-hats.yaml.
             "ai_hats_dir": self.ai_hats_dir,
-            # HATS-471: migration_step is unconditionally serialized once
+            # migration_step is unconditionally serialized once
             # any save fires — same as schema_version. Greenfield init
             # seeds it to ``migrations.latest_step()``; the registry
             # runner persists subsequent advances. Existing pre-HATS-471
@@ -255,7 +253,7 @@ class ProjectConfig(_YamlModel):
             "active_role": self.active_role,
             "default_role": self.default_role,
         }
-        # HATS-334: venv_path is opt-in — omitted from yaml when None so
+        # venv_path is opt-in — omitted from yaml when None so
         # existing files without the field stay clean and the field appears
         # only when the user actually picks an override.
         if self.venv_path is not None:
@@ -273,15 +271,15 @@ class ProjectConfig(_YamlModel):
             d["manage_gitignore"] = False
         if self.task_prefix != "TASK":
             d["task_prefix"] = self.task_prefix
-        # HATS-764: harness is opt-in — omitted when default (stable, no
+        # Harness is opt-in — omitted when default (stable, no
         # repo/path) so existing yamls without the block stay byte-clean.
         if not self.harness.is_default:
             d["harness"] = self.harness.to_dict()
-        # HATS-942: worktree base/merge-target is opt-in — omitted when default
+        # Worktree base/merge-target is opt-in — omitted when default
         # so existing yamls without the block stay byte-clean.
         if not self.worktree.is_default:
             d["worktree"] = self.worktree.to_dict()
-        # HATS-792: round-trip same-version unknown top-level keys captured on
+        # Round-trip same-version unknown top-level keys captured on
         # load (mirrors TaskCard.to_dict). Known fields take precedence on an
         # accidental collision; _extra should never hold a known key since
         # _strip_unknown_fields only pops set(data) - set(model_fields), but we

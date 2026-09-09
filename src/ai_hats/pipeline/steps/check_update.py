@@ -47,13 +47,13 @@ class CheckUpdateAsync(Step):
         project_dir = layout.root
         if is_disabled():
             return {}
-        # HATS-781: a LOCAL editable harness is updated via ``git`` — never
+        # A LOCAL editable harness is updated via ``git`` — never
         # probe upstream or surface a ``self update`` nudge for it.
         if is_local_channel(project_dir):
             return {}
         cached = read_cache(project_dir)
         if cached is not None and cached.is_fresh:
-            # HATS-781: the cache is keyed only on project_dir + 24h TTL. A
+            # The cache is keyed only on project_dir + 24h TTL. A
             # reinstall within that window changes the installed SHA, so a
             # time-fresh cache can still describe the PRE-update build. Re-probe
             # when the running SHA is known AND differs; when it is unknown

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .fs_digest import dir_digest
 
-# A rebuild is a sub-second fs op, so a timeout means a stuck/dead holder (HATS-604).
+# A rebuild is a sub-second fs op, so a timeout means a stuck/dead holder.
 LOCK_TIMEOUT = 30.0
 
 

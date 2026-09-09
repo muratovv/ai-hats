@@ -47,7 +47,7 @@ def sweep_incomplete_versions(project_dir: Path, ttl_hours: int = DEFAULT_TTL_HO
             continue  # the 'current' pointer file and any stray files
         sha = entry.name
         if sha == ".refs":
-            continue  # liveness-ref store (HATS-649), not a version dir
+            continue  # liveness-ref store, not a version dir
         if sha == current:
             continue  # never touch the active version
         if is_complete(project_dir, sha):

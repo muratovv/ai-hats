@@ -181,7 +181,7 @@ class SessionReviewRunner:
             "      recommendation: close_confirmed | close_refuted | "
             "keep | extend_window\n"
             "    (one entry PER active HYP listed above; do not skip)\n"
-            # HATS-1418: semantics live in review-hypothesis/SKILL.md, which no
+            # Semantics live in review-hypothesis/SKILL.md, which no
             # reviewer run opens — unstated, each model guesses from its own prior.
             "\n    What each verdict means — choose by the evidence, not by confidence:\n"
             "      confirmed    — the session SHOWS the mechanism operating, and that\n"
@@ -229,7 +229,7 @@ class SessionReviewRunner:
                 f"  success_criterion: {h.success_criterion!r}\n"
                 f"  observation_window: {h.observation_window!r}"
             )
-            # HATS-534 — surface verification_protocol as a YAML literal block
+            # Surface verification_protocol as a YAML literal block
             # scalar so multi-line protocols stay verbatim for the auditor.
             vp = h.verification_protocol
             if vp:
@@ -316,7 +316,7 @@ class SessionReviewRunner:
             )
         return "\n\n".join(parts)
 
-    # HATS-684: content-aware audit *delivery* (generation stays lossless,
+    # Content-aware audit *delivery* (generation stays lossless,
     # HATS-681/666/683). The bulk of audit bytes is the first-turn 👤
     # ingested-evidence echo (PROJECT_STATE backlog dump / Reflect-all handoff /
     # harness-context) — redundant, since the reviewer already has the target's
@@ -378,7 +378,7 @@ class SessionReviewRunner:
         from ..composition_seam import build_composition_payload, make_session_manager
         from ..runtime import SubAgentRunner
 
-        # HATS-865: compose ONCE at this integrator-side seam; the retry loop
+        # Compose ONCE at this integrator-side seam; the retry loop
         # in _run_and_validate shares the composition. strict=False — a broken
         # session-reviewer role surfaces via HATS-271 (empty transcript), not
         # a seam raise.
@@ -438,7 +438,7 @@ class SessionReviewRunner:
             )
             transcript_path = session.session_dir / TRANSCRIPT_TXT
             transcript = transcript_path.read_text() if transcript_path.exists() else ""
-            # HATS-271: empty transcript means the sub-agent itself failed
+            # Empty transcript means the sub-agent itself failed
             # (subprocess timeout, claude CLI error, auth/quota issue) — not
             # a schema mismatch. Retrying with a "fix your YAML" prompt is
             # pointless and produces a misleading "Empty frontmatter" final
@@ -457,7 +457,7 @@ class SessionReviewRunner:
                 # Light shape validation only — full SessionReviewV1 happens
                 # after merging facts.
                 self._validate_analysis_shape(raw, session_id)
-                # HATS-610: normalise non-string observation entries BEFORE
+                # Normalise non-string observation entries BEFORE
                 # the strict list[str] validation in _merge (which runs
                 # outside this retry loop). A dict-shaped observation would
                 # otherwise pass the lenient shape check, return here, then

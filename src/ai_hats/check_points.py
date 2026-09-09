@@ -45,7 +45,7 @@ from .libraries.models import AppBinding, CheckBindingError, resolve_namespace
 #: The worktree application key. ai-hats fires it, so it reads its cargo.
 WT_APP = "wt"
 
-#: The session-start application key (HATS-1581). ai-hats fires this one too:
+#: The session-start application key. ai-hats fires this one too:
 #: the launch is its own lifecycle, owned by no other application.
 AI_HATS_APP = "ai-hats"
 
@@ -173,7 +173,7 @@ _APP_RULES: dict[str, tuple[tuple[str | None, Callable[[str], str | None]], ...]
         # consent-only row is refused nowhere else (HATS-1682 A5).
         (None, _rack_selector_form),
         # May a row that RUNS a script stand on it? A wide output takes a legal
-        # name and turns a gate into a lock-in (HATS-1720).
+        # name and turns a gate into a lock-in.
         ("run", _rack_gate_veto),
     ),
 }
@@ -236,7 +236,7 @@ def resolve_checks(
         # else, and a typo in one disarms a gate in silence (HATS-1682 A5).
         _validate_selector(row)
         if not row.run:
-            # A consent-only row runs nothing (HATS-1682): no script to find, and
+            # A consent-only row runs nothing: no script to find, and
             # no root to judge it from — resolving it would make a declaration
             # that spawns nothing refuse from a linked worktree.
             if owns_app(row.app):
@@ -339,7 +339,7 @@ def _label(check: ResolvedCheck | AppBinding) -> str:
 
 #: This channel's own words for each outcome. Its own on purpose: in ai-hats a
 #: "hook" is a channel (git_hooks, runtime_hooks, worktree) and a binding line is
-#: not one, so the primitive's wording would name the wrong subsystem (HATS-1572).
+#: not one, so the primitive's wording would name the wrong subsystem.
 #: Keyed by the enum member, never by its ``value``: a string key would re-open
 #: the seam the typed outcome exists to close, and the exhaustiveness test below
 #: it could not then be written.
@@ -409,7 +409,7 @@ def _stale_mirror_note(check: ResolvedCheck, identity: Any) -> str:
     if live is None:
         # Nothing re-based this check, so no envelope is worth reading — and
         # asking for one a refusal does not depend on is how a gate's verdict
-        # gets replaced by a complaint about the environment (HATS-1594).
+        # gets replaced by a complaint about the environment.
         return ""
     if identity is _FROM_ENV:
         # Both production callers leave it defaulted, so resolving here is not a

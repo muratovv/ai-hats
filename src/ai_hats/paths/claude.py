@@ -13,7 +13,7 @@ from pathlib import Path
 
 AI_HATS_MANAGED_MARKER = ".ai-hats-managed"
 
-# Claude Code's project-key slugification: every non-alphanumeric byte -> "-" (HATS-1412).
+# Claude Code's project-key slugification: every non-alphanumeric byte -> "-".
 _NON_ALNUM_RE = re.compile(r"[^A-Za-z0-9]")
 
 _CLAUDE_DIRNAME = ".claude"
