@@ -7,6 +7,10 @@ function, a gate naming a stage that does not exist, a stage no gate requires
 that nobody decided to leave out, and the containment the marker's absorption
 rule stands on (review ⊆ merge ⊆ done). Each is a subprocess of the scripts,
 never a literal copied here.
+
+The containment holds between what the gates DECLARE. It does not hold between
+what they end up requiring: `->merge` also demands the zones the diff names and
+`->done` does not, which is a decision (ADR-0023 D11), asserted below.
 """
 
 from __future__ import annotations
@@ -54,6 +58,12 @@ def _stages(gate: str) -> list[str]:
     out = _run(GATE_SCRIPTS[gate], "--stages")
     assert out.returncode == 0, out.stderr
     return out.stdout.split()
+
+
+def _zones(gate: str) -> str:
+    out = _run(GATE_SCRIPTS[gate], "--zones")
+    assert out.returncode == 0, out.stderr
+    return out.stdout.strip()
 
 
 def _listed() -> dict[str, str]:
@@ -147,6 +157,24 @@ def test_the_done_gate_demands_what_only_it_can_ask():
         "master-ci",
         "merge-smoke",
         "e2e-default",
+    }
+
+
+def test_only_the_edges_before_the_merge_demand_the_zones_a_diff_names():
+    """A zone is what THIS change is expected to break, and the agent fixes that
+    alone at `->merge`. `->done` asks the other question — what the merge itself
+    broke — and its tree is not the one that earned the stage, so asking there
+    runs the same tests a second time for a refusal that edge is not for
+    (ADR-0023 D11). `push-gate` requires the whole partition by name, decided by
+    no diff.
+
+    Every gate answers, including the git one: the renderer asks all of them, and
+    an unknown flag there falls into check mode, which waits on stdin forever."""
+    assert {gate: _zones(gate) for gate in GATE_SCRIPTS} == {
+        "review-gate": "diff",
+        "merge-gate": "diff",
+        "done-gate": "none",
+        "push-gate": "none",
     }
 
 

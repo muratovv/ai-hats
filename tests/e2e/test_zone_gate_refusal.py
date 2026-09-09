@@ -5,10 +5,12 @@ cmds:
     ai-hats wt merge HATS-1921
     scripts/gates.sh touched
     make merge-gate
+    make done-gate
 expect: the merge gate refuses naming `e2e-rack` — a stage no gate declares,
         demanded because the branch changed `packages/ai-hats-rack/` — and the
         same branch with that one stage earned is let through; a branch that
-        changed nothing zoned is never asked for it
+        changed nothing zoned is never asked for it, and the done gate never
+        asks for it at all
 why:    without it a change lands in master with only the tier that runs after
         the merge, so the tests its own area owns are first run when the
         breakage is already shared
@@ -28,6 +30,7 @@ pytestmark = pytest.mark.integration
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
 MERGE_GATE = SKILL / "hooks" / "merge-gate.sh"
+DONE_GATE = SKILL / "hooks" / "done-gate.sh"
 GATES = REPO_ROOT / "scripts" / "gates.sh"
 STAGES_DIR = Path(".git") / "ai-hats" / "stages"
 
@@ -38,15 +41,15 @@ ZONE_FILE = "packages/ai-hats-rack/src/ai_hats_rack/cli.py"
 REFUSE, PASS = 2, 0
 
 
-def _declared() -> list[str]:
-    """What `merge-gate` requires of every tree, zones aside."""
+def _declared(gate: Path = MERGE_GATE) -> list[str]:
+    """What `gate` requires of every tree, zones aside."""
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(MERGE_GATE), "--stages"], capture_output=True, text=True, check=True
+        ["bash", str(gate), "--stages"], capture_output=True, text=True, check=True
     )
     return out.stdout.split()
 
 
-def _check(project: Path) -> subprocess.CompletedProcess[str]:
+def _check(project: Path, gate: Path = MERGE_GATE) -> subprocess.CompletedProcess[str]:
     """The gate as the checks runner spawns it: no argv, the subject in the env."""
     env = {
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
@@ -56,7 +59,7 @@ def _check(project: Path) -> subprocess.CompletedProcess[str]:
         "AI_HATS_WORKTREE_PATH": str(project),
     }
     return subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(MERGE_GATE)], capture_output=True, text=True, check=False, env=env
+        ["bash", str(gate)], capture_output=True, text=True, check=False, env=env
     )
 
 
@@ -129,6 +132,21 @@ def test_earning_the_zone_stage_lets_the_same_branch_through(project: Path):
     out = _check(project)
 
     assert out.returncode == PASS, out.stdout + out.stderr
+
+
+def test_the_done_gate_never_asks_for_the_zone_the_branch_changed(project: Path):
+    """The same branch, the same table, the other edge. `->merge` refuses for
+    `e2e-rack` (the two tests above); `->done` does not ask for it at all, so the
+    zone is paid for once. It is the edge for what the MERGE broke, and the tree
+    it judges is not the tree that earned the stage anyway — asking would run it
+    a second time for a refusal nobody there is for (ADR-0023 D11)."""
+    commit_file(project, ZONE_FILE, "x = 2\n", "change the rack zone")
+    _stamp(project, _declared(DONE_GATE))
+
+    out = _check(project, DONE_GATE)
+
+    assert out.returncode == PASS, out.stdout + out.stderr
+    assert ZONE_STAGE not in _missing(out)
 
 
 def test_a_branch_outside_every_zone_is_never_asked_for_one(project: Path):

@@ -46,6 +46,8 @@ class Gate:
     name: str
     stages: tuple[str, ...]
     where: tuple[str, ...]
+    #: `diff` if this gate also demands the zones the change touches, else `none`.
+    zones: str
 
 
 def _bash(repo: Path, script: str, *args: str) -> str:
@@ -113,7 +115,8 @@ def read_gates(repo: Path) -> list[Gate]:
     gates = []
     for name, where in found.items():
         stages = _bash(repo, f"{SKILL_RELPATH}/{scripts[name]}", "--stages").split()
-        gates.append(Gate(name, tuple(stages), tuple(where)))
+        zones = _bash(repo, f"{SKILL_RELPATH}/{scripts[name]}", "--zones").strip()
+        gates.append(Gate(name, tuple(stages), tuple(where), zones))
     if not gates:
         raise SourceError("no gate is bound anywhere")
     return gates
@@ -158,7 +161,8 @@ def render_stages(stages: list[tuple[str, str]], gates: list[Gate], zones: dict[
         required = " ".join(g.name for g in gates if stage in g.stages)
         if stage in zones:
             prefixes = ", ".join(f"`{prefix}`" for prefix in zones[stage])
-            by_diff = f"карточные, когда дифф трогает {prefixes}"
+            asking = " ".join(g.name for g in gates if g.zones == "diff")
+            by_diff = f"{asking}, когда дифф трогает {prefixes}"
             required = f"{required}; {by_diff}" if required else by_diff
         body.append([f"`{stage}`", required or "-", desc])
     return _table(["стадия", "требуют гейты", "что проверяет"], body)

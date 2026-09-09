@@ -66,35 +66,35 @@ hook-подложкой и контрактом кодов возврата. **A
 
 <!-- gate-table:stages -->
 
-| стадия             | требуют гейты                                                                                                           | что проверяет                                                                     |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `e2e-catalog`      | review-gate done-gate merge-gate push-gate                                                                              | tests/e2e/CATALOG.md matches the flow blocks in the tests' docstrings             |
-| `lint`             | review-gate done-gate merge-gate push-gate                                                                              | ruff check and ruff format --check, both over the whole tree                      |
-| `shellcheck`       | review-gate done-gate merge-gate                                                                                        | every tracked *.sh is clean at severity warning and above                         |
-| `dependency-floor` | review-gate done-gate merge-gate                                                                                        | every pin on a workspace package tracks that package's version                    |
-| `silent-fallback`  | review-gate done-gate merge-gate                                                                                        | no broad except swallows a failure without reporting it                           |
-| `test-isolation`   | review-gate done-gate merge-gate                                                                                        | the suite patches its own units no more than the recorded baseline                |
-| `prose-refs`       | review-gate done-gate merge-gate push-gate                                                                              | paths, library prefixes, sections and symbols named in library prose resolve      |
-| `ticket-ids`       | review-gate done-gate merge-gate push-gate                                                                              | no tracker id in shipped library prose                                            |
-| `consumer-refs`    | review-gate done-gate merge-gate                                                                                        | no library component names a component that composes it                           |
-| `env-reference`    | review-gate done-gate merge-gate push-gate                                                                              | docs/reference-env.md matches the env declarations the code reads                 |
-| `gate-table`       | review-gate done-gate merge-gate push-gate                                                                              | ADR-0023's stage and gate tables match this file and the gates                    |
-| `adr-integrity`    | push-gate                                                                                                               | every ADR citation resolves and a number names exactly one file                   |
-| `bidi`             | push-gate                                                                                                               | no bidirectional control characters, which are invisible in review                |
-| `wheel-contents`   | review-gate done-gate merge-gate                                                                                        | every tracked src file reaches the wheel built through the sdist                  |
-| `master-ci`        | done-gate                                                                                                               | master's last CI verdict is green (network)                                       |
-| `unit`             | review-gate done-gate merge-gate push-gate                                                                              | every test not marked integration                                                 |
-| `integration`      | done-gate                                                                                                               | the real-subprocess tests outside tests/e2e                                       |
-| `merge-smoke`      | done-gate                                                                                                               | the curated smoke subset of tests/e2e                                             |
-| `e2e`              | -                                                                                                                       | the full tier: integration or smoke, quarantine and live agents excluded          |
-| `e2e-default`      | done-gate push-gate                                                                                                     | the half of the tier no zone claims — an unexpected regression                    |
-| `e2e-rack`         | push-gate; карточные, когда дифф трогает `packages/ai-hats-rack/`, `src/ai_hats/rack_`, `src/ai_hats/tracker_wiring.py` | the rack zone of the tier: what a change to the rack surface is expected to break |
-| `coverage`         | -                                                                                                                       | the tests outside tests/e2e in one process, at the coverage floor (CI)            |
-| `security`         | -                                                                                                                       | pip-audit over the interpreter's whole environment (CI-authoritative)             |
-| `version-skew`     | -                                                                                                                       | every workspace package is ahead of what PyPI has (network)                       |
-| `python-pin`       | -                                                                                                                       | every copy of the Python pin agrees and CI runs it                                |
-| `tmp-sweep`        | -                                                                                                                       | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing               |
-| `prepare`          | -                                                                                                                       | precondition: a venv for this checkout; it asserts nothing                        |
+| стадия             | требуют гейты                                                                                                                        | что проверяет                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `e2e-catalog`      | review-gate done-gate merge-gate push-gate                                                                                           | tests/e2e/CATALOG.md matches the flow blocks in the tests' docstrings             |
+| `lint`             | review-gate done-gate merge-gate push-gate                                                                                           | ruff check and ruff format --check, both over the whole tree                      |
+| `shellcheck`       | review-gate done-gate merge-gate                                                                                                     | every tracked *.sh is clean at severity warning and above                         |
+| `dependency-floor` | review-gate done-gate merge-gate                                                                                                     | every pin on a workspace package tracks that package's version                    |
+| `silent-fallback`  | review-gate done-gate merge-gate                                                                                                     | no broad except swallows a failure without reporting it                           |
+| `test-isolation`   | review-gate done-gate merge-gate                                                                                                     | the suite patches its own units no more than the recorded baseline                |
+| `prose-refs`       | review-gate done-gate merge-gate push-gate                                                                                           | paths, library prefixes, sections and symbols named in library prose resolve      |
+| `ticket-ids`       | review-gate done-gate merge-gate push-gate                                                                                           | no tracker id in shipped library prose                                            |
+| `consumer-refs`    | review-gate done-gate merge-gate                                                                                                     | no library component names a component that composes it                           |
+| `env-reference`    | review-gate done-gate merge-gate push-gate                                                                                           | docs/reference-env.md matches the env declarations the code reads                 |
+| `gate-table`       | review-gate done-gate merge-gate push-gate                                                                                           | ADR-0023's stage and gate tables match this file and the gates                    |
+| `adr-integrity`    | push-gate                                                                                                                            | every ADR citation resolves and a number names exactly one file                   |
+| `bidi`             | push-gate                                                                                                                            | no bidirectional control characters, which are invisible in review                |
+| `wheel-contents`   | review-gate done-gate merge-gate                                                                                                     | every tracked src file reaches the wheel built through the sdist                  |
+| `master-ci`        | done-gate                                                                                                                            | master's last CI verdict is green (network)                                       |
+| `unit`             | review-gate done-gate merge-gate push-gate                                                                                           | every test not marked integration                                                 |
+| `integration`      | done-gate                                                                                                                            | the real-subprocess tests outside tests/e2e                                       |
+| `merge-smoke`      | done-gate                                                                                                                            | the curated smoke subset of tests/e2e                                             |
+| `e2e`              | -                                                                                                                                    | the full tier: integration or smoke, quarantine and live agents excluded          |
+| `e2e-default`      | done-gate push-gate                                                                                                                  | the half of the tier no zone claims — an unexpected regression                    |
+| `e2e-rack`         | push-gate; review-gate merge-gate, когда дифф трогает `packages/ai-hats-rack/`, `src/ai_hats/rack_`, `src/ai_hats/tracker_wiring.py` | the rack zone of the tier: what a change to the rack surface is expected to break |
+| `coverage`         | -                                                                                                                                    | the tests outside tests/e2e in one process, at the coverage floor (CI)            |
+| `security`         | -                                                                                                                                    | pip-audit over the interpreter's whole environment (CI-authoritative)             |
+| `version-skew`     | -                                                                                                                                    | every workspace package is ahead of what PyPI has (network)                       |
+| `python-pin`       | -                                                                                                                                    | every copy of the Python pin agrees and CI runs it                                |
+| `tmp-sweep`        | -                                                                                                                                    | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing               |
+| `prepare`          | -                                                                                                                                    | precondition: a venv for this checkout; it asserts nothing                        |
 
 <!-- /gate-table:stages -->
 
@@ -515,10 +515,17 @@ e2e**: тир стоял на `push-gate`, то есть после того, к
 одни и те же тесты). Каждая зона — своя именованная стадия, а `e2e-default` —
 половина, не занятая ни одной зоной.
 
-- **Карточный гейт требует объявленное множество плюс зоны, которых требует
+- **Гейт до мёрджа требует объявленное множество плюс зоны, которых требует
   дифф.** `gates.sh touched` превращает дифф в имена стадий, `lib/gate.sh`
   дописывает их и в `--check`, и в `--run` — иначе отказ был бы непочинимым:
-  команда, которую он выдаёт, не заработала бы названную стадию.
+  команда, которую он выдаёт, не заработала бы названную стадию. Спрашивать ли
+  их — объявление самого гейта (`DEMAND_ZONES`, ответ на `--zones`): `diff` у
+  `review` и `merge`, `none` у `done` (HATS-1936). Зона — ожидаемая регрессия,
+  её чинит агент один на `->merge`; повторный запрос на `->done` прогнал бы те
+  же тесты второй раз, на втором дереве, ради отказа, для которого это ребро не
+  предназначено. **Цена названа:** вложенность, которая держится между
+  объявленными наборами (`review ⊆ merge ⊆ done`), между фактическими не
+  держится — `merge` требует стадию, которой `done` не требует.
 - **`e2e-default` объявлен только `done-gate`.** Ожидаемую регрессию чинит агент
   один — ей место на `->merge` (D3). Неожидаемая — это поломка от совмещения двух
   независимо зелёных веток, и D3 отдаёт её ребру, где присутствует супервизор.

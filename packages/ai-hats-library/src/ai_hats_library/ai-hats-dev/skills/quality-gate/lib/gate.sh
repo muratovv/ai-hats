@@ -85,10 +85,21 @@ _gate_realdir() {
 # no zone stages either, so there is nothing there to demand and today's level is
 # what it gets. That is a different thing from a tree that HAS the verb and could
 # not answer — which is a gate that cannot tell, and refuses.
+#
+# WHETHER a gate asks is the gate's own declaration, `DEMAND_ZONES`: `diff` for
+# the edges before the merge, `none` for `done-gate`. A zone is what this change
+# is EXPECTED to break, and the agent fixes that alone on `->merge`; asking again
+# on `->done` runs it a second time, on a second tree, for a supervisor who is
+# there for the OTHER kind of breakage (ADR-0023 D3, D11). The consequence is
+# real and named: `merge` demands a stage `done` does not, so the containment
+# that holds between their declared sets does not hold between the effective
+# ones.
+: "${DEMAND_ZONES:=diff}"
 _GATE_ZONE_STAGES=''
 _gate_zone_stages() {
     local gate="$1" run_in="$2" gates="$3" rev="$4" out rc=0
     _GATE_ZONE_STAGES=''
+    [[ "$DEMAND_ZONES" == diff ]] || return 0
     if ! grep -q '^cmd_touched()' "$gates" 2>/dev/null; then
         printf '%s: %s predates zone selection — no zone stage can be demanded\n' \
                "$gate" "$gates"
@@ -280,8 +291,12 @@ gate_next_note() {
         fi
         # A gate demands its declared set PLUS this change's zones, so a note
         # built from `--stages` alone would promise a road one refusal shorter
-        # than it is — the exact thing this note exists to prevent.
-        stages="$stages $_GATE_ZONE_STAGES"
+        # than it is — the exact thing this note exists to prevent. Which gate
+        # demands them is that gate's answer, not this one's: `done-gate` does
+        # not, and naming its zones here would promise a refusal it never makes.
+        if [[ "$(bash "$script" --zones 2>/dev/null)" != none ]]; then
+            stages="$stages $_GATE_ZONE_STAGES"
+        fi
         # shellcheck disable=SC2086
         missing="$(cd "$repo_root" && bash "$gates" "${args[@]}" $stages)"
         rc=$?
@@ -398,8 +413,9 @@ gate_main() {
             gate_run "$gate" "$stages" "$@"
             ;;
         --stages) printf '%s\n' "$stages" ;;
+        --zones) printf '%s\n' "$DEMAND_ZONES" ;;
         *)
-            echo "usage: $gate.sh [--check | --run [--rev <sha>] | --stages]" >&2
+            echo "usage: $gate.sh [--check | --run [--rev <sha>] | --stages | --zones]" >&2
             # 64 = EX_USAGE. Never 1 and never 2: a typo at the command line is
             # neither a refusal nor a verdict of any kind.
             exit 64

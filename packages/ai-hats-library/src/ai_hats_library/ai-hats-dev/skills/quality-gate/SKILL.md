@@ -115,9 +115,10 @@ suite stubbed the very contracts the change broke.
 
    **A stage the gate does not declare** — `e2e-rack`, say, absent from
    `<gate>.sh --stages` — is a **zone**: an area of the codebase and the tests
-   that assert it. A card gate requires what it declares PLUS the zones your
-   diff touches, so the set depends on what you changed and cannot be declared
-   in advance. `bash scripts/gates.sh touched` prints what your change adds and
+   that assert it. The gates BEFORE the merge (`review`, `merge`) require what
+   they declare PLUS the zones your diff touches, so the set depends on what you
+   changed and cannot be declared in advance; `->done` never asks for them, so
+   you pay for your zone once. Which gate asks: `<gate>.sh --zones`. `bash scripts/gates.sh touched` prints what your change adds and
    `bash scripts/gates.sh zones` the whole table; `make <gate>` earns them like
    any other stage. Nothing is wrong with the gate — read it as the tests your
    own area owns, asked for where you can still fix them alone.
@@ -168,11 +169,11 @@ suite stubbed the very contracts the change broke.
    knob (see "No bypass") is the supervisor's to set, never yours.
 5. **Touched what the gate does not name?** No card gate runs the whole tier
    under one name: `->merge` asks for the zones your diff touches, `->done` for
-   `e2e-default` — the half no zone claims — plus `merge-smoke`. What that
-   leaves out is a zone your change breaks WITHOUT touching its prefix, and
-   nothing refuses there. Run the tier yourself and say so. It outlives a
-   foreground call, so run it in the background through the wrapper, which exits
-   with the tier's own status:
+   `e2e-default` — the half no zone claims — plus `merge-smoke`, and never for
+   your zones again. What that leaves out is a zone your change breaks WITHOUT
+   touching its prefix, and nothing refuses there. Run the tier yourself and say
+   so. It outlives a foreground call, so run it in the background through the
+   wrapper, which exits with the tier's own status:
 
        timeout 1800 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh \
            --log /tmp/e2e.log -- bash scripts/gates.sh e2e

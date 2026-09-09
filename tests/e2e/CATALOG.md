@@ -4645,7 +4645,8 @@ as a claim to check, not as evidence.
   ai-hats wt merge HATS-1921
   scripts/gates.sh touched
   make merge-gate
+  make done-gate
   ```
 
-- **expect** — the merge gate refuses naming `e2e-rack` — a stage no gate declares, demanded because the branch changed `packages/ai-hats-rack/` — and the same branch with that one stage earned is let through; a branch that changed nothing zoned is never asked for it
+- **expect** — the merge gate refuses naming `e2e-rack` — a stage no gate declares, demanded because the branch changed `packages/ai-hats-rack/` — and the same branch with that one stage earned is let through; a branch that changed nothing zoned is never asked for it, and the done gate never asks for it at all
 - **why** — without it a change lands in master with only the tier that runs after the merge, so the tests its own area owns are first run when the breakage is already shared
