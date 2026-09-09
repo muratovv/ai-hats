@@ -25,8 +25,9 @@ from _helpers.hook_chain import (  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
-#: Read by a PROCESS inside `make` or a git hook, so an inline prefix reaches them.
-#: One per spelling the shape rule covers: suffix, and the off-convention name.
+#: Read by a PROCESS inside `make` or a git hook, so an inline prefix reaches them —
+#: unlike the hook-read acks of HATS-1639, where it cannot (HATS-1944). One per
+#: suffix the shape rule covers; the off-convention names ride in the unit tests.
 PROCESS_READ_GATE_FLAGS = [
     "AI_HATS_RED_MASTER_ACK",
     "AI_HATS_SMOKE_SKIP",
