@@ -64,21 +64,12 @@ Isolated development using git worktrees. Each task gets its own working copy �
    agent-set). Docs, non-trigger extensions, and gitignored paths (tracker, `ai-hats.yaml`)
    are exempt (trigger set: `hooks/code_extensions.json`).
 
-   A second gate (`hooks/wt_git_gate.py`) denies the same way for **git state**:
-   a command that throws away uncommitted work or moves a branch ref, issued
-   with the main checkout as the effective directory. `reset --hard|--merge|--keep`
-   and a ref-moving `reset <commit-ish>`; `checkout -f`, `checkout -- <path>` and
-   `checkout <existing-path>`; `switch -f|--discard-changes`; `restore` unless it
-   is `--staged` alone; `branch -f|-D|-M`; `clean -f`. It reads a leading
-   `cd <worktree> &&` and a `git -C <dir>` before deciding, so the same command
-   aimed at a worktree runs. Anything git already refuses on its own — a plain
-   `checkout <branch>`, `branch -d` — is left alone. Recovery is the same: re-run
-   it from inside the worktree, or with `git -C <worktree>`. Bypass is
-   supervisor-only (`AI_HATS_WT_GIT_OFF=1`, never agent-set).
-
-   Why it exists: edits in main were denied and git state was not, so
-   `git reset --hard HEAD~1` ran there and moved master by a commit. The reflog
-   returned it, which was the timing rather than a property of the system.
+   A second gate (`hooks/wt_git_gate.py`) does the same for **git state**: a
+   command that discards uncommitted work or moves a branch ref is denied where
+   it would act on the main checkout. A leading `cd` and a `git -C` are read
+   first, so the same command aimed at a worktree runs, and the refusal names
+   the recipe. Bypass is supervisor-only (`AI_HATS_WT_GIT_OFF=1`, never
+   agent-set).
 
 2. **Work** — commit freely in the worktree. Main tree is untouched.
 
