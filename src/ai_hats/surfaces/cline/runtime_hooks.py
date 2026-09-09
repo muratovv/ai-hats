@@ -7,42 +7,35 @@ import sys
 from importlib.resources import as_file, files
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 from .profile import PROFILE
-from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
-from ai_hats.paths import ai_hats_dir, session_cache_dir
+from ai_hats.hook_collection import composed_rows
 from ai_hats.session_artifacts import BuiltArtifacts
 
 CLINE_HOOK_EVENTS: tuple[str, ...] = PROFILE.native_events
 MANIFEST_VERSION = 1
 
 
-def _manifest(project_dir: Path, result, session_id: str, *, skills_dir: Path) -> dict:
-    hooks: dict[str, list[dict[str, str]]] = {}
-    collected = collect_runtime_hooks(result)
-    for event in CLINE_HOOK_EVENTS:
-        for skill_name, hook in collected.get(event, []):
-            if resolve_skill_script(result, skill_name, hook.script) is None:
-                continue
-            hooks.setdefault(event, []).append(
-                {
-                    "matcher": hook.matcher,
-                    "command": str(skills_dir / skill_name / hook.script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
-                }
-            )
+def _manifest(
+    layout: ProjectLayout, result, session_id: str, *, skills_dir: Path, artifacts: BuiltArtifacts
+) -> dict:
+    rows, notices = composed_rows(result, skills_dir, port=artifacts.port)
+    artifacts.notices.extend(notices)
+    hooks = {event: rows[event] for event in CLINE_HOOK_EVENTS if event in rows}
     return {
         "version": MANIFEST_VERSION,
         "session": {
             "id": session_id,
-            "ai_hats_dir": str(ai_hats_dir(project_dir)),
+            "ai_hats_dir": str(layout.base),
         },
         "hooks": hooks,
     }
 
 
 def materialize_runtime_hooks(
-    project_dir: Path,
+    layout: ProjectLayout,
     result,
     session_id: str,
     artifacts: BuiltArtifacts,
@@ -50,11 +43,11 @@ def materialize_runtime_hooks(
     skills_dir: Path,
 ) -> Path | None:
     """Materialize the composed Cline chain; return its hook directory."""
-    manifest = _manifest(project_dir, result, session_id, skills_dir=skills_dir)
+    manifest = _manifest(layout, result, session_id, skills_dir=skills_dir, artifacts=artifacts)
     if not manifest["hooks"]:
         return None
 
-    cache_dir = session_cache_dir(project_dir, session_id)
+    cache_dir = layout.cache.session(session_id)
     hooks_dir = cache_dir / "hooks"
     artifacts.port.mkdir(cache_dir)
     artifacts.port.remove_tree(hooks_dir)

@@ -19,7 +19,7 @@ import pytest
 from _helpers.env import checkout_pythonpath
 from _helpers.project import Project
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def _has_cline_plugin() -> bool:

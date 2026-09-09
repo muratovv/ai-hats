@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = [pytest.mark.guards, pytest.mark.wt]
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "wt_hook_lib"
 

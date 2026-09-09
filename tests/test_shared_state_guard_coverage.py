@@ -18,8 +18,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
+from ai_hats.hook_collection import composed_rows
+from ai_hats.materialization import PlanMaterializer
 from ai_hats.paths import claude_plugin_skills_dir
-from ai_hats.surfaces.claude.runtime_hooks import composed_rows
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
@@ -32,7 +33,11 @@ def _builtin_roles() -> list[str]:
 
 def _guard_wired(role: str) -> bool:
     result = Assembler(REPO_ROOT).composer.compose(role)
-    rows = composed_rows(result, claude_plugin_skills_dir(Path("/probe/plugin")))
+    skills_dir = claude_plugin_skills_dir(Path("/probe/plugin"))
+    port = PlanMaterializer()  # the mirror as the SKILLS handler would record it
+    for skill in result.skills:
+        port.copy_tree(skill.source_path, skills_dir / skill.name)
+    rows, _notices = composed_rows(result, skills_dir, port=port)
     return any(
         GUARD_BASENAME in row["command"] for event_rows in rows.values() for row in event_rows
     )

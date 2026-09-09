@@ -21,6 +21,8 @@ from pathlib import Path
 import pytest
 from ai_hats.constants import HOOK_POST_TOOL_USE
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT

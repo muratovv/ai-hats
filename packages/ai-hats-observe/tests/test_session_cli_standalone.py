@@ -1,7 +1,7 @@
 """ADR-0014 Phase 1 (T15 / HATS-952) — standalone consumability for the session CLI.
 
 Proves a third party can drive ``ai_hats_observe.cli.session`` — list / show /
-list --tag — on a bare directory with the default worktree-free ``_seam``
+list --tag — on a bare directory under the worktree-free ``STANDALONE`` host
 resolvers (no ``ai-hats.yaml``, no composition, no integrator override), and that
 importing the CLI pulls in no ``ai_hats`` integrator (the browse CLI is core-only).
 """
@@ -14,24 +14,28 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from click.testing import CliRunner
 
 from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
-from ai_hats_observe.cli import _seam
+from ai_hats_observe.cli import STANDALONE, attach
 from ai_hats_observe.cli.session import session
 
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _pin_wt_free_seam(monkeypatch) -> None:
-    """Reset the seam to its wt-free defaults for the test.
+@pytest.fixture
+def wt_free_host():
+    """Run the test under the standalone host.
 
-    The integrator override mutates the shared ``_seam`` module for the whole
-    process, so an earlier test that imported ``ai_hats.cli`` would otherwise
-    leave the integrator resolvers in place. Pin the standalone defaults here.
+    An integrator attaches its host process-wide, so an earlier test that imported
+    ``ai_hats.cli`` would otherwise leave its resolvers in place. Attach the
+    standalone one here and put the previous back after.
     """
-    monkeypatch.setattr(_seam, "_LAYOUT", _seam._default_layout)
-    monkeypatch.setattr(_seam, "_TAG_FILTER_PARSER", _seam._default_tag_filter_parser)
+    previous = attach(STANDALONE)
+    yield
+    attach(previous)
 
 
 def _make_session(runs: Path, sid: str, *, metrics: dict) -> None:
@@ -40,8 +44,8 @@ def _make_session(runs: Path, sid: str, *, metrics: dict) -> None:
     (sdir / METRICS_JSON).write_text(json.dumps(metrics))
 
 
-def test_standalone_session_browse_wt_free(tmp_path: Path, monkeypatch) -> None:
-    """list / show / list --tag on a bare dir with the wt-free seam — no
+def test_standalone_session_browse_wt_free(tmp_path: Path, monkeypatch, wt_free_host) -> None:
+    """list / show / list --tag on a bare dir under the standalone host — no
     ``ai-hats.yaml``, no integrator override. The runs live under the default
     ``.agent/sessions/runs`` layout the wt-free ``_RUNS_DIR`` injects."""
     assert not (tmp_path / "ai-hats.yaml").exists()
@@ -71,7 +75,6 @@ def test_standalone_session_browse_wt_free(tmp_path: Path, monkeypatch) -> None:
         },
     )
     monkeypatch.chdir(tmp_path)
-    _pin_wt_free_seam(monkeypatch)
     runner = CliRunner()
 
     # list --json --all — both sessions, resolved via the wt-free default layout
@@ -119,7 +122,7 @@ def test_session_cli_import_pulls_no_integrator() -> None:
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
 
 
-def test_session_show_renders_diagnostics(tmp_path: Path, monkeypatch) -> None:
+def test_session_show_renders_diagnostics(tmp_path: Path, monkeypatch, wt_free_host) -> None:
     """`ai-hats session show` renders Startup Diagnostics and Post-Session Banners when present."""
     runs = tmp_path / ".agent" / "sessions" / "runs"
     sid = "20260401T100000Z_diag"
@@ -152,7 +155,6 @@ def test_session_show_renders_diagnostics(tmp_path: Path, monkeypatch) -> None:
     (sdir / "diagnostics.json").write_text(json.dumps(diag_payload))
 
     monkeypatch.chdir(tmp_path)
-    _pin_wt_free_seam(monkeypatch)
     runner = CliRunner()
 
     shown = runner.invoke(session, ["show", sid])
@@ -166,7 +168,9 @@ def test_session_show_renders_diagnostics(tmp_path: Path, monkeypatch) -> None:
     assert "diagnostics.json" in shown.output
 
 
-def test_session_show_renders_subagent_diagnostics(tmp_path: Path, monkeypatch) -> None:
+def test_session_show_renders_subagent_diagnostics(
+    tmp_path: Path, monkeypatch, wt_free_host
+) -> None:
     """`ai-hats session show` renders subagent completion fields cleanly (role, exit_code, duration_s)."""
     runs = tmp_path / ".agent" / "sessions" / "runs"
     sid = "20260401T100000Z_subdiag"
@@ -191,7 +195,6 @@ def test_session_show_renders_subagent_diagnostics(tmp_path: Path, monkeypatch) 
     (sdir / "diagnostics.json").write_text(json.dumps(diag_payload))
 
     monkeypatch.chdir(tmp_path)
-    _pin_wt_free_seam(monkeypatch)
     runner = CliRunner()
 
     shown = runner.invoke(session, ["show", sid])

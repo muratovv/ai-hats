@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Sequence
 
 from ai_hats_rack import Kernel
@@ -48,7 +50,6 @@ from ai_hats_core.deadline import Deadline
 
 from . import ownership
 from .constants import ENV_ROOT_PID
-from .paths import worktrees_dir
 from .session_identity import SessionIdentity, SessionIdentityError
 from .wt_effects import WtWorktreeEffects
 
@@ -235,7 +236,7 @@ class WorktreeExtension:
 
     def __init__(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         *,
         effects: WtWorktreeEffects | None = None,
         setup_priority: int = 30,
@@ -243,10 +244,11 @@ class WorktreeExtension:
         epicify_priority: int = 20,
         budget: float = WORKTREE_BUDGET,
     ) -> None:
-        self.project_dir = project_dir
+        self.layout = layout
+        self.project_dir = layout.root
         self._budget = budget
         self._effects = (
-            effects if effects is not None else WtWorktreeEffects(project_dir, git_timeout=budget)
+            effects if effects is not None else WtWorktreeEffects(layout, git_timeout=budget)
         )
         self._setup_priority = setup_priority
         self._teardown_priority = teardown_priority
@@ -358,7 +360,7 @@ class WorktreeExtension:
         return WorktreeManager.load_for_task(
             self.project_dir,
             task_id,
-            state_dir=worktrees_dir(self.project_dir),
+            state_dir=self.layout.sessions.worktrees,
             git_timeout=self._budget,
         )
 
@@ -406,9 +408,9 @@ class WorktreeExtension:
 
 
 def build_rack_kernel(
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
-    backlog_owner: Path | None,
+    backlog_owner: ProjectLayout | None,
     tasks_dir: Path | None = None,
     state_md_path: Path | None = None,
     prefix: str = "HATS",
@@ -427,7 +429,7 @@ def build_rack_kernel(
     if tasks_dir is None or state_md_path is None:
         from .tracker_wiring import tracker_paths
 
-        paths = tracker_paths(project_dir)
+        paths = tracker_paths(layout)
         tasks_dir = tasks_dir if tasks_dir is not None else paths.tasks_dir
         state_md_path = state_md_path if state_md_path is not None else paths.state_md_path
 
@@ -435,13 +437,13 @@ def build_rack_kernel(
     # §1). The legacy links.yaml is the OWNER's; with no owner the
     # anchor is still probed, so R6 never gets weaker than it was.
     defn = resolve_definition(
-        tasks_dir, prefix_alias=prefix, project_dir=backlog_owner or project_dir
+        tasks_dir, prefix_alias=prefix, project_dir=(backlog_owner or layout).root
     )
     topology = defn.topology
     if links_registry is None:
         links_registry = defn.links_registry
     registry = tasks_dir.parent / "ownership.json"
-    worktree = WorktreeExtension(project_dir, effects=worktree_effects)
+    worktree = WorktreeExtension(layout, effects=worktree_effects)
     automation = EpicAutomationExtension(topology=topology, registry=links_registry)
     # Declaration channel: frozen-integrity (ambient) + scaffold/
     # plan-gate/stamp/clear (declaration-bound) come from the definition slots.

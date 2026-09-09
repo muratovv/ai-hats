@@ -11,6 +11,8 @@ why:    without verifying hook body execution, dangling settings.json pointers f
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import shutil
 import subprocess
@@ -22,6 +24,8 @@ from _helpers.hook_chain import composed_row
 
 from ai_hats.paths import strip_claude_project_dir
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
+
+pytestmark = pytest.mark.guards
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -63,7 +67,6 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     _init_with_fixture_role(launcher, env, project)
 
     from ai_hats.assembler import Assembler
-    from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
@@ -71,9 +74,13 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     asm = Assembler(project)
     result = asm.composer.compose("e2e-rthook-role")
     provider.build_session_artifacts(
-        project, result, "sid-rthook-fires", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        result,
+        "sid-rthook-fires",
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
-    cache_settings = session_cache_dir(project, "sid-rthook-fires") / "settings.json"
+    cache_settings = ProjectLayout.at(project).cache.session("sid-rthook-fires") / "settings.json"
     pre_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PreToolUse:Bash:probe")["command"]
     post_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe")[
         "command"

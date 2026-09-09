@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import sys
 
 import pytest
@@ -11,8 +13,8 @@ from ai_hats.cli import main
 from ai_hats_rack.cli import main as rack_main
 from ai_hats.resolver import LibraryResolver
 from ai_hats.models import ComponentType
-from ai_hats.paths import rules_dir, skills_dir, tasks_dir
 from ai_hats.paths import PROJECT_CONFIG
+import os
 
 
 @pytest.fixture(autouse=True)
@@ -86,9 +88,9 @@ def test_set_creates_project(cli_project):
 
     assert result.exit_code == 0, result.output
     assert (project / PROJECT_CONFIG).exists()
-    assert (rules_dir(project)).is_dir()
-    assert (skills_dir(project)).is_dir()
-    assert (tasks_dir(project)).is_dir()
+    assert (ProjectLayout.compute(project, os.environ).library.rules).is_dir()
+    assert (ProjectLayout.compute(project, os.environ).library.skills).is_dir()
+    assert (ProjectLayout.compute(project, os.environ).tracker.tasks_dir).is_dir()
     # HATS-1170 clean-root invariant: the role reaches Claude per-session via
     # --system-prompt-file, so nothing lands in the project root.
     assert not (project / "CLAUDE.md").exists()
@@ -359,7 +361,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     asm = Assembler(project)
     provider = ClaudeSurface()
     result = asm.composer.compose("sre")
-    args, env, _ = provider.build_session_prompt(project, result, "test-sid")
+    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
 
     # Shadow prompt created
     assert args[0] == "--system-prompt-file"
@@ -395,7 +397,9 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     overrides = {}
     for role in ("sre", "go-dev", "architect"):
         result = asm.composer.compose(role)
-        args, _, _ = provider.build_session_prompt(project, result, f"test-sid-{role}")
+        args, _, _ = provider.build_session_prompt(
+            ProjectLayout.at(project), result, f"test-sid-{role}"
+        )
         override_path = Path(args[1])
         overrides[role] = {
             "path": override_path,
@@ -446,9 +450,9 @@ def test_agy_override_creates_session_rules_dir(cli_project):
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")
-    args_a, _, _ = provider.build_session_prompt(project, result_a, "test-sid-a")
+    args_a, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result_a, "test-sid-a")
     result_b = asm.composer.compose("go-dev")
-    args_b, _, _ = provider.build_session_prompt(project, result_b, "test-sid-b")
+    args_b, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result_b, "test-sid-b")
 
     dir_a = Path(args_a[1])
     dir_b = Path(args_b[1])
@@ -487,12 +491,12 @@ def test_migrate_cleanup_removes_legacy_backlog_md(tmp_path):
     legacy.parent.mkdir(parents=True)
     legacy.write_text("# stale content from old version\n")
 
-    actions = Assembler._cleanup_obsolete_files(tmp_path)
+    actions = Assembler._cleanup_obsolete_files(ProjectLayout.at(tmp_path))
     assert legacy.exists() is False
     assert any("backlog.md" in a for a in actions)
 
     # Idempotent — second call finds nothing.
-    assert Assembler._cleanup_obsolete_files(tmp_path) == []
+    assert Assembler._cleanup_obsolete_files(ProjectLayout.at(tmp_path)) == []
 
 
 def test_migrate_cleanup_skips_when_already_clean(tmp_path):
@@ -500,7 +504,7 @@ def test_migrate_cleanup_skips_when_already_clean(tmp_path):
     from ai_hats.assembler import Assembler
 
     (tmp_path / ".agent").mkdir()
-    assert Assembler._cleanup_obsolete_files(tmp_path) == []
+    assert Assembler._cleanup_obsolete_files(ProjectLayout.at(tmp_path)) == []
 
 
 def test_migrate_cleanup_sweeps_stale_last_backup_pointer(tmp_path):
@@ -533,14 +537,14 @@ def test_migrate_cleanup_sweeps_stale_last_backup_pointer(tmp_path):
     pointer = canon / ".last_backup"
     pointer.write_text(str(backup_payload))
 
-    actions = Assembler._cleanup_obsolete_files(tmp_path)
+    actions = Assembler._cleanup_obsolete_files(ProjectLayout.at(tmp_path))
 
     assert not pointer.exists(), "pointer file must be swept"
     assert not backup_payload.exists(), "referenced backup dir must be removed"
     assert any(".last_backup" in a for a in actions), actions
 
     # Idempotent on second call.
-    assert Assembler._cleanup_obsolete_files(tmp_path) == []
+    assert Assembler._cleanup_obsolete_files(ProjectLayout.at(tmp_path)) == []
 
 
 def test_migrate_cleanup_sweeps_stale_last_backup_as_directory(tmp_path):
@@ -557,7 +561,7 @@ def test_migrate_cleanup_sweeps_stale_last_backup_as_directory(tmp_path):
     backup_dir.mkdir()
     (backup_dir / "stale.txt").write_text("stale")
 
-    actions = Assembler._cleanup_obsolete_files(tmp_path)
+    actions = Assembler._cleanup_obsolete_files(ProjectLayout.at(tmp_path))
     assert not backup_dir.exists()
     assert any(".last_backup" in a for a in actions)
 
@@ -581,7 +585,7 @@ def test_migrate_cleanup_ignores_non_tmp_pointer_target(tmp_path):
     pointer = canon / ".last_backup"
     pointer.write_text(str(user_dir))
 
-    Assembler._cleanup_obsolete_files(tmp_path)
+    Assembler._cleanup_obsolete_files(ProjectLayout.at(tmp_path))
 
     # Pointer swept; user content preserved.
     assert not pointer.exists()
@@ -615,7 +619,7 @@ def test_migrate_cleanup_ignores_last_backup_outside_project_dir(tmp_path, monke
 
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(foreign_dir))
 
-    actions = Assembler._cleanup_obsolete_files(project_dir)
+    actions = Assembler._cleanup_obsolete_files(ProjectLayout.at(project_dir))
 
     assert foreign_pointer.exists(), "foreign pointer file must NOT be swept"
     assert backup_payload.exists(), "foreign referenced backup dir must NOT be removed"
@@ -765,7 +769,9 @@ def test_task_create_auto_id(cli_project):
     assert "Created" in result.output
     assert "My test task" in result.output
     assert "HATS-001" in result.output
-    assert (tasks_dir(project) / "HATS-001" / "task.yaml").exists()
+    assert (
+        ProjectLayout.compute(project, os.environ).tracker.tasks_dir / "HATS-001" / "task.yaml"
+    ).exists()
 
 
 def test_init_task_prefix_flag(cli_project):
@@ -854,7 +860,7 @@ def test_task_prefix_honored_from_yaml(cli_project):
     result = runner.invoke(rack_main, ["create", "Custom prefix"])
     assert result.exit_code == 0, result.output
     assert "ACME-001" in result.output
-    assert (tasks_dir(project) / "ACME-001").exists()
+    assert (ProjectLayout.compute(project, os.environ).tracker.tasks_dir / "ACME-001").exists()
 
 
 # HATS-1260: prefix auto-detection from legacy task dirs was a tracker-CLI
@@ -870,7 +876,9 @@ def test_task_create_explicit_id(cli_project):
     result = runner.invoke(rack_main, ["create", "Explicit ID task", "--id", "HATS-901"])
     assert result.exit_code == 0, result.output
     assert "HATS-901" in result.output
-    assert (tasks_dir(project) / "HATS-901" / "task.yaml").exists()
+    assert (
+        ProjectLayout.compute(project, os.environ).tracker.tasks_dir / "HATS-901" / "task.yaml"
+    ).exists()
 
 
 def test_task_list_table_filters(cli_project):
@@ -887,7 +895,9 @@ def test_task_list_table_filters(cli_project):
     runner.invoke(rack_main, ["transition", "HATS-003", "plan"])
     # Fill every required section so the per-section plan→execute gate passes
     # (HATS-230 created the gate; HATS-635 made it per-section).
-    plan_path = tasks_dir(project) / "HATS-003" / "plan.md"
+    plan_path = (
+        ProjectLayout.compute(project, os.environ).tracker.tasks_dir / "HATS-003" / "plan.md"
+    )
     plan_path.write_text(
         "# Plan\n\n## Requirements\nfilled in for the test\n\n"
         "## Scope & Out-of-scope\nin/out\n\n"

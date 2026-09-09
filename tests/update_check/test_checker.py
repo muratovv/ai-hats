@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -289,7 +291,7 @@ def test_run_check_writes_cache_on_success(tmp_path, monkeypatch):
         patch.object(checker, "_count_ahead_behind", return_value=(0, 19)),
         patch.object(checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]),
     ):
-        entry = run_check(tmp_path)
+        entry = run_check(tmp_path, ProjectLayout.at(tmp_path).cache)
     assert entry is not None
     assert entry.installed_sha == "a" * 40
     assert entry.latest_sha == "b" * 40
@@ -301,8 +303,8 @@ def test_run_check_writes_cache_on_success(tmp_path, monkeypatch):
     # Cache file must exist and round-trip.
     from ai_hats.update_check.cache import cache_path, read_cache
 
-    assert cache_path(tmp_path).exists()
-    loaded = read_cache(tmp_path)
+    assert cache_path(ProjectLayout.at(tmp_path).cache).exists()
+    loaded = read_cache(ProjectLayout.at(tmp_path).cache)
     assert loaded is not None and loaded.behind == 19 and loaded.ahead == 0
 
 
@@ -321,7 +323,7 @@ def test_run_check_persists_unknown_counts_when_git_fails(tmp_path, monkeypatch)
         patch.object(checker, "_count_ahead_behind", return_value=None),
         patch.object(checker, "_describe", return_value=None),
     ):
-        entry = run_check(tmp_path)
+        entry = run_check(tmp_path, ProjectLayout.at(tmp_path).cache)
     assert entry is not None
     assert entry.behind is None
     assert entry.ahead is None
@@ -351,7 +353,7 @@ def test_run_check_falls_back_to_mirror_when_pkg_path_unusable(tmp_path, monkeyp
             checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]
         ) as mock_describe,
     ):
-        entry = run_check(tmp_path)
+        entry = run_check(tmp_path, ProjectLayout.at(tmp_path).cache)
 
     assert entry is not None
     assert entry.behind == 19 and entry.ahead == 0
@@ -396,7 +398,7 @@ def test_run_check_mirror_fetch_failure_records_none_axes(tmp_path, monkeypatch)
         patch.object(checker, "_count_ahead_behind") as mock_count,
         patch.object(checker, "_describe") as mock_describe,
     ):
-        entry = run_check(tmp_path)
+        entry = run_check(tmp_path, ProjectLayout.at(tmp_path).cache)
 
     assert entry is not None
     assert entry.ahead is None and entry.behind is None
@@ -416,14 +418,14 @@ def test_ensure_probe_mirror_creates_and_reuses(tmp_path):
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     with patch.object(subprocess, "run", side_effect=fake_run):
-        first = checker._ensure_probe_mirror(project)
+        first = checker._ensure_probe_mirror(ProjectLayout.at(project).cache)
     assert first is not None and first.is_dir(), first
     # Simulate ``git init`` having written HEAD (real git does; the mock
     # doesn't, so write it ourselves).
     (first / "HEAD").write_text("ref: refs/heads/master\n")
 
     with patch.object(subprocess, "run", side_effect=fake_run) as mock_run:
-        second = checker._ensure_probe_mirror(project)
+        second = checker._ensure_probe_mirror(ProjectLayout.at(project).cache)
     assert second == first
     # No subprocess on re-entry — early return.
     mock_run.assert_not_called()
@@ -432,12 +434,12 @@ def test_ensure_probe_mirror_creates_and_reuses(tmp_path):
 def test_ensure_probe_mirror_returns_none_on_git_init_failure(tmp_path):
     fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal")
     with patch.object(subprocess, "run", return_value=fail):
-        assert checker._ensure_probe_mirror(tmp_path) is None
+        assert checker._ensure_probe_mirror(ProjectLayout.at(tmp_path).cache) is None
 
 
 def test_ensure_probe_mirror_returns_none_when_git_missing(tmp_path):
     with patch.object(subprocess, "run", side_effect=FileNotFoundError):
-        assert checker._ensure_probe_mirror(tmp_path) is None
+        assert checker._ensure_probe_mirror(ProjectLayout.at(tmp_path).cache) is None
 
 
 def test_fetch_into_mirror_success(tmp_path):
@@ -508,7 +510,7 @@ def test_describe_uses_git_dir_param(tmp_path):
 def test_run_check_skips_when_installed_unknown(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     with patch.object(checker, "detect_installed_sha", return_value=None):
-        assert run_check(tmp_path) is None
+        assert run_check(tmp_path, ProjectLayout.at(tmp_path).cache) is None
 
 
 def test_run_check_skips_when_remote_unreachable(tmp_path, monkeypatch):
@@ -518,11 +520,11 @@ def test_run_check_skips_when_remote_unreachable(tmp_path, monkeypatch):
         patch.object(checker, "detect_remote_url", return_value="https://example.git"),
         patch.object(checker, "fetch_latest_sha", return_value=None),
     ):
-        assert run_check(tmp_path) is None
+        assert run_check(tmp_path, ProjectLayout.at(tmp_path).cache) is None
     # No cache should be written.
     from ai_hats.update_check.cache import cache_path
 
-    assert not cache_path(tmp_path).exists()
+    assert not cache_path(ProjectLayout.at(tmp_path).cache).exists()
 
 
 # ---------- _count_ahead_behind ----------

@@ -20,7 +20,7 @@ from _helpers.project import pin_edge_channel
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.install]
 
 # The real-world residue. Materialization never writes this basename today —
 # ``managed_runtime_hook_filename`` prefixes every skill-declared script with

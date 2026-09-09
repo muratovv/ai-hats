@@ -203,7 +203,7 @@ def reflect_all_cmd(dry_run: bool):
                 ),
             ),
             recording=SessionRecording(
-                manager=make_session_manager(project_dir),
+                manager=make_session_manager(layout),
                 tracer_factory=SidecarTracer,
             ),
             harness=Hitl(prompt=combined),
@@ -275,7 +275,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
                 ),
             ),
             recording=SessionRecording(
-                manager=make_session_manager(project_dir),
+                manager=make_session_manager(layout),
                 tracer_factory=SidecarTracer,
             ),
             harness=Automate(prompt=combined1),
@@ -314,7 +314,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
         raise click.ClickException(
             "built-in initial_injection 'reflect-hypothesis-interactive' not found"
         )
-    preamble2 = _fill_inbox_digest(preamble2_path.read_text(), project_dir)
+    preamble2 = _fill_inbox_digest(preamble2_path.read_text(), layout)
     combined2 = preamble2.replace("{draft_body}", draft_path.read_text())
 
     console.print("[cyan]→ Phase 2 — judge (HITL session with draft inlined)[/]")
@@ -331,7 +331,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
                 ),
             ),
             recording=SessionRecording(
-                manager=make_session_manager(project_dir),
+                manager=make_session_manager(layout),
                 tracer_factory=SidecarTracer,
             ),
             harness=Hitl(prompt=combined2),
@@ -427,7 +427,7 @@ def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
                 ),
             ),
             recording=SessionRecording(
-                manager=make_session_manager(project_dir),
+                manager=make_session_manager(layout),
                 tracer_factory=SidecarTracer,
             ),
             # No prompt on the harness: ``audit`` builds the first message, which
@@ -587,7 +587,7 @@ def _run_intake_pipeline(
                 ),
             ),
             recording=SessionRecording(
-                manager=make_session_manager(project_dir),
+                manager=make_session_manager(layout),
                 tracer_factory=SidecarTracer,
             ),
             harness=Automate(prompt=prompt_text, model=INTAKE_MODEL),
@@ -793,8 +793,8 @@ def reflect_issue_cmd(
     layout = resolve_project().layout
     project_dir = layout.root
     # reflect issue creates an HYP; mount its backlog on a project that never had one.
-    ensure_backlog(project_dir, "hypotheses")
-    ws = rack_workspace(project_dir)
+    ensure_backlog(layout, "hypotheses")
+    ws = rack_workspace(layout)
     active = active_hypotheses(ws)
     prompt_text = _build_intake_prompt(text, active)
 
@@ -881,7 +881,7 @@ def reflect_commit_cmd(accept, reject, defer, duplicate):
     """Bulk-update proposal statuses (called at end of interactive chat)."""
     layout = resolve_project().layout
     project_dir = layout.root
-    ws = rack_workspace(project_dir)
+    ws = rack_workspace(layout)
     changes = 0
     for pid, to_state in (
         *((p, "accepted") for p in accept),
@@ -904,7 +904,7 @@ def _handoff_dir(retros: Path) -> Path:
 
 def _build_handoff(layout: ProjectLayout) -> Path:
     """Collect active HYP + open PROP into a single markdown handoff file."""
-    ws = rack_workspace(layout.root)
+    ws = rack_workspace(layout)
     active = active_hypotheses(ws)
     open_props = open_proposals(ws)
 
@@ -985,7 +985,7 @@ def _prop_number(prop_id: str) -> int:
     return int(tail) if tail.isdigit() else 0
 
 
-def _build_inbox_digest(project_dir: Path) -> str:
+def _build_inbox_digest(layout: ProjectLayout) -> str:
     """Compact open-PROP inventory for the Phase 2 preamble.
 
     A digest, not the handoff's dump: that section measured ~126K chars on a
@@ -993,7 +993,7 @@ def _build_inbox_digest(project_dir: Path) -> str:
     Ranked on two axes — votes AND age — because vote counts predating the
     HATS-1397 reviewer fix are systematically depressed.
     """
-    props = open_proposals(rack_workspace(project_dir))
+    props = open_proposals(rack_workspace(layout))
     if not props:
         return "## PROP inbox\n\n(inbox empty — 0 open proposals)\n"
 
@@ -1025,11 +1025,11 @@ def _build_inbox_digest(project_dir: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _fill_inbox_digest(preamble: str, project_dir: Path) -> str:
+def _fill_inbox_digest(preamble: str, layout: ProjectLayout) -> str:
     """Substitute `{inbox_digest}`; append it when an overridden injection has
     dropped the placeholder — a judge silently launched without the inbox is the
     HATS-1323 failure itself, so this says so rather than shipping the gap."""
-    digest = _build_inbox_digest(project_dir)
+    digest = _build_inbox_digest(layout)
     if "{inbox_digest}" in preamble:
         return preamble.replace("{inbox_digest}", digest)
     console.print(

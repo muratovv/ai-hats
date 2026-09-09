@@ -11,7 +11,6 @@ import json
 from types import SimpleNamespace
 
 from ai_hats.constants import HOOK_PRE_TOOL_USE
-from ai_hats.paths import runs_dir
 from ai_hats.wrap_runner import WrapRunner
 from ai_hats_core.layout import ProjectLayout
 
@@ -24,7 +23,7 @@ def _runner(project):
     from ai_hats_core import CompositionResult
 
     hooks = HooksManager(
-        project,
+        ProjectLayout.at(project),
         ProjectConfig(),
         resolve_provider=lambda name: None,
     )
@@ -37,7 +36,7 @@ def _runner(project):
     return WrapRunner(
         ProjectLayout.at(project),
         payload,
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
         tracer_factory=SidecarTracer,
     )
 

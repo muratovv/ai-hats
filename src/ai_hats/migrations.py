@@ -43,12 +43,7 @@ from .constants import (
     PUBLISH_AGGREGATOR_END,
     PUBLISH_AGGREGATOR_START,
 )
-from .paths import (
-    hooks_dir as _lib_hooks_dir,
-    legacy_paths_by_class,
-    library_dir as _lib_dir,
-    user_hooks_dir as _user_hooks_dir,
-)
+from .paths import legacy_paths_by_class
 from ai_hats_core.migrations import (
     Migration,
     latest_step as _latest_step,
@@ -109,13 +104,13 @@ def _m_cleanup_obsolete_files(a: "Assembler") -> None:
     # ``_cleanup_obsolete_files`` is a staticmethod taking the project dir.
     from .assembler import Assembler as _A
 
-    _A._cleanup_obsolete_files(a.project_dir)
+    _A._cleanup_obsolete_files(a.layout)
 
 
 def _m_heal_external_refs(a: "Assembler") -> None:
     from .migration_healer import heal_external_refs
 
-    heal_external_refs(a.project_dir)
+    heal_external_refs(a.layout)
 
 
 def _m_migrate_claude_md_to_v3(a: "Assembler") -> None:
@@ -189,9 +184,7 @@ def _m_retire_agy_token_zeros(a: "Assembler") -> None:
 
     from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY, METRICS_JSON
 
-    from .paths import runs_dir
-
-    runs = runs_dir(a.project_dir)
+    runs = a.layout.sessions.runs
     if not runs.is_dir():
         return
 
@@ -261,7 +254,7 @@ def migrate_layout_v4_library(a: "Assembler") -> None:
     delete it.
     """
     migrate_layout_v4_hooks_partition(a)
-    for old_abs, new_abs in legacy_paths_by_class(a.project_dir, "library"):
+    for old_abs, new_abs in legacy_paths_by_class(a.layout, "library"):
         # The hooks pair was handled by the partition step; skip
         # so ``_idempotent_move`` doesn't run on the now-empty
         # ``.agent/hooks/`` directory (the partition leaves it
@@ -288,8 +281,8 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
     discard failures WARN to stderr — silence would mask a partial-state limbo
     (review S.4).
     """
-    managed_dst = _lib_hooks_dir(a.project_dir)
-    user_dst = _user_hooks_dir(a.project_dir)
+    managed_dst = a.layout.library.hooks
+    user_dst = a.layout.user_hooks
     whitelist = a._ai_hats_owned_hook_basenames()
 
     # --- Pass 1: legacy partition ---
@@ -375,7 +368,7 @@ def migrate_layout_v4_tracker(a: "Assembler") -> None:
     <ai_hats_dir>/). Idempotent on a re-run after success.
     """
     for class_ in ("tracker", "root"):
-        for old_abs, new_abs in legacy_paths_by_class(a.project_dir, class_):
+        for old_abs, new_abs in legacy_paths_by_class(a.layout, class_):
             a._idempotent_move(old_abs, new_abs)
 
 
@@ -387,14 +380,12 @@ def migrate_layout_v4_sessions(a: "Assembler") -> None:
     handoff file. Idempotent: a no-op once every legacy path is gone.
     See ADR `2026-05-13-hats-316-ai-hats-dir-layout.md`.
     """
-    for old_abs, new_abs in legacy_paths_by_class(a.project_dir, "sessions"):
+    for old_abs, new_abs in legacy_paths_by_class(a.layout, "sessions"):
         a._idempotent_move(old_abs, new_abs)
     # Pick up the orphan handoff file lingering at .agent/ root.
     orphan = a.project_dir / AGENT_DIR / "handoff-2026-04-09-hats-061.md"
     if orphan.exists():
-        from .paths import handoffs_dir
-
-        dest_dir = handoffs_dir(a.project_dir)
+        dest_dir = a.layout.sessions.handoffs
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / orphan.name
         if not dest.exists():
@@ -426,7 +417,7 @@ def _m_drop_retired_wt_hooks(a: "Assembler") -> None:
     """
     from .sweeper import read_marker_names
 
-    retired = _lib_dir(a.project_dir) / "wt-hooks"
+    retired = a.layout.library.root / "wt-hooks"
     manifest = retired / ".manifest"
     if not retired.is_dir():
         return
@@ -452,7 +443,7 @@ def _m_drop_retired_runtime_hooks(a: "Assembler") -> None:
     """
     from .sweeper import read_marker_names
 
-    retired = _lib_dir(a.project_dir) / "hooks"
+    retired = a.layout.library.root / "hooks"
     manifest = retired / ".manifest"
     if not retired.is_dir():
         return

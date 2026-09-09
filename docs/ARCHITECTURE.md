@@ -102,7 +102,8 @@ sharing a basename never collide. It also holds the update-check probe mirror
 and `update-check.json`. Everything under it is machine-only, regenerable and
 never versioned; keeping it out of the project spares the watchers, `git status`
 runs, greps and indexers that a project tree pays for. Resolvers: `cache_home()`
-/ `project_key()` / `cache_root()` in `src/ai_hats/paths/_dirs.py`.
+/ `project_key()` and the `cache` view of `ProjectLayout` in
+`packages/ai-hats-core/src/ai_hats_core/layout.py`.
 
 **What this means in practice.** Nothing about a composition change needs a
 command. `ai-hats.yaml` is re-read and the role re-composed at every launch, so
@@ -241,7 +242,7 @@ ai_hats_library/
     initial_injections/   initial-wizard, reflect-all, reflect-role, reflect-hypothesis, reflect-hypothesis-interactive
     templates/      githooks/ (dispatcher + managed hook scripts)
   usage/                             # curated content catalog — opt-in
-    roles/          assistant, dev-python, dev-web, maintainer, architect, sre, go-dev, go-dev-full, tech-writer
+    roles/          assistant, dev-python, dev-web, behaviorist, architect, sre, go-dev, tech-writer
     traits/         trait-se-mindset, trait-researcher-mindset, skill-engineer, dev::python, dev::shell, dev::go-*, env::proxmox
     rules/          dev_rule_secure_coding, env_rule_proxmox_infra
     skills/         55+ skills (golang-*, terraform, ansible, observability, system-design, ...)

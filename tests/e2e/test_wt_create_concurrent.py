@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 from ai_hats_wt import LifecycleContext, WorktreeManager
 
+pytestmark = pytest.mark.wt
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

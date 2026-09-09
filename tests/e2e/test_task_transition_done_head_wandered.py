@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.wt
+
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(

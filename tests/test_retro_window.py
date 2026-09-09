@@ -16,7 +16,6 @@ from pathlib import Path
 
 import yaml
 
-from ai_hats.paths import tasks_dir
 from ai_hats.retro.window import tasks_closed_in_window
 
 _CLOSED = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -43,7 +42,7 @@ def _seed_card(
     }
     if completed_at is not None:
         card["completed_at"] = completed_at
-    card_dir = tasks_dir(project) / task_id
+    card_dir = ProjectLayout.at(project).tracker.tasks_dir / task_id
     card_dir.mkdir(parents=True, exist_ok=True)
     (card_dir / "task.yaml").write_text(yaml.safe_dump(card, sort_keys=False))
 
@@ -59,7 +58,7 @@ def test_finds_seeded_done_task(tmp_path: Path) -> None:
     _seed_card(project, "TST-1", completed_at=_stamp(_CLOSED))
 
     closed = tasks_closed_in_window(
-        project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
+        ProjectLayout.at(project), _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
     )
     assert closed == ["TST-1"]
 
@@ -69,7 +68,9 @@ def test_excludes_task_closed_outside_window(tmp_path: Path) -> None:
     _seed_card(project, "TST-1", completed_at=_stamp(_CLOSED))
 
     since = _CLOSED + timedelta(hours=2)
-    assert tasks_closed_in_window(project, since, since + timedelta(hours=1)) == []
+    assert (
+        tasks_closed_in_window(ProjectLayout.at(project), since, since + timedelta(hours=1)) == []
+    )
 
 
 def test_touching_an_old_done_card_does_not_count_as_closed(tmp_path: Path) -> None:
@@ -84,7 +85,9 @@ def test_touching_an_old_done_card_does_not_count_as_closed(tmp_path: Path) -> N
     _seed_card(project, "TST-1", completed_at=_stamp(long_ago), updated=_stamp(_CLOSED))
 
     assert (
-        tasks_closed_in_window(project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1))
+        tasks_closed_in_window(
+            ProjectLayout.at(project), _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
+        )
         == []
     )
 
@@ -97,7 +100,7 @@ def test_done_card_without_completed_at_warns(tmp_path: Path, caplog) -> None:
 
     with caplog.at_level(logging.WARNING, logger="ai_hats.retro.window"):
         closed = tasks_closed_in_window(
-            project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
+            ProjectLayout.at(project), _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
         )
 
     assert closed == []
@@ -109,24 +112,26 @@ def test_ignores_cards_that_are_not_done(tmp_path: Path) -> None:
     _seed_card(project, "TST-1", state="review", completed_at=_stamp(_CLOSED))
 
     assert (
-        tasks_closed_in_window(project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1))
+        tasks_closed_in_window(
+            ProjectLayout.at(project), _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
+        )
         == []
     )
 
 
 def test_project_without_a_backlog_is_empty_not_an_error(tmp_path: Path) -> None:
     """A project that never ran `ai-hats self init` has no tasks dir at all."""
-    assert tasks_closed_in_window(_project(tmp_path), _CLOSED - timedelta(hours=1), _CLOSED) == []
+    layout = ProjectLayout.at(_project(tmp_path))
+    assert tasks_closed_in_window(layout, _CLOSED - timedelta(hours=1), _CLOSED) == []
 
 
 def test_session_cut_with_duration_s(tmp_path: Path) -> None:
-    from ai_hats.paths import runs_dir
     from ai_hats.retro.window import session_cut
     from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
 
     project = _project(tmp_path)
     sid = "20260613-191140-1"
-    sdir = runs_dir(project) / session_dirname(sid)
+    sdir = ProjectLayout.at(project).sessions.runs / session_dirname(sid)
     sdir.mkdir(parents=True)
     (sdir / METRICS_JSON).write_text('{"duration_s": 300}')
 
@@ -146,13 +151,12 @@ def test_session_cut_without_duration_s(tmp_path: Path) -> None:
 
 
 def test_session_cut_handles_prefixed_session_id(tmp_path: Path) -> None:
-    from ai_hats.paths import runs_dir
     from ai_hats.retro.window import session_cut
     from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
 
     project = _project(tmp_path)
     sid = "20260613-191140-1"
-    sdir = runs_dir(project) / session_dirname(sid)
+    sdir = ProjectLayout.at(project).sessions.runs / session_dirname(sid)
     sdir.mkdir(parents=True)
     (sdir / METRICS_JSON).write_text('{"duration_s": 300}')
 

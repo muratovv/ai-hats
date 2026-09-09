@@ -11,6 +11,7 @@ why:    without entry point discovery, custom out-of-tree provider plugins canno
 
 from __future__ import annotations
 
+
 import os
 import subprocess
 from pathlib import Path
@@ -20,7 +21,7 @@ import pytest
 from _helpers.env import checkout_pythonpath
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 _PLUGIN_SRC = """\
@@ -34,7 +35,7 @@ class AcmeProvider(Surface):
     def name(self) -> str:
         return "acme"
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
+    def system_prompt_path(self, layout) -> Path:
         return project_dir / "ACME.md"
 
     def rules_dir(self, session_dir: Path) -> Path:
@@ -46,7 +47,7 @@ class AcmeProvider(Surface):
     def get_cli_command(self, args=None):
         return ["acme-cli", *(args or [])]
 
-    def get_env(self, session_dir, project_dir):
+    def get_env(self, session_dir, layout):
         return {}
 """
 

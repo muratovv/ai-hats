@@ -26,7 +26,7 @@ import pytest
 from _helpers.git import git as _git
 from _helpers.hook_chain import build_session_settings, run_approved, run_chain
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.consent]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"

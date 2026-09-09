@@ -18,6 +18,8 @@
 #   gates.sh check [--rev C] <stage>... # which of these lack a marker; runs nothing
 #   gates.sh run   [--rev C] [--fresh] <stage>...   # run the unmarked, stamp each
 #   gates.sh subject [--rev C]          # what a run would judge, and where
+#   gates.sh touched [--rev C] [--base B]  # zone stages this change demands
+#   gates.sh zones                      # prefix | marker | stage, one per zone
 #
 # A STAGE RUNS BARE: nothing after its name reaches pytest, because a marker
 # earned for `unit -k foo` would be a lie. CI's parallelism rides PYTEST_ADDOPTS.
@@ -86,6 +88,16 @@ unit             | every test not marked integration
 integration      | the real-subprocess tests outside tests/e2e
 merge-smoke      | the curated smoke subset of tests/e2e
 e2e              | the full tier: integration or smoke, quarantine and live agents excluded
+e2e-default      | the half of the tier no zone claims — an unexpected regression
+e2e-rack         | the rack zone of the tier: what a change to the rack surface is expected to break
+e2e-guards       | the guards zone of the tier: what a change to the agent guards and the git hooks is expected to break
+e2e-gates        | the gates zone of the tier: what a change to the quality gate machinery is expected to break
+e2e-wt           | the wt zone of the tier: what a change to the worktree lifecycle is expected to break
+e2e-install      | the install zone of the tier: what a change to the install road — launcher, bootstrap, self update is expected to break
+e2e-surfaces     | the surfaces zone of the tier: what a change to a provider surface or the session runtime is expected to break
+e2e-consent      | the consent zone of the tier: what a change to the consent engine is expected to break
+e2e-library      | the library zone of the tier: what a change to the library content or its composition is expected to break
+e2e-observe      | the observe zone of the tier: what a change to session observation — transcript, retro, reflect is expected to break
 coverage         | the tests outside tests/e2e in one process, at the coverage floor (CI)
 security         | pip-audit over the interpreter's whole environment (CI-authoritative)
 version-skew     | every workspace package is ahead of what PyPI has (network)
@@ -254,11 +266,246 @@ ci_gate_table() {
     run_py scripts/gen_gate_table.py --check
 }
 
-# The full maintainer tier (the slow one). Excluded from `all`; the push gate's
-# selection, kept here so `make e2e` cannot mean something narrower.
+# ZONES: which change makes which part of the tier expected to break.
+#
+# A zone is a marker on the tests and the path prefixes that own them. `touched`
+# turns a diff into the zone stages it demands, so a card editing a zone runs it
+# at `->merge`, where a refusal points at the agent's own branch. What no zone
+# claims is `e2e-default`, and it stands at `->done`, where a supervisor is
+# present for the breakage two green branches made together (ADR-0023 D3).
+#
+# ONE PREFIX PER ROW, and a zone is every row that names its marker: a subject
+# rarely lives under one path — rack is a package, its wiring inside `src/`, and
+# both break the same tests — while a row holding a list of prefixes is a line
+# too long to read and a cell too long to render into the ADR.
+#
+# A zone marker MOVES a test between gates; it never removes it from the tier.
+# `push-gate` and CI run the whole of it either way, so a row missing here costs
+# today's level, never less.
+zone_table() {
+    cat <<'TABLE'
+packages/ai-hats-rack/ | rack
+src/ai_hats/rack_ | rack
+src/ai_hats/tracker_wiring.py | rack
+packages/ai-hats-library/src/ai_hats_library/core/skills/hatrack/ | rack
+
+packages/ai-hats-library/src/ai_hats_library/hooks/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/safety-guard/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/tool-call-hygiene/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/command-lifetime/ | guards
+packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/comment-length-lint/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/py-security-lint/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/rule-delivery-gate/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/skill-lint-gate/ | guards
+packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/ | guards
+src/ai_hats/hook_collection.py | guards
+src/ai_hats/hook_exec.py | guards
+src/ai_hats/hooks_manager.py | guards
+src/ai_hats/githooks_ | guards
+src/ai_hats/cli/githooks_hook.py | guards
+
+scripts/gates.sh | gates
+scripts/check_ | gates
+scripts/gen_ | gates
+scripts/run-e2e-gate.sh | gates
+scripts/revert-proof.sh | gates
+scripts/clean-tmp-cruft.sh | gates
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/ | gates
+src/ai_hats/check_ | gates
+.github/workflows/ | gates
+
+packages/ai-hats-wt/ | wt
+src/ai_hats/wt_ | wt
+src/ai_hats/worktree_hooks.py | wt
+src/ai_hats/cli/worktree.py | wt
+src/ai_hats/config/worktree.py | wt
+packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/ | wt
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/worktree-venv/ | wt
+
+scripts/bootstrap.sh | install
+scripts/install-launcher.sh | install
+scripts/ai-hats-launcher | install
+src/ai_hats/_bootstrap.py | install
+src/ai_hats/_bump_internal.py | install
+src/ai_hats/channel.py | install
+src/ai_hats/env.py | install
+src/ai_hats/env_drift.py | install
+src/ai_hats/environment_recovery.py | install
+src/ai_hats/migration | install
+src/ai_hats/provider_entry_points.py | install
+src/ai_hats/relocation.py | install
+src/ai_hats/retired_dists.py | install
+src/ai_hats/self_heal.py | install
+src/ai_hats/self_location.py | install
+src/ai_hats/update_check/ | install
+src/ai_hats/version_ | install
+src/ai_hats/cli/maintenance.py | install
+
+src/ai_hats/surfaces/ | surfaces
+src/ai_hats/pty_ | surfaces
+src/ai_hats/wrap_runner.py | surfaces
+src/ai_hats/subagent_runner.py | surfaces
+src/ai_hats/runtime | surfaces
+src/ai_hats/session_artifacts.py | surfaces
+src/ai_hats/session_run.py | surfaces
+src/ai_hats/cli/execute.py | surfaces
+src/ai_hats/cli/agent.py | surfaces
+
+src/ai_hats/consent_ | consent
+src/ai_hats/consent_mcp/ | consent
+packages/ai-hats-library/src/ai_hats_library/hooks/consent_gate/ | consent
+packages/ai-hats-library/src/ai_hats_library/hooks/consent_ticket.py | consent
+
+packages/ai-hats-library/src/ai_hats_library/core/ | library
+packages/ai-hats-library/src/ai_hats_library/usage/ | library
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/ | library
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/rules/ | library
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ | library
+src/ai_hats/assembler.py | library
+src/ai_hats/composer.py | library
+src/ai_hats/composition_ | library
+src/ai_hats/libraries/ | library
+src/ai_hats/library_ | library
+src/ai_hats/materializ | library
+src/ai_hats/role_ | library
+src/ai_hats/rule_delivery.py | library
+src/ai_hats/skill | library
+
+packages/ai-hats-observe/ | observe
+src/ai_hats/retro/ | observe
+src/ai_hats/runs_retention.py | observe
+src/ai_hats/session_report.py | observe
+src/ai_hats/cli/reflect.py | observe
+src/ai_hats/cli/reflect_session_main.py | observe
+src/ai_hats/cli/session.py | observe
+TABLE
+}
+
+# A zone's stage name, spelled in ONE place: the verb that demands it and the
+# renderer that documents it must agree, and a convention spread over two files
+# is a convention that drifts. Answers in a variable rather than on stdout: the
+# table is ~90 rows and every road through it asks, so a command substitution
+# here is a fork per row per road.
+_ZONE_STAGE=''
+_zone_stage() {
+    _ZONE_STAGE="e2e-$1"
+}
+
+# Every zone as one pytest expression: `rack`, then `rack or wt`, and so on.
+# Empty while no zone exists, which is what makes `e2e-default` the whole tier
+# until the first row lands. Each marker once, however many prefixes name it:
+# `rack or rack` selects the same tests but reads as two zones.
+_zone_expr() {
+    zone_table | awk -F'|' '
+        {
+            gsub(/[[:space:]]/, "", $2)
+            if ($2 != "" && !seen[$2]++) printf "%s%s", (n++ ? " or " : ""), $2
+        }
+        END { printf "\n" }'
+}
+
+# The tier's selection lives HERE and nowhere else: `e2e` is the whole of it and
+# the zone stages are it narrowed. Hand-kept copies of this expression is the
+# defect that already cost this repo once — the tier's selection lived in two
+# copies with no test holding them equal — so `tests/test_e2e_zone_partition.py`
+# holds the parts equal to the whole.
+E2E_SELECT='(integration or smoke) and not quarantine and not live_agy'
+E2E_PATHS='tests/e2e/ tests/smoke/'
+
+# The full maintainer tier (the slow one). Excluded from `all`; what CI runs and
+# what the zone stages partition, kept here so `make e2e` cannot mean something
+# narrower. It runs the whole of it — no memo, because `make e2e` means all of
+# it and a reader asking for that is not asking for what a stage happened to
+# cover an hour ago.
 ci_e2e() {
     echo "[gates] e2e (integration + smoke, quarantine and live agy excluded)" >&2
-    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine and not live_agy" tests/e2e/ tests/smoke/ -q
+    # shellcheck disable=SC2086 # E2E_PATHS is two paths and must split
+    "$PY" -B -m pytest -m "$E2E_SELECT" $E2E_PATHS -q
+}
+
+# A TEST RUNS ONCE PER TREE, however many zones claim it. Zones overlap on
+# purpose — a consent test on the codex surface belongs to both — so one gate run
+# can name two stages that share tests, and the second would pay for them again.
+# `cmd_run` names the store and the tree; the memo lives beside the stage markers
+# and is keyed the same way, so "already green" means green on THIS content.
+#
+# Only the stages that PARTITION the tier share it. `unit`, `integration` and
+# `merge-smoke` keep their full runs: `merge-smoke` is the floor `->done` stands
+# on, and a floor that skips what another stage happened to run is not a floor.
+_tier_memo_env() {
+    [[ -n "${AI_HATS_GATE_STORE:-}" && -n "${AI_HATS_GATE_TREE:-}" ]] || return 0
+    export AI_HATS_GATE_TIER_MEMO="$AI_HATS_GATE_STORE/$AI_HATS_GATE_TREE/tier-passed"
+}
+
+# The one place a partition stage invokes the tier, so a zone stage is its marker
+# expression and nothing else — and so the next zone cannot forget the memo.
+_run_tier() {
+    _tier_memo_env
+    # shellcheck disable=SC2086 # E2E_PATHS is two paths and must split
+    "$PY" -B -m pytest -m "$1" $E2E_PATHS -q
+}
+
+# The half no zone claims — an unexpected regression, judged where a supervisor
+# is present. It shrinks as zones are declared; an empty zone table makes it the
+# whole tier.
+ci_e2e_default() {
+    echo "[gates] e2e-default (the tier outside every zone)" >&2
+    local zones select
+    zones="$(_zone_expr)"
+    if [[ -n "$zones" ]]; then
+        select="$E2E_SELECT and not ($zones)"
+    else
+        select="$E2E_SELECT"
+    fi
+    _run_tier "$select"
+}
+
+# One function per zone row, by hand: the stage set is `declare -F`, so a
+# generated name would be a stage nothing can list.
+ci_e2e_rack() {
+    echo "[gates] e2e-rack (the rack zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and rack"
+}
+
+ci_e2e_guards() {
+    echo "[gates] e2e-guards (the guards zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and guards"
+}
+
+ci_e2e_gates() {
+    echo "[gates] e2e-gates (the gates zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and gates"
+}
+
+ci_e2e_wt() {
+    echo "[gates] e2e-wt (the wt zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and wt"
+}
+
+ci_e2e_install() {
+    echo "[gates] e2e-install (the install zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and install"
+}
+
+ci_e2e_surfaces() {
+    echo "[gates] e2e-surfaces (the surfaces zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and surfaces"
+}
+
+ci_e2e_consent() {
+    echo "[gates] e2e-consent (the consent zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and consent"
+}
+
+ci_e2e_library() {
+    echo "[gates] e2e-library (the library zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and library"
+}
+
+ci_e2e_observe() {
+    echo "[gates] e2e-observe (the observe zone of the tier)" >&2
+    _run_tier "$E2E_SELECT and observe"
 }
 
 # Make THIS checkout runnable, so `$PY` resolves to an interpreter that imports
@@ -321,7 +568,7 @@ ci_master_ci() {
 # found — before the first of these it reaches, so a checker-only run stays
 # silent about xdist. Hand-kept; `tests/test_gates_table.py` holds it equal to
 # the functions above that invoke pytest.
-PYTEST_STAGES='unit integration coverage merge-smoke e2e'
+PYTEST_STAGES='unit integration coverage merge-smoke e2e e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe'
 
 _is_pytest_stage() {
     case " $PYTEST_STAGES " in
@@ -574,6 +821,176 @@ cmd_subject() {
            "$repo_root" "$sha" "$tree" "$(_where "$repo_root" "$sha")"
 }
 
+# The branch a card lands on. A shell copy of ai-hats-wt's
+# CANONICAL_BASE_BRANCHES, held equal to it by `tests/test_zone_touched.py`:
+# a drifted copy names the wrong base, and a wrong base is a wrong diff.
+CANONICAL_BASE_BRANCHES='master main'
+
+_base_branch() {
+    local name
+    for name in $CANONICAL_BASE_BRANCHES; do
+        if git -C "$1" show-ref --verify --quiet "refs/heads/$name"; then
+            printf '%s' "$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# The stages named so far, so a stage two roads demand is printed once: the
+# caller appends this list to a gate's, and a stage named twice is a stage the
+# gate then looks up twice.
+_demanded=''
+_already() {
+    case " $_demanded " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+_demand() {
+    if _already "$1"; then
+        return 0
+    fi
+    _demanded="$_demanded $1"
+    printf '%s\n' "$1"
+}
+
+# Is this path part of the tier? Asked of `E2E_PATHS`, the tier's own roots, so
+# a tier that grows a third directory does not leave this rule behind.
+_under_tier() {
+    local path="$1" root
+    for root in $E2E_PATHS; do
+        case "$path" in "$root"*) return 0 ;; esac
+    done
+    return 1
+}
+
+# Which zone stages a change demands — the diff turned into stage names, one per
+# line. NEVER SILENT ABOUT NOT KNOWING: a base it cannot name exits non-zero,
+# because "nothing changed" and "I could not tell" are the same empty output,
+# and a gate reading the second as the first passes what it never examined.
+#
+# The base has two roads, the same two the subject has (ADR-0023 D4): a merge
+# commit is judged against its first parent, so the diff is exactly what the card
+# contributed; anything else against where it left the base branch.
+cmd_touched() {
+    local base='' rev='HEAD'
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --rev)
+                [[ -n "${2:-}" ]] || _die 64 "--rev names no commit"
+                rev="$2"
+                shift 2
+                ;;
+            --base)
+                [[ -n "${2:-}" ]] || _die 64 "--base names no commit"
+                base="$2"
+                shift 2
+                ;;
+            *) _die 64 "touched: unexpected argument '$1'" ;;
+        esac
+    done
+
+    local sha
+    sha="$(_commit_of "$repo_root" "$rev")" || _die 70 "$rev names no commit in $repo_root"
+    if [[ -z "$base" ]]; then
+        if git -C "$repo_root" rev-parse --verify --quiet "$sha^2" >/dev/null 2>&1; then
+            base="$sha^1"
+        else
+            local branch
+            branch="$(_base_branch "$repo_root")" \
+                || _die 70 "no base branch here (looked for: $CANONICAL_BASE_BRANCHES) — cannot tell what changed"
+            base="$(git -C "$repo_root" merge-base "$sha" "$branch" 2>/dev/null)" \
+                || _die 70 "no merge base between $rev and $branch — cannot tell what changed"
+        fi
+    fi
+
+    local changed
+    changed="$(git -C "$repo_root" diff --name-only "$base" "$sha" 2>/dev/null)" \
+        || _die 70 "cannot diff $base..$sha — cannot tell what changed"
+
+    _demanded=''
+    local prefix zone path hit
+    while IFS='|' read -r prefix zone; do
+        prefix="${prefix//[[:space:]]/}"
+        zone="${zone//[[:space:]]/}"
+        [[ -n "$prefix" && -n "$zone" ]] || continue
+        _zone_stage "$zone"
+        # A zone is several rows; once one of them has named the stage the rest
+        # have nothing left to add, and this is what keeps the scan below linear
+        # in the diff rather than in the diff times the table.
+        if _already "$_ZONE_STAGE"; then
+            continue
+        fi
+        # A prefix owning nothing is a zone that can never be demanded, and it is
+        # NOT checked here: this table belongs to the repository that ships it,
+        # while `touched` runs against whatever tree is being judged — a scratch
+        # project carrying this script has none of these paths, and refusing
+        # there broke the gate for every test that plants it.
+        # `tests/test_zone_touched.py` holds the rows resolvable in THIS repo.
+        hit=''
+        while IFS= read -r path; do
+            [[ -n "$path" ]] || continue
+            case "$path" in "$prefix"*) hit=1; break ;; esac
+        done <<< "$changed"
+        [[ -n "$hit" ]] || continue
+        _demand "$_ZONE_STAGE"
+    done < <(zone_table)
+
+    # The second road into a zone: a test the card edits itself. The table's
+    # prefixes name SOURCE, and a zoned test is already subtracted from
+    # `e2e-default` — so nothing here would demand it and the card's own test
+    # would first run on `push-gate`, after the merge it was written for.
+    #
+    # The zone is written ON the file, so read it there: at the subject
+    # normally, at the base when the card deleted it. A path readable at
+    # neither end is not something `git diff` produces between those two
+    # commits; if it ever is, the verb refuses rather than reading it as
+    # "no zone" — the same rule the base resolution above follows.
+    local body marks rc
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        _under_tier "$path" || continue
+        body="$(git -C "$repo_root" show "$sha:$path" 2>/dev/null)" \
+            || body="$(git -C "$repo_root" show "$base:$path" 2>/dev/null)" \
+            || _die 70 "cannot read $path at $rev or at $base — cannot tell which zone it declares"
+        # Every marker the file wears, read ONCE. Asking the file per zone row
+        # instead is a grep per row per file, and the table is ~90 rows.
+        # grep answers 1 for a file wearing no marker at all — the ordinary case
+        # for the unzoned half of the tier, and the one status that is not an
+        # error. Anything else is grep failing, and a failure read as "no zone"
+        # is the silence this verb exists to refuse.
+        rc=0
+        marks="$(printf '%s' "$body" | grep -oE 'pytest\.mark\.[A-Za-z0-9_]+' | sort -u)" || rc=$?
+        [[ $rc -le 1 ]] || _die 70 "cannot read the markers of $path (grep exited $rc)"
+        marks=$'\n'"$marks"$'\n'
+        while IFS='|' read -r prefix zone; do
+            zone="${zone//[[:space:]]/}"
+            [[ -n "$zone" ]] || continue
+            _zone_stage "$zone"
+            if _already "$_ZONE_STAGE"; then
+                continue
+            fi
+            case "$marks" in *$'\n'"pytest.mark.$zone"$'\n'*) _demand "$_ZONE_STAGE" ;; esac
+        done < <(zone_table)
+    done <<< "$changed"
+    return 0
+}
+
+# The zone table with each row's stage name resolved: `prefix | marker | stage`.
+# What `gen_gate_table.py` reads so ADR-0023 can say which stages are demanded by
+# a diff rather than by a gate's declaration — a row it had to guess at by the
+# shape of a stage name would be a guess the `gate-table` stage then enforced.
+cmd_zones() {
+    [[ $# -eq 0 ]] || _die 64 "zones takes no argument"
+    local prefix zone
+    while IFS='|' read -r prefix zone; do
+        prefix="${prefix//[[:space:]]/}"
+        zone="${zone//[[:space:]]/}"
+        [[ -n "$prefix" && -n "$zone" ]] || continue
+        _zone_stage "$zone"
+        printf '%s | %s | %s\n' "$prefix" "$zone" "$_ZONE_STAGE"
+    done < <(zone_table)
+}
+
 # Short ids for a reader; the marker files keep the full ones.
 _short() {
     git -C "$1" rev-parse --short "$2" 2>/dev/null || printf '%s' "$2"
@@ -669,6 +1086,13 @@ cmd_run() {
     tree="$(_tree_of "$repo_root" "$sha")" || _die 70 "cannot resolve the tree of $sha"
     sha_s="$(_short "$repo_root" "$sha")"
     tree_s="$(_short "$repo_root" "$tree")"
+
+    # What a partition stage needs to find the memo it shares with its siblings.
+    # `--fresh` asked for the runs again, so it starts from an empty one: a memo
+    # left from an earlier run of this tree would hand back exactly what was
+    # asked to be repeated.
+    export AI_HATS_GATE_STORE="$store" AI_HATS_GATE_TREE="$tree"
+    [[ -z "$FRESH" ]] || rm -f "$store/$tree/tier-passed"
 
     local -a cached=() todo=() ran_green=() notes=()
     for stage in "${STAGES[@]}"; do
@@ -831,6 +1255,8 @@ case "$verb" in
     check) shift; cmd_check "$@" ;;
     run) shift; cmd_run "$@" ;;
     subject) shift; cmd_subject "$@"; exit 0 ;;
+    touched) shift; cmd_touched "$@"; exit 0 ;;
+    zones) shift; cmd_zones "$@"; exit 0 ;;
 esac
 if [[ $# -gt 1 ]]; then
     echo "[gates] a stage runs bare: '${*:2}' after '$verb' is not accepted" >&2
@@ -871,6 +1297,8 @@ case "$verb" in
             echo "  stages: $(known_stages | tr '\n' ' ')" >&2
             echo "  bundle: all (the local pre-push bundle, and the default)" >&2
             echo "  list | check <stage>... | run <stage>... | subject — the markers" >&2
+            echo "  touched: the zone stages this change demands (a diff, not a marker)" >&2
+            echo "  zones: the zone table — prefix | marker | stage" >&2
             echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
             exit 2
         fi

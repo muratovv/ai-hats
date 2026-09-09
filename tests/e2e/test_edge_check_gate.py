@@ -9,6 +9,8 @@ why: without edge check gates, invalid edge channel references cause failed upda
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import re
@@ -21,7 +23,7 @@ import pytest
 
 from _helpers.git import git, init_repo
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "brainstorm->plan"
@@ -357,17 +359,15 @@ def _session_dir(project: Path, env: dict[str, str], session_id: str) -> Path:
     """The subprocess's own session cache dir, via the production path function
     under the subprocess's exact env — re-deriving it here is how a test starts
     watching a root the child never writes to."""
-    from ai_hats.paths import session_cache_dir
 
     with mock.patch.dict(os.environ, env, clear=True):
-        return session_cache_dir(project, session_id)
+        return ProjectLayout.at(project).cache.session(session_id)
 
 
 def _sessions_root(project: Path, env: dict[str, str]) -> Path:
-    from ai_hats.paths import session_cache_root
 
     with mock.patch.dict(os.environ, env, clear=True):
-        return session_cache_root(project)
+        return ProjectLayout.at(project).cache.sessions
 
 
 def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Path:
@@ -387,7 +387,7 @@ def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Pa
     with mock.patch.dict(os.environ, env, clear=True):
         surface = ProjectConfig.from_yaml(project / PROJECT_CONFIG).provider
         return get_surface(surface).session_skills_root(
-            project, session_id or env["AI_HATS_SESSION_ID"]
+            ProjectLayout.at(project), session_id or env["AI_HATS_SESSION_ID"]
         )
 
 
@@ -474,7 +474,7 @@ def venv_surfaces(shared_launcher) -> dict[str, bool]:
             "from ai_hats.surface_registry import surface_names, get_surface; "
             "p = pathlib.Path('/tmp'); "
             "print(json.dumps({n: bool(get_surface(n).handles_artifact_categories() "
-            "and get_surface(n).session_skills_root(p, 'probe') is not None) "
+            "and get_surface(n).session_skills_root(ProjectLayout.at(p), 'probe') is not None) "
             "for n in surface_names()}))",
         ],
         capture_output=True,

@@ -16,9 +16,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ai_hats_core.layout import ProjectLayout
+
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from pathlib import Path
-
     from ai_hats_core import CompositionResult, ResolvedCheck
 
     from .materialization import MaterializationPlan
@@ -42,7 +43,7 @@ class ReportedCheck:
 
 def describe_checks(
     provider,
-    project_dir: Path,
+    layout: ProjectLayout,
     result: CompositionResult,
     session_id: str,
     plan: MaterializationPlan,
@@ -65,7 +66,7 @@ def describe_checks(
     if not result.checks:
         return (), ()
 
-    root = provider.session_skills_root(project_dir, session_id)
+    root = provider.session_skills_root(layout, session_id)
     if root is None:
         # Every binding is unresolvable for the same reason, and
         # `surface_skew_notice` already says it once — do not repeat it per row.
@@ -107,7 +108,7 @@ def _plan_covers(plan: MaterializationPlan, runs_from: Path) -> bool:
     )
 
 
-def surface_skew_notice(provider_name: str, provider, project_dir, result) -> str | None:
+def surface_skew_notice(provider_name: str, provider, layout: ProjectLayout, result) -> str | None:
     """Said at LAUNCH when this surface cannot root a bound check (HATS-1540).
 
     ``Surface.session_skills_root`` is concrete and defaults to ``None``, so a
@@ -122,7 +123,7 @@ def surface_skew_notice(provider_name: str, provider, project_dir, result) -> st
     """  # comment-length: allow — the ADR claimed this was covered; it was not
     if not result.checks:
         return None
-    if provider.session_skills_root(project_dir, "probe") is not None:
+    if provider.session_skills_root(layout, "probe") is not None:
         return None
     skills = ", ".join(sorted({check.skill for check in result.checks}))
     return (

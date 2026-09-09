@@ -24,7 +24,7 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
+pytestmark = [pytest.mark.integration, pytest.mark.smoke, pytest.mark.rack]
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

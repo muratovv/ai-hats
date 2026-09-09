@@ -21,7 +21,6 @@ from ai_hats.cli.reflect_session_main import (
 )
 from ai_hats.rack_workspace import proposals, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
-from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 
 
 SID = "20260506-100000-1"
@@ -31,7 +30,9 @@ def _check(project_dir: Path, session_id: str, runner_error: str | None = None) 
     """Mirror main()'s single-parse contract: load the doc once, then hand
     (raw, parse_issues) to _harness_check — the same call shape production
     uses, so this test file never re-introduces the double-parse (HATS-1369)."""
-    raw, parse_issues = _load_review_doc(_review_doc_path(retros_dir(project_dir), session_id))
+    raw, parse_issues = _load_review_doc(
+        _review_doc_path(ProjectLayout.at(project_dir).sessions.retros, session_id)
+    )
     return _harness_check(
         ProjectLayout.at(project_dir), session_id, runner_error, raw, parse_issues
     )
@@ -40,8 +41,10 @@ def _check(project_dir: Path, session_id: str, runner_error: str | None = None) 
 def _seed(project_dir: Path) -> None:
     """Seed both HYP/PROP catalogs with backlog.yaml so the workspace mounts them
     (HATS-1044 R6: consumers require the migrated dir-per-card layout)."""
-    migrate_catalog(hypotheses_dir(project_dir), "hypotheses")
-    migrate_catalog(proposals_dir(project_dir), "proposals")
+    migrate_catalog(
+        ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses", "hypotheses"
+    )
+    migrate_catalog(ProjectLayout.at(project_dir).tracker.proposals_dir, "proposals")
 
 
 def _make_review_file(
@@ -50,7 +53,7 @@ def _make_review_file(
     summary: str = "ok",
     verdicts=None,
 ) -> Path:
-    out = retros_dir(project_dir) / "sessions" / f"{SID}.md"
+    out = ProjectLayout.at(project_dir).sessions.retros / "sessions" / f"{SID}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     fm = {
         "schema": "hats-session-review/v1",
@@ -65,7 +68,7 @@ def _make_review_file(
 def _add_active_hyp(
     project_dir: Path, hyp_id: str = "HYP-001", created: str = "2026-05-01"
 ) -> None:
-    hyps_dir = hypotheses_dir(project_dir)
+    hyps_dir = ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses"
     hyps_dir.mkdir(parents=True, exist_ok=True)
     (hyps_dir / f"{hyp_id}.yaml").write_text(
         "id: " + hyp_id + "\n"
@@ -80,7 +83,7 @@ def _add_active_hyp(
 
 
 def _proposals_count(project_dir: Path) -> int:
-    pdir = proposals_dir(project_dir)
+    pdir = ProjectLayout.at(project_dir).tracker.proposals_dir
     if not pdir.exists():
         return 0
     return len(list(pdir.glob("*/task.yaml")))  # dir-per-card cards
@@ -138,11 +141,11 @@ def test_harness_surfaces_runner_error_even_with_valid_file(tmp_path: Path) -> N
 
 def test_file_meta_proposal_creates_one(tmp_path: Path) -> None:
     _seed(tmp_path)
-    _file_meta_proposal(tmp_path, SID, ["output file missing or empty"])
+    _file_meta_proposal(ProjectLayout.at(tmp_path), SID, ["output file missing or empty"])
     assert _proposals_count(tmp_path) == 1
     # Read the filed card back through the rack; unfiltered, so the destructuring
     # still asserts single ownership.
-    [prop] = proposals(rack_workspace(tmp_path))
+    [prop] = proposals(rack_workspace(ProjectLayout.at(tmp_path)))
     assert prop.category == "process"
     assert prop.target == "session-reviewer"
     assert prop.failed_session_id == SID
@@ -151,13 +154,13 @@ def test_file_meta_proposal_creates_one(tmp_path: Path) -> None:
 def test_file_meta_proposal_deduplicates_by_failed_session(tmp_path: Path) -> None:
     """Second call for the same session must NOT create a second proposal."""
     _seed(tmp_path)
-    _file_meta_proposal(tmp_path, SID, ["issue 1"])
-    _file_meta_proposal(tmp_path, SID, ["issue 2"])
+    _file_meta_proposal(ProjectLayout.at(tmp_path), SID, ["issue 1"])
+    _file_meta_proposal(ProjectLayout.at(tmp_path), SID, ["issue 2"])
     assert _proposals_count(tmp_path) == 1
 
 
 def test_file_meta_proposal_distinct_sessions_distinct_proposals(tmp_path: Path) -> None:
     _seed(tmp_path)
-    _file_meta_proposal(tmp_path, "SID-A", ["a"])
-    _file_meta_proposal(tmp_path, "SID-B", ["b"])
+    _file_meta_proposal(ProjectLayout.at(tmp_path), "SID-A", ["a"])
+    _file_meta_proposal(ProjectLayout.at(tmp_path), "SID-B", ["b"])
     assert _proposals_count(tmp_path) == 2

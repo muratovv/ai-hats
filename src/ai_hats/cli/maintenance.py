@@ -17,7 +17,7 @@ from ai_hats_core import scrubbed_git_env
 from .. import health
 from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV, ProjectConfigError
 from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT, PINNED_PYTHON
-from ai_hats_core.layout import ProjectLayout, ProjectNotFoundError
+from ai_hats_core.layout import CacheLayout, ProjectLayout, ProjectNotFoundError, VersionsLayout
 
 from ._helpers import _assembler, console, logger
 
@@ -231,7 +231,7 @@ def _is_managed_install(layout: ProjectLayout) -> bool:
     try:
         venv_root = _active_venv_root().resolve()
         default_venv = layout.default_venv.resolve()
-        vroot = layout.versions.resolve()
+        vroot = layout.versions.root.resolve()
     except OSError:
         return False
     return venv_root == default_venv or venv_root.parent == vroot
@@ -408,7 +408,7 @@ def _run_post_install_verify(python_exe: str) -> tuple[bool, str]:
     return False, (verify.stderr or verify.stdout or "").strip() or "see logs"
 
 
-def _flip_current(project_dir: Path, sha: str) -> None:
+def _flip_current(versions: VersionsLayout, sha: str) -> None:
     """Atomically point ``versions/current`` at ``sha`` (tmp-write + replace).
 
     The pointer is the single source of truth the launcher reads; the rename
@@ -418,11 +418,10 @@ def _flip_current(project_dir: Path, sha: str) -> None:
     the tool never bricks.
     """
     from ai_hats_core import atomic_write_text
-    from ..paths import current_pointer
 
     # atomic_write_text creates the parent (versions/) and writes via a unique
     # tmp + os.replace — same atomicity as the prior inline form.
-    atomic_write_text(current_pointer(project_dir), f"{sha}\n")
+    atomic_write_text(versions.current_pointer, f"{sha}\n")
 
 
 def _version_string(python_exe: str) -> str:
@@ -459,7 +458,7 @@ def _pause_after_complete_for_test() -> None:
 
 
 def _run_managed_versioned_update(
-    project_dir: Path,
+    layout: ProjectLayout,
     resolution: ChannelResolution,
     *,
     old_version: str,
@@ -491,17 +490,13 @@ def _run_managed_versioned_update(
     """
     import shutil
 
-    from ..paths import (
-        complete_sentinel,
-        is_usable_version,
-        read_current_sha,
-        version_dir,
-    )
+    from ..version_refs import is_usable_version, read_current_sha
 
     # version_id is resolved upstream (edge head sha / stable tag) and
     # is authoritative — names versions/<version_id>/. The caller fails loud on
     # an unresolvable edge sha BEFORE building the resolution, so a None here is
     # a contract violation, not an offline case.
+    project_dir = layout.root
     target_sha = resolution.version_id
     if not target_sha:
         console.print(
@@ -527,12 +522,12 @@ def _run_managed_versioned_update(
         sweep_incomplete_versions,
     )
 
-    with versions_lock(project_dir, timeout=INSTALL_LOCK_TIMEOUT):
+    with versions_lock(layout.versions, timeout=INSTALL_LOCK_TIMEOUT):
         # HATS-648 (R1): clean incomplete residue from prior crashed updates
         # before staging the new build. Same idempotent, TTL-guarded sweep as
         # the create_session chokepoint (a *recent* incomplete dir may be a
         # concurrent update in flight, so it is kept). No-silent-caps.
-        for _residue in sweep_incomplete_versions(project_dir):
+        for _residue in sweep_incomplete_versions(layout):
             console.print(f"[dim]Reclaimed incomplete residue: versions/{_residue.name}[/]")
 
         # HATS-649 (R2): reclaim complete versions orphaned by earlier runs —
@@ -542,7 +537,7 @@ def _run_managed_versioned_update(
         # `current` version this updater itself runs from is skipped;
         # `target_sha` (the about-to-be-installed/reused dir, not yet `current`)
         # is protected explicitly via keep.
-        for _orphan in reclaim_orphan_versions(project_dir, keep_shas={target_sha}):
+        for _orphan in reclaim_orphan_versions(layout, keep_shas={target_sha}):
             console.print(f"[dim]Reclaimed orphaned version: versions/{_orphan.name}[/]")
 
         # HATS-653 (Phase B): once this updater itself runs from a complete
@@ -552,11 +547,11 @@ def _run_managed_versioned_update(
         # reclaim converges on a later update / session. Inside the lock is
         # harmless: .venv lives outside versions/ and reclaim_legacy_venv never
         # re-enters the version lock.
-        if (_venv := reclaim_legacy_venv(project_dir)) is not None:
+        if (_venv := reclaim_legacy_venv(layout)) is not None:
             console.print(f"[dim]Reclaimed legacy venv: {_venv}[/]")
 
-        vdir = version_dir(project_dir, target_sha)
-        already_current = read_current_sha(project_dir) == target_sha
+        vdir = layout.versions.dir(target_sha)
+        already_current = read_current_sha(layout.versions) == target_sha
 
         if already_current:
             console.print(
@@ -564,7 +559,7 @@ def _run_managed_versioned_update(
                 f"[dim]— current → {target_sha[:12]}[/]"
             )
             new_python = sys.executable
-        elif is_usable_version(project_dir, target_sha):
+        elif is_usable_version(layout.versions, target_sha):
             # A prior successful install of this exact sha that is still USABLE
             # (sentinel present AND bin/python on disk — HATS-790): trust it
             # and reuse — just (re)flip current below. A blind reinstall would
@@ -578,7 +573,7 @@ def _run_managed_versioned_update(
             # branch below, which rmtree+reinstalls it (the proper heal).
             new_python = str(vdir / "bin" / "python")
             console.print(f"[cyan]Reusing complete[/] versions/{target_sha[:12]} …")
-            _flip_current(project_dir, target_sha)
+            _flip_current(layout.versions, target_sha)
             new_version = _version_string(new_python)
             console.print(
                 f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
@@ -643,13 +638,13 @@ def _run_managed_versioned_update(
             # — the authoritative completeness marker. Only then is
             # the atomic flip allowed; current never points at a dir lacking
             # .complete.
-            complete_sentinel(project_dir, target_sha).write_text("", encoding="utf-8")
+            layout.versions.sentinel(target_sha).write_text("", encoding="utf-8")
             # HATS-650 e2e seam — no-op unless AI_HATS_TEST_PAUSE_AFTER_COMPLETE
             # is set. Lets a test freeze the install here (lock held, .complete
             # written, current not yet flipped) to exercise the corruption window
             # the lock closes.
             _pause_after_complete_for_test()
-            _flip_current(project_dir, target_sha)
+            _flip_current(layout.versions, target_sha)
             new_version = _version_string(new_python)
             console.print(
                 f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
@@ -678,7 +673,7 @@ def _run_managed_versioned_update(
             bump_cmd.append("--check-branches")
         # Pin the bump child to the venv it actually runs in (the new sha),
         # not the old AI_HATS_VENV inherited from the launcher — so any
-        # venv_path() resolution inside the bump agrees with sys.prefix.
+        # Project.venv resolution inside the bump agrees with sys.prefix.
         bump_env = {**os.environ, ENV_AI_HATS_VENV: str(vdir)}
         proc = subprocess.run(
             bump_cmd,
@@ -1075,7 +1070,7 @@ DOWNGRADE_REFUSAL_EXIT_CODE = 3
 
 
 def _probe_remote_state(
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
     remote_url: str | None = None,
     ref: str = "master",
@@ -1093,7 +1088,7 @@ def _probe_remote_state(
     try:
         from ..update_check.checker import run_check
 
-        return run_check(project_dir, remote_url=remote_url, ref=ref)
+        return run_check(layout.root, layout.cache, remote_url=remote_url, ref=ref)
     except (ImportError, OSError, ValueError):
         # ImportError: update_check missing (packaging regression) → guard
         # inactive, never brick the recovery path.
@@ -1338,7 +1333,7 @@ def _render_triage(reports: list[health.LayerReport]) -> None:
     console.print()
 
 
-def _reverify_layers(project_dir: Path, before: list[health.LayerReport]) -> None:
+def _reverify_layers(layout: ProjectLayout, before: list[health.LayerReport]) -> None:
     """Re-run the triage after the update and report what the bump did NOT fix.
 
     The bump's ``_refresh`` already rebuilds the MANAGED layer, so this only
@@ -1347,7 +1342,7 @@ def _reverify_layers(project_dir: Path, before: list[health.LayerReport]) -> Non
     was_broken = {r.name for r in before if r.status is health.Status.BROKEN}
     if not was_broken:
         return
-    still = {r.name for r in health.triage(project_dir) if r.status is health.Status.BROKEN}
+    still = {r.name for r in health.triage(layout) if r.status is health.Status.BROKEN}
     healed = was_broken - still
     if healed:
         console.print(f"[green]Layers restored:[/] {', '.join(sorted(healed))}")
@@ -1356,7 +1351,7 @@ def _reverify_layers(project_dir: Path, before: list[health.LayerReport]) -> Non
         console.print(f"[red]Still broken:[/] {', '.join(sorted(remaining))}")
 
 
-def _invalidate_update_cache(project_dir: Path) -> None:
+def _invalidate_update_cache(cache: CacheLayout) -> None:
     """Drop the update-check cache after a self update (HATS-781).
 
     The cache is keyed only on ``project_dir`` + a 24h TTL, so without this a
@@ -1368,7 +1363,7 @@ def _invalidate_update_cache(project_dir: Path) -> None:
     try:
         from ..update_check.cache import cache_path
 
-        cache_path(project_dir).unlink(
+        cache_path(cache).unlink(
             missing_ok=True
         )  # safe-delete: ok update-check cache (ephemeral, re-probed next session)
     except (ImportError, OSError):
@@ -1465,7 +1460,7 @@ def update(
     project_dir = layout.root
 
     # Triage before any write, so --check can short-circuit here.
-    reports = health.triage(project_dir)
+    reports = health.triage(layout)
     _render_triage(reports)
     if check:
         sys.exit(1 if health.worst_status(reports) is health.Status.BROKEN else 0)
@@ -1564,7 +1559,7 @@ def update(
         probe = (
             None
             if force_downgrade
-            else _probe_remote_state(project_dir, remote_url=probe_url, ref="HEAD")
+            else _probe_remote_state(layout, remote_url=probe_url, ref="HEAD")
         )
         if force_downgrade:
             console.print(
@@ -1638,8 +1633,8 @@ def update(
             migrate_force=migrate_force,
             check_branches=check_branches,
         )
-        _invalidate_update_cache(project_dir)  # HATS-781
-        _reverify_layers(project_dir, reports)
+        _invalidate_update_cache(layout.cache)  # HATS-781
+        _reverify_layers(layout, reports)
         return
 
     # HATS-647/764: edge/stable on the managed default venv → blue-green
@@ -1658,7 +1653,7 @@ def update(
         )
         try:
             _run_managed_versioned_update(
-                project_dir,
+                layout,
                 resolution,
                 old_version=old_version,
                 active_role=active_role,
@@ -1672,8 +1667,8 @@ def update(
             # other update converges. Clean exit, no traceback.
             console.print(f"[red]Update failed[/] (another update in progress):\n{exc}")
             sys.exit(2)
-        _invalidate_update_cache(project_dir)  # HATS-781
-        _reverify_layers(project_dir, reports)
+        _invalidate_update_cache(layout.cache)  # HATS-781
+        _reverify_layers(layout, reports)
         return
 
     # 2. Install — short-circuited when the probe confirms the installed SHA
@@ -1744,7 +1739,7 @@ def update(
     # Legacy in-place path reached on success (incl. the "already up
     # to date" no-op). Drop the stale update-check cache so the next session
     # re-probes instead of nagging with the pre-update delta.
-    _invalidate_update_cache(project_dir)
+    _invalidate_update_cache(layout.cache)
 
     # 3b. Dep activation banner — flag the chicken-and-egg cycle: new in-
     # memory code is still the OLD one, so any changed dep won't be wired
@@ -1925,7 +1920,7 @@ def update(
         if bump_in_process_failed:
             sys.exit(1)
 
-    _reverify_layers(project_dir, reports)
+    _reverify_layers(layout, reports)
 
 
 # `ai-hats self migrate` removed. Migration is transparent inside

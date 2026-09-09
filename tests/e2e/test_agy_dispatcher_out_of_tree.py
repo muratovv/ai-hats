@@ -12,6 +12,8 @@ why:    without out-of-tree cache resolution, moving session cache out of worksp
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from _helpers.sessions import stand_in_session
 
 import json
@@ -29,7 +31,7 @@ from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.agy.global_hook import DISPATCHER_COMMAND
 from ai_hats.surfaces.agy.provider import AgySurface
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.surfaces]
 
 SESSION_ID = "e2e-sid-dispatch"
 
@@ -67,12 +69,16 @@ def agy_session(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
     artifacts = BuiltArtifacts()
     provider = AgySurface()
     provider.build_session_artifacts(
-        project, result, SESSION_ID, run_mode=RunMode.AUTOMATE, artifacts=artifacts
+        ProjectLayout.at(project),
+        result,
+        SESSION_ID,
+        run_mode=RunMode.AUTOMATE,
+        artifacts=artifacts,
     )
 
     env = {
         **os.environ,
-        **provider.get_env(project, project),
+        **provider.get_env(project, ProjectLayout.at(project)),
         **artifacts.extra_env,
         "AI_HATS_PYTHON": sys.executable,
     }

@@ -7,6 +7,8 @@ row and ``test_runtime_hooks_broken_when_manifest_entry_has_no_file`` goes red.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import shutil
 import warnings
@@ -36,13 +38,13 @@ def _row(reports, name):
 
 
 def test_healthy_project_reports_no_broken_rows(project: Path) -> None:
-    assert [r for r in triage(project) if r.status is Status.BROKEN] == []
+    assert [r for r in triage(ProjectLayout.at(project)) if r.status is Status.BROKEN] == []
 
 
 def test_data_layer_broken_when_tracker_missing(project: Path, tmp_path: Path) -> None:
     shutil.rmtree(project / ".agent" / "ai-hats" / "tracker")
 
-    row = _row(triage(project), "tracker")
+    row = _row(triage(ProjectLayout.at(project)), "tracker")
 
     assert row.layer is Layer.DATA
     assert row.status is Status.BROKEN
@@ -51,7 +53,7 @@ def test_data_layer_broken_when_tracker_missing(project: Path, tmp_path: Path) -
 def test_managed_layer_broken_when_library_missing(project: Path) -> None:
     shutil.rmtree(project / ".agent" / "ai-hats" / "library")
 
-    row = _row(triage(project), "library")
+    row = _row(triage(ProjectLayout.at(project)), "library")
 
     assert row.layer is Layer.MANAGED
     assert row.status is Status.BROKEN
@@ -62,7 +64,7 @@ def test_no_imports_md_row_is_reported(project: Path) -> None:
     """HATS-1203: the aggregator is retired, so triage must not probe for it —
     a project without one is healthy, not BROKEN.
     """
-    assert not [r for r in triage(project) if r.name == "imports.md"]
+    assert not [r for r in triage(ProjectLayout.at(project)) if r.name == "imports.md"]
     assert not (project / ".agent" / "ai-hats" / "imports.md").exists()
 
 
@@ -92,7 +94,7 @@ def _write_settings(project: Path, command: str) -> None:
 def test_hook_refs_broken_row_names_the_dangling_command(project: Path) -> None:
     _write_settings(project, "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/gone.sh")
 
-    row = _row(triage(project), "hook refs")
+    row = _row(triage(ProjectLayout.at(project)), "hook refs")
 
     assert row.layer is Layer.MANAGED
     assert row.status is Status.BROKEN
@@ -104,7 +106,7 @@ def test_hook_refs_ok_when_every_command_resolves(project: Path) -> None:
     hook.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     _write_settings(project, "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/live.sh")
 
-    assert _row(triage(project), "hook refs").status is Status.OK
+    assert _row(triage(ProjectLayout.at(project)), "hook refs").status is Status.OK
 
 
 def test_data_remediation_points_at_the_newest_snapshot(
@@ -117,7 +119,7 @@ def test_data_remediation_points_at_the_newest_snapshot(
     (newest.parent / f"20200101T000000Z-{slug}-older.tar.gz").write_bytes(b"")
     shutil.rmtree(project / ".agent" / "ai-hats" / "tracker")
 
-    row = _row(triage(project), "tracker")
+    row = _row(triage(ProjectLayout.at(project)), "tracker")
 
     assert row.status is Status.BROKEN
     assert str(newest) in row.remediation
@@ -130,7 +132,7 @@ def test_data_remediation_degrades_when_no_snapshot_exists(
     monkeypatch.setenv(ENV_BACKUP_DIR, str(tmp_path / "empty"))
     shutil.rmtree(project / ".agent" / "ai-hats" / "tracker")
 
-    row = _row(triage(project), "tracker")
+    row = _row(triage(ProjectLayout.at(project)), "tracker")
 
     assert row.status is Status.BROKEN
     assert "no snapshot found" in row.remediation
@@ -139,7 +141,7 @@ def test_data_remediation_degrades_when_no_snapshot_exists(
 def test_drift_warns_when_cache_says_behind(project: Path) -> None:
     _write_update_cache(project, behind=3, ahead=0)
 
-    row = _row(triage(project), "version drift")
+    row = _row(triage(ProjectLayout.at(project)), "version drift")
 
     assert row.layer is Layer.RUNTIME
     assert row.status is Status.WARN
@@ -149,11 +151,11 @@ def test_drift_warns_when_cache_says_behind(project: Path) -> None:
 def test_drift_is_ok_when_cache_says_current(project: Path) -> None:
     _write_update_cache(project, behind=0, ahead=0)
 
-    assert _row(triage(project), "version drift").status is Status.OK
+    assert _row(triage(ProjectLayout.at(project)), "version drift").status is Status.OK
 
 
 def test_drift_is_unknown_without_cache_and_never_broken(project: Path) -> None:
-    row = _row(triage(project), "version drift")
+    row = _row(triage(ProjectLayout.at(project)), "version drift")
 
     assert row.status is Status.OK
     assert "unknown" in row.detail
@@ -161,7 +163,7 @@ def test_drift_is_unknown_without_cache_and_never_broken(project: Path) -> None:
 
 def _write_update_cache(project: Path, *, behind: int, ahead: int) -> None:
     write_cache(
-        project,
+        ProjectLayout.at(project).cache,
         CacheEntry(
             checked_at=datetime.now(timezone.utc),
             installed_sha="a" * 40,
@@ -184,7 +186,7 @@ def test_triage_warns_at_most_once_about_a_leaked_dir_pin(
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        triage(project)
+        triage(ProjectLayout.at(project))
 
     leaked = [w for w in caught if "pinned to project" in str(w.message)]
     assert len(leaked) <= 1, [str(w.message) for w in leaked]

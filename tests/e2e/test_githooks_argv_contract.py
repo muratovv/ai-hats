@@ -24,7 +24,7 @@ from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 AI_HATS_PYTHON = Path(sys.executable)
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards]
 
 #: Records the argv git handed the hook, NUL-separated so a path with spaces
 #: survives the round trip.

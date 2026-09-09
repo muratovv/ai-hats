@@ -8,18 +8,28 @@ keys is what makes a future third key inherit the answer instead of inventing on
 
 from __future__ import annotations
 
+import os
 import warnings
 from pathlib import Path
 
 import pytest
 
+from ai_hats.cli._entry import project_at
 from ai_hats.env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
-from ai_hats.paths import ai_hats_dir, venv_path
+from ai_hats_core.layout import ProjectLayout
 
 # (env var, callable(project_dir) -> resolved path, override value builder)
 KEYS = [
-    pytest.param(ENV_AI_HATS_DIR, ai_hats_dir, id="AI_HATS_DIR"),
-    pytest.param(ENV_AI_HATS_VENV, venv_path, id="AI_HATS_VENV"),
+    pytest.param(
+        ENV_AI_HATS_DIR,
+        lambda project: ProjectLayout.compute(project, os.environ).base,
+        id="AI_HATS_DIR",
+    ),
+    pytest.param(
+        ENV_AI_HATS_VENV,
+        lambda project: project_at(project, os.environ).venv,
+        id="AI_HATS_VENV",
+    ),
 ]
 
 

@@ -20,8 +20,9 @@ import time
 from pathlib import Path
 
 from ai_hats_core import safe_delete
-from .paths import ai_hats_dir, is_complete, read_current_sha, versions_root
-from .version_refs import current_run_sha, load_refs, ref_is_live
+from ai_hats_core.layout import ProjectLayout
+
+from .version_refs import current_run_sha, is_complete, load_refs, read_current_sha, ref_is_live
 
 # Reused from the HATS-294 session-cache sweep: conservative 24h window. The
 # risk an "incomplete" dir is actually an install in flight lasts seconds, so
@@ -30,16 +31,18 @@ from .version_refs import current_run_sha, load_refs, ref_is_live
 DEFAULT_TTL_HOURS = 24
 
 
-def sweep_incomplete_versions(project_dir: Path, ttl_hours: int = DEFAULT_TTL_HOURS) -> list[Path]:
+def sweep_incomplete_versions(
+    layout: ProjectLayout, ttl_hours: int = DEFAULT_TTL_HOURS
+) -> list[Path]:
     """Remove incomplete ``versions/<sha>/`` residue older than ``ttl_hours``.
 
     Idempotent and conservative. Returns the list of removed directories (for
     no-silent-caps logging by the caller). A second call is a no-op.
     """
-    root = versions_root(project_dir)
+    root = layout.versions.root
     if not root.exists():
         return []
-    current = read_current_sha(project_dir)
+    current = read_current_sha(layout.versions)
     cutoff = time.time() - ttl_hours * 3600
     removed: list[Path] = []
     for entry in sorted(root.iterdir()):
@@ -50,7 +53,7 @@ def sweep_incomplete_versions(project_dir: Path, ttl_hours: int = DEFAULT_TTL_HO
             continue  # liveness-ref store, not a version dir
         if sha == current:
             continue  # never touch the active version
-        if is_complete(project_dir, sha):
+        if is_complete(layout.versions, sha):
             continue  # complete → R2's liveness-based reclaim, not ours
         try:
             if entry.stat().st_mtime >= cutoff:
@@ -61,13 +64,13 @@ def sweep_incomplete_versions(project_dir: Path, ttl_hours: int = DEFAULT_TTL_HO
         safe_delete.discard(
             entry,
             reason="incomplete versioned-install residue (HATS-648)",
-            project_dir=project_dir,
+            project_dir=layout.root,
         )
         removed.append(entry)
     return removed
 
 
-def reclaim_orphan_versions(project_dir: Path, keep_shas: set[str] | None = None) -> list[Path]:
+def reclaim_orphan_versions(layout: ProjectLayout, keep_shas: set[str] | None = None) -> list[Path]:
     """Reclaim complete, non-``current`` ``versions/<sha>/`` dirs with no live ref.
 
     **Reclaim-on-certain-death** (HATS-649 / R2): a complete version is removed
@@ -91,15 +94,15 @@ def reclaim_orphan_versions(project_dir: Path, keep_shas: set[str] | None = None
 
     Idempotent. Returns reclaimed dirs for no-silent-caps logging by the caller.
     """
-    root = versions_root(project_dir)
+    root = layout.versions.root
     if not root.exists():
         return []
-    current = read_current_sha(project_dir)
+    current = read_current_sha(layout.versions)
     keep = keep_shas or set()
 
     # Partition refs into live (protect their sha) and dead (reclaim the ref).
     live_shas: set[str] = set()
-    for ref_path, ref in load_refs(project_dir):
+    for ref_path, ref in load_refs(layout.versions):
         if ref_is_live(ref):
             sha = ref.get("sha")
             if isinstance(sha, str):
@@ -120,7 +123,7 @@ def reclaim_orphan_versions(project_dir: Path, keep_shas: set[str] | None = None
             continue  # active version — never reclaim
         if sha in keep:
             continue  # explicitly protected (e.g. self update's target_sha)
-        if not is_complete(project_dir, sha):
+        if not is_complete(layout.versions, sha):
             continue  # incomplete residue → sweep_incomplete_versions owns it
         if sha in live_shas:
             continue  # a live run pins it
@@ -128,13 +131,13 @@ def reclaim_orphan_versions(project_dir: Path, keep_shas: set[str] | None = None
         safe_delete.discard(
             entry,
             reason="orphaned versioned-install (HATS-649)",
-            project_dir=project_dir,
+            project_dir=layout.root,
         )
         removed.append(entry)
     return removed
 
 
-def reclaim_legacy_venv(project_dir: Path) -> Path | None:
+def reclaim_legacy_venv(layout: ProjectLayout) -> Path | None:
     """Reclaim the legacy ``<ai_hats_dir>/.venv`` once versioned is authoritative.
 
     Phase B (HATS-653): after lazy migration to the versioned layout the old
@@ -155,14 +158,14 @@ def reclaim_legacy_venv(project_dir: Path) -> Path | None:
     no-op). Returns the reclaimed path (for caller logging) or ``None`` when
     skipped.
     """
-    if current_run_sha(project_dir) is None:
+    if current_run_sha(layout.versions) is None:
         return None  # running from .venv / override / editable → keep legacy venv
-    legacy = ai_hats_dir(project_dir) / ".venv"
+    legacy = layout.default_venv
     if not (legacy.exists() or legacy.is_symlink()):
         return None  # already reclaimed or never migrated → no-op
     safe_delete.discard(
         legacy,
         reason="legacy .venv superseded by versioned install (HATS-653)",
-        project_dir=project_dir,
+        project_dir=layout.root,
     )
     return legacy

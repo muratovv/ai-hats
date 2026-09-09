@@ -12,7 +12,8 @@ why: without probe-mirror fallback, non-editable site-packages installs without 
 
 from __future__ import annotations
 
-from ai_hats.paths import cache_root
+from ai_hats_core.layout import ProjectLayout
+
 
 import json
 import os
@@ -25,9 +26,10 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -188,11 +190,11 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
     )
 
     # ----- assert mirror was used + cache reflects behind=LAG_COMMITS -----
-    mirror = cache_root(project) / "probe-mirror"
+    mirror = ProjectLayout.at(project).cache.root / "probe-mirror"
     assert mirror.is_dir(), f"probe-mirror directory missing at {mirror}"
     assert (mirror / "HEAD").is_file(), "probe-mirror was not initialized (HEAD missing)"
 
-    cache_path = cache_root(project) / "update-check.json"
+    cache_path = ProjectLayout.at(project).cache.root / "update-check.json"
     assert cache_path.is_file(), f"cache file missing at {cache_path}"
     cache_data = json.loads(cache_path.read_text())
     # ``__commit_id__`` is a short SHA (9 chars); compare against the

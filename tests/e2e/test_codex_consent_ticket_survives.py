@@ -26,6 +26,8 @@ import pytest
 from _helpers.sessions import stand_in_session
 from _helpers.hook_chain import run_codex_dispatch
 
+pytestmark = [pytest.mark.consent, pytest.mark.surfaces]
+
 SESSION_ID = "sid-codex-ticket"
 TICKET = "AI_HATS_CONSENT" + "_TICKET=nonce git push --force"
 

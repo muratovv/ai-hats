@@ -27,7 +27,6 @@ from pathlib import Path
 import yaml
 
 from ai_hats_observe import AuditWriter, Session
-from ai_hats.paths import runs_dir
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.pipeline import run as run_pipeline
 from ai_hats.constants import ENV_SKIP_RETRO
@@ -77,7 +76,7 @@ def _seed_project_with_retro_policy(
             }
         )
     )
-    session_dir = runs_dir(tmp_path) / "session_test"
+    session_dir = ProjectLayout.at(tmp_path).sessions.runs / "session_test"
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
     return session_dir

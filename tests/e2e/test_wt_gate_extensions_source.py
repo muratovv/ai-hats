@@ -33,7 +33,7 @@ import pytest
 from _helpers.git import init_repo
 from _helpers.hook_chain import build_session_settings, pretooluse_hooks, run_tool_chain
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.wt]
 
 SKILL = "worktree-isolation"
 EXTS_FILENAME = "code_extensions.json"

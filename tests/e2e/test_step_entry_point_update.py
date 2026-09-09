@@ -24,7 +24,7 @@ from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 from _helpers.env import clean_env  # noqa: E402
 
-pytestmark = pytest.mark.install_heavy
+pytestmark = [pytest.mark.install_heavy, pytest.mark.install]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"

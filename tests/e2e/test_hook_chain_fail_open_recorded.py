@@ -24,6 +24,8 @@ from _helpers.hook_chain import (  # noqa: E402
     run_chain,
 )
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 GARBAGE_PAYLOAD = "this is not json at all {{{"

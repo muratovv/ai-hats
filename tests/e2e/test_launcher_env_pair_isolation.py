@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 
 def test_launcher_drops_foreign_ai_hats_dir_on_repin(shared_launcher, tmp_path: Path) -> None:

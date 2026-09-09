@@ -20,7 +20,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:

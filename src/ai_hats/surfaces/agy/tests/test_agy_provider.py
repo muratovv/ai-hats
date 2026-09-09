@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 
 from pathlib import Path
@@ -10,7 +12,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG, gemini_md, session_cache_dir
+from ai_hats.paths import PROJECT_CONFIG, gemini_md
 from ai_hats.surfaces.agy.provider import AgySurface
 
 
@@ -48,9 +50,9 @@ def test_wrap_materializes_skills_into_session_skills_dir(agy_project) -> None:
     project, result = agy_project
     provider = AgySurface()
 
-    provider.build_session_prompt(project, result, "sid-1")
+    provider.build_session_prompt(ProjectLayout.at(project), result, "sid-1")
 
-    skills_dir = session_cache_dir(project, "sid-1") / "rules" / ".agents" / "skills"
+    skills_dir = ProjectLayout.at(project).cache.session("sid-1") / "rules" / ".agents" / "skills"
     assert (skills_dir / "s" / "SKILL.md").is_file()
 
 
@@ -58,10 +60,10 @@ def test_automate_hook_materializes_and_returns_no_args(agy_project) -> None:
     project, result = agy_project
     provider = AgySurface()
 
-    args = provider.materialize_runtime_skills(project, result, "sid-2")
+    args = provider.materialize_runtime_skills(ProjectLayout.at(project), result, "sid-2")
 
     assert args == []
-    skills_dir = session_cache_dir(project, "sid-2") / "rules" / ".agents" / "skills"
+    skills_dir = ProjectLayout.at(project).cache.session("sid-2") / "rules" / ".agents" / "skills"
     assert (skills_dir / "s" / "SKILL.md").is_file()
 
 
@@ -76,21 +78,25 @@ def test_system_prompt_omits_skills_index(agy_project) -> None:
 def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
     project, result = agy_project
 
-    args, env, prompt = AgySurface().build_session_prompt(project, result, "sid-4")
+    args, env, prompt = AgySurface().build_session_prompt(
+        ProjectLayout.at(project), result, "sid-4"
+    )
 
     assert args[0] == "--add-dir"
     session_md = Path(args[1]) / "GEMINI.md"
     assert session_md.read_text() == prompt
     # The only env the prompt channel carries: the dispatcher's cache-dir pin.
-    assert env == {"AI_HATS_SESSION_CACHE_DIR": str(session_cache_dir(project, "sid-4"))}
+    assert env == {
+        "AI_HATS_SESSION_CACHE_DIR": str(ProjectLayout.at(project).cache.session("sid-4"))
+    }
 
 
 def test_wrap_session_dirs_isolated_per_session(agy_project) -> None:
     project, result = agy_project
     provider = AgySurface()
 
-    args_a, _, _ = provider.build_session_prompt(project, result, "sid-a")
-    args_b, _, _ = provider.build_session_prompt(project, result, "sid-b")
+    args_a, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-a")
+    args_b, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-b")
 
     assert args_a[1] != args_b[1]
 
@@ -98,7 +104,7 @@ def test_wrap_session_dirs_isolated_per_session(agy_project) -> None:
 def test_get_env_carries_no_dead_rules_path(agy_project, tmp_path) -> None:
     project, _ = agy_project
 
-    env = AgySurface().get_env(tmp_path / "sess", project)
+    env = AgySurface().get_env(tmp_path / "sess", ProjectLayout.at(project))
 
     assert "GEMINI_CLI_PROJECT_RULES_PATH" not in env
 
@@ -119,7 +125,7 @@ def test_execution_context_is_clean_no_op_native_by_default(tmp_path) -> None:
     agents.write_text("root agents rules")
 
     provider = AgySurface()
-    with provider.execution_context(project):
+    with provider.execution_context(ProjectLayout.at(project)):
         assert gemini.exists()
         assert agents.exists()
         assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
@@ -134,7 +140,7 @@ def test_provider_name() -> None:
 
 def test_system_prompt_path(tmp_path: Path) -> None:
     project = tmp_path / "proj"
-    assert AgySurface().system_prompt_path(project) == gemini_md(project)
+    assert AgySurface().system_prompt_path(ProjectLayout.at(project)) == gemini_md(project)
 
 
 def test_rules_dir(tmp_path: Path) -> None:
@@ -198,7 +204,7 @@ def test_get_run_command_with_harness_flags() -> None:
 def test_get_env(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     session_dir = tmp_path / "session"
-    env = AgySurface().get_env(session_dir, project)
+    env = AgySurface().get_env(session_dir, ProjectLayout.at(project))
     assert env["AI_HATS_PROJECT_DIR"] == str(project)
     assert env["AI_HATS_DIR"] == str(project / ".agent" / "ai-hats")
 
@@ -214,10 +220,14 @@ def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path, monkeypatc
     project = tmp_path / "project"
     project.mkdir()
     provider = AgySurface()
-    provider.materialize_runtime_skills(project, result, "sid-wt")
+    provider.materialize_runtime_skills(ProjectLayout.at(project), result, "sid-wt")
 
     wt_skill_dir = (
-        session_cache_dir(project, "sid-wt") / "rules" / ".agents" / "skills" / "worktree-isolation"
+        ProjectLayout.at(project).cache.session("sid-wt")
+        / "rules"
+        / ".agents"
+        / "skills"
+        / "worktree-isolation"
     )
     assert (wt_skill_dir / "SKILL.md").is_file()
     assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
@@ -237,7 +247,7 @@ def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_roo
     project.mkdir()
     provider = AgySurface()
 
-    provider.build_session_prompt(project, result, "sid-sp-settings")
+    provider.build_session_prompt(ProjectLayout.at(project), result, "sid-sp-settings")
 
     # Clean-Root Invariant: project root .gemini/settings.json must NOT be written
     root_settings = project / ".gemini" / "settings.json"
@@ -246,7 +256,7 @@ def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_roo
     )
 
     # Session hooks manifest must be in session cache
-    cache_hooks = session_cache_dir(project, "sid-sp-settings") / "hooks.json"
+    cache_hooks = ProjectLayout.at(project).cache.session("sid-sp-settings") / "hooks.json"
     assert cache_hooks.is_file()
     data = json.loads(cache_hooks.read_text())
     pre_tool_hooks = data.get("PreToolUse", [])
@@ -311,11 +321,15 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     provider = AgySurface()
     artifacts = BuiltArtifacts()
     provider.build_session_artifacts(
-        project, result, "sid-auto", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+        ProjectLayout.at(project),
+        result,
+        "sid-auto",
+        run_mode=RunMode.AUTOMATE,
+        artifacts=artifacts,
     )
 
     # 1. Manifest written in AUTOMATE session cache
-    cache_hooks = session_cache_dir(project, "sid-auto") / "hooks.json"
+    cache_hooks = ProjectLayout.at(project).cache.session("sid-auto") / "hooks.json"
     assert cache_hooks.is_file(), (
         "hooks.json must be materialized in session cache under AUTOMATE mode"
     )
@@ -349,3 +363,83 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     assert res == 0
     assert marker.is_file()
     assert marker.read_text().strip() == "FIRED"
+
+
+# --- a declared hook whose script is not where it should be (HATS-1862) ---
+
+
+def _hooked_skill(root: Path, name: str = "guard") -> Path:
+    source = root / "sources" / name
+    (source / "hooks").mkdir(parents=True)
+    script = source / "hooks" / "guard.sh"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    (source / "SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        "description: guard\n"
+        "ai_hats:\n"
+        "  runtime_hooks:\n"
+        "    PreToolUse:\n"
+        "      - matcher: Edit\n"
+        "        script: hooks/guard.sh\n"
+        "---\n"
+        "# guard\n"
+    )
+    return source
+
+
+def _result_with(*skills: Path):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        name="r",
+        priorities=[],
+        merged_injection="role",
+        rules=[],
+        user_rules=(),
+        skills=[SimpleNamespace(name=p.name, source_path=p) for p in skills],
+        checks=(),
+    )
+
+
+def test_a_script_missing_from_the_skill_is_a_notice_not_a_dead_command(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    skill = _hooked_skill(tmp_path)
+    (skill / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
+    artifacts = BuiltArtifacts()
+
+    layout = ProjectLayout.at(project)
+    AgySurface().build_session_artifacts(
+        layout, _result_with(skill), "sid-gone", run_mode=RunMode.HITL, artifacts=artifacts
+    )
+
+    data = json.loads((layout.cache.session("sid-gone") / "hooks.json").read_text())
+    assert data.get("PreToolUse", []) == [], "no command may point at a file that is not there"
+    [notice] = artifacts.notices
+    assert "guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
+
+
+def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path, monkeypatch) -> None:
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.session_artifacts import BuiltArtifacts
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    skill = _hooked_skill(tmp_path)
+
+    with pytest.raises(RuntimeHookMirrorError, match="guard"):  # the mirror was never written
+        AgySurface()._deliver_hooks(
+            ProjectLayout.at(project), _result_with(skill), "sid-unmirrored", BuiltArtifacts()
+        )

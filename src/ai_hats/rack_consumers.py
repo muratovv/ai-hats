@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Callable, Sequence
 
 from ai_hats_core import ResolvedCheck
@@ -63,7 +65,7 @@ class AiHatsCheckPort:
 
     def __init__(
         self,
-        backlog_owner: Path | None,
+        owner: ProjectLayout | None,
         *,
         catalog: Path,
         resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
@@ -71,7 +73,7 @@ class AiHatsCheckPort:
         #: The backlog's own project — the ONLY one this channel knows:
         #: it composes the role, it is the gate's cwd, and it is the
         #: ``AI_HATS_PROJECT_DIR`` the gate reads as "this project".
-        self.backlog_owner = backlog_owner
+        self.owner = owner
         # The catalog of the backlog being gated, not the project's tasks dir:
         # a sibling's check log belongs under the sibling, and the gate reads
         # AI_HATS_TASKS_DIR to decide whether the backlog is its business at all.
@@ -90,7 +92,7 @@ class AiHatsCheckPort:
     def _carried(self) -> tuple[ResolvedCheck, ...]:
         if self._resolve is not None:
             return tuple(self._resolve())
-        if self.backlog_owner is None:
+        if self.owner is None:
             # A backlog nobody owns declares nothing, so nothing fires. Said out
             # loud: a gate that is not there must not read as a gate that passed.
             print(
@@ -100,22 +102,25 @@ class AiHatsCheckPort:
             )
             return ()
         return resolve_carried_checks(
-            self.backlog_owner,
+            self.owner.root,
             self.APP,
             # Scoped to the backlog's owner: unscoped, another project's session
             # chose the rows, and one declaring none closed the card ungated
             # (HATS-1631).
-            identity=session_identity_for(self.backlog_owner),
+            identity=session_identity_for(self.owner.root),
         )
 
     def _project(self) -> Path:
+        return self._layout().root
+
+    def _layout(self) -> ProjectLayout:
         """The owner, proven present: rows only exist when a project declared them."""
-        if self.backlog_owner is None:
+        if self.owner is None:
             raise CheckResolutionError(
                 f"checks: a bound check was requested for the backlog at {self._catalog}, "
                 f"which no project owns — nothing could have declared it"
             )
-        return self.backlog_owner
+        return self.owner
 
     def run_check(self, request: CheckRequest) -> CheckOutcome:
         check: ResolvedCheck = request.declaration.handle
@@ -158,12 +163,10 @@ class AiHatsCheckPort:
         """The read itself — memoized by the caller, so it takes its filelock once."""
         from ai_hats_wt import WorktreeManager
 
-        from .paths import worktrees_dir
-
         try:
-            project = self._project()
+            layout = self._layout()
             path = WorktreeManager.peek_worktree_path(
-                project, task_id, state_dir=worktrees_dir(project)
+                layout.root, task_id, state_dir=layout.sessions.worktrees
             )
         except (OSError, ValueError) as exc:
             # "Cannot tell" is not "no worktree". Handing a gate an absent
@@ -186,12 +189,11 @@ class AiHatsCheckPort:
         from ai_hats_wt import WorktreeManager
 
         from .env import ENV_MERGED_SHA
-        from .paths import worktrees_dir
 
         try:
-            project = self._project()
+            layout = self._layout()
             sha = WorktreeManager.peek_merged_sha(
-                project, task_id, state_dir=worktrees_dir(project)
+                layout.root, task_id, state_dir=layout.sessions.worktrees
             )
         except (OSError, ValueError) as exc:
             # Same rule as the worktree read: "cannot tell" must not read as
@@ -237,7 +239,7 @@ def _binding(check: ResolvedCheck) -> str:
     return f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
 
 
-def check_port_factory(backlog_owner: Path | None) -> CheckPortFactory:
+def check_port_factory(owner: ProjectLayout | None) -> CheckPortFactory:
     """This integrator's ``CheckPortFactory``: one executor per gated catalog.
 
     The whole of what ai-hats contributes to the channel since HATS-1575. Which
@@ -247,11 +249,11 @@ def check_port_factory(backlog_owner: Path | None) -> CheckPortFactory:
     them here meant every road that did not repeat the derivation — the sibling
     backlogs, the workspace the reflect consumers mount — silently had no gate.
     """  # comment-length: allow — the boundary this draws IS the fix
-    return lambda catalog: AiHatsCheckPort(backlog_owner, catalog=catalog)
+    return lambda catalog: AiHatsCheckPort(owner, catalog=catalog)
 
 
 def consumer_subscribers(
-    backlog_owner: Path | None,
+    owner: ProjectLayout | None,
     *,
     definition: BacklogDefinition,
     catalog: Path,
@@ -266,7 +268,7 @@ def consumer_subscribers(
     return [
         check_subscriber(
             definition,
-            port=check_port_factory(backlog_owner)(catalog),
+            port=check_port_factory(owner)(catalog),
             known_backlogs=known_backlogs,
         )
     ]

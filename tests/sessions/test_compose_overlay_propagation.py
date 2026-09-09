@@ -25,6 +25,8 @@ family (D1 in ADR-0005 / HATS-456 single-derivation-point invariant).
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -283,7 +285,7 @@ def test_hitl_session_prompt_carries_all_overlay_content(
     asm = Assembler(project)
     result = compose_for_role(asm, "maintainer")
     args, _env, _ = ClaudeSurface().build_session_prompt(
-        project,
+        ProjectLayout.at(project),
         result,
         "test-sid-501",
     )
@@ -307,6 +309,10 @@ def _sdk_audit(provider, project, result, *, task: str) -> str:
 
     artifacts = BuiltArtifacts(port=PlanMaterializer())
     provider.build_session_artifacts(
-        project, result, "audit-probe", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+        ProjectLayout.at(project),
+        result,
+        "audit-probe",
+        run_mode=RunMode.AUTOMATE,
+        artifacts=artifacts,
     )
-    return render_sdk_prompt_audit(artifacts, project, task=task, ticket_id="")
+    return render_sdk_prompt_audit(artifacts, ProjectLayout.at(project), task=task, ticket_id="")

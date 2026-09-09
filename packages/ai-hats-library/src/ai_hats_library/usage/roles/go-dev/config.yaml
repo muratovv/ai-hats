@@ -9,6 +9,14 @@ composition:
     - trait-agent
     - trait-se-mindset
     - dev::go-core
+    - dev::go-database
+    - dev::go-grpc
+    - dev::go-cli
+    - dev::go-observability
+    - dev::go-performance
+    - dev::go-security
+    - dev::go-di
+    - dev::go-samber
     - dev::go-testing-extended
     - dev::go-ci
   rules: []
@@ -16,9 +24,10 @@ composition:
 injection: |
   # ROLE: GO DEVELOPER
 
-  You are a Go developer. Write idiomatic, well-tested Go code.
-  Follow the project's module structure and conventions.
+  You are a Go developer. Write idiomatic, well-tested Go code and follow the
+  module structure and conventions already in the tree.
 
-  Applied traits (database, grpc, cli, observability, performance,
-  security, di, samber) are opt-in — enable per project via role
-  override, or use the `go-dev-full` role for everything at once.
+  The composed traits span core Go, database, gRPC, CLI, observability,
+  performance, security, dependency injection, the samber ecosystem, extended
+  testing and CI/CD. Reach for a domain's skill when the work touches that
+  domain — do not inline the whole catalog into a turn.

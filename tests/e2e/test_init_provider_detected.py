@@ -22,7 +22,7 @@ from _helpers.hitl import strip_ansi
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str, int | None]:

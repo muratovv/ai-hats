@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 JOURNAL_HELPER = LIB / "hooks/bypass_journal.sh"

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.opencode import OpenCodeSurface
 from ai_hats.surfaces.opencode.runtime_hooks import MANIFEST_VERSION, plugin_source
@@ -62,7 +63,7 @@ SESSION_ID = "20260822-000000-1-00000"
 
 
 def _config(project: Path, provider: OpenCodeSurface) -> dict:
-    path = provider.session_config_path(project, SESSION_ID)
+    path = provider.session_config_path(ProjectLayout.at(project), SESSION_ID)
     assert path.is_file()
     return json.loads(path.read_text())
 
@@ -74,10 +75,10 @@ def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> Non
     artifacts = BuiltArtifacts()
 
     provider.build_session_artifacts(
-        project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=artifacts
+        ProjectLayout.at(project), result, SESSION_ID, run_mode=RunMode.HITL, artifacts=artifacts
     )
 
-    cache_dir = session_cache_dir(project, SESSION_ID)
+    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
     manifest_path = cache_dir / "opencode" / "hooks.json"
     plugin_path = cache_dir / "opencode" / "plugin" / "ai-hats-hooks.mjs"
     assert manifest_path.is_file()
@@ -94,12 +95,10 @@ def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> Non
     assert pre[0]["command"].endswith("safety-guard/hooks/guard.sh")
     assert pre[0]["tag"].startswith("ai-hats:safety-guard:PreToolUse:")
 
-    from ai_hats.paths import cache_root
-
     assert manifest["permissions"] == [
         {
             "permission": "external_directory",
-            "prefix": f"{cache_root(project)}/",
+            "prefix": f"{ProjectLayout.at(project).cache.root}/",
             "action": "allow",
         }
     ]
@@ -119,22 +118,21 @@ def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> No
 
     project = _project(tmp_path)
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result([plain]),
         SESSION_ID,
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
 
-    cache_dir = session_cache_dir(project, SESSION_ID)
+    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
     manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
     assert manifest["hooks"] == {}
-    from ai_hats.paths import cache_root
 
     assert manifest["permissions"] == [
         {
             "permission": "external_directory",
-            "prefix": f"{cache_root(project)}/",
+            "prefix": f"{ProjectLayout.at(project).cache.root}/",
             "action": "allow",
         }
     ]
@@ -142,7 +140,7 @@ def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> No
     assert config.get("plugin"), "permission dispatcher must stay registered"
 
 
-def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
+def test_a_script_missing_from_the_skill_is_a_notice_not_a_silent_drop(tmp_path: Path) -> None:
     source = _make_hooked_skill(tmp_path)
     (source / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
 
@@ -150,18 +148,38 @@ def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
     project = _project(tmp_path)
     artifacts = BuiltArtifacts()
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result([source]),
         SESSION_ID,
         run_mode=RunMode.HITL,
         artifacts=artifacts,
     )
 
-    cache_dir = session_cache_dir(project, SESSION_ID)
+    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
     manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
-    assert manifest["hooks"]["PreToolUse"] == []
+    assert manifest["hooks"].get("PreToolUse", []) == []
+    [notice] = artifacts.notices
+    assert "safety-guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
     config = _config(project, provider)
     assert "plugin" in config, "dispatcher stays registered; empty lists dispatch nothing"
+
+
+def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path) -> None:
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.surfaces.opencode.runtime_hooks import materialize_hook_manifest
+
+    source = _make_hooked_skill(tmp_path)
+    unwritten_mirror = tmp_path / "session" / "skills"
+
+    with pytest.raises(RuntimeHookMirrorError, match="safety-guard"):
+        materialize_hook_manifest(
+            ProjectLayout.at(_project(tmp_path)),
+            _fake_result([source]),
+            SESSION_ID,
+            BuiltArtifacts(),
+            skills_dir=unwritten_mirror,
+            permission_rules=[],
+        )
 
 
 def test_plugin_asset_is_fail_open_on_missing_pin_and_maps_tools() -> None:

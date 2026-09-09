@@ -372,8 +372,8 @@ def cache_home_override() -> str | None:
     """Read ``AI_HATS_CACHE_HOME`` env var.
 
     Meaning: Runtime override for the BASE of the machine-only cache class, which lives
-    outside the project. Never a project's final cache root — ``paths.cache_root`` always
-    appends the per-project key, so a leaked value cannot merge two projects' caches.
+    outside the project. Never a project's final cache root — ``ProjectLayout.cache.root``
+    always appends the per-project key, so a leaked value cannot merge two projects' caches.
     Documentation: ``docs/ARCHITECTURE.md`` (Materialization), HATS-1398.
     """
     return _read(ENV_AI_HATS_CACHE_HOME)

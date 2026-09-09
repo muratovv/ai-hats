@@ -12,13 +12,14 @@ import json
 import sys
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats.env import (
     ENV_AI_HATS_PYTHON,
     ENV_SESSION_CACHE_DIR,
 )
 from .profile import PROFILE
-from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
-from ai_hats.paths import ai_hats_dir, session_cache_dir
+from ai_hats.hook_collection import composed_rows
 from ai_hats.session_artifacts import BuiltArtifacts
 
 from ..hook_channel import surface_timeout
@@ -59,30 +60,20 @@ def build_hook_cli_args() -> list[str]:
 
 
 def _manifest(
-    project_dir: Path,
+    layout: ProjectLayout,
     result,
     session_id: str,
     *,
     skills_dir: Path,
+    artifacts: BuiltArtifacts,
 ) -> dict:
-    hooks: dict[str, list[dict[str, str]]] = {}
-    for event, entries in collect_runtime_hooks(result).items():
-        event_hooks = hooks.setdefault(event, [])
-        for skill_name, hook in entries:
-            if resolve_skill_script(result, skill_name, hook.script) is None:
-                continue
-            event_hooks.append(
-                {
-                    "matcher": hook.matcher,
-                    "command": str(skills_dir / skill_name / hook.script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
-                }
-            )
+    hooks, notices = composed_rows(result, skills_dir, port=artifacts.port)
+    artifacts.notices.extend(notices)
     return {
         "version": MANIFEST_VERSION,
         "session": {
             "id": session_id,
-            "ai_hats_dir": str(ai_hats_dir(project_dir)),
+            "ai_hats_dir": str(layout.base),
             "skills_root": str(skills_dir),
         },
         "hooks": hooks,
@@ -90,7 +81,7 @@ def _manifest(
 
 
 def materialize_hook_manifest(
-    project_dir: Path,
+    layout: ProjectLayout,
     result,
     session_id: str,
     artifacts: BuiltArtifacts,
@@ -107,11 +98,11 @@ def materialize_hook_manifest(
     ``skills_dir`` must be the already-materialized session mirror.  Commands
     never point back at library sources or into the project root.
     """
-    cache_dir = session_cache_dir(project_dir, session_id)
+    cache_dir = layout.cache.session(session_id)
     artifacts.port.mkdir(cache_dir)
     path = cache_dir / "hooks.json"
     content = json.dumps(
-        _manifest(project_dir, result, session_id, skills_dir=skills_dir),
+        _manifest(layout, result, session_id, skills_dir=skills_dir, artifacts=artifacts),
         indent=2,
         sort_keys=True,
     )

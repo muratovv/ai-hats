@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING, Generator
 
 from .global_hook import ensure_global_dispatcher_hook
@@ -27,7 +29,6 @@ from .global_hook import ensure_global_dispatcher_hook
 from ai_hats.paths import (
     GEMINI_MD_FILENAME,
     gemini_md,
-    session_cache_dir,
 )
 from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
@@ -99,14 +100,15 @@ class AgySurface(Surface):
             end_ts=end_ts,
         )
 
-    def system_prompt_path(self, project_dir: Path) -> Path | None:
+    def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
+        project_dir = layout.root
         return gemini_md(project_dir)
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
 
     @contextmanager
-    def execution_context(self, project_dir: Path) -> Generator[None, None, None]:
+    def execution_context(self, layout: ProjectLayout) -> Generator[None, None, None]:
         """Clean execution context — HATS-1166: file-hiding hacks retired (native-by-default)."""
         yield
 
@@ -114,28 +116,29 @@ class AgySurface(Surface):
         # Skills reach agy via the native .agy/skills/ registry
         return self._compose_sections(result)
 
-    def _session_skills_dir(self, project_dir: Path, session_id: str) -> Path:
-        return session_cache_dir(project_dir, session_id) / "rules" / ".agents" / "skills"
+    def _session_skills_dir(self, layout: ProjectLayout, session_id: str) -> Path:
+        return layout.cache.session(session_id) / "rules" / ".agents" / "skills"
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+    def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
         """HATS-1540: what a bound check resolves its script from in-session."""
-        return self._session_skills_dir(project_dir, session_id)
+        return self._session_skills_dir(layout, session_id)
 
-    def _cache_dir(self, project_dir: Path, session_id: str, artifacts: BuiltArtifacts) -> Path:
-        cache_dir = session_cache_dir(project_dir, session_id)
+    def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
+        cache_dir = layout.cache.session(session_id)
         artifacts.port.mkdir(cache_dir)
         return cache_dir
 
     # -- context ---------------------------------------------------------------
 
-    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
         """Rules dir on disk, handed over with --add-dir."""
+        project_dir = layout.root
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
-        cache_dir = self._cache_dir(project_dir, session_id, artifacts)
+        cache_dir = self._cache_dir(layout, session_id, artifacts)
         prompt_content = self.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, project_dir)
+        prompt_content = expand_path_placeholders(prompt_content, layout)
         prompt_content = expand_role_catalog(prompt_content, project_dir)
 
         artifacts.full_content = prompt_content
@@ -146,86 +149,80 @@ class AgySurface(Surface):
         artifacts.materialized.append(session_md)
         artifacts.cli_args.extend(["--add-dir", str(rules_dir)])
 
-    def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
         """Role sections inline in the meta-prompt — nothing on disk, no flag."""
+        project_dir = layout.root
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
         prompt_content = self.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, project_dir)
+        prompt_content = expand_path_placeholders(prompt_content, layout)
         prompt_content = expand_role_catalog(prompt_content, project_dir)
         artifacts.full_content = prompt_content
 
     # -- skills ----------------------------------------------------------------
 
-    def _materialize_skills(self, project_dir, result, session_id, artifacts) -> Path:
+    def _materialize_skills(self, layout, result, session_id, artifacts) -> Path:
         # Not via materialize_runtime_skills: that is a published extension point
         # and cannot take the port (HATS-1211 / HATS-1207 R4).
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
-        self._cache_dir(project_dir, session_id, artifacts)
-        skills_dir = self._session_skills_dir(project_dir, session_id)
-        materialize_skills_dir(skills_dir, result.skills, project_dir, artifacts.port)
+        self._cache_dir(layout, session_id, artifacts)
+        skills_dir = self._session_skills_dir(layout, session_id)
+        materialize_skills_dir(skills_dir, result.skills, layout, artifacts.port)
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
         artifacts.materialized.append(skills_dir)
         return skills_dir
 
-    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._materialize_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._materialize_skills(layout, result, session_id, artifacts)
 
-    def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._materialize_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
+        self._materialize_skills(layout, result, session_id, artifacts)
 
     # -- hooks -----------------------------------------------------------------
 
-    def _hooks_manifest(self, project_dir: Path, result, session_id: str) -> dict[str, list[dict]]:
-        from ai_hats.hook_collection import collect_runtime_hooks
+    def _hooks_manifest(
+        self, layout: ProjectLayout, result, session_id: str, artifacts: BuiltArtifacts
+    ) -> dict[str, list[dict]]:
+        """The flat ``{event: [row, ...]}`` the global dispatcher reads.
 
-        skills_dir = self._session_skills_dir(project_dir, session_id)
-        manifest: dict[str, list[dict]] = {}
-        for event, entries in collect_runtime_hooks(result).items():
-            event_list = manifest.setdefault(event, [])
-            for skill_name, hook in entries:
-                # Kept in the row's own (Claude) vocabulary. Translating it here
-                # covered one class and left `Bash` alone, so the shared-state
-                # guard never fired on this surface; the dispatcher now asks
-                # `claude_hook_adapter` instead, which knows every class
-                # (HATS-1776).
-                matcher = getattr(hook, "matcher", "")
-                script = getattr(hook, "script", "")
-                event_list.append(
-                    {
-                        "matcher": matcher,
-                        "command": str(skills_dir / skill_name / script),
-                        "tag": f"ai-hats:{skill_name}:{event}:{matcher}:{Path(script).stem}",
-                    }
-                )
-        return manifest
+        Rows keep the Claude matcher vocabulary: translating it here once covered
+        one class and left ``Bash`` alone, so the shared-state guard never fired
+        on this surface; the dispatcher asks ``claude_hook_adapter`` instead.
+        """
+        from ai_hats.hook_collection import composed_rows
 
-    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
+        rows, notices = composed_rows(
+            result, self._session_skills_dir(layout, session_id), port=artifacts.port
+        )
+        artifacts.notices.extend(notices)
+        return rows
+
+    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
         """Global dispatcher registration (HATS-1166) plus the session manifest it reads."""
         from ai_hats.env import ENV_SESSION_CACHE_DIR
 
-        cache_dir = self._cache_dir(project_dir, session_id, artifacts)
+        cache_dir = self._cache_dir(layout, session_id, artifacts)
         # The dispatcher is a standalone process on every tool call — hand it the
         # resolved dir rather than have it import ai-hats to re-derive it.
         artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
         ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
 
-        manifest = self._hooks_manifest(project_dir, result, session_id)
+        manifest = self._hooks_manifest(layout, result, session_id, artifacts)
         hooks_json = cache_dir / "hooks.json"
         artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
         artifacts.materialized.append(hooks_json)
 
-    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
-    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
     def materialize_runtime_skills(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: str,
     ) -> list[str]:
@@ -236,28 +233,28 @@ class AgySurface(Surface):
         # A published extension point cannot carry the port, so this path always
         # writes — it is one of the builder bypasses HATS-1207 removes.
         materialize_skills_dir(
-            self._session_skills_dir(project_dir, session_id),
+            self._session_skills_dir(layout, session_id),
             result.skills,
-            project_dir,
+            layout,
             ApplyMaterializer(),
         )
         return []
 
     def ensure_runtime_hooks(
-        self, project_dir: Path, result: CompositionResult | None = None, **kwargs
+        self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
     ) -> None:
         """HATS-1166: Runtime hooks write to session cache hooks.json via build_session_artifacts."""
         pass
 
     def build_session_prompt(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: str,
     ) -> tuple[list[str], dict[str, str], str]:
         """Write composed prompt & session artifacts via build_session_artifacts (ADR-0018)."""
         artifacts = self.build_session_artifacts(
-            project_dir,
+            layout,
             result,
             session_id,
             run_mode=RunMode.HITL,
@@ -328,14 +325,14 @@ class AgySurface(Surface):
     ) -> list[str]:
         return cmd + ["--output-format", "json", "-p", meta_prompt]
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
+        project_dir = layout.root
         import sys
         from ai_hats.env import ENV_AI_HATS_PYTHON
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
-        from ai_hats.paths import ai_hats_dir
 
         return {
-            ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
+            ENV_AI_HATS_DIR: str(layout.base),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
             ENV_AI_HATS_PYTHON: sys.executable,
         }

@@ -9,6 +9,11 @@
 HATS-1708 (D10), HATS-1877 (гейт `->review`) — сохранена там, где она объясняет
 решение; там, где она описывала механизм, механизм описан заново.
 
+**Дополнен в HATS-1921 (2026-09-09):** e2e-тир разбит на **зоны**, и карточный
+гейт требует своё объявленное множество плюс зоны, которых требует сам дифф
+(D11). Это меняет одну строку D9 — «полный e2e-тир на каждой карточке» больше не
+отвергнут целиком — и отдаёт содержание HATS-1605 этому решению.
+
 **ADR-0019** [1] владеет каналом привязок (`composition.apps`: форма строки,
 политика отказа, кто валидирует имя точки). **ADR-0020** [2] владеет
 hook-подложкой и контрактом кодов возврата. **ADR-0021** [3] владеет материализацией
@@ -61,51 +66,75 @@ hook-подложкой и контрактом кодов возврата. **A
 
 <!-- gate-table:stages -->
 
-| стадия             | требуют гейты                              | что проверяет                                                                |
-| ------------------ | ------------------------------------------ | ---------------------------------------------------------------------------- |
-| `e2e-catalog`      | review-gate done-gate merge-gate push-gate | tests/e2e/CATALOG.md matches the flow blocks in the tests' docstrings        |
-| `lint`             | review-gate done-gate merge-gate push-gate | ruff check and ruff format --check, both over the whole tree                 |
-| `shellcheck`       | review-gate done-gate merge-gate           | every tracked *.sh is clean at severity warning and above                    |
-| `dependency-floor` | review-gate done-gate merge-gate           | every pin on a workspace package tracks that package's version               |
-| `silent-fallback`  | review-gate done-gate merge-gate           | no broad except swallows a failure without reporting it                      |
-| `test-isolation`   | review-gate done-gate merge-gate           | the suite patches its own units no more than the recorded baseline           |
-| `prose-refs`       | review-gate done-gate merge-gate push-gate | paths, library prefixes, sections and symbols named in library prose resolve |
-| `ticket-ids`       | review-gate done-gate merge-gate push-gate | no tracker id in shipped library prose                                       |
-| `consumer-refs`    | review-gate done-gate merge-gate           | no library component names a component that composes it                      |
-| `env-reference`    | review-gate done-gate merge-gate push-gate | docs/reference-env.md matches the env declarations the code reads            |
-| `gate-table`       | review-gate done-gate merge-gate push-gate | ADR-0023's stage and gate tables match this file and the gates               |
-| `adr-integrity`    | push-gate                                  | every ADR citation resolves and a number names exactly one file              |
-| `bidi`             | push-gate                                  | no bidirectional control characters, which are invisible in review           |
-| `wheel-contents`   | review-gate done-gate merge-gate           | every tracked src file reaches the wheel built through the sdist             |
-| `master-ci`        | done-gate                                  | master's last CI verdict is green (network)                                  |
-| `unit`             | review-gate done-gate merge-gate push-gate | every test not marked integration                                            |
-| `integration`      | done-gate                                  | the real-subprocess tests outside tests/e2e                                  |
-| `merge-smoke`      | done-gate                                  | the curated smoke subset of tests/e2e                                        |
-| `e2e`              | push-gate                                  | the full tier: integration or smoke, quarantine and live agents excluded     |
-| `coverage`         | -                                          | the tests outside tests/e2e in one process, at the coverage floor (CI)       |
-| `security`         | -                                          | pip-audit over the interpreter's whole environment (CI-authoritative)        |
-| `version-skew`     | -                                          | every workspace package is ahead of what PyPI has (network)                  |
-| `python-pin`       | -                                          | every copy of the Python pin agrees and CI runs it                           |
-| `tmp-sweep`        | -                                          | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing          |
-| `prepare`          | -                                          | precondition: a venv for this checkout; it asserts nothing                   |
+| стадия             | требуют гейты                                                                            | что проверяет                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `e2e-catalog`      | review-gate done-gate merge-gate push-gate                                               | tests/e2e/CATALOG.md matches the flow blocks in the tests' docstrings                                                   |
+| `lint`             | review-gate done-gate merge-gate push-gate                                               | ruff check and ruff format --check, both over the whole tree                                                            |
+| `shellcheck`       | review-gate done-gate merge-gate                                                         | every tracked *.sh is clean at severity warning and above                                                               |
+| `dependency-floor` | review-gate done-gate merge-gate                                                         | every pin on a workspace package tracks that package's version                                                          |
+| `silent-fallback`  | review-gate done-gate merge-gate                                                         | no broad except swallows a failure without reporting it                                                                 |
+| `test-isolation`   | review-gate done-gate merge-gate                                                         | the suite patches its own units no more than the recorded baseline                                                      |
+| `prose-refs`       | review-gate done-gate merge-gate push-gate                                               | paths, library prefixes, sections and symbols named in library prose resolve                                            |
+| `ticket-ids`       | review-gate done-gate merge-gate push-gate                                               | no tracker id in shipped library prose                                                                                  |
+| `consumer-refs`    | review-gate done-gate merge-gate                                                         | no library component names a component that composes it                                                                 |
+| `env-reference`    | review-gate done-gate merge-gate push-gate                                               | docs/reference-env.md matches the env declarations the code reads                                                       |
+| `gate-table`       | review-gate done-gate merge-gate push-gate                                               | ADR-0023's stage and gate tables match this file and the gates                                                          |
+| `adr-integrity`    | push-gate                                                                                | every ADR citation resolves and a number names exactly one file                                                         |
+| `bidi`             | push-gate                                                                                | no bidirectional control characters, which are invisible in review                                                      |
+| `wheel-contents`   | review-gate done-gate merge-gate                                                         | every tracked src file reaches the wheel built through the sdist                                                        |
+| `master-ci`        | done-gate                                                                                | master's last CI verdict is green (network)                                                                             |
+| `unit`             | review-gate done-gate merge-gate push-gate                                               | every test not marked integration                                                                                       |
+| `integration`      | done-gate                                                                                | the real-subprocess tests outside tests/e2e                                                                             |
+| `merge-smoke`      | done-gate                                                                                | the curated smoke subset of tests/e2e                                                                                   |
+| `e2e`              | -                                                                                        | the full tier: integration or smoke, quarantine and live agents excluded                                                |
+| `e2e-default`      | done-gate push-gate                                                                      | the half of the tier no zone claims — an unexpected regression                                                          |
+| `e2e-rack`         | push-gate; review-gate merge-gate, когда дифф трогает зону `rack` (`gates.sh zones`)     | the rack zone of the tier: what a change to the rack surface is expected to break                                       |
+| `e2e-guards`       | push-gate; review-gate merge-gate, когда дифф трогает зону `guards` (`gates.sh zones`)   | the guards zone of the tier: what a change to the agent guards and the git hooks is expected to break                   |
+| `e2e-gates`        | push-gate; review-gate merge-gate, когда дифф трогает зону `gates` (`gates.sh zones`)    | the gates zone of the tier: what a change to the quality gate machinery is expected to break                            |
+| `e2e-wt`           | push-gate; review-gate merge-gate, когда дифф трогает зону `wt` (`gates.sh zones`)       | the wt zone of the tier: what a change to the worktree lifecycle is expected to break                                   |
+| `e2e-install`      | push-gate; review-gate merge-gate, когда дифф трогает зону `install` (`gates.sh zones`)  | the install zone of the tier: what a change to the install road — launcher, bootstrap, self update is expected to break |
+| `e2e-surfaces`     | push-gate; review-gate merge-gate, когда дифф трогает зону `surfaces` (`gates.sh zones`) | the surfaces zone of the tier: what a change to a provider surface or the session runtime is expected to break          |
+| `e2e-consent`      | push-gate; review-gate merge-gate, когда дифф трогает зону `consent` (`gates.sh zones`)  | the consent zone of the tier: what a change to the consent engine is expected to break                                  |
+| `e2e-library`      | push-gate; review-gate merge-gate, когда дифф трогает зону `library` (`gates.sh zones`)  | the library zone of the tier: what a change to the library content or its composition is expected to break              |
+| `e2e-observe`      | push-gate; review-gate merge-gate, когда дифф трогает зону `observe` (`gates.sh zones`)  | the observe zone of the tier: what a change to session observation — transcript, retro, reflect is expected to break    |
+| `coverage`         | -                                                                                        | the tests outside tests/e2e in one process, at the coverage floor (CI)                                                  |
+| `security`         | -                                                                                        | pip-audit over the interpreter's whole environment (CI-authoritative)                                                   |
+| `version-skew`     | -                                                                                        | every workspace package is ahead of what PyPI has (network)                                                             |
+| `python-pin`       | -                                                                                        | every copy of the Python pin agrees and CI runs it                                                                      |
+| `tmp-sweep`        | -                                                                                        | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing                                                     |
+| `prepare`          | -                                                                                        | precondition: a venv for this checkout; it asserts nothing                                                              |
 
 <!-- /gate-table:stages -->
 
 `-` — стадия, которую не требует ни один гейт: `coverage`, `security`,
 `version-skew` живут в CI, `python-pin` — в бандле `all` и CI, `tmp-sweep` —
 уборка, которая не может быть красной, `prepare` — предусловие, которое ничего
-не утверждает. Строка с `-` стоит в таблице нарочно: «не названа ни одним
-гейтом» должно быть решением, которое читатель видит, а не строкой, которую
-кто-то забыл.
+не утверждает. С HATS-1921 к ним прибавился **`e2e`** — весь тир под одним
+именем, то, что гоняет job `e2e` в CI и что значит `make e2e`; гейты требуют его
+**частей** (D11), чтобы дерево не гоняло те же тесты второй раз под другим
+именем. Строка с `-` стоит в таблице нарочно: «не названа ни одним гейтом»
+должно быть решением, которое читатель видит, а не строкой, которую кто-то забыл.
+
+Ячейка вида «`push-gate`; карточные, когда дифф трогает `<префикс>`» — **зонная
+стадия** (D11): её не объявляет ни один карточный гейт, и требуют её все трое,
+когда префикс зоны попал в дифф. Колонка рендерится из `gates.sh zones`, а не
+угадывается по форме имени стадии, — иначе стадия `gate-table` принуждала бы
+догадку.
 
 **Времена — замер, а не свойство таблицы, и потому проза с датой.**
 Последовательный прогон на одном ядре без xdist, 2026-08-14 (HATS-1655): тир
 линтинга (все офлайновые стадии до `unit`) — около девяти секунд вместе;
 `merge-smoke` ~20 с; `integration` ~98 с; `unit` ~95 с; `coverage` ~195 с.
-Полный `e2e` — 245–251 с при `-n 8` (2026-08-17, HATS-1708; два прогона одного
-дерева, 911 passed). `wheel-contents` ~3 с на пять пакетов, `master-ci` — сеть
-(HATS-1877). Следующий обязательный перезамер — не позднее 2026-09-16 или сразу
-после изменения селекции, числа workers или venv-контура.
+`wheel-contents` ~3 с на пять пакетов, `master-ci` — сеть (HATS-1877).
+
+Полный `e2e` при `-n 8`: 245–251 с (2026-08-17, HATS-1708; два прогона одного
+дерева, 911 passed), **295 с на 2026-09-09** (HATS-1921, master 1670d0c7, 1162
+passed — тир за три недели вырос примерно на 18%; прогон был не зелёным, и
+краснота вынесена в отдельную карточку, но на счёт времени она не влияет). Его
+части в тот же день: зона `rack` — 26 тестов, 27.7 с последовательно; `e2e-default`
+— остаток, то есть почти весь тир. Следующий обязательный перезамер — не позднее
+2026-10-09 или сразу после изменения селекции, числа workers, состава зон или
+venv-контура.
 
 ## Контекст
 
@@ -208,12 +237,12 @@ flowchart TD
 
 <!-- gate-table:gates -->
 
-| гейт          | где применяется          | стадии                                                                                                                                                                                         |
-| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                   |
-| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke master-ci |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                   |
-| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e                                                                                                    |
+| гейт          | где применяется          | стадии                                                                                                                                                                                                     |
+| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                               |
+| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default master-ci |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                               |
+| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe      |
 
 <!-- /gate-table:gates -->
 
@@ -299,9 +328,10 @@ HATS-1664 сделал прогон на коммите **исключением
 > цифра, 2026-08-14: 3 мин 44 с на весь состав `done-gate` вместе со сборкой
 > venv против 3 мин 32 с в готовом воркtree.
 
-**Релевантные e2e** по объявлению `covers:` в flow-блоке — владелец **HATS-1605**,
-не сделано: зелёный `->done` НЕ означает зелёный e2e-тир, тир целиком стоит на
-`push-gate` и в CI (D10). **Покрытие — измерение, а не гейт.** **Эпик не платит**
+**Релевантные e2e** — сделано в HATS-1921 **зонами** (D11), а не объявлением
+`covers:` в flow-блоке, как предполагала первая редакция. Зелёный `->done` всё
+так же НЕ означает зелёный e2e-тир: тир целиком стоит на `push-gate` и в CI
+(D10), а карточные гейты требуют его частей. **Покрытие — измерение, а не гейт.** **Эпик не платит**
 — у него нет ни ветки, ни слияния, он попадает в третью строку резолва предмета.
 **Область гейта объявляется, а не наследуется от инструмента** (HATS-1607:
 точный пин `ruff` плюс `extend-exclude`).
@@ -431,8 +461,13 @@ allow-ветке не вызывается ничего.
   объявляется в `backlog.yaml` (ADR-0017 [4]), а чтение `priority:` из строки
   заставило бы резолвить `composition.apps` на каждом `rack ls`.
 - **Отказ, который размёрдживает.** Кернел не откатывает git (D2).
-- **Полный e2e-тир на каждой карточке.** Тир исполняется в CI и на пуше; карточный
-  `->done` остаётся выборочным (HATS-1605).
+- **Полный e2e-тир на каждой карточке — ПЕРЕСМОТРЕНО в HATS-1921 (D11).** Отвергнутым
+  остаётся тир на `->merge`: там агент один, и общая поломка заставила бы двух
+  агентов чинить её одновременно без арбитра (D3). На `->done` весь неразмеченный
+  остаток тира теперь требуется — присутствует супервизор, и это ровно то ребро,
+  которому D3 отдаёт поломку от совмещения двух независимо зелёных веток. Остаток
+  задуман усыхающим: размеченная зона уходит на `->merge`, к диффу, который её
+  трогает.
 - **Реюз `pre-push-e2e-master.sh` телом чека.** Пустой stdin — вечнозелёный гейт
   (D6).
 - **Предсказание дерева слияния** (`git merge-tree --write-tree`) и **вторая
@@ -474,6 +509,115 @@ skip в явный отказ.
 `install-smoke` и один видимый вердикт полного e2e для каждого события. Локальный
 push-гейт остаётся: до HATS-927 CI — сигнал, но не неотключаемый барьер.
 
+### D11 — Зоны: ожидаемые регрессии на `->merge`, остаток на `->done`
+
+Принято HATS-1921 (2026-09-09). До него **карточные гейты не гоняли ни одного
+e2e**: тир стоял на `push-gate`, то есть после того, как всё уже влито, и в CI
+пост-фактум. Замер по последним шестидесяти first-parent-мёрджам: 29 тронули
+триггерную поверхность, и каждый вошёл в master без единого e2e.
+
+**Зона** — область кода вместе с тестами, которые её *утверждают*: маркер pytest
+на этих тестах плюс пути, которые ими владеют. В таблице `gates.sh zones` строка
+несёт один префикс, а зона — это все строки, назвавшие её маркер: субъект редко
+живёт под одним путём (rack — пакет, его проводка внутри `src/`, и ломают они
+одни и те же тесты). Каждая зона — своя именованная стадия, а `e2e-default` —
+половина, не занятая ни одной зоной.
+
+- **Гейт до мёрджа требует объявленное множество плюс зоны, которых требует
+  дифф.** `gates.sh touched` превращает дифф в имена стадий, `lib/gate.sh`
+  дописывает их и в `--check`, и в `--run` — иначе отказ был бы непочинимым:
+  команда, которую он выдаёт, не заработала бы названную стадию. Спрашивать ли
+  их — объявление самого гейта (`DEMAND_ZONES`, ответ на `--zones`): `diff` у
+  `review` и `merge`, `none` у `done` (HATS-1936). Зона — ожидаемая регрессия,
+  её чинит агент один на `->merge`; повторный запрос на `->done` прогнал бы те
+  же тесты второй раз, на втором дереве, ради отказа, для которого это ребро не
+  предназначено. **Цена названа:** вложенность, которая держится между
+  объявленными наборами (`review ⊆ merge ⊆ done`), между фактическими не
+  держится — `merge` требует стадию, которой `done` не требует.
+- **`e2e-default` объявлен только `done-gate`.** Ожидаемую регрессию чинит агент
+  один — ей место на `->merge` (D3). Неожидаемая — это поломка от совмещения двух
+  независимо зелёных веток, и D3 отдаёт её ребру, где присутствует супервизор.
+- **`push-gate` требует части вместо целого `e2e`.** Иначе одно дерево гнало бы
+  те же тесты дважды: как части на карточных гейтах и как `e2e` на пуше, потому
+  что маркер именуется стадией.
+
+**Модель маркера не тронута, и это главное свойство конструкции.** Первая
+редакция карточки предполагала, что маркер должен нести сам набор (`selected=`),
+раз набор зависит от диффа, а дифф — от движущегося merge-base. Этого не нужно:
+стадия **именована**, её выборка фиксирована и запускается голой, поэтому маркер
+остаётся `(дерево, стадия)` по D5. От диффа зависит только **требование**.
+Уехавший master, сузивший дифф, оставляет старые маркеры годными; расширивший —
+называет стадию без маркера, то есть обычный отказ.
+
+**Разбиение доказано машиной, а не соглашением.** `e2e-default ∪ зоны == e2e`,
+и `e2e-default` не пересекается ни с одной зоной — `tests/test_e2e_zone_partition.py`
+спрашивает сами стадии через `--collect-only`. Две ЗОНЫ пересекаться вправе
+(HATS-1936): тест утверждает две поверхности, и правка каждой из них ожидаемо
+его ломает. Чтобы он не оплачивался дважды в одном прогоне, стадии партиции
+делят памятку «что уже зелено на этом дереве», лежащую рядом с маркерами и
+ключуемую так же — деревом; в неё пишется только прошедший тест, и коллекция её
+не читает, иначе законы выше зеленели бы на сжатых множествах. Копия их marker-выражений в тесте была бы тем самым
+дефектом, ради которого тест написан: селекция тира уже жила в двух копиях без
+теста на их равенство (см. «Контекст»). `push-gate` обязан требовать каждую
+часть — это отдельное утверждение того же файла.
+
+**Остаток задуман усыхающим.** Дефолт — не постоянный набор, а **ещё не
+размеченный остаток**; цель — ноль. Ответ на регрессию, проехавшую в master:
+расширить зону на тесты, где её не ждали, либо разобрать, почему проехала — не
+возвращать широкий набор на карточный гейт. **Цена этого решения названа:** когда
+дефолт опустеет, карточные гейты перестанут ловить неожидаемое, и оно останется
+на `push-gate` и в CI, то есть на сегодняшнем уровне. Планка не опускается нигде,
+но и не поднимается для неожидаемого; поднимается она для ожидаемого. Пол на
+`->done` даёт `merge-smoke`, который остаётся на месте.
+
+**Что остаётся незаверяемым.** Зона — заявление автора; никакая машина не
+докажет, что тест трогает именно её. То же ограничение уже записано про себя в
+`tests/e2e/CATALOG.md` («Treat a row as a claim to check, not as evidence»), и
+для bash из `**/hooks/**` альтернативы нет в принципе — python-coverage их не
+видит. Отсюда правило, стоившее одного захода на исполнении: **зона теста — то,
+что он утверждает, а не то, что он дёргает по дороге.** Разметка «по дороге»
+затянула бы в зону rack 68 файлов тира из 307 — почти все где-то зовут `rack`, —
+и зона перестала бы что-либо значить.
+
+**Объявленный fail-open, цена названа вслух.** Судимое дерево, чей `gates.sh`
+старше глагола `touched`, не имеет и зонных стадий: требовать их не у чего.
+Такое дерево получает сегодняшний уровень и строку об этом в выводе. Отказ вместо
+этого блокировал бы каждую карточку, ушедшую в работу до этого решения, до её
+ребейза.
+
+### D11 amendment — разметка доведена до остатка (HATS-1936)
+
+Дефолт перестал быть тиром. Замер на дереве карточки: тир 1225 тестов,
+`e2e-default` — **36** (2.9%) против 1199 (97.9%) до неё. Девять зон: `guards`
+509, `gates` 173, `install` 143, `surfaces` 135, `consent` 131, `wt` 129, `rack`
+107, `library` 56, `observe` 11 (суммы больше тира — зоны пересекаются, см.
+ниже). Реплей 51 first-parent мёрджа под этой таблицей: медиана требуемого на
+`->merge` — 229 тестов (19% тира), максимум 1189, восемь мёрджей не требуют
+ничего; на `->done` каждая карточка платит те же 36.
+
+Четыре решения этой карточки, каждое — правка D11, а не его пересказ:
+
+1. **Строка таблицы — один префикс, зона — все строки с её маркером.** Субъект
+   редко живёт под одним путём: rack — это пакет, его проводка внутри `src/` и
+   скилл в библиотеке, и ломают они одни и те же тесты.
+2. **Тест вправе состоять в двух зонах** и исполняется при этом **строго один
+   раз на дереве**: стадии партиции делят памятку пройденного, лежащую рядом с
+   маркерами. Без неё карточка, тронувшая две пересекающиеся зоны, платила бы
+   за общий тест дважды в одном прогоне.
+3. **`touched` знает вторую дорогу в зону** — маркер, написанный на самом
+   изменённом тестовом файле. Без неё размеченный тест, который карточка правит,
+   не бежал бы ни на одном карточном гейте: из `e2e-default` он вычтен, а
+   префиксы таблицы указывают на исходники.
+4. **`->done` зоны не требует** (`DEMAND_ZONES=none`). Зона — ожидаемая
+   регрессия, её чинит агент один на `->merge`; повторный запрос на `->done`
+   прогнал бы те же тесты второй раз, на втором дереве, ради отказа, для
+   которого это ребро не предназначено. **Цена названа:** вложенность, которая
+   держится между объявленными наборами, между фактическими не держится.
+
+Что от этого НЕ изменилось: полный тир по-прежнему требуется `push-gate` и CI,
+поэтому неверно размеченный тест теряется только на карточных гейтах, и планка
+не опускается нигде.
+
 ## Семь способов гейту исчезнуть тихо
 
 Первые три наследуются любой новой строкой; четвёртый не про строку, а про
@@ -514,14 +658,16 @@ push-гейт остаётся: до HATS-927 CI — сигнал, но не н�
 
 ## Открытые карточки
 
-| карточка      | что решает                                              |
-| ------------- | ------------------------------------------------------- |
-| **HATS-1879** | стоимость одноразовой scratch-воркtree на прогон (D4)   |
-| **HATS-1605** | `covers:` в flow-блоке для релевантных e2e              |
-| **HATS-1609** | содержание дороги тегирования релиза                    |
-| **HATS-927**  | branch protection и required CI status checks           |
-| **HATS-1591** | security: стадия красная и зависит от venv              |
-| **HATS-1589** | формат сообщения коммита: сначала конвенция, потом гейт |
+| карточка      | что решает                                                        |
+| ------------- | ----------------------------------------------------------------- |
+| **HATS-1879** | стоимость одноразовой scratch-воркtree на прогон (D4)             |
+| **HATS-1605** | что осталось после D11: состав «набора в граните» (`merge-smoke`) |
+| **HATS-1940** | зоны интеграционного тира: 453 теста вне `tests/e2e` не размечены  |
+| **HATS-1923** | e2e-тир красный на master, и `push-gate` стоит на нём             |
+| **HATS-1609** | содержание дороги тегирования релиза                              |
+| **HATS-927**  | branch protection и required CI status checks                     |
+| **HATS-1591** | security: стадия красная и зависит от venv                        |
+| **HATS-1589** | формат сообщения коммита: сначала конвенция, потом гейт           |
 
 **Не закрыто и HATS-1878 не берёт:** правка карточки, стоящей в `review`, молча
 обесценивает её маркер, и это ловится следующим гейченым ребром, а не в момент

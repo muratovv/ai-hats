@@ -233,7 +233,7 @@ def execute_cmd(
             # The CLI (integrator) injects the observe writer handles —
             # runners no longer construct them.
             recording=SessionRecording(
-                manager=make_session_manager(project_dir),
+                manager=make_session_manager(layout),
                 tracer_factory=SidecarTracer,
             ),
             annotations=tags,

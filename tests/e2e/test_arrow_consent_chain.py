@@ -23,7 +23,7 @@ import pytest
 from _helpers.hook_chain import build_session_settings, run_chain  # noqa: E402
 from _helpers.sessions import stand_in_session  # noqa: E402
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.consent]
 
 
 @pytest.fixture(scope="module")

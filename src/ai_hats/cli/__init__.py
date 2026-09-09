@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 import click
 
@@ -273,7 +272,7 @@ def _dry_run_session(
     # The seam's typed errors render at the root group —
     # cli/_helpers.dispatch_friendly_error.
     report = dry_run_hitl(
-        resolve_project().layout.root,
+        resolve_project().layout,
         role=role,
         provider=provider,
         extra_args=list(extra_args or []),
@@ -330,7 +329,7 @@ def _launch_session(
             # The CLI (integrator) injects the observe writer
             # handles — runners no longer construct them.
             recording=SessionRecording(
-                manager=make_session_manager(project_dir),
+                manager=make_session_manager(layout),
                 tracer_factory=SidecarTracer,
             ),
             annotations=tags,
@@ -414,10 +413,10 @@ main.add_command(wait_mod.wait_cmd)
 # unmounted — rack is the only backlog surface; the tracker package dies at HATS-1262.
 
 # Observe session-browse CLI (list/show/audit) defaults to wt-free
-# resolvers; inject the integrator's AI_HATS_DIR/yaml-aware layout so
+# resolvers; attach the integrator's AI_HATS_DIR/yaml-aware layout so
 # `ai-hats session` keeps its exact paths + tag semantics.
 from ai_hats_core.layout import ProjectLayout  # noqa: E402
-from ai_hats_observe.cli import _seam as _observe_seam  # noqa: E402
+from ai_hats_observe.cli import Host, attach  # noqa: E402
 from ..tags import parse_tag_filters  # noqa: E402
 
 
@@ -425,11 +424,6 @@ def _integrator_layout() -> ProjectLayout:
     from ._entry import resolve_project  # lazy: keeps config/pydantic off the CLI start path
 
     return resolve_project().layout
-
-
-_observe_seam._LAYOUT = _integrator_layout
-_observe_seam._TAG_FILTER_PARSER = parse_tag_filters
-_observe_seam._CONSOLE = console
 
 
 def _observe_provider_adapter(provider: str):
@@ -448,7 +442,14 @@ def _observe_provider_adapter(provider: str):
     return p.resolve_transcript, p.transcript_parser()
 
 
-_observe_seam._PROVIDER_ADAPTER = _observe_provider_adapter
+attach(
+    Host(
+        layout=_integrator_layout,
+        tag_filter_parser=parse_tag_filters,
+        provider_adapter=_observe_provider_adapter,
+        console=console,
+    )
+)
 
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)
@@ -507,23 +508,6 @@ def _is_guard_exempt_invocation(argv: list[str]) -> bool:
     if not argv:
         return True  # bare invocation → click prints help, no project work
     return any(a in _GUARD_EXEMPT_FLAGS for a in argv)
-
-
-def _resolve_guard_target(project_dir: Path) -> str | None:
-    """The venv this project resolves to, or ``None`` when there is none.
-
-    ``venv_path`` IS the precedence chain, ``AI_HATS_VENV`` first and pair-scoped
-    (ADR-0025 D3) — reading the pin separately honoured one that the launcher and
-    ``venv_path`` both drop, refusing this project's own venv (HATS-1621).
-
-    Only a venv that ACTUALLY EXISTS can be shadowed (HATS-791): an absent one
-    means no managed install for this project, so there is nothing to shadow and
-    the caller fails open on ``None``.
-    """
-    from ..paths import venv_path
-
-    resolved = venv_path(project_dir)
-    return str(resolved) if resolved.exists() else None
 
 
 def _guard_self_location() -> None:

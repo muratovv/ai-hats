@@ -14,6 +14,8 @@ import subprocess
 from pathlib import Path
 import pytest
 
+pytestmark = pytest.mark.library
+
 #: Distinctive enough that finding it in stdout can only mean the sidecar was read.
 SENTINEL = "SENTINEL-HATS-1836-DESCRIPTION"
 

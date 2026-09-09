@@ -332,7 +332,7 @@ class ProjectConfig(_YamlModel):
         return cleaned
 
     @classmethod
-    def resolve_task_prefix(cls, project_dir: Path, config_path: Path) -> str:
+    def resolve_task_prefix(cls, tasks_dir: Path, config_path: Path) -> str:
         """Return the task-id prefix for `project_dir`, persisting an auto-detected
         value for legacy projects so we only pay the detection cost once.
 
@@ -348,7 +348,7 @@ class ProjectConfig(_YamlModel):
             if isinstance(raw.get("task_prefix"), str) and raw["task_prefix"].strip():
                 return raw["task_prefix"].strip()
 
-        detected = cls._detect_prefix_from_tasks(project_dir)
+        detected = cls._detect_prefix_from_tasks(tasks_dir)
         if detected and config_path.exists():
             # Persist the detected prefix so legacy repos don't re-detect every call.
             raw["task_prefix"] = detected
@@ -361,13 +361,10 @@ class ProjectConfig(_YamlModel):
         return "TASK"
 
     @staticmethod
-    def _detect_prefix_from_tasks(project_dir: Path) -> str | None:
+    def _detect_prefix_from_tasks(tasks_dir: Path) -> str | None:
         """Return the common prefix of existing task dirs, or None if ambiguous/empty."""
         import re as _re
 
-        from ..paths import tasks_dir as _tasks_dir
-
-        tasks_dir = _tasks_dir(project_dir)
         if not tasks_dir.is_dir():
             return None
         prefixes: set[str] = set()

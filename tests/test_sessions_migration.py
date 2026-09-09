@@ -5,16 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
-from ai_hats.paths import (
-    audits_dir,
-    handoffs_dir,
-    retros_dir,
-    runs_dir,
-    sessions_dir,
-    worktrees_dir,
-)
 from ai_hats_observe.artifacts import METRICS_JSON
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats_core.layout import ProjectLayout
 
 
 def _seed_session_legacy(project_dir: Path) -> dict[str, Path]:
@@ -69,19 +62,31 @@ def test_sessions_migration_moves_all_paths(tmp_path: Path) -> None:
     asm._migrate_layout_v4_sessions()
 
     # Pipeline run moved into sessions/runs/pipeline_runs/...
-    assert (runs_dir(tmp_path) / "pipeline_runs" / "execute" / "run-1" / "manifest.yaml").exists()
+    assert (
+        ProjectLayout.at(tmp_path).sessions.runs
+        / "pipeline_runs"
+        / "execute"
+        / "run-1"
+        / "manifest.yaml"
+    ).exists()
     # session_<id>/ trace dir moved into sessions/runs/session_.../
-    assert (runs_dir(tmp_path) / "session_20260101-000000-1" / METRICS_JSON).exists()
+    assert (
+        ProjectLayout.at(tmp_path).sessions.runs / "session_20260101-000000-1" / METRICS_JSON
+    ).exists()
     # Per-class .agent/ subdirs landed under sessions/{retros,audits,handoffs,experiments}/
-    assert (retros_dir(tmp_path) / "2026-01-01-marker.md").exists()
-    assert (audits_dir(tmp_path) / "2026-01-01-marker.md").exists()
-    assert (handoffs_dir(tmp_path) / "2026-01-01-marker.md").exists()
-    assert (sessions_dir(tmp_path) / "experiments" / "lab-a" / "README.md").exists()
+    assert (ProjectLayout.at(tmp_path).sessions.retros / "2026-01-01-marker.md").exists()
+    assert (ProjectLayout.at(tmp_path).sessions.audits / "2026-01-01-marker.md").exists()
+    assert (ProjectLayout.at(tmp_path).sessions.handoffs / "2026-01-01-marker.md").exists()
+    assert (
+        ProjectLayout.at(tmp_path).sessions.base / "experiments" / "lab-a" / "README.md"
+    ).exists()
     # Worktrees + singleton
-    assert (worktrees_dir(tmp_path) / "task-hats-001.json").exists()
-    assert (sessions_dir(tmp_path) / "worktree.json").exists()
+    assert (ProjectLayout.at(tmp_path).sessions.worktrees / "task-hats-001.json").exists()
+    assert (ProjectLayout.at(tmp_path).sessions.base / "worktree.json").exists()
     # Orphan handoff picked up
-    assert (handoffs_dir(tmp_path) / "handoff-2026-04-09-hats-061.md").exists()
+    assert (
+        ProjectLayout.at(tmp_path).sessions.handoffs / "handoff-2026-04-09-hats-061.md"
+    ).exists()
     # All legacy roots gone (or empty)
     assert not (tmp_path / ".gitlog").exists()
     for sub in (
@@ -125,7 +130,7 @@ def test_sessions_migration_merge_when_target_exists(tmp_path: Path) -> None:
     (old / "old-a.md").write_text("from old")
     (old / "old-b.md").write_text("from old")
     # New side already has a same-name file with different content
-    new = retros_dir(tmp_path)
+    new = ProjectLayout.at(tmp_path).sessions.retros
     new.mkdir(parents=True)
     (new / "old-a.md").write_text("from new (winner)")
 

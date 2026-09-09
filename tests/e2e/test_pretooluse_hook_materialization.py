@@ -12,6 +12,8 @@ why:    PreToolUse guards rely on materialized script files on disk to enforce s
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import subprocess
 from pathlib import Path
@@ -34,6 +36,8 @@ from _helpers.project import pin_edge_channel  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV  # noqa: E402
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
+
+pytestmark = pytest.mark.guards
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -165,19 +169,19 @@ def test_e2e_materialized_hook_blocks_irreversible_no_tty(installed_launcher, tm
     # library/hooks/ no longer carries shared_state_classifier.sh, so executing
     # THAT one would test a corpse — the session mirror is where the guard lives.
     from ai_hats.assembler import Assembler
-    from ai_hats.paths import claude_plugin_skills_dir, session_cache_dir
+    from ai_hats.paths import claude_plugin_skills_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     sid = "sid-guard-live"
     ClaudeSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         Assembler(project).composer.compose("assistant"),
         sid,
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
-    skills = claude_plugin_skills_dir(session_cache_dir(project, sid) / "plugin")
+    skills = claude_plugin_skills_dir(ProjectLayout.at(project).cache.session(sid) / "plugin")
     guard = skills / "safety-guard" / "hooks" / "pre_bash_shared_state_guard.sh"
     assert guard.is_file(), "precondition: the session mirror must have been built"
     assert (guard.parent / "shared_state_classifier.sh").is_file(), (

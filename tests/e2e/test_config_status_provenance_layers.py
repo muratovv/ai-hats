@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 def _run(cmd, *, cwd, env, timeout=30, check=True):

@@ -6,6 +6,8 @@ and the user-global leak detector still keys on the pre-1268 spelling because
 that is the shape the residue it hunts was written with.
 """
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 
@@ -13,7 +15,7 @@ import pytest
 
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.paths import claude_dir, session_cache_dir
+from ai_hats.paths import claude_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from ai_hats.surfaces.claude.channel import DISPATCHER_COMMAND, DISPATCHER_TAG
 from ai_hats.surfaces.claude.provider import ClaudeSurface
@@ -26,11 +28,19 @@ SETTINGS = Path(".claude") / "settings.json"
 SESSION_ID = "test-session-id"
 
 
-def _settings(project: Path, result: CompositionResult | None = None) -> dict:
+def _settings(
+    project: Path,
+    result: CompositionResult | None = None,
+    artifacts: BuiltArtifacts | None = None,
+) -> dict:
     provider = ClaudeSurface()
     res = result or _result([])
     artifacts = provider.build_session_artifacts(
-        project, res, "test-session-id", run_mode="hitl", artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        res,
+        "test-session-id",
+        run_mode="hitl",
+        artifacts=artifacts or BuiltArtifacts(),
     )
     settings_file = [
         Path(artifacts.cli_args[i + 1])
@@ -59,6 +69,7 @@ def _skill_with_runtime_hooks(
             sp = skill_dir / script
             sp.parent.mkdir(parents=True, exist_ok=True)
             sp.write_text("#!/usr/bin/env bash\nexit 0\n")
+            sp.chmod(0o755)  # a declared gate ships executable, as the library guard demands
     lines += ["---", f"# {name}"]
     (skill_dir / "SKILL.md").write_text("\n".join(lines) + "\n")
     return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=skill_dir)
@@ -80,7 +91,9 @@ def _managed_command(project: Path, skill: str, script: str) -> str:
     Spelled out here rather than imported, so the test fails if the emitted
     contract drifts — the same reason the old $CLAUDE_PROJECT_DIR literal was.
     """
-    return str(session_cache_dir(project, SESSION_ID) / "plugin" / "skills" / skill / script)
+    return str(
+        ProjectLayout.at(project).cache.session(SESSION_ID) / "plugin" / "skills" / skill / script
+    )
 
 
 def test_a_composition_without_skills_wires_nothing(tmp_path: Path) -> None:
@@ -125,7 +138,7 @@ def test_a_leaked_ai_hats_dir_cannot_redirect_the_command(tmp_path: Path, monkey
     _settings(proj, _result([skill]))
     cmd = _manifest(proj)["hooks"][HOOK_PRE_TOOL_USE][0]["command"]
     assert "elsewhere" not in cmd
-    assert cmd.startswith(str(session_cache_dir(proj, SESSION_ID)))
+    assert cmd.startswith(str(ProjectLayout.at(proj).cache.session(SESSION_ID)))
 
 
 def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monkeypatch) -> None:
@@ -145,12 +158,12 @@ def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monk
 
 def test_claude_ensure_runtime_hooks_leaves_root_clean(tmp_path: Path) -> None:
     """HATS-1170: ensure_runtime_hooks is a no-op for project-root .claude/settings.json."""
-    ClaudeSurface().ensure_runtime_hooks(tmp_path)
+    ClaudeSurface().ensure_runtime_hooks(ProjectLayout.at(tmp_path))
     assert not (tmp_path / SETTINGS).exists()
 
 
 def test_agy_provider_does_not_touch_settings(tmp_path: Path) -> None:
-    AgySurface().ensure_runtime_hooks(tmp_path)
+    AgySurface().ensure_runtime_hooks(ProjectLayout.at(tmp_path))
     assert not (tmp_path / SETTINGS).exists()
 
 
@@ -201,9 +214,9 @@ def test_claude_skill_hooks_idempotent(tmp_path: Path) -> None:
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
-    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(ProjectLayout.at(proj), _result([skill]))
     first = _settings(proj, _result([skill]))
-    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(ProjectLayout.at(proj), _result([skill]))
     assert _settings(proj, _result([skill])) == first
 
 
@@ -232,9 +245,9 @@ def test_claude_removing_skill_sweeps_entries_and_keeps_user(
             HOOK_POST_TOOL_USE: [("Write", "hooks/post.sh")],
         },
     )
-    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(ProjectLayout.at(proj), _result([skill]))
     # Skill leaves the composition → re-apply with no skills.
-    ClaudeSurface().ensure_runtime_hooks(proj, _result([]))
+    ClaudeSurface().ensure_runtime_hooks(ProjectLayout.at(proj), _result([]))
     data = _settings(proj, _result([]))
 
     tags = [
@@ -257,7 +270,7 @@ def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None
         "skill-x",
         {HOOK_PRE_TOOL_USE: [("Bash", "hooks/a.sh"), ("Edit", "hooks/b.sh")]},
     )
-    ClaudeSurface().ensure_runtime_hooks(proj, _result([skill]))
+    ClaudeSurface().ensure_runtime_hooks(ProjectLayout.at(proj), _result([skill]))
     _settings(proj, _result([skill]))
     skill_tags = {row["tag"] for row in _manifest(proj)["hooks"][HOOK_PRE_TOOL_USE]}
     assert skill_tags == {
@@ -386,7 +399,9 @@ def test_leak_detector_catches_session_tree_leaked_hooks(tmp_path: Path) -> None
 
 
 def _manifest(project: Path) -> dict:
-    return json.loads((session_cache_dir(project, SESSION_ID) / "hooks.json").read_text())
+    return json.loads(
+        (ProjectLayout.at(project).cache.session(SESSION_ID) / "hooks.json").read_text()
+    )
 
 
 def _hook_skills(base: Path) -> list[ResolvedComponent]:
@@ -426,18 +441,44 @@ def test_the_manifest_names_exactly_the_composed_gates(tmp_path: Path) -> None:
     }
 
 
-def test_a_gate_whose_script_is_gone_is_missing_from_both(tmp_path: Path) -> None:
-    """The drop stays silent — HATS-1862 owns making it loud. What must not
-    differ is WHERE it drops."""
+def test_a_gate_whose_script_is_gone_is_missing_from_both_and_said_so(tmp_path: Path) -> None:
+    """A script the skill no longer ships is the author's to fix: the gate is
+    left out of the wiring AND the manifest alike, and the session is told."""
     proj = tmp_path / "proj"
     proj.mkdir()
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
     (skill.source_path / "hooks" / "pre.sh").unlink()
+    artifacts = BuiltArtifacts()
 
-    assert _settings(proj, _result([skill]))["hooks"] == {}
+    assert _settings(proj, _result([skill]), artifacts)["hooks"] == {}
     assert _manifest(proj)["hooks"] == {}
+    [notice] = artifacts.notices
+    assert "skill-x" in notice and "hooks/pre.sh" in notice and "will not run" in notice
+
+
+def test_a_gate_the_mirror_lacks_refuses_the_build(tmp_path: Path) -> None:
+    """The mirror is ai-hats's own write; a script present in the skill but not
+    there is not the author's problem, so the build stops instead of wiring
+    a gate that cannot run."""
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.surfaces.claude.runtime_hooks import materialize_hook_manifest
+
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+    cache_dir = tmp_path / "cache"
+    unwritten_mirror = cache_dir / "plugin" / "skills"
+
+    with pytest.raises(RuntimeHookMirrorError, match="skill-x"):
+        materialize_hook_manifest(
+            _result([skill]),
+            BuiltArtifacts(),
+            cache_dir=cache_dir,
+            session_id=SESSION_ID,
+            skills_dir=unwritten_mirror,
+        )
 
 
 @pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
@@ -449,7 +490,7 @@ def test_the_pins_the_dispatcher_needs_reach_the_launch(tmp_path: Path, run_mode
     proj.mkdir()
     provider = ClaudeSurface()
     artifacts = provider.build_session_artifacts(
-        proj,
+        ProjectLayout.at(proj),
         _result(_hook_skills(tmp_path / "skills")),
         SESSION_ID,
         run_mode=run_mode,
@@ -458,7 +499,7 @@ def test_the_pins_the_dispatcher_needs_reach_the_launch(tmp_path: Path, run_mode
 
     env = assemble_launch_env(
         provider,
-        proj,
+        ProjectLayout.at(proj),
         tmp_path / "session",
         session_id=SESSION_ID,
         trace_path=str(tmp_path / "trace.jsonl"),
@@ -468,7 +509,7 @@ def test_the_pins_the_dispatcher_needs_reach_the_launch(tmp_path: Path, run_mode
         run_mode=run_mode,
     )
 
-    assert env["AI_HATS_SESSION_CACHE_DIR"] == str(session_cache_dir(proj, SESSION_ID))
+    assert env["AI_HATS_SESSION_CACHE_DIR"] == str(ProjectLayout.at(proj).cache.session(SESSION_ID))
     assert Path(env["AI_HATS_PYTHON"]).exists()
 
 
@@ -502,3 +543,29 @@ def test_a_gate_bound_to_everything_keeps_the_entry_open(tmp_path: Path) -> None
     entries = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE]
 
     assert entries[0]["matcher"] == "*"
+
+
+def test_a_dry_run_reports_a_missing_script_exactly_as_the_real_build(tmp_path: Path) -> None:
+    """``--dry-run`` writes no mirror, so the port answers for it from its record;
+    what the developer is told must not depend on which port ran."""
+    from ai_hats.materialization import PlanMaterializer
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+    (skill.source_path / "hooks" / "pre.sh").unlink()
+    real, plan = BuiltArtifacts(), BuiltArtifacts(port=PlanMaterializer())
+
+    for artifacts in (real, plan):
+        ClaudeSurface().build_session_artifacts(
+            ProjectLayout.at(proj),
+            _result([skill]),
+            SESSION_ID,
+            run_mode="hitl",
+            artifacts=artifacts,
+        )
+
+    assert real.notices == plan.notices
+    assert len(real.notices) == 1

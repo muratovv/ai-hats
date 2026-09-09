@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.surfaces
+
 
 # Stuck-child simulator: traps SIGTERM and silently swallows it for the
 # first 30s. Only SIGKILL ends the process within the window. This

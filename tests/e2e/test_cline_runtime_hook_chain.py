@@ -20,7 +20,7 @@ import pytest
 from _helpers.hook_chain import install_cline_surface_venv, run_cline_hook_session
 from _helpers.repo_src import build_src
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.surfaces]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

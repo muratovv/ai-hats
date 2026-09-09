@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**312 of 312 files catalogued — 320 flows.**
+**314 of 314 files catalogued — 322 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2772,6 +2772,20 @@ as a claim to check, not as evidence.
 - **expect** — runtime hooks are wired into settings.json and materialized executable scripts return correct codes
 - **why** — without end-to-end hook propagation, skill runtime hooks are dropped during session initialization
 
+## `test_runtime_hook_script_missing_warns.py`
+
+*pins HATS-1862*
+
+- **flow** — a developer launching a session whose role composes a skill that declares a runtime hook, but the skill no longer ships the script
+- **cmds**
+
+  ```console
+  ai-hats -r hook-role
+  ```
+
+- **expect** — the session starts, and the pre-launch banner says which gate will not run and which file the skill is missing
+- **why** — the manifest writers used to drop such a row in silence, so the session ran with the gate off and nothing but a harness stderr line said so
+
 ## `test_runtime_hooks_execute_from_session_tree.py`
 
 *pins HATS-1268*
@@ -3759,6 +3773,7 @@ as a claim to check, not as evidence.
 
   ```console
   ai-hats --role definitely-not-a-real-role
+  ai-hats --dry-run            # role named only in ai-hats.yaml
   ```
 
 - **expect** — CLI exits with code 2 listing available roles without printing raw Python traceback
@@ -4618,3 +4633,20 @@ as a claim to check, not as evidence.
 
 - **expect** — a virtual environment is provisioned inside worktree .venv and imports worktree source
 - **why** — worktrees must provision isolated venvs to prevent importing main repository packages
+
+## `test_zone_gate_refusal.py`
+
+*pins HATS-1921*
+
+- **flow** — an agent merging a branch that changed a zone of the codebase
+- **cmds**
+
+  ```console
+  ai-hats wt merge HATS-1921
+  scripts/gates.sh touched
+  make merge-gate
+  make done-gate
+  ```
+
+- **expect** — the merge gate refuses naming `e2e-rack` — a stage no gate declares, demanded because the branch changed `packages/ai-hats-rack/`, or because it edited a test carrying that zone's marker — and the same branch with that one stage earned is let through; a branch that changed nothing zoned is never asked for it, and the done gate never asks at all
+- **why** — without it a change lands in master with only the tier that runs after the merge, so the tests its own area owns are first run when the breakage is already shared
