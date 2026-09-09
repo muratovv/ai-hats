@@ -84,7 +84,7 @@ def test_the_gate_is_on_the_composed_bash_chain(chain):
 
 @pytest.mark.integration
 def test_a_hard_reset_in_the_main_checkout_is_denied(chain):
-    """The incident, verbatim: master moved by a commit from a slipped cwd."""
+    """The incident, verbatim: master moved by a commit from a slipped cwd (HATS-1899)."""
     project, worktree, settings, env = chain
     verdict = run_chain(project, "git reset --hard HEAD~1", settings=settings, env=env, cwd=project)
     assert verdict.denied, f"expected a deny, got {verdict}"
