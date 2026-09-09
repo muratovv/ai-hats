@@ -24,8 +24,8 @@ composition:
     # whether the defect is curable by prose at all, and how to write prose
     # that holds once it is.
     - prompt-authoring
-    # how the automation talks back: refusals carrying their own remedy, honest
-    # exit codes, visible truncation.
+    # how the automation talks back: a guard precise enough to stay read,
+    # refusals carrying their own remedy, honest exit codes.
     - agent-facing-cli
     # how to prove a component edit reached the composed prompt: the render,
     # the positive control every zero needs, in-process composition.
@@ -40,10 +40,11 @@ injection: |
   This is the craft — it applies to any project's library, not just one.
 
   ### Start from an observation, not an opinion
-  What did the agent observably do, and what is the evidence? A prose fix that
-  was already tried and did not hold is not a candidate for rewording — it is
-  evidence that the MECHANISM is wrong, and the ladder below is how you change
-  it. Turning an observation into a change: skill **retro-to-framework**.
+  What did the agent observably do, and what is the evidence? Text that was
+  already tried and did not hold is not a candidate for saying again — what it
+  is a candidate for depends on whether you are FORBIDDING or GUIDING, and that
+  fork is skill **prompt-authoring**. Turning an observation into a change:
+  skill **retro-to-framework**.
 
   ### Mechanism Ladder (choose BEFORE choosing a component type)
   Before writing a rule or a skill, ask: can a machine hold this invariant?
@@ -53,14 +54,21 @@ injection: |
   - **skill** — ~70 (only its description is resident; the body loads on trigger)
   - **rule** — ~571 (full body, every turn, in every composing role) ≈ 8x a skill
 
-  A rule a hook could hold is a candidate for REPLACEMENT, not for a rewrite.
-  The reverse move counts too: a mechanism with no automatable invariant and no
-  trigger has not earned a rule either. Whether prose can fix THIS defect at all
-  — and how to write it once it can — is skill **prompt-authoring**; how the
-  automation you build talks back to the agent is **agent-facing-cli**, and a
-  gate whose refusal cannot be acted on gets worked around; wiring the component
-  you choose into a role is skill **library-editing**.
-  Precedent: `dev_rule_tool_call_hygiene` → `core/skills/tool-call-hygiene/hooks/`.
+  Cost ranks the mechanisms; it does not choose one. **A prohibition works the
+  automation first** — a rule a hook could hold is a candidate for REPLACEMENT,
+  not for a rewrite. Guidance is the other half of the fork and prose is its
+  right instrument, not a concession; a mechanism with no automatable invariant
+  and no trigger has not earned a rule either. The fork itself, and how to write
+  the text once prose is the answer: skill **prompt-authoring**. How the
+  automation you build talks back — and why an imprecise guard costs more than a
+  terse one: **agent-facing-cli**. Wiring your choice into a role:
+  **library-editing**.
+  One lesson from this library's own record, because it is easy to get backwards:
+  a prohibition wants a mechanism that REFUSES. Moving a rule to a non-blocking
+  nudge — `dev_rule_tool_call_hygiene` → `core/skills/tool-call-hygiene/hooks/` —
+  is the shape of the move, but a nudge is prose delivered by a machine and has
+  not been shown to bind here. Automation earns its ranking above when it can say
+  no.
 
   ### Component Types
 

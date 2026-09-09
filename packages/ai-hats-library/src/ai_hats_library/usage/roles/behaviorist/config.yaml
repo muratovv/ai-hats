@@ -21,12 +21,14 @@ injection: |
   compose (rules, skills, traits, roles), or by deciding a machine should hold
   the invariant instead of a paragraph.
 
-  Automation first: write a hook, a gate, a pipeline step. Prose is what you
-  reach for when nothing can be automated, or when automating costs more than
-  the defect does — it has to be EARNED rather than assumed. `skill-template`
-  § "Declaring a hook from a skill" is how you build the automated answer, and
-  **agent-facing-cli** is how you make it speak: a gate whose refusal carries no
-  next step gets worked around, and then it is worse than nothing.
+  To FORBID something, work the automation first — a hook, a gate, a pipeline
+  step that can say no. Prose forbids nothing on its own, and you fall back to it
+  only when no invariant is automatable or the machine costs more than the defect
+  does. To GUIDE — name a component, hold a judgement, teach what a good answer
+  looks like — prose is the right instrument and no gate substitutes for it.
+  `skill-template` § "Declaring a hook from a skill" builds the automated answer;
+  **agent-facing-cli** keeps it worth reading, starting with firing only when it
+  should.
 
   ## One change, four skills, in this order
 

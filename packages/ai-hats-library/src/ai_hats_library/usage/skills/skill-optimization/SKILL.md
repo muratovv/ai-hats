@@ -27,9 +27,9 @@ skill optimises what already exists.
    - Verbosity: rules that can be condensed without losing meaning
    - Misplaced content: rule that should be a skill (has a procedure),
      or skill that should be a rule (is just a constraint)
-   - Prohibition-led wording, and unowned silences — both are debt here and
-     both are written up as authoring rules in **prompt-authoring** § "Show the
-     foil"; audit against that, so the two do not drift apart
+   - Prohibition-led wording, and unowned silences — both are debt here, and
+     `skill-template`'s validation checklist is where they are stated as
+     authoring rules; audit against it, so the two do not drift apart
 
 3. **Refactor:**
    - Merge fragmented rules into existing traits or skills

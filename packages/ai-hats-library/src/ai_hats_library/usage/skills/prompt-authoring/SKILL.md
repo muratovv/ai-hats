@@ -1,6 +1,6 @@
 ---
 name: prompt-authoring
-description: Rule automation out before writing prose, then write prose that holds. Use before wording or rewording any rule, injection or skill body, and when a written instruction has failed to change behaviour.
+description: Separate forbidding from guiding — a prohibition works the automation first, guidance is prose — then write the prose so it holds. Use before wording or rewording any rule, injection or skill body, and when a written instruction has failed to change behaviour.
 license: MIT
 ---
 
@@ -17,40 +17,53 @@ validation scenario of the file you end up writing are `skill-template`.
 
 ## Procedure
 
-### 1. Automate unless you cannot — prose needs an excuse
+### 1. Are you FORBIDDING something, or guiding it?
 
-The first question is never "how do I word this". It is **can a machine hold
-this invariant** — a hook, a gate, a pipeline step. If it can, that is the
-answer, and the comparison is not close: automation costs nothing per turn and
-does not depend on the agent reading anything.
+This is the fork, and it decides the mechanism before any wording question.
 
-Prose is the fallback, and exactly two answers earn it:
+**To forbid — work the automation first.** If the goal is that an action must
+not happen, a machine that refuses it is the answer, and prose is the fallback
+you take only when there is no automatable invariant or when building it costs
+more than the defect does. Say which, and name the cost; "seems hard" is not a
+reason. Prose forbids nothing on its own: it asks, every turn, and one turn will
+answer no.
 
-- **There is no automatable invariant.** The call is a genuine judgement — no
-  rule over the command, the diff, or the file expresses it.
-- **The automation is disproportionate.** It exists, and it costs more than the
-  defect does. Name what building it would take and why it loses; a number beats
-  "seems hard".
+**To guide — prose is the right instrument, not a concession.** Naming a
+component so it is not invented, saying which of two paths applies, teaching
+what a good answer looks like, holding a judgement no rule can express: no gate
+does any of this, and reaching for one here builds a machine that refuses the
+wrong thing.
 
-"The wording could be clearer" is not one of them. It is the cheapest-looking
-move, which is why it is the one reached for when neither answer above is true.
+Getting the fork wrong is expensive in both directions. Wording a prohibition
+buys a rule that is argued around; gating a judgement buys false refusals, and
+those cost more than they look — see `agent-facing-cli` § "Precision before
+eloquence".
 
-### 2. A prompt that already failed is evidence FOR automating
+### 2. What a prompt that already failed tells you
 
 If the instruction was in the prompt and the behaviour happened anyway, that is
-a measurement, not a wording problem: prose does not bind here. Rewording is the
-move the evidence has already refuted — climb, and say in the card that prose
-was tried, so the next author does not spend the same session.
+a measurement. What it measures depends on step 1.
 
-Only once automation is genuinely off the table does it matter which kind of
-failure you had. Three states look identical in the symptom and demand opposite
-fixes, and two of them still leave prose on the table.
+**For a prohibition, it is evidence for automating.** Saying it again, louder,
+is the move the evidence has already refuted. Climb, and record that prose was
+tried so the next author does not spend the same session.
 
-| What the evidence shows                                                                                                            | What it means         | The move                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------ |
-| The instruction was **not in the prompt**                                                                                          | the agent never knew  | prose — write it                           |
-| It was in the prompt but **never reached** (unloaded skill body, a doc the project does not have, a section for a different stage) | a DELIVERY defect     | move it to the point of use, do not reword |
-| It was present, reached, and **selectively applied**                                                                               | prose is refuted here | automate — go back to the ladder           |
+**For guidance, it is evidence about the SHAPE of the text, not about prose as
+a mechanism.** Three rewrites have a record of working on text that had already
+failed once, and they are the only three: moving it to where the decision is
+made; replacing a citation with the content itself; and rewriting an enumeration
+into the invariant behind it. What has never worked is adding another bullet or
+adding emphasis. If your revision is not one of the three, it is the fourth
+thing, and it has no record.
+
+Then narrow it further. Three states look identical in the symptom and demand
+opposite fixes.
+
+| What the evidence shows                                                                                                            | What it means           | The move                                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------- |
+| The instruction was **not in the prompt**                                                                                          | the agent never knew    | prose — write it                                                          |
+| It was in the prompt but **never reached** (unloaded skill body, a doc the project does not have, a section for a different stage) | a DELIVERY defect       | move it to the point of use, do not reword                                |
+| It was present, reached, and **selectively applied**                                                                               | this text does not bind | a prohibition goes to automation; guidance gets one of the three rewrites |
 
 Presence is settled by reading the render (**composition-verification**), never
 by remembering what the file says. Reaching is settled by the transcript: did
@@ -65,10 +78,12 @@ had to be fetched — a skill body, a doc, a section belonging to another stage 
 where the transcript can show the fetch never happened. Without this default the
 cheaper fix wins by silence, and rewording ships again.
 
-The third row is the one that costs sessions. A measured case: an agent applied
-the design half of a skill it had plainly read and skipped the operational half
-of the same document — the words were on the path and did not bind. Strengthening
-those words is the move the evidence has already refuted.
+The third row is the one that costs sessions, and it has a shape worth
+recognizing: an agent applies one half of a document it plainly read and skips
+the other — the words were on the path and did not bind. That observation is a
+single uncontrolled session, so treat it as a pattern to look for, not as a
+settled frequency; what is settled is the move it rules out, which is saying the
+same thing more firmly.
 
 ### 3. If prose is earned, write the invariant — not the enumeration
 
@@ -96,16 +111,13 @@ the agent already intended. Pair the shape to write with the shape to cut, and
 state what breaks when it is ignored — a consequence is harder to argue with
 than an imperative.
 
-Two shapes that fail this on their own:
-
-- **Prohibition without a replacement.** State the target behaviour positively;
-  a bare "do not X" survives only as a hard guardrail, and only when it names
-  what to do instead ("redirect instead: `pytest > /tmp/gate.log`"). An agent
-  told only what not to do picks its own second choice.
-- **Unowned silence.** Every decision the text leaves unstated is delegated to
-  model priors, which is where the old behaviour lives. Make each omission
-  deliberate: fill it, or mark it an open question — the three-state default in
-  step 2 is that move applied to this skill's own hardest branch.
+Two shapes fail this on their own, and `skill-template`'s validation checklist
+already refuses both — "target behaviour stated positively" and "every omission
+is a decision". Audit against it rather than against a copy here; what belongs
+in this skill is why they bite: an agent told only what NOT to do picks its own
+second choice, and every silence is delegated to model priors, which is exactly
+where the old behaviour lives. The step-2 default for always-on text is that
+second rule applied to this skill's own hardest branch.
 
 ### 6. Re-read it as an agent looking for a way out
 
@@ -116,11 +128,12 @@ what a rewrite that only adds emphasis never does.
 
 ## Completion
 
-- Automation was ruled out on the record, by one of the two answers in step 1 —
-  no automatable invariant, or a named cost that loses. "Clearer wording" is not
-  a reason and does not appear here.
-- Which of the three states in step 2 applies is stated, with its evidence, and
-  prose was written only for the first two.
+- Step 1's fork is answered out loud: forbidding, or guiding. For a prohibition,
+  automation was ruled out by no automatable invariant or by a named cost that
+  loses — "clearer wording" is not a reason and does not appear here.
+- Which of the three states in step 2 applies is stated, with its evidence; and
+  a revision to text that already failed is one of the three rewrites with a
+  record, not a fourth thing.
 - The text names an invariant, sits at the point of use, and carries a foil.
 - One adversarial re-read was done and its loopholes closed.
 - The prediction is handed to **library-change-hypothesis-protocol**: this skill
