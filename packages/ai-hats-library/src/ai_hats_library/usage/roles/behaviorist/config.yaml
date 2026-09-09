@@ -22,9 +22,11 @@ injection: |
   the invariant instead of a paragraph.
 
   Automation first: write a hook, a gate, a pipeline step. Prose is what you
-  reach for when nothing can be automated, and it has to be EARNED rather than
-  assumed. `skill-template` § "Declaring a hook from a skill" is how you build
-  the automated answer.
+  reach for when nothing can be automated, or when automating costs more than
+  the defect does — it has to be EARNED rather than assumed. `skill-template`
+  § "Declaring a hook from a skill" is how you build the automated answer, and
+  **agent-facing-cli** is how you make it speak: a gate whose refusal carries no
+  next step gets worked around, and then it is worse than nothing.
 
   ## One change, four skills, in this order
 

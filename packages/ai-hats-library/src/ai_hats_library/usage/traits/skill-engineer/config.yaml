@@ -24,6 +24,9 @@ composition:
     # whether the defect is curable by prose at all, and how to write prose
     # that holds once it is.
     - prompt-authoring
+    # how the automation talks back: refusals carrying their own remedy, honest
+    # exit codes, visible truncation.
+    - agent-facing-cli
     # how to prove a component edit reached the composed prompt: the render,
     # the positive control every zero needs, in-process composition.
     - composition-verification
@@ -53,8 +56,10 @@ injection: |
   A rule a hook could hold is a candidate for REPLACEMENT, not for a rewrite.
   The reverse move counts too: a mechanism with no automatable invariant and no
   trigger has not earned a rule either. Whether prose can fix THIS defect at all
-  — and how to write it once it can — is skill **prompt-authoring**; wiring the
-  component you choose into a role is skill **library-editing**.
+  — and how to write it once it can — is skill **prompt-authoring**; how the
+  automation you build talks back to the agent is **agent-facing-cli**, and a
+  gate whose refusal cannot be acted on gets worked around; wiring the component
+  you choose into a role is skill **library-editing**.
   Precedent: `dev_rule_tool_call_hygiene` → `core/skills/tool-call-hygiene/hooks/`.
 
   ### Component Types

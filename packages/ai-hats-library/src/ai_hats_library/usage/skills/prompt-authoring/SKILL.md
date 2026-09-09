@@ -1,6 +1,6 @@
 ---
 name: prompt-authoring
-description: Decide whether a misbehaviour is curable by prose at all, then write the prose so it holds. Use before wording or rewording any rule, injection or skill body, and when a written instruction has failed to change behaviour.
+description: Rule automation out before writing prose, then write prose that holds. Use before wording or rewording any rule, injection or skill body, and when a written instruction has failed to change behaviour.
 license: MIT
 ---
 
@@ -17,10 +17,34 @@ validation scenario of the file you end up writing are `skill-template`.
 
 ## Procedure
 
-### 1. Establish what the agent actually had
+### 1. Automate unless you cannot — prose needs an excuse
 
-Before touching a word, separate three states. They look identical in the
-symptom and demand opposite fixes.
+The first question is never "how do I word this". It is **can a machine hold
+this invariant** — a hook, a gate, a pipeline step. If it can, that is the
+answer, and the comparison is not close: automation costs nothing per turn and
+does not depend on the agent reading anything.
+
+Prose is the fallback, and exactly two answers earn it:
+
+- **There is no automatable invariant.** The call is a genuine judgement — no
+  rule over the command, the diff, or the file expresses it.
+- **The automation is disproportionate.** It exists, and it costs more than the
+  defect does. Name what building it would take and why it loses; a number beats
+  "seems hard".
+
+"The wording could be clearer" is not one of them. It is the cheapest-looking
+move, which is why it is the one reached for when neither answer above is true.
+
+### 2. A prompt that already failed is evidence FOR automating
+
+If the instruction was in the prompt and the behaviour happened anyway, that is
+a measurement, not a wording problem: prose does not bind here. Rewording is the
+move the evidence has already refuted — climb, and say in the card that prose
+was tried, so the next author does not spend the same session.
+
+Only once automation is genuinely off the table does it matter which kind of
+failure you had. Three states look identical in the symptom and demand opposite
+fixes, and two of them still leave prose on the table.
 
 | What the evidence shows                                                                                                            | What it means         | The move                                   |
 | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------ |
@@ -45,13 +69,6 @@ The third row is the one that costs sessions. A measured case: an agent applied
 the design half of a skill it had plainly read and skipped the operational half
 of the same document — the words were on the path and did not bind. Strengthening
 those words is the move the evidence has already refuted.
-
-### 2. If prose is refuted, say so and climb the ladder
-
-"Tried prose, it did not hold" is a **result**, not a failure to be papered over
-with firmer wording. Record it where the next author will meet it, and take the
-rung above: a hook, a gate, a pipeline step. A machine that refuses the action
-does not depend on the agent reading anything.
 
 ### 3. If prose is earned, write the invariant — not the enumeration
 
@@ -88,7 +105,7 @@ Two shapes that fail this on their own:
 - **Unowned silence.** Every decision the text leaves unstated is delegated to
   model priors, which is where the old behaviour lives. Make each omission
   deliberate: fill it, or mark it an open question — the three-state default in
-  §1 is that move applied to this skill's own hardest branch.
+  step 2 is that move applied to this skill's own hardest branch.
 
 ### 6. Re-read it as an agent looking for a way out
 
@@ -99,8 +116,11 @@ what a rewrite that only adds emphasis never does.
 
 ## Completion
 
-- Which of the three states in step 1 applies is stated, with its evidence.
-- Prose was written only for state one or two; state three went to the ladder.
+- Automation was ruled out on the record, by one of the two answers in step 1 —
+  no automatable invariant, or a named cost that loses. "Clearer wording" is not
+  a reason and does not appear here.
+- Which of the three states in step 2 applies is stated, with its evidence, and
+  prose was written only for the first two.
 - The text names an invariant, sits at the point of use, and carries a foil.
 - One adversarial re-read was done and its loopholes closed.
 - The prediction is handed to **library-change-hypothesis-protocol**: this skill
@@ -113,7 +133,8 @@ opens the rule that already forbids it and strengthens the wording — "never,
 under any circumstances" — then reports the fix. The transcript shows the agent
 had read that very rule in the failing session and acted against it, so the
 reworded rule fails identically next time, having cost a release cycle to learn
-what step 1 would have said in one reading.
+what steps 1 and 2 would have said in one reading: a prompt that already failed
+is an argument for automating, not for saying it louder.
 
 ## Anti-Patterns
 

@@ -1,6 +1,6 @@
 ---
 name: library-editing
-description: Change what an agent composes in this project — author a component in the project's own library root, wire it to a role persistently or for one session, and know when the edit takes effect. Use before adding or removing a trait, rule or skill, and when a component you wrote is not reaching the agent.
+description: Put a component where this project reads it, and wire it to a role. Use before adding or removing a trait, rule or skill, and when a component you wrote is not reaching the agent.
 license: MIT
 ---
 

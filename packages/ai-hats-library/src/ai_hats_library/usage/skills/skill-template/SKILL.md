@@ -82,8 +82,8 @@ frontmatter declares **hooks** under a top-level `ai_hats:` key — `git_hooks`
 
 ```yaml
 ---
-name: my-guard
-description: What it does. Use when <triggers>.
+name: migration-freeze
+description: PreToolUse hook — refuses edits under `db/migrations/` while a release branch is open, and records the attempt. Use when diagnosing why a migration edit was blocked.
 ai_hats:
   runtime_hooks:
     PreToolUse:

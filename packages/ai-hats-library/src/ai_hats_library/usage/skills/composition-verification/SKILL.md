@@ -94,21 +94,13 @@ table lists a component you know is only in that tree.
 ### 6. When you need the object graph, compose in-process
 
 Only when the CLI's output is not enough — you want `errors`, the resolved
-components, or to compose a library root other than the one cwd implies:
+components, or to compose a library root other than the one cwd implies. A
+ready script sits next to this skill: `examples/compose-in-process.md`. Copy it,
+set the role, run it with the interpreter of the checkout you mean.
 
-```python
-from pathlib import Path
-from ai_hats.assembler import Assembler
-
-project = Path(".").resolve()
-a = Assembler(project)                       # this path resolves the library
-overlays = a._get_overlays("<role>")         # ALWAYS pass overlays
-result = a.composer.compose("<role>", overlays=overlays)
-assert result.errors == []
-```
-
-Omitting `overlays` silently skips user-global customizations and project
-config overlays — the usual cause of a false "the rule is not there".
+The one thing to carry without reading it: **always pass overlays**. Omitting
+them silently skips user-global customizations and the project's own overlays —
+the usual cause of a false "the rule is not there".
 
 To force a specific library root instead:
 
