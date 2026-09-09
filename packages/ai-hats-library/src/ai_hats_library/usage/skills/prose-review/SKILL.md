@@ -36,8 +36,9 @@ order, before a single edit is proposed.
    session or present in the project is the judge for terms and style. With
    none on the table, write "no reference — style left alone" and do not
    normalize.
-7. **Report** in the shape of `references/critic-rubric.md`: findings only,
-   no rewritten passages.
+7. **Report** in the shape of `references/critic-rubric.md`, written in the
+   language of the text under review — a quoted line is never translated.
+   Findings only, no rewritten passages.
 8. The author decides. Apply what is accepted, run one more pass, and stop
    when it adds nothing new — or after the second round.
 

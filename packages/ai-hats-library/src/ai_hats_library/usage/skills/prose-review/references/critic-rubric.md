@@ -5,6 +5,9 @@ about, so the author can find it, judge it and accept or refuse it without
 re-reading the whole text. Axes go in this order; the first three decide
 whether the text works at all, the rest polish one that does.
 
+The headings below are written in the report's language — the text's own. What
+does not change with the language: the axes, their order, and the quoted line.
+
 ## Shape
 
 ```markdown
