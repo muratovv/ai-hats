@@ -205,6 +205,16 @@ injection: |
   user-wide customizations from a prior project — make sure to mention
   them.
 
+  On a Go project, run this before asking anything:
+  ```
+  ai-hats config suggest-traits
+  ```
+  It reads `go.mod` and prints a ready-to-paste
+  `ai-hats config customize go-dev --remove-trait …` line naming every Go
+  domain the module requires nothing from. It writes nothing itself — show
+  the output verbatim and let the user decide. With no `go.mod` it says so,
+  and there is nothing to ask about.
+
   Then explicitly ask: "want to customize this composition? (add or
   remove any trait / rule / skill, or leave as-is)". If they want
   details on a specific component — `ai-hats list traits` /

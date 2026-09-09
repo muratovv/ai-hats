@@ -914,6 +914,29 @@ def customize(
     _print_overlay("project", role, overlay)
 
 
+@click.command("suggest-traits")
+def suggest_traits():
+    """Suggest `go-dev` traits this project's go.mod shows no evidence for.
+
+    Read-only — it prints the `config customize` line, it never writes one.
+    No go.mod means no evidence either way, so nothing is suggested and the
+    full role stands.
+    """
+    from ..go_traits import suggestion_lines
+
+    root = resolve_project_lenient().layout.root
+    go_mod = root / "go.mod"
+    if not go_mod.is_file():
+        console.print(f"No go.mod under {root} — nothing to suggest.")
+        console.print("`go-dev` composes every Go domain; that is the intended default.")
+        return
+
+    # soft_wrap throughout: a wrapped command line cannot be copied or pasted.
+    console.print(f"go.mod: {go_mod}", soft_wrap=True)
+    for line in suggestion_lines(go_mod.read_text()):
+        console.print(line, soft_wrap=True)
+
+
 @click.command()
 def status():
     """Show current role, dependency tree, and health."""

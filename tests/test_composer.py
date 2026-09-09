@@ -656,7 +656,7 @@ def _all_library_roles() -> list[str]:
     return sorted(p.parent.name for p in _LIB_BASE.glob("*/roles/*/config.yaml"))
 
 
-# The 11 roles that compose trait-agent — each inherits the flipped default.
+# Every role that composes trait-agent — each inherits the flipped default.
 _AGENT_ROLES = [
     "assistant",
     "maintainer",
@@ -666,10 +666,51 @@ _AGENT_ROLES = [
     "architect",
     "sre",
     "go-dev",
-    "go-dev-full",
     "judge",
     "test-agent",
 ]
+
+
+# Every domain trait a Go project can need. `go-dev` is the only Go role, so
+# it carries all of them: the split that let a DB project compose none of
+# them is gone (HATS-1931).
+_GO_TRAITS = {
+    "dev::go-core",
+    "dev::go-database",
+    "dev::go-grpc",
+    "dev::go-cli",
+    "dev::go-observability",
+    "dev::go-performance",
+    "dev::go-security",
+    "dev::go-di",
+    "dev::go-samber",
+    "dev::go-testing-extended",
+    "dev::go-ci",
+}
+
+
+def test_go_dev_composes_every_go_trait():
+    result = _real_composer().compose("go-dev")
+    composed = {t for t in result.trait_injections if t.startswith("dev::go-")}
+    assert composed == _GO_TRAITS
+
+
+def test_go_traits_are_composed_by_go_dev_alone():
+    """Positive control for the sweep: `go-dev` must be found carrying them."""
+    carriers = {
+        role
+        for role in _all_library_roles()
+        if any(t.startswith("dev::go-") for t in _real_composer().compose(role).trait_injections)
+    }
+    assert carriers == {"go-dev"}
+
+
+def test_go_dev_injection_gives_the_agent_nothing_to_hand_to_a_human():
+    """The old injection told the agent to "enable per project via role
+    override" — an act only a human can perform (HATS-1931)."""
+    injection = _real_composer().compose("go-dev").role_injection
+    assert "role override" not in injection
+    assert "go-dev-full" not in injection
 
 
 @pytest.mark.parametrize("role", _AGENT_ROLES)
