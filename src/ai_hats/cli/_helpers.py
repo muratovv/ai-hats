@@ -298,12 +298,16 @@ def catch_broken_install():
         raise
 
 
-def _assembler(project_dir: Path):
-    """The caller resolves the project; this helper only survives the import guard."""
+def _assembler(project_dir: Path, *, prefer_cwd: bool = False):
+    """The caller resolves the project; this helper only survives the import guard.
+
+    ``prefer_cwd`` is for commands that only READ (HATS-1911) — see
+    ``Assembler.__init__``.
+    """
     with catch_broken_install():
         from ..assembler import Assembler
 
-    return Assembler(project_dir)
+    return Assembler(project_dir, prefer_cwd=prefer_cwd)
 
 
 def _guard_not_inside_linked_worktree() -> None:

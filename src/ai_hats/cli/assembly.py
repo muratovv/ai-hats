@@ -835,7 +835,10 @@ def customize(
 @click.command()
 def status():
     """Show current role, dependency tree, and health."""
-    asm = _assembler(resolve_project_lenient().layout.root)
+    # Two questions, two sources (HATS-1911): the tree answers "what am I
+    # editing" and follows cwd; Health answers "what is installed in this
+    # project" and stays project-keyed.
+    asm = _assembler(resolve_project_lenient().layout.root, prefer_cwd=True)
     st = asm.status()
 
     # HATS-497: the role + tree section is role-dependent, but install

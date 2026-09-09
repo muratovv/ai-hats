@@ -842,14 +842,24 @@ turn to answer a question that arises only while verifying a change.
   read-only composition passes and writers never do (HATS-1501)** →
   `project_dir` → `importlib.resources`. Full layer order (lowest → highest):
   builtin/core, builtin/usage, builtin/ai-hats-dev, `~/.ai-hats`, project config-specified,
-  project-local `libraries/`, explicit extras — first-wins when searching for a
-  component, last-wins when a layer overrides one (`build_library_paths`).
+  project-local `libraries/`, explicit extras. Resolution is **last-wins**
+  throughout (`find_component_dir` returns the LAST match), so a later layer
+  overrides an earlier one — there is one search, not two.
 
 ### Verifying a composition from a worktree
 
 A **read-only** command run from inside a worktree composes THAT worktree's
-library (HATS-1501): `config show-prompt` and friends key off cwd, so your edit
-is what you see.
+library, so your edit is what you see. That is the whole read-only family:
+`config show-prompt`, `--dry-run`, every `list` subcommand that reads the
+library (`list providers` reads none), and `config status`'s role tree
+(HATS-1501, HATS-1911).
+
+Two things inside that output still answer about the PROJECT, by design.
+`config status`'s **Health** block (version, venv, materialized
+`system_prompt`) reports what is installed here, and its `Library:` line comes
+from `importlib`, not from the resolver — so it can disagree with the tree the
+command just composed from, and is not the line to read when diagnosing which
+library answered.
 
 A command that **writes** — init, sync, anything materializing into `.agent/` —
 deliberately still keys off the project, which for a linked worktree is the MAIN

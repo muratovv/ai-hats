@@ -26,7 +26,7 @@ def list_roles():
 
     from ..models import ComponentType
 
-    asm = _assembler(resolve_project().layout.root)
+    asm = _assembler(resolve_project().layout.root, prefer_cwd=True)
     names = asm.resolver.list_components(ComponentType.ROLE)
     if not names:
         console.print("[dim]No roles found[/]")
@@ -76,7 +76,7 @@ def list_traits():
     """List available traits."""
     from ..models import ComponentType
 
-    asm = _assembler(resolve_project().layout.root)
+    asm = _assembler(resolve_project().layout.root, prefer_cwd=True)
     names = asm.resolver.list_components(ComponentType.TRAIT)
     for name in names:
         console.print(f"  [cyan]{name}[/]")
@@ -87,7 +87,7 @@ def list_rules():
     """List available rules."""
     from ..models import ComponentType
 
-    asm = _assembler(resolve_project().layout.root)
+    asm = _assembler(resolve_project().layout.root, prefer_cwd=True)
     names = asm.resolver.list_components(ComponentType.RULE)
     for name in names:
         console.print(f"  [cyan]{name}[/]")
@@ -98,7 +98,7 @@ def list_skills():
     """List available skills."""
     from ..models import ComponentType
 
-    asm = _assembler(resolve_project().layout.root)
+    asm = _assembler(resolve_project().layout.root, prefer_cwd=True)
     names = asm.resolver.list_components(ComponentType.SKILL)
     for name in names:
         console.print(f"  [cyan]{name}[/]")
@@ -126,7 +126,7 @@ def list_tokens(name: str, as_trait: bool, approx: bool):
     from ..composer import Composer
     from ..costs import analyze_composition
 
-    asm = _assembler(resolve_project().layout.root)
+    asm = _assembler(resolve_project().layout.root, prefer_cwd=True)
     composer = Composer(asm.resolver)
 
     breakdown = analyze_composition(composer, name, as_trait=as_trait, exact=not approx)

@@ -33,9 +33,12 @@ from ai_hats.paths import PROJECT_CONFIG
 from _helpers.env import checkout_pythonpath
 from _helpers.git import git
 
-TRAIT = Path(
-    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-dev/config.yaml"
+# The curator prose folded from its own trait into the role (HATS-1900), so the
+# worktree-only edit now lands in the role's injection.
+ROLE_CONFIG = Path(
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml"
 )
+ANCHOR = "  # ROLE: ROLE CURATOR\n"
 SENTINEL = "SENTINEL_HATS_1501_WORKTREE_EDIT"
 PROJECT_SENTINEL = "SENTINEL_HATS_1699_PROJECT_CONFIG"
 
@@ -61,12 +64,10 @@ def test_worktree_library_edit_reaches_show_prompt(repo_root: Path, tmp_path: Pa
     wt = tmp_path / "wt-1501"
     git(main, "worktree", "add", "--detach", str(wt))
 
-    trait = wt / TRAIT
-    original = trait.read_text()
-    assert "## LIBRARY CURATOR" in original, "trait shape changed; update this test"
-    trait.write_text(
-        original.replace("  ## LIBRARY CURATOR\n", f"  ## LIBRARY CURATOR\n\n  {SENTINEL}\n", 1)
-    )
+    role_config = wt / ROLE_CONFIG
+    original = role_config.read_text()
+    assert ANCHOR in original, "role injection shape changed; update this test"
+    role_config.write_text(original.replace(ANCHOR, f"{ANCHOR}\n  {SENTINEL}\n", 1))
     ProjectConfig(
         provider="claude",
         customizations={"role-curator": OverlayConfig(injection_append=PROJECT_SENTINEL)},
@@ -102,7 +103,7 @@ def test_worktree_library_edit_reaches_show_prompt(repo_root: Path, tmp_path: Pa
     assert proc.returncode == 0, proc.stderr
     # Positive control first: if the trait vanished entirely, a missing
     # sentinel would prove nothing about WHICH checkout was composed.
-    assert "LIBRARY CURATOR" in proc.stdout, "trait did not compose at all"
+    assert "ROLE CURATOR" in proc.stdout, "role injection did not compose at all"
     assert PROJECT_SENTINEL in proc.stdout, "worktree project config did not compose"
     assert SENTINEL in proc.stdout, (
         "composed the main checkout's library, not the worktree's — HATS-1501"
