@@ -159,8 +159,17 @@ suite stubbed the very contracts the change broke.
    knob (see "No bypass") is the supervisor's to set, never yours.
 5. **Touched what the gate does not name?** No card gate runs the `e2e`
    stage, the full tier (`done-gate` runs `merge-smoke`, a curated subset).
-   Run it yourself and say so: `bash scripts/gates.sh e2e`. Nothing refuses
-   here, which is why that command is not optional. What a gate requires:
+   Run it yourself and say so. Nothing refuses here, which is why it is not
+   optional. It outlives a foreground call, so run it in the background through
+   the wrapper, which exits with the tier's own status:
+
+       timeout 1800 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh \
+           --log /tmp/e2e.log -- bash scripts/gates.sh e2e
+
+   Report the number in `/tmp/e2e.log.rc`, never the completion notice: that
+   notice reports the whole command, so a hand-rolled `; echo $?` is what it
+   announces — two red tiers arrived as `exit code 0` that way. What a gate
+   requires:
 
        bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/done-gate.sh --stages
 

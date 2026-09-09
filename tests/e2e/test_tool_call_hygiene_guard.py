@@ -29,17 +29,26 @@ GUARD = (
 
 @pytest.fixture
 def _run(hook_repo):
-    def run(command: str | None, *, env: dict | None = None, raw: str | None = None):
+    def run(
+        command: str | None,
+        *,
+        env: dict | None = None,
+        raw: str | None = None,
+        background: bool = False,
+    ):
         if raw is not None:
             stdin = raw
         elif command is None:
             stdin = ""
         else:
+            tool_input: dict = {"command": command}
+            if background:
+                tool_input["run_in_background"] = True
             stdin = json.dumps(
                 {
                     "hook_event_name": HOOK_PRE_TOOL_USE,
                     "tool_name": "Bash",
-                    "tool_input": {"command": command},
+                    "tool_input": tool_input,
                 }
             )
         base_env = os.environ.copy()
@@ -158,6 +167,19 @@ def test_noncovered_command_forms_get_no_nudge(_run, command):
         # bash-only spelling with no bash in sight: in the tool's zsh this is
         # `exit ""` -> 0 for every run, so it masks rather than preserves.
         "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
+        # `pipefail` fixes WHICH status a pipeline reports and says nothing about
+        # what a `;` runs next, so it cannot excuse a trailing echo (HATS-1709).
+        # This is the measured incident shape: the shell-level defence was there
+        # and the status was still the echo's.
+        "bash -c 'set -o pipefail; pytest tests/' ; echo done",
+        # ...and the exemption was a substring test, so a filename disarmed it.
+        "pytest tests/ --junit=pipefail.xml; echo done",
+        # A runner named with its PATH — the form this project's own quality-gate
+        # skill prescribes, and the form both measured incidents were written in.
+        # The whole test corpus used bare names, so nothing here ever exercised
+        # what an agent actually types (HATS-1709).
+        "bash scripts/gates.sh run unit | tail",
+        "bash scripts/ci-local.sh e2e; echo done",
     ],
 )
 def test_exit_code_masking_nudges(_run, command):
@@ -322,7 +344,12 @@ def test_the_nudge_survives_the_whole_bash_chain(shared_launcher, tmp_path_facto
     """
     import subprocess as sp
 
-    from _helpers.hook_chain import build_session_settings, pretooluse_hooks, run_chain
+    from _helpers.hook_chain import (
+        build_session_settings,
+        pretooluse_hooks,
+        run_chain,
+        run_tool_chain,
+    )
 
     launcher, base_env, _venv = shared_launcher
     env = dict(base_env)
@@ -350,3 +377,113 @@ def test_the_nudge_survives_the_whole_bash_chain(shared_launcher, tmp_path_facto
     verdict = run_chain(project, "pytest tests/ ; git commit -m wip", settings=settings, env=env)
     assert "state-mutating command follows" in verdict.context, verdict
     assert not verdict.gated, f"this guard must never gate, it only nudges: {verdict}"
+
+    # The background branch reads a tool_input FIELD, not the command string, so
+    # the flag has to survive the composed dispatcher — a single-hook test cannot
+    # show that, and the fix would be dead in a real session with every unit test
+    # green (HATS-1709). The pair IS the control: one payload, one field apart.
+    # Bounded, because the command-lifetime guard REFUSES an unbounded background
+    # launch — and its deny would be the chain's verdict, hiding whether this
+    # guard said anything at all. The bound is what an agent has to write anyway.
+    incident = "timeout 1800 bash scripts/gates.sh e2e > /tmp/e2e.log 2>&1; echo $? > /tmp/e2e.rc"
+    foreground = run_tool_chain(project, "Bash", {"command": incident}, settings=settings, env=env)
+    assert not foreground.context, f"the capture form preserves in the foreground: {foreground}"
+
+    background = run_tool_chain(
+        project,
+        "Bash",
+        {"command": incident, "run_in_background": True},
+        settings=settings,
+        env=env,
+    )
+    assert "completion notice" in background.context, background
+    assert not background.gated, f"this guard must never gate, it only nudges: {background}"
+
+
+# --- backgrounded runs: the notice reports the wrapper (HATS-1709) ------------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The two measured incidents, verbatim in shape. Both captured the status
+        # correctly AND were announced as "exit code 0", because the trailing
+        # echo is what the completion notice reports.
+        "bash scripts/ci-local.sh e2e > /tmp/e2e.log 2>&1; echo $? > /tmp/e2e.rc",
+        "timeout 1800 bash -c 'bash scripts/gates.sh run unit' > /tmp/g.log 2>&1; echo \"GATES_EXIT=$?\" >> /tmp/g.log",
+    ],
+)
+def test_a_backgrounded_capture_is_masking_not_preservation(_run, command):
+    res = _run(command, background=True)
+    assert res.returncode == 0, res.stderr
+    ctx = _nudge(res)
+    assert ctx is not None, f"expected a background nudge for {command!r}, got {res.stdout!r}"
+    assert "completion notice" in ctx
+
+
+@pytest.mark.integration
+def test_the_same_capture_in_the_foreground_stays_excused(_run):
+    """The excuse is not wrong, it is scoped: nothing consults a notice here."""
+    command = "pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc"
+    assert _nudge(_run(command)) is None
+    assert _nudge(_run(command, background=True)) is not None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Redirect only: the wrapper's last element IS the runner, so the notice
+        # tells the truth and there is nothing to say.
+        "timeout 1800 bash scripts/gates.sh e2e > /tmp/e2e.log 2>&1",
+        # The wrapper: capture inside, status out.
+        "timeout 1800 bash runcheck.sh --log /tmp/e2e.log -- bash scripts/gates.sh e2e",
+    ],
+)
+def test_a_background_run_whose_status_survives_gets_no_nudge(_run, command):
+    res = _run(command, background=True)
+    assert res.returncode == 0, res.stderr
+    assert _nudge(res) is None, f"unexpected nudge for {command!r}: {res.stdout!r}"
+
+
+# --- a MULTI-LINE quoted argument is still argument text (HATS-1709) ----------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The role's commonest write, verbatim in shape: a work-log body that
+        # talks about a run, and the `cd` that puts `; rack transition` on the
+        # line. Both halves are needed — the text supplies the runner name, the
+        # prefix supplies the mutation the guard then reports.
+        "cd /repo; rack transition HATS-1 --log 'ran the tier\nbash scripts/gates.sh e2e came back red\nfixing now'",
+        "cd /repo; rack transition HATS-1 --log 'gates.sh e2e is red\nsecond thought'",
+        "cd /repo; rack create task --description 'we should run pytest here\nand ci-local.sh too'",
+    ],
+)
+def test_a_multiline_quoted_argument_is_not_a_call(_run, command):
+    """Quote stripping was line-oriented, so an opening quote whose pair sits on
+    a later line never paired and the body was read as commands. Measured on the
+    card's own work-log writes — the guard cried wolf on the text describing it."""
+    res = _run(command)
+    assert res.returncode == 0, res.stderr
+    assert _nudge(res) is None, f"spurious nudge for {command!r}: {res.stdout!r}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The positive control the fix must not blind: a REAL runner on a later
+        # line, outside any quote. Silence here would mean the contour went dark
+        # rather than the noise going away.
+        "cd /repo\nbash scripts/gates.sh run unit | tail",
+        "echo starting\npytest tests/ ; git commit -m wip",
+    ],
+)
+def test_a_real_runner_on_a_later_line_is_still_a_call(_run, command):
+    res = _run(command)
+    assert res.returncode == 0, res.stderr
+    assert _nudge(res) is not None, f"contour went dark for {command!r}"
