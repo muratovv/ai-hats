@@ -87,8 +87,15 @@ def _tier_memo_path(config) -> Path | None:
     return Path(raw)
 
 
+@pytest.hookimpl(optionalhook=True)
 def pytest_configure_node(node):
     """Hand an xdist worker the memo its controller consumed.
+
+    `optionalhook` because the name belongs to pytest-xdist: without that plugin
+    installed, pytest refuses to load a conftest declaring a hook it does not
+    know, and this file is the ROOT conftest — every run in every environment
+    would fail to start. Caught by `test_venv_strict_mode`, which runs pytest in
+    an environment built without it.
 
     A worker that did not deselect what its siblings deselected would make the
     two collections differ, which xdist refuses outright."""
