@@ -309,6 +309,7 @@ scripts/gates.sh | gates
 scripts/check_ | gates
 scripts/gen_ | gates
 scripts/run-e2e-gate.sh | gates
+scripts/revert-proof.sh | gates
 scripts/clean-tmp-cruft.sh | gates
 packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/ | gates
 src/ai_hats/check_ | gates
