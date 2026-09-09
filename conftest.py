@@ -56,22 +56,44 @@ def pytest_configure(config):
 #: us. ``scripts/gates.sh`` sets it for the stages that PARTITION the e2e tier
 #: and for nothing else.
 TIER_MEMO_ENV = "AI_HATS_GATE_TIER_MEMO"
+#: The key the controller hands its xdist workers the same path under.
+TIER_MEMO_WORKERINPUT = "ai_hats_tier_memo"
+_tier_memo_path_for_this_run: Path | None = None
 _tier_memo_seen: set[str] = set()
 _tier_memo_sink = None
 _tier_memo_deselected = 0
 
 
 def _tier_memo_path(config) -> Path | None:
-    """The memo this run may use, or ``None``.
+    """The memo THIS run may use, or ``None``.
+
+    Taken OUT of the environment rather than read from it: a test of ours may
+    spawn pytest again — the hermetic unit gate does, twice — and an inherited
+    memo made that nested run write its own node ids into a gate's record and
+    the next one skip them, so the gate test failed for a reason that had
+    nothing to do with the gate. The stage handed the memo is the only run it
+    describes, so this process consumes the variable and its children see none.
+    An xdist worker is the exception: it gets the path by the hook below,
+    because the controller consumed it before any worker existed.
 
     Never under ``--collect-only``: the partition laws are asked by collecting
     each stage, and a memo answering there would shrink the sets that must add
     up to the whole tier — the laws would go green while the tier lost tests.
     """
-    raw = os.environ.get(TIER_MEMO_ENV)
+    worker = getattr(config, "workerinput", None)
+    raw = worker.get(TIER_MEMO_WORKERINPUT) if worker else os.environ.pop(TIER_MEMO_ENV, None)
     if not raw or config.option.collectonly:
         return None
     return Path(raw)
+
+
+def pytest_configure_node(node):
+    """Hand an xdist worker the memo its controller consumed.
+
+    A worker that did not deselect what its siblings deselected would make the
+    two collections differ, which xdist refuses outright."""
+    if _tier_memo_path_for_this_run is not None:
+        node.workerinput[TIER_MEMO_WORKERINPUT] = str(_tier_memo_path_for_this_run)
 
 
 def _tier_memo_open(config) -> None:
@@ -81,10 +103,11 @@ def _tier_memo_open(config) -> None:
     tests, and the test is the same test on the same tree. It runs in the first
     and is deselected in the second.
     """
-    global _tier_memo_sink
+    global _tier_memo_sink, _tier_memo_path_for_this_run
     memo = _tier_memo_path(config)
     if memo is None:
         return
+    _tier_memo_path_for_this_run = memo
     if memo.exists():
         try:
             _tier_memo_seen.update(memo.read_text(encoding="utf-8").split())
@@ -106,7 +129,7 @@ def _tier_memo_open(config) -> None:
 def pytest_collection_modifyitems(config, items):
     """Drop what this tree has already passed under another stage's name."""
     global _tier_memo_deselected
-    if _tier_memo_path(config) is None or not _tier_memo_seen:
+    if _tier_memo_path_for_this_run is None or not _tier_memo_seen:
         return
     keep = [item for item in items if item.nodeid not in _tier_memo_seen]
     dropped = [item for item in items if item.nodeid in _tier_memo_seen]

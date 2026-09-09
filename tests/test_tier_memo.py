@@ -23,6 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MEMO_ENV = "AI_HATS_GATE_TIER_MEMO"
 
 PROBE = """
+import os
+
+
 def test_green():
     assert True
 
@@ -33,6 +36,17 @@ def test_also_green():
 
 def test_red():
     assert False
+"""
+
+#: A test that spawns pytest again — the hermetic unit gate does exactly this,
+#: twice, and asserts the second run refuses.
+NESTED = """
+import os
+from pathlib import Path
+
+
+def test_reports_what_a_child_would_inherit():
+    Path("inherited.txt").write_text(str(os.environ.get("AI_HATS_GATE_TIER_MEMO")), encoding="utf-8")
 """
 
 
@@ -110,6 +124,43 @@ def test_collection_answers_for_the_whole_set_however_much_has_run(probe: Path):
 
     assert "test_probe.py::test_green" in collected.stdout, collected.stdout
     assert "deselected" not in collected.stdout, collected.stdout
+
+
+def test_the_memo_does_not_reach_what_a_test_spawns(probe: Path):
+    """The defect this consumption exists to prevent, and it cost a green stage:
+    the hermetic unit gate runs `gates.sh unit` twice and asserts both refuse.
+    With the variable inherited, the first nested run wrote its own node id into
+    the gate's memo and the second deselected it — the run exited 0 and the gate
+    test failed for a reason that had nothing to do with the gate."""
+    memo = probe / "memo"
+    (probe / "test_nested.py").write_text(NESTED, encoding="utf-8")
+
+    _run(probe, memo, "test_nested.py")
+
+    assert (probe / "inherited.txt").read_text(encoding="utf-8") == "None"
+
+
+def test_the_workers_of_a_parallel_run_deselect_what_the_controller_consumed(probe: Path):
+    """The variable is taken out of the environment before a worker exists, so a
+    worker gets the path by `pytest_configure_node` or not at all — and a worker
+    that deselected differently from its siblings would make xdist refuse the run
+    outright ("Different tests were collected")."""
+    pytest.importorskip("xdist")
+    memo = probe / "memo"
+    _run(probe, memo, "-n", "2", "test_probe.py::test_green")
+
+    second = _run(
+        probe, memo, "-n", "2", "test_probe.py::test_green", "test_probe.py::test_also_green"
+    )
+
+    assert second.returncode == 0, second.stdout + second.stderr
+    # Two named, one run: xdist reports the deselection as a smaller count rather
+    # than as a `deselected` line, so the count is what says it happened.
+    assert "1 passed" in second.stdout, second.stdout
+    assert sorted(memo.read_text(encoding="utf-8").split()) == [
+        "test_probe.py::test_also_green",
+        "test_probe.py::test_green",
+    ]
 
 
 def test_without_the_gate_there_is_no_memo_at_all(probe: Path):
