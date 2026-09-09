@@ -1343,8 +1343,8 @@ as a claim to check, not as evidence.
   bash scripts/gates.sh --prepare
   ```
 
-- **expect** — the dispatcher delegates to the worktree-venv hook of the tree it is preparing, and leaves an already-usable venv untouched
-- **why** — a checkout minted by `git worktree add` has no .venv, so every real-subprocess stage would exercise the MAIN checkout's installed code while claiming to judge the commit
+- **expect** — the dispatcher delegates to the worktree-venv hook of the tree it is preparing, keeps an already-usable venv, and installs the tree's current pins into it every time
+- **why** — a checkout minted by `git worktree add` has no .venv, so every real-subprocess stage would exercise the MAIN checkout's installed code while claiming to judge the commit; and a venv that merely EXISTS can still hold the pins of a tree that has since been rebased (HATS-1939)
 
 ## `test_gates_prose_refs.py`
 

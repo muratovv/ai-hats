@@ -102,7 +102,7 @@ hook-подложкой и контрактом кодов возврата. **A
 | `version-skew`     | -                                                                                        | a changed package bumps its version in the same diff, and none is behind PyPI (network)                                 |
 | `python-pin`       | -                                                                                        | every copy of the Python pin agrees and CI runs it                                                                      |
 | `tmp-sweep`        | -                                                                                        | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing                                                     |
-| `prepare`          | -                                                                                        | precondition: a venv for this checkout; it asserts nothing                                                              |
+| `prepare`          | -                                                                                        | precondition: this checkout's venv, at this tree's pins; it asserts nothing                                             |
 
 <!-- /gate-table:stages -->
 
@@ -301,7 +301,11 @@ HATS-1664 сделал прогон на коммите **исключением
 `HEAD` — субъект. Иначе примитив сам минтит одноразовую detached-воркtree на
 коммите под `<git-common-dir>/ai-hats/gate-checkouts/` (не `$TMPDIR`: macOS
 чистит его по atime, и venv, унаследовавший atime кэша uv, рождался просроченным
-— HATS-1632), готовит её `gates.sh --prepare`, гоняет и сносит. В воркtree
+— HATS-1632), гоняет и сносит. **`gates.sh --prepare` зовётся на ОБЕИХ
+дорогах**: scratch-чекаут минтится пустым и может быть только
+недо-provision'ен, а in-place несёт тот `.venv`, каким его оставили — после
+ребейза это зависимости ПРЕДЫДУЩЕГО дерева, и стадии судили бы коммит по
+тому, чего он не объявляет (HATS-1939). В воркtree
 карточки условие выполнено — быстрый путь; в главном чекауте оно не выполнено
 никогда, и туда просто нет дороги. Инвариант: **то, на чём стадии бежали, и есть
 то, что маркер называет**, и ничьё слияние в главный чекаут не сдвинет
