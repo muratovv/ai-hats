@@ -125,7 +125,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         _journal_allowed()
         return 0
-    print(f"{TAG} Fix master first — this close waits on master, not on your branch.", file=sys.stderr)
+    print(
+        f"{TAG} Fix master first — this close waits on master, not on your branch.", file=sys.stderr
+    )
     print(
         f"{TAG} If THIS card is the fix, the supervisor sets {ENV_ALLOW_RED}=1 in the "
         "environment that launches the agent. Writing it on the command line is refused "
