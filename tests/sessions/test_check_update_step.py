@@ -54,7 +54,7 @@ def test_skips_spawn_when_disabled(tmp_path, monkeypatch):
 def test_skips_spawn_when_cache_fresh_and_sha_matches(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    write_cache(tmp_path, _fresh_entry())  # installed_sha = "a" * 40
+    write_cache(ProjectLayout.at(tmp_path).cache, _fresh_entry())  # installed_sha = "a" * 40
     step = CheckUpdateAsync()
     with (
         patch(
@@ -72,7 +72,7 @@ def test_skips_spawn_when_fresh_and_sha_unknown(tmp_path, monkeypatch):
     """Cannot detect the running SHA → do NOT churn a probe every session."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    write_cache(tmp_path, _fresh_entry())
+    write_cache(ProjectLayout.at(tmp_path).cache, _fresh_entry())
     step = CheckUpdateAsync()
     with (
         patch(
@@ -90,7 +90,7 @@ def test_spawns_when_fresh_but_sha_changed(tmp_path, monkeypatch):
     fresh cache no longer describes the running build, so re-probe."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    write_cache(tmp_path, _fresh_entry())  # installed_sha = "a" * 40
+    write_cache(ProjectLayout.at(tmp_path).cache, _fresh_entry())  # installed_sha = "a" * 40
     step = CheckUpdateAsync()
     with (
         patch(
@@ -117,14 +117,19 @@ def test_skips_spawn_when_local_channel(tmp_path, monkeypatch):
 def test_spawns_when_cache_stale(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    write_cache(tmp_path, _stale_entry())
+    write_cache(ProjectLayout.at(tmp_path).cache, _stale_entry())
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
         step.run(layout=ProjectLayout.at(tmp_path))
     popen.assert_called_once()
     args, kwargs = popen.call_args
     cmd = args[0]
-    assert cmd[1:] == ["-m", "ai_hats.update_check", str(tmp_path)]
+    assert cmd[1:] == [
+        "-m",
+        "ai_hats.update_check",
+        str(tmp_path),
+        str(ProjectLayout.at(tmp_path).cache.root),
+    ]
     assert kwargs["start_new_session"] is True
     assert kwargs["stdout"] is __import__("subprocess").DEVNULL
 

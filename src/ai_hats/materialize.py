@@ -25,25 +25,26 @@ consumer appears later, it's a 5-line addition.
 from __future__ import annotations
 
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionIncompleteError, CompositionResult
 
 from .diagnostics import Diagnostic
-from .paths import user_rules_dir
 
 if TYPE_CHECKING:
     from .assembler import Assembler
     from .models import OverlayConfig
 
 
-def discover_user_rules(project_dir: Path) -> tuple[Path, ...]:
+def discover_user_rules(layout: ProjectLayout) -> tuple[Path, ...]:
     """Project-authored rule files, name-sorted (HATS-1203).
 
     Unfiltered by design: unlike library rules there is no catalog to select
     from, so dropping a file into ``user-rules/`` IS the opt-in.
     """
-    rules_dir = user_rules_dir(project_dir)
+    rules_dir = layout.user_rules
     if not rules_dir.is_dir():
         return ()
     return tuple(sorted(rules_dir.glob("*.md")))

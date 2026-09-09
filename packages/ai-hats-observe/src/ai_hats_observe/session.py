@@ -64,7 +64,7 @@ class SessionManager:
         runs_dir: Path,
         recovery: RecoveryProtocol | None = None,
     ) -> None:
-        # HATS-864: the runs root is injected integrator policy (paths.runs_dir).
+        # HATS-864: the runs root is injected integrator policy (``SessionsLayout.runs``).
         # `gitlog_dir` name kept for backwards source compat; it's the runs root.
         self.gitlog_dir = runs_dir
         self.gitlog_dir.mkdir(parents=True, exist_ok=True)

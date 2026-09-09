@@ -23,9 +23,9 @@ prompt or path reaches the agent / filesystem):
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
-from .paths import ai_hats_dir
+from ai_hats_core.layout import ProjectLayout
+
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +35,19 @@ PLACEHOLDER = "<ai_hats_dir>"
 PROJECT_DIR_PLACEHOLDER = "<project_dir>"
 
 
-def expand_path_placeholders(text: str, project_dir: Path) -> str:
+def expand_path_placeholders(text: str, layout: ProjectLayout) -> str:
     """Replace ``<ai_hats_dir>`` (relative) and ``<project_dir>`` (absolute).
 
     ``<ai_hats_dir>`` falls back to the absolute POSIX path when the resolved
     dir is not inside ``project_dir`` (e.g. ``AI_HATS_DIR`` env set to an
     absolute out-of-tree location).
     """
+    project_dir = layout.root
     if PROJECT_DIR_PLACEHOLDER in text:
         text = text.replace(PROJECT_DIR_PLACEHOLDER, project_dir.resolve().as_posix())
     if PLACEHOLDER not in text:
         return text
-    base = ai_hats_dir(project_dir)
+    base = layout.base
     try:
         rel = base.relative_to(project_dir).as_posix()
     except ValueError:
@@ -72,7 +73,7 @@ FSM_EDGES_UNAVAILABLE = (
 )
 
 
-def render_backlog_fsm_edges(project_dir: Path) -> str:
+def render_backlog_fsm_edges(layout: ProjectLayout) -> str:
     """Render this project's backlog FSM edge set as a compact markdown table.
 
     Source of truth: the definition rack itself resolves for the tasks catalog —
@@ -83,7 +84,7 @@ def render_backlog_fsm_edges(project_dir: Path) -> str:
     An edge carrying a ``name:`` is annotated with it — that name is typeable in
     place of the target state (``rack transition <ID> reclaim``).
     """
-    defn = _resolve_backlog(project_dir)
+    defn = _resolve_backlog(layout)
     if defn is None:
         return FSM_EDGES_UNAVAILABLE
     topology = defn.topology
@@ -102,19 +103,18 @@ def _edge_cell(defn, from_state: str, to_state: str) -> str:
     return f"`{to_state}` ({name})" if name else f"`{to_state}`"
 
 
-def _resolve_backlog(project_dir: Path):
+def _resolve_backlog(layout: ProjectLayout):
     """The project's tasks-backlog definition, or ``None`` when it will not load.
 
     Degrades rather than raising: the prompt must still render for the agent who
     would fix the broken file, and the failure is already loud on every rack
     verb. Broad catch on purpose — nothing is swallowed (warning + marker).
     """
+    project_dir = layout.root
     from ai_hats_rack.definition import resolve_definition
 
-    from .paths import tasks_dir
-
     try:
-        return resolve_definition(tasks_dir(project_dir), project_dir=project_dir)
+        return resolve_definition(layout.tracker.tasks_dir, project_dir=project_dir)
     except Exception:  # noqa: BLE001 — see docstring
         logger.warning(
             "Could not resolve the backlog definition for %s; the FSM edge table "
@@ -125,7 +125,7 @@ def _resolve_backlog(project_dir: Path):
         return None
 
 
-def expand_fsm_edges_token(text: str, project_dir: Path) -> str:
+def expand_fsm_edges_token(text: str, layout: ProjectLayout) -> str:
     """Replace ``{{backlog_fsm_edges}}`` with the rendered FSM edge table.
 
     Absent token → no-op (a skill that carries no token is returned unchanged).
@@ -135,4 +135,4 @@ def expand_fsm_edges_token(text: str, project_dir: Path) -> str:
     """
     if FSM_EDGES_TOKEN not in text:
         return text
-    return text.replace(FSM_EDGES_TOKEN, render_backlog_fsm_edges(project_dir))
+    return text.replace(FSM_EDGES_TOKEN, render_backlog_fsm_edges(layout))

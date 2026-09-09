@@ -10,6 +10,8 @@ why:    without worktree gate hooks materialized for agy, agents make unauthoriz
 """
 
 from __future__ import annotations
+
+from ai_hats_core.layout import ProjectLayout
 from _helpers.git import git as _git
 
 import json
@@ -22,7 +24,6 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.constants import HOOK_PRE_TOOL_USE
-from ai_hats.paths import session_cache_dir
 from ai_hats.surfaces.agy.provider import AgySurface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -44,9 +45,9 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("maintainer")
     provider = AgySurface()
-    provider.build_session_prompt(main, result, "sid-agy-gate")
+    provider.build_session_prompt(ProjectLayout.at(main), result, "sid-agy-gate")
 
-    hooks_file = session_cache_dir(main, "sid-agy-gate") / "hooks.json"
+    hooks_file = ProjectLayout.at(main).cache.session("sid-agy-gate") / "hooks.json"
     assert hooks_file.is_file(), "hooks.json must be created in session cache"
     hooks_data = json.loads(hooks_file.read_text())
     pre_tool_hooks = hooks_data.get("PreToolUse", [])
@@ -66,7 +67,7 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     assert matches_claude_hook(matcher, "Create"), "the row must answer agy's own tool name"
 
     hook_script = (
-        session_cache_dir(main, "sid-agy-gate")
+        ProjectLayout.at(main).cache.session("sid-agy-gate")
         / "rules"
         / ".agents"
         / "skills"
@@ -118,11 +119,11 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("maintainer")
     provider = AgySurface()
-    provider.materialize_runtime_skills(main, result, "sid-agy-gate-create")
-    provider.ensure_runtime_hooks(main, result, session_id="sid-agy-gate-create")
+    provider.materialize_runtime_skills(ProjectLayout.at(main), result, "sid-agy-gate-create")
+    provider.ensure_runtime_hooks(ProjectLayout.at(main), result, session_id="sid-agy-gate-create")
 
     hook_script = (
-        session_cache_dir(main, "sid-agy-gate-create")
+        ProjectLayout.at(main).cache.session("sid-agy-gate-create")
         / "rules"
         / ".agents"
         / "skills"

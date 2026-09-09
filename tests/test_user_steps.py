@@ -9,6 +9,8 @@ itself.
 
 from __future__ import annotations
 
+import os
+
 from ai_hats_core.layout import ProjectLayout
 
 import textwrap
@@ -53,7 +55,7 @@ def test_no_steps_dir_silent_noop(tmp_path):
     """Empty/absent dir → loader returns [], no error."""
     # paths.pipeline_steps_dir creates the dir on first call, so the
     # "absent" case is really "empty".
-    assert load_user_steps(tmp_path) == []
+    assert load_user_steps(ProjectLayout.at(tmp_path).pipeline_steps) == []
 
 
 def test_step_registers_via_module_top_level(tmp_path, monkeypatch):
@@ -89,7 +91,7 @@ def test_step_registers_via_module_top_level(tmp_path, monkeypatch):
     """,
     )
 
-    loaded = load_user_steps(tmp_path)
+    loaded = load_user_steps(ProjectLayout.at(tmp_path).pipeline_steps)
     assert len(loaded) == 1 and loaded[0].name == "echo.py"
 
     factory = registry.get("echo")
@@ -108,7 +110,7 @@ def test_underscore_prefix_modules_skipped(tmp_path, monkeypatch):
         raise RuntimeError("this should not have been imported")
     """,
     )
-    assert load_user_steps(tmp_path) == []
+    assert load_user_steps(ProjectLayout.at(tmp_path).pipeline_steps) == []
 
 
 def test_loader_idempotent_within_process(tmp_path, monkeypatch):
@@ -141,9 +143,9 @@ def test_loader_idempotent_within_process(tmp_path, monkeypatch):
     """,
     )
 
-    first = load_user_steps(tmp_path)
+    first = load_user_steps(ProjectLayout.at(tmp_path).pipeline_steps)
     assert len(first) == 1
-    second = load_user_steps(tmp_path)  # must not raise
+    second = load_user_steps(ProjectLayout.at(tmp_path).pipeline_steps)  # must not raise
     assert second == []  # no NEW imports on second call
 
 
@@ -178,7 +180,7 @@ def test_conflict_with_builtin_raises(tmp_path, monkeypatch):
     )
 
     with pytest.raises(registry.StepRegistryError, match="already registered"):
-        load_user_steps(tmp_path)
+        load_user_steps(ProjectLayout.at(tmp_path).pipeline_steps)
 
 
 def test_invalid_step_class_surfaces_error(tmp_path, monkeypatch):
@@ -193,7 +195,7 @@ def test_invalid_step_class_surfaces_error(tmp_path, monkeypatch):
     """,
     )
     with pytest.raises(ValueError, match="intentional"):
-        load_user_steps(tmp_path)
+        load_user_steps(ProjectLayout.at(tmp_path).pipeline_steps)
 
 
 def test_ai_hats_dir_override_for_user_steps(tmp_path, monkeypatch):
@@ -231,7 +233,7 @@ def test_ai_hats_dir_override_for_user_steps(tmp_path, monkeypatch):
     """,
     )
 
-    loaded = load_user_steps(project_dir)
+    loaded = load_user_steps(ProjectLayout.compute(project_dir, os.environ).pipeline_steps)
     assert len(loaded) == 1
     assert registry.get("external")({}).io.name == "external"
 

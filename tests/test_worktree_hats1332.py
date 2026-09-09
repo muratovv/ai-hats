@@ -8,6 +8,8 @@ git's own bookkeeping, so every test drives a real ``git worktree prune``.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import logging
 import shutil
 import subprocess
@@ -15,7 +17,6 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import worktrees_dir
 from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeManager
 
@@ -76,7 +77,7 @@ class TestDiscardAfterPrune:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/pruned-discard",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_path = mgr.create()
         mgr.save_state()
@@ -96,7 +97,7 @@ class TestDiscardAfterPrune:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/pruned-keep",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_path = mgr.create()
         mgr.save_state()
@@ -114,7 +115,7 @@ class TestDiscardAfterPrune:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/pruned-force",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_path = mgr.create()
         mgr.save_state()
@@ -147,7 +148,7 @@ class TestMergeAfterPrune:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/pruned-merge",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
             lifecycle=_PruningLifecycle(git_project),
         )
         wt_path = mgr.create()
@@ -172,14 +173,16 @@ class TestAdministrativeTeardown:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/hats-9332",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_path = mgr.create()
         mgr.save_state()
         _prune_behind_manager(git_project, wt_path)
 
         with caplog.at_level(logging.WARNING):
-            outcome = WtWorktreeEffects(git_project).teardown("HATS-9332", merge=False)
+            outcome = WtWorktreeEffects(ProjectLayout.at(git_project)).teardown(
+                "HATS-9332", merge=False
+            )
 
         assert outcome == "discarded"
         assert not wt_path.exists()
@@ -192,7 +195,7 @@ class TestAdministrativeTeardown:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/hats-9333",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr.create()
         mgr.save_state()
@@ -202,7 +205,9 @@ class TestAdministrativeTeardown:
 
         monkeypatch.setattr(WorktreeManager, "discard", boom)
         with caplog.at_level(logging.WARNING):
-            outcome = WtWorktreeEffects(git_project).teardown("HATS-9333", merge=False)
+            outcome = WtWorktreeEffects(ProjectLayout.at(git_project)).teardown(
+                "HATS-9333", merge=False
+            )
 
         assert outcome is None
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]

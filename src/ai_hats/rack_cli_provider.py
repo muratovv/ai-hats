@@ -12,23 +12,33 @@ edge), and typed wt-exception rendering (no raw teardown traceback).
 from __future__ import annotations
 
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import Any
 
 import click
 
 from ai_hats_rack.cli_common import emit_json
 from ai_hats_rack.definition import resolve_definition
+
+from .cli._entry import project_at
 from ai_hats_rack.extensions import DerivedViewsExtension
 from ai_hats_rack.journal import JsonlJournalSink
 from ai_hats_rack.workspace import backlog_selectors_in_root
 
 from .rack_consumers import check_port_factory, consumer_subscribers
 from .rack_wiring import build_rack_kernel
-from .tracker_wiring import tracker_paths
 
 
-#: The conventional backlog tail under ``<ai_hats_dir>`` (see ``paths.tasks_dir``).
+#: The conventional backlog tail under ``<ai_hats_dir>`` (see ``TrackerLayout.tasks_dir``).
 _TASKS_TAIL = ("tracker", "backlog", "tasks")
+
+
+def _owner_layout(root: Any) -> ProjectLayout | None:
+    """The backlog owner's layout, or None for an anchorless backlog."""
+    if root.backlog_owner is None:
+        return None
+    return project_at(root.backlog_owner).layout
 
 
 def _state_md_for(root: Any) -> Path:
@@ -38,8 +48,9 @@ def _state_md_for(root: Any) -> Path:
     carries the conventional tail, beside the cards otherwise. Both stay inside
     the backlog the operator named, which is the whole point (HATS-1573).
     """
-    if root.backlog_owner is not None:
-        return tracker_paths(root.backlog_owner).state_md_path
+    owner = _owner_layout(root)
+    if owner is not None:
+        return owner.state_md
     if root.tasks_dir.parts[-3:] == _TASKS_TAIL:
         return root.tasks_dir.parents[2] / "STATE.md"
     return root.tasks_dir.parent / "STATE.md"
@@ -57,9 +68,15 @@ class CliKernelProvider:
             prefix_alias=root.prefix,
             project_dir=root.backlog_owner or root.project_dir,
         )
+        owner = _owner_layout(root)
+        layout = (
+            owner
+            if owner is not None and owner.root == root.project_dir
+            else project_at(root.project_dir).layout
+        )
         return build_rack_kernel(
-            root.project_dir,
-            backlog_owner=root.backlog_owner,
+            layout,
+            backlog_owner=owner,
             tasks_dir=root.tasks_dir,
             # The SAME file `after_create` writes: a transition indexes the
             # backlog it moved a card in, never the checkout the operator
@@ -68,7 +85,7 @@ class CliKernelProvider:
             prefix=root.prefix,
             journal_sink=JsonlJournalSink(root.tasks_dir),
             extra_subscribers=consumer_subscribers(
-                root.backlog_owner,
+                owner,
                 definition=defn,
                 catalog=root.tasks_dir,
                 known_backlogs=backlog_selectors_in_root(root),
@@ -83,7 +100,7 @@ class CliKernelProvider:
         pin). Everything else about the channel — topology, selectors, which
         instances get a subscriber — the rack decides from its own definitions.
         """
-        return check_port_factory(root.backlog_owner)(catalog)
+        return check_port_factory(_owner_layout(root))(catalog)
 
     def after_create(self, root: Any, result: Any) -> None:
         """Refresh STATE.md after a create (fork K3 #7): create takes no FSM

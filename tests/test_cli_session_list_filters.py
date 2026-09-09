@@ -16,7 +16,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
-from ai_hats.paths import PROJECT_CONFIG, runs_dir
+from ai_hats.paths import PROJECT_CONFIG
+from ai_hats_core.layout import ProjectLayout
 
 
 def _make_session(
@@ -25,14 +26,14 @@ def _make_session(
     *,
     metrics: dict,
 ) -> None:
-    sdir = runs_dir(project_dir) / session_dirname(session_id)
+    sdir = ProjectLayout.at(project_dir).sessions.runs / session_dirname(session_id)
     sdir.mkdir(parents=True)
     (sdir / METRICS_JSON).write_text(json.dumps(metrics))
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
-    runs_dir(tmp_path).mkdir(parents=True, exist_ok=True)
+    ProjectLayout.at(tmp_path).sessions.runs.mkdir(parents=True, exist_ok=True)
     (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         "active_role: primary\ndefault_role: primary\n"

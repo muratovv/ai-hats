@@ -21,6 +21,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats_core import CompositionResult, ResolvedComponent
 from .frontmatter import FrontmatterError, read_frontmatter
 from ai_hats_core import scrubbed_git_env
@@ -402,7 +404,7 @@ def plan_migration(
     canonical_dir: Path,
     composition: CompositionResult,
     tier2_source_lookup: dict[str, Path] | None = None,
-    project_dir: Path | None = None,
+    layout: ProjectLayout | None = None,
     tier2_hook_source_dirs: list[Path] | None = None,
 ) -> MigrationReport:
     """Inspect ``canonical_dir`` and classify each finding.
@@ -415,7 +417,7 @@ def plan_migration(
     name → source root; absence means Tier-2 dirs all classify as user-edit
     (conservative).
 
-    ``project_dir`` (optional) enables placeholder expansion on Tier-1
+    ``layout`` (optional) enables placeholder expansion on Tier-1
     baselines — v0.6 ``write_canonical`` called
     :func:`ai_hats.placeholders.expand_path_placeholders` on every
     rendered byte before write, so any baseline whose source content
@@ -441,10 +443,10 @@ def plan_migration(
             trait_baseline=trait_baseline,
             rule_baseline=rule_baseline,
         )
-        if baseline is not None and project_dir is not None:
+        if baseline is not None and layout is not None:
             from .placeholders import expand_path_placeholders
 
-            baseline = expand_path_placeholders(baseline, project_dir)
+            baseline = expand_path_placeholders(baseline, layout)
         actual = _safe_read(path)
         edited = is_user_edit(actual, baseline)
         report.findings.append(

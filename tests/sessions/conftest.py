@@ -22,9 +22,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir, runs_dir
 from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, session_dirname
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats_core.layout import ProjectLayout
 
 
 class _StubSession:
@@ -35,7 +35,7 @@ class _StubSession:
         exit_code: int = 0,
     ) -> None:
         self.session_id = session_id
-        self.session_dir = runs_dir(project_dir) / session_dirname(session_id)
+        self.session_dir = ProjectLayout.at(project_dir).sessions.runs / session_dirname(session_id)
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.trace_path = self.session_dir / TRACE_LOG
         self.trace_path.write_text("(trace)")
@@ -58,13 +58,13 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
 
     pd = tmp_path / "proj"
     pd.mkdir()
-    runs_dir(pd).mkdir(parents=True, exist_ok=True)
-    (hypotheses_dir(pd)).mkdir(parents=True)
-    (proposals_dir(pd)).mkdir(parents=True)
+    ProjectLayout.at(pd).sessions.runs.mkdir(parents=True, exist_ok=True)
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses").mkdir(parents=True)
+    (ProjectLayout.at(pd).tracker.proposals_dir).mkdir(parents=True)
     # HATS-1044 R6: seed the HYP/PROP catalogs' backlog.yaml so the rack
     # workspace mounts them (the reflect consumers require the migrated layout).
-    migrate_catalog(hypotheses_dir(pd), "hypotheses")
-    migrate_catalog(proposals_dir(pd), "proposals")
+    migrate_catalog(ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses", "hypotheses")
+    migrate_catalog(ProjectLayout.at(pd).tracker.proposals_dir, "proposals")
     (pd / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\nactive_role: test-agent\ndefault_role: test-agent\n"
     )
@@ -131,7 +131,7 @@ def mock_runners(monkeypatch, project_dir, captured):
         def run(self, sid, max_retries=1, harness_policy=None):
             del harness_policy  # accepted for API parity, unused by stubs
             cap["session_review_calls"].append((sid, max_retries))
-            out = retros_dir(pd) / "sessions" / f"{sid}.md"
+            out = ProjectLayout.at(pd).sessions.retros / "sessions" / f"{sid}.md"
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(
                 "---\nsession_id: " + sid + "\nsummary: ok\nhypothesis_verdicts: []\n---\n\nbody\n"

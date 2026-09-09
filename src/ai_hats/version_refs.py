@@ -32,13 +32,57 @@ import uuid
 from pathlib import Path
 
 from ai_hats_core import atomic_write_text
-from .paths import _is_safe_sha_component, versions_root
+from ai_hats_core.layout import VersionsLayout
 
 # One run_id per process — stable across repeated ``create_session`` calls
 # (multi-turn sub-agent, wrap), so the ref file (keyed by ``root_pid``) is
 # idempotently refreshed rather than multiplied. Generated lazily so importing
 # this module is side-effect-free.
 _PROCESS_RUN_ID: str | None = None
+
+
+def _is_safe_sha_component(raw: str) -> bool:
+    """True if ``raw`` is a single safe path component usable as a dir name.
+
+    A managed ``sha`` is the git commit the active ai-hats was installed from —
+    hex, but tag/branch-derived names are tolerated, so the alphabet is
+    ``[A-Za-z0-9._-]``. Empty, dot, dotdot or anything with a separator is
+    rejected so a corrupt pointer can never escape ``versions/``.
+    """
+    if not raw or raw in (".", ".."):
+        return False
+    return all(c.isalnum() or c in "._-" for c in raw)
+
+
+def is_complete(versions: VersionsLayout, sha: str) -> bool:
+    """``versions/<sha>/`` carries the ``.complete`` sentinel — written LAST by
+    ``self update``; a dir without it is crash residue, never trust presence alone."""
+    return versions.sentinel(sha).is_file()
+
+
+def is_usable_version(versions: VersionsLayout, sha: str) -> bool:
+    """Complete AND runnable: the sentinel plus ``bin/python`` on disk, since the
+    launcher execs ``<venv>/bin/python -m ai_hats``. A host python upgrade leaves a
+    venv complete yet unrunnable; that one is not usable."""
+    return is_complete(versions, sha) and (versions.dir(sha) / "bin" / "python").exists()
+
+
+def read_current_sha(versions: VersionsLayout) -> str | None:
+    """The active managed ``sha`` from ``versions/current``, or ``None``.
+
+    ``None`` for a missing or corrupt pointer, a dangling sha, an incomplete
+    install, or a present-but-broken venv, so callers degrade to the legacy
+    ``.venv`` instead of dead-ending.
+    """
+    try:
+        raw = versions.current_pointer.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not _is_safe_sha_component(raw):
+        return None
+    if not is_usable_version(versions, raw):
+        return None
+    return raw
 
 
 def _process_run_id() -> str:
@@ -48,12 +92,12 @@ def _process_run_id() -> str:
     return _PROCESS_RUN_ID
 
 
-def refs_dir(project_dir: Path) -> Path:
+def refs_dir(versions: VersionsLayout) -> Path:
     """Liveness-ref directory: ``<ai_hats_dir>/versions/.refs/``."""
-    return versions_root(project_dir) / ".refs"
+    return versions.root / ".refs"
 
 
-def current_run_sha(project_dir: Path) -> str | None:
+def current_run_sha(versions: VersionsLayout) -> str | None:
     """Managed ``sha`` THIS process runs from, derived from ``sys.prefix``.
 
     Returns the version dir name when the running interpreter's prefix is
@@ -70,7 +114,7 @@ def current_run_sha(project_dir: Path) -> str | None:
     """
     try:
         prefix = Path(sys.prefix).resolve()
-        vroot = versions_root(project_dir).resolve()
+        vroot = versions.root.resolve()
         rel = prefix.relative_to(vroot)
     except (ValueError, OSError):
         return None
@@ -150,14 +194,14 @@ def ref_is_live(ref: dict) -> bool:
     return _pid_alive(pid)
 
 
-def write_current_run_ref(project_dir: Path) -> Path | None:
+def write_current_run_ref(versions: VersionsLayout) -> Path | None:
     """Write/refresh this run's liveness ref; no-op (``None``) for legacy runs.
 
     Keyed by ``root_pid`` so repeated ``create_session`` calls in one process
     idempotently refresh a single file. Atomic (tmp + ``replace``). Returns the
     ref path, or ``None`` when this process pins no managed version.
     """
-    sha = current_run_sha(project_dir)
+    sha = current_run_sha(versions)
     if sha is None:
         return None
     pid = os.getpid()
@@ -167,19 +211,19 @@ def write_current_run_ref(project_dir: Path) -> Path | None:
         "start_time_utc": _proc_start_time(pid),
         "sha": sha,
     }
-    dest = refs_dir(project_dir) / f"{pid}.json"
+    dest = refs_dir(versions) / f"{pid}.json"
     atomic_write_text(dest, json.dumps(ref))
     return dest
 
 
-def load_refs(project_dir: Path) -> list[tuple[Path, dict]]:
+def load_refs(versions: VersionsLayout) -> list[tuple[Path, dict]]:
     """Load all ref files as ``[(path, dict)]``; skip unreadable / malformed.
 
     A ref that can't be parsed into a dict protects nothing — it's skipped here
     and swept by the reclaim pass when its sha is reclaimed. Hidden temp files
     (``.<pid>.json.tmp``) and non-``.json`` entries are ignored.
     """
-    d = refs_dir(project_dir)
+    d = refs_dir(versions)
     if not d.exists():
         return []
     out: list[tuple[Path, dict]] = []

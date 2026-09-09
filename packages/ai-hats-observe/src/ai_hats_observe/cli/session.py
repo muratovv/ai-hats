@@ -1,7 +1,7 @@
 """`ai-hats session` browse commands — observability over recorded sessions.
 
-Standalone subcommands: list / show / audit. Runs on the worktree-free ``_seam``
-defaults (core-only). The integrator overrides ``_seam`` with its
+Standalone subcommands: list / show / audit. Runs under the worktree-free ``STANDALONE``
+host (core-only). The integrator attaches its own ``Host`` with
 AI_HATS_DIR/yaml-aware resolvers at mount and re-attaches the retro subcommands
 (``retro`` / ``retro-validate``, downstream consumers that stay integrator-side).
 """
@@ -27,7 +27,7 @@ from ..artifacts import (
     session_start_dt,
 )
 from ..session import _load_metrics_safe
-from . import _seam
+from . import _host
 
 
 @click.group()
@@ -45,7 +45,7 @@ def session_audit(session_id: str | None):
 
     from ..session import SessionManager
 
-    layout = _seam._LAYOUT()
+    layout = _host.host().layout()
     mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
 
     if session_id:
@@ -55,13 +55,13 @@ def session_audit(session_id: str | None):
         s = sessions[0] if sessions else None
 
     if s is None:
-        _seam._CONSOLE.print("[yellow]No session found[/]")
+        _host.host().console.print("[yellow]No session found[/]")
         return
 
     if s.audit_path.exists():
-        _seam._CONSOLE.print(s.audit_path.read_text())
+        _host.host().console.print(s.audit_path.read_text())
     else:
-        _seam._CONSOLE.print(f"[yellow]No audit for session {s.session_id}[/]")
+        _host.host().console.print(f"[yellow]No audit for session {s.session_id}[/]")
 
 
 @session.command("list")
@@ -110,11 +110,11 @@ def session_list(
     from ..session import SessionManager
 
     try:
-        tag_filters = _seam._TAG_FILTER_PARSER(tag_filters_raw)
+        tag_filters = _host.host().tag_filter_parser(tag_filters_raw)
     except ValueError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    layout = _seam._LAYOUT()
+    layout = _host.host().layout()
     mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
     sessions = mgr.list_sessions(
         productive_only=productive,
@@ -143,7 +143,7 @@ def session_list(
         return
 
     if not sessions:
-        _seam._CONSOLE.print("[yellow]No sessions found[/]")
+        _host.host().console.print("[yellow]No sessions found[/]")
         return
 
     from rich.table import Table
@@ -209,8 +209,8 @@ def session_list(
             tok_out_str,
         )
 
-    _seam._CONSOLE.print(table)
-    _seam._CONSOLE.print(f"[dim]{len(sessions)} sessions shown[/]")
+    _host.host().console.print(table)
+    _host.host().console.print(f"[dim]{len(sessions)} sessions shown[/]")
 
 
 def _emit_sessions_json(sessions) -> None:
@@ -326,9 +326,9 @@ def _render_usage(session) -> None:
         return
 
     schema = u.get("schema_version", "usage/v1")
-    _seam._CONSOLE.print(f"\n[bold]Usage[/] ([dim]{schema}[/]):")
+    _host.host().console.print(f"\n[bold]Usage[/] ([dim]{schema}[/]):")
     for line in lines:
-        _seam._CONSOLE.print(line, markup=False)
+        _host.host().console.print(line, markup=False)
 
 
 def _render_diagnostics(session) -> None:
@@ -349,26 +349,26 @@ def _render_diagnostics(session) -> None:
     if isinstance(startup, dict):
         notices = startup.get("notices") or []
         hold = startup.get("hold_seconds", 0.0)
-        _seam._CONSOLE.print(f"\n[bold]Startup Diagnostics[/] ([dim]hold: {hold}s[/]):")
+        _host.host().console.print(f"\n[bold]Startup Diagnostics[/] ([dim]hold: {hold}s[/]):")
         if not notices:
-            _seam._CONSOLE.print("  [green]✓ Clean start (no warnings or notes)[/]")
+            _host.host().console.print("  [green]✓ Clean start (no warnings or notes)[/]")
         else:
             for n in notices:
                 lvl = n.get("level", "info")
                 txt = n.get("text", "")
                 if lvl == "note":
-                    _seam._CONSOLE.print(f"  [green]✓ {txt}[/]", markup=False)
+                    _host.host().console.print(f"  [green]✓ {txt}[/]", markup=False)
                 elif lvl == "fatal":
-                    _seam._CONSOLE.print(f"  [red]✕ {txt}[/]", markup=False)
+                    _host.host().console.print(f"  [red]✕ {txt}[/]", markup=False)
                 else:
-                    _seam._CONSOLE.print(f"  [yellow]⚠ {txt}[/]", markup=False)
+                    _host.host().console.print(f"  [yellow]⚠ {txt}[/]", markup=False)
 
     completion = diag.get("completion")
     retro = diag.get("retro_reminder")
     update = diag.get("update_banner")
 
     if completion or retro or update:
-        _seam._CONSOLE.print("\n[bold]Post-Session Diagnostics & Banners[/]:")
+        _host.host().console.print("\n[bold]Post-Session Diagnostics & Banners[/]:")
 
         if isinstance(completion, dict):
             dur = completion.get("duration")
@@ -396,17 +396,17 @@ def _render_diagnostics(session) -> None:
             if error:
                 parts.append(f"error: {error}")
 
-            _seam._CONSOLE.print(f"  ✨ [green]Completion[/]: {', '.join(parts)}")
+            _host.host().console.print(f"  ✨ [green]Completion[/]: {', '.join(parts)}")
 
         if isinstance(retro, dict):
             rem = retro.get("reminder")
             if isinstance(rem, dict):
-                _seam._CONSOLE.print(
+                _host.host().console.print(
                     f"  📝 [cyan]Retro Reminder[/]: Reflect through {rem.get('count')} sessions (`{rem.get('command')}`)"
                 )
             wrap = retro.get("wrap_up")
             if isinstance(wrap, dict):
-                _seam._CONSOLE.print(
+                _host.host().console.print(
                     f"  🧹 [cyan]Wrap Up[/]: {wrap.get('tasks_closed')} tasks closed in {wrap.get('duration_min')}m"
                 )
 
@@ -414,7 +414,7 @@ def _render_diagnostics(session) -> None:
             inst = update.get("installed_label") or update.get("installed_sha", "?")
             latest = update.get("latest_label") or update.get("latest_sha", "?")
             behind = update.get("behind", 0)
-            _seam._CONSOLE.print(
+            _host.host().console.print(
                 f"  🚀 [yellow]Update Available[/]: {inst} → {latest} (+{behind} commits). Run: ai-hats self update"
             )
 
@@ -427,29 +427,29 @@ def session_show(session_id: str):
 
     from ..session import SessionManager
 
-    layout = _seam._LAYOUT()
+    layout = _host.host().layout()
     mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
     s = mgr.get_session(session_id)
     if s is None:
-        _seam._CONSOLE.print(f"[red]Session {session_id} not found[/]")
+        _host.host().console.print(f"[red]Session {session_id} not found[/]")
         sys.exit(1)
 
-    _seam._CONSOLE.print(f"[bold]Session:[/] {s.session_id}")
-    _seam._CONSOLE.print(f"[bold]Path:[/] {s.session_dir}")
+    _host.host().console.print(f"[bold]Session:[/] {s.session_id}")
+    _host.host().console.print(f"[bold]Path:[/] {s.session_dir}")
 
     if s.metrics_path.exists():
         try:
             m = json.loads(s.metrics_path.read_text())
-            _seam._CONSOLE.print("\n[bold]Metrics:[/]")
+            _host.host().console.print("\n[bold]Metrics:[/]")
             for k, v in m.items():
                 if isinstance(v, dict):
-                    _seam._CONSOLE.print(f"  {k}:")
+                    _host.host().console.print(f"  {k}:")
                     for k2, v2 in v.items():
-                        _seam._CONSOLE.print(f"    {k2}: {v2}")
+                        _host.host().console.print(f"    {k2}: {v2}")
                 else:
-                    _seam._CONSOLE.print(f"  {k}: {v}")
+                    _host.host().console.print(f"  {k}: {v}")
         except (json.JSONDecodeError, OSError) as e:
-            _seam._CONSOLE.print(f"[yellow]Cannot read metrics: {e}[/]")
+            _host.host().console.print(f"[yellow]Cannot read metrics: {e}[/]")
 
     _render_diagnostics(s)
     _render_usage(s)
@@ -469,7 +469,7 @@ def session_show(session_id: str):
         if p.exists() and p.stat().st_size > 0:
             artifacts.append(f"{name} ({p.stat().st_size:,}b)")
     if artifacts:
-        _seam._CONSOLE.print(f"\n[bold]Artifacts:[/] {', '.join(artifacts)}")
+        _host.host().console.print(f"\n[bold]Artifacts:[/] {', '.join(artifacts)}")
 
 
 # ---- session backfill ----
@@ -546,7 +546,7 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
             from_trace = True
         row["provider"] = provider or "?"
 
-    resolver, parser = _seam._PROVIDER_ADAPTER(provider)
+    resolver, parser = _host.host().provider_adapter(provider)
     if resolver is None or not provider_session_id:
         row["note"] = "no provider session id"
         return row
@@ -616,7 +616,7 @@ def session_backfill(
 
     from ..session import SessionManager
 
-    layout = _seam._LAYOUT()
+    layout = _host.host().layout()
     mgr = SessionManager(layout.root, runs_dir=layout.sessions.runs)
 
     if session_ids:
@@ -630,7 +630,7 @@ def session_backfill(
         raise click.UsageError("pass session ids, or one of --last N / --all")
 
     if not sessions:
-        _seam._CONSOLE.print("[yellow]No matching sessions[/]")
+        _host.host().console.print("[yellow]No matching sessions[/]")
         return
 
     rows, skipped = [], 0
@@ -658,11 +658,11 @@ def session_backfill(
             r["tool_calls"],
             r["note"],
         )
-    _seam._CONSOLE.print(table)
+    _host.host().console.print(table)
 
     recovered = sum(1 for r in rows if r["before"] == "unmeasured" and r["after"] == "measured")
     no_transcript = sum(1 for r in rows if r["note"].startswith("no "))
-    _seam._CONSOLE.print(
+    _host.host().console.print(
         f"\n[bold]{len(rows)}[/] examined, [bold green]{recovered}[/] recoverable, "
         f"[bold]{no_transcript}[/] without a transcript, [bold]{skipped}[/] already measured"
         + (" [dim](nothing written — dry run)[/]" if dry_run else "")

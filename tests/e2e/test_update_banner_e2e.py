@@ -12,7 +12,8 @@ why: without update banner notifications, users remain unaware of framework secu
 
 from __future__ import annotations
 
-from ai_hats.paths import cache_root
+from ai_hats_core.layout import ProjectLayout
+
 
 import json
 import os
@@ -79,7 +80,7 @@ def _seed_cache(
     installed_label: str | None = None,
     latest_label: str | None = None,
 ) -> Path:
-    cache = cache_root(project) / "update-check.json"
+    cache = ProjectLayout.at(project).cache.root / "update-check.json"
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(
         json.dumps(

@@ -18,8 +18,8 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 from ai_hats_observe.artifacts import TRACE_LOG, TRANSCRIPT_TXT
+from ai_hats_core.layout import ProjectLayout
 
 
 def _make_hyp(pd: Path, hyp_id: str):
@@ -34,7 +34,9 @@ def _make_hyp(pd: Path, hyp_id: str):
         "success_criterion": "x",
         "observation_window": "5 sessions",
     }
-    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+        yaml.safe_dump(body)
+    )
 
 
 def _make_prop(pd: Path, pid: str):
@@ -49,7 +51,7 @@ def _make_prop(pd: Path, pid: str):
         "votes": [],
         "status": "open",
     }
-    (proposals_dir(pd) / f"{pid}.yaml").write_text(yaml.safe_dump(body))
+    (ProjectLayout.at(pd).tracker.proposals_dir / f"{pid}.yaml").write_text(yaml.safe_dump(body))
 
 
 # --- helpers ----------------------------------------------------------------
@@ -97,7 +99,9 @@ def test_dry_run_writes_handoff_no_pipeline(project_dir: Path, mock_runners):
     res = CliRunner().invoke(main, ["reflect", "hypothesis", "--dry-run"])
     assert res.exit_code == 0, res.output
 
-    handoff_files = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))
+    handoff_files = list(
+        (ProjectLayout.at(project_dir).sessions.retros / "reflect-all").glob("*-handoff.md")
+    )
     assert len(handoff_files) == 1
 
     # No pipeline launched at all
@@ -115,9 +119,8 @@ def test_headless_runs_phase1_only(project_dir: Path, mock_runners, monkeypatch)
     _make_prop(project_dir, "PROP-001")
 
     # Seed the stub session output so extract_marker captures a draft.
-    from ai_hats.paths import runs_dir
 
-    sub_session_dir = runs_dir(project_dir) / "session_sub-1"
+    sub_session_dir = ProjectLayout.at(project_dir).sessions.runs / "session_sub-1"
     _seed_draft_transcript(sub_session_dir)
 
     res = CliRunner().invoke(main, ["reflect", "hypothesis", "--headless"])
@@ -131,7 +134,7 @@ def test_headless_runs_phase1_only(project_dir: Path, mock_runners, monkeypatch)
     assert call["role_name"] == "judge-auditor"
 
     # Draft was persisted.
-    draft_files = list((retros_dir(project_dir) / "judge").glob("*-draft.md"))
+    draft_files = list((ProjectLayout.at(project_dir).sessions.retros / "judge").glob("*-draft.md"))
     assert len(draft_files) == 1
     assert "HYP-001" in draft_files[0].read_text()
 
@@ -146,10 +149,9 @@ def test_full_runs_both_phases(project_dir: Path, mock_runners):
     _make_prop(project_dir, "PROP-001")
 
     # Seed both phases' fake outputs.
-    from ai_hats.paths import runs_dir
 
-    _seed_draft_transcript(runs_dir(project_dir) / "session_sub-1")
-    _seed_report_trace(runs_dir(project_dir) / "session_wrap-1")
+    _seed_draft_transcript(ProjectLayout.at(project_dir).sessions.runs / "session_sub-1")
+    _seed_report_trace(ProjectLayout.at(project_dir).sessions.runs / "session_wrap-1")
 
     res = CliRunner().invoke(main, ["reflect", "hypothesis"])
     assert res.exit_code == 0, res.output
@@ -168,8 +170,8 @@ def test_full_runs_both_phases(project_dir: Path, mock_runners):
     assert "HYP-001" in first_arg, "draft body (with HYP) must be substituted into preamble"
 
     # Both artifacts persisted
-    drafts = list((retros_dir(project_dir) / "judge").glob("*-draft.md"))
-    reports = list((retros_dir(project_dir) / "judge").glob("*-report.md"))
+    drafts = list((ProjectLayout.at(project_dir).sessions.retros / "judge").glob("*-draft.md"))
+    reports = list((ProjectLayout.at(project_dir).sessions.retros / "judge").glob("*-report.md"))
     assert len(drafts) == 1
     assert len(reports) == 1
 
@@ -228,9 +230,8 @@ def test_phase1_empty_draft_aborts_phase2(project_dir: Path, mock_runners):
 
     # Seed the sub-agent session output WITHOUT the BEGIN_JUDGE_DRAFT
     # markers. extract_marker → "", save_artifact writes empty file.
-    from ai_hats.paths import runs_dir
 
-    sub_session_dir = runs_dir(project_dir) / "session_sub-1"
+    sub_session_dir = ProjectLayout.at(project_dir).sessions.runs / "session_sub-1"
     sub_session_dir.mkdir(parents=True, exist_ok=True)
     (sub_session_dir / TRANSCRIPT_TXT).write_text(
         "(judge-auditor produced free-form text without markers)\n"

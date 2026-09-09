@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.opencode import OpenCodeSurface
 from ai_hats.surfaces.opencode.runtime_hooks import MANIFEST_VERSION, plugin_source
@@ -62,7 +63,7 @@ SESSION_ID = "20260822-000000-1-00000"
 
 
 def _config(project: Path, provider: OpenCodeSurface) -> dict:
-    path = provider.session_config_path(project, SESSION_ID)
+    path = provider.session_config_path(ProjectLayout.at(project), SESSION_ID)
     assert path.is_file()
     return json.loads(path.read_text())
 
@@ -74,10 +75,10 @@ def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> Non
     artifacts = BuiltArtifacts()
 
     provider.build_session_artifacts(
-        project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=artifacts
+        ProjectLayout.at(project), result, SESSION_ID, run_mode=RunMode.HITL, artifacts=artifacts
     )
 
-    cache_dir = session_cache_dir(project, SESSION_ID)
+    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
     manifest_path = cache_dir / "opencode" / "hooks.json"
     plugin_path = cache_dir / "opencode" / "plugin" / "ai-hats-hooks.mjs"
     assert manifest_path.is_file()
@@ -94,12 +95,10 @@ def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> Non
     assert pre[0]["command"].endswith("safety-guard/hooks/guard.sh")
     assert pre[0]["tag"].startswith("ai-hats:safety-guard:PreToolUse:")
 
-    from ai_hats.paths import cache_root
-
     assert manifest["permissions"] == [
         {
             "permission": "external_directory",
-            "prefix": f"{cache_root(project)}/",
+            "prefix": f"{ProjectLayout.at(project).cache.root}/",
             "action": "allow",
         }
     ]
@@ -119,22 +118,21 @@ def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> No
 
     project = _project(tmp_path)
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result([plain]),
         SESSION_ID,
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
 
-    cache_dir = session_cache_dir(project, SESSION_ID)
+    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
     manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
     assert manifest["hooks"] == {}
-    from ai_hats.paths import cache_root
 
     assert manifest["permissions"] == [
         {
             "permission": "external_directory",
-            "prefix": f"{cache_root(project)}/",
+            "prefix": f"{ProjectLayout.at(project).cache.root}/",
             "action": "allow",
         }
     ]
@@ -150,14 +148,14 @@ def test_unresolvable_script_is_skipped_from_manifest(tmp_path: Path) -> None:
     project = _project(tmp_path)
     artifacts = BuiltArtifacts()
     provider.build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         _fake_result([source]),
         SESSION_ID,
         run_mode=RunMode.HITL,
         artifacts=artifacts,
     )
 
-    cache_dir = session_cache_dir(project, SESSION_ID)
+    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
     manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
     assert manifest["hooks"]["PreToolUse"] == []
     config = _config(project, provider)

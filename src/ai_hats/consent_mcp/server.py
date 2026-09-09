@@ -27,8 +27,9 @@ from ai_hats.consent_wrapper import (
     load_config,
     match_operation,
 )
-from ai_hats.paths import tasks_dir
+from ai_hats.cli._entry import project_at
 from ai_hats.session_identity import SessionIdentity
+from ai_hats_core.layout import ProjectLayout
 from ai_hats_library.hooks import consent_ticket
 from ai_hats_library.hooks.bypass_journal import journal_bypass
 from ai_hats_library.hooks.consent_gate import operations
@@ -100,12 +101,15 @@ class Binding:
         )
 
 
-def read_transition(args: list[str], project: Path) -> tuple[tuple[str, ...], str]:
+def read_transition(args: list[str], layout: ProjectLayout) -> tuple[tuple[str, ...], str]:
     if not args or any("\x00" in arg for arg in args):
         raise ValueError("Expected rack transition arguments without NUL bytes")
     with transition.make_context("transition", list(args), help_option_names=[]) as ctx:
         target_dir = ctx.params["tasks_dir"]
-        if target_dir is not None and Path(target_dir).resolve() != tasks_dir(project).resolve():
+        if (
+            target_dir is not None
+            and Path(target_dir).resolve() != layout.tracker.tasks_dir.resolve()
+        ):
             raise ValueError("Cross-project --tasks-dir is not supported")
         state_ops = [op for op in parse_ops(ctx.params["op_tokens"]) if isinstance(op, StateOp)]
         if len(state_ops) != 1:
@@ -234,7 +238,9 @@ def build_server(binding: Binding) -> FastMCP:
         argv: tuple[str, ...] = ()
         started = False
         try:
-            argv, task_id = read_transition(args, binding.config.project_dir)
+            argv, task_id = read_transition(
+                args, project_at(binding.config.project_dir, binding.environ).layout
+            )
             result = result.model_copy(update={"task_id": task_id})
             source = await asyncio.to_thread(binding.source, task_id, argv)
             matched = match_operation("rack", argv, binding.config.policy, source_state=source)

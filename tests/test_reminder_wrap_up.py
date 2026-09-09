@@ -11,7 +11,6 @@ from pathlib import Path
 import yaml
 
 from ai_hats.retro.reminder import evaluate_wrap_up
-from ai_hats.paths import runs_dir, state_md_path, tasks_dir
 from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
 from ai_hats.paths import PROJECT_CONFIG
 
@@ -23,10 +22,10 @@ SESSION_START = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 def _setup_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    (tasks_dir(project)).mkdir(parents=True)
-    (state_md_path(project)).write_text("")
+    (ProjectLayout.at(project).tracker.tasks_dir).mkdir(parents=True)
+    (ProjectLayout.at(project).state_md).write_text("")
     (project / PROJECT_CONFIG).write_text("task_prefix: TST\n")
-    sdir = runs_dir(project) / session_dirname(SESSION_ID)
+    sdir = ProjectLayout.at(project).sessions.runs / session_dirname(SESSION_ID)
     sdir.mkdir(parents=True)
     return project
 
@@ -40,13 +39,15 @@ def _write_metrics(project: Path, **overrides) -> None:
         "tokens": {"cache_read": 12_500_000},  # 12 MB by default
     }
     metrics.update(overrides)
-    (runs_dir(project) / session_dirname(SESSION_ID) / METRICS_JSON).write_text(json.dumps(metrics))
+    (
+        ProjectLayout.at(project).sessions.runs / session_dirname(SESSION_ID) / METRICS_JSON
+    ).write_text(json.dumps(metrics))
 
 
 def _create_done_task(project: Path, task_id: str, closed_at: datetime) -> None:
     """Seed a closed card as literal yaml — HATS-1259 windows on ``completed_at``."""
     iso = closed_at.strftime("%Y-%m-%dT%H:%M:%SZ")
-    card_dir = tasks_dir(project) / task_id
+    card_dir = ProjectLayout.at(project).tracker.tasks_dir / task_id
     card_dir.mkdir(parents=True, exist_ok=True)
     (card_dir / "task.yaml").write_text(
         yaml.safe_dump(

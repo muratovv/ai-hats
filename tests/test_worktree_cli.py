@@ -15,7 +15,7 @@ from ai_hats.cli import main
 from ai_hats.cli.worktree import _effective_dir, _owner_root
 from ai_hats_wt import WorktreeManager
 from ai_hats_wt.env import PACKAGES_DIRNAME, SRC_DIRNAME
-from ai_hats.paths import worktrees_dir
+from ai_hats_core.layout import ProjectLayout
 
 
 pytestmark = pytest.mark.integration
@@ -81,7 +81,7 @@ class TestStatePersistence:
         mgr = WorktreeManager(
             git_project,
             branch_name="feat/test-save",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr.create()
         state_path = mgr.save_state()
@@ -111,7 +111,7 @@ class TestStatePersistence:
 
     def test_load_for_branch_returns_none_when_stale(self, git_project: Path) -> None:
         """If worktree dir was deleted externally, load cleans up."""
-        states_dir = worktrees_dir(git_project)
+        states_dir = ProjectLayout.at(git_project).sessions.worktrees
         states_dir.mkdir(parents=True, exist_ok=True)
         state_path = states_dir / "feat-stale.json"
         state_path.write_text(
@@ -125,7 +125,9 @@ class TestStatePersistence:
         )
         assert (
             WorktreeManager.load_for_branch(
-                git_project, "feat/stale", state_dir=worktrees_dir(git_project)
+                git_project,
+                "feat/stale",
+                state_dir=ProjectLayout.at(git_project).sessions.worktrees,
             )
             is None
         )
@@ -154,7 +156,9 @@ class TestPersistentMerge:
 
         assert (git_project / "result.txt").read_text() == "done"
         # State file is gone
-        assert not (worktrees_dir(git_project) / "feat-agent-task.json").exists()
+        assert not (
+            ProjectLayout.at(git_project).sessions.worktrees / "feat-agent-task.json"
+        ).exists()
         assert not wt.exists()
 
     def test_create_save_load_discard(self, git_project: Path) -> None:
@@ -173,7 +177,9 @@ class TestPersistentMerge:
 
         assert not (git_project / "junk.txt").exists()
         assert not wt.exists()
-        assert not (worktrees_dir(git_project) / "feat-bad-idea.json").exists()
+        assert not (
+            ProjectLayout.at(git_project).sessions.worktrees / "feat-bad-idea.json"
+        ).exists()
 
     def test_merge_no_squash(self, git_project: Path) -> None:
         """Regular merge (not squash)."""
@@ -277,7 +283,7 @@ def active_worktree(git_project: Path, monkeypatch):
     mgr = WorktreeManager(
         git_project,
         branch_name="feat/exec-test",
-        state_dir=worktrees_dir(git_project),
+        state_dir=ProjectLayout.at(git_project).sessions.worktrees,
     )
     wt = mgr.create()
     mgr.save_state()
@@ -363,7 +369,7 @@ class TestWtExec:
         mgr = WorktreeManager(
             git_project,
             branch_name="feat/notfound-test",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr.create()
         mgr.save_state()
@@ -389,12 +395,16 @@ class TestWtExec:
         the command runs in that worktree even when >1 is active (ambiguous)."""
         monkeypatch.chdir(git_project)
         mgr_a = WorktreeManager(
-            git_project, branch_name="feat/exec-a", state_dir=worktrees_dir(git_project)
+            git_project,
+            branch_name="feat/exec-a",
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr_a.create()
         mgr_a.save_state()
         mgr_b = WorktreeManager(
-            git_project, branch_name="feat/exec-b", state_dir=worktrees_dir(git_project)
+            git_project,
+            branch_name="feat/exec-b",
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_b = mgr_b.create()
         mgr_b.save_state()
@@ -603,7 +613,7 @@ class TestMergeRefusalNamesEveryBlocker:
         mgr = WorktreeManager(
             git_project,
             branch_name="feat/two-blockers",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt = mgr.create()
         mgr.save_state()

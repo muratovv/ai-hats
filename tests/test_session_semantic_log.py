@@ -9,11 +9,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats_observe import SessionManager
-from ai_hats.paths import runs_dir
+from ai_hats_core.layout import ProjectLayout
 
 
 def _session(tmp_path: Path):
-    return SessionManager(runs_dir=runs_dir(tmp_path)).create_session()
+    return SessionManager(runs_dir=ProjectLayout.at(tmp_path).sessions.runs).create_session()
 
 
 def test_semantic_methods_emit_expected_tags(tmp_path: Path) -> None:

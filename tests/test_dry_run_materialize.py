@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 import pytest
 
@@ -11,7 +13,6 @@ from ai_hats.dry_run import (
     dry_run_automate,
     dry_run_hitl,
 )
-from ai_hats.paths import session_cache_dir
 
 
 @pytest.fixture
@@ -44,10 +45,10 @@ def project(tmp_path: Path, monkeypatch) -> Path:
 
 
 def test_dry_run_materialize_leaves_tree_on_disk(project: Path):
-    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     assert not cache_mat.exists()
 
-    report = dry_run_hitl(project, provider="claude", materialize=True)
+    report = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
 
     assert report.escapes == ()
     assert cache_mat.is_dir()
@@ -63,10 +64,12 @@ def test_dry_run_materialize_leaves_tree_on_disk(project: Path):
 
 
 def test_dry_run_automate_materialize_leaves_tree_on_disk(project: Path):
-    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     assert not cache_mat.exists()
 
-    report = dry_run_automate(project, provider="claude", task="test task", materialize=True)
+    report = dry_run_automate(
+        ProjectLayout.at(project), provider="claude", task="test task", materialize=True
+    )
 
     assert report.escapes == ()
     assert cache_mat.is_dir()
@@ -77,10 +80,10 @@ def test_dry_run_automate_materialize_leaves_tree_on_disk(project: Path):
 
 
 def test_dry_run_default_leaves_nothing_on_disk(project: Path):
-    cache_std = session_cache_dir(project, DRY_RUN_SESSION_ID)
-    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    cache_std = ProjectLayout.at(project).cache.session(DRY_RUN_SESSION_ID)
+    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
 
-    report = dry_run_hitl(project, provider="claude", materialize=False)
+    report = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
 
     assert report.escapes == ()
     assert not cache_std.exists()
@@ -89,13 +92,13 @@ def test_dry_run_default_leaves_nothing_on_disk(project: Path):
 
 def test_dry_run_materialize_determinism_on_repeated_runs(project: Path):
     """S5 / R4: Two --materialize runs in a row yield identical plan entries and files."""
-    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
 
-    report1 = dry_run_hitl(project, provider="claude", materialize=True)
+    report1 = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
     entries1 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report1.plan.entries]
     files1 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
 
-    report2 = dry_run_hitl(project, provider="claude", materialize=True)
+    report2 = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
     entries2 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report2.plan.entries]
     files2 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
 
@@ -119,7 +122,7 @@ def test_a_second_materialize_waits_instead_of_wiping_the_first(project: Path, m
     from ai_hats.dry_run import _exclusive_rebuild
     from ai_hats.materialization import ApplyMaterializer
 
-    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -144,12 +147,12 @@ def test_a_held_lock_stalls_the_materializing_entry_point(project: Path):
 
     import filelock
 
-    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     started = perf_counter()
-    dry_run_hitl(project, provider="claude", materialize=True)
+    dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
     window = max(0.25, 5 * (perf_counter() - started))
 
     done = threading.Event()
@@ -157,7 +160,7 @@ def test_a_held_lock_stalls_the_materializing_entry_point(project: Path):
 
     def rebuild() -> None:
         try:
-            dry_run_hitl(project, provider="claude", materialize=True)
+            dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
         except Exception as exc:
             failure.append(exc)  # re-raised in the main thread, below
         finally:
@@ -176,28 +179,28 @@ def test_a_held_lock_does_not_stall_a_plain_dry_run(project: Path):
     """The default path writes nothing, so it has nothing to serialise against."""
     import filelock
 
-    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     with filelock.FileLock(str(lock_path)):
-        report = dry_run_hitl(project, provider="claude", materialize=False)
+        report = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
 
     assert report.plan.entries
 
 
 def test_dry_run_materialize_does_not_affect_subsequent_default_dry_run(project: Path):
     """S6 / R3: --materialize followed by default --dry-run leaves default report unchanged."""
-    report_clean = dry_run_hitl(project, provider="claude", materialize=False)
+    report_clean = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
     entries_clean = [
         (e.kind.value, str(e.target), e.size, e.digest) for e in report_clean.plan.entries
     ]
 
     # Run --materialize
-    dry_run_hitl(project, provider="claude", materialize=True)
+    dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
 
     # Run default dry-run again
-    report_after = dry_run_hitl(project, provider="claude", materialize=False)
+    report_after = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
     entries_after = [
         (e.kind.value, str(e.target), e.size, e.digest) for e in report_after.plan.entries
     ]

@@ -7,7 +7,6 @@ test at all, which is why the silence survived.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +14,7 @@ from ai_hats.assembler import HealthStatus
 
 
 class _BoomProvider:
-    def system_prompt_path(self, project_dir: Path):
+    def system_prompt_path(self, layout):
         raise RuntimeError("provider is installed but broken")
 
 
@@ -59,10 +58,11 @@ def test_a_provider_whose_prompt_path_raises_also_reports_unknown(monkeypatch, t
 def test_reinit_refuses_when_the_existing_config_will_not_load(monkeypatch, tmp_path):
     """It used to reset the project to claude in silence — an agy project included."""
     from ai_hats.cli import assembly
+    from ai_hats.initialization import InitConfigUnreadableError
     from ai_hats.paths import PROJECT_CONFIG
-    from ai_hats.pipeline.steps import init_steps
 
-    # `already` is derived from the config existing on disk, so it must be real.
+    # The one Assembler of an init run is built at the root, before any step; that is
+    # where a config that will not load has to refuse now.
     (tmp_path / PROJECT_CONFIG).write_text("provider: agy\n")
     monkeypatch.setattr(
         assembly,
@@ -70,10 +70,8 @@ def test_reinit_refuses_when_the_existing_config_will_not_load(monkeypatch, tmp_
         lambda project_dir: (_ for _ in ()).throw(ValueError("ai-hats.yaml is not valid YAML")),
     )
 
-    step = init_steps.SelectProviderStep()
-
-    with pytest.raises(init_steps.InitConfigUnreadableError) as excinfo:
-        step.run(project_dir=tmp_path, provider=None, role=None, channel=None, no_wizard=True)
+    with pytest.raises(InitConfigUnreadableError) as excinfo:
+        assembly.AssemblerBootstrapper(tmp_path)
 
     assert "not valid YAML" in str(excinfo.value)
 

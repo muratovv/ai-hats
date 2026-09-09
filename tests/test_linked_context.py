@@ -14,12 +14,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.linked_context import load_linked_context, load_ticket
-from ai_hats.paths import tasks_dir
 from ai_hats_rack.models import TaskCard
+from ai_hats_core.layout import ProjectLayout
 
 
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
-    card_dir = tasks_dir(project_dir) / card.id
+    card_dir = ProjectLayout.at(project_dir).tracker.tasks_dir / card.id
     # The rack's atomic write needs the card dir to exist (the tracker's went
     # through ai_hats_core.atomic_write_text, which created parents itself).
     card_dir.mkdir(parents=True, exist_ok=True)
@@ -60,7 +60,9 @@ def test_load_linked_context_module_assembles_links(tmp_path: Path) -> None:
         ),
     )
 
-    body = load_linked_context(tasks_root=tasks_dir(project_dir), ticket_id="HATS-902")
+    body = load_linked_context(
+        tasks_root=ProjectLayout.at(project_dir).tracker.tasks_dir, ticket_id="HATS-902"
+    )
     assert "EPIC DESCRIPTION BODY" in body
     assert "EPIC PLAN BODY" in body
     assert "RELEASE BODY" in body
@@ -72,7 +74,7 @@ def test_load_linked_context_module_empty_when_no_links(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_card(project_dir, TaskCard(id="HATS-902", title="lonely", state="execute"))
-    root = tasks_dir(project_dir)
+    root = ProjectLayout.at(project_dir).tracker.tasks_dir
     assert load_linked_context(tasks_root=root, ticket_id="HATS-902") == ""
     assert load_linked_context(tasks_root=root, ticket_id="HATS-404") == ""
     assert load_linked_context(tasks_root=root, ticket_id="") == ""
@@ -82,6 +84,6 @@ def test_load_ticket_module(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_card(project_dir, TaskCard(id="HATS-902", title="t", state="execute"))
-    root = tasks_dir(project_dir)
+    root = ProjectLayout.at(project_dir).tracker.tasks_dir
     assert "HATS-902" in load_ticket(tasks_root=root, ticket_id="HATS-902")
     assert load_ticket(tasks_root=root, ticket_id="HATS-404") == ""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from ai_hats_core import ComponentKind, ResolvedComponent
@@ -29,7 +31,7 @@ def test_materializes_skill(tmp_path: Path) -> None:
     skill = _make_skill("alpha", skills_root)
     target = tmp_path / ".agy" / "skills"
 
-    materialize_skills_dir(target, [skill], tmp_path, ApplyMaterializer())
+    materialize_skills_dir(target, [skill], ProjectLayout.at(tmp_path), ApplyMaterializer())
 
     assert (target / "alpha" / "SKILL.md").is_file()
 
@@ -41,8 +43,8 @@ def test_role_change_sweeps_unreferenced_skill(tmp_path: Path) -> None:
     beta = _make_skill("beta", skills_root)
     target = tmp_path / "skills"
 
-    materialize_skills_dir(target, [alpha], tmp_path, ApplyMaterializer())
-    materialize_skills_dir(target, [beta], tmp_path, ApplyMaterializer())
+    materialize_skills_dir(target, [alpha], ProjectLayout.at(tmp_path), ApplyMaterializer())
+    materialize_skills_dir(target, [beta], ProjectLayout.at(tmp_path), ApplyMaterializer())
 
     assert not (target / "alpha").exists()
     assert (target / "beta" / "SKILL.md").is_file()
@@ -64,7 +66,7 @@ def test_rebuild_wipes_anything_not_in_the_composition(tmp_path: Path) -> None:
     stale.mkdir(parents=True)
     (stale / "SKILL.md").write_text("# stale\n")
 
-    materialize_skills_dir(target, [alpha], tmp_path, ApplyMaterializer())
+    materialize_skills_dir(target, [alpha], ProjectLayout.at(tmp_path), ApplyMaterializer())
 
     assert (target / "alpha" / "SKILL.md").is_file()
     assert not stale.exists()
@@ -78,7 +80,7 @@ def test_expands_placeholder_in_skill_md_only(tmp_path: Path) -> None:
     (alpha.source_path / "asset.txt").write_text("verbatim <ai_hats_dir>\n")
     target = tmp_path / "skills"
 
-    materialize_skills_dir(target, [alpha], tmp_path, ApplyMaterializer())
+    materialize_skills_dir(target, [alpha], ProjectLayout.at(tmp_path), ApplyMaterializer())
 
     materialized = (target / "alpha" / "SKILL.md").read_text()
     assert "<ai_hats_dir>" not in materialized

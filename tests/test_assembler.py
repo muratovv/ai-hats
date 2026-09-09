@@ -5,23 +5,14 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import (
-    AI_HATS_MANAGED_MARKER,
-    claude_plugin_manifest,
-    claude_skills_dir,
-    hooks_dir,
-    rules_dir,
-    runs_dir,
-    skills_dir,
-    state_md_path,
-    tasks_dir,
-)
+from ai_hats.paths import AI_HATS_MANAGED_MARKER, claude_plugin_manifest, claude_skills_dir
 from ai_hats_core.layout import ProjectLayout
 
 # HATS-469: ``Assembler.bump()`` was removed; use the test-side pipeline
 # helper that mirrors ``cli/assembly.py::do_bump``.
 from tests._assembler_helpers import bump_pipeline
 from ai_hats.paths import PROJECT_CONFIG
+import os
 
 
 @pytest.fixture
@@ -102,13 +93,13 @@ def test_init_creates_structure(tmp_path):
     asm = Assembler(project)
     asm.init()
 
-    assert (rules_dir(project)).is_dir()
-    assert (skills_dir(project)).is_dir()
-    assert not (hooks_dir(project)).exists()
-    assert (tasks_dir(project)).is_dir()
-    assert (runs_dir(project)).is_dir()
+    assert (ProjectLayout.compute(project, os.environ).library.rules).is_dir()
+    assert (ProjectLayout.compute(project, os.environ).library.skills).is_dir()
+    assert not (ProjectLayout.compute(project, os.environ).library.hooks).exists()
+    assert (ProjectLayout.compute(project, os.environ).tracker.tasks_dir).is_dir()
+    assert (ProjectLayout.compute(project, os.environ).sessions.runs).is_dir()
     assert (project / PROJECT_CONFIG).exists()
-    assert (state_md_path(project)).exists()
+    assert (ProjectLayout.compute(project, os.environ).state_md).exists()
 
 
 def test_init_is_idempotent(tmp_path):
@@ -120,7 +111,7 @@ def test_init_is_idempotent(tmp_path):
     asm.init()
     asm.init()  # Second call should not fail
 
-    assert (rules_dir(project)).is_dir()
+    assert (ProjectLayout.compute(project, os.environ).library.rules).is_dir()
 
 
 def test_set_role(project_with_library):
@@ -141,8 +132,8 @@ def test_set_role(project_with_library):
     assert "Role injection" in prompt
     # HATS-407: rules/skills are NOT copied into the canonical library tree.
     # Composition resolves them in-memory via the library layers.
-    assert not (rules_dir(project) / "test_rule").exists()
-    assert not (skills_dir(project) / "test_skill").exists()
+    assert not (ProjectLayout.compute(project, os.environ).library.rules / "test_rule").exists()
+    assert not (ProjectLayout.compute(project, os.environ).library.skills / "test_skill").exists()
 
 
 def test_set_role_with_claude(project_with_library):
@@ -565,7 +556,7 @@ def test_preserve_local_rules(project_with_library):
     asm.set_role("test-role")
 
     # Add a project-local rule
-    local_rule = rules_dir(project) / "my_local_rule"
+    local_rule = ProjectLayout.compute(project, os.environ).library.rules / "my_local_rule"
     local_rule.mkdir(parents=True)
     (local_rule / "rule.md").write_text("# My Local Rule")
 
@@ -573,7 +564,9 @@ def test_preserve_local_rules(project_with_library):
     asm.set_role("test-role")
 
     # Local rule should still exist
-    assert (rules_dir(project) / "my_local_rule" / "rule.md").exists()
+    assert (
+        ProjectLayout.compute(project, os.environ).library.rules / "my_local_rule" / "rule.md"
+    ).exists()
 
 
 # HATS-407: rollback / _backup / _restore_backup helpers removed.
@@ -595,7 +588,7 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     # Build override for other-role
     provider = ClaudeSurface()
     result = asm.composer.compose("other-role")
-    args, env, _ = provider.build_session_prompt(project, result, "test-sid")
+    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
 
     # HATS-307: args now include --system-prompt-file AND --plugin-dir
     assert args[0] == "--system-prompt-file"
@@ -632,7 +625,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
 
     provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
-    args, _, _ = provider.build_session_prompt(project, result, "test-sid")
+    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
 
     assert "--plugin-dir" in args
     plugin_dir = Path(args[args.index("--plugin-dir") + 1])
@@ -659,7 +652,7 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
 
     provider = ClaudeSurface()
     result = asm.composer.compose("other-role")
-    args, _, _ = provider.build_session_prompt(project, result, "test-sid")
+    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
 
     # CLAUDE.md unchanged
     assert (project / "CLAUDE.md").read_text() == original_content
@@ -683,7 +676,7 @@ def test_agy_build_session_prompt_creates_rules_dir(project_with_library):
 
     provider = AgySurface()
     result = asm.composer.compose("other-role")
-    args, env, _ = provider.build_session_prompt(project, result, "test-sid")
+    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
 
     assert args[0] == "--add-dir"
     assert set(env) == {"AI_HATS_SESSION_CACHE_DIR"}  # the dispatcher pin (HATS-1398)
@@ -1097,8 +1090,12 @@ def test_managed_manifest_absent_after_set_role(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    assert not (skills_dir(project) / ".ai-hats-managed").exists()
-    assert not (hooks_dir(project) / ".ai-hats-managed").exists()
+    assert not (
+        ProjectLayout.compute(project, os.environ).library.skills / ".ai-hats-managed"
+    ).exists()
+    assert not (
+        ProjectLayout.compute(project, os.environ).library.hooks / ".ai-hats-managed"
+    ).exists()
 
 
 def test_user_hook_survives_bump(project_with_library):
@@ -1110,8 +1107,8 @@ def test_user_hook_survives_bump(project_with_library):
 
     # Ensure the dir exists (post-HATS-407 it may be empty until the user
     # drops a file in it — _copy_components no longer pre-populates).
-    hooks_dir(project).mkdir(parents=True, exist_ok=True)
-    user_hook = hooks_dir(project) / "my-custom.sh"
+    ProjectLayout.compute(project, os.environ).library.hooks.mkdir(parents=True, exist_ok=True)
+    user_hook = ProjectLayout.compute(project, os.environ).library.hooks / "my-custom.sh"
     user_hook.write_text("#!/usr/bin/env bash\necho custom\n")
 
     bump_pipeline(asm)
@@ -1127,8 +1124,8 @@ def test_user_skill_dir_survives_bump(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    skills_dir(project).mkdir(parents=True, exist_ok=True)
-    user_skill = skills_dir(project) / "my_local_skill"
+    ProjectLayout.compute(project, os.environ).library.skills.mkdir(parents=True, exist_ok=True)
+    user_skill = ProjectLayout.compute(project, os.environ).library.skills / "my_local_skill"
     user_skill.mkdir()
     (user_skill / "SKILL.md").write_text("# local\n")
 
@@ -1137,7 +1134,7 @@ def test_user_skill_dir_survives_bump(project_with_library):
     assert (user_skill / "SKILL.md").exists()
     # HATS-407: library-sourced skills are no longer copied into the
     # canonical tree. They are resolved in-memory at session-compose time.
-    assert not (skills_dir(project) / "test_skill").exists()
+    assert not (ProjectLayout.compute(project, os.environ).library.skills / "test_skill").exists()
 
 
 # --------------------------------------------------------------------- #
@@ -1267,7 +1264,7 @@ def test_agy_build_session_prompt_has_no_literal_placeholder(
     asm.init()
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _, _ = AgySurface().build_session_prompt(project, result, "test-sid")
+    args, _, _ = AgySurface().build_session_prompt(ProjectLayout.at(project), result, "test-sid")
     override = Path(args[1]) / "GEMINI.md"
     content = override.read_text()
     assert "<ai_hats_dir>" not in content
@@ -1288,7 +1285,7 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _, _ = ClaudeSurface().build_session_prompt(project, result, "test-sid")
+    args, _, _ = ClaudeSurface().build_session_prompt(ProjectLayout.at(project), result, "test-sid")
     # build_session_prompt returns ["--system-prompt-file", <path>]
     prompt_file = Path(args[args.index("--system-prompt-file") + 1])
     content = prompt_file.read_text()
@@ -1320,9 +1317,13 @@ def _sdk_audit(provider, project, result, *, task: str) -> str:
 
     artifacts = BuiltArtifacts(port=PlanMaterializer())
     provider.build_session_artifacts(
-        project, result, "audit-probe", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+        ProjectLayout.at(project),
+        result,
+        "audit-probe",
+        run_mode=RunMode.AUTOMATE,
+        artifacts=artifacts,
     )
-    return render_sdk_prompt_audit(artifacts, project, task=task, ticket_id="")
+    return render_sdk_prompt_audit(artifacts, ProjectLayout.at(project), task=task, ticket_id="")
 
 
 def test_subagent_meta_prompt_has_no_literal_placeholder(
@@ -1353,7 +1354,6 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
     dump was ~5.4K tok of mostly-completed-task dead weight per sub-agent run,
     and the dominant consumer (session-reviewer) never used it; the backlog is
     reachable on-demand via the `ai-hats task` CLI."""
-    from ai_hats.paths import state_md_path
     from ai_hats.surface_registry import get_surface
 
     project, lib = project_with_placeholder_library
@@ -1363,7 +1363,7 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
     result = asm.composer.compose("ph-role")
 
     # STATE.md exists with real backlog content — the thing we must NOT inject.
-    state_md_path(project).write_text(
+    ProjectLayout.compute(project, os.environ).state_md.write_text(
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
@@ -1378,7 +1378,6 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
     """HATS-681: the SDK first-user-message (captured in the meta_prompt.txt
     forensic audit) must not carry PROJECT_STATE either — same rationale as the
     legacy path."""
-    from ai_hats.paths import state_md_path
     from ai_hats.runtime import SubAgentRunner
 
     project, lib = project_with_placeholder_library
@@ -1387,7 +1386,7 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
     asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
-    state_md_path(project).write_text(
+    ProjectLayout.compute(project, os.environ).state_md.write_text(
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
@@ -1396,7 +1395,9 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
     runner = SubAgentRunner(
         ProjectLayout.at(project),
         _subagent_payload(result),
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        session_mgr=SessionManager(
+            project, runs_dir=ProjectLayout.compute(project, os.environ).sessions.runs
+        ),
     )
     audit = _sdk_audit(runner.payload.provider, project, result, task="do the real thing")
 

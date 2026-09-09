@@ -10,7 +10,8 @@ why: without update cache invalidation, upgrade banners persist on terminal afte
 
 from __future__ import annotations
 
-from ai_hats.paths import cache_root
+from ai_hats_core.layout import ProjectLayout
+
 
 import json
 import os
@@ -74,7 +75,7 @@ def test_e2e_self_update_clears_update_cache(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 
     # ----- seed a stale update-check cache before the update -----
-    cache_file = cache_root(project) / "update-check.json"
+    cache_file = ProjectLayout.at(project).cache.root / "update-check.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(
         json.dumps(

@@ -102,7 +102,8 @@ sharing a basename never collide. It also holds the update-check probe mirror
 and `update-check.json`. Everything under it is machine-only, regenerable and
 never versioned; keeping it out of the project spares the watchers, `git status`
 runs, greps and indexers that a project tree pays for. Resolvers: `cache_home()`
-/ `project_key()` / `cache_root()` in `src/ai_hats/paths/_dirs.py`.
+/ `project_key()` and the `cache` view of `ProjectLayout` in
+`packages/ai-hats-core/src/ai_hats_core/layout.py`.
 
 **What this means in practice.** Nothing about a composition change needs a
 command. `ai-hats.yaml` is re-read and the role re-composed at every launch, so

@@ -7,6 +7,8 @@ deliberately does NOT share, since that channel is uniformly fail-closed.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import stat
@@ -33,7 +35,6 @@ from ai_hats_core.deadline import Deadline
 
 from ai_hats.hook_exec import run_hook
 from ai_hats.models import AppBinding
-from ai_hats.paths import session_cache_dir
 from ai_hats_rack.checks import CheckSubscriber, check_subscriber
 
 from ai_hats.rack_consumers import (
@@ -50,7 +51,11 @@ def _extension(project_dir, *, tasks_dir, topology, resolve=None, **kwargs) -> C
     ``CheckRunnerExtension`` exposed for the same reason."""
     kwargs.setdefault("backlog", "tasks")
     return CheckSubscriber(
-        AiHatsCheckPort(project_dir, catalog=tasks_dir, resolve=resolve),
+        AiHatsCheckPort(
+            None if project_dir is None else ProjectLayout.at(project_dir),
+            catalog=tasks_dir,
+            resolve=resolve,
+        ),
         topology=topology,
         **kwargs,
     )
@@ -130,7 +135,7 @@ def test_pack_covers_every_edge_of_the_given_topology(tmp_path):
     """
     topology = _topology()
     pack = consumer_subscribers(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         definition=_definition(topology, tmp_path=tmp_path),
         catalog=tmp_path / "tasks",
     )
@@ -163,7 +168,7 @@ def test_the_pack_judges_rows_against_the_topology_handed_through_the_seam(tmp_p
     runner = check_subscriber(
         _definition(_topology(), tmp_path=tmp_path),
         port=AiHatsCheckPort(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             catalog=tmp_path / "tasks",
             resolve=lambda: (_check(script, point="open->review"),),
         ),
@@ -212,9 +217,8 @@ def test_a_bound_check_on_an_unowned_backlog_refuses_in_words(tmp_path):
 
 def _wt_state(project_dir: Path, task_id: str, worktree: Path) -> Path:
     """The worktree-state record rack writes at execute, as the runner reads it."""
-    from ai_hats.paths import worktrees_dir
 
-    state_dir = worktrees_dir(project_dir)
+    state_dir = ProjectLayout.at(project_dir).sessions.worktrees
     state_dir.mkdir(parents=True, exist_ok=True)
     state_path = state_dir / f"task-{task_id.lower()}.json"
     state_path.write_text(
@@ -801,9 +805,8 @@ def _composition(*, checks: tuple[ResolvedCheck, ...] = (), errors: list[str] | 
 
 def _mirror_root(project_dir: Path, session_id: str) -> Path:
     """Where the stub surface below mirrors this session's composed skills."""
-    from ai_hats.paths import session_cache_dir
 
-    return session_cache_dir(project_dir, session_id) / "mirror"
+    return ProjectLayout.at(project_dir).cache.session(session_id) / "mirror"
 
 
 def _identity(project_dir: Path, session_id: str, skills_root: Path | None = None):
@@ -1025,7 +1028,7 @@ def test_the_mirror_root_is_followed_verbatim_never_guessed(tmp_path, layout):
     launch (pinned in ``test_session_identity_launch.py``) and the answer rides
     the envelope. What is proven here is that the channel adds nothing to it.
     """  # comment-length: allow — which half of the invariant lives where
-    root = session_cache_dir(tmp_path, "sess-a") / layout
+    root = ProjectLayout.at(tmp_path).cache.session("sess-a") / layout
     live = _script(tmp_path, "exit 0")
     mirrored_dir = root / "quality::gates"
     mirrored_dir.mkdir(parents=True)

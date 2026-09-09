@@ -7,6 +7,8 @@ Verifies that for every surface provider:
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 import pytest
@@ -57,7 +59,9 @@ def test_role_propagation_and_hook_materialization_parity(
     provider = provider_cls()
     sid = f"sid-{provider.name}"
 
-    args, env, prompt = provider.build_session_prompt(project, composition_result, sid)
+    args, env, prompt = provider.build_session_prompt(
+        ProjectLayout.at(project), composition_result, sid
+    )
 
     # 1. Verify role propagation: prompt contains role injection + priorities
     assert "## ROLE INJECTION" in prompt
@@ -70,15 +74,14 @@ def test_role_propagation_and_hook_materialization_parity(
         skill_mat = plugin_path / "skills" / "my-skill" / "SKILL.md"
         hook_mat = plugin_path / "skills" / "my-skill" / "hooks" / "pre_tool.sh"
     elif provider.name == "agy":
-        skills_root = provider._session_skills_dir(project, sid)
+        skills_root = provider._session_skills_dir(ProjectLayout.at(project), sid)
         skill_mat = skills_root / "my-skill" / "SKILL.md"
         hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
     elif provider.name == "cline":
         # HATS-1171: cline skills materialize into the per-session cache, not the
         # project root (clean-root invariant); delivered to cline via --config.
-        from ai_hats.paths import session_cache_dir
 
-        skills_root = session_cache_dir(project, sid) / "skills"
+        skills_root = ProjectLayout.at(project).cache.session(sid) / "skills"
         skill_mat = skills_root / "my-skill" / "SKILL.md"
         hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
         assert not (project / ".cline").exists()  # clean root

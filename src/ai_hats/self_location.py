@@ -70,7 +70,7 @@ def classify_invocation(
 
     ``running_prefix`` is the venv root the live interpreter belongs to
     (``sys.prefix``). ``resolved_venv`` is the venv ai-hats *would* resolve for
-    the current project (``ai_hats.paths.venv_path`` / the launcher's
+    the current project (``Project.venv`` / the launcher's
     ``AI_HATS_VENV`` pin), or ``None`` when no project / resolution failed.
 
     Contract (sanctioned ⇒ allow; the policy is FAIL-OPEN — only a positively

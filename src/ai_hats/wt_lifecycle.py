@@ -57,7 +57,7 @@ class WorktreeHookError(Exception):
 
 def _wt_hook_log_dir(state_dir, branch_name: str):
     # ADR-0013 D4 / HATS-851: resolve hook-logs off the manager's INJECTED
-    # state-dir base (ctx.state_dir), not a recomputed worktrees_dir(project_dir),
+    # state-dir base (ctx.state_dir), not a recomputed layout.sessions.worktrees,
     # so state + hook-logs stay co-located even under a custom-base driver.
     return state_dir / f"{_state_key(branch_name)}.logs"
 

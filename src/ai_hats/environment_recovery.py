@@ -39,7 +39,7 @@ from pathlib import Path
 # consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
-from .paths import ai_hats_dir, cache_home, cache_root, session_cache_root, versions_root
+from ai_hats_core.layout import ProjectLayout
 from .runs_retention import sweep_runs
 from .session_liveness import LazyLiveness as _LazyLiveness
 from .session_liveness import session_owners
@@ -58,7 +58,7 @@ PROJECT_KEY_TTL_DAYS = 9
 
 
 def _sweep_orphan_session_caches(
-    project_dir: Path,
+    layout: ProjectLayout,
     ttl_hours: int = SESSION_CACHE_TTL_HOURS,
     *,
     liveness: _LazyLiveness | None = None,
@@ -72,8 +72,8 @@ def _sweep_orphan_session_caches(
     """
     cutoff = time.time() - ttl_hours * 3600
     liveness = liveness or _LazyLiveness()
-    _expire_session_dirs(session_cache_root(project_dir), cutoff, liveness)
-    _drain_workspace_cache(ai_hats_dir(project_dir) / ".cache", cutoff, liveness)
+    _expire_session_dirs(layout.cache.sessions, cutoff, liveness)
+    _drain_workspace_cache(layout.base / ".cache", cutoff, liveness)
 
 
 def _expire_session_dirs(root: Path, cutoff: float, liveness: _LazyLiveness) -> None:
@@ -164,7 +164,7 @@ def _key_last_touched(key_dir: Path) -> float:
 
 
 def _sweep_orphan_project_keys(
-    project_dir: Path,
+    layout: ProjectLayout,
     ttl_days: int = PROJECT_KEY_TTL_DAYS,
     *,
     liveness: _LazyLiveness | None = None,
@@ -179,12 +179,12 @@ def _sweep_orphan_project_keys(
     says (HATS-1339): a long session never touches its key's direct children
     again, so the ttl read it as abandoned and took the running session with it.
     """
-    own_key = cache_root(project_dir).name
+    own_key = layout.cache.root.name
     cutoff = time.time() - ttl_days * 86400
     session_cutoff = time.time() - SESSION_CACHE_TTL_HOURS * 3600
     liveness = liveness or _LazyLiveness()
     try:
-        entries = list(cache_home().iterdir())
+        entries = list(layout.cache.root.parent.iterdir())
     except FileNotFoundError:
         return  # silent-ok: no cache home yet — a first run has nothing to sweep
     except OSError as exc:
@@ -259,8 +259,8 @@ def _rmdir_quiet(path: Path) -> None:
 class EnvironmentRecovery:
     """Real recovery: ref-write first (protect our own pin), then sweeps + reclaim."""
 
-    def __init__(self, project_dir: Path) -> None:
-        self.project_dir = project_dir
+    def __init__(self, layout: ProjectLayout) -> None:
+        self.layout = layout
 
     def run(self) -> None:
         # Order matters: write THIS run's ref before any reclaim can observe the
@@ -270,12 +270,12 @@ class EnvironmentRecovery:
         # the session-cache sweep stay OUTSIDE the version lock: the ref must
         # never be skipped (it declares our pin), and the cache sweep mutates a
         # different tree (sessions/, not versions/).
-        write_current_run_ref(self.project_dir)
+        write_current_run_ref(self.layout.versions)
         # One process table for both sweeps, read only if one of them needs it.
         liveness = _LazyLiveness()
-        _sweep_orphan_session_caches(self.project_dir, liveness=liveness)
-        _sweep_orphan_project_keys(self.project_dir, liveness=liveness)
-        sweep_runs(self.project_dir, liveness=liveness)
+        _sweep_orphan_session_caches(self.layout, liveness=liveness)
+        _sweep_orphan_project_keys(self.layout, liveness=liveness)
+        sweep_runs(self.layout, liveness=liveness)
 
         # The version GC mutates versions/ — serialize it against a concurrent
         # `self update` (acquire) or a peer GC pass under the crash-safe lock
@@ -288,12 +288,12 @@ class EnvironmentRecovery:
         # mid-sweep (a vanishing dir, permissions, a full disk) is swallowed too
         # (WARNING — no-silent-caps) rather than propagated up through
         # create_session; the next invocation retries.
-        if versions_root(self.project_dir).exists():
+        if self.layout.versions.root.exists():
             try:
-                with versions_lock(self.project_dir, timeout=GC_LOCK_TIMEOUT):
-                    for residue in sweep_incomplete_versions(self.project_dir):
+                with versions_lock(self.layout.versions, timeout=GC_LOCK_TIMEOUT):
+                    for residue in sweep_incomplete_versions(self.layout):
                         logger.warning("reclaimed incomplete version residue: %s", residue.name)
-                    for orphan in reclaim_orphan_versions(self.project_dir):
+                    for orphan in reclaim_orphan_versions(self.layout):
                         logger.warning("reclaimed orphaned version: %s", orphan.name)
             except VersionLockError:
                 logger.info(
@@ -308,6 +308,6 @@ class EnvironmentRecovery:
         # OUTSIDE the version lock: .venv lives outside versions/, the reclaim is
         # idempotent, and its current_run_sha guard makes it a no-op on a
         # legacy/override/editable run, so it is safe at this universal seam.
-        reclaimed_venv = reclaim_legacy_venv(self.project_dir)
+        reclaimed_venv = reclaim_legacy_venv(self.layout)
         if reclaimed_venv is not None:
             logger.warning("reclaimed legacy .venv: %s", reclaimed_venv)

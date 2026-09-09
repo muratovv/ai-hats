@@ -12,6 +12,8 @@ why:    relative hook paths fail when invoked from subdirectories, leaving safet
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import subprocess
 from pathlib import Path
@@ -55,7 +57,6 @@ def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
 
 def _managed_guard_command(project: Path) -> str:
     from ai_hats.assembler import Assembler
-    from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
@@ -63,9 +64,13 @@ def _managed_guard_command(project: Path) -> str:
     asm = Assembler(project)
     result = asm.composer.compose("assistant")
     provider.build_session_artifacts(
-        project, result, "sid-cwd-res", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        result,
+        "sid-cwd-res",
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
-    cache_settings = session_cache_dir(project, "sid-cwd-res") / "settings.json"
+    cache_settings = ProjectLayout.at(project).cache.session("sid-cwd-res") / "settings.json"
     return composed_row(cache_settings, GUARD_TAG)["command"]
 
 

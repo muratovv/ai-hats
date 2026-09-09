@@ -9,9 +9,11 @@ back to a bare cwd — so the HATS-839 creator guards the write path here instea
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import pytest
 
-from ai_hats.paths import NotAnAiHatsProjectError
+from ai_hats.rack_workspace import NotAnAiHatsProjectError
 from ai_hats.paths.constants import ENV_AI_HATS_DIR, PROJECT_CONFIG
 from ai_hats.rack_workspace import create_proposal, ensure_backlog, rack_workspace
 
@@ -28,7 +30,7 @@ def test_ensure_backlog_refuses_a_stray_root(tmp_path):
     stray.mkdir()
 
     with pytest.raises(NotAnAiHatsProjectError):
-        ensure_backlog(stray, "hypotheses")
+        ensure_backlog(ProjectLayout.at(stray), "hypotheses")
 
     assert not (stray / ".agent").exists(), "phantom tracker bootstrapped at a stray root"
 
@@ -38,11 +40,11 @@ def test_ensure_backlog_seeds_an_onboarded_project(tmp_path):
     (tmp_path / PROJECT_CONFIG).write_text("schema_version: 4\nprovider: claude\n")
     catalog = tmp_path / ".agent" / "ai-hats" / "tracker" / "backlog" / "hypotheses"
 
-    ensure_backlog(tmp_path, "hypotheses")
+    ensure_backlog(ProjectLayout.at(tmp_path), "hypotheses")
     assert (catalog / "backlog.yaml").is_file()
 
     before = (catalog / "backlog.yaml").read_text()
-    ensure_backlog(tmp_path, "hypotheses")
+    ensure_backlog(ProjectLayout.at(tmp_path), "hypotheses")
     assert (catalog / "backlog.yaml").read_text() == before
 
 
@@ -58,7 +60,7 @@ def test_card_create_cannot_reach_its_mkdir_on_a_stray_root(tmp_path):
 
     with pytest.raises(Exception, match="no backlog for id prefix"):
         create_proposal(
-            rack_workspace(stray),
+            rack_workspace(ProjectLayout.at(stray)),
             title="t",
             category="process",
             target="x",

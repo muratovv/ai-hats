@@ -10,6 +10,8 @@ runtime-hook chain from the same session cache.
 from __future__ import annotations
 
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 from ai_hats.surfaces import Surface
@@ -78,14 +80,14 @@ class ClineSurface(Surface):
             end_ts=end_ts,
         )
 
-    def system_prompt_path(self, project_dir: Path) -> Path | None:
+    def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         # Inline-only surface — no root file managed.
-        del project_dir
+        del layout
         return None
 
-    def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
+    def update_system_prompt(self, layout: ProjectLayout, content: str) -> Path | None:
         # Inline-only surface: set_role must not write a CLINE.md cline would ignore.
-        del project_dir, content
+        del layout, content
         return None
 
     def rules_dir(self, session_dir: Path) -> Path:
@@ -107,91 +109,91 @@ class ClineSurface(Surface):
             cmd.insert(1, "-i")
         return super().get_cli_launch_args(cmd, session_id, is_resume)
 
-    def _cache_dir(self, project_dir: Path, session_id: str, artifacts: BuiltArtifacts) -> Path:
-        from ai_hats.paths import session_cache_dir
+    def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
 
-        cache_dir = session_cache_dir(project_dir, session_id)
+        cache_dir = layout.cache.session(session_id)
         artifacts.port.mkdir(cache_dir)
         return cache_dir
 
     # -- context ---------------------------------------------------------------
 
-    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
         """Role inline via -s. The TUI flag is launch mode, not context — see
         ``get_cli_launch_args`` (HATS-1207: gating CONTEXT must not drop -i)."""
+        project_dir = layout.root
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
-        self._cache_dir(project_dir, session_id, artifacts)
+        self._cache_dir(layout, session_id, artifacts)
         prompt = self.build_system_prompt(result)
-        prompt = expand_path_placeholders(prompt, project_dir)
+        prompt = expand_path_placeholders(prompt, layout)
         prompt = expand_role_catalog(prompt, project_dir)
         artifacts.full_content = prompt
         artifacts.cli_args.extend(["-s", prompt])
 
-    def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
+    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
         """Role sections inline in the meta-prompt — no flag."""
+        project_dir = layout.root
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
-        self._cache_dir(project_dir, session_id, artifacts)
+        self._cache_dir(layout, session_id, artifacts)
         prompt = self.build_system_prompt(result)
-        prompt = expand_path_placeholders(prompt, project_dir)
+        prompt = expand_path_placeholders(prompt, layout)
         prompt = expand_role_catalog(prompt, project_dir)
         artifacts.full_content = prompt
 
     # -- skills ----------------------------------------------------------------
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+    def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
         """HATS-1540: what a bound check resolves its script from in-session."""
-        from ai_hats.paths import session_cache_dir
 
-        return session_cache_dir(project_dir, session_id) / "skills"
+        return layout.cache.session(session_id) / "skills"
 
-    def _deliver_skills(self, project_dir, result, session_id, artifacts) -> None:
+    def _deliver_skills(self, layout, result, session_id, artifacts) -> None:
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
-        cache_dir = self._cache_dir(project_dir, session_id, artifacts)
-        skills_dir = self.session_skills_root(project_dir, session_id)
+        cache_dir = self._cache_dir(layout, session_id, artifacts)
+        skills_dir = self.session_skills_root(layout, session_id)
         # Shared with agy: a private copy drifted and lost the
         # {{backlog_fsm_edges}} expansion the shared one has done since HATS-1051.
-        materialize_skills_dir(skills_dir, result.skills, project_dir, artifacts.port)
+        materialize_skills_dir(skills_dir, result.skills, layout, artifacts.port)
         # cline scans <T()>/skills; --config sets T()=cache_dir (spike HATS-1191).
         # CLINE_DATA_DIR (get_env) keeps auth/state off this ephemeral base.
         artifacts.cli_args.extend(["--config", str(cache_dir)])
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
         artifacts.materialized.append(skills_dir)
 
-    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_skills(layout, result, session_id, artifacts)
 
-    def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_skills(layout, result, session_id, artifacts)
 
     # -- hooks -----------------------------------------------------------------
 
-    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
+    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
         from .runtime_hooks import materialize_runtime_hooks
 
         hooks_dir = materialize_runtime_hooks(
-            project_dir,
+            layout,
             result,
             session_id,
             artifacts,
-            skills_dir=self.session_skills_root(project_dir, session_id),
+            skills_dir=self.session_skills_root(layout, session_id),
         )
         if hooks_dir is not None:
             artifacts.cli_args.extend(["--hooks-dir", str(hooks_dir)])
 
-    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
-    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
     def build_session_prompt(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: str,
     ) -> tuple[list[str], dict[str, str], str]:
@@ -201,7 +203,7 @@ class ClineSurface(Surface):
         exact bytes WrapRunner persists to ``meta_prompt.txt`` (HATS-523).
         """
         artifacts = self.build_session_artifacts(
-            project_dir,
+            layout,
             result,
             session_id,
             run_mode=RunMode.HITL,
@@ -211,7 +213,7 @@ class ClineSurface(Surface):
 
     def materialize_runtime_skills(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: str,
     ) -> list[str]:
@@ -222,7 +224,7 @@ class ClineSurface(Surface):
         so the headless path lands skills in the cache too (no project-root leak).
         """
         artifacts = self.build_session_artifacts(
-            project_dir,
+            layout,
             result,
             session_id,
             run_mode=RunMode.AUTOMATE,
@@ -245,24 +247,25 @@ class ClineSurface(Surface):
         kept = [a for a in (cmd or ["cline"]) if a not in ("-i", "--tui")]
         return [*kept, "--yolo", "--json", meta_prompt]
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
         """Pure: the hub port reads as the launch's to pick (HATS-1554)."""
         from ai_hats.session_artifacts import AT_LAUNCH
 
-        return self._env(project_dir, hub_port=AT_LAUNCH)
+        return self._env(layout, hub_port=AT_LAUNCH)
 
-    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def claim_launch_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
         """Bind the hub port. Only a real launch may take one."""
         del session_dir
         return {"CLINE_HUB_PORT": str(self._allocate_hub_port())}
 
-    def _env(self, project_dir: Path, *, hub_port: str) -> dict[str, str]:
+    def _env(self, layout: ProjectLayout, *, hub_port: str) -> dict[str, str]:
         """One key list for both modes, so the report cannot name a different set."""
+        project_dir = layout.root
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
-        from ai_hats.paths import ai_hats_dir, tool_home
+        from ai_hats.paths import tool_home
 
         return {
-            ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
+            ENV_AI_HATS_DIR: str(layout.base),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
             # Per-session hub port — parallel sessions EADDRINUSE on the default.
             "CLINE_HUB_PORT": hub_port,

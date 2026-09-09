@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import io
 import json
 import os
@@ -10,7 +12,6 @@ import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
-from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.codex.hook_dispatcher import DISPATCHER_COMMAND, dispatch_hook
 from ai_hats.surfaces.codex.provider import CodexSurface
@@ -160,7 +161,7 @@ def test_materializes_composed_manifest_only_in_the_session_cache(
     artifacts = BuiltArtifacts()
 
     path = materialize_hook_manifest(
-        project,
+        ProjectLayout.at(project),
         result,
         "sid-manifest",
         artifacts,
@@ -203,14 +204,14 @@ def test_provider_artifact_pipeline_delivers_manifest_and_static_hook_config(
     )
 
     artifacts = CodexSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         result,
         "sid-pipeline",
         run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
 
-    manifest = session_cache_dir(project, "sid-pipeline") / "hooks.json"
+    manifest = ProjectLayout.at(project).cache.session("sid-pipeline") / "hooks.json"
     assert manifest in artifacts.materialized
     assert json.loads(manifest.read_text())["session"]["id"] == "sid-pipeline"
     overrides = artifacts.cli_args[1::2]

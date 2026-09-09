@@ -22,7 +22,8 @@ from pathlib import Path
 
 from ai_hats_core.layout import ForeignPinPolicy, resolve_root
 from ai_hats.env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
-from ai_hats.paths import ai_hats_dir
+from ai_hats_core.layout import ProjectLayout
+import os
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -57,7 +58,7 @@ def test_worktree_cwd_with_main_checkout_pin_resolves_to_main(tmp_path, monkeypa
         resolved = resolve_root(
             wt, dict(__import__("os").environ), on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE
         )
-        base = ai_hats_dir(resolved)
+        base = ProjectLayout.compute(resolved, os.environ).base
 
     assert resolved.resolve() == main.resolve(), (
         "the hop did not fire: a sub-agent in a worktree would resolve to the "
@@ -82,7 +83,7 @@ def test_worktree_cwd_with_a_genuinely_foreign_pin_still_warns(tmp_path, monkeyp
         resolved = resolve_root(
             wt, dict(__import__("os").environ), on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE
         )
-        base = ai_hats_dir(resolved)
+        base = ProjectLayout.compute(resolved, os.environ).base
 
     assert [w for w in caught if "foreign" in str(w.message)], (
         "a pin naming an unrelated project must warn"
@@ -112,7 +113,7 @@ def test_worktree_carrying_its_own_agent_dir_still_hops(tmp_path, monkeypatch):
         resolved = resolve_root(
             wt, dict(__import__("os").environ), on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE
         )
-        base = ai_hats_dir(resolved)
+        base = ProjectLayout.compute(resolved, os.environ).base
 
     assert resolved.resolve() == main.resolve()
     assert not [w for w in caught if "foreign" in str(w.message)], (

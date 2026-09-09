@@ -120,7 +120,7 @@ class PipelineHarness:
         # step IDs are resolvable from YAML the same way as built-ins. Errors
         # propagate (fail-fast on a broken step-dir, don't half-start the
         # pipeline).
-        load_user_steps(self.project_dir)
+        load_user_steps(self.layout.pipeline_steps)
         self._gc_old_sessions()
         self.namespace.mkdir(parents=True, exist_ok=True)
         return self

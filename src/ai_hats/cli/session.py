@@ -4,7 +4,7 @@ The browse commands (list / show / audit) live in ``ai_hats_observe.cli.session`
 (core-only, standalone). This module re-attaches the retro subcommands
 (``retro`` / ``retro-validate``) — downstream consumers of the integrator
 ``retro/`` subsystem that cannot move into the core-only package — onto the same
-``session`` group. ``cli/__init__.py`` overrides the observe ``_seam`` resolvers
+``session`` group. ``cli/__init__.py`` attaches the integrator's ``Host`` to observe
 with the integrator's AI_HATS_DIR/yaml-aware versions and mounts the group.
 """
 
