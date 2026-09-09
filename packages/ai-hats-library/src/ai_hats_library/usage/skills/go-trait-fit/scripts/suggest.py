@@ -1,15 +1,22 @@
-"""Which `dev::go-*` traits a project's ``go.mod`` shows no evidence for.
+#!/usr/bin/env python3
+"""Which `dev::go-*` traits a project's `go.mod` shows no evidence for.
 
-`go-dev` composes every Go domain, so the default is never under-equipped.
-The cost of that default is per-project noise, and ``go.mod`` is the one
+The Go role composes every Go domain, so the default is never under-equipped.
+The cost of that default is per-project noise, and `go.mod` is the one
 machine-readable statement of which domains a repository actually touches.
-Read-only: this module recommends, the human applies.
+
+Stdlib only and read-only: no ai-hats import, and it prints the `customize`
+command rather than running it. The human decides.
 """
 
 from __future__ import annotations
 
+import argparse
+import sys
+from pathlib import Path
+
 # Prefix-matched against direct module paths, so a `/v5` suffix still hits.
-# Deliberately generous: a missed signal only means we keep a trait, while a
+# Deliberately generous: a missed signal only means a trait is kept, while a
 # missing entry would tell the user to drop a domain they do use.
 GO_TRAIT_SIGNALS: dict[str, tuple[str, ...]] = {
     "dev::go-database": (
@@ -47,7 +54,7 @@ GO_TRAIT_SIGNALS: dict[str, tuple[str, ...]] = {
 
 
 def direct_requires(go_mod: str) -> set[str]:
-    """Module paths a ``go.mod`` requires directly.
+    """Module paths a `go.mod` requires directly.
 
     `// indirect` lines are excluded: a transitive dependency on grpc says
     nothing about whether this repository writes gRPC services.
@@ -91,10 +98,10 @@ def unsupported_traits(go_mod: str) -> list[str]:
     ]
 
 
-def suggestion_lines(go_mod: str) -> list[str]:
-    """What `ai-hats config suggest-traits` prints for a `go.mod`'s contents.
+def suggestion_lines(go_mod: str, role: str) -> list[str]:
+    """What to print for a `go.mod`'s contents, as lines.
 
-    Pure so the wording and the one-line shape of the `customize` command are
+    Pure, so the wording and the one-line shape of the `customize` command are
     testable without a project on disk to stand in.
     """
     unsupported = unsupported_traits(go_mod)
@@ -107,12 +114,32 @@ def suggestion_lines(go_mod: str) -> list[str]:
         names = ", ".join(sig.rsplit("/", 1)[-1] for sig in GO_TRAIT_SIGNALS[trait])
         lines.append(f"  {trait} — no {names}")
     flags = " ".join(f"--remove-trait {t}" for t in unsupported)
-    lines += [
+    return lines + [
         "",
         "Drop them from this project only:",
         "",
-        f"  ai-hats config customize go-dev {flags}",
+        f"  ai-hats config customize {role} {flags}",
         "",
         "Undo any of them with the matching --add-trait.",
     ]
-    return lines
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--role", default="go-dev", help="role the customize line targets")
+    parser.add_argument("--go-mod", default="go.mod", type=Path, help="path to the module file")
+    args = parser.parse_args(argv)
+
+    if not args.go_mod.is_file():
+        print(f"No {args.go_mod} here — nothing to suggest.")
+        print(f"`{args.role}` composes every Go domain; that is the intended default.")
+        return 0
+
+    print(f"go.mod: {args.go_mod}")
+    for line in suggestion_lines(args.go_mod.read_text(), args.role):
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

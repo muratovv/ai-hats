@@ -357,11 +357,10 @@ from . import (  # noqa: E402
     worktree,
 )
 
-# Config — composition lives here. `set` and `customize` write ai-hats.yaml;
-# the rest only read it, and `suggest-traits` merely recommends a customize line.
+# Config — set + customize + status nest under it.
+# All four touch ai-hats.yaml composition; status is the readout.
 config_mod.config.add_command(assembly.set_role)
 config_mod.config.add_command(assembly.customize)
-config_mod.config.add_command(assembly.suggest_traits)
 config_mod.config.add_command(assembly.status)
 config_mod.config.add_command(assembly.show_prompt)  # HATS-452 Phase 1
 main.add_command(config_mod.config)
