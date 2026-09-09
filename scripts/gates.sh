@@ -710,11 +710,12 @@ cmd_touched() {
         prefix="${prefix//[[:space:]]/}"
         zone="${zone//[[:space:]]/}"
         [[ -n "$prefix" && -n "$zone" ]] || continue
-        # A prefix owning nothing is a zone that can never be demanded — the
-        # silent hole this table is most likely to grow.
-        if ! git -C "$repo_root" ls-files --error-unmatch -- "$prefix" >/dev/null 2>&1; then
-            _die 70 "zone '$zone' owns '$prefix', which matches no tracked file"
-        fi
+        # A prefix owning nothing is a zone that can never be demanded, and it is
+        # NOT checked here: this table belongs to the repository that ships it,
+        # while `touched` runs against whatever tree is being judged — a scratch
+        # project carrying this script has none of these paths, and refusing
+        # there broke the gate for every test that plants it.
+        # `tests/test_zone_touched.py` holds the rows resolvable in THIS repo.
         hit=''
         while IFS= read -r path; do
             [[ -n "$path" ]] || continue

@@ -143,16 +143,28 @@ def test_a_base_it_cannot_name_refuses_instead_of_printing_nothing(repo: Path):
     assert "cannot tell what changed" in out.stderr
 
 
-def test_a_zone_owning_no_tracked_file_refuses(repo: Path):
-    """A prefix that matches nothing can never be demanded — a zone that is
-    declared and unreachable, which is the hole this table grows most easily."""
-    (repo / ZONE_PATH).unlink()
-    _commit(repo, "the zone's files are gone")
+def test_every_zone_owns_at_least_one_tracked_file_here():
+    """A prefix that matches nothing can never be demanded — a zone declared and
+    unreachable, the hole this table grows most easily.
 
-    out = _touched(repo)
-
-    assert out.returncode != 0
-    assert "matches no tracked file" in out.stderr
+    Checked HERE and not inside `touched`, which runs against whatever tree is
+    being judged: a scratch project carrying this repo's `gates.sh` has none of
+    these paths, and refusing there broke the gate for every test that plants
+    it. The table belongs to this repository, so this repository checks it."""
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(GATES), "zones"], capture_output=True, text=True, check=True
+    )
+    rows = [ln for ln in out.stdout.splitlines() if ln.strip()]
+    assert rows, "gates.sh declares no zone"
+    for row in rows:
+        prefix, marker, _stage = (cell.strip() for cell in row.split("|"))
+        tracked = subprocess.run(  # noqa: S603 — fixed argv, no shell
+            ["git", "-C", str(REPO_ROOT), "ls-files", "--", prefix],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert tracked.stdout.strip(), f"zone {marker!r} owns {prefix!r}, which is empty here"
 
 
 def test_the_shell_base_branches_match_the_ones_ai_hats_wt_resolves():
