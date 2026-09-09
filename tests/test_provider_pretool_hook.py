@@ -28,7 +28,11 @@ SETTINGS = Path(".claude") / "settings.json"
 SESSION_ID = "test-session-id"
 
 
-def _settings(project: Path, result: CompositionResult | None = None) -> dict:
+def _settings(
+    project: Path,
+    result: CompositionResult | None = None,
+    artifacts: BuiltArtifacts | None = None,
+) -> dict:
     provider = ClaudeSurface()
     res = result or _result([])
     artifacts = provider.build_session_artifacts(
@@ -36,7 +40,7 @@ def _settings(project: Path, result: CompositionResult | None = None) -> dict:
         res,
         "test-session-id",
         run_mode="hitl",
-        artifacts=BuiltArtifacts(),
+        artifacts=artifacts or BuiltArtifacts(),
     )
     settings_file = [
         Path(artifacts.cli_args[i + 1])
@@ -65,6 +69,7 @@ def _skill_with_runtime_hooks(
             sp = skill_dir / script
             sp.parent.mkdir(parents=True, exist_ok=True)
             sp.write_text("#!/usr/bin/env bash\nexit 0\n")
+            sp.chmod(0o755)  # a declared gate ships executable, as the library guard demands
     lines += ["---", f"# {name}"]
     (skill_dir / "SKILL.md").write_text("\n".join(lines) + "\n")
     return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=skill_dir)
@@ -436,18 +441,44 @@ def test_the_manifest_names_exactly_the_composed_gates(tmp_path: Path) -> None:
     }
 
 
-def test_a_gate_whose_script_is_gone_is_missing_from_both(tmp_path: Path) -> None:
-    """The drop stays silent — HATS-1862 owns making it loud. What must not
-    differ is WHERE it drops."""
+def test_a_gate_whose_script_is_gone_is_missing_from_both_and_said_so(tmp_path: Path) -> None:
+    """A script the skill no longer ships is the author's to fix: the gate is
+    left out of the wiring AND the manifest alike, and the session is told."""
     proj = tmp_path / "proj"
     proj.mkdir()
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
     (skill.source_path / "hooks" / "pre.sh").unlink()
+    artifacts = BuiltArtifacts()
 
-    assert _settings(proj, _result([skill]))["hooks"] == {}
+    assert _settings(proj, _result([skill]), artifacts)["hooks"] == {}
     assert _manifest(proj)["hooks"] == {}
+    [notice] = artifacts.notices
+    assert "skill-x" in notice and "hooks/pre.sh" in notice and "will not run" in notice
+
+
+def test_a_gate_the_mirror_lacks_refuses_the_build(tmp_path: Path) -> None:
+    """The mirror is ai-hats's own write; a script present in the skill but not
+    there is not the author's problem, so the build stops instead of wiring
+    a gate that cannot run."""
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.surfaces.claude.runtime_hooks import materialize_hook_manifest
+
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+    cache_dir = tmp_path / "cache"
+    unwritten_mirror = cache_dir / "plugin" / "skills"
+
+    with pytest.raises(RuntimeHookMirrorError, match="skill-x"):
+        materialize_hook_manifest(
+            _result([skill]),
+            BuiltArtifacts(),
+            cache_dir=cache_dir,
+            session_id=SESSION_ID,
+            skills_dir=unwritten_mirror,
+        )
 
 
 @pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
@@ -512,3 +543,29 @@ def test_a_gate_bound_to_everything_keeps_the_entry_open(tmp_path: Path) -> None
     entries = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE]
 
     assert entries[0]["matcher"] == "*"
+
+
+def test_a_dry_run_reports_a_missing_script_exactly_as_the_real_build(tmp_path: Path) -> None:
+    """``--dry-run`` writes no mirror, so the port answers for it from its record;
+    what the developer is told must not depend on which port ran."""
+    from ai_hats.materialization import PlanMaterializer
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+    (skill.source_path / "hooks" / "pre.sh").unlink()
+    real, plan = BuiltArtifacts(), BuiltArtifacts(port=PlanMaterializer())
+
+    for artifacts in (real, plan):
+        ClaudeSurface().build_session_artifacts(
+            ProjectLayout.at(proj),
+            _result([skill]),
+            SESSION_ID,
+            run_mode="hitl",
+            artifacts=artifacts,
+        )
+
+    assert real.notices == plan.notices
+    assert len(real.notices) == 1

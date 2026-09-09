@@ -241,6 +241,47 @@ def test_automate_materialization_delivers_composed_runtime_hooks(tmp_path) -> N
     assert not (tmp_path / ".cline").exists()
 
 
+def test_a_script_missing_from_the_skill_is_a_notice_not_a_silent_drop(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    skill = _make_runtime_hook_skill(tmp_path)
+    (skill / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
+    artifacts = BuiltArtifacts()
+
+    ClineSurface().build_session_artifacts(
+        ProjectLayout.at(tmp_path),
+        _fake_result(skills=[skill]),
+        "sid-gone",
+        run_mode=RunMode.HITL,
+        artifacts=artifacts,
+    )
+
+    assert not (ProjectLayout.at(tmp_path).cache.session("sid-gone") / "hooks.json").exists()
+    assert len(artifacts.notices) == 2, "one per declared event, both pointing at the same file"
+    assert all(
+        "guard" in n and "hooks/guard.sh" in n and "will not run" in n for n in artifacts.notices
+    )
+
+
+def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path, monkeypatch) -> None:
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.surfaces.cline.runtime_hooks import materialize_runtime_hooks
+
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    skill = _make_runtime_hook_skill(tmp_path)
+    unwritten_mirror = tmp_path / "mirror" / "skills"
+
+    with pytest.raises(RuntimeHookMirrorError, match="guard"):
+        materialize_runtime_hooks(
+            ProjectLayout.at(tmp_path),
+            _fake_result(skills=[skill]),
+            "sid-unmirrored",
+            BuiltArtifacts(),
+            skills_dir=unwritten_mirror,
+        )
+
+
 def test_build_session_prompt_config_is_session_scoped(tmp_path) -> None:
     args_a, _, _ = ClineSurface().build_session_prompt(
         ProjectLayout.at(tmp_path), _fake_result(), "sid-a"

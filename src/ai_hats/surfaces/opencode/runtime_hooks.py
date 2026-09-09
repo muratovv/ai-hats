@@ -19,7 +19,7 @@ from ai_hats_core.layout import ProjectLayout
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 
 from ..hook_channel import ENV_HOOK_SURFACE_TIMEOUT_MS, surface_timeout
-from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
+from ai_hats.hook_collection import composed_rows
 from ai_hats.session_artifacts import BuiltArtifacts
 
 MANIFEST_VERSION = 1
@@ -43,20 +43,10 @@ def _manifest(
     *,
     skills_dir: Path,
     permission_rules: list[dict[str, str]],
+    artifacts: BuiltArtifacts,
 ) -> dict:
-    hooks: dict[str, list[dict[str, str]]] = {}
-    for event, entries in collect_runtime_hooks(result).items():
-        event_hooks = hooks.setdefault(event, [])
-        for skill_name, hook in entries:
-            if resolve_skill_script(result, skill_name, hook.script) is None:
-                continue
-            event_hooks.append(
-                {
-                    "matcher": hook.matcher,
-                    "command": str(skills_dir / skill_name / hook.script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{hook.matcher}:{Path(hook.script).stem}",
-                }
-            )
+    hooks, notices = composed_rows(result, skills_dir, port=artifacts.port)
+    artifacts.notices.extend(notices)
     return {
         "version": MANIFEST_VERSION,
         "session": {
@@ -96,6 +86,7 @@ def materialize_hook_manifest(
             session_id,
             skills_dir=skills_dir,
             permission_rules=permission_rules,
+            artifacts=artifacts,
         ),
         indent=2,
         sort_keys=True,

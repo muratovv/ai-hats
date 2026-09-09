@@ -12,6 +12,7 @@ import abc
 import contextlib
 import hashlib
 import json
+import os
 import shutil
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -200,6 +201,14 @@ class Materializer(abc.ABC):
         """Recursive delete. Absent target is a no-op and stays out of the plan."""
 
     @abc.abstractmethod
+    def executable_at(self, path: Path) -> bool:
+        """Whether an executable file sits at ``path`` once this build has run.
+
+        Hook writers ask it about the session mirror another handler copied; a
+        dry-run has to answer the way the real build would, from its record.
+        """
+
+    @abc.abstractmethod
     def lock(self, path: Path) -> contextlib.AbstractContextManager[None]:
         """Serialise a multi-step rebuild. Not materialization — never recorded.
 
@@ -264,6 +273,9 @@ class ApplyMaterializer(Materializer):
         entry = describe_remove_tree(path)
         shutil.rmtree(path)  # safe-delete: ok caller-owned session artifact
         self._record(entry)
+
+    def executable_at(self, path: Path) -> bool:
+        return path.is_file() and os.access(path, os.X_OK)
 
     @contextlib.contextmanager
     def lock(self, path: Path):
@@ -347,6 +359,20 @@ class PlanMaterializer(Materializer):
         self._created.discard(path)
         self._removed.add(path)
         self._record(describe_remove_tree(path))
+
+    def executable_at(self, path: Path) -> bool:
+        for entry in reversed(self.plan.entries):
+            covers = path == entry.target or entry.target in path.parents
+            if not covers:
+                continue
+            if entry.kind is WriteKind.COPY_TREE and entry.source is not None:
+                source = entry.source / path.relative_to(entry.target)
+                return source.is_file() and os.access(source, os.X_OK)
+            if entry.kind is WriteKind.WRITE_EXECUTABLE:
+                return path == entry.target
+            if entry.kind is WriteKind.REMOVE_TREE:
+                return False
+        return path.is_file() and os.access(path, os.X_OK)
 
     @contextlib.contextmanager
     def lock(self, path: Path):
