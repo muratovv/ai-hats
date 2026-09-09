@@ -89,7 +89,7 @@ integration      | the real-subprocess tests outside tests/e2e
 merge-smoke      | the curated smoke subset of tests/e2e
 e2e              | the full tier: integration or smoke, quarantine and live agents excluded
 e2e-default      | the half of the tier no zone claims — an unexpected regression
-e2e-rack         | the rack zone of the tier: what a change under packages/ai-hats-rack/ is expected to break
+e2e-rack         | the rack zone of the tier: what a change to the rack surface is expected to break
 coverage         | the tests outside tests/e2e in one process, at the coverage floor (CI)
 security         | pip-audit over the interpreter's whole environment (CI-authoritative)
 version-skew     | every workspace package is ahead of what PyPI has (network)
@@ -260,18 +260,25 @@ ci_gate_table() {
 
 # ZONES: which change makes which part of the tier expected to break.
 #
-# A zone is a marker on the tests and the path prefix that owns them. `touched`
+# A zone is a marker on the tests and the path prefixes that own them. `touched`
 # turns a diff into the zone stages it demands, so a card editing a zone runs it
 # at `->merge`, where a refusal points at the agent's own branch. What no zone
 # claims is `e2e-default`, and it stands at `->done`, where a supervisor is
 # present for the breakage two green branches made together (ADR-0023 D3).
+#
+# ONE PREFIX PER ROW, and a zone is every row that names its marker: a subject
+# rarely lives under one path — rack is a package, its wiring inside `src/`, and
+# both break the same tests — while a row holding a list of prefixes is a line
+# too long to read and a cell too long to render into the ADR.
 #
 # A zone marker MOVES a test between gates; it never removes it from the tier.
 # `push-gate` and CI run the whole of it either way, so a row missing here costs
 # today's level, never less.
 zone_table() {
     cat <<'TABLE'
-packages/ai-hats-rack/ | rack
+packages/ai-hats-rack/        | rack
+src/ai_hats/rack_             | rack
+src/ai_hats/tracker_wiring.py | rack
 TABLE
 }
 
@@ -284,10 +291,14 @@ _zone_stage() {
 
 # Every zone as one pytest expression: `rack`, then `rack or wt`, and so on.
 # Empty while no zone exists, which is what makes `e2e-default` the whole tier
-# until the first row lands.
+# until the first row lands. Each marker once, however many prefixes name it:
+# `rack or rack` selects the same tests but reads as two zones.
 _zone_expr() {
     zone_table | awk -F'|' '
-        { gsub(/[[:space:]]/, "", $2); if ($2 != "") printf "%s%s", (n++ ? " or " : ""), $2 }
+        {
+            gsub(/[[:space:]]/, "", $2)
+            if ($2 != "" && !seen[$2]++) printf "%s%s", (n++ ? " or " : ""), $2
+        }
         END { printf "\n" }'
 }
 
@@ -705,7 +716,7 @@ cmd_touched() {
     changed="$(git -C "$repo_root" diff --name-only "$base" "$sha" 2>/dev/null)" \
         || _die 70 "cannot diff $base..$sha — cannot tell what changed"
 
-    local prefix zone path hit
+    local prefix zone path hit stage demanded=''
     while IFS='|' read -r prefix zone; do
         prefix="${prefix//[[:space:]]/}"
         zone="${zone//[[:space:]]/}"
@@ -721,7 +732,14 @@ cmd_touched() {
             [[ -n "$path" ]] || continue
             case "$path" in "$prefix"*) hit=1; break ;; esac
         done <<< "$changed"
-        [[ -n "$hit" ]] && printf '%s\n' "$(_zone_stage "$zone")"
+        [[ -n "$hit" ]] || continue
+        # Once per stage, not once per prefix that matched: the caller appends
+        # this to a gate's stage list, and a stage named twice is a stage the
+        # gate then looks up twice.
+        stage="$(_zone_stage "$zone")"
+        case " $demanded " in *" $stage "*) continue ;; esac
+        demanded="$demanded $stage"
+        printf '%s\n' "$stage"
     done < <(zone_table)
     return 0
 }

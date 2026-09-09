@@ -130,30 +130,35 @@ def _table(headers: list[str], body: list[list[str]]) -> str:
     return "\n".join([line(headers), rule, *(line(cells) for cells in body)])
 
 
-def read_zones(repo: Path) -> dict[str, str]:
-    """`stage -> the path prefix that demands it`, from `gates.sh zones`.
+def read_zones(repo: Path) -> dict[str, list[str]]:
+    """`stage -> the path prefixes that demand it`, from `gates.sh zones`.
 
     A zone stage is required by NO gate's declaration and by every card gate that
-    sees its prefix in the diff. Rendering it like any other stage would print a
-    row saying only `push-gate`, and the `gate-table` check would then enforce
-    that half-truth.
+    sees one of its prefixes in the diff. Rendering it like any other stage would
+    print a row saying only `push-gate`, and the `gate-table` check would then
+    enforce that half-truth.
+
+    A zone spans as many rows as it has prefixes, so the value is a list: keeping
+    one would name a single path and hide the rest, which is the same half-truth
+    one level down.
     """
-    zones = {}
+    zones: dict[str, list[str]] = {}
     for line in _bash(repo, GATES_SH, "zones").splitlines():
         cells = [cell.strip() for cell in line.split("|")]
         if len(cells) != 3:
             raise SourceError(f"{GATES_SH} zones: a row is not `prefix | marker | stage`: {line!r}")
         prefix, _marker, stage = cells
-        zones[stage] = prefix
+        zones.setdefault(stage, []).append(prefix)
     return zones
 
 
-def render_stages(stages: list[tuple[str, str]], gates: list[Gate], zones: dict[str, str]) -> str:
+def render_stages(stages: list[tuple[str, str]], gates: list[Gate], zones: dict[str, list[str]]) -> str:
     body = []
     for stage, desc in stages:
         required = " ".join(g.name for g in gates if stage in g.stages)
         if stage in zones:
-            by_diff = f"карточные, когда дифф трогает `{zones[stage]}`"
+            prefixes = ", ".join(f"`{prefix}`" for prefix in zones[stage])
+            by_diff = f"карточные, когда дифф трогает {prefixes}"
             required = f"{required}; {by_diff}" if required else by_diff
         body.append([f"`{stage}`", required or "-", desc])
     return _table(["стадия", "требуют гейты", "что проверяет"], body)

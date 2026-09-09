@@ -23,6 +23,33 @@ ZONE_STAGE = "e2e-rack"
 ZONE_PATH = "packages/ai-hats-rack/src/ai_hats_rack/cli.py"
 
 
+def _rows() -> list[tuple[str, str, str]]:
+    """Every `prefix | marker | stage` the shipped table declares.
+
+    Asked of the script, never listed here: a zone spans one row per prefix, so a
+    copy in this file would go stale on the next prefix a subject grows — which is
+    exactly the row whose wiring nothing would then check.
+    """
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(GATES), "zones"], capture_output=True, text=True, check=True
+    )
+    rows = [tuple(cell.strip() for cell in ln.split("|")) for ln in out.stdout.splitlines() if ln.strip()]
+    assert rows, "gates.sh declares no zone"
+    for row in rows:
+        assert len(row) == 3, f"not a `prefix | marker | stage` row: {row!r}"
+    return rows  # type: ignore[return-value]
+
+
+def _probe_for(prefix: str) -> str:
+    """A path this prefix owns — a file to plant so the prefix has something to
+    match. Prefixes come in three shapes: a directory (`packages/ai-hats-rack/`),
+    a whole file (`src/ai_hats/tracker_wiring.py`) and a name stem
+    (`src/ai_hats/rack_`); only the middle one is already a path."""
+    if prefix.endswith(".py"):
+        return prefix
+    return f"{prefix}probe.py" if prefix.endswith("/") else f"{prefix}_probe.py"
+
+
 def _git(repo: Path, *args: str) -> str:
     out = subprocess.run(  # noqa: S603 — fixed argv, no shell
         ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
@@ -61,6 +88,8 @@ def repo(tmp_path: Path) -> Path:
     _git(repo, "init", "-q", "-b", "master")
     _write(repo, "scripts/gates.sh", GATES.read_text(encoding="utf-8"))
     _write(repo, ZONE_PATH, "x = 1\n")
+    for prefix, _marker, _stage in _rows():
+        _write(repo, _probe_for(prefix), "x = 1\n")
     _write(repo, "src/other.py", "y = 1\n")
     _commit(repo, "base")
     return repo
@@ -75,6 +104,48 @@ def test_a_change_inside_a_zone_demands_that_zones_stage(repo: Path):
 
     assert out.returncode == 0, out.stderr
     assert out.stdout.split() == [ZONE_STAGE]
+
+
+@pytest.mark.parametrize("row", _rows(), ids=lambda row: f"{row[2]}:{row[0]}")
+def test_every_prefix_the_table_declares_demands_its_stage(row: tuple[str, str, str], repo: Path):
+    """One row is one prefix, and a zone is every row naming its marker. A prefix
+    wired nowhere is a path the table promises to watch and does not — invisible,
+    because the zone keeps working through its other rows."""
+    prefix, _marker, stage = row
+    _git(repo, "checkout", "-q", "-b", "task/x")
+    _write(repo, _probe_for(prefix), "x = 2\n")
+    _commit(repo, f"touch {prefix}")
+
+    out = _touched(repo)
+
+    assert out.returncode == 0, out.stderr
+    assert stage in out.stdout.split(), (out.stdout, out.stderr)
+
+
+def test_a_stage_two_touched_prefixes_share_is_named_once(repo: Path):
+    """The caller appends this output to a gate's stage list, so a stage named
+    twice is a stage looked up twice — and a zone with several prefixes is the
+    normal case, not the exotic one."""
+    rows = _rows()
+    by_stage: dict[str, list[str]] = {}
+    for prefix, _marker, stage in rows:
+        by_stage.setdefault(stage, []).append(prefix)
+    shared = {stage: prefixes for stage, prefixes in by_stage.items() if len(prefixes) > 1}
+    assert shared, "no zone declares two prefixes — this test would prove nothing"
+
+    _git(repo, "checkout", "-q", "-b", "task/x")
+    for prefixes in shared.values():
+        for prefix in prefixes:
+            _write(repo, _probe_for(prefix), "x = 2\n")
+    _commit(repo, "touch several prefixes of the same zone")
+
+    out = _touched(repo)
+
+    assert out.returncode == 0, out.stderr
+    named = out.stdout.split()
+    assert len(named) == len(set(named)), named
+    for stage in shared:
+        assert named.count(stage) == 1, (stage, named)
 
 
 def test_a_change_outside_every_zone_demands_nothing(repo: Path):
@@ -150,21 +221,20 @@ def test_every_zone_owns_at_least_one_tracked_file_here():
     Checked HERE and not inside `touched`, which runs against whatever tree is
     being judged: a scratch project carrying this repo's `gates.sh` has none of
     these paths, and refusing there broke the gate for every test that plants
-    it. The table belongs to this repository, so this repository checks it."""
-    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["bash", str(GATES), "zones"], capture_output=True, text=True, check=True
-    )
-    rows = [ln for ln in out.stdout.splitlines() if ln.strip()]
-    assert rows, "gates.sh declares no zone"
-    for row in rows:
-        prefix, marker, _stage = (cell.strip() for cell in row.split("|"))
-        tracked = subprocess.run(  # noqa: S603 — fixed argv, no shell
-            ["git", "-C", str(REPO_ROOT), "ls-files", "--", prefix],
-            capture_output=True,
-            text=True,
-            check=True,
+    it. The table belongs to this repository, so this repository checks it.
+
+    Matched the way `touched` matches — a plain string prefix over the tracked
+    paths, not a git pathspec. `git ls-files -- src/ai_hats/rack_` answers
+    nothing for a prefix that names four files, so a pathspec here would refuse
+    a row the verb honours: a guard asserting something other than what it
+    guards."""
+    tracked = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["git", "-C", str(REPO_ROOT), "ls-files"], capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    for prefix, marker, _stage in _rows():
+        assert any(path.startswith(prefix) for path in tracked), (
+            f"zone {marker!r} owns {prefix!r}, which is empty here"
         )
-        assert tracked.stdout.strip(), f"zone {marker!r} owns {prefix!r}, which is empty here"
 
 
 def test_the_shell_base_branches_match_the_ones_ai_hats_wt_resolves():
