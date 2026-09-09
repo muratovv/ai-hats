@@ -50,6 +50,37 @@ def test_retired_surface_names_its_replacement(word: str, remedy: str) -> None:
     assert remedy in _refusal(word, "whatever")
 
 
+def test_reserved_never_shadows_a_live_command() -> None:
+    """Mounting a command named in RESERVED would make it unreachable.
+
+    `classify` checks RESERVED before the tree, and only the click wiring keeps a
+    real command from ever reaching it — so the two sets must not overlap.
+    """
+    from ai_hats.cli import main
+    from ai_hats.cli._argv_guard import RESERVED
+
+    clash = sorted(set(RESERVED) & set(command_paths(main)))
+    assert not clash, f"RESERVED shadows live command(s): {clash}"
+
+
+def test_module_remedy_names_an_importable_entry_point() -> None:
+    """The one remedy pointing at a module must keep resolving.
+
+    `githooks` is the single reserved word with a real handler; the other ten are
+    retired, so there is nothing to bind their message to but this table.
+    """
+    import importlib
+    import re
+
+    from ai_hats.cli._argv_guard import RESERVED
+
+    modules = re.findall(r"python -m ([\w.]+)", "\n".join(RESERVED.values()))
+    assert modules, "the githooks remedy names a module — this test guards it"
+    for name in modules:
+        module = importlib.import_module(name)
+        assert callable(getattr(module, "main", None)), f"{name} has no callable main()"
+
+
 def test_every_ai_hats_remedy_resolves_in_the_real_tree() -> None:
     """A remedy naming a command that does not exist repeats the defect being fixed.
 
