@@ -78,6 +78,35 @@ _gate_realdir() {
     if [[ -d "$1" ]]; then (cd -- "$1" && pwd -P); else printf '%s' "$1"; fi
 }
 
+# The zone stages the judged tree says this change demands, into
+# `_GATE_ZONE_STAGES`. Non-zero return means the gate must not proceed.
+#
+# DECLARED FAIL-OPEN, price named: a tree whose `gates.sh` predates the verb has
+# no zone stages either, so there is nothing there to demand and today's level is
+# what it gets. That is a different thing from a tree that HAS the verb and could
+# not answer — which is a gate that cannot tell, and refuses.
+_GATE_ZONE_STAGES=''
+_gate_zone_stages() {
+    local gate="$1" run_in="$2" gates="$3" rev="$4" out rc=0
+    _GATE_ZONE_STAGES=''
+    if ! grep -q '^cmd_touched()' "$gates" 2>/dev/null; then
+        printf '%s: %s predates zone selection — no zone stage can be demanded\n' \
+               "$gate" "$gates"
+        printf 'of this tree. Requiring only what the gate declares.\n'
+        return 0
+    fi
+    out="$(cd "$run_in" && bash "$gates" touched --rev "$rev" 2>&1)" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        printf '%s: `%s touched` failed with rc=%s — the gate could not tell\n' \
+               "$gate" "$gates" "$rc"
+        printf 'which zones this change demands, and an empty answer would read as\n'
+        printf '"none". It said:\n%s\n' "$out"
+        return 1
+    fi
+    _GATE_ZONE_STAGES="$(printf '%s' "$out" | tr '\n' ' ')"
+    return 0
+}
+
 # Require every stage of <gate> to be marked for the tree this card puts into
 # master. EXITS. Instant by construction — a few `git rev-parse` and a marker
 # lookup — because it runs INSIDE the per-task rack lock. The suite never runs
@@ -170,6 +199,14 @@ gate_check_task_worktree() {
         gate_exit checks refuse
     fi
 
+    # What this CHANGE additionally demands, on top of what the gate declares.
+    # It cannot live in `$STAGES`: the answer depends on the diff, and the same
+    # tree asks for different sets as the base branch moves. What it names are
+    # ordinary named stages all the same, so markers stay per stage per tree and
+    # nothing about them has to know a diff ever happened.
+    _gate_zone_stages "$gate" "$run_in" "$gates" "$rev" || exit 1
+    stages="$stages $_GATE_ZONE_STAGES"
+
     local missing rc
     # shellcheck disable=SC2086
     missing="$(cd "$run_in" && bash "$gates" check --rev "$rev" $stages)"
@@ -241,6 +278,10 @@ gate_next_note() {
             unanswered="$unanswered $name"
             continue
         fi
+        # A gate demands its declared set PLUS this change's zones, so a note
+        # built from `--stages` alone would promise a road one refusal shorter
+        # than it is — the exact thing this note exists to prevent.
+        stages="$stages $_GATE_ZONE_STAGES"
         # shellcheck disable=SC2086
         missing="$(cd "$repo_root" && bash "$gates" "${args[@]}" $stages)"
         rc=$?
@@ -326,6 +367,11 @@ gate_run() {
         printf -v rev_arg " ${RUN_REV_FMT:-REV=%s}" "$rev"
     fi
     export GATES_RESUME_CMD="${RUN_CMD:-make $gate}$rev_arg"
+    # The same zones `--check` will demand. Earning less than the check requires
+    # would make the refusal unfixable: the command the refusal hands you would
+    # never stamp the stage it named.
+    _gate_zone_stages "$gate" "$repo_root" "$gates" "${rev:-HEAD}" >&2 || exit 1
+    stages="$stages $_GATE_ZONE_STAGES"
     # Not `exec`: a green run has one more thing to say, and saying it needs the
     # markers the run has just written.
     local rc=0

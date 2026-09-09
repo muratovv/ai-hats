@@ -37,9 +37,10 @@ KNOWN_UNGATED = {
     "python-pin",
     "tmp-sweep",
     "prepare",
-    # TRANSIENT (HATS-1921 S1): the zone stages exist but no gate names them yet.
-    "e2e-default",
-    "e2e-rack",
+    # The whole tier under one name: CI's `e2e` job and `make e2e`. The gates
+    # require its PARTS, so a tree is never asked to re-run the same tests under
+    # another name (parts == whole: tests/test_e2e_zone_partition.py).
+    "e2e",
 }
 
 
@@ -135,11 +136,17 @@ def test_the_card_gates_nest_so_one_run_of_the_widest_pays_for_all():
 
 
 def test_the_done_gate_demands_what_only_it_can_ask():
-    """Shrinking a set is the silent direction: markers on disk stay valid."""
+    """Shrinking a set is the silent direction: markers on disk stay valid.
+
+    `e2e-default` is the tier no zone claims — an UNEXPECTED regression, which is
+    the breakage two independently green branches make together, and so belongs
+    on the edge where a supervisor is present (ADR-0023 D3). The zones a change
+    does touch are demanded earlier, by the diff, at `->merge`."""
     assert set(_stages("done-gate")) - set(_stages("merge-gate")) == {
         "integration",
         "master-ci",
         "merge-smoke",
+        "e2e-default",
     }
 
 

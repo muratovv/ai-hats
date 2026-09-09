@@ -130,11 +130,32 @@ def _table(headers: list[str], body: list[list[str]]) -> str:
     return "\n".join([line(headers), rule, *(line(cells) for cells in body)])
 
 
-def render_stages(stages: list[tuple[str, str]], gates: list[Gate]) -> str:
+def read_zones(repo: Path) -> dict[str, str]:
+    """`stage -> the path prefix that demands it`, from `gates.sh zones`.
+
+    A zone stage is required by NO gate's declaration and by every card gate that
+    sees its prefix in the diff. Rendering it like any other stage would print a
+    row saying only `push-gate`, and the `gate-table` check would then enforce
+    that half-truth.
+    """
+    zones = {}
+    for line in _bash(repo, GATES_SH, "zones").splitlines():
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) != 3:
+            raise SourceError(f"{GATES_SH} zones: a row is not `prefix | marker | stage`: {line!r}")
+        prefix, _marker, stage = cells
+        zones[stage] = prefix
+    return zones
+
+
+def render_stages(stages: list[tuple[str, str]], gates: list[Gate], zones: dict[str, str]) -> str:
     body = []
     for stage, desc in stages:
-        required = " ".join(g.name for g in gates if stage in g.stages) or "-"
-        body.append([f"`{stage}`", required, desc])
+        required = " ".join(g.name for g in gates if stage in g.stages)
+        if stage in zones:
+            by_diff = f"карточные, когда дифф трогает `{zones[stage]}`"
+            required = f"{required}; {by_diff}" if required else by_diff
+        body.append([f"`{stage}`", required or "-", desc])
     return _table(["стадия", "требуют гейты", "что проверяет"], body)
 
 
@@ -157,8 +178,8 @@ def splice(doc: str, mark: str, table: str) -> str:
 
 
 def render(repo: Path, doc: str) -> str:
-    stages, gates = read_stages(repo), read_gates(repo)
-    doc = splice(doc, STAGES_MARK, render_stages(stages, gates))
+    stages, gates, zones = read_stages(repo), read_gates(repo), read_zones(repo)
+    doc = splice(doc, STAGES_MARK, render_stages(stages, gates, zones))
     return splice(doc, GATES_MARK, render_gates(gates))
 
 

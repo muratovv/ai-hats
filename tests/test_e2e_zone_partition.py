@@ -16,6 +16,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATES = REPO_ROOT / "scripts" / "gates.sh"
+PUSH_GATE = (
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills"
+    "/quality-gate/git_hooks/pre-push-e2e-master.sh"
+)
 
 #: The whole tier and the two halves that must add back up to it.
 WHOLE = "e2e"
@@ -71,6 +75,22 @@ def test_no_test_belongs_to_two_parts():
         for right in names[i + 1 :]:
             both = parts[left] & parts[right]
             assert not both, f"{left} and {right} both claim: {sorted(both)}"
+
+
+def test_the_push_gate_requires_every_part_of_the_partition():
+    """It asks about the tree going to origin/master, and used to name the tier
+    under one stage. The parts are the same tests, so requiring them instead
+    spares a card tree a second run of what it already earned — but only while
+    this list is complete. A zone declared and left out here would leave the push
+    gate demanding less than the tier it stands for; `PARTS` itself is held
+    complete by the union test above."""
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(PUSH_GATE), "--stages"], capture_output=True, text=True, check=False
+    )
+    assert out.returncode == 0, out.stderr
+    required = set(out.stdout.split())
+
+    assert set(PARTS) <= required, sorted(set(PARTS) - required)
 
 
 def test_every_part_claims_something():

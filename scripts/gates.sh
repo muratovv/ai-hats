@@ -19,6 +19,7 @@
 #   gates.sh run   [--rev C] [--fresh] <stage>...   # run the unmarked, stamp each
 #   gates.sh subject [--rev C]          # what a run would judge, and where
 #   gates.sh touched [--rev C] [--base B]  # zone stages this change demands
+#   gates.sh zones                      # prefix | marker | stage, one per zone
 #
 # A STAGE RUNS BARE: nothing after its name reaches pytest, because a marker
 # earned for `unit -k foo` would be a lie. CI's parallelism rides PYTEST_ADDOPTS.
@@ -272,6 +273,13 @@ zone_table() {
     cat <<'TABLE'
 packages/ai-hats-rack/ | rack
 TABLE
+}
+
+# A zone's stage name, spelled in ONE place: the verb that demands it and the
+# renderer that documents it must agree, and a convention spread over two files
+# is a convention that drifts.
+_zone_stage() {
+    printf 'e2e-%s' "$1"
 }
 
 # Every zone as one pytest expression: `rack`, then `rack or wt`, and so on.
@@ -712,9 +720,24 @@ cmd_touched() {
             [[ -n "$path" ]] || continue
             case "$path" in "$prefix"*) hit=1; break ;; esac
         done <<< "$changed"
-        [[ -n "$hit" ]] && printf 'e2e-%s\n' "$zone"
+        [[ -n "$hit" ]] && printf '%s\n' "$(_zone_stage "$zone")"
     done < <(zone_table)
     return 0
+}
+
+# The zone table with each row's stage name resolved: `prefix | marker | stage`.
+# What `gen_gate_table.py` reads so ADR-0023 can say which stages are demanded by
+# a diff rather than by a gate's declaration — a row it had to guess at by the
+# shape of a stage name would be a guess the `gate-table` stage then enforced.
+cmd_zones() {
+    [[ $# -eq 0 ]] || _die 64 "zones takes no argument"
+    local prefix zone
+    while IFS='|' read -r prefix zone; do
+        prefix="${prefix//[[:space:]]/}"
+        zone="${zone//[[:space:]]/}"
+        [[ -n "$prefix" && -n "$zone" ]] || continue
+        printf '%s | %s | %s\n' "$prefix" "$zone" "$(_zone_stage "$zone")"
+    done < <(zone_table)
 }
 
 # Short ids for a reader; the marker files keep the full ones.
@@ -975,6 +998,7 @@ case "$verb" in
     run) shift; cmd_run "$@" ;;
     subject) shift; cmd_subject "$@"; exit 0 ;;
     touched) shift; cmd_touched "$@"; exit 0 ;;
+    zones) shift; cmd_zones "$@"; exit 0 ;;
 esac
 if [[ $# -gt 1 ]]; then
     echo "[gates] a stage runs bare: '${*:2}' after '$verb' is not accepted" >&2
@@ -1016,6 +1040,7 @@ case "$verb" in
             echo "  bundle: all (the local pre-push bundle, and the default)" >&2
             echo "  list | check <stage>... | run <stage>... | subject — the markers" >&2
             echo "  touched: the zone stages this change demands (a diff, not a marker)" >&2
+            echo "  zones: the zone table — prefix | marker | stage" >&2
             echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
             exit 2
         fi
