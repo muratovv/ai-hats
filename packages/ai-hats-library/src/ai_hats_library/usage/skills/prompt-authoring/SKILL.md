@@ -1,6 +1,6 @@
 ---
 name: prompt-authoring
-description: Separate forbidding from guiding — a prohibition works the automation first, guidance is prose — then write the prose so it holds. Use before wording or rewording any rule, injection or skill body, and when a written instruction has failed to change behaviour.
+description: Choose the mechanism before the wording, then write prose that holds. Use before wording or rewording any rule, injection or skill body, and when a written instruction has failed to change behaviour.
 license: MIT
 ---
 
@@ -36,8 +36,8 @@ wrong thing.
 
 Getting the fork wrong is expensive in both directions. Wording a prohibition
 buys a rule that is argued around; gating a judgement buys false refusals, and
-those cost more than they look — see `agent-facing-cli` § "Precision before
-eloquence".
+those cost more than they look — see `agent-cli-guidelines` § "Fire only when
+you should".
 
 ### 2. What a prompt that already failed tells you
 

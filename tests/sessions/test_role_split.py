@@ -514,7 +514,7 @@ def test_hypothesis_protocol_reaches_any_project() -> None:
 
 @pytest.mark.parametrize(
     "skill",
-    ["prompt-authoring", "library-editing", "composition-verification", "agent-facing-cli"],
+    ["prompt-authoring", "library-editing", "composition-verification", "agent-cli-guidelines"],
 )
 def test_the_authoring_chain_is_wired_to_the_trait(skill: str) -> None:
     """Decide (prose or machine), wire, verify — one skill each, all three

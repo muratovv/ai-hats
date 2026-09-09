@@ -27,7 +27,7 @@ injection: |
   does. To GUIDE — name a component, hold a judgement, teach what a good answer
   looks like — prose is the right instrument and no gate substitutes for it.
   `skill-template` § "Declaring a hook from a skill" builds the automated answer;
-  **agent-facing-cli** keeps it worth reading, starting with firing only when it
+  **agent-cli-guidelines** keeps it worth reading, starting with firing only when it
   should.
 
   ## One change, four skills, in this order

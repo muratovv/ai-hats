@@ -26,7 +26,7 @@ composition:
     - prompt-authoring
     # how the automation talks back: a guard precise enough to stay read,
     # refusals carrying their own remedy, honest exit codes.
-    - agent-facing-cli
+    - agent-cli-guidelines
     # how to prove a component edit reached the composed prompt: the render,
     # the positive control every zero needs, in-process composition.
     - composition-verification
@@ -61,7 +61,7 @@ injection: |
   and no trigger has not earned a rule either. The fork itself, and how to write
   the text once prose is the answer: skill **prompt-authoring**. How the
   automation you build talks back — and why an imprecise guard costs more than a
-  terse one: **agent-facing-cli**. Wiring your choice into a role:
+  terse one: **agent-cli-guidelines**. Wiring your choice into a role:
   **library-editing**.
   One lesson from this library's own record, because it is easy to get backwards:
   a prohibition wants a mechanism that REFUSES. Moving a rule to a non-blocking
