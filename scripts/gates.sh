@@ -521,7 +521,7 @@ ci_prepare() {
         echo "[gates] no provision-venv hook at $hook — nothing to prepare" >&2
         return 1
     fi
-    AI_HATS_WORKTREE_PATH="$repo_root" bash "$hook"
+    AI_HATS_WORKTREE_PATH="$repo_root" bash "$hook" --sync
 }
 
 # NOTE: excluded from `all` — it queries PyPI, so an offline dev box would fail
@@ -1141,14 +1141,17 @@ cmd_run() {
     runner="$(_runner_in "$checkout")"
     [[ -f "$runner" ]] || _die 70 "no stage runner at $runner"
 
-    if [[ "$where" == "scratch" ]]; then
-        # A non-zero rc is REPORTED and the run goes on: a stage failing for
-        # want of a dependency says so loudly; skipping here would say nothing.
-        if _capture "$run_dir/prepare.log" _in "$checkout" bash "$runner" --prepare; then
-            notes+=("prepare: $(_last_line "$run_dir/prepare.log" worktree-venv)")
-        else
-            notes+=("the runner could not prepare $checkout — ran anyway; see $run_dir/prepare.log")
-        fi
+    # Both roads, not just scratch. A scratch checkout is minted empty and so
+    # can only be under-provisioned; an in-place one carries whatever its .venv
+    # held when it was last touched, which after a rebase (or a pull in MAIN) is
+    # the PREVIOUS tree's dependencies. Guarding this on "scratch" left the road
+    # the stages actually take on a task worktree unchecked (HATS-1939).
+    # A non-zero rc is REPORTED and the run goes on: a stage failing for
+    # want of a dependency says so loudly; skipping here would say nothing.
+    if _capture "$run_dir/prepare.log" _in "$checkout" bash "$runner" --prepare; then
+        notes+=("prepare: $(_last_line "$run_dir/prepare.log" worktree-venv)")
+    else
+        notes+=("the runner could not prepare $checkout — ran anyway; see $run_dir/prepare.log")
     fi
 
     # A dirty desk is judged in a scratch checkout of the subject, so the WHOLE
