@@ -7,6 +7,8 @@ composition:
   skills:
     # decides what owes an e2e test, and installs the pre-push hook enforcing it.
     - quality-gate
+    # the question the gate's red verdict does not ask: whose failure is this.
+    - red-attribution
     # what § "Documentation discipline" points at.
     - doc-protocol
     # wt_in hook that mints a .venv in each new worktree.
