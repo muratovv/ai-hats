@@ -17,11 +17,11 @@ does not change with the language: the axes, their order, and the quoted line.
 
 ## Essence
 
-- point surfaces at: > "…" (para N) — above it: keep / cut / move to top
+- point surfaces at "…" (para N) — above it: keep / cut / move to top
 
 ## Repetition
 
-- "…" ↔ > "…" — keep the first; the second adds <nothing / only X>
+- "…" ↔ "…" — keep the first; the second adds <nothing / only X>
 
 ## Value per section
 
@@ -65,9 +65,8 @@ author's ("overview"). A section whose line is empty or repeats another
 section's is merged or cut. A section whose line is fine but whose heading
 says something else gets a heading finding.
 
-**Style.** Findings come only from the language reference, quoted next to the
-rule. Taste is not a finding; a rule the reference does not carry is not a
-finding either — propose it for the reference instead.
+**Style.** One owner for this rule, and it is `editor-conduct.md` §6 — where it
+comes with the worked pair. Read it there; do not restate it here.
 
 **Terms & voice.** Terms: one name per thing, the glossary's name if there is
 one. Voice: the author's sentence rhythm, person, register and signature moves

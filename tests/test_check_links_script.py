@@ -1,7 +1,8 @@
 """The claim-evidence-check link checker against a real local HTTP server.
 
-Exit 1 is reserved for a dead link (404/410); an unreachable host or an empty
-file never fails the run — the network is not the text's fault.
+Exit 1 is reserved for a dead link (404/410). Nothing else fails the run — not
+an unreachable host, not a bot filter's 403, not a malformed URL — and none of
+them may stop the links that follow from being checked.
 """
 
 from __future__ import annotations
@@ -22,9 +23,20 @@ SCRIPT = _LIB / "usage" / "skills" / "claim-evidence-check" / "scripts" / "check
 
 
 class _Handler(BaseHTTPRequestHandler):
+    """Routes by path so one server covers every verdict the script can return."""
+
+    def _status(self) -> int:
+        if self.path == "/ok":
+            return 200
+        if self.path == "/botfilter":
+            return 403
+        # /head-refused answers 405 to HEAD only, so GET is the retry that works.
+        if self.path == "/head-refused":
+            return 405 if self.command == "HEAD" else 200
+        return 404
+
     def _answer(self) -> None:
-        status = 200 if self.path == "/ok" else 404
-        self.send_response(status)
+        self.send_response(self._status())
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -114,3 +126,39 @@ def test_no_argument_is_exit_2() -> None:
 
     assert result.returncode == 2, result.stderr
     assert "Usage: check_links.py" in result.stderr
+
+
+def test_bot_filter_403_warns_and_does_not_fail(tmp_path: Path, base_url: str) -> None:
+    """The reason the script exists instead of `curl -I`: a 403 is not a dead link."""
+    md = tmp_path / "draft.md"
+    md.write_text(f"Guarded: {base_url}/botfilter\n")
+
+    result = _run(md)
+
+    assert result.returncode == 0, result.stdout
+    assert f"WARN 403 {base_url}/botfilter" in result.stdout
+
+
+def test_head_refused_retries_with_get(tmp_path: Path, base_url: str) -> None:
+    """405 to HEAD is the server refusing the method, not the URL being gone."""
+    md = tmp_path / "draft.md"
+    md.write_text(f"Picky: {base_url}/head-refused\n")
+
+    result = _run(md)
+
+    assert result.returncode == 0, result.stdout
+    assert f"OK 200 {base_url}/head-refused" in result.stdout
+
+
+def test_malformed_url_is_reported_and_the_run_continues(tmp_path: Path, base_url: str) -> None:
+    """One typo used to abort the whole run with a traceback, hiding later links."""
+    md = tmp_path / "draft.md"
+    md.write_text(f"Typo: https://[bad/x and good: {base_url}/ok\n")
+
+    result = _run(md)
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert "MALFORMED " in result.stdout
+    assert f"OK 200 {base_url}/ok" in result.stdout, "the link after the bad one was skipped"
+    assert "checked 2 link(s), dead 0, malformed 1" in result.stdout

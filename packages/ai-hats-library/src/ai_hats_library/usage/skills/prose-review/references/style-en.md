@@ -3,8 +3,8 @@
 Plain language (Federal Plain Language Guidelines, plainlanguage.gov): the
 reader finds what they need, understands it on the first read, and can act on
 it. Plain does not mean simplified — the technical term stays when it is the
-right word. Every item below is a rule the critic quotes a line against; no
-quote, no finding.
+right word. Below are the English criteria only; when a rule applies and what
+to do with one the reference lacks is `editor-conduct.md` §6.
 
 ## Syntax
 

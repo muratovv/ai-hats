@@ -3,11 +3,11 @@
 
 Usage: check_links.py <file> [<file> ...]
 
-One line per link: ``OK``, ``DEAD <status>`` (404/410), ``WARN <status>``
-(any other non-2xx/3xx — a bot filter's 403 is not a dead link), or
-``UNREACHABLE <reason>`` (network, DNS, timeout — not the link's fault).
-Exit 1 iff at least one link is DEAD; UNREACHABLE and WARN never fail the run.
-Exit 2 on bad input: no argument, or a file that cannot be read.
+Per link: OK · DEAD <status> (404/410) · WARN <status> (other non-2xx/3xx —
+a bot filter's 403 is not a dead link) · UNREACHABLE (network) · MALFORMED
+(urllib refuses the URL before any request).
+Exit 1 iff a link is DEAD, 2 on bad input. Every other verdict keeps the run
+going, so one bad link never hides the ones after it.
 """
 
 from __future__ import annotations
@@ -35,24 +35,32 @@ def extract_urls(text: str) -> list[str]:
     return list(seen)
 
 
-def probe(url: str) -> tuple[str, str]:
-    """Return (verdict, detail) for one URL — verdict in OK/DEAD/WARN/UNREACHABLE."""
-    for method in ("HEAD", "GET"):
+def _attempt(url: str, method: str) -> tuple[str, str] | None:
+    """One request. None means the server refused the METHOD itself — retry-worthy."""
+    try:
         # URL_RE admits only http(s), so the scheme audit does not apply.
         req = urllib.request.Request(url, method=method, headers=HEADERS)  # noqa: S310
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:  # noqa: S310
-                return "OK", str(resp.status)
-        except urllib.error.HTTPError as exc:
-            if method == "HEAD" and exc.code in (405, 501):
-                continue  # server refuses HEAD; ask again with GET
-            if exc.code in DEAD_STATUSES:
-                return "DEAD", str(exc.code)
-            return "WARN", str(exc.code)
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            reason = getattr(exc, "reason", exc)
-            return "UNREACHABLE", str(reason)
-    return "WARN", "HEAD and GET both refused"
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:  # noqa: S310
+            return "OK", str(resp.status)
+    except ValueError as exc:
+        # urllib rejects a malformed URL while building the request — before any
+        # socket. Uncaught, it aborted the whole run on one typo.
+        return "MALFORMED", str(exc)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (405, 501):
+            return None
+        if exc.code in DEAD_STATUSES:
+            return "DEAD", str(exc.code)
+        return "WARN", str(exc.code)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        return "UNREACHABLE", str(reason)
+
+
+def probe(url: str) -> tuple[str, str]:
+    """Return (verdict, detail) — OK/DEAD/WARN/UNREACHABLE/MALFORMED."""
+    verdict = _attempt(url, "HEAD") or _attempt(url, "GET")
+    return verdict or ("WARN", "HEAD and GET both refused")
 
 
 def main(argv: list[str]) -> int:
@@ -60,6 +68,7 @@ def main(argv: list[str]) -> int:
         print(__doc__.strip(), file=sys.stderr)
         return 2
     dead = 0
+    malformed = 0
     total = 0
     for name in argv:
         try:
@@ -73,8 +82,10 @@ def main(argv: list[str]) -> int:
             verdict, detail = probe(url)
             if verdict == "DEAD":
                 dead += 1
+            elif verdict == "MALFORMED":
+                malformed += 1
             print(f"{verdict} {detail} {url}")
-    print(f"checked {total} link(s), dead {dead}")
+    print(f"checked {total} link(s), dead {dead}, malformed {malformed}")
     return 1 if dead else 0
 
 

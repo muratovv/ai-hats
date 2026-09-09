@@ -63,5 +63,4 @@ mark — the SAFE / FActScore pattern, applied by hand.
 - Softening a contradicted claim in the text instead of reporting it.
 - A row bundling two facts — one can hold and the other not.
 - Counting `UNREACHABLE` as dead, or a 403 from a bot filter as a fact check.
-- Running `scripts/check_links.py` from the project root and reporting "no
-  such file" — that path is the project's `scripts/`, not this skill's.
+- Reading `checked 0 link(s)` as "the references are fine".
