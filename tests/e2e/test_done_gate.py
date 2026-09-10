@@ -181,9 +181,7 @@ def gate_project(shared_launcher, tmp_path: Path):
     _launcher, base_env, _venv = shared_launcher
     counter = {"n": 0}
 
-    def make(
-        role: str, *, bind: bool = True, overlay: bool = False
-    ) -> tuple[Path, dict[str, str]]:
+    def make(role: str, *, bind: bool = True, overlay: bool = False) -> tuple[Path, dict[str, str]]:
         counter["n"] += 1
         project = tmp_path / f"proj{counter['n']}"
         project.mkdir()
