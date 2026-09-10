@@ -100,7 +100,7 @@ e2e-library      | the library zone of the tier: what a change to the library co
 e2e-observe      | the observe zone of the tier: what a change to session observation — transcript, retro, reflect is expected to break
 coverage         | the tests outside tests/e2e in one process, at the coverage floor (CI)
 security         | pip-audit over the interpreter's whole environment (CI-authoritative)
-version-skew     | every workspace package is ahead of what PyPI has (network)
+version-skew     | a changed package bumps its version in the same diff, and none is behind PyPI (network)
 python-pin       | every copy of the Python pin agrees and CI runs it
 tmp-sweep        | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing
 prepare          | precondition: a venv for this checkout; it asserts nothing
@@ -526,7 +526,7 @@ ci_prepare() {
 # NOTE: excluded from `all` — it queries PyPI, so an offline dev box would fail
 # a legitimate push. CI is authoritative; SKEW_BASE=<sha> to reproduce.
 ci_version_skew() {
-    echo "[gates] version-skew (workspace pkgs ahead of PyPI)" >&2
+    echo "[gates] version-skew (a changed pkg bumps in the same diff; none behind PyPI)" >&2
     run_py scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
 }
 

@@ -1,7 +1,9 @@
 """Unit tests for the workspace version-skew gate (HATS-943).
 
 The RED baseline: `evaluate` must FAIL the exact HATS-937 shape — a package whose
-`src/**` changed while its version still equals the published one.
+`src/**` changed while its version still equals the published one — and must NOT
+fail its twin (HATS-1957), where the version equals the published one because the
+bump in this very diff is what got published.
 """
 
 from __future__ import annotations
@@ -51,6 +53,44 @@ class TestEvaluate:
         assert v.ok is True
         assert "skipped" in v.reason
 
+    def test_bump_published_by_the_same_push_passes(self):
+        # HATS-1957, run 34464727909: master auto-publishes a landed bump, so
+        # equality with PyPI is the healthy END state — strict `>` made the
+        # verdict a race with release-packages.yml.
+        v = skew.evaluate(
+            "ai_hats_core",
+            Version("0.12.0"),
+            Version("0.12.0"),
+            src_changed=True,
+            base_ver=Version("0.11.0"),
+        )
+        assert v.ok is True
+        assert "0.11.0" in v.reason
+
+    def test_no_bump_in_the_diff_still_fails(self):
+        # The control on the case above: run 34135274201, ai-hats-library left
+        # at 0.6.5 across the diff while 0.6.5 was published. Still the skew.
+        v = skew.evaluate(
+            "ai_hats_library",
+            Version("0.6.5"),
+            Version("0.6.5"),
+            src_changed=True,
+            base_ver=Version("0.6.5"),
+        )
+        assert v.ok is False
+        assert "stale wheel" in v.reason
+
+    def test_behind_pypi_fails_even_when_bumped(self):
+        v = skew.evaluate(
+            "ai_hats_core",
+            Version("0.12.0"),
+            Version("0.13.0"),
+            src_changed=True,
+            base_ver=Version("0.11.0"),
+        )
+        assert v.ok is False
+        assert "behind" in v.reason
+
 
 class TestSourceMeta:
     def test_static_version(self, tmp_path: Path):
@@ -89,68 +129,89 @@ class TestLatestPypiVersion:
             skew.latest_pypi_version("ai-hats-core", fetch=fetch)
 
 
-class TestResolveBase:
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "test",
+    "GIT_AUTHOR_EMAIL": "test@example.com",
+    "GIT_COMMITTER_NAME": "test",
+    "GIT_COMMITTER_EMAIL": "test@example.com",
+}
+
+
+def git(repo: Path, *args: str) -> str:
+    import subprocess
+
+    return subprocess.run(  # noqa: S603, S607 — fixed argv, no shell
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True, env=GIT_ENV
+    ).stdout.strip()
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path) -> Path:
+    git(tmp_path, "init", "-b", "master")
+    (tmp_path / "file.txt").write_text("hello")
+    git(tmp_path, "add", "file.txt")
+    git(tmp_path, "commit", "-m", "initial")
+    return tmp_path
+
+
+class TestVersionAt:
+    """The offline half of the verdict, over a real git object store."""
+
+    def _pyproject(self, version: str) -> str:
+        return f'[project]\nname = "ai-hats-core"\nversion = "{version}"\n'
+
     @pytest.fixture
-    def git_repo(self, tmp_path: Path) -> Path:
-        def _git(*args):
-            import subprocess
+    def repo_with_bump(self, git_repo: Path) -> tuple[Path, str]:
+        """A repo whose HEAD bumped ai-hats-core 0.11.0 -> 0.12.0. Returns (repo, base)."""
+        pkg = git_repo / "packages" / "ai-hats-core"
+        pkg.mkdir(parents=True)
+        (pkg / "pyproject.toml").write_text(self._pyproject("0.11.0"))
+        git(git_repo, "add", "packages")
+        git(git_repo, "commit", "-m", "core at 0.11.0")
+        base = git(git_repo, "rev-parse", "HEAD")
+        (pkg / "pyproject.toml").write_text(self._pyproject("0.12.0"))
+        git(git_repo, "commit", "-am", "bump core to 0.12.0")
+        return git_repo, base
 
-            subprocess.run(
-                ["git", *args],
-                cwd=tmp_path,
-                check=True,
-                capture_output=True,
-                env={
-                    "GIT_AUTHOR_NAME": "test",
-                    "GIT_AUTHOR_EMAIL": "test@example.com",
-                    "GIT_COMMITTER_NAME": "test",
-                    "GIT_COMMITTER_EMAIL": "test@example.com",
-                },
-            )
+    def test_reads_the_version_the_base_commit_carried(self, repo_with_bump):
+        repo, base = repo_with_bump
+        assert skew.version_at(base, "packages/ai-hats-core/pyproject.toml", repo) == Version(
+            "0.11.0"
+        )
 
-        _git("init", "-b", "master")
-        (tmp_path / "file.txt").write_text("hello")
-        _git("add", "file.txt")
-        _git("commit", "-m", "initial")
-        return tmp_path
+    def test_head_carries_the_bumped_version(self, repo_with_bump):
+        repo, _ = repo_with_bump
+        assert skew.version_at("HEAD", "packages/ai-hats-core/pyproject.toml", repo) == Version(
+            "0.12.0"
+        )
 
-    def test_reachable_base_returns_ref(self, git_repo: Path):
-        assert skew.resolve_base("HEAD", git_repo) == "HEAD"
+    def test_absent_at_base_is_none(self, repo_with_bump):
+        # A package this very diff added has no base version to compare against.
+        repo, base = repo_with_bump
+        assert skew.version_at(base, "packages/ai-hats-brand-new/pyproject.toml", repo) is None
+
+    def test_dynamic_version_at_base_is_none(self, git_repo: Path):
+        pkg = git_repo / "packages" / "ai-hats"
+        pkg.mkdir(parents=True)
+        (pkg / "pyproject.toml").write_text('[project]\nname = "ai-hats"\ndynamic = ["version"]\n')
+        git(git_repo, "add", "packages")
+        git(git_repo, "commit", "-m", "dynamic version")
+        assert skew.version_at("HEAD", "packages/ai-hats/pyproject.toml", git_repo) is None
+
+
+class TestResolveBase:
+    def test_reachable_base_returns_the_merge_base_commit(self, git_repo: Path):
+        head = git(git_repo, "rev-parse", "HEAD")
+        assert skew.resolve_base("HEAD", git_repo) == head
 
     def test_unknown_sha_returns_none(self, git_repo: Path):
         assert skew.resolve_base("deadbeefdeadbeef", git_repo) is None
 
     def test_unrelated_history_returns_none(self, git_repo: Path):
-        import subprocess
-
-        env = {
-            "GIT_AUTHOR_NAME": "test",
-            "GIT_AUTHOR_EMAIL": "test@example.com",
-            "GIT_COMMITTER_NAME": "test",
-            "GIT_COMMITTER_EMAIL": "test@example.com",
-        }
-        subprocess.run(
-            ["git", "checkout", "--orphan", "unrelated"],
-            cwd=git_repo,
-            check=True,
-            capture_output=True,
-            env=env,
-        )
+        git(git_repo, "checkout", "--orphan", "unrelated")
         (git_repo / "other.txt").write_text("unrelated")
-        subprocess.run(
-            ["git", "add", "other.txt"],
-            cwd=git_repo,
-            check=True,
-            capture_output=True,
-            env=env,
-        )
-        subprocess.run(
-            ["git", "commit", "-m", "unrelated commit"],
-            cwd=git_repo,
-            check=True,
-            capture_output=True,
-            env=env,
-        )
+        git(git_repo, "add", "other.txt")
+        git(git_repo, "commit", "-m", "unrelated commit")
 
         assert skew.resolve_base("master", git_repo) is None
 
