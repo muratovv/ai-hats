@@ -112,11 +112,22 @@ suite stubbed the very contracts the change broke.
    (`make done-gate REV=<sha>` for a card already merged.) It runs only the
    stages the tree has not earned, in order, stops at the first red, and
    stamps each green one.
+
+   **A stage the gate does not declare** — `e2e-rack`, say, absent from
+   `<gate>.sh --stages` — is a **zone**: an area of the codebase and the tests
+   that assert it. The gates BEFORE the merge (`review`, `merge`) require what
+   they declare PLUS the zones your diff touches, so the set depends on what you
+   changed and cannot be declared in advance; `->done` never asks for them, so
+   you pay for your zone once — `<gate>.sh --zones` says which gate asks.
+   `bash scripts/gates.sh touched` prints what your change adds and
+   `bash scripts/gates.sh zones` the whole table; `make <gate>` earns them like
+   any other stage. Nothing is wrong with the gate — read it as the tests your
+   own area owns, asked for where you can still fix them alone.
 3. **Green** — the run's first line is `RESULT …, green`. Its last says what
    the transition after this one will additionally demand, so you can earn it
    now instead of being refused for it later:
 
-       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, master-ci
+       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, e2e-default, master-ci
 
    `next: nothing` means no gate on the road is short of anything. Transition.
 4. **Red** — the run's block, verdict first:
@@ -137,7 +148,14 @@ suite stubbed the very contracts the change broke.
    In order of importance: the verdict, what to do, what the red stage said
    (a failing test per line, a finding per line, or `master-ci`'s run URL),
    one line per green stage, the cached ones, the subject, and the dir holding
-   every stage's full output. Triage the red stage:
+   every stage's full output.
+
+   **`fix <stage>` assumes the failure is yours, and the gate cannot tell.** When
+   the red is in something this change did not touch, attribute before you fix or
+   ask for anything: skill **red-attribution**. Cheapest first — a stale base is a
+   more common cause than a broken master.
+
+   Triage the red stage:
 
    - a red pytest stage hands you the narrow command already — paste the
      `re-run just these` line. Do not rebuild it: the interpreter in it is the
@@ -157,11 +175,13 @@ suite stubbed the very contracts the change broke.
 
    `master-ci` is the one red the tree cannot fix: master itself is red. Its
    knob (see "No bypass") is the supervisor's to set, never yours.
-5. **Touched what the gate does not name?** No card gate runs the `e2e`
-   stage, the full tier (`done-gate` runs `merge-smoke`, a curated subset).
-   Run it yourself and say so. Nothing refuses here, which is why it is not
-   optional. It outlives a foreground call, so run it in the background through
-   the wrapper, which exits with the tier's own status:
+5. **Touched what the gate does not name?** No card gate runs the whole tier
+   under one name: `->merge` asks for the zones your diff touches, `->done` for
+   `e2e-default` — the half no zone claims — plus `merge-smoke`, and never for
+   your zones again. What that leaves out is a zone your change breaks WITHOUT
+   touching its prefix, and nothing refuses there. Run the tier yourself and say
+   so. It outlives a foreground call, so run it in the background through the
+   wrapper, which exits with the tier's own status:
 
        timeout 1800 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh \
            --log /tmp/e2e.log -- bash scripts/gates.sh e2e
@@ -169,7 +189,7 @@ suite stubbed the very contracts the change broke.
    Report the number in `/tmp/e2e.log.rc`, never the completion notice: that
    notice reports the whole command, so a hand-rolled `; echo $?` is what it
    announces — two red tiers arrived as `exit code 0` that way. What a gate
-   requires:
+   requires of every tree:
 
        bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/done-gate.sh --stages
 
@@ -226,3 +246,9 @@ There is no `AI_HATS_E2E_SKIP` and no `--ack`. `git push --no-verify` and forgin
 a marker are deliberate local acts by the trusted maintainer, never an accidental
 skip. The one knob is `AI_HATS_RED_MASTER_ACK=1`: it lets `master-ci` pass on a
 red master, for the card that fixes it, and says so in the run.
+
+That knob is the supervisor's, and it reaches the check only from the environment
+that LAUNCHED the agent. Writing it on your own command line is refused
+(`safety-guard`) — an approval you grant yourself is not one. If the red is not
+yours, the move is a classification, not a request for the flag:
+skill **red-attribution**.

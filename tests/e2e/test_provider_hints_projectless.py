@@ -15,7 +15,7 @@ import sys
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 @pytest.mark.parametrize(

@@ -14,7 +14,7 @@ import sys
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 import click
 from ai_hats_core import LockTimeoutError, file_lock
@@ -22,10 +22,16 @@ from rich.tree import Tree
 
 from ai_hats_core.layout import ProjectNotFoundError
 
-from ..paths import PROJECT_CONFIG
-from ..session_policy import InitRunParams
+from ..config import Channel
+from ..config.project import ProjectConfig
+from ..initialization import InitConfigUnreadableError, InitRefusedError
+from ..paths import PROJECT_CONFIG, ProjectConfigError
+from ..session_policy import InitOutcome, InitRunParams
 from ._entry import resolve_project, resolve_project_lenient
 from ._helpers import _assembler, console
+
+if TYPE_CHECKING:
+    from ..surfaces import Surface
 
 
 @contextmanager
@@ -152,6 +158,75 @@ def _wizard_harness_prompt(current_channel: str | None = None) -> str:
         console.print(f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(channels)} or channel name.")
 
 
+class ClickInitWizard:
+    """The terminal answers: stdin says whether anyone is there, click asks the questions."""
+
+    def is_interactive(self) -> bool:
+        return _stdin_is_tty()
+
+    def detected_providers(self) -> list[Surface]:
+        from ..surface_registry import get_surface
+
+        return [get_surface(name) for name in _detected_providers()]
+
+    def choose_provider(self, detected: list[Surface]) -> Surface:
+        from ..surface_registry import get_surface
+
+        return get_surface(_wizard_provider_prompt([s.name for s in detected]))
+
+    def choose_channel(self, current: Channel | None) -> Channel:
+        return Channel(_wizard_harness_prompt(None if current is None else current.value))
+
+
+class AssemblerBootstrapper:
+    """One ``Assembler`` for the whole run, built before the pipeline starts."""
+
+    def __init__(self, project_dir: Path) -> None:
+        try:
+            self._asm = _assembler(project_dir)
+        except Exception as exc:  # noqa: BLE001 — any load failure refuses; the silent branch reset the provider
+            raise InitConfigUnreadableError(repr(exc)) from exc
+
+    @property
+    def config(self) -> ProjectConfig:
+        return self._asm.project_config
+
+    def init(
+        self,
+        *,
+        provider: str,
+        role: str | None,
+        task_prefix: str | None,
+        ai_hats_dir: Path | None,
+        venv_path: Path | None,
+        manage_gitignore: bool | None,
+        channel: Channel | None,
+        harness_path: Path | None,
+    ) -> None:
+        self._asm.init(
+            provider=provider,
+            role=role,
+            task_prefix=task_prefix,
+            ai_hats_dir=None if ai_hats_dir is None else str(ai_hats_dir),
+            venv_path=None if venv_path is None else str(venv_path),
+            manage_gitignore=manage_gitignore,
+            channel=None if channel is None else channel.value,
+            harness_path=None if harness_path is None else str(harness_path),
+        )
+
+    def verify_runtime_hooks(self, *, backup_path: Path | None) -> None:
+        from ..assembler import AssemblyError
+        from ..migration_assert import assert_runtime_hooks_resolve
+
+        try:
+            assert_runtime_hooks_resolve(self._asm.project_dir, backup_path=backup_path)
+        except AssemblyError as exc:
+            raise InitRefusedError(f"[red]Init refused[/]:\n{exc}") from exc
+
+    def report_diagnostics(self) -> None:
+        self._asm._run_diagnostics()
+
+
 def _launch_wizard_session(cmd: list[str]) -> None:
     """Replace the current process with the command prepared by `PrepareExecuteSessionStep`.
 
@@ -164,6 +239,8 @@ def _launch_wizard_session(cmd: list[str]) -> None:
 
 def _build_init_pipeline_params(
     project_dir: Path,
+    wizard: ClickInitWizard,
+    bootstrapper: AssemblerBootstrapper,
     provider: str | None,
     role: str | None,
     task_prefix: str | None,
@@ -175,19 +252,19 @@ def _build_init_pipeline_params(
     harness_path: str | None,
 ) -> InitRunParams:
     """Map CLI options into the init pipeline's params."""
-    from ..config import Channel
-
     return InitRunParams(
         project_dir=project_dir,
+        wizard=wizard,
+        bootstrapper=bootstrapper,
         provider=provider,
         role=role,
         task_prefix=task_prefix,
-        ai_hats_dir=ai_hats_dir,
-        venv_path=venv_path,
+        ai_hats_dir=None if ai_hats_dir is None else Path(ai_hats_dir),
+        venv_path=None if venv_path is None else Path(venv_path),
         no_manage_gitignore=no_manage_gitignore,
         no_wizard=no_wizard,
         channel=None if channel is None else Channel(channel),
-        harness_path=harness_path,
+        harness_path=None if harness_path is None else Path(harness_path),
     )
 
 
@@ -289,6 +366,8 @@ def init(
         project_dir = resolve_project().layout.root
     except ProjectNotFoundError:
         project_dir = Path.cwd()
+    except ProjectConfigError as exc:  # a re-init on an unreadable yaml refuses, never resets
+        raise InitConfigUnreadableError(str(exc)) from exc
 
     # Mirror the `config --channel` guard — a path only means the
     # local channel.
@@ -299,10 +378,11 @@ def init(
     # Wizard choice moved into the pipeline — no local branch here.
     from ..pipeline import run_pipeline
     from ..pipeline_catalog import INIT
-    from ..session_policy import InitOutcome
 
     init_params = _build_init_pipeline_params(
         project_dir=project_dir,
+        wizard=ClickInitWizard(),
+        bootstrapper=AssemblerBootstrapper(project_dir),
         provider=provider,
         role=role,
         task_prefix=task_prefix,
@@ -330,9 +410,11 @@ def init(
             shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
         raise
 
-    cmd = InitOutcome.of(result).execute_cmd
-    if cmd:
-        _launch_wizard_session(cmd)
+    outcome = InitOutcome.of(result)
+    for line in outcome.notices:
+        console.print(line)
+    if outcome.execute_cmd:
+        _launch_wizard_session(outcome.execute_cmd)
 
 
 # `self sync-hooks` removed — hook drift healing is session-start only.

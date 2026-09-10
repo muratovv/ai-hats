@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.rack]
 
 
 def _git_init_on_master(project: Path) -> None:

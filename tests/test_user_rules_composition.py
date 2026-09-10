@@ -8,6 +8,8 @@ real session; these pin the edges cheaply.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 import pytest
@@ -15,7 +17,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.materialize import compose_for_role, discover_user_rules
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG, user_rules_dir
+from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.surfaces.cline.provider import ClineSurface
@@ -30,7 +32,7 @@ SECTION_RULES = "## RULES"
 
 
 def _write_rule(project: Path, stem: str, body: str = "body\n") -> Path:
-    d = user_rules_dir(project)
+    d = ProjectLayout.at(project).user_rules
     d.mkdir(parents=True, exist_ok=True)
     target = d / f"{stem}.md"
     target.write_text(body)
@@ -45,21 +47,21 @@ def _write_rule(project: Path, stem: str, body: str = "body\n") -> Path:
 def test_absent_directory_yields_empty(tmp_path: Path):
     """A project that never created ``user-rules/`` must not raise."""
     ProjectConfig(provider="claude", library_paths=[]).save(tmp_path / PROJECT_CONFIG)
-    assert discover_user_rules(tmp_path) == ()
+    assert discover_user_rules(ProjectLayout.at(tmp_path)) == ()
 
 
 def test_empty_directory_yields_empty(tmp_path: Path):
     ProjectConfig(provider="claude", library_paths=[]).save(tmp_path / PROJECT_CONFIG)
-    user_rules_dir(tmp_path).mkdir(parents=True)
-    assert discover_user_rules(tmp_path) == ()
+    ProjectLayout.at(tmp_path).user_rules.mkdir(parents=True)
+    assert discover_user_rules(ProjectLayout.at(tmp_path)) == ()
 
 
 def test_only_markdown_is_picked_up(tmp_path: Path):
     ProjectConfig(provider="claude", library_paths=[]).save(tmp_path / PROJECT_CONFIG)
     _write_rule(tmp_path, "keep")
-    (user_rules_dir(tmp_path) / "notes.txt").write_text("ignored")
-    (user_rules_dir(tmp_path) / "README.rst").write_text("ignored")
-    assert [p.name for p in discover_user_rules(tmp_path)] == ["keep.md"]
+    (ProjectLayout.at(tmp_path).user_rules / "notes.txt").write_text("ignored")
+    (ProjectLayout.at(tmp_path).user_rules / "README.rst").write_text("ignored")
+    assert [p.name for p in discover_user_rules(ProjectLayout.at(tmp_path))] == ["keep.md"]
 
 
 def test_results_are_name_sorted(tmp_path: Path):
@@ -68,7 +70,11 @@ def test_results_are_name_sorted(tmp_path: Path):
     ProjectConfig(provider="claude", library_paths=[]).save(tmp_path / PROJECT_CONFIG)
     for stem in ("zulu", "alpha", "mike"):
         _write_rule(tmp_path, stem)
-    assert [p.stem for p in discover_user_rules(tmp_path)] == ["alpha", "mike", "zulu"]
+    assert [p.stem for p in discover_user_rules(ProjectLayout.at(tmp_path))] == [
+        "alpha",
+        "mike",
+        "zulu",
+    ]
 
 
 # --------------------------------------------------------------------- #

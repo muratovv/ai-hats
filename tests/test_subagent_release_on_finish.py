@@ -10,6 +10,8 @@ own ``(session_id, root_pid)`` holds, fail-open.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,12 +32,13 @@ class _FakeSession:
 
 def _runner(project_dir: Path) -> SubAgentRunner:
     runner = SubAgentRunner.__new__(SubAgentRunner)
+    runner.layout = ProjectLayout.at(project_dir)
     runner.project_dir = project_dir
     return runner
 
 
 def _registry(project_dir: Path) -> Path:
-    reg = tracker_paths(project_dir).tasks_dir.parent / "ownership.json"
+    reg = tracker_paths(ProjectLayout.at(project_dir)).tasks_dir.parent / "ownership.json"
     reg.parent.mkdir(parents=True, exist_ok=True)
     return reg
 

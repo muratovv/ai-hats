@@ -29,7 +29,6 @@ def _runner(project: Path) -> WrapRunner:
     edge, so the composition itself is a placeholder)."""
     from ai_hats.composition_payload import CompositionPayload
     from ai_hats_observe import SessionManager, SidecarTracer
-    from ai_hats.paths import runs_dir
     from ai_hats_core import CompositionResult
 
     payload = CompositionPayload(
@@ -47,7 +46,7 @@ def _runner(project: Path) -> WrapRunner:
     return WrapRunner(
         ProjectLayout.at(project),
         payload,
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
         tracer_factory=SidecarTracer,
     )
 

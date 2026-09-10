@@ -13,6 +13,8 @@ resolved and never run.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 
@@ -181,7 +183,7 @@ def _declared(project: Path):
 
     catalog = project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
     catalog.mkdir(parents=True, exist_ok=True)
-    return AiHatsCheckPort(project, catalog=catalog).check_declarations()
+    return AiHatsCheckPort(ProjectLayout.at(project), catalog=catalog).check_declarations()
 
 
 def test_the_projects_own_gate_is_declared_on_the_rack_road(gated_project):

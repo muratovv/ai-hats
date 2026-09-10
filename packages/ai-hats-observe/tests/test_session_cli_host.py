@@ -1,9 +1,9 @@
-"""HATS-952 (T15/0.2.0) — wt-free defaults of the session-CLI injection seam.
+"""The standalone host of the session CLI.
 
-The observe session CLI (`list`/`show`/`audit`) defaults to project-local,
-worktree-free resolvers so it runs with only ai-hats-core; the integrator
-overrides the ``_seam`` module globals at mount. This pins the standalone
-defaults' behaviour (the counterpart of the tracker's ``_seam`` defaults).
+The observe session CLI (`list`/`show`/`audit`) runs under ``STANDALONE`` —
+project-local, worktree-free resolvers — so it works with only ai-hats-core; an
+integrator attaches its own ``Host``. This pins the standalone behaviour and that
+a fresh import runs under it.
 """
 
 from __future__ import annotations
@@ -23,35 +23,35 @@ def test_layout_default_is_the_shared_core_resolver(tmp_path: Path) -> None:
     the walk-up behaviour itself is covered by core's ``test_layout.py``.
     Standalone keeps the deliberate flat tree: base is ``.agent``, not
     ``.agent/ai-hats``."""
-    from ai_hats_observe.cli import _seam
+    from ai_hats_observe.cli import _host
 
     (tmp_path / ".agent").mkdir()
-    layout = _seam._default_layout(tmp_path)
+    layout = _host._default_layout(tmp_path)
     assert layout.root == tmp_path.resolve()
     assert layout.sessions.runs == tmp_path.resolve() / ".agent" / "sessions" / "runs"
 
 
 def test_default_tag_filter_parser_splits_kv() -> None:
-    from ai_hats_observe.cli import _seam
+    from ai_hats_observe.cli import _host
 
-    assert _seam._default_tag_filter_parser(["env=prod", "tier=gold"]) == {
+    assert _host._default_tag_filter_parser(["env=prod", "tier=gold"]) == {
         "env": "prod",
         "tier": "gold",
     }
 
 
 def test_default_tag_filter_parser_rejects_malformed() -> None:
-    from ai_hats_observe.cli import _seam
+    from ai_hats_observe.cli import _host
 
     with pytest.raises(ValueError):
-        _seam._default_tag_filter_parser(["noequals"])
+        _host._default_tag_filter_parser(["noequals"])
 
 
-def test_seam_slots_default_to_wt_free_functions_on_fresh_import() -> None:
-    """A fresh import of the seam wires the slots to their wt-free defaults and
-    pulls no ``ai_hats`` integrator. Runs in a clean subprocess: the integrator
-    override mutates the shared ``_seam`` globals process-wide, so an in-process
-    identity assert is contaminated by any earlier ``import ai_hats.cli``.
+def test_fresh_import_runs_under_the_standalone_host() -> None:
+    """A fresh import runs under ``STANDALONE`` and pulls no ``ai_hats`` integrator.
+
+    A clean subprocess: an integrator attaches its host process-wide, so an
+    in-process identity assert is contaminated by any earlier ``import ai_hats.cli``.
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
@@ -63,9 +63,10 @@ def test_seam_slots_default_to_wt_free_functions_on_fresh_import() -> None:
     )
     code = (
         "import sys\n"
-        "import ai_hats_observe.cli._seam as s\n"
-        "assert s._LAYOUT is s._default_layout\n"
-        "assert s._TAG_FILTER_PARSER is s._default_tag_filter_parser\n"
+        "from ai_hats_observe.cli import STANDALONE, host\n"
+        "assert host() is STANDALONE\n"
+        "from ai_hats_observe.cli import _host as h\n"
+        "assert STANDALONE.layout is h._default_layout\n"
         "assert 'ai_hats' not in sys.modules, 'seam import pulled the integrator'\n"
     )
     result = subprocess.run(  # noqa: S603 — fixed argv, our own interpreter

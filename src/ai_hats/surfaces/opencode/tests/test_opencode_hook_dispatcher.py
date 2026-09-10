@@ -7,6 +7,7 @@ call in the dialect every shipped hook speaks and be waved through.
 
 from __future__ import annotations
 
+
 import io
 import json
 from pathlib import Path

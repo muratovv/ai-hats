@@ -51,7 +51,7 @@ class CheckUpdateAsync(Step):
         # probe upstream or surface a ``self update`` nudge for it.
         if is_local_channel(project_dir):
             return {}
-        cached = read_cache(project_dir)
+        cached = read_cache(layout.cache)
         if cached is not None and cached.is_fresh:
             # The cache is keyed only on project_dir + 24h TTL. A
             # reinstall within that window changes the installed SHA, so a
@@ -63,7 +63,13 @@ class CheckUpdateAsync(Step):
                 return {}
         try:
             subprocess.Popen(
-                [sys.executable, "-m", "ai_hats.update_check", str(project_dir)],
+                [
+                    sys.executable,
+                    "-m",
+                    "ai_hats.update_check",
+                    str(project_dir),
+                    str(layout.cache.root),
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,

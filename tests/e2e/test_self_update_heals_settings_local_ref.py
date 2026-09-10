@@ -19,7 +19,7 @@ from _helpers.project import pin_edge_channel
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.install]
 
 USER_ENTRY = {"matcher": "*", "hooks": [{"type": "command", "command": "echo mine"}]}
 

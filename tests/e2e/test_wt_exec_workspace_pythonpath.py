@@ -22,7 +22,7 @@ from ai_hats_wt.env import PACKAGES_DIRNAME, SRC_DIRNAME
 
 from _helpers.wt import spawn_worktree
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 
 def _child_env(repo_root: Path) -> dict[str, str]:

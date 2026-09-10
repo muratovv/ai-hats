@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -113,7 +115,7 @@ def inject_skill_paths_to_env(
 def materialize_skills_dir(
     skills_dir: Path,
     skills: Iterable[ResolvedComponent],
-    project_dir: Path,
+    layout: ProjectLayout,
     port: "Materializer",
 ) -> None:
     """Wipe ``skills_dir`` and copy ``skills`` in.
@@ -141,8 +143,6 @@ def materialize_skills_dir(
         source_md = skill.source_path / "SKILL.md"
         if source_md.exists():
             original = source_md.read_text()
-            rendered = expand_fsm_edges_token(
-                expand_path_placeholders(original, project_dir), project_dir
-            )
+            rendered = expand_fsm_edges_token(expand_path_placeholders(original, layout), layout)
             if rendered != original:
                 port.write_text(dest / "SKILL.md", rendered)

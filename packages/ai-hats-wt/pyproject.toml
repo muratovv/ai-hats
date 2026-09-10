@@ -25,7 +25,7 @@ classifiers = [
     "Topic :: Software Development :: Version Control :: Git",
 ]
 dependencies = [
-    "ai-hats-core>=0.11.0",  # floor tracks the workspace version (HATS-1719); Deadline.clamped_to needs only 0.9.0
+    "ai-hats-core>=0.12.0",  # floor tracks the workspace version (HATS-1719); Deadline.clamped_to needs only 0.9.0
     "filelock>=3.12",
     "pydantic>=2.0",
 ]

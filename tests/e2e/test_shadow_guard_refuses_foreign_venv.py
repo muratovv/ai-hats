@@ -21,9 +21,10 @@ import pytest
 from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # real wheel build + install at call time → capped via conftest
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # real wheel build + install at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

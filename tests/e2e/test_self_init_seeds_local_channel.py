@@ -17,7 +17,10 @@ import yaml
 from ai_hats.constants import ENV_AI_HATS_INIT_SRC, ENV_LAUNCHER_DEST, ENV_REPO_URL
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
-pytestmark = pytest.mark.install_heavy  # real uv install at call time → capped via conftest
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # real uv install at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"

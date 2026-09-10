@@ -27,6 +27,8 @@ from _helpers.env import clean_env  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 from _helpers.venv import network_available, venv_unavailable  # noqa: E402
 
+pytestmark = pytest.mark.install
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 #: Areas laid out per ADR-0026 D5 — one entry each, as `testpaths` lists them.

@@ -15,6 +15,8 @@ F. the hook scripts shipped into user projects spell every ``AI_HATS_*`` they
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import ast
 import re
 from pathlib import Path
@@ -302,18 +304,18 @@ class _Surface:
 
     name = "stub"
 
-    def session_skills_root(self, project_dir, session_id):
-        del project_dir, session_id
+    def session_skills_root(self, layout, session_id):
+        del layout, session_id
         return None
 
-    def get_env(self, session_dir, project_dir):
+    def get_env(self, session_dir, layout):
         del session_dir
         from ai_hats.env import AI_HATS_PROJECT_DIR_ENV
 
-        return {AI_HATS_PROJECT_DIR_ENV: str(project_dir)}
+        return {AI_HATS_PROJECT_DIR_ENV: str(layout.root)}
 
-    def claim_launch_env(self, session_dir, project_dir):
-        del session_dir, project_dir
+    def claim_launch_env(self, session_dir, layout):
+        del session_dir, layout
         return {}
 
 
@@ -331,7 +333,7 @@ def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
 
     env = assemble_launch_env(
         _Surface(),
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         tmp_path / "session",
         session_id="20260812-101500-3-4242",
         trace_path=str(tmp_path / "trace.log"),

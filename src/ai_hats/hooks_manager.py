@@ -15,6 +15,8 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult, scrubbed_git_env
@@ -58,12 +60,13 @@ class HooksManager:
 
     def __init__(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         project_config: "ProjectConfig",
         *,
         resolve_provider: "Callable[[str], Surface]",
     ) -> None:
-        self.project_dir = project_dir
+        self.layout = layout
+        self.project_dir = layout.root
         self.project_config = project_config
         self.resolve_provider = resolve_provider
 
@@ -92,7 +95,7 @@ class HooksManager:
         try:
             from .update_check import upstream_update
 
-            return upstream_update(self.project_dir) is not None
+            return upstream_update(self.layout) is not None
         except Exception:  # silent-ok: unknown means "not behind" — see docstring
             return False
 

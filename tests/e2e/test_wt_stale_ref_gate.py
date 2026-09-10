@@ -19,6 +19,8 @@ import pytest
 import ai_hats_wt as wt
 from ai_hats_wt import WorktreeManager, NOOP_LIFECYCLE
 
+pytestmark = pytest.mark.wt
+
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}

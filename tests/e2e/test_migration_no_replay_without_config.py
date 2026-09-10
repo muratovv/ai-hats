@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 _SENTINEL = "safety-guard-safety_gate.py"
 

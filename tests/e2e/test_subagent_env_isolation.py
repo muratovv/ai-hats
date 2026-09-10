@@ -22,7 +22,7 @@ from ai_hats.constants import BYPASS_FLAGS_NOT_INHERITED
 
 from _helpers.fake_surface import install
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 #: Two the journal shows most — SHARED_STATE_ACK leads every count and YOLO switches
 #: off the guard wholesale — plus one no roster has ever heard of, which is the case

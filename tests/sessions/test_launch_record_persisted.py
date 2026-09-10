@@ -104,7 +104,6 @@ def test_automate_subagent_persists_role_materialization_json(
 ):
     """Automate (SubAgentRunner) launch writes <session_dir>/role_materialization.json (HATS-1216)."""
     from ai_hats.composition_seam import build_composition_payload
-    from ai_hats.paths import runs_dir
     from ai_hats.runtime import SubAgentRunner
     from ai_hats_observe import SessionManager
 
@@ -118,7 +117,8 @@ def test_automate_subagent_persists_role_materialization_json(
 
     payload = build_composition_payload(project_with_maintainer_default, role_override="maintainer")
     session_mgr = SessionManager(
-        project_with_maintainer_default, runs_dir=runs_dir(project_with_maintainer_default)
+        project_with_maintainer_default,
+        runs_dir=ProjectLayout.at(project_with_maintainer_default).sessions.runs,
     )
     runner = SubAgentRunner(
         ProjectLayout.at(project_with_maintainer_default), payload, session_mgr=session_mgr

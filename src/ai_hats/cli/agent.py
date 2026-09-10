@@ -90,7 +90,7 @@ def run_subagent(
         # The seam's typed errors render at the root group —
         # cli/_helpers.dispatch_friendly_error.
         report = dry_run_automate(
-            resolve_project().layout.root,
+            resolve_project().layout,
             role=role,
             task=task or "",
             ticket_id=ticket or "",

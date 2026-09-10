@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -397,7 +399,7 @@ def test_materialization_wraps_declared_surfaces_in_session_path(tmp_path: Path)
     artifacts = BuiltArtifacts()
 
     materialize_consent_wrappers(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         result,
         "sid-a",
         SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
@@ -433,7 +435,7 @@ def test_materialization_skips_every_inherited_wrapper_bin(tmp_path: Path):
         return str(canonical)
 
     materialize_consent_wrappers(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         SimpleNamespace(
             consent=(
                 ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),
@@ -458,7 +460,7 @@ def test_materialization_rejects_wrapper_returned_by_custom_resolver(tmp_path: P
 
     with pytest.raises(RuntimeError, match="resolved executable is a consent wrapper"):
         materialize_consent_wrappers(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             SimpleNamespace(
                 consent=(
                     ConsentPoint(
@@ -484,7 +486,7 @@ def test_materialization_rejects_symlink_to_inherited_wrapper(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="resolved executable is a consent wrapper"):
         materialize_consent_wrappers(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             SimpleNamespace(
                 consent=(
                     ConsentPoint(
@@ -507,7 +509,7 @@ def test_materialization_fails_when_only_inherited_wrapper_exists(tmp_path: Path
 
     with pytest.raises(RuntimeError, match="executable not found on PATH"):
         materialize_consent_wrappers(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             SimpleNamespace(
                 consent=(
                     ConsentPoint(
@@ -526,7 +528,7 @@ def test_role_without_consent_keeps_the_original_command_surface(tmp_path: Path)
     artifacts = BuiltArtifacts()
 
     materialize_consent_wrappers(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         SimpleNamespace(consent=()),
         "sid-a",
         SimpleNamespace(name="agy", supports_session_command_wrappers=lambda: False),
@@ -544,7 +546,7 @@ def test_provider_without_command_interception_refuses_protected_role(tmp_path: 
 
     with pytest.raises(RuntimeError, match="cannot enforce role-declared command consent"):
         materialize_consent_wrappers(
-            tmp_path,
+            ProjectLayout.at(tmp_path),
             result,
             "sid-a",
             SimpleNamespace(name="agy", supports_session_command_wrappers=lambda: False),
@@ -669,7 +671,7 @@ def test_the_guard_recognises_the_wrapper_the_materializer_wrote(
     artifacts = BuiltArtifacts()
 
     materialize_consent_wrappers(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         SimpleNamespace(
             consent=(
                 ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),

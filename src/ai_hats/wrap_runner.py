@@ -159,7 +159,7 @@ _REPAIR_CMD = (
 )
 
 
-def _venv_is_ai_hats_managed(project_dir: Path) -> bool:
+def _venv_is_ai_hats_managed(base: Path) -> bool:
     """True when ``bootstrap.sh --repair`` would rebuild *this* venv (HATS-1521).
 
     Two facts, both required. The venv must live under the framework dir — that is
@@ -168,13 +168,11 @@ def _venv_is_ai_hats_managed(project_dir: Path) -> bool:
     editable install points back at somebody's checkout, which a rebuild from
     GitHub would silently replace — the HATS-1522 reasoning, one file over.
     """
-    from .paths import ai_hats_dir
-
     try:
         prefix = Path(sys.prefix).resolve()
-        return prefix.is_relative_to(ai_hats_dir(project_dir).resolve()) and Path(
-            __file__
-        ).resolve().is_relative_to(prefix)
+        return prefix.is_relative_to(base.resolve()) and Path(__file__).resolve().is_relative_to(
+            prefix
+        )
     except OSError:
         return False
 
@@ -276,7 +274,7 @@ class WrapRunner:
         return interpreter_pin_notices(
             running or "{}.{}".format(*sys.version_info[:2]),
             venv=sys.prefix,
-            managed=_venv_is_ai_hats_managed(self.project_dir),
+            managed=_venv_is_ai_hats_managed(self.layout.base),
         )
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
@@ -285,14 +283,13 @@ class WrapRunner:
 
         Fail-open — a broken auto-discovery dir must never block launch.
         """
-        from .paths import session_cache_dir
         from .plugin_dir import duplicate_skill_registrations
 
         try:
             collisions = duplicate_skill_registrations(
                 [s.name for s in result.skills],
                 project_dir=self.project_dir,
-                plugin_skills_root=session_cache_dir(self.project_dir, session.session_id)
+                plugin_skills_root=self.layout.cache.session(session.session_id)
                 / "plugin"
                 / "skills",
                 home=Path.home(),
@@ -361,7 +358,7 @@ class WrapRunner:
         if provider is None:
             return []
         try:
-            findings = provider.settings_lint_warnings(self.project_dir)
+            findings = provider.settings_lint_warnings(self.layout)
         except Exception as exc:
             logger.warning("provider settings lint at session start failed", exc_info=True)
             session.log_sys(f"provider settings lint FAILED — {type(exc).__name__}: {exc}")
@@ -398,7 +395,7 @@ class WrapRunner:
         """
         server = None
         try:
-            server = provider.serve_hooks(self.project_dir, session.session_id, env)
+            server = provider.serve_hooks(self.layout, session.session_id, env)
         except Exception as exc:
             logger.warning("resident hook dispatcher did not start", exc_info=True)
             session.log_sys(f"resident hook dispatcher FAILED, spawning per call — {exc!r}")
@@ -599,18 +596,18 @@ class WrapRunner:
         session = run.session
         run.defer(
             "session cache",
-            lambda: _cleanup_session_cache(self.project_dir, session.session_id),
+            lambda: _cleanup_session_cache(self.layout.cache.session(session.session_id)),
         )
 
         # HATS-452 (D2): no override channel on WrapRunner — the payload's
         # composition flows straight into the builder.
         builder_notices: list[StartupNotice] = []
         artifacts = BuiltArtifacts(resources=run)
-        with provider.execution_context(self.project_dir):
+        with provider.execution_context(self.layout):
             result = payload.result
             if provider.handles_artifact_categories():
                 artifacts = provider.build_session_artifacts(
-                    self.project_dir,
+                    self.layout,
                     result,
                     session.session_id,
                     run_mode=RunMode.HITL,
@@ -623,14 +620,14 @@ class WrapRunner:
                 # A surface older than `session_skills_root` handles
                 # this seam fine and still cannot root a bound check. Said here,
                 # at launch, not at the first refused transition.
-                skew = surface_skew_notice(provider_name, provider, self.project_dir, result)
+                skew = surface_skew_notice(provider_name, provider, self.layout, result)
                 if skew:
                     builder_notices.append(StartupNotice("warn", skew))
             else:
                 # HATS-1207 R4 / HATS-1241: the legacy entry point predates both
                 # SessionPolicy and the check snapshot — loudly, not in silence.
                 session_args, session_env, meta_prompt = provider.build_session_prompt(
-                    self.project_dir, result, session.session_id
+                    self.layout, result, session.session_id
                 )
                 artifacts.extra_env.update(session_env)
                 builder_notices.extend(
@@ -638,11 +635,11 @@ class WrapRunner:
                     for text in legacy_launch_notices(provider_name, result, payload.policy)
                 )
             materialize_consent_wrappers(
-                self.project_dir, result, session.session_id, provider, artifacts
+                self.layout, result, session.session_id, provider, artifacts
             )
             session_env = artifacts.extra_env
         builder_notices.extend(StartupNotice("warn", text) for text in artifacts.notices)
-        _claim_session_cache(self.project_dir, session.session_id)
+        _claim_session_cache(self.layout.cache.session(session.session_id))
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -672,7 +669,7 @@ class WrapRunner:
         # Persist launch record as role_materialization.json
         env_map = assemble_launch_env(
             provider,
-            self.project_dir,
+            self.layout,
             session.session_dir,
             session_id=session.session_id,
             trace_path=str(session.trace_path),
@@ -690,7 +687,7 @@ class WrapRunner:
         # The same section --dry-run shows, on the launch record — one
         # call site would be a report about a session nobody can compare against.
         reported_checks, check_notes = describe_checks(
-            provider, self.project_dir, result, session.session_id, artifacts.port.plan
+            provider, self.layout, result, session.session_id, artifacts.port.plan
         )
         builder_notices.extend(StartupNotice("warn", text) for text in check_notes)
         # The record carries the same notes the dry-run does. They are already on
@@ -823,7 +820,7 @@ class WrapRunner:
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
             self._hold_before_launch(startup_notices, env=env)
             with (
-                provider.execution_context(self.project_dir),
+                provider.execution_context(self.layout),
                 self._serving_hooks(provider, session, env),
             ):
                 # The anchor names the cache's real READER. Redundant
@@ -835,7 +832,7 @@ class WrapRunner:
                     tracer,
                     pty_tap_factory=pty_tap_factory,
                     on_spawn=lambda pid: _claim_surface_child(
-                        self.project_dir, session.session_id, pid
+                        self.layout.cache.session(session.session_id), pid
                     ),
                 )
         except KeyboardInterrupt:

@@ -32,7 +32,7 @@ from _helpers.env import clean_env  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 from _helpers.venv import network_available, venv_unavailable  # noqa: E402
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

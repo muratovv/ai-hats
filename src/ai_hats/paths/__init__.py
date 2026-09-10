@@ -4,8 +4,9 @@ Package facade (HATS-831 split). The single ``paths.py`` module was split into
 cohesive submodules — all re-exported here so ``from ai_hats.paths import X``
 keeps working unchanged for every consumer:
 
-  - :mod:`._dirs`      — directory-path resolution (``ai_hats_dir``, sessions/
-    tracker/library dirs, venv + versioned-install layout, legacy migration map).
+  - :mod:`._dirs`      — what is not geometry: ``user_home``, ``ProjectConfigError``,
+    the legacy migration map. The geometry itself is
+    :class:`ai_hats_core.layout.ProjectLayout` (ADR-0026).
   - :mod:`.library`    — builtin ``library/`` SOURCE resolution (worktree-aware),
     the single home for ``files(LIBRARY_PKG)``.
   - :mod:`.claude`     — Claude Code ``.claude/*`` layout conventions (HATS-907/908).

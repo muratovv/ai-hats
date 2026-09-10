@@ -24,7 +24,7 @@ import pytest
 from _helpers.git import git as _git
 from _helpers.sessions import stand_in_session
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.rack]
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 STATE_MD = Path(".agent") / "ai-hats" / "STATE.md"

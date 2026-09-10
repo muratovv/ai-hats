@@ -9,6 +9,8 @@ would never use, because the launch allocates its own.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import socket
 from pathlib import Path
 
@@ -60,12 +62,12 @@ def no_sockets(monkeypatch):
 @pytest.mark.parametrize("report_of", [dry_run_hitl, dry_run_automate])
 def test_a_dry_run_binds_no_socket(project: Path, no_sockets, report_of, surface: str):
     """Every surface, both modes — the invariant belongs to reporting, not to cline."""
-    report_of(project, provider=surface)
+    report_of(ProjectLayout.at(project), provider=surface)
 
 
 @pytest.mark.parametrize("report_of", [dry_run_hitl, dry_run_automate])
 def test_the_reported_hub_port_is_the_launchs_to_pick(project: Path, report_of):
-    report = report_of(project, provider="cline")
+    report = report_of(ProjectLayout.at(project), provider="cline")
 
     assert report.env["CLINE_HUB_PORT"] == AT_LAUNCH, (
         "the report must say the port is the launch's to pick, not invent one"
@@ -74,14 +76,14 @@ def test_the_reported_hub_port_is_the_launchs_to_pick(project: Path, report_of):
 
 def test_the_port_key_survives_into_the_report(project: Path):
     """Purity must not be bought by dropping the key — that hides it instead."""
-    env_keys = dry_run_hitl(project, provider="cline").to_dict()["env_keys"]
+    env_keys = dry_run_hitl(ProjectLayout.at(project), provider="cline").to_dict()["env_keys"]
 
     assert "CLINE_HUB_PORT" in env_keys
 
 
 def test_a_real_launch_claims_a_usable_port(project: Path):
     """The sentinel is a report value; a launch still gets a bound-and-free port."""
-    claimed = get_surface("cline").claim_launch_env(project, project)
+    claimed = get_surface("cline").claim_launch_env(project, ProjectLayout.at(project))
 
     assert set(claimed) == {"CLINE_HUB_PORT"}
     assert 1024 < int(claimed["CLINE_HUB_PORT"]) <= 65535
@@ -96,7 +98,7 @@ def test_what_a_launch_claims_is_a_key_the_report_already_names(provider_name: s
     """
     provider = get_surface(provider_name)
 
-    claimed = set(provider.claim_launch_env(tmp_path, tmp_path))
-    reported = set(provider.get_env(tmp_path, tmp_path))
+    claimed = set(provider.claim_launch_env(tmp_path, ProjectLayout.at(tmp_path)))
+    reported = set(provider.get_env(tmp_path, ProjectLayout.at(tmp_path)))
 
     assert claimed <= reported, f"{provider_name} claims keys its report never names"

@@ -19,8 +19,9 @@ from pathlib import Path
 from ai_hats.assembler import Assembler
 from ai_hats.harness.diagnostic import is_zero_output
 from ai_hats.migrations import run_pending
-from ai_hats.paths import PROJECT_CONFIG, runs_dir
+from ai_hats.paths import PROJECT_CONFIG
 from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY, METRICS_JSON
+from ai_hats_core.layout import ProjectLayout
 
 ZEROS = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
 
@@ -33,7 +34,7 @@ def _project(tmp_path: Path) -> Path:
 
 
 def _session(project_dir: Path, name: str, metrics: dict) -> Path:
-    d = runs_dir(project_dir) / f"session_{name}"
+    d = ProjectLayout.at(project_dir).sessions.runs / f"session_{name}"
     d.mkdir(parents=True)
     path = d / METRICS_JSON
     path.write_text(json.dumps(metrics))

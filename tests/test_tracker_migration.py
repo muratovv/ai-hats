@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
-from ai_hats.paths import (
-    backlog_dir,
-    decisions_dir,
-    hypotheses_flat_dir,
-    last_backup_path,
-    proposals_dir,
-    state_md_path,
-    tasks_dir,
-)
 from ai_hats.paths import PROJECT_CONFIG
 
 
@@ -57,15 +50,15 @@ def test_tracker_migration_moves_all_paths(tmp_path: Path) -> None:
     asm._migrate_layout_v4_tracker()
 
     # Task / proposal / hypothesis / decision under new layout
-    assert (tasks_dir(tmp_path) / "HATS-001" / "task.yaml").exists()
-    assert (proposals_dir(tmp_path) / "PROP-001.yaml").exists()
+    assert (ProjectLayout.at(tmp_path).tracker.tasks_dir / "HATS-001" / "task.yaml").exists()
+    assert (ProjectLayout.at(tmp_path).tracker.proposals_dir / "PROP-001.yaml").exists()
     # v4 layout migration lands flat HYP files at the legacy flat dir; the rack
     # dir-per-card normalization to tracker/backlog/hypotheses is a later step (HATS-1054).
-    assert (hypotheses_flat_dir(tmp_path) / "HYP-001.yaml").exists()
-    assert (decisions_dir(tmp_path) / "2026-01-01-adr.md").exists()
+    assert (ProjectLayout.at(tmp_path).tracker.base / "hypotheses" / "HYP-001.yaml").exists()
+    assert (ProjectLayout.at(tmp_path).tracker.decisions_dir / "2026-01-01-adr.md").exists()
     # STATE.md + .last_backup at dir root
-    assert state_md_path(tmp_path).read_text() == "# state"
-    assert last_backup_path(tmp_path).read_text() == "/tmp/backup-1"
+    assert ProjectLayout.at(tmp_path).state_md.read_text() == "# state"
+    assert ProjectLayout.at(tmp_path).last_backup.read_text() == "/tmp/backup-1"
     # Legacy paths gone
     assert not (tmp_path / ".agent" / "backlog").exists()
     assert not (tmp_path / ".agent" / "hypotheses").exists()
@@ -78,10 +71,10 @@ def test_tracker_migration_idempotent(tmp_path: Path) -> None:
     _seed_tracker_legacy(tmp_path)
     asm = Assembler(tmp_path)
     asm._migrate_layout_v4_tracker()
-    before_state = state_md_path(tmp_path).read_text()
+    before_state = ProjectLayout.at(tmp_path).state_md.read_text()
     asm._migrate_layout_v4_tracker()  # no-op
-    assert state_md_path(tmp_path).read_text() == before_state
-    assert (tasks_dir(tmp_path) / "HATS-001" / "task.yaml").exists()
+    assert ProjectLayout.at(tmp_path).state_md.read_text() == before_state
+    assert (ProjectLayout.at(tmp_path).tracker.tasks_dir / "HATS-001" / "task.yaml").exists()
 
 
 def test_tracker_migration_e2e_task_visible(tmp_path: Path) -> None:
@@ -98,7 +91,9 @@ def test_tracker_migration_e2e_task_visible(tmp_path: Path) -> None:
     asm = Assembler(tmp_path)
     asm._migrate_layout_v4_tracker()
 
-    kernel = build_rack_kernel(tmp_path, backlog_owner=tmp_path, prefix="HATS")
+    kernel = build_rack_kernel(
+        ProjectLayout.at(tmp_path), backlog_owner=ProjectLayout.at(tmp_path), prefix="HATS"
+    )
     task = kernel.get("HATS-001")
     assert task is not None
     assert task.title == "x"
@@ -110,4 +105,6 @@ def test_tracker_migration_noop_on_clean_project(tmp_path: Path) -> None:
     )
     asm = Assembler(tmp_path)
     asm._migrate_layout_v4_tracker()  # must not raise
-    assert not backlog_dir(tmp_path).exists() or not any(backlog_dir(tmp_path).iterdir())
+    assert not (ProjectLayout.at(tmp_path).tracker.base / "backlog").exists() or not any(
+        (ProjectLayout.at(tmp_path).tracker.base / "backlog").iterdir()
+    )

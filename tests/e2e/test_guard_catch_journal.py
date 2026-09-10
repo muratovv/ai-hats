@@ -20,6 +20,8 @@ import pytest
 from _helpers.git import git as _git
 from _helpers.hook_chain import build_session_settings, run_chain, run_tool_chain
 
+pytestmark = pytest.mark.guards
+
 SESSION_ID = "sid-catch"
 
 

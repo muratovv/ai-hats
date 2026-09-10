@@ -23,6 +23,8 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
+pytestmark = [pytest.mark.guards, pytest.mark.install]
+
 
 def _seed(project_path: Path) -> None:
     (project_path / PROJECT_CONFIG).write_text(

@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import worktrees_dir
 from ai_hats_wt import NOOP_LIFECYCLE, WorktreeManager
 from ai_hats_wt.locks import _state_key
 from ai_hats.wt_lifecycle import HOOK_LIFECYCLE
+from ai_hats_core.layout import ProjectLayout
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -53,7 +53,7 @@ def test_injected_state_dir_drives_state_path(git_project, tmp_path):
     assert mgr._state_dir == custom
     assert (custom / f"{_state_key('task/seam')}.json").exists()
     # The ai-hats convention dir was never written through this manager.
-    convention = worktrees_dir(git_project)
+    convention = ProjectLayout.at(git_project).sessions.worktrees
     assert not convention.exists() or not list(convention.glob("*.json"))
 
 
@@ -109,4 +109,4 @@ def test_lifecycle_ctx_threads_state_dir_into_hook_log_dir(git_project, tmp_path
     log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
     assert log_dir == custom / f"{_state_key('task/hats-851')}.logs"
     # NOT split under the ai-hats convention dir — the regression this fix prevents.
-    assert worktrees_dir(git_project) not in log_dir.parents
+    assert ProjectLayout.at(git_project).sessions.worktrees not in log_dir.parents

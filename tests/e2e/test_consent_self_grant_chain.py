@@ -26,7 +26,7 @@ from _helpers.hook_chain import (  # noqa: E402
     run_chain,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.consent]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

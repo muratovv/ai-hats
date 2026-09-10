@@ -60,7 +60,7 @@ class SaveArtifact(Step):
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
         template = self.out_path_template
         if self._needs_project_dir:
-            template = expand_path_placeholders(template, inputs["layout"].root)
+            template = expand_path_placeholders(template, inputs["layout"])
         path = Path(template.format(ts=ts, **inputs))
         if self._needs_project_dir and not path.is_absolute():
             # ``<ai_hats_dir>`` expands to a *project-relative* path when the

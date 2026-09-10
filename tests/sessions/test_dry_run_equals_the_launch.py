@@ -147,7 +147,7 @@ def _comparable(payload: dict, sid: str) -> dict:
 
 def test_the_dry_run_payload_equals_the_launch_record(project: Path, monkeypatch):
     """Field for field, once the launch-minted values are folded away."""
-    planned = dry_run_hitl(project).to_dict()
+    planned = dry_run_hitl(ProjectLayout.at(project)).to_dict()
     launched = _launch_for_real(monkeypatch, project)
 
     sid = _sid_of(launched)
@@ -177,7 +177,7 @@ def test_the_gates_survive_the_round_trip(project: Path, monkeypatch):
     Named separately because the equality above cannot fail on it: drop the
     section and both payloads lose it together.
     """
-    planned = dry_run_hitl(project).to_dict()
+    planned = dry_run_hitl(ProjectLayout.at(project)).to_dict()
     launched = _launch_for_real(monkeypatch, project)
 
     assert planned["checks"], "the maintainer role binds a gate — the fixture must show it"
@@ -194,9 +194,8 @@ TASK_TEXT = "ship the thing"
 def _write_ticket(project: Path) -> str:
     """A card on disk is what makes ``TICKET_CONTEXT`` non-empty — the section the
     dry-run drops together with the ``ticket_id`` that selects it."""
-    from ai_hats.paths import tasks_dir
 
-    card = tasks_dir(project) / TICKET
+    card = ProjectLayout.at(project).tracker.tasks_dir / TICKET
     card.mkdir(parents=True, exist_ok=True)
     (card / "task.yaml").write_text(f"id: {TICKET}\ntitle: the card the sub-agent is handed\n")
     return TICKET
@@ -210,7 +209,6 @@ def _automate_for_real(monkeypatch, project: Path) -> dict:
     reconstruction the test agrees with by construction.
     """
     from ai_hats.composition_seam import build_composition_payload
-    from ai_hats.paths import runs_dir
     from ai_hats.subagent_runner import SubAgentRunner
     from ai_hats.surfaces.claude.sdk_runner import SdkRunResult
     from ai_hats_observe import SessionManager
@@ -238,7 +236,7 @@ def _automate_for_real(monkeypatch, project: Path) -> dict:
     )
 
     payload = build_composition_payload(project, role_override="maintainer")
-    session_mgr = SessionManager(project, runs_dir=runs_dir(project))
+    session_mgr = SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs)
     session = SubAgentRunner(ProjectLayout.at(project), payload, session_mgr=session_mgr).run(
         task=TASK_TEXT,
         ticket_id=TICKET,
@@ -251,7 +249,9 @@ def _automate_for_real(monkeypatch, project: Path) -> dict:
 
 
 def _planned_automate(project: Path):
-    return dry_run_automate(project, role="maintainer", task=TASK_TEXT, ticket_id=TICKET)
+    return dry_run_automate(
+        ProjectLayout.at(project), role="maintainer", task=TASK_TEXT, ticket_id=TICKET
+    )
 
 
 def test_the_automate_dry_run_payload_equals_the_launch_record(project: Path, monkeypatch):
@@ -342,7 +342,6 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
 
     from ai_hats.composition_seam import build_composition_payload
-    from ai_hats.paths import runs_dir
     from ai_hats.subagent_runner import SubAgentRunner
     from ai_hats_observe import SessionManager
 
@@ -359,7 +358,9 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
 
     payload = build_composition_payload(proj, role_override="maintainer")
     session = SubAgentRunner(
-        ProjectLayout.at(proj), payload, session_mgr=SessionManager(proj, runs_dir=runs_dir(proj))
+        ProjectLayout.at(proj),
+        payload,
+        session_mgr=SessionManager(proj, runs_dir=ProjectLayout.at(proj).sessions.runs),
     ).run(task=TASK_TEXT, isolation_mode="none")
 
     record = json.loads(Path(session.role_materialization_path).read_text())

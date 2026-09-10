@@ -23,7 +23,7 @@ from _helpers.wt import (
     worktree_branches,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 _HEAD = ("git", "rev-parse", "--abbrev-ref", "HEAD")
 

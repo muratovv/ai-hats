@@ -211,7 +211,7 @@ def sigint_shield(
             logger.warning("SIGINT shield not restored: %r", exc)
 
 
-def _claim_session_cache(project_dir: Path, session_id: str) -> None:
+def _claim_session_cache(cache_dir: Path) -> None:
     """Record this process as the owner of the session's cache dir (HATS-1339).
 
     The opening bracket of ``_cleanup_session_cache`` below: claimed at the
@@ -228,13 +228,12 @@ def _claim_session_cache(project_dir: Path, session_id: str) -> None:
     The window costs nothing — until the anchor lands, the pid in the session id
     already names the owner.
     """  # comment-length: allow — both wrong seams fail silently, one per paragraph
-    from .paths import session_cache_dir
     from .session_liveness import write_session_anchor
 
-    write_session_anchor(session_cache_dir(project_dir, session_id))
+    write_session_anchor(cache_dir)
 
 
-def _claim_surface_child(project_dir: Path, session_id: str, pid: int) -> None:
+def _claim_surface_child(cache_dir: Path, pid: int) -> None:
     """Name the surface CLI as the cache's second owner (HATS-1339 D3).
 
     Called by both runners the moment the child has a pid. The wrapper owns the
@@ -242,13 +241,12 @@ def _claim_surface_child(project_dir: Path, session_id: str, pid: int) -> None:
     the sub-agent path (pipes, no tty) it survives a SIGKILLed wrapper — so the
     sweep must find both gone before it reclaims anything.
     """
-    from .paths import session_cache_dir
     from .session_liveness import record_surface_child
 
-    record_surface_child(session_cache_dir(project_dir, session_id), pid)
+    record_surface_child(cache_dir, pid)
 
 
-def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
+def _cleanup_session_cache(cache_dir: Path) -> None:
     """Remove the session's per-session cache dir (HATS-294).
 
     Drops the whole ``<cache_root>/sessions/<session_id>/`` tree
@@ -257,13 +255,9 @@ def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
     missing paths. A SIGKILL skips this entirely; since HATS-1339 the next run's
     sweep reclaims that dir on proof the owner is dead, not after a TTL.
     """
-    from .paths import session_cache_dir
-
     # Per-session cache: ephemeral, dropped here and reclaimed on owner death by
     # the next run's sweep. Whitelist.
-    shutil.rmtree(
-        session_cache_dir(project_dir, session_id), ignore_errors=True
-    )  # safe-delete: ok session-cache
+    shutil.rmtree(cache_dir, ignore_errors=True)  # safe-delete: ok session-cache
 
 
 def _session_timed_out(session: Session) -> bool:

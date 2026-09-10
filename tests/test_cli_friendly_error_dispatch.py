@@ -19,8 +19,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli import _PassthroughGroup
 from ai_hats.composition_seam import MissingProviderError, RoleNotFoundError
-from ai_hats.paths import NotAnAiHatsProjectError
 from ai_hats.surface_registry import UnknownSurfaceError
+from ai_hats.rack_workspace import NotAnAiHatsProjectError
 
 
 def _cases():

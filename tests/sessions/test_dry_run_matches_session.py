@@ -10,6 +10,8 @@ Moved out of ``tests/e2e/`` by HATS-1493 — it never drove the binary, and the
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import hashlib
 import json
 from pathlib import Path
@@ -30,11 +32,10 @@ LIB_USAGE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_librar
 def _fingerprint(project: Path) -> dict[str, str]:
     """Digest both roots — the cache left the project in HATS-1398, and a
     project-only walk would pass while a build wrote freely to the real target."""
-    from ai_hats.paths import cache_root
 
     return {
         str(p): hashlib.sha256(p.read_bytes()).hexdigest()
-        for root in (project, cache_root(project))
+        for root in (project, ProjectLayout.at(project).cache.root)
         if root.is_dir()
         for p in sorted(root.rglob("*"))
         if p.is_file()

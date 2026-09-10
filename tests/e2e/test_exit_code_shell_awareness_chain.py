@@ -21,6 +21,8 @@ import pytest
 
 from _helpers.hook_chain import build_session_settings, run_chain  # noqa: E402
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 

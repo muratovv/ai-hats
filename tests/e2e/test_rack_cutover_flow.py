@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.rack]
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 STATE_MD = Path(".agent") / "ai-hats" / "STATE.md"

@@ -18,6 +18,7 @@ from ai_hats_wt import (
 )
 from ai_hats.consent_wrapper import WrapperConfig, run_wrapped
 from ai_hats_library.hooks.consent_gate import Outcome, Verdict
+from ai_hats_core.layout import ProjectLayout
 
 
 pytestmark = pytest.mark.integration
@@ -689,16 +690,17 @@ class TestBranchExistsClassifier:
         _git(git_project, "worktree", "add", "-b", "task/orphan", str(linked_path))
         # No state JSON exists for it (we never went through ai-hats).
         from ai_hats_wt.locks import _state_key
-        from ai_hats.paths import worktrees_dir
 
-        state = worktrees_dir(git_project) / f"{_state_key('task/orphan')}.json"
+        state = (
+            ProjectLayout.at(git_project).sessions.worktrees / f"{_state_key('task/orphan')}.json"
+        )
         assert not state.exists()
 
         # Now call create() — should adopt, not fail.
         mgr = WorktreeManager(
             git_project,
             branch_name="task/orphan",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt = mgr.create()
         assert wt.resolve() == linked_path.resolve()

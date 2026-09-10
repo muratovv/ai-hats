@@ -20,7 +20,7 @@ import pytest
 from _helpers.git import branches, commit_file, git as _git, log_subjects, worktrees
 from _helpers.hook_chain import Verdict, build_session_settings, run_approved, run_chain
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.consent, pytest.mark.wt]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 #: Minted by `safety_gate.py` when the supervisor answers, spent by `ai-hats wt

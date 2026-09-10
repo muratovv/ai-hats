@@ -22,6 +22,10 @@ KEY_AI_HATS_DIR = "ai_hats_dir"
 KEY_VENV_PATH = "venv_path"
 KEY_NO_MANAGE_GITIGNORE = "no_manage_gitignore"
 KEY_HARNESS_PATH = "harness_path"
+# Collaborators an ``init`` run receives from its root: the steps declare them in
+# ``requires``, the CLI builds them once and seeds them here.
+KEY_WIZARD = "wizard"
+KEY_BOOTSTRAPPER = "bootstrapper"
 
 # Read back from the final state by CLI / runners.
 KEY_SESSION_ID = "session_id"
@@ -29,6 +33,8 @@ KEY_SESSION_DIR = "session_dir"
 KEY_CLAUDE_SESSION_ID = "claude_session_id"
 KEY_ERRORS = "errors"
 KEY_EXECUTE_CMD = "execute_cmd"
+# What a step reports to its runner, in order; the runner prints, the step never does.
+KEY_NOTICES = "notices"
 
 __all__ = [
     "KEY_ROLE",
@@ -41,9 +47,12 @@ __all__ = [
     "KEY_VENV_PATH",
     "KEY_NO_MANAGE_GITIGNORE",
     "KEY_HARNESS_PATH",
+    "KEY_WIZARD",
+    "KEY_BOOTSTRAPPER",
     "KEY_SESSION_ID",
     "KEY_SESSION_DIR",
     "KEY_CLAUDE_SESSION_ID",
     "KEY_ERRORS",
     "KEY_EXECUTE_CMD",
+    "KEY_NOTICES",
 ]

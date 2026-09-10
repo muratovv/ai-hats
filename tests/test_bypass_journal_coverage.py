@@ -58,17 +58,36 @@ def strip_comments(text: str) -> str:
     return "\n".join(out)
 
 
+#: Identifiers a hook assigns a roster of flags it will NEVER honour — whether it
+#: refuses them or hands them to another owner. Both readings are the opposite of
+#: offering a hatch; which one it is does not change that there is none to record.
+ROSTER_NAMES = (
+    "SELF_GRANT_FORBIDDEN",
+    "BYPASS_FLAGS_OFF_CONVENTION",
+    "CONSENT_OWNED_KEYS",
+)
+
+#: The tuple form and the (frozen)set form, since the rosters are spelled both ways.
+_ROSTER_FORMS = (r"{name}\s*=\s*\(([^)]*)\)", r"{name}\s*=\s*(?:frozenset\s*\(\s*)?\{{(.*?)\}}")
+
+
 def refused_only(text: str) -> set[str]:
-    """Flags whose ONLY code mention is a deny-list entry: naming one there is the
+    """Flags whose ONLY code mention is a roster entry: naming one there is the
     opposite of offering a hatch, so there is no bypass to record (HATS-1639).
 
     A flag named elsewhere too (`AI_HATS_YOLO` — safety_gate both refuses it inline
     and journals it as its own hatch) stays under the ratchet."""
-    listed = re.search(r"SELF_GRANT_FORBIDDEN\s*=\s*\(([^)]*)\)", text)
-    if not listed:
-        return set()
-    inside = set(re.findall(r"AI_HATS_[A-Z0-9_]+", listed.group(1)))
-    outside = set(re.findall(r"AI_HATS_[A-Z0-9_]+", text.replace(listed.group(0), "")))
+    inside: set[str] = set()
+    remainder = text
+    for name in ROSTER_NAMES:
+        for form in _ROSTER_FORMS:
+            listed = re.search(form.format(name=name), text, re.DOTALL)
+            if not listed:
+                continue
+            inside |= set(re.findall(r"AI_HATS_[A-Z0-9_]+", listed.group(1)))
+            remainder = remainder.replace(listed.group(0), "")
+            break
+    outside = set(re.findall(r"AI_HATS_[A-Z0-9_]+", remainder))
     return inside - outside
 
 
@@ -125,6 +144,18 @@ def test_a_flag_only_listed_as_refused_is_not_a_hatch():
     """Refusing a flag is the opposite of offering a bypass (HATS-1639)."""
     text = 'SELF_GRANT_FORBIDDEN = ("AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK")\ncode = 1'
     assert hatches_in(text) == set()
+
+
+def test_a_roster_spelled_as_a_frozenset_is_read_too():
+    """The rosters are spelled both ways; reading only tuples would let one slip."""
+    text = 'CONSENT_OWNED_KEYS = frozenset(\n    {\n        "AI_HATS_PLAN_ACK",\n    }\n)\n'
+    assert hatches_in(text) == set()
+
+
+def test_a_roster_flag_the_file_also_reads_stays_under_the_ratchet():
+    """The generalised roster must not launder a hatch any more than one name did."""
+    text = 'BYPASS_FLAGS_OFF_CONVENTION = frozenset({"AI_HATS_YOLO"})\nif os.environ.get("AI_HATS_YOLO"):\n    sys.exit(0)\n'
+    assert unjournaled(text) == {"AI_HATS_YOLO"}
 
 
 def test_a_refused_flag_named_elsewhere_too_stays_under_the_ratchet():

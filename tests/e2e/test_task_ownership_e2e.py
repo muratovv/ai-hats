@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.rack]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

@@ -21,7 +21,7 @@ import pytest
 
 from _helpers.env import checkout_pythonpath
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 # HATS-1826 folded this surface out of its own distribution and into
 # ai-hats, so the integrator's pyproject is now the declaration under test.

@@ -128,9 +128,9 @@ the other way around.
 ### D5 — All lock files under `<ai_hats_dir>`
 
 Every worktree-subsystem lock lives under
-`<ai_hats_dir>/sessions/worktrees/`, resolved through
-`worktrees_dir(project_dir)` → `ai_hats_dir()` (`paths/_dirs.py`).
-The path precedence is `AI_HATS_DIR` env > yaml `ai_hats_dir:` >
+`<ai_hats_dir>/sessions/worktrees/`, which is
+`ProjectLayout.sessions.worktrees` (`ai_hats_core/layout.py`, ADR-0026).
+The base precedence is `AI_HATS_DIR` env > yaml `ai_hats_dir:` >
 default `<project>/.agent/ai-hats/`. Tests override via
 `AI_HATS_DIR=<tmp_path>` to isolate; users with a custom
 `ai_hats_dir:` get locks adjacent to state without split-brain.

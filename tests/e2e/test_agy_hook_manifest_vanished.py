@@ -21,7 +21,7 @@ import pytest
 
 from _helpers.hook_chain import run_agy_dispatch
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.surfaces]
 
 SESSION_ID = "e2e-sid-manifest-vanished"
 GUARDED_TOOL = "Edit"

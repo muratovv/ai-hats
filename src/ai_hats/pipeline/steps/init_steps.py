@@ -1,4 +1,10 @@
-"""Pipeline steps for project initialization (`ai-hats self init`)."""
+"""Pipeline steps for project initialization (`ai-hats self init`).
+
+The steps own no collaborator: the wizard, the one ``Assembler`` and the project
+directory arrive in the state (``InitRunParams``), and what a step has to say goes
+back out as ``notices`` for the runner to print. A refusal is an exception the
+runner renders — a step never prints and never exits the process.
+"""
 
 from __future__ import annotations
 
@@ -6,48 +12,41 @@ import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
-from click import ClickException
+from ai_hats.config import Channel
+from ai_hats.initialization import (
+    InitProviderRequiredError,
+    InitRefusedError,
+    InitWizard,
+    ProjectBootstrapper,
+)
 
 from ..keys import (
     KEY_AI_HATS_DIR,
+    KEY_BOOTSTRAPPER,
     KEY_CHANNEL,
     KEY_EXECUTE_CMD,
     KEY_HARNESS_PATH,
     KEY_NO_MANAGE_GITIGNORE,
     KEY_NO_WIZARD,
+    KEY_NOTICES,
     KEY_PROJECT_DIR,
     KEY_PROVIDER,
     KEY_ROLE,
     KEY_TASK_PREFIX,
     KEY_VENV_PATH,
+    KEY_WIZARD,
 )
 from ..step import Step, StepIO
 
-
-class InitProviderRequiredError(ClickException):
-    """Raised when stdin is non-TTY, no provider flag is given, and project is greenfield."""
-
-    exit_code = 2
-
-    def __init__(self, message: str = "No TTY and no --provider flag") -> None:
-        super().__init__(
-            "[red]No TTY and no flags[/]: cannot run interactive wizard.\n"
-            "Pass --provider/-p (and optionally --role/-r), or run with "
-            "--no-wizard to bootstrap a minimal config."
-        )
+# Decided by ``select_provider`` before anything is written: the later steps read it
+# instead of looking at a yaml that ``bootstrap_project`` has just created.
+ALREADY_INITIALIZED = "already_initialized"
 
 
-class InitConfigUnreadableError(ClickException):
-    """Raised when re-running init on a project whose existing config will not load."""
-
-    exit_code = 2
-
-    def __init__(self, reason: str) -> None:
-        super().__init__(
-            f"[red]Existing ai-hats.yaml could not be read[/]: {reason}\n"
-            "Refusing to continue: init would silently reset this project's provider. "
-            "Fix or remove the config, then re-run."
-        )
+def _wants_wizard(
+    wizard: InitWizard, *, no_wizard: bool, provider: str | None, role: str | None
+) -> bool:
+    return not no_wizard and wizard.is_interactive() and not (provider and role)
 
 
 class SelectProviderStep(Step):
@@ -63,33 +62,28 @@ class SelectProviderStep(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="select_provider",
-            requires=frozenset({KEY_PROJECT_DIR}),
+            requires=frozenset({KEY_PROJECT_DIR, KEY_WIZARD, KEY_BOOTSTRAPPER}),
             optional=frozenset({KEY_PROVIDER, KEY_NO_WIZARD, KEY_CHANNEL, KEY_ROLE}),
-            produces=frozenset({KEY_PROVIDER, KEY_CHANNEL}),
+            produces=frozenset({KEY_PROVIDER, KEY_CHANNEL, ALREADY_INITIALIZED}),
         )
 
     def run(
         self,
         *,
         project_dir: Path,
+        wizard: InitWizard,
+        bootstrapper: ProjectBootstrapper,
         provider: str | None = None,
         no_wizard: bool = False,
-        channel: str | None = None,
+        channel: Channel | None = None,
         role: str | None = None,
         **_: Any,
     ) -> dict[str, Any]:
         from ai_hats.constants import PROVIDER_CLAUDE
         from ai_hats.paths import PROJECT_CONFIG
-        from ai_hats.cli.assembly import (
-            _assembler,
-            _detected_providers,
-            _stdin_is_tty,
-            _wizard_harness_prompt,
-            _wizard_provider_prompt,
-        )
 
         already = (project_dir / PROJECT_CONFIG).exists()
-        use_wizard = not no_wizard and _stdin_is_tty() and not (provider and role)
+        use_wizard = _wants_wizard(wizard, no_wizard=no_wizard, provider=provider, role=role)
 
         if not use_wizard and not already and provider is None and role is None and not no_wizard:
             raise InitProviderRequiredError()
@@ -99,39 +93,22 @@ class SelectProviderStep(Step):
 
         if use_wizard:
             if res_channel is None and res_provider is None:
-                cur_ch = None
-                if already:
-                    try:
-                        cur_ch = _assembler(project_dir).project_config.harness.channel.value
-                    except Exception:  # noqa: S110
-                        # silent-ok: only prefills the wizard default; having none is fine
-                        pass
-                res_channel = _wizard_harness_prompt(cur_ch)
-
+                current = bootstrapper.config.harness.channel if already else None
+                res_channel = wizard.choose_channel(current)
             if res_provider is None:
-                detected = _detected_providers()
-                res_provider = _wizard_provider_prompt(detected)
+                res_provider = wizard.choose_provider(wizard.detected_providers()).name
 
         if res_provider is None:
-            if already:
-                try:
-                    res_provider = _assembler(project_dir).project_config.provider
-                except Exception as exc:
-                    # Swallowing this reset an existing project to claude with no
-                    # message — an agy/cline project silently reconfigured by a
-                    # re-run of init.
-                    raise InitConfigUnreadableError(repr(exc)) from exc
-            if res_provider is None:
-                res_provider = PROVIDER_CLAUDE
+            res_provider = (bootstrapper.config.provider if already else None) or PROVIDER_CLAUDE
 
-        out: dict[str, Any] = {KEY_PROVIDER: res_provider}
+        out: dict[str, Any] = {KEY_PROVIDER: res_provider, ALREADY_INITIALIZED: already}
         if res_channel is not None:
             out[KEY_CHANNEL] = res_channel
         return out
 
 
 class BootstrapProjectStep(Step):
-    """Execute pre-init backups, migrations, and `Assembler.init()`."""
+    """Pre-init backup, then ``init`` on the run's one bootstrapper."""
 
     def __init__(self, params: Mapping[str, Any] | None = None) -> None:
         del params
@@ -140,7 +117,7 @@ class BootstrapProjectStep(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="bootstrap_project",
-            requires=frozenset({KEY_PROJECT_DIR, KEY_PROVIDER}),
+            requires=frozenset({KEY_PROJECT_DIR, KEY_PROVIDER, KEY_BOOTSTRAPPER}),
             optional=frozenset(
                 {
                     KEY_ROLE,
@@ -152,7 +129,7 @@ class BootstrapProjectStep(Step):
                     KEY_HARNESS_PATH,
                 }
             ),
-            produces=frozenset(),
+            produces=frozenset({KEY_NOTICES}),
         )
 
     def run(
@@ -160,18 +137,17 @@ class BootstrapProjectStep(Step):
         *,
         project_dir: Path,
         provider: str,
+        bootstrapper: ProjectBootstrapper,
         role: str | None = None,
         task_prefix: str | None = None,
-        ai_hats_dir: str | None = None,
-        venv_path: str | None = None,
+        ai_hats_dir: Path | None = None,
+        venv_path: Path | None = None,
         no_manage_gitignore: bool = False,
-        channel: str | None = None,
-        harness_path: str | None = None,
+        channel: Channel | None = None,
+        harness_path: Path | None = None,
         **_: Any,
     ) -> dict[str, Any]:
         from ai_hats.paths import PROJECT_CONFIG
-        from ai_hats.cli.assembly import _assembler, console
-        from ai_hats.models import Channel as _Channel
 
         already = (project_dir / PROJECT_CONFIG).exists()
         agent_dir = project_dir / ".agent"
@@ -183,14 +159,11 @@ class BootstrapProjectStep(Step):
             try:
                 init_backup_path = snapshot_pre_bump(project_dir, label="init")
             except BackupError as be:
-                console.print(f"[red]Pre-init backup failed[/]: {be}")
-                raise SystemExit(1) from be
+                raise InitRefusedError(f"[red]Pre-init backup failed[/]: {be}") from be
 
         manage_gitignore: bool | None = False if no_manage_gitignore else None
-        asm = _assembler(project_dir)
-
         try:
-            asm.init(
+            bootstrapper.init(
                 provider=provider,
                 role=role,
                 task_prefix=task_prefix,
@@ -208,32 +181,22 @@ class BootstrapProjectStep(Step):
                 and not (project_dir / PROJECT_CONFIG).exists()
             ):
                 shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
-            console.print(f"[red]Error[/]: {err}")
-            raise SystemExit(1) from err
+            raise InitRefusedError(f"[red]Error[/]: {err}") from err
 
-        seeded = asm.project_config.harness
-        if seeded.channel is not _Channel.STABLE:
+        notices: list[str] = []
+        seeded = bootstrapper.config.harness
+        if seeded.channel is not Channel.STABLE:
             loc = f" → {seeded.path}" if seeded.path else ""
-            console.print(f"[green]✓[/] harness channel: [bold]{seeded.channel.value}[/]{loc}")
+            notices.append(f"[green]✓[/] harness channel: [bold]{seeded.channel.value}[/]{loc}")
 
         if already:
-            from ai_hats.assembler import AssemblyError as _AssemblyError
-            from ai_hats.migration_assert import assert_runtime_hooks_resolve
+            bootstrapper.verify_runtime_hooks(backup_path=init_backup_path)
 
-            try:
-                assert_runtime_hooks_resolve(
-                    project_dir,
-                    backup_path=init_backup_path,
-                )
-            except _AssemblyError as e:
-                console.print(f"[red]Init refused[/]:\n{e}")
-                raise SystemExit(1) from e
-
-        return {}
+        return {KEY_NOTICES: notices}
 
 
 class PrepareExecuteSessionStep(Step):
-    """Prepare the command line to hand off process to `ai-hats execute`."""
+    """Report the outcome and prepare the hand-off to `ai-hats execute`."""
 
     def __init__(self, params: Mapping[str, Any] | None = None) -> None:
         del params
@@ -242,7 +205,7 @@ class PrepareExecuteSessionStep(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="prepare_execute_session",
-            requires=frozenset({KEY_PROJECT_DIR, KEY_PROVIDER}),
+            requires=frozenset({KEY_PROJECT_DIR, KEY_PROVIDER, KEY_WIZARD, KEY_BOOTSTRAPPER}),
             optional=frozenset(
                 {
                     KEY_ROLE,
@@ -251,9 +214,11 @@ class PrepareExecuteSessionStep(Step):
                     KEY_AI_HATS_DIR,
                     KEY_VENV_PATH,
                     KEY_NO_MANAGE_GITIGNORE,
+                    KEY_NOTICES,
+                    ALREADY_INITIALIZED,
                 }
             ),
-            produces=frozenset({KEY_EXECUTE_CMD}),
+            produces=frozenset({KEY_EXECUTE_CMD, KEY_NOTICES}),
         )
 
     def run(
@@ -261,46 +226,48 @@ class PrepareExecuteSessionStep(Step):
         *,
         project_dir: Path,
         provider: str,
+        wizard: InitWizard,
+        bootstrapper: ProjectBootstrapper,
         role: str | None = None,
         no_wizard: bool = False,
         task_prefix: str | None = None,
-        ai_hats_dir: str | None = None,
-        venv_path: str | None = None,
+        ai_hats_dir: Path | None = None,
+        venv_path: Path | None = None,
         no_manage_gitignore: bool = False,
+        notices: list[str] | None = None,
+        already_initialized: bool = False,
         **_: Any,
     ) -> dict[str, Any]:
-        from ai_hats.paths import PROJECT_CONFIG
-        from ai_hats.cli.assembly import _assembler, _stdin_is_tty, console
-
-        already = (project_dir / PROJECT_CONFIG).exists()
-        asm = _assembler(project_dir)
-        use_wizard = not no_wizard and _stdin_is_tty() and not (provider and role)
+        already = already_initialized
+        use_wizard = _wants_wizard(wizard, no_wizard=no_wizard, provider=provider, role=role)
+        out: list[str] = list(notices or ())
 
         if already and not use_wizard:
             from ai_hats_core.safe_delete import session_summary as _trash_summary
 
-            asm._run_diagnostics()
+            bootstrapper.report_diagnostics()
             banner = _trash_summary()
             if banner:
-                console.print(f"  [dim]{banner}[/]")
+                out.append(f"  [dim]{banner}[/]")
 
         label = "Re-initialized" if already else "Initialized"
-        console.print(f"[green]{label}[/] ai-hats in {project_dir}")
+        out.append(f"[green]{label}[/] ai-hats in {project_dir}")
 
+        cfg = bootstrapper.config
         if role:
-            console.print(f"  Default role: [bold]{role}[/]")
-        console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
+            out.append(f"  Default role: [bold]{role}[/]")
+        out.append(f"  Provider: [bold]{provider}[/]")
         if task_prefix:
-            console.print(f"  Task prefix: [bold]{asm.project_config.task_prefix}[/]")
+            out.append(f"  Task prefix: [bold]{cfg.task_prefix}[/]")
         if ai_hats_dir:
-            console.print(f"  ai-hats dir: [bold]{asm.project_config.ai_hats_dir}[/]")
+            out.append(f"  ai-hats dir: [bold]{cfg.ai_hats_dir}[/]")
         if venv_path:
-            console.print(f"  Venv path: [bold]{asm.project_config.venv_path}[/]")
+            out.append(f"  Venv path: [bold]{cfg.venv_path}[/]")
         if no_manage_gitignore:
-            console.print("  manage_gitignore: [bold]disabled[/]")
+            out.append("  manage_gitignore: [bold]disabled[/]")
 
         if not (use_wizard and not role):
-            console.print(
+            out.append(
                 "  [dim]💡 A direct provider session reads no ai-hats content. "
                 "Run `ai-hats execute [-r ROLE]` for role + user-rules.[/]"
             )
@@ -308,12 +275,12 @@ class PrepareExecuteSessionStep(Step):
         if use_wizard and not role:
             ai_hats_bin = shutil.which("ai-hats")
             if not ai_hats_bin:
-                console.print(
+                out.append(
                     "[yellow]ai-hats binary not in PATH — cannot auto-launch wizard.[/]\n"
                     "Run manually:  ai-hats execute --role initial-wizard --prompt initial-wizard --provider "
                     + provider,
                 )
-                return {KEY_EXECUTE_CMD: None}
+                return {KEY_EXECUTE_CMD: None, KEY_NOTICES: out}
 
             cmd = [
                 ai_hats_bin,
@@ -325,6 +292,6 @@ class PrepareExecuteSessionStep(Step):
                 "--provider",
                 provider,
             ]
-            return {KEY_EXECUTE_CMD: cmd}
+            return {KEY_EXECUTE_CMD: cmd, KEY_NOTICES: out}
 
-        return {KEY_EXECUTE_CMD: None}
+        return {KEY_EXECUTE_CMD: None, KEY_NOTICES: out}

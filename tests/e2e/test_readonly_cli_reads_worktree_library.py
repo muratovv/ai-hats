@@ -35,6 +35,8 @@ from ai_hats.paths import PROJECT_CONFIG
 from _helpers.env import checkout_pythonpath
 from _helpers.git import git
 
+pytestmark = [pytest.mark.library, pytest.mark.wt]
+
 LIB = Path("packages/ai-hats-library/src/ai_hats_library")
 ROLE = "zz-worktree-only-role"
 TRAIT = "zz-worktree-only-trait"

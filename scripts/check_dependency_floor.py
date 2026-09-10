@@ -2,8 +2,7 @@
 """A pin on a workspace package may not float below that package's version.
 
 HATS-1399. The producer side is guarded (`check_pkg_version_skew.py` refuses a
-`src/**` change that does not outrank the published wheel); the consumer side
-was not. The root pyproject held `ai-hats-observe>=0.3.0` while the integrator
+`src/**` change whose diff carries no version bump); the consumer side was not. The root pyproject held `ai-hats-observe>=0.3.0` while the integrator
 imported `is_measured`, added in 0.5.0 — so `self update` resolving from PyPI
 could serve 0.3.0 and every `ai-hats` command would die on ImportError. No test
 saw it: the work tree runs an editable workspace install where the floor never

@@ -94,6 +94,8 @@ UNDECLARED: dict[str, frozenset[str]] = {
             "AI_HATS_CONSENT_WRAPPER_CONFIG",
             "AI_HATS_EVENT",
             "AI_HATS_FORCE",
+            "AI_HATS_GATE_STORE",
+            "AI_HATS_GATE_TREE",
             "AI_HATS_HOOK_CALL",
             "AI_HATS_HOOK_EVENT",
             "AI_HATS_HOOK_POINT",

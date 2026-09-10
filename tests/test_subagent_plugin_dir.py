@@ -96,7 +96,7 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
     )
 
     provider = ClaudeSurface()
-    args = provider.materialize_runtime_skills(tmp_path, result, "test-sid")
+    args = provider.materialize_runtime_skills(ProjectLayout.at(tmp_path), result, "test-sid")
     try:
         assert args[0] == "--plugin-dir"
         plugin_dir = Path(args[1])
@@ -117,7 +117,10 @@ def test_agy_materialize_runtime_skills_is_noop(tmp_path):
         skills=[],
         injections=[],
     )
-    assert AgySurface().materialize_runtime_skills(tmp_path, result, "test-sid") == []
+    assert (
+        AgySurface().materialize_runtime_skills(ProjectLayout.at(tmp_path), result, "test-sid")
+        == []
+    )
 
 
 def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_roles, monkeypatch):
@@ -178,10 +181,9 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
 
     from ai_hats.composition_seam import build_composition_payload
     from ai_hats_observe import SessionManager
-    from ai_hats.paths import runs_dir
 
     class LifecycleProvider(ClaudeSurface):
-        def build_session_artifacts(self, project_dir, result, session_id, **kwargs):
+        def build_session_artifacts(self, layout, result, session_id, **kwargs):
             artifacts = kwargs["artifacts"]
             assert artifacts.resources is not None
             artifacts.resources.defer(
@@ -189,7 +191,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
                 lambda: lifecycle.append("provider"),
             )
             return super().build_session_artifacts(
-                project_dir,
+                layout,
                 result,
                 session_id,
                 **kwargs,
@@ -202,7 +204,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     runner = runtime_mod.SubAgentRunner(
         ProjectLayout.at(project),
         payload,
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
     )
     runner.run(task="hi", isolation_mode="none")
 

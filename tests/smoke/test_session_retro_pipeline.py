@@ -40,7 +40,7 @@ import yaml
 
 from ai_hats_observe import Session
 from ai_hats_observe.artifacts import RETRO_LOG
-from ai_hats.paths import runs_dir, PROJECT_CONFIG
+from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
     MaybeSpawnSessionReviewer,
 )
@@ -190,5 +190,5 @@ def test_spawner_uses_start_new_session(tmp_path, monkeypatch):
         "drop it without re-validating the terminal-detach e2e step."
     )
     assert captured["env"][ENV_SKIP_RETRO] == "1"
-    log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
+    log = ProjectLayout.at(tmp_path).sessions.runs / "session_SID" / RETRO_LOG
     assert "session-reviewer\tspawn" in log.read_text()

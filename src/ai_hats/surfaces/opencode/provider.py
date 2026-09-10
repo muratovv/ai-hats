@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 from ai_hats.surfaces import Surface
@@ -67,9 +69,9 @@ class OpenCodeSurface(Surface):
             ),
         ]
 
-    def system_prompt_path(self, project_dir: Path) -> Path | None:
+    def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         """OpenCode receives ai-hats context via the session agent; no project file."""
-        del project_dir
+        del layout
         return None
 
     def rules_dir(self, session_dir: Path) -> Path:
@@ -82,12 +84,11 @@ class OpenCodeSurface(Surface):
 
     # --- deterministic session paths -------------------------------------------------
 
-    def session_config_path(self, project_dir: Path, session_id: str) -> Path:
-        from ai_hats.paths import session_cache_dir
+    def session_config_path(self, layout: ProjectLayout, session_id: str) -> Path:
 
-        return session_cache_dir(project_dir, session_id) / "opencode" / "opencode.json"
+        return layout.cache.session(session_id) / "opencode" / "opencode.json"
 
-    def session_xdg_config_home(self, project_dir: Path, session_id: str) -> Path:
+    def session_xdg_config_home(self, layout: ProjectLayout, session_id: str) -> Path:
         """The ``XDG_CONFIG_HOME`` value pinned for this session's child process.
 
         OpenCode resolves its global config dir as ``<XDG_CONFIG_HOME>/opencode``
@@ -95,14 +96,13 @@ class OpenCodeSurface(Surface):
         cache makes the native skill discovery read the ai-hats mirror while
         user-owned entries stay reachable through base-home projection.
         """
-        from ai_hats.paths import session_cache_dir
 
-        return session_cache_dir(project_dir, session_id) / "opencode-xdg"
+        return layout.cache.session(session_id) / "opencode-xdg"
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+    def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
         # Inside the redirected config dir: <XDG>/opencode/skills is a native
         # discovery path, so the mirror doubles as real skills.
-        return self.session_xdg_config_home(project_dir, session_id) / "opencode" / "skills"
+        return self.session_xdg_config_home(layout, session_id) / "opencode" / "skills"
 
     def _base_config_home(self) -> Path:
         """Resolve the user's real config home (the base, not ``opencode/``)."""
@@ -151,15 +151,16 @@ class OpenCodeSurface(Surface):
     def _agent_description(self, result: "CompositionResult") -> str:
         return f"ai-hats composed role session ({result.name})"
 
-    def _expanded_prompt(self, project_dir: Path, result, session_id: str) -> str:
+    def _expanded_prompt(self, layout: ProjectLayout, result, session_id: str) -> str:
+        project_dir = layout.root
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
         prompt = self.build_system_prompt(result)
-        index = self._skill_index(project_dir, result, session_id)
+        index = self._skill_index(layout, result, session_id)
         if index:
             prompt = f"{prompt}\n\n{index}" if prompt else index
-        prompt = expand_path_placeholders(prompt, project_dir)
+        prompt = expand_path_placeholders(prompt, layout)
         return expand_role_catalog(prompt, project_dir)
 
     @staticmethod
@@ -173,10 +174,10 @@ class OpenCodeSurface(Surface):
         description = metadata.get("description")
         return description if isinstance(description, str) and description else skill.name
 
-    def _skill_index(self, project_dir: Path, result, session_id: str) -> str:
+    def _skill_index(self, layout: ProjectLayout, result, session_id: str) -> str:
         if not result.skills:
             return ""
-        skills_root = self.session_skills_root(project_dir, session_id)
+        skills_root = self.session_skills_root(layout, session_id)
         lines = [
             "## AVAILABLE SKILLS",
             "Use a skill when its description matches the task. Before using it, read the exact "
@@ -204,7 +205,7 @@ class OpenCodeSurface(Surface):
 
     def build_session_artifacts(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: "CompositionResult",
         session_id: str,
         *,
@@ -213,7 +214,7 @@ class OpenCodeSurface(Surface):
         artifacts: BuiltArtifacts,
     ) -> BuiltArtifacts:
         built = super().build_session_artifacts(
-            project_dir,
+            layout,
             result,
             session_id,
             run_mode=run_mode,
@@ -222,14 +223,14 @@ class OpenCodeSurface(Surface):
         )
         doc = getattr(built, "_ai_hats_opencode_config", None)
         if doc is not None:
-            built.port.merge_json(self.session_config_path(project_dir, session_id), doc)
-            built.materialized.append(self.session_config_path(project_dir, session_id))
+            built.port.merge_json(self.session_config_path(layout, session_id), doc)
+            built.materialized.append(self.session_config_path(layout, session_id))
         return built
 
     # --- context ---------------------------------------------------------------------
 
-    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        prompt = self._expanded_prompt(project_dir, result, session_id)
+    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
+        prompt = self._expanded_prompt(layout, result, session_id)
         artifacts.full_content = prompt
         doc = self._config_doc(artifacts)
         doc.setdefault("agent", {})[AGENT_NAME] = {
@@ -240,26 +241,24 @@ class OpenCodeSurface(Surface):
         # No permission keys here — work policy belongs to the role's
         # manifest-driven plugin, not to the generated config.
         artifacts.cli_args.extend(["--agent", AGENT_NAME])
-        artifacts.extra_env[ENV_OPENCODE_CONFIG] = str(
-            self.session_config_path(project_dir, session_id)
-        )
+        artifacts.extra_env[ENV_OPENCODE_CONFIG] = str(self.session_config_path(layout, session_id))
 
-    def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._build_context_hitl(project_dir, result, session_id, artifacts)
+    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
+        self._build_context_hitl(layout, result, session_id, artifacts)
 
     # --- skills ----------------------------------------------------------------------
 
-    def _deliver_skills(self, project_dir, result, session_id, artifacts) -> None:
+    def _deliver_skills(self, layout, result, session_id, artifacts) -> None:
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
         if not result.skills:
             return
-        xdg_root = self.session_xdg_config_home(project_dir, session_id)
+        xdg_root = self.session_xdg_config_home(layout, session_id)
         session_config_dir = xdg_root / "opencode"
-        skills_root = self.session_skills_root(project_dir, session_id)
+        skills_root = self.session_skills_root(layout, session_id)
         # Wipe-and-copy first: the mirror is the native discovery dir, and base
         # entries are projected into it afterwards.
-        materialize_skills_dir(skills_root, result.skills, project_dir, artifacts.port)
+        materialize_skills_dir(skills_root, result.skills, layout, artifacts.port)
         artifacts.port.mkdir(session_config_dir)
         self._project_base_home(session_config_dir, artifacts)
         self._project_base_skills(skills_root, {skill.name for skill in result.skills}, artifacts)
@@ -267,15 +266,15 @@ class OpenCodeSurface(Surface):
         artifacts.extra_env[ENV_XDG_CONFIG_HOME] = str(xdg_root)
         artifacts.materialized.append(skills_root)
 
-    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_skills(layout, result, session_id, artifacts)
 
-    def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_skills(layout, result, session_id, artifacts)
 
     # --- hooks -----------------------------------------------------------------------
 
-    def _permission_rules(self, project_dir: Path) -> list[dict[str, str]]:
+    def _permission_rules(self, layout: ProjectLayout) -> list[dict[str, str]]:
         """Role-owned permission policy shipped in the hook manifest (HATS-1792).
 
         The generated opencode.json carries no permission keys (Q2: decisions
@@ -284,27 +283,26 @@ class OpenCodeSurface(Surface):
         ask defers — to the TUI prompt in HITL, to opencode's headless
         auto-reject otherwise.
         """
-        from ai_hats.paths import cache_root
 
         return [
             {
                 "permission": "external_directory",
-                "prefix": f"{cache_root(project_dir)}/",
+                "prefix": f"{layout.cache.root}/",
                 "action": "allow",
             },
         ]
 
-    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
+    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
         # The manifest also carries the role's permission rules, so
         # it materializes for every composition — hookless roles still touch
         # session-cache paths that external_directory gating would ask about.
         manifest_path, plugin_path = materialize_hook_manifest(
-            project_dir,
+            layout,
             result,
             session_id,
             artifacts,
-            skills_dir=self.session_skills_root(project_dir, session_id),
-            permission_rules=self._permission_rules(project_dir),
+            skills_dir=self.session_skills_root(layout, session_id),
+            permission_rules=self._permission_rules(layout),
         )
         del manifest_path
         doc = self._config_doc(artifacts)
@@ -313,11 +311,11 @@ class OpenCodeSurface(Surface):
         if entry not in plugins:
             plugins.append(entry)
 
-    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
-    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
     # --- launch ----------------------------------------------------------------------
 
@@ -343,11 +341,12 @@ class OpenCodeSurface(Surface):
         base = list(cmd or ["opencode"])
         return [base[0], "run", *base[1:], meta_prompt]
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
+        project_dir = layout.root
         del session_dir
-        from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ai_hats_dir
+        from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 
         return {
-            ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
+            ENV_AI_HATS_DIR: str(layout.base),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
         }

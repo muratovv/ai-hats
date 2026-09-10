@@ -76,7 +76,7 @@ def compute_facts(layout: ProjectLayout, session_id: str) -> SessionFacts:
     artifacts = SessionArtifacts(
         files_changed=_files_changed(project_dir, session_start, session_end),
         commits=_commits_in_window(project_dir, session_start, session_end),
-        tasks_closed=tasks_closed_in_window(project_dir, session_start, session_end),
+        tasks_closed=tasks_closed_in_window(layout, session_start, session_end),
     )
 
     # Retros live at <ai_hats_dir>/sessions/retros/<...>.md and runs at

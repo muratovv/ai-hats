@@ -258,3 +258,18 @@ def test_plan_leaves_the_filesystem_byte_identical(tmp_path: Path):
 
     after = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
     assert after == before
+
+
+# --- executable_at: the one question a hook writer asks the port after the mirror ---
+
+
+def test_executable_at_answers_for_a_copied_tree(port: Materializer, tmp_path: Path):
+    src = _skill_src(tmp_path)
+    (src / "scripts" / "run.sh").chmod(0o755)
+    dest = tmp_path / "session" / "skills" / "src-skill"
+
+    port.copy_tree(src, dest)
+
+    assert port.executable_at(dest / "scripts" / "run.sh") is True
+    assert port.executable_at(dest / "SKILL.md") is False, "a copied file without +x"
+    assert port.executable_at(dest / "scripts" / "missing.sh") is False

@@ -18,13 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ai_hats.paths import (
-    ENV_AI_HATS_VENV,
-    claude_dir,
-    claude_settings_json,
-    read_current_sha,
-    venv_path,
-)
+from ai_hats.paths import ENV_AI_HATS_VENV, claude_dir, claude_settings_json
 from ai_hats.migration_backup import (
     BACKUP_SCOPE_PATHS,
     ENV_BACKUP_DIR,
@@ -35,6 +29,10 @@ from ai_hats.migration_backup import (
     snapshot_pre_bump,
 )
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats_core.layout import ProjectLayout
+import os
+from ai_hats.version_refs import read_current_sha
+from ai_hats.cli._entry import project_at
 
 
 # ---------- Helpers ----------
@@ -529,8 +527,8 @@ def test_restore_without_the_venv_lands_on_the_self_heal_path(
 
     assert (project / ".agent" / "ai-hats" / "versions" / "current").read_text() == "abc123\n"
     assert (project / PROJECT_CONFIG).exists()
-    assert read_current_sha(project) is None
-    assert venv_path(project) == project / ".agent" / "ai-hats" / ".venv"
+    assert read_current_sha(ProjectLayout.at(project).versions) is None
+    assert project_at(project, os.environ).venv == project / ".agent" / "ai-hats" / ".venv"
 
 
 def test_snapshot_drops_symlinks_from_tarball(

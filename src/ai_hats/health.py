@@ -13,10 +13,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Iterator
 
-from .constants import USER_RULES_SUBDIR
 from .migration_assert import find_broken_hook_refs
 from .migration_backup import latest_snapshot
-from .paths import ai_hats_dir, library_dir, tracker_dir
+from ai_hats_core.layout import ProjectLayout
 
 
 __all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status", "check_venv_consistency"]
@@ -85,11 +84,11 @@ def _data_remediation(project_dir: Path) -> str:
     return f"tar -xzf {snapshot} -C {project_dir}"
 
 
-def _data_reports(project_dir: Path) -> list[LayerReport]:
-    base = ai_hats_dir(project_dir)
+def _data_reports(layout: ProjectLayout) -> list[LayerReport]:
+    project_dir = layout.root
     rows = [
-        _presence(Layer.DATA, "tracker", tracker_dir(project_dir), "", project_dir),
-        _presence(Layer.DATA, "user-rules", base / USER_RULES_SUBDIR, "", project_dir),
+        _presence(Layer.DATA, "tracker", layout.tracker.base, "", project_dir),
+        _presence(Layer.DATA, "user-rules", layout.user_rules, "", project_dir),
     ]
     # Resolve the snapshot only when something is actually broken.
     if all(r.status is Status.OK for r in rows):
@@ -106,14 +105,14 @@ def _hook_refs_report(project_dir: Path) -> LayerReport:
     return LayerReport(Layer.MANAGED, "hook refs", Status.BROKEN, detail, _INIT)
 
 
-def _managed_reports(project_dir: Path) -> list[LayerReport]:
+def _managed_reports(layout: ProjectLayout) -> list[LayerReport]:
     return [
-        _presence(Layer.MANAGED, "library", library_dir(project_dir), _INIT, project_dir),
-        _hook_refs_report(project_dir),
+        _presence(Layer.MANAGED, "library", layout.library.root, _INIT, layout.root),
+        _hook_refs_report(layout.root),
     ]
 
 
-def _drift_report(project_dir: Path) -> LayerReport:
+def _drift_report(layout: ProjectLayout) -> LayerReport:
     """Drift vs upstream, read from the TTL cache — never probes the network.
 
     Absent or inconclusive cache is reported OK: an unknown drift is not a
@@ -124,9 +123,9 @@ def _drift_report(project_dir: Path) -> LayerReport:
     except ImportError:
         return LayerReport(Layer.RUNTIME, "version drift", Status.OK, "unknown (no update_check)")
 
-    entry = upstream_update(project_dir)
+    entry = upstream_update(layout)
     if entry is None:
-        raw_entry = read_cache(project_dir)
+        raw_entry = read_cache(layout.cache)
         if raw_entry is None or raw_entry.behind is None:
             return LayerReport(
                 Layer.RUNTIME, "version drift", Status.OK, "unknown (no cached probe)"
@@ -170,13 +169,13 @@ def _collapsed_warnings() -> Iterator[None]:
         warnings.warn(w.message, stacklevel=2)
 
 
-def triage(project_dir: Path) -> list[LayerReport]:
-    """Run every layer check against ``project_dir``. Read-only."""
+def triage(layout: ProjectLayout) -> list[LayerReport]:
+    """Run every layer check against the project. Read-only."""
     with _collapsed_warnings():
         reports = [
-            *_data_reports(project_dir),
-            *_managed_reports(project_dir),
-            _drift_report(project_dir),
+            *_data_reports(layout),
+            *_managed_reports(layout),
+            _drift_report(layout),
         ]
     return reports
 

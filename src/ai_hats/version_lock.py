@@ -36,7 +36,7 @@ from typing import Iterator
 
 import filelock
 
-from .paths import versions_root
+from ai_hats_core.layout import VersionsLayout
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +54,14 @@ INSTALL_LOCK_TIMEOUT = 300.0
 GC_LOCK_TIMEOUT = 2.0
 
 
-def gc_lock_path(project_dir: Path) -> Path:
+def gc_lock_path(versions: VersionsLayout) -> Path:
     """Single source of truth for the version GC/acquire lock: ``versions/.gc.lock``.
 
-    Pure path helper — no ``mkdir`` (mirrors :func:`ai_hats.paths.versions_root`).
+    Pure path helper — no ``mkdir``.
     Exposed so call sites and tests share one definition rather than a magic
     string.
     """
-    return versions_root(project_dir) / ".gc.lock"
+    return versions.root / ".gc.lock"
 
 
 class VersionLockError(Exception):
@@ -69,7 +69,7 @@ class VersionLockError(Exception):
 
 
 @contextmanager
-def versions_lock(project_dir: Path, *, timeout: float) -> Iterator[None]:
+def versions_lock(versions: VersionsLayout, *, timeout: float) -> Iterator[None]:
     """Hold the crash-safe ``versions/.gc.lock`` for a versioned-install section.
 
     Serializes the acquire (install + flip) and GC (reclaim + sweep) critical
@@ -81,7 +81,7 @@ def versions_lock(project_dir: Path, *, timeout: float) -> Iterator[None]:
     propagate (the explicit ``self update`` acquire) or swallow and skip (the
     opportunistic hot-path GC).
     """
-    lock_path = gc_lock_path(project_dir)
+    lock_path = gc_lock_path(versions)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock = filelock.FileLock(str(lock_path), timeout=timeout)
     try:

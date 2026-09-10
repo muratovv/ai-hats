@@ -56,7 +56,7 @@ class RelocationResult:
         self.gitignore_updated = gitignore_updated
 
 
-def ensure_gitignore_entry(project_dir: Path) -> None:
+def ensure_gitignore_entry(project_dir: Path, ai_hats_dir: str | None) -> None:
     """One-shot: ensure `.agent/ai-hats/` (or current `<ai_hats_dir>/`) is in .gitignore.
 
     HATS-317 removed the dynamic managed-block generator. The new policy
@@ -64,10 +64,8 @@ def ensure_gitignore_entry(project_dir: Path) -> None:
     and ``bump`` do not touch .gitignore — the user owns the file.
     Idempotent: re-running ``init`` is a no-op if the line is present.
     """
-    from .paths import _read_ai_hats_dir_from_yaml
-
     gitignore = project_dir / GITIGNORE_FILE
-    ai_hats_rel = _read_ai_hats_dir_from_yaml(project_dir) or ".agent/ai-hats"
+    ai_hats_rel = ai_hats_dir or ".agent/ai-hats"
     # Normalize: trailing slash so directories are matched explicitly.
     line = ai_hats_rel.rstrip("/") + "/"
 

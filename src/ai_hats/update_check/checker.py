@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, metadata
 from pathlib import Path
 
+from ai_hats_core.layout import CacheLayout
+
 import ai_hats
 
 from ai_hats_core import scrubbed_git_env
@@ -235,15 +237,13 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
     return result.returncode == 0
 
 
-def _probe_mirror_dir(project_dir: Path) -> Path:
+def _probe_mirror_dir(cache: CacheLayout) -> Path:
     """Path to the bare probe-mirror used as the local object graph for
     non-editable / wheel installs (HATS-458)."""
-    from ..paths import cache_root
-
-    return cache_root(project_dir) / "probe-mirror"
+    return cache.root / "probe-mirror"
 
 
-def _ensure_probe_mirror(project_dir: Path) -> Path | None:
+def _ensure_probe_mirror(cache: CacheLayout) -> Path | None:
     """Init or reuse a bare probe-mirror at ``<cache_root>/probe-mirror/``.
 
     HATS-458: when ``_fetch_into_pkg`` refuses (no usable ``.git`` next to
@@ -255,7 +255,7 @@ def _ensure_probe_mirror(project_dir: Path) -> Path | None:
     Returns the mirror path on success, ``None`` when ``git init`` failed
     (no git, no write permission, etc.).
     """
-    mirror = _probe_mirror_dir(project_dir)
+    mirror = _probe_mirror_dir(cache)
     if (mirror / "HEAD").exists():
         return mirror
     try:
@@ -384,6 +384,7 @@ def _describe(sha: str, *, git_dir: Path | None = None) -> str | None:
 
 def run_check(
     project_dir: Path,
+    cache: CacheLayout,
     *,
     remote_url: str | None = None,
     ref: str = "master",
@@ -427,7 +428,7 @@ def run_check(
         # ``rev-list`` / ``describe`` resolve locally — no pollution of
         # any foreign ``.git`` in an ancestor (HATS-441 closed that
         # surface), no dependency on a pkg-checkout-shaped install.
-        mirror = _ensure_probe_mirror(project_dir)
+        mirror = _ensure_probe_mirror(cache)
         if mirror is not None and _fetch_into_mirror(mirror, remote_url, ref):
             counts = _count_ahead_behind(installed, latest, git_dir=mirror)
             if counts is not None:
@@ -445,5 +446,5 @@ def run_check(
         installed_label=installed_label,
         latest_label=latest_label,
     )
-    write_cache(project_dir, entry)
+    write_cache(cache, entry)
     return entry

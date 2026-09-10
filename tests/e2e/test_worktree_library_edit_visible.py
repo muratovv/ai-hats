@@ -33,6 +33,8 @@ from ai_hats.paths import PROJECT_CONFIG
 from _helpers.env import checkout_pythonpath
 from _helpers.git import git
 
+pytestmark = [pytest.mark.library, pytest.mark.wt]
+
 # The curator prose folded from its own trait into the role (HATS-1900), so the
 # worktree-only edit now lands in the role's injection.
 ROLE_CONFIG = Path(

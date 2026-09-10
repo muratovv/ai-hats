@@ -23,7 +23,7 @@ from ai_hats.constants import ENV_REPO_URL
 from ai_hats.paths import ENV_AI_HATS_VENV
 
 # own launcher venv + two real uv installs
-pytestmark = [pytest.mark.integration, pytest.mark.install_heavy]
+pytestmark = [pytest.mark.integration, pytest.mark.install_heavy, pytest.mark.install]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _PROBE = "PROBE_SYMBOL"

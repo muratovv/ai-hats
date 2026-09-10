@@ -10,12 +10,13 @@ never in the project root; the dead TS hook plugin is gone.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 from ai_hats.surfaces.cline import ClineSurface
 
@@ -123,7 +124,7 @@ def test_get_env_pins_cline_data_dir(tmp_path, monkeypatch) -> None:
     # must be pinned back to the real cline home, else auth is lost.
     monkeypatch.delenv("CLINE_DATA_DIR", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-    env = ClineSurface().get_env(tmp_path / "session", tmp_path)
+    env = ClineSurface().get_env(tmp_path / "session", ProjectLayout.at(tmp_path))
     assert env["CLINE_DATA_DIR"] == str(tmp_path / "home" / ".cline" / "data")
     # R7: AI_HATS_DIR is needed by runtime hooks / skills.
     assert env["AI_HATS_DIR"]
@@ -137,15 +138,15 @@ def test_get_env_pins_cline_data_dir(tmp_path, monkeypatch) -> None:
 def test_claim_launch_env_sets_cline_hub_port(tmp_path) -> None:
     # Per-session CLINE_HUB_PORT moves each ai-hats cline session off
     # the default hub port (25463) so parallel sessions don't collide.
-    env = ClineSurface().claim_launch_env(tmp_path / "session", tmp_path)
+    env = ClineSurface().claim_launch_env(tmp_path / "session", ProjectLayout.at(tmp_path))
     port = int(env["CLINE_HUB_PORT"])
     assert 1024 < port < 65536
 
 
 def test_claim_launch_env_distinct_sessions_distinct_ports(tmp_path) -> None:
     # Two sessions must own different hub ports (ephemeral allocation).
-    env_a = ClineSurface().claim_launch_env(tmp_path / "sess-a", tmp_path)
-    env_b = ClineSurface().claim_launch_env(tmp_path / "sess-b", tmp_path)
+    env_a = ClineSurface().claim_launch_env(tmp_path / "sess-a", ProjectLayout.at(tmp_path))
+    env_b = ClineSurface().claim_launch_env(tmp_path / "sess-b", ProjectLayout.at(tmp_path))
     assert env_a["CLINE_HUB_PORT"] != env_b["CLINE_HUB_PORT"]
 
 
@@ -154,14 +155,14 @@ def test_get_env_names_the_port_without_taking_one(tmp_path, monkeypatch) -> Non
     import socket
 
     monkeypatch.setattr(socket, "socket", lambda *a, **k: pytest.fail("get_env opened a socket"))
-    env = ClineSurface().get_env(tmp_path / "session", tmp_path)
+    env = ClineSurface().get_env(tmp_path / "session", ProjectLayout.at(tmp_path))
 
     assert env["CLINE_HUB_PORT"] == "<assigned at launch>"
 
 
 def test_update_system_prompt_is_noop(tmp_path) -> None:
     # Inline-only surface: set_role must not litter a CLINE.md cline ignores.
-    ClineSurface().update_system_prompt(tmp_path, "role body")
+    ClineSurface().update_system_prompt(ProjectLayout.at(tmp_path), "role body")
     assert not (tmp_path / "CLINE.md").exists()
 
 
@@ -185,7 +186,9 @@ def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
 
 def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     provider = ClineSurface()
-    args, env, meta_prompt = provider.build_session_prompt(tmp_path, _fake_result(), "sid-1")
+    args, env, meta_prompt = provider.build_session_prompt(
+        ProjectLayout.at(tmp_path), _fake_result(), "sid-1"
+    )
     # HITL: role inline via -s. HATS-1207 moved -i out of the CONTEXT handler —
     # it is launch mode, not context, so suppressing CONTEXT must not drop the TUI.
     assert args[0] == "-s"
@@ -198,7 +201,7 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     # Skills reach cline via --config <cache> (not a root .cline dir)
     assert "--config" in args
     cache_arg = args[args.index("--config") + 1]
-    assert cache_arg == str(session_cache_dir(tmp_path, "sid-1"))
+    assert cache_arg == str(ProjectLayout.at(tmp_path).cache.session("sid-1"))
     # A hookless role keeps the pre-HATS-1775 launch shape.
     assert "--hooks-dir" not in args
 
@@ -208,10 +211,10 @@ def test_build_session_prompt_delivers_composed_runtime_hooks(tmp_path, monkeypa
     skill = _make_runtime_hook_skill(tmp_path)
 
     args, env, _ = ClineSurface().build_session_prompt(
-        tmp_path, _fake_result(skills=[skill]), "sid-hooks"
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill]), "sid-hooks"
     )
 
-    cache = session_cache_dir(tmp_path, "sid-hooks")
+    cache = ProjectLayout.at(tmp_path).cache.session("sid-hooks")
     hooks_dir = cache / "hooks"
     assert args[args.index("--hooks-dir") + 1] == str(hooks_dir)
     assert (cache / "hooks.json").is_file()
@@ -228,19 +231,64 @@ def test_automate_materialization_delivers_composed_runtime_hooks(tmp_path) -> N
     skill = _make_runtime_hook_skill(tmp_path)
 
     args = ClineSurface().materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill]), "sid-automate-hooks"
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill]), "sid-automate-hooks"
     )
 
-    cache = session_cache_dir(tmp_path, "sid-automate-hooks")
+    cache = ProjectLayout.at(tmp_path).cache.session("sid-automate-hooks")
     assert args == ["--config", str(cache), "--hooks-dir", str(cache / "hooks")]
     assert (cache / "hooks.json").is_file()
     assert (cache / "hooks" / "PreToolUse").is_file()
     assert not (tmp_path / ".cline").exists()
 
 
+def test_a_script_missing_from_the_skill_is_a_notice_not_a_silent_drop(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    skill = _make_runtime_hook_skill(tmp_path)
+    (skill / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
+    artifacts = BuiltArtifacts()
+
+    ClineSurface().build_session_artifacts(
+        ProjectLayout.at(tmp_path),
+        _fake_result(skills=[skill]),
+        "sid-gone",
+        run_mode=RunMode.HITL,
+        artifacts=artifacts,
+    )
+
+    assert not (ProjectLayout.at(tmp_path).cache.session("sid-gone") / "hooks.json").exists()
+    assert len(artifacts.notices) == 2, "one per declared event, both pointing at the same file"
+    assert all(
+        "guard" in n and "hooks/guard.sh" in n and "will not run" in n for n in artifacts.notices
+    )
+
+
+def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path, monkeypatch) -> None:
+    from ai_hats.hook_collection import RuntimeHookMirrorError
+    from ai_hats.surfaces.cline.runtime_hooks import materialize_runtime_hooks
+
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    skill = _make_runtime_hook_skill(tmp_path)
+    unwritten_mirror = tmp_path / "mirror" / "skills"
+
+    with pytest.raises(RuntimeHookMirrorError, match="guard"):
+        materialize_runtime_hooks(
+            ProjectLayout.at(tmp_path),
+            _fake_result(skills=[skill]),
+            "sid-unmirrored",
+            BuiltArtifacts(),
+            skills_dir=unwritten_mirror,
+        )
+
+
 def test_build_session_prompt_config_is_session_scoped(tmp_path) -> None:
-    args_a, _, _ = ClineSurface().build_session_prompt(tmp_path, _fake_result(), "sid-a")
-    args_b, _, _ = ClineSurface().build_session_prompt(tmp_path, _fake_result(), "sid-b")
+    args_a, _, _ = ClineSurface().build_session_prompt(
+        ProjectLayout.at(tmp_path), _fake_result(), "sid-a"
+    )
+    args_b, _, _ = ClineSurface().build_session_prompt(
+        ProjectLayout.at(tmp_path), _fake_result(), "sid-b"
+    )
     cfg_a = args_a[args_a.index("--config") + 1]
     cfg_b = args_b[args_b.index("--config") + 1]
     assert cfg_a != cfg_b
@@ -249,15 +297,19 @@ def test_build_session_prompt_config_is_session_scoped(tmp_path) -> None:
 
 def test_build_session_prompt_materializes_skills_to_cache(tmp_path) -> None:
     skill = _make_skill(tmp_path, "deploy-skill")
-    ClineSurface().build_session_prompt(tmp_path, _fake_result(skills=[skill]), "sid-1")
-    cache_skills = session_cache_dir(tmp_path, "sid-1") / "skills"
+    ClineSurface().build_session_prompt(
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill]), "sid-1"
+    )
+    cache_skills = ProjectLayout.at(tmp_path).cache.session("sid-1") / "skills"
     assert (cache_skills / "deploy-skill" / "SKILL.md").exists()
 
 
 def test_build_session_prompt_leaves_project_root_clean(tmp_path) -> None:
     # HATS-1171 clean-root: no .cline/ and no .gitignore mutation in the root.
     skill = _make_skill(tmp_path, "my-skill")
-    ClineSurface().build_session_prompt(tmp_path, _fake_result(skills=[skill]), "sid-1")
+    ClineSurface().build_session_prompt(
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill]), "sid-1"
+    )
     assert not (tmp_path / ".cline").exists()
     assert not (tmp_path / ".gitignore").exists()
 
@@ -266,7 +318,7 @@ def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
     # Only-seam filtering (supervisor): policy.context=False → no -s role delivery.
     provider = ClineSurface()
     artifacts = provider.build_session_artifacts(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         _fake_result(),
         "sid-1",
         run_mode=RunMode.HITL,
@@ -280,7 +332,7 @@ def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
 
 def test_hookless_role_and_settings_category_add_no_launch_args(tmp_path) -> None:
     artifacts = ClineSurface().build_session_artifacts(
-        tmp_path,
+        ProjectLayout.at(tmp_path),
         _fake_result(),
         "sid-1",
         run_mode=RunMode.HITL,
@@ -298,9 +350,9 @@ def test_materialize_returns_config_flag_and_writes_cache(tmp_path) -> None:
     skill_a = _make_skill(tmp_path, "skill-a")
     skill_b = _make_skill(tmp_path, "skill-b")
     args = ClineSurface().materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill_a, skill_b]), "sid-1"
     )
-    cache_dir = session_cache_dir(tmp_path, "sid-1")
+    cache_dir = ProjectLayout.at(tmp_path).cache.session("sid-1")
     # Automate threads --config <cache> (no -s: role rides the meta_prompt).
     assert args == ["--config", str(cache_dir)]
     assert (cache_dir / "skills" / "skill-a" / "SKILL.md").exists()
@@ -313,10 +365,10 @@ def test_materialize_is_idempotent(tmp_path) -> None:
     skill = _make_skill(tmp_path, "my-skill")
     result = _fake_result(skills=[skill])
     provider = ClineSurface()
-    provider.materialize_runtime_skills(tmp_path, result, "sid-1")
-    cache_skills = session_cache_dir(tmp_path, "sid-1") / "skills"
+    provider.materialize_runtime_skills(ProjectLayout.at(tmp_path), result, "sid-1")
+    cache_skills = ProjectLayout.at(tmp_path).cache.session("sid-1") / "skills"
     first = sorted(p.name for p in cache_skills.iterdir())
-    provider.materialize_runtime_skills(tmp_path, result, "sid-1")
+    provider.materialize_runtime_skills(ProjectLayout.at(tmp_path), result, "sid-1")
     second = sorted(p.name for p in cache_skills.iterdir())
     assert first == second == ["my-skill"]
 
@@ -327,11 +379,15 @@ def test_materialize_sessions_are_isolated(tmp_path) -> None:
     skill_a = _make_skill(tmp_path, "skill-a")
     skill_b = _make_skill(tmp_path, "skill-b")
     provider = ClineSurface()
-    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill_a]), "sid-1")
-    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill_b]), "sid-2")
-    assert (session_cache_dir(tmp_path, "sid-1") / "skills" / "skill-a").exists()
-    assert not (session_cache_dir(tmp_path, "sid-1") / "skills" / "skill-b").exists()
-    assert (session_cache_dir(tmp_path, "sid-2") / "skills" / "skill-b").exists()
+    provider.materialize_runtime_skills(
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill_a]), "sid-1"
+    )
+    provider.materialize_runtime_skills(
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill_b]), "sid-2"
+    )
+    assert (ProjectLayout.at(tmp_path).cache.session("sid-1") / "skills" / "skill-a").exists()
+    assert not (ProjectLayout.at(tmp_path).cache.session("sid-1") / "skills" / "skill-b").exists()
+    assert (ProjectLayout.at(tmp_path).cache.session("sid-2") / "skills" / "skill-b").exists()
 
 
 def test_materialize_expands_the_fsm_edges_token(tmp_path) -> None:
@@ -342,10 +398,12 @@ def test_materialize_expands_the_fsm_edges_token(tmp_path) -> None:
     authoritative. Delivery is what this pins — the renderer is tested upstream.
     """
     skill = _make_skill(tmp_path, "fsm-skill", body="edges:\n\n{{backlog_fsm_edges}}\n")
-    ClineSurface().materialize_runtime_skills(tmp_path, _fake_result(skills=[skill]), "sid-1")
+    ClineSurface().materialize_runtime_skills(
+        ProjectLayout.at(tmp_path), _fake_result(skills=[skill]), "sid-1"
+    )
 
     delivered = (
-        session_cache_dir(tmp_path, "sid-1") / "skills" / "fsm-skill" / "SKILL.md"
+        ProjectLayout.at(tmp_path).cache.session("sid-1") / "skills" / "fsm-skill" / "SKILL.md"
     ).read_text()
     assert "{{backlog_fsm_edges}}" not in delivered
     assert "brainstorm" in delivered  # a real FSM state reached the file

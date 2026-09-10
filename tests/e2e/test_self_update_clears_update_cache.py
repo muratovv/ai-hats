@@ -10,7 +10,8 @@ why: without update cache invalidation, upgrade banners persist on terminal afte
 
 from __future__ import annotations
 
-from ai_hats.paths import cache_root
+from ai_hats_core.layout import ProjectLayout
+
 
 import json
 import os
@@ -21,7 +22,10 @@ import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # real uv install at call time → capped via conftest
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # real uv install at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
@@ -74,7 +78,7 @@ def test_e2e_self_update_clears_update_cache(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 
     # ----- seed a stale update-check cache before the update -----
-    cache_file = cache_root(project) / "update-check.json"
+    cache_file = ProjectLayout.at(project).cache.root / "update-check.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(
         json.dumps(

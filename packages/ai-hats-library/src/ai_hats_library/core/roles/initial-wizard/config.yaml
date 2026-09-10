@@ -11,6 +11,7 @@ composition:
     - dev_rule_tool_call_hygiene
   skills:
     - requirements-interview
+    - go-trait-fit
 injection: |
   # ROLE: INITIAL WIZARD
 
@@ -204,6 +205,12 @@ injection: |
   `(project)`). If anything is already tagged `(global)`, the user has
   user-wide customizations from a prior project — make sure to mention
   them.
+
+  Before asking anything: if Step 3 detected a stack, look for a loaded
+  skill whose description offers a role fit for that stack, and follow it.
+  Such a skill reads the project's own manifest and proposes trait removals
+  as a concrete command — show its output verbatim. If no skill covers the
+  detected stack, skip this and never invent the trims yourself.
 
   Then explicitly ask: "want to customize this composition? (add or
   remove any trait / rule / skill, or leave as-is)". If they want

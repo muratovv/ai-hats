@@ -19,6 +19,8 @@ import pytest
 from _helpers.env import launcher_subprocess_env
 from ai_hats.constants import ENV_REPO_URL
 
+pytestmark = pytest.mark.gates
+
 
 @pytest.mark.integration
 def test_absolute_pythonpath_leak_does_not_hide_builtin_roles(

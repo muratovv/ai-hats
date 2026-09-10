@@ -13,6 +13,8 @@ why:    user-defined rules in user-rules/ must be incorporated into system
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +45,7 @@ RULE_BODY = f"# Team rule\n\nAlways cite the ledger id: {SENTINEL}\n"
 
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
+pytestmark = [pytest.mark.integration, pytest.mark.smoke, pytest.mark.library]
 
 
 # --------------------------------------------------------------------- #
@@ -236,7 +238,9 @@ def test_show_prompt_and_session_agree_on_user_rules(project_with_user_rule: Pat
 
     res_show = CliRunner().invoke(main, ["config", "show-prompt"])
     assert res_show.exit_code == 0, f"show-prompt exited {res_show.exit_code}"
-    show_body = expand_path_placeholders(res_show.output, project_with_user_rule).strip("\n")
+    show_body = expand_path_placeholders(
+        res_show.output, ProjectLayout.at(project_with_user_rule)
+    ).strip("\n")
 
     assert SENTINEL in session_body, "sentinel missing from session side"
     assert SENTINEL in show_body, "sentinel missing from show-prompt side"

@@ -9,6 +9,8 @@ run, the live checkout quoted inside the observed session's evidence.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from ai_hats.session_artifacts import assemble_meta_prompt
@@ -19,7 +21,7 @@ def test_meta_prompt_names_the_project_directory(tmp_path: Path) -> None:
     project_dir.mkdir()
 
     out = assemble_meta_prompt(
-        project_dir, role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id=""
+        ProjectLayout.at(project_dir), role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id=""
     )
 
     assert project_dir.resolve().as_posix() in out
@@ -31,7 +33,10 @@ def test_working_directory_precedes_the_task(tmp_path: Path) -> None:
     project_dir.mkdir()
 
     out = assemble_meta_prompt(
-        project_dir, role_context="# SYSTEM_ROLE\nstub", task="run rack ls", ticket_id=""
+        ProjectLayout.at(project_dir),
+        role_context="# SYSTEM_ROLE\nstub",
+        task="run rack ls",
+        ticket_id="",
     )
 
     assert out.index(project_dir.resolve().as_posix()) < out.index("# TASK")
@@ -59,6 +64,6 @@ def test_session_reviewer_role_anchors_cli_calls_and_expands(tmp_path: Path) -> 
     # Positive control: if this vanishes too, the file/path is wrong, not the role.
     assert "review-session" in role
 
-    expanded = expand_path_placeholders(role, tmp_path)
+    expanded = expand_path_placeholders(role, ProjectLayout.at(tmp_path))
     assert "<project_dir>" not in expanded
     assert tmp_path.resolve().as_posix() in expanded

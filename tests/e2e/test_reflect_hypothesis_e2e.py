@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.observe]
 
 
 def test_e2e_reflect_hypothesis_dry_run_writes_handoff(tmp_project) -> None:

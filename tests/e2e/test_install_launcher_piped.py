@@ -19,6 +19,8 @@ from pathlib import Path
 import pytest
 from ai_hats.constants import ENV_LAUNCHER_DEST
 
+pytestmark = pytest.mark.install
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LAUNCHER_SRC = REPO_ROOT / "scripts" / "ai-hats-launcher"
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"

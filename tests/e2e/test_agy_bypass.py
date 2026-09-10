@@ -23,7 +23,7 @@ import pytest
 
 from _helpers.env import checkout_pythonpath
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def test_agy_bypasses_root_gemini_md(

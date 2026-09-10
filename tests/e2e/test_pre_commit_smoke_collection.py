@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
+pytestmark = [pytest.mark.integration, pytest.mark.smoke, pytest.mark.guards]
 
 HOOK_PATH = (
     Path(__file__).parent.parent.parent

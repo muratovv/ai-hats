@@ -11,6 +11,7 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.codex.provider import CodexSurface
+from ai_hats_core.layout import ProjectLayout
 
 from .env import clean_env
 from .git import git
@@ -28,7 +29,11 @@ def session(tmp_path: Path, monkeypatch, artifacts=None) -> tuple[Path, dict[str
     git(project, "add", ".gitignore")
     git(project, "commit", "-m", "init")
     ProjectConfig(provider="codex", active_role="assistant").save(project / PROJECT_CONFIG)
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-base"))
+    # The surface resolves a session home under it and refuses a base home that
+    # is not an existing directory, so it has to be on disk before the build.
+    codex_base = tmp_path / "codex-base"
+    codex_base.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CODEX_HOME", str(codex_base))
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "user-home"))
     library = Path(__file__).resolve().parents[3] / "packages/ai-hats-library/src/ai_hats_library"
@@ -38,14 +43,16 @@ def session(tmp_path: Path, monkeypatch, artifacts=None) -> tuple[Path, dict[str
     result = assembler.composer.compose("assistant")
     surface = CodexSurface()
     artifacts = artifacts if artifacts is not None else BuiltArtifacts()
+    # Built once here and handed to both collaborators, the way the runtime does.
+    layout = ProjectLayout.at(project)
     surface.build_session_artifacts(
-        project, result, "consent-test", run_mode=RunMode.HITL, artifacts=artifacts
+        layout, result, "consent-test", run_mode=RunMode.HITL, artifacts=artifacts
     )
     env = clean_env()
     env["AI_HATS_USER_HOME"] = str(tmp_path / "user-home")
     env["PATH"] = os.pathsep.join((str(write_surface_shims(tmp_path / "bin")), os.defpath))
     stand_in_session(env, project, "consent-test", provider="codex")
     env["AI_HATS_DIR"] = str(project / ".agent" / "ai-hats")
-    materialize_consent_wrappers(project, result, "consent-test", surface, artifacts, environ=env)
+    materialize_consent_wrappers(layout, result, "consent-test", surface, artifacts, environ=env)
     env.update(artifacts.extra_env)
     return project, env

@@ -196,7 +196,7 @@ def test_a_foreign_pin_does_not_become_the_guards_target(monkeypatch, tmp_path):
     with both: the guard then called this project's own venv foreign and exited
     3, telling the user to uninstall from the venv that was correct all along.
     """
-    from ai_hats.cli import _resolve_guard_target
+    from ai_hats.cli._entry import project_at
 
     proj = tmp_path / "proj"
     (proj / ".agent").mkdir(parents=True)
@@ -211,7 +211,7 @@ def test_a_foreign_pin_does_not_become_the_guards_target(monkeypatch, tmp_path):
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(other))
     monkeypatch.setenv("AI_HATS_VENV", str(other_venv))
 
-    assert _resolve_guard_target(proj) == str(own_venv)
+    assert project_at(proj).venv == own_venv
 
 
 def test_an_unpaired_venv_override_still_wins(monkeypatch, tmp_path):
@@ -221,7 +221,7 @@ def test_an_unpaired_venv_override_still_wins(monkeypatch, tmp_path):
     :func:`venv_path` must not cost that: the override, not the yaml value, is
     what this project resolves to.
     """
-    from ai_hats.cli import _resolve_guard_target
+    from ai_hats.cli._entry import project_at
 
     proj = tmp_path / "proj"
     (proj / ".agent").mkdir(parents=True)
@@ -234,7 +234,7 @@ def test_an_unpaired_venv_override_still_wins(monkeypatch, tmp_path):
     monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
     monkeypatch.setenv("AI_HATS_VENV", str(override))
 
-    assert _resolve_guard_target(proj) == str(override)
+    assert project_at(proj).venv == override
 
 
 def test_an_absent_resolved_venv_reads_as_unknown(tmp_path, monkeypatch):
@@ -243,11 +243,11 @@ def test_an_absent_resolved_venv_reads_as_unknown(tmp_path, monkeypatch):
     The caller fails open on ``None``; returning a path that isn't there would
     make every project without a managed install look foreign.
     """
-    from ai_hats.cli import _resolve_guard_target
+    from ai_hats.cli._entry import project_at
 
     proj = tmp_path / "proj"
     (proj / ".agent").mkdir(parents=True)
     monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
     monkeypatch.delenv("AI_HATS_VENV", raising=False)
 
-    assert _resolve_guard_target(proj) is None
+    assert not project_at(proj).venv.exists()

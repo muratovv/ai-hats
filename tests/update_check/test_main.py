@@ -28,7 +28,7 @@ def test_main_returns_1_when_project_dir_missing(tmp_path, monkeypatch):
 
 def test_main_calls_run_check_on_valid_input(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setattr("sys.argv", ["update_check", str(tmp_path)])
+    monkeypatch.setattr("sys.argv", ["update_check", str(tmp_path), str(tmp_path / "cache")])
     with patch.object(entry, "run_check", return_value=None) as m:
         assert entry.main() == 0
         m.assert_called_once()
@@ -36,7 +36,7 @@ def test_main_calls_run_check_on_valid_input(tmp_path, monkeypatch):
 
 def test_main_swallows_exceptions(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setattr("sys.argv", ["update_check", str(tmp_path)])
+    monkeypatch.setattr("sys.argv", ["update_check", str(tmp_path), str(tmp_path / "cache")])
     with patch.object(entry, "run_check", side_effect=RuntimeError("boom")):
         # main must NOT propagate — background subprocess should die silently.
         assert entry.main() == 1

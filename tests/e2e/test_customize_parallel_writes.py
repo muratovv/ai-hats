@@ -23,7 +23,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 N = 5

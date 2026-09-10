@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install, pytest.mark.library]
 
 
 def test_retired_hooks_dir_never_recreated(tmp_venv_project) -> None:

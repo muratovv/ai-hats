@@ -261,7 +261,7 @@ class SubAgentRunner:
         session = run.session
         run.defer(
             "session cache",
-            lambda: _cleanup_session_cache(self.project_dir, session.session_id),
+            lambda: _cleanup_session_cache(self.layout.cache.session(session.session_id)),
         )
 
         # The ONE composition arrived in the payload (compose seam).
@@ -281,11 +281,11 @@ class SubAgentRunner:
             result = result.with_injection_override(system_prompt_override)
         provider = self.payload.provider
         provider_name = provider.name
-        _ctx = provider.execution_context(self.project_dir)
+        _ctx = provider.execution_context(self.layout)
         _ctx.__enter__()
 
         artifacts = provider.build_session_artifacts(
-            self.project_dir,
+            self.layout,
             result,
             session.session_id,
             run_mode=RunMode.AUTOMATE,
@@ -294,13 +294,13 @@ class SubAgentRunner:
         )
         for warning in artifacts.notices:
             session.log_sys(warning)
-        _claim_session_cache(self.project_dir, session.session_id)
+        _claim_session_cache(self.layout.cache.session(session.session_id))
 
         # The gates this sub-agent runs under. Every AUTOMATE record ever written
         # said `checks: []`, so the reflect loop could not see whether a
         # sub-agent had its gates at all.
         reported_checks, notes = describe_checks(
-            provider, self.project_dir, result, session.session_id, artifacts.port.plan
+            provider, self.layout, result, session.session_id, artifacts.port.plan
         )
         # Everything ai-hats adds to the child's environment, expressed once
         # — the sub-agent path merged its own subset and reported a
@@ -308,7 +308,7 @@ class SubAgentRunner:
         # six keys it did deliver appeared in no record.
         launch_env = assemble_launch_env(
             provider,
-            self.project_dir,
+            self.layout,
             session.session_dir,
             session_id=session.session_id,
             trace_path=str(session.trace_path),
@@ -319,7 +319,7 @@ class SubAgentRunner:
             run_mode=RunMode.AUTOMATE,
         )
         described = provider.describe_automate_launch(
-            self.project_dir,
+            self.layout,
             result,
             session.session_id,
             artifacts,
@@ -376,7 +376,6 @@ class SubAgentRunner:
 
         # ADR-0013 D3: the context-manager cleanup() fires before_teardown from
         # __exit__, so the manager must carry ai-hats's hook-running bundle.
-        from .paths import worktrees_dir
         from .wt_lifecycle import HOOK_LIFECYCLE
 
         with WorktreeManager(
@@ -385,7 +384,7 @@ class SubAgentRunner:
             session.session_id,
             mode,
             lifecycle=HOOK_LIFECYCLE,
-            state_dir=worktrees_dir(self.project_dir),
+            state_dir=self.layout.sessions.worktrees,
         ) as work_dir:
             session.log_sub(f"Working directory: {work_dir}")
             SurfaceGuard.pre_flight_check(self.project_dir, work_dir, mode, provider_name).unwrap()
@@ -407,7 +406,7 @@ class SubAgentRunner:
                     metrics = CollectedMetrics()
                     run_result = engine.run(
                         result=result,
-                        project_dir=self.project_dir,
+                        layout=self.layout,
                         work_dir=work_dir,
                         session_id=session.session_id,
                         task=task,
@@ -443,14 +442,14 @@ class SubAgentRunner:
                     # The reported argv IS the executed one — this used to
                     # re-derive it from materialize_runtime_skills, and matched
                     # what was reported only by coincidence.
-                    with provider.execution_context(self.project_dir):
+                    with provider.execution_context(self.layout):
                         proc = _run_surface(
                             described.launch,
                             work_dir=work_dir,
                             env=env,
                             timeout_s=timeout_s,
                             on_spawn=lambda pid: _claim_surface_child(
-                                self.project_dir, session.session_id, pid
+                                self.layout.cache.session(session.session_id), pid
                             ),
                         )
                     session.log_res(f"Exit code: {proc.returncode}")
@@ -548,9 +547,8 @@ class SubAgentRunner:
         """
         try:
             from . import ownership
-            from .tracker_wiring import tracker_paths
 
-            registry = tracker_paths(self.project_dir).tasks_dir.parent / "ownership.json"
+            registry = self.layout.tracker.tasks_dir.parent / "ownership.json"
             ownership.release_session_pid(registry, session.session_id, os.getpid())
         except Exception as exc:  # noqa: BLE001 — fail-open teardown
             session.log_sys(f"release-on-finish failed: {exc}")

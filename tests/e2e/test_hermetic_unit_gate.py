@@ -27,7 +27,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOST_ENTRY_POINT = "hats1700_host_only"
 TEST_ENTRY_POINT = "hats1700_test_mutation"
-pytestmark = [pytest.mark.integration, pytest.mark.install_heavy]
+pytestmark = [pytest.mark.integration, pytest.mark.install_heavy, pytest.mark.gates]
 
 
 def _lock_state() -> tuple[bool, int, int] | None:

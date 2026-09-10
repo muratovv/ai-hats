@@ -12,6 +12,8 @@ runs for real, so a break there is this test's failure too.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from types import SimpleNamespace
 
 from ai_hats.session_artifacts import BuiltArtifacts, CollectedMetrics
@@ -38,7 +40,7 @@ def _run(tmp_path, metrics):
         result=SimpleNamespace(
             name="r", priorities=[], merged_injection="", rules=[], skills=[], checks=()
         ),
-        project_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
         work_dir=tmp_path,
         session_id="20260826-102204-1-27148",
         task="do the thing",

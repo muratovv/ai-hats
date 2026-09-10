@@ -24,7 +24,7 @@ import pytest
 from _helpers.git import git, init_repo
 from _helpers.hook_chain import build_session_settings, run_chain, run_unasked
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.gates]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

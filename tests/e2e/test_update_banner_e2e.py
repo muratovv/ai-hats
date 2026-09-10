@@ -12,7 +12,8 @@ why: without update banner notifications, users remain unaware of framework secu
 
 from __future__ import annotations
 
-from ai_hats.paths import cache_root
+from ai_hats_core.layout import ProjectLayout
+
 
 import json
 import os
@@ -33,9 +34,10 @@ from _helpers.repo_src import build_src  # noqa: E402
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 # HATS-782: the installed sha is detected at runtime (the real running build) so
 # HATS-781's installed-SHA banner guard does not suppress the seeded banner.
@@ -79,7 +81,7 @@ def _seed_cache(
     installed_label: str | None = None,
     latest_label: str | None = None,
 ) -> Path:
-    cache = cache_root(project) / "update-check.json"
+    cache = ProjectLayout.at(project).cache.root / "update-check.json"
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(
         json.dumps(

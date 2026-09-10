@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.gates]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIB_RELPATH = "packages/ai-hats-library/src/ai_hats_library"

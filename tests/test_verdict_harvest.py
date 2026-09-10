@@ -9,17 +9,18 @@ it into the HYP card. The bottom test chains harvest -> ``quorum_autoclose``
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from ai_hats.cli.reflect_session_main import _harvest_verdicts
-from ai_hats.paths import hypotheses_dir
 from ai_hats.rack_workspace import autoclose_hypotheses, rack_workspace
 from ai_hats_rack.extensions.quorum import AUTOCLOSE_ACTOR
 from ai_hats_rack.migration import migrate_catalog
 
 
 def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
-    hyps_dir = hypotheses_dir(project_dir)
+    hyps_dir = ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses"
     hyps_dir.mkdir(parents=True, exist_ok=True)
     (hyps_dir / f"{hyp_id}.yaml").write_text(
         "id: " + hyp_id + "\n"
@@ -34,7 +35,7 @@ def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
 
 
 def _validation_log(project_dir: Path, hyp_id: str) -> list[dict]:
-    ws = rack_workspace(project_dir)
+    ws = rack_workspace(ProjectLayout.at(project_dir))
     card = ws.kernel_for(hyp_id).get(hyp_id)
     assert card is not None, f"{hyp_id} vanished"
     return list(card.extras.get("validation_log") or [])
@@ -54,7 +55,7 @@ def test_harvest_persists_non_na_verdict_with_correct_fields(tmp_path: Path) -> 
         }
     ]
 
-    persisted = _harvest_verdicts(tmp_path, "sess-001", verdicts)
+    persisted = _harvest_verdicts(ProjectLayout.at(tmp_path), "sess-001", verdicts)
 
     assert persisted == ["HYP-001"]
     [entry] = _validation_log(tmp_path, "HYP-001")
@@ -69,7 +70,7 @@ def test_harvest_skips_na_verdict(tmp_path: Path) -> None:
     _add_active_hyp(tmp_path, "HYP-001")
     verdicts = [{"hyp_id": "HYP-001", "verdict": "n/a", "evidence": "not relevant this session"}]
 
-    persisted = _harvest_verdicts(tmp_path, "sess-001", verdicts)
+    persisted = _harvest_verdicts(ProjectLayout.at(tmp_path), "sess-001", verdicts)
 
     assert persisted == []
     assert _validation_log(tmp_path, "HYP-001") == []
@@ -79,7 +80,7 @@ def test_harvest_skips_verdict_missing_hyp_id_without_crashing(tmp_path: Path) -
     _add_active_hyp(tmp_path, "HYP-001")
     verdicts = [{"verdict": "confirmed", "evidence": "e"}]  # no hyp_id
 
-    persisted = _harvest_verdicts(tmp_path, "sess-001", verdicts)
+    persisted = _harvest_verdicts(ProjectLayout.at(tmp_path), "sess-001", verdicts)
 
     assert persisted == []
     assert _validation_log(tmp_path, "HYP-001") == []
@@ -102,7 +103,7 @@ def test_harvest_session_id_is_the_observed_session_not_the_verdict_payload(
         }
     ]
 
-    _harvest_verdicts(tmp_path, "observed-session-42", verdicts)
+    _harvest_verdicts(ProjectLayout.at(tmp_path), "observed-session-42", verdicts)
 
     [entry] = _validation_log(tmp_path, "HYP-001")
     assert entry["session_id"] == "observed-session-42"
@@ -115,7 +116,7 @@ def test_harvest_one_failure_does_not_abort_the_rest(tmp_path: Path) -> None:
         {"hyp_id": "HYP-001", "verdict": "confirmed", "evidence": "known hyp"},
     ]
 
-    persisted = _harvest_verdicts(tmp_path, "sess-001", verdicts)
+    persisted = _harvest_verdicts(ProjectLayout.at(tmp_path), "sess-001", verdicts)
 
     assert persisted == ["HYP-001"]
     [entry] = _validation_log(tmp_path, "HYP-001")
@@ -142,12 +143,12 @@ def test_three_independent_harvested_refuted_verdicts_reach_quorum_autoclose(
                 "recommendation": "close_refuted",
             }
         ]
-        persisted = _harvest_verdicts(tmp_path, sid, verdicts)
+        persisted = _harvest_verdicts(ProjectLayout.at(tmp_path), sid, verdicts)
         assert persisted == ["HYP-001"]
 
     assert len(_validation_log(tmp_path, "HYP-001")) == 3
 
-    ws = rack_workspace(tmp_path)
+    ws = rack_workspace(ProjectLayout.at(tmp_path))
     closures = autoclose_hypotheses(ws, caller_cwd=tmp_path, k=3, actor=AUTOCLOSE_ACTOR)
 
     assert [c.hyp_id for c in closures] == ["HYP-001"]

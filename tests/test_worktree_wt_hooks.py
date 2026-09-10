@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import worktrees_dir
 from ai_hats_wt import WorktreeManager, WorktreeTeardownAborted
 from ai_hats.wt_lifecycle import HOOK_LIFECYCLE, WorktreeHookError
+from ai_hats_core.layout import ProjectLayout
 
 
 def _mgr(project: Path, branch: str) -> WorktreeManager:
@@ -31,7 +31,9 @@ def _mgr(project: Path, branch: str) -> WorktreeManager:
         project,
         branch_name=branch,
         lifecycle=HOOK_LIFECYCLE,
-        state_dir=worktrees_dir(project),  # ADR-0013 D4: match the ai-hats convention
+        state_dir=ProjectLayout.at(
+            project
+        ).sessions.worktrees,  # ADR-0013 D4: match the ai-hats convention
     )
 
 
@@ -178,7 +180,7 @@ def test_persistence_roundtrip_runs_create_time_hooks(git_project, tmp_path):
         git_project,
         "task/h",
         lifecycle=HOOK_LIFECYCLE,
-        state_dir=worktrees_dir(git_project),
+        state_dir=ProjectLayout.at(git_project).sessions.worktrees,
     )
     assert loaded is not None
     assert loaded._wt_hooks == _carry_out()
@@ -192,7 +194,7 @@ def test_legacy_state_without_wt_hooks_warns_and_does_not_crash(git_project, cap
     wt = mgr.create()
     mgr.save_state()
     # Simulate a pre-upgrade state file: strip the wt_hooks key.
-    state_file = next(worktrees_dir(git_project).glob("*.json"))
+    state_file = next(ProjectLayout.at(git_project).sessions.worktrees.glob("*.json"))
     data = json.loads(state_file.read_text())
     data.pop("wt_hooks", None)
     state_file.write_text(json.dumps(data))
@@ -201,7 +203,7 @@ def test_legacy_state_without_wt_hooks_warns_and_does_not_crash(git_project, cap
         git_project,
         "task/i",
         lifecycle=HOOK_LIFECYCLE,
-        state_dir=worktrees_dir(git_project),
+        state_dir=ProjectLayout.at(git_project).sessions.worktrees,
     )
     assert loaded is not None
     assert loaded._wt_hooks_legacy is True

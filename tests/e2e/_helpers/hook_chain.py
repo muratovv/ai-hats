@@ -7,6 +7,8 @@ Bash chain from the project's settings.json and returns the composite verdict.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import re
@@ -224,15 +226,18 @@ def build_session_settings(
     session is built.
     """
     from ai_hats.assembler import Assembler
-    from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     result = Assembler(project).composer.compose(role)
     ClaudeSurface().build_session_artifacts(
-        project, result, session_id, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        result,
+        session_id,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
-    return session_cache_dir(project, session_id) / "settings.json"
+    return ProjectLayout.at(project).cache.session(session_id) / "settings.json"
 
 
 def composed_rows(settings: Path, event: str = "PreToolUse") -> list[dict]:

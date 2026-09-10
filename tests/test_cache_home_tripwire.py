@@ -23,7 +23,7 @@ CACHE = Path(r{cache!r})
 
 
 def _project_key(path):
-    """Verbatim ``ai_hats.paths.project_key`` — the inner run has no import path."""
+    """Verbatim ``ai_hats_core.layout.project_key`` — the inner run has no import path."""
     resolved = path.expanduser().resolve()
     digest = hashlib.sha256(str(resolved).encode()).hexdigest()[:8]
     slug = "".join(c if (c.isalnum() or c in "._-") else "-" for c in resolved.name)

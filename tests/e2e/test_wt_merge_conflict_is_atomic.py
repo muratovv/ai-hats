@@ -19,6 +19,8 @@ import pytest
 
 from _helpers.git import init_repo, git as _git
 
+pytestmark = pytest.mark.wt
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

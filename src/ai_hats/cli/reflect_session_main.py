@@ -62,7 +62,6 @@ def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout)
     ``MaybeSpawnSessionReviewer``'s ``background: false`` branch can run it
     synchronously in-process instead of only via the CLI subprocess.
     """
-    project_dir = layout.root
     retros = layout.sessions.retros
     runner_error: str | None = None
     harness_error: HarnessReliabilityError | None = None
@@ -99,11 +98,11 @@ def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout)
     # Harvest whatever verdicts the doc carries into validation_log,
     # independent of _harness_check's full-active-coverage gate below or
     # harness-reliability failures above.
-    persisted = _maybe_harvest_verdicts(project_dir, session_id, raw)
+    persisted = _maybe_harvest_verdicts(layout, session_id, raw)
 
     if harness_error is not None:
         _file_meta_proposal(
-            project_dir,
+            layout,
             session_id,
             issues=[f"harness: {harness_error}"],
             target=TARGET_HARNESS_INCIDENT,
@@ -115,7 +114,7 @@ def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout)
     issues = _harness_check(layout, session_id, runner_error, raw, parse_issues)
     if issues:
         _file_meta_proposal(
-            project_dir,
+            layout,
             session_id,
             issues,
             target=TARGET_SESSION_REVIEWER,
@@ -226,7 +225,7 @@ def _load_active_hyp_ids(layout: ProjectLayout, session_id: str) -> set[str]:
     from ..rack_workspace import active_hypotheses, created_at_or_before, rack_workspace
     from ..retro.window import session_cut
 
-    ws = rack_workspace(layout.root)
+    ws = rack_workspace(layout)
     every = active_hypotheses(ws)
     kept = created_at_or_before(every, session_cut(layout, session_id))
     return {h.id for h in kept}
@@ -235,7 +234,7 @@ def _load_active_hyp_ids(layout: ProjectLayout, session_id: str) -> set[str]:
 # ---- verdict harvest ----
 
 
-def _maybe_harvest_verdicts(project_dir: Path, session_id: str, raw: dict | None) -> list[str]:
+def _maybe_harvest_verdicts(layout: ProjectLayout, session_id: str, raw: dict | None) -> list[str]:
     """Harvest whatever verdicts ``raw`` carries; ``[]`` when ``raw`` is
     ``None`` (doc missing/unparseable — nothing to harvest) or its
     ``hypothesis_verdicts`` isn't a list. ``raw`` comes from the caller's
@@ -245,10 +244,10 @@ def _maybe_harvest_verdicts(project_dir: Path, session_id: str, raw: dict | None
     verdicts = raw.get("hypothesis_verdicts")
     if not isinstance(verdicts, list):
         return []
-    return _harvest_verdicts(project_dir, session_id, verdicts)
+    return _harvest_verdicts(layout, session_id, verdicts)
 
 
-def _harvest_verdicts(project_dir: Path, session_id: str, verdicts: list) -> list[str]:
+def _harvest_verdicts(layout: ProjectLayout, session_id: str, verdicts: list) -> list[str]:
     """Persist each non-``n/a`` verdict into its HYP's ``validation_log``.
 
     ``session_id`` is this function's OWN argument — the session under
@@ -261,7 +260,7 @@ def _harvest_verdicts(project_dir: Path, session_id: str, verdicts: list) -> lis
     """
     from ..rack_workspace import SESSION_REVIEWER_ACTOR, append_verdict, rack_workspace
 
-    ws = rack_workspace(project_dir)
+    ws = rack_workspace(layout)
     now = datetime.now(timezone.utc)
     persisted: list[str] = []
     for v in verdicts:
@@ -280,7 +279,7 @@ def _harvest_verdicts(project_dir: Path, session_id: str, verdicts: list) -> lis
             "timestamp": v.get("timestamp") or now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         try:
-            append_verdict(ws, hyp_id, entry, caller_cwd=project_dir, actor=SESSION_REVIEWER_ACTOR)
+            append_verdict(ws, hyp_id, entry, caller_cwd=layout.root, actor=SESSION_REVIEWER_ACTOR)
         except (Exception, KeyboardInterrupt):
             logger.warning(
                 "verdict harvest failed for %s (session %s)", hyp_id, session_id, exc_info=True
@@ -294,7 +293,7 @@ def _harvest_verdicts(project_dir: Path, session_id: str, verdicts: list) -> lis
 
 
 def _file_meta_proposal(
-    project_dir: Path,
+    layout: ProjectLayout,
     session_id: str,
     issues: list[str],
     *,
@@ -302,7 +301,7 @@ def _file_meta_proposal(
 ) -> None:
     from ..rack_workspace import create_proposal, proposals, rack_workspace
 
-    ws = rack_workspace(project_dir)
+    ws = rack_workspace(layout)
 
     # De-dup: skip if a process proposal with the SAME target already exists for
     # this failed_session_id (distinct targets coexist — both facets get filed).

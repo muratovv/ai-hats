@@ -55,7 +55,7 @@ def compute_session_end(session_start: datetime, session_dir: Path, session_id: 
     return datetime.now(timezone.utc)
 
 
-def tasks_closed_in_window(project_dir: Path, since: datetime, until: datetime) -> list[str]:
+def tasks_closed_in_window(layout: ProjectLayout, since: datetime, until: datetime) -> list[str]:
     """Return IDs of tasks whose `completed_at` falls in [since, until], state=done.
 
     Loud by design (HATS-1259): a read that cannot be performed raises rather than
@@ -65,7 +65,7 @@ def tasks_closed_in_window(project_dir: Path, since: datetime, until: datetime) 
     from ..rack_workspace import closed_tasks
 
     closed: list[str] = []
-    for task in closed_tasks(project_dir):
+    for task in closed_tasks(layout):
         ts = parse_task_timestamp(task.completed_at)
         if ts is None:
             logger.warning(

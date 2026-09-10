@@ -13,6 +13,8 @@ import io
 import os
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from .cache import CacheEntry, cache_path, read_cache, write_cache
 from .checker import (
     detect_installed_sha,
@@ -58,7 +60,7 @@ def is_local_channel(project_dir: Path) -> bool:
     return channel == Channel.LOCAL
 
 
-def upstream_update(project_dir: Path) -> CacheEntry | None:
+def upstream_update(layout: ProjectLayout) -> CacheEntry | None:
     """The cache entry iff the *running* build is genuinely behind upstream, else None.
 
     The one canonical reader of the behind signal (HATS-846): bundles
@@ -68,9 +70,9 @@ def upstream_update(project_dir: Path) -> CacheEntry | None:
     folded in (it suppresses the notification, not hook-safety); an unknown running
     SHA is treated as about-us, not suppressed.
     """
-    if is_local_channel(project_dir):
+    if is_local_channel(layout.root):
         return None
-    entry = read_cache(project_dir)
+    entry = read_cache(layout.cache)
     if entry is None or not entry.has_update:
         return None
     current = detect_installed_sha()

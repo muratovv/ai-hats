@@ -30,7 +30,11 @@ from _helpers.hook_chain import run_opencode_dispatch
 SESSION_ID = "sid-opencode-chain"
 OFF_LIMITS = "/etc/passwd"
 
-pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs a JS runtime")
+pytestmark = [
+    pytest.mark.skipif(shutil.which("node") is None, reason="needs a JS runtime"),
+    pytest.mark.guards,
+    pytest.mark.surfaces,
+]
 
 
 def _script(path: Path, body: str) -> Path:

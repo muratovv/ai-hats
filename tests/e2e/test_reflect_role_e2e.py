@@ -17,7 +17,7 @@ from _helpers.hitl import drive_bare_hitl, strip_ansi
 from _helpers.project import Project
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.observe]
 
 
 # ``maintainer`` ships in core (``library/core/roles/maintainer/``)

@@ -24,7 +24,7 @@ from ai_hats.paths import ENV_AI_HATS_VENV
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # HATS-678/771: real uv build + install at call time → capped via conftest.INSTALL_HEAVY_GROUPS.
-pytestmark = pytest.mark.install_heavy
+pytestmark = [pytest.mark.install_heavy, pytest.mark.install]
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):

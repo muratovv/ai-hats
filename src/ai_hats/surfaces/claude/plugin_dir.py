@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 from ai_hats_core import ResolvedComponent
@@ -28,7 +30,7 @@ if TYPE_CHECKING:
 def materialize_plugin_dir(
     role_name: str,
     skills: list[ResolvedComponent],
-    project_dir: Path,
+    layout: ProjectLayout,
     plugin_dir: Path,
     port: Materializer,
 ) -> Path:
@@ -42,14 +44,14 @@ def materialize_plugin_dir(
     lock_path = plugin_dir.parent / f"{plugin_dir.name}.lock"
     port.mkdir(plugin_dir.parent)
     with port.lock(lock_path):
-        _rebuild_plugin_dir(role_name, skills, project_dir, plugin_dir, port)
+        _rebuild_plugin_dir(role_name, skills, layout, plugin_dir, port)
     return plugin_dir
 
 
 def _rebuild_plugin_dir(
     role_name: str,
     skills: list[ResolvedComponent],
-    project_dir: Path,
+    layout: ProjectLayout,
     plugin_dir: Path,
     port: Materializer,
 ) -> None:
@@ -77,8 +79,6 @@ def _rebuild_plugin_dir(
         source_md = skill.source_path / "SKILL.md"
         if source_md.exists():
             original = source_md.read_text()
-            rendered = expand_fsm_edges_token(
-                expand_path_placeholders(original, project_dir), project_dir
-            )
+            rendered = expand_fsm_edges_token(expand_path_placeholders(original, layout), layout)
             if rendered != original:
                 port.write_text(dest / "SKILL.md", rendered)

@@ -2,7 +2,7 @@
 
 THE single home for "where is the builtin ``library/`` the engine composes
 from?". This is the SHIPPED source (``core``/``usage``/``hooks``/``core/pipelines``),
-distinct from :func:`ai_hats.paths.library_dir` (the materialized
+distinct from ``ProjectLayout.library`` (the materialized
 ``<.agent>/library/`` mirror).
 
 ``importlib.resources.files(LIBRARY_PKG)`` hard-pins the editable install

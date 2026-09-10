@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..paths import cache_root
+from ai_hats_core.layout import CacheLayout
 
 TTL = timedelta(days=1)
 
@@ -63,8 +63,8 @@ class CacheEntry:
         )
 
 
-def cache_path(project_dir: Path) -> Path:
-    return cache_root(project_dir) / "update-check.json"
+def cache_path(cache: CacheLayout) -> Path:
+    return cache.root / "update-check.json"
 
 
 def _parse_iso(s: str) -> datetime:
@@ -88,7 +88,7 @@ def _opt_str(v: object) -> str | None:
     return None
 
 
-def read_cache(project_dir: Path) -> CacheEntry | None:
+def read_cache(cache: CacheLayout) -> CacheEntry | None:
     """Return the cached entry, or ``None`` when the file is missing/corrupt.
 
     Forward-compatible read: legacy entries (no ``behind`` / ``ahead`` /
@@ -96,7 +96,7 @@ def read_cache(project_dir: Path) -> CacheEntry | None:
     ``has_update`` returns False until the next probe overwrites the cache
     with the new schema.
     """
-    p = cache_path(project_dir)
+    p = cache_path(cache)
     if not p.exists():
         return None
     try:
@@ -115,8 +115,8 @@ def read_cache(project_dir: Path) -> CacheEntry | None:
         return None
 
 
-def write_cache(project_dir: Path, entry: CacheEntry) -> None:
-    p = cache_path(project_dir)
+def write_cache(cache: CacheLayout, entry: CacheEntry) -> None:
+    p = cache_path(cache)
     p.parent.mkdir(parents=True, exist_ok=True)
     iso = entry.checked_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     payload = {

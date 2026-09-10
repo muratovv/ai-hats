@@ -15,6 +15,8 @@ Three race scenarios:
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import multiprocessing
 import subprocess
@@ -23,7 +25,6 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import worktrees_dir
 from ai_hats_wt import WorktreeLockError, WorktreeManager
 from ai_hats_wt.locks import (
     GIT_RETRY_MAX,
@@ -77,7 +78,9 @@ def git_project(tmp_path: Path) -> Path:
 def _writer_worker(project_dir: str, branch: str, marker: str, iterations: int) -> None:
     """Repeatedly save_state with a payload identifiable by ``marker``."""
     project = Path(project_dir)
-    mgr = WorktreeManager(project, branch_name=branch, state_dir=worktrees_dir(project))
+    mgr = WorktreeManager(
+        project, branch_name=branch, state_dir=ProjectLayout.at(project).sessions.worktrees
+    )
     mgr.worktree_path = project / f"fake-wt-{marker}"
     mgr._original_branch = "main"
     for _ in range(iterations):
@@ -138,7 +141,7 @@ def test_save_state_write_write_race(git_project: Path) -> None:
     assert p1.exitcode == 0, "writer alpha failed"
     assert p2.exitcode == 0, "writer beta failed"
 
-    state_path = worktrees_dir(git_project) / f"{_state_key(branch)}.json"
+    state_path = ProjectLayout.at(git_project).sessions.worktrees / f"{_state_key(branch)}.json"
     assert state_path.exists()
     data = json.loads(state_path.read_text())  # never raises
     assert data["branch"] == branch
@@ -175,7 +178,7 @@ def test_load_during_clear_race(git_project: Path) -> None:
 
 def test_acquire_timeout_raises_worktree_lock_error(git_project: Path, tmp_path: Path) -> None:
     """TC-3: a stuck lock holder triggers WorktreeLockError on second acquire."""
-    state_path = worktrees_dir(git_project) / "task-hats-121-tc3.json"
+    state_path = ProjectLayout.at(git_project).sessions.worktrees / "task-hats-121-tc3.json"
     state_path.parent.mkdir(parents=True, exist_ok=True)
     ready = tmp_path / "ready.flag"
 
@@ -322,7 +325,9 @@ def _create_worker(
     from ai_hats_wt import WorktreeCreateError
 
     project = Path(project_dir)
-    mgr = WorktreeManager(project, branch_name=branch, state_dir=worktrees_dir(project))
+    mgr = WorktreeManager(
+        project, branch_name=branch, state_dir=ProjectLayout.at(project).sessions.worktrees
+    )
     try:
         path = mgr.create()
         mgr.save_state()
@@ -391,7 +396,7 @@ def test_parallel_create_same_branch_exactly_one_winner(
     assert branches.count(branch) == 1, branches
 
     # State JSON exists exactly once.
-    state_path = worktrees_dir(git_project) / f"{_state_key(branch)}.json"
+    state_path = ProjectLayout.at(git_project).sessions.worktrees / f"{_state_key(branch)}.json"
     assert state_path.exists()
 
     # No new leaked tempdirs from the loser.
@@ -432,8 +437,12 @@ def test_parallel_create_different_branches_both_succeed(
         assert outcome["path"] is not None
 
     # Both state files exist.
-    assert (worktrees_dir(git_project) / f"{_state_key(branch_a)}.json").exists()
-    assert (worktrees_dir(git_project) / f"{_state_key(branch_b)}.json").exists()
+    assert (
+        ProjectLayout.at(git_project).sessions.worktrees / f"{_state_key(branch_a)}.json"
+    ).exists()
+    assert (
+        ProjectLayout.at(git_project).sessions.worktrees / f"{_state_key(branch_b)}.json"
+    ).exists()
 
 
 # TC-N3 (test_create_failure_cleans_tempdir_preserves_pre_existing_branch)
@@ -456,7 +465,7 @@ def _setup_worktree_worker(project_dir: str, task_id: str, result_dict: dict, ke
     """Child process: invoke WtWorktreeEffects.setup (the HATS-866 seam), record outcome."""
     from ai_hats.wt_effects import WtWorktreeEffects
 
-    effects = WtWorktreeEffects(Path(project_dir))
+    effects = WtWorktreeEffects(ProjectLayout.at(Path(project_dir)))
     try:
         path = effects.setup(task_id)
         result_dict[key] = {"path": str(path) if path else None, "error": None}
@@ -596,14 +605,16 @@ def test_base_lock_key_sanitization() -> None:
 
 def test_base_lock_path_under_state_dir(git_project: Path) -> None:
     """Lock file lives next to other worktree state, under .agent."""
-    path = _base_lock_path(worktrees_dir(git_project), "master")
+    path = _base_lock_path(ProjectLayout.at(git_project).sessions.worktrees, "master")
     assert path.name == ".base-master.lock"
-    assert path.parent == worktrees_dir(git_project)
+    assert path.parent == ProjectLayout.at(git_project).sessions.worktrees
 
 
 def _hold_base_lock(project_dir_str: str, base: str, hold_s: float, ready: str) -> None:
     """Acquire L1' for ``base`` and hold for ``hold_s`` seconds."""
-    with _acquire_base_branch_lock(worktrees_dir(Path(project_dir_str)), base):
+    with _acquire_base_branch_lock(
+        ProjectLayout.at(Path(project_dir_str)).sessions.worktrees, base
+    ):
         Path(ready).write_text("ready")
         time.sleep(hold_s)
 
@@ -628,7 +639,9 @@ def test_base_lock_serializes_same_base(git_project: Path, tmp_path: Path) -> No
 
         # Second acquire with a short timeout MUST raise — holder is still active.
         with pytest.raises(WorktreeLockError):
-            with _acquire_base_branch_lock(worktrees_dir(git_project), "master", timeout=0.1):
+            with _acquire_base_branch_lock(
+                ProjectLayout.at(git_project).sessions.worktrees, "master", timeout=0.1
+            ):
                 pass  # pragma: no cover
     finally:
         holder.join(timeout=5)
@@ -651,7 +664,7 @@ def test_base_lock_independent_per_base(git_project: Path, tmp_path: Path) -> No
 
         # Different base → must NOT block.
         t0 = time.monotonic()
-        with _acquire_base_branch_lock(worktrees_dir(git_project), "develop"):
+        with _acquire_base_branch_lock(ProjectLayout.at(git_project).sessions.worktrees, "develop"):
             assert time.monotonic() - t0 < 0.2, "different-base lock blocked"
     finally:
         holder.join(timeout=5)

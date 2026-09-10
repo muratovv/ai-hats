@@ -19,7 +19,7 @@ from rich.console import Console
 
 from ai_hats_observe.artifacts import METRICS_JSON
 from ai_hats_core.layout import ProjectLayout
-from ai_hats_observe.cli import _seam
+from ai_hats_observe.cli import STANDALONE, Host, attach
 from ai_hats_observe.cli.session import session
 
 FIXTURE = Path(__file__).parent / "fixtures" / "claude_jsonl" / "three_turns_with_tool.jsonl"
@@ -30,7 +30,7 @@ PROVIDER_SESSION_ID = "5c639a19-5b64-4a91-8813-2937b47e9126"
 
 
 @pytest.fixture
-def project(tmp_path, monkeypatch):
+def project(tmp_path):
     """A project with one unmeasured session whose transcript is on disk."""
     runs = tmp_path / ".agent" / "sessions" / "runs"
     session_dir = runs / f"session_{SESSION_ID}"
@@ -50,13 +50,18 @@ def project(tmp_path, monkeypatch):
     transcript = tmp_path / f"{PROVIDER_SESSION_ID}.jsonl"
     shutil.copy(FIXTURE, transcript)
 
-    monkeypatch.setattr(
-        _seam, "_LAYOUT", lambda: ProjectLayout(root=tmp_path, base=tmp_path / ".agent")
-    )
     # Wide console: at the default 80 columns rich truncates the note cell, so
     # assertions on *why* a session was refused would pass on any output.
-    monkeypatch.setattr(_seam, "_CONSOLE", Console(width=200))
-    return tmp_path, session_dir, transcript
+    previous = attach(
+        Host(
+            layout=lambda: ProjectLayout(root=tmp_path, base=tmp_path / ".agent"),
+            tag_filter_parser=STANDALONE.tag_filter_parser,
+            provider_adapter=_adapter(tmp_path),
+            console=Console(width=200),
+        )
+    )
+    yield tmp_path, session_dir, transcript
+    attach(previous)
 
 
 def _adapter(transcripts_dir: Path):
@@ -90,9 +95,8 @@ def read_metrics(session_dir) -> dict:
     return json.loads((session_dir / METRICS_JSON).read_text())
 
 
-def test_dry_run_reports_recovery_without_writing(project, monkeypatch):
+def test_dry_run_reports_recovery_without_writing(project):
     tmp_path, session_dir, transcript = project
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID, "--dry-run"])
 
@@ -103,9 +107,8 @@ def test_dry_run_reports_recovery_without_writing(project, monkeypatch):
     assert "turns" not in read_metrics(session_dir)
 
 
-def test_backfill_recovers_counters(project, monkeypatch):
+def test_backfill_recovers_counters(project):
     tmp_path, session_dir, transcript = project
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -118,7 +121,7 @@ def test_backfill_recovers_counters(project, monkeypatch):
     assert m["claude_session_id"] == PROVIDER_SESSION_ID, "identity survives the rewrite"
 
 
-def test_backfill_refuses_a_stranger_when_our_transcript_is_gone(project, monkeypatch):
+def test_backfill_refuses_a_stranger_when_our_transcript_is_gone(project):
     """The 60-session mis-attribution guard — now enforced by the resolver itself.
 
     Claude expires its JSONL after ~30–40 days, so the common archive shape is
@@ -128,7 +131,6 @@ def test_backfill_refuses_a_stranger_when_our_transcript_is_gone(project, monkey
     tmp_path, session_dir, transcript = project
     transcript.unlink()
     shutil.copy(FIXTURE, tmp_path / "totally-different-uuid.jsonl")
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -139,14 +141,13 @@ def test_backfill_refuses_a_stranger_when_our_transcript_is_gone(project, monkey
     assert "turns" not in m
 
 
-def test_backfill_refuses_when_no_provider_session_id_recorded(project, monkeypatch):
+def test_backfill_refuses_when_no_provider_session_id_recorded(project):
     """Without the identity link there is nothing to match against — the exact
     case of every pre-HATS-1374 HITL session."""
     tmp_path, session_dir, transcript = project
     metrics = read_metrics(session_dir)
     del metrics["claude_session_id"]
     (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -154,7 +155,7 @@ def test_backfill_refuses_when_no_provider_session_id_recorded(project, monkeypa
     assert read_metrics(session_dir)["measured"] is False
 
 
-def test_identity_is_recovered_from_the_logged_launch_line(project, monkeypatch):
+def test_identity_is_recovered_from_the_logged_launch_line(project):
     """Pre-HATS-1374 records carry no id, but the runner logged the launch line.
 
     Measured on the real project: of 120 unmeasured sessions, 118 still had
@@ -171,7 +172,6 @@ def test_identity_is_recovered_from_the_logged_launch_line(project, monkeypatch)
         f"--session-id {PROVIDER_SESSION_ID}\n"
     )
     (session_dir / METRICS_JSON).chmod(0o644)
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -186,7 +186,7 @@ def test_identity_is_recovered_from_the_logged_launch_line(project, monkeypatch)
     assert stat.S_IMODE((session_dir / METRICS_JSON).stat().st_mode) == 0o600
 
 
-def test_trace_without_a_session_id_flag_still_refuses(project, monkeypatch):
+def test_trace_without_a_session_id_flag_still_refuses(project):
     """Fails closed: a surface whose launch line has no such flag stays refused."""
     tmp_path, session_dir, transcript = project
     metrics = read_metrics(session_dir)
@@ -195,7 +195,6 @@ def test_trace_without_a_session_id_flag_still_refuses(project, monkeypatch):
     (session_dir / "trace.log").write_text(
         "12:00:00.100 [SYS] Launching: agy -i task list --add-dir /x/rules\n"
     )
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -203,7 +202,7 @@ def test_trace_without_a_session_id_flag_still_refuses(project, monkeypatch):
     assert read_metrics(session_dir)["measured"] is False
 
 
-def test_a_stray_uuid_in_terminal_output_is_not_our_identity(project, monkeypatch):
+def test_a_stray_uuid_in_terminal_output_is_not_our_identity(project):
     """trace.log is the whole PTY stream, not a launch record (HATS-1397, F5).
 
     The launch line of a ``--resume`` session carries no ``--session-id``, and
@@ -219,7 +218,6 @@ def test_a_stray_uuid_in_terminal_output_is_not_our_identity(project, monkeypatc
         "12:00:00.100 [SYS] Launching: claude --settings x.json --resume\n"
         f"12:00:31.400 [RES] resuming session --session-id {PROVIDER_SESSION_ID}\n"
     )
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -229,7 +227,7 @@ def test_a_stray_uuid_in_terminal_output_is_not_our_identity(project, monkeypatc
     assert "claude_session_id" not in m, "a uuid seen in terminal output is not an identity"
 
 
-def test_backfill_refuses_a_live_session(project, monkeypatch):
+def test_backfill_refuses_a_live_session(project):
     """``--all`` must not rewrite a session that is still running (HATS-1397, F6).
 
     ``build`` replaces audit.md wholesale, so the incremental ``## Events`` log a
@@ -242,7 +240,6 @@ def test_backfill_refuses_a_live_session(project, monkeypatch):
     metrics["finalized"] = False
     (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
     (session_dir / "audit.md").write_text("# Session Audit: live\n\n## Events\n\n- started\n")
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -252,7 +249,7 @@ def test_backfill_refuses_a_live_session(project, monkeypatch):
     assert "turns" not in read_metrics(session_dir)
 
 
-def test_backfill_keeps_trace_log(project, monkeypatch):
+def test_backfill_keeps_trace_log(project):
     """``AuditWriter.build`` deletes trace.log by default; a backfill must not.
 
     It is the only remaining source for surfaces whose structured transcript
@@ -261,19 +258,17 @@ def test_backfill_keeps_trace_log(project, monkeypatch):
     tmp_path, session_dir, transcript = project
     trace = session_dir / "trace.log"
     trace.write_text("12:00:00.000 [SYS] Session started: role=maintainer\n")
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     CliRunner().invoke(session, ["backfill", SESSION_ID])
 
     assert trace.exists(), "backfill consumed the raw trace it was meant to preserve"
 
 
-def test_already_measured_sessions_are_skipped_without_force(project, monkeypatch):
+def test_already_measured_sessions_are_skipped_without_force(project):
     tmp_path, session_dir, transcript = project
     (session_dir / METRICS_JSON).write_text(
         json.dumps({"provider": "claude", "measured": True, "turns": 9, "tool_calls": 3})
     )
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 

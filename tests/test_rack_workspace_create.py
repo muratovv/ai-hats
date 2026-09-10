@@ -9,13 +9,14 @@ validation. These pin what delegating to ``kernel.create`` buys back.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import re
 from pathlib import Path
 
 import pytest
 from filelock import FileLock
 
-from ai_hats.paths import tasks_dir
 from ai_hats.paths.constants import ENV_AI_HATS_DIR, PROJECT_CONFIG
 from ai_hats.rack_workspace import (
     create_hypothesis,
@@ -37,12 +38,12 @@ def _no_env_optin(monkeypatch):
 def _project(tmp_path: Path, *backlogs: str) -> Path:
     (tmp_path / PROJECT_CONFIG).write_text("schema_version: 4\nprovider: claude\n")
     for name in backlogs:
-        ensure_backlog(tmp_path, name)
+        ensure_backlog(ProjectLayout.at(tmp_path), name)
     return tmp_path
 
 
 def _catalog(project: Path, name: str) -> Path:
-    return tasks_dir(project).parent / name
+    return ProjectLayout.at(project).tracker.tasks_dir.parent / name
 
 
 def _card(project: Path, name: str, card_id: str) -> TaskCard:
@@ -60,7 +61,10 @@ def test_hypothesis_takes_its_initial_state_from_the_backlog(tmp_path):
     path.write_text(path.read_text().replace("active", "proposed"))
 
     hyp_id = create_hypothesis(
-        rack_workspace(project), title="t", hypothesis="h", source_task="supervisor-observation"
+        rack_workspace(ProjectLayout.at(project)),
+        title="t",
+        hypothesis="h",
+        source_task="supervisor-observation",
     )
     assert _card(project, "hypotheses", hyp_id).state == "proposed"
 
@@ -72,7 +76,7 @@ def test_proposal_takes_its_initial_state_from_the_backlog(tmp_path):
     path.write_text(re.sub(r"\bopen\b", "triage", path.read_text()))
 
     prop_id = create_proposal(
-        rack_workspace(project),
+        rack_workspace(ProjectLayout.at(project)),
         title="t",
         category="process",
         target="x",
@@ -90,7 +94,7 @@ def test_proposal_with_an_undeclared_category_is_refused(tmp_path):
     project = _project(tmp_path, "proposals")
     with pytest.raises(FieldValidationError):
         create_proposal(
-            rack_workspace(project),
+            rack_workspace(ProjectLayout.at(project)),
             title="t",
             category="not-a-declared-choice",
             target="x",
@@ -105,7 +109,7 @@ def test_proposal_with_an_undeclared_category_is_refused(tmp_path):
 
 def test_hypothesis_links_a_real_source_task(tmp_path):
     project = _project(tmp_path, "hypotheses")
-    ws = rack_workspace(project)
+    ws = rack_workspace(ProjectLayout.at(project))
     real = ws.kernel_for("HATS-1").create(actor="t", caller_cwd=project, title="anchor").task.id
 
     hyp_id = create_hypothesis(ws, title="t", hypothesis="h", source_task=real)
@@ -114,7 +118,7 @@ def test_hypothesis_links_a_real_source_task(tmp_path):
 
 def test_proposal_links_its_related_hypotheses(tmp_path):
     project = _project(tmp_path, "hypotheses", "proposals")
-    ws = rack_workspace(project)
+    ws = rack_workspace(ProjectLayout.at(project))
     hyp_id = create_hypothesis(ws, title="h", hypothesis="h")
 
     prop_id = create_proposal(
@@ -155,7 +159,7 @@ def test_a_contended_alloc_lock_fails_loudly_instead_of_waiting_forever(tmp_path
 
     with FileLock(str(_catalog(project, "hypotheses") / ".alloc.lock")):
         with pytest.raises(LockTimeoutError, match="task-id allocation"):
-            create_hypothesis(rack_workspace(project), title="t", hypothesis="h")
+            create_hypothesis(rack_workspace(ProjectLayout.at(project)), title="t", hypothesis="h")
 
 
 # ----- a stale --task id demotes instead of writing a dangling edge -------------
@@ -168,7 +172,10 @@ def test_a_source_task_that_does_not_exist_demotes_to_origin(tmp_path):
     already used — rather than failing the whole command."""
     project = _project(tmp_path, "hypotheses")
     hyp_id = create_hypothesis(
-        rack_workspace(project), title="t", hypothesis="h", source_task="HATS-99999"
+        rack_workspace(ProjectLayout.at(project)),
+        title="t",
+        hypothesis="h",
+        source_task="HATS-99999",
     )
     card = _card(project, "hypotheses", hyp_id)
     assert "source_task" not in card.links
@@ -179,7 +186,7 @@ def test_an_explicit_origin_survives_a_stale_source_task(tmp_path):
     """Demotion must not clobber an origin the caller set on purpose."""
     project = _project(tmp_path, "hypotheses")
     hyp_id = create_hypothesis(
-        rack_workspace(project),
+        rack_workspace(ProjectLayout.at(project)),
         title="t",
         hypothesis="h",
         source_task="HATS-99999",

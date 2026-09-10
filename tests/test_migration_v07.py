@@ -12,6 +12,8 @@ Coverage:
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import logging
 import subprocess
 from pathlib import Path
@@ -559,7 +561,7 @@ def test_plan_migration_expands_ai_hats_dir_placeholder_in_baseline(tmp_path):
     assert finding.is_user_edit is True
 
     # With project_dir: baseline expands, diff matches.
-    report_expanded = m.plan_migration(canonical.parent, compose, project_dir=project)
+    report_expanded = m.plan_migration(canonical.parent, compose, layout=ProjectLayout.at(project))
     finding = next(f for f in report_expanded.findings if f.path.name == "foo.md")
     assert finding.is_user_edit is False, "expanded baseline should match disk bytes"
 
@@ -573,7 +575,7 @@ def test_plan_migration_placeholder_irrelevant_when_token_absent(tmp_path):
     on_disk.write_text("plain trait body\n")
 
     compose = _make_compose(trait_injections={"foo": "plain trait body"})
-    report = m.plan_migration(canonical.parent, compose, project_dir=project)
+    report = m.plan_migration(canonical.parent, compose, layout=ProjectLayout.at(project))
     finding = next(f for f in report.findings if f.path.name == "foo.md")
     assert finding.is_user_edit is False
 

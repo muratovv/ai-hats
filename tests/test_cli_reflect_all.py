@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,22 +12,21 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
-from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 from ai_hats.rack_workspace import proposals, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
 
 
 def _seed(pd: Path) -> None:
     """Seed both catalogs' backlog.yaml so the workspace mounts them (R6)."""
-    migrate_catalog(hypotheses_dir(pd), "hypotheses")
-    migrate_catalog(proposals_dir(pd), "proposals")
+    migrate_catalog(ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses", "hypotheses")
+    migrate_catalog(ProjectLayout.at(pd).tracker.proposals_dir, "proposals")
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
-    (hypotheses_dir(pd)).mkdir(parents=True)
-    (proposals_dir(pd)).mkdir(parents=True)
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses").mkdir(parents=True)
+    (ProjectLayout.at(pd).tracker.proposals_dir).mkdir(parents=True)
     _seed(pd)
     monkeypatch.chdir(pd)
     return pd
@@ -43,8 +44,12 @@ def _make_hyp(pd: Path, hyp_id: str, status="active"):
         "success_criterion": "x",
         "observation_window": "5 sessions",
     }
-    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
-    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+        yaml.safe_dump(body)
+    )
+    migrate_catalog(
+        ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses", "hypotheses"
+    )  # flat → dir-per-card
 
 
 def _make_prop(pd: Path, pid: str, status="open"):
@@ -59,8 +64,8 @@ def _make_prop(pd: Path, pid: str, status="open"):
         "votes": [],
         "status": status,
     }
-    (proposals_dir(pd) / f"{pid}.yaml").write_text(yaml.safe_dump(body))
-    migrate_catalog(proposals_dir(pd), "proposals")  # flat → dir-per-card
+    (ProjectLayout.at(pd).tracker.proposals_dir / f"{pid}.yaml").write_text(yaml.safe_dump(body))
+    migrate_catalog(ProjectLayout.at(pd).tracker.proposals_dir, "proposals")  # flat → dir-per-card
 
 
 def test_dry_run_builds_handoff(project_dir: Path):
@@ -68,7 +73,7 @@ def test_dry_run_builds_handoff(project_dir: Path):
     _make_prop(project_dir, "PROP-001")
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0, res.output
-    out_dir = retros_dir(project_dir) / "reflect-all"
+    out_dir = ProjectLayout.at(project_dir).sessions.retros / "reflect-all"
     files = list(out_dir.glob("*-handoff.md"))
     assert len(files) == 1
     text = files[0].read_text()
@@ -90,8 +95,12 @@ def _make_hyp_with_protocol(pd: Path, hyp_id: str, protocol: str):
         "observation_window": "5 sessions",
         "verification_protocol": protocol,
     }
-    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
-    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+        yaml.safe_dump(body)
+    )
+    migrate_catalog(
+        ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses", "hypotheses"
+    )  # flat → dir-per-card
 
 
 def test_dry_run_handoff_surfaces_verification_protocol(project_dir: Path):
@@ -103,7 +112,9 @@ def test_dry_run_handoff_surfaces_verification_protocol(project_dir: Path):
     _make_hyp_with_protocol(project_dir, "HYP-501", protocol)
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0, res.output
-    text = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))[0].read_text()
+    text = list(
+        (ProjectLayout.at(project_dir).sessions.retros / "reflect-all").glob("*-handoff.md")
+    )[0].read_text()
     assert "verification_protocol: |" in text, (
         "judge handoff missing verification_protocol literal-block header"
     )
@@ -119,7 +130,9 @@ def test_dry_run_handoff_omits_verification_protocol_when_absent(
     _make_hyp(project_dir, "HYP-001")
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0
-    text = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))[0].read_text()
+    text = list(
+        (ProjectLayout.at(project_dir).sessions.retros / "reflect-all").glob("*-handoff.md")
+    )[0].read_text()
     assert "HYP-001" in text
     assert "verification_protocol" not in text
 
@@ -127,7 +140,7 @@ def test_dry_run_handoff_omits_verification_protocol_when_absent(
 def test_dry_run_handles_empty_inbox(project_dir: Path):
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0
-    out_dir = retros_dir(project_dir) / "reflect-all"
+    out_dir = ProjectLayout.at(project_dir).sessions.retros / "reflect-all"
     text = list(out_dir.glob("*-handoff.md"))[0].read_text()
     assert "no active hypotheses" in text
     assert "inbox empty" in text
@@ -152,7 +165,7 @@ def test_commit_changes_status(project_dir: Path):
     assert res.exit_code == 0, res.output
 
     # Read back through the rack PROP view the judge/triage consumers use.
-    status = {p.id: p.status for p in proposals(rack_workspace(project_dir))}
+    status = {p.id: p.status for p in proposals(rack_workspace(ProjectLayout.at(project_dir)))}
     assert status["PROP-001"] == "accepted"
     assert status["PROP-002"] == "rejected"
     assert status["PROP-003"] == "deferred"

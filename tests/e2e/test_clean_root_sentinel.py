@@ -20,7 +20,7 @@ from ai_hats.assembler import Assembler
 from _helpers.env import checkout_pythonpath
 from _helpers.hitl import drive_bare_hitl
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 _ALLOWLIST: set[str] = {
     ".gitignore",

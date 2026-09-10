@@ -73,6 +73,14 @@ error handling**. A committed script saves tokens and is more reliable
 than code regenerated from a description each time. Keep ad-hoc, one-off,
 or judgment-heavy steps as prose.
 
+**Name the script so the agent can resolve it.** A `hooks/` script is wired by
+the engine, which knows where it lives; a `scripts/` one is run by the agent,
+whose cwd is the project root. A bare `scripts/<name>` therefore reads as the
+*project's* `scripts/` — a directory most repos already have. Say which
+directory you mean, in the step that invokes it: `scripts/<name>` **resolved
+against this skill's own directory**. `references/` paths are read, not
+executed, and carry no such collision.
+
 ## Declaring a hook from a skill
 
 This is how the ladder's top rung is actually built: a skill's `SKILL.md`

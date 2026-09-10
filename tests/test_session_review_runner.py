@@ -24,7 +24,6 @@ from ai_hats.retro.session_review_runner import (
 from ai_hats.retro.session_review_schema import SessionReviewV1
 from ai_hats.retro.common import SessionArtifacts, SessionLinks, SessionMetrics
 from ai_hats.retro.loader import load
-from ai_hats.paths import hypotheses_dir
 from ai_hats_rack.migration import migrate_catalog
 from ai_hats_observe.artifacts import METRICS_JSON, REASONING_LOG, TRANSCRIPT_TXT
 
@@ -55,7 +54,7 @@ def _facts(sid: str = SID) -> SessionFacts:
 def _add_active_hyp(
     project_dir: Path, hyp_id: str = "HYP-001", created: str = "2026-05-01"
 ) -> None:
-    hyps_dir = hypotheses_dir(project_dir)
+    hyps_dir = ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses"
     hyps_dir.mkdir(parents=True, exist_ok=True)
     (hyps_dir / f"{hyp_id}.yaml").write_text(
         "id: " + hyp_id + "\n"
@@ -625,7 +624,7 @@ def _write_hyp_with_extras(project_dir: Path, hyp_id: str, **extras) -> None:
     Used by HATS-534 tests to verify the renderer surfaces fields stored
     outside the typed schema (verification_protocol in particular).
     """
-    hyps_dir = hypotheses_dir(project_dir)
+    hyps_dir = ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses"
     hyps_dir.mkdir(parents=True, exist_ok=True)
     body = {
         "id": hyp_id,
@@ -715,13 +714,12 @@ def test_render_active_hypotheses_all_filtered_shows_none_and_note(tmp_path: Pat
 
 def test_render_open_proposals_filters_future_and_adds_note(tmp_path: Path):
     """Protocol item 4: open PROPs created after session_cut are excluded from render and note is added."""
-    from ai_hats.paths import proposals_dir
     from ai_hats.rack_workspace import create_proposal, ensure_backlog, rack_workspace
     from ai_hats.retro.session_review_runner import SessionReviewRunner
 
     (tmp_path / "ai-hats.yaml").touch()
-    ensure_backlog(tmp_path, "proposals")
-    ws = rack_workspace(tmp_path)
+    ensure_backlog(ProjectLayout.at(tmp_path), "proposals")
+    ws = rack_workspace(ProjectLayout.at(tmp_path))
 
     p1 = create_proposal(
         ws,
@@ -740,12 +738,12 @@ def test_render_open_proposals_filters_future_and_adds_note(tmp_path: Path):
         rationale="rat 2",
     )
 
-    p1_path = proposals_dir(tmp_path) / p1 / "task.yaml"
+    p1_path = ProjectLayout.at(tmp_path).tracker.proposals_dir / p1 / "task.yaml"
     data1 = yaml.safe_load(p1_path.read_text())
     data1["created"] = "2026-05-01"
     p1_path.write_text(yaml.safe_dump(data1))
 
-    p2_path = proposals_dir(tmp_path) / p2 / "task.yaml"
+    p2_path = ProjectLayout.at(tmp_path).tracker.proposals_dir / p2 / "task.yaml"
     data2 = yaml.safe_load(p2_path.read_text())
     data2["created"] = "2099-01-01"
     p2_path.write_text(yaml.safe_dump(data2))

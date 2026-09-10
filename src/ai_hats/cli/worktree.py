@@ -11,9 +11,6 @@ from pathlib import Path
 import click
 
 from ai_hats_core import scrubbed_git_env
-from ..paths import (  # ADR-0013 D4: path bases for the wt core
-    worktree_checkouts_dir,
-)
 from ._entry import resolve_project
 from ._helpers import _guard_not_inside_linked_worktree, console
 
@@ -240,7 +237,7 @@ def wt_create(branch: str):
         merge_target=merge_target,
         lifecycle=HOOK_LIFECYCLE,
         state_dir=layout.sessions.worktrees,
-        worktree_checkouts_dir=worktree_checkouts_dir(project_dir),  # HATS-1632
+        worktree_checkouts_dir=layout.cache.worktree_checkouts,
     )
     try:
         wt_path = mgr.create(wt_hooks=collect_carry_for_project(project_dir))

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .paths import state_md_path, tasks_dir
+from ai_hats_core.layout import ProjectLayout
 
 
 @dataclass(frozen=True)
@@ -22,11 +22,11 @@ class TrackerPaths:
     state_md_path: Path
 
 
-def tracker_paths(project_dir: Path) -> TrackerPaths:
+def tracker_paths(layout: ProjectLayout) -> TrackerPaths:
     """Bind the project's backlog layout to integrator policy."""
     return TrackerPaths(
-        tasks_dir=tasks_dir(project_dir),
-        state_md_path=state_md_path(project_dir),
+        tasks_dir=layout.tracker.tasks_dir,
+        state_md_path=layout.state_md,
     )
 
 

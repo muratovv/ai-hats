@@ -19,6 +19,8 @@ import contextlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING, Mapping, Protocol
 
 
@@ -117,7 +119,7 @@ class SubagentEngine(abc.ABC):
         self,
         *,
         result: "CompositionResult",
-        project_dir: Path,
+        layout: ProjectLayout,
         work_dir: Path,
         session_id: SessionId,
         task: str,
@@ -150,14 +152,14 @@ class Surface(abc.ABC):
         return []
 
     @abc.abstractmethod
-    def system_prompt_path(self, project_dir: Path) -> Path | None:
+    def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         """Path to the system prompt file for this surface, or None if omitted."""
 
     @abc.abstractmethod
     def rules_dir(self, session_dir: Path) -> Path:
         """Directory where rules files should be placed."""
 
-    def session_skills_root(self, project_dir: Path, session_id: SessionId) -> Path | None:
+    def session_skills_root(self, layout: ProjectLayout, session_id: SessionId) -> Path | None:
         """Where this surface mirrors the session's composed skills (HATS-1540).
 
         The root a bound check resolves its script from in-session, one level
@@ -171,7 +173,7 @@ class Surface(abc.ABC):
         return None
 
     @contextlib.contextmanager
-    def execution_context(self, project_dir: Path) -> contextlib.AbstractContextManager[None]:
+    def execution_context(self, layout: ProjectLayout) -> contextlib.AbstractContextManager[None]:
         """Context manager active around the surface's CLI execution.
 
         Subclasses override to perform workspace setup/teardown during launch.
@@ -185,7 +187,7 @@ class Surface(abc.ABC):
     def build_category_artifact(
         self,
         category: ArtifactCategory,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: SessionId,
         *,
@@ -204,7 +206,7 @@ class Surface(abc.ABC):
         if handler is None:
             logger.debug("Surface %s delivers no %s in %s", self.name, category, run_mode)
             return
-        handler(project_dir, result, session_id, artifacts)
+        handler(layout, result, session_id, artifacts)
 
     def handles_artifact_categories(self) -> bool:
         """Whether this surface implements the ADR-0018 per-category seam.
@@ -221,7 +223,7 @@ class Surface(abc.ABC):
 
     def build_session_artifacts(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: SessionId,
         *,
@@ -244,7 +246,7 @@ class Surface(abc.ABC):
             if policy.is_enabled(category):
                 self.build_category_artifact(
                     category,
-                    project_dir,
+                    layout,
                     result,
                     session_id,
                     run_mode=mode,
@@ -290,7 +292,7 @@ class Surface(abc.ABC):
         """
         return []
 
-    def settings_lint_warnings(self, project_dir: Path) -> list[str]:
+    def settings_lint_warnings(self, layout: ProjectLayout) -> list[str]:
         """Known surface-settings pitfalls to surface at session start (HATS-1006).
 
         Base surfaces lint nothing; ClaudeSurface overrides to check the Claude
@@ -359,7 +361,7 @@ class Surface(abc.ABC):
 
     def describe_automate_launch(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: SessionId,
         artifacts: BuiltArtifacts,
@@ -377,7 +379,7 @@ class Surface(abc.ABC):
         """
         del result, session_id, env
         prompt = assemble_meta_prompt(
-            project_dir,
+            layout,
             role_context=artifacts.full_content or "",
             task=task,
             ticket_id=ticket_id,
@@ -387,7 +389,7 @@ class Surface(abc.ABC):
         return AutomateLaunch(launch=self.get_run_command(cmd, prompt), prompt=prompt)
 
     @abc.abstractmethod
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
         """Environment variables this surface needs. Pure — claims nothing.
 
         A value that only exists once something is taken for real (a bound port,
@@ -395,7 +397,7 @@ class Surface(abc.ABC):
         the side effect while reporting a value the launch will not use.
         """
 
-    def serve_hooks(self, project_dir: Path, session_id: str, environ: dict[str, str]):
+    def serve_hooks(self, layout: ProjectLayout, session_id: str, environ: dict[str, str]):
         """A dispatcher held open for the whole session, or ``None`` for a
         surface that spawns one per hook — which every surface still does when
         this returns ``None`` or the one it returns cannot be reached.
@@ -403,21 +405,21 @@ class Surface(abc.ABC):
         The object must carry ``path`` and ``close()``; the runner logs the
         first and calls the second.
         """
-        del project_dir, session_id, environ
+        del layout, session_id, environ
         return None
 
-    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def claim_launch_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
         """Env values a launch must claim for real — ``{}`` for most surfaces.
 
         Called only on the launch path. Keys must be a subset of
         :meth:`get_env`'s, so a report names them either way (HATS-1554).
         """
-        del session_dir, project_dir
+        del session_dir, layout
         return {}
 
     def build_session_prompt(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: SessionId,
     ) -> tuple[list[str], dict[str, str], str]:
@@ -442,7 +444,7 @@ class Surface(abc.ABC):
 
     def materialize_runtime_skills(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: CompositionResult,
         session_id: SessionId,
     ) -> list[str]:
@@ -457,11 +459,11 @@ class Surface(abc.ABC):
         Default: no-op — the surface has no per-spawn skill materialization
         mechanism (Agy case — see HATS-367 follow-up).
         """
-        del project_dir, result, session_id
+        del layout, result, session_id
         return []
 
     def ensure_runtime_hooks(
-        self, project_dir: Path, result: CompositionResult | None = None, **kwargs
+        self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
     ) -> None:
         """Install surface-specific runtime hooks (e.g. Claude Code PreToolUse).
 
@@ -479,18 +481,18 @@ class Surface(abc.ABC):
         for ``library/hooks/pre_bash_shared_state_guard.sh`` into
         ``.claude/settings.json``, plus any skill-declared runtime hooks.
         """
-        del project_dir, result
+        del layout, result
         return None
 
     def runtime_wiring_changes(
-        self, project_dir: Path, result: CompositionResult | None = None
+        self, layout: ProjectLayout, result: CompositionResult | None = None
     ) -> list[tuple[str, str]]:
         """Managed runtime-hook wiring drift as ``[(name, "wiring")]``. Default:
         none (no settings.json channel); ``ClaudeSurface`` overrides (HATS-833)."""
-        del project_dir, result
+        del layout, result
         return []
 
-    def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
+    def update_system_prompt(self, layout: ProjectLayout, content: str) -> Path | None:
         """Write or update the inline system prompt block.
 
         Used by surfaces without a scaffold (e.g. Agy) to maintain the
@@ -501,7 +503,8 @@ class Surface(abc.ABC):
         return below provides a defense-in-depth no-op if it is invoked
         anyway.
         """
-        prompt_path = self.system_prompt_path(project_dir)
+        project_dir = layout.root
+        prompt_path = self.system_prompt_path(layout)
         if prompt_path is None:
             return None
         return write_managed_block(prompt_path, content, project_dir=project_dir)

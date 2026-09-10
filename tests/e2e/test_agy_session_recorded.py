@@ -21,7 +21,7 @@ from ai_hats_observe.artifacts import AUDIT_MD, USAGE_JSON
 from _helpers.env import checkout_pythonpath
 from _helpers.project import Project
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.observe, pytest.mark.surfaces]
 
 
 def _has_agy_plugin() -> bool:

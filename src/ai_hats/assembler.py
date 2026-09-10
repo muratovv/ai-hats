@@ -11,11 +11,14 @@ were removed — git owns user recovery.
 
 from __future__ import annotations
 
+import os
 import logging
 import shutil
 import sys
 from enum import Enum
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 
 import yaml
 
@@ -42,8 +45,6 @@ from .paths import (
     builtin_library_hooks as _builtin_library_hooks,
     builtin_library_layers as _builtin_library_layers,
     claude_skills_dir,
-    rules_dir as _lib_rules_dir,
-    skills_dir as _lib_skills_dir,
 )
 from .paths.constants import PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
@@ -133,6 +134,9 @@ class Assembler:
         self.agent_dir = project_dir / AGENT_DIR
         self.config_path = project_dir / PROJECT_CONFIG
         self.project_config = ProjectConfig.from_yaml(self.config_path)
+        self.layout = ProjectLayout.compute(
+            project_dir, os.environ, ai_hats_dir=self.project_config.ai_hats_dir
+        )
         # Read-path net for a hand-edited ai-hats.yaml: the schema no longer
         # validates ``provider`` (HATS-863 severed schema→providers).
         if self.project_config.provider:
@@ -154,7 +158,7 @@ class Assembler:
             hooks
             if hooks is not None
             else HooksManager(
-                self.project_dir,
+                self.layout,
                 self.project_config,
                 resolve_provider=get_surface,  # DI so the brick never imports providers
             )
@@ -200,7 +204,7 @@ class Assembler:
         drop_legacy_root_skills_mirrors(self.project_dir)
 
     @staticmethod
-    def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
+    def _cleanup_obsolete_files(layout: ProjectLayout) -> list[str]:
         """Delete files retired by previous releases (HATS-285 — moved from CLI).
 
         Each entry: (relative path, human reason). Idempotent — missing
@@ -213,6 +217,7 @@ class Assembler:
         (``<ai_hats_dir>/.last_backup``) are swept so upgrades from any
         prior version land in a clean state.
         """
+        project_dir = layout.root
         obsolete = [
             (".agent/backlog.md", "removed legacy backlog.md (unified into STATE.md)"),
         ]
@@ -229,13 +234,10 @@ class Assembler:
             actions.append(reason)
 
         # Sweep stale .last_backup pointer + referenced /tmp dir.
-        # Local import avoids a top-level cycle with paths.py at module load.
-        from .paths import last_backup_path as _last_backup_path
-
         resolved_project = project_dir.resolve()
         for backup_ref in (
             project_dir / ".agent" / ".last_backup",  # pre-v4 location
-            _last_backup_path(project_dir),  # v4 location
+            layout.last_backup,  # v4 location
         ):
             if not backup_ref.exists():
                 continue
@@ -374,12 +376,10 @@ class Assembler:
 
         # All framework roots live under
         # <ai_hats_dir>/. .agent/ itself is no longer populated by ai-hats.
-        from .paths import runs_dir, tasks_dir
-
-        runs_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
-        tasks_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
-        for subdir_fn in (_lib_rules_dir, _lib_skills_dir):
-            subdir_fn(self.project_dir).mkdir(parents=True, exist_ok=True)
+        self.layout.sessions.runs.mkdir(parents=True, exist_ok=True)
+        self.layout.tracker.tasks_dir.mkdir(parents=True, exist_ok=True)
+        for subdir in (self.layout.library.rules, self.layout.library.skills):
+            subdir.mkdir(parents=True, exist_ok=True)
 
         # HATS-469 R2: capture greenfield state BEFORE the ai-hats.yaml
         # save block below consumes ``config_path.exists()`` as a signal.
@@ -415,9 +415,7 @@ class Assembler:
             self.save_config(harness=harness_seed)
 
         # Create STATE.md
-        from .paths import state_md_path
-
-        state_md = state_md_path(self.project_dir)
+        state_md = self.layout.state_md
         state_md.parent.mkdir(parents=True, exist_ok=True)
         if not state_md.exists():
             state_md.write_text("# Task State\n\nNo active tasks.\n")
@@ -762,8 +760,8 @@ class Assembler:
         # Surface inline system prompt. Agy writes ./GEMINI.md; Claude and
         # Cline deliver theirs per-session (ADR-0018) and no-op here.
         prompt_content = provider.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
-        provider.update_system_prompt(self.project_dir, prompt_content)
+        prompt_content = expand_path_placeholders(prompt_content, self.layout)
+        provider.update_system_prompt(self.layout, prompt_content)
 
         # Persist active_role + provider.
         self.save_config(active_role=role_name, provider=provider.name)
@@ -1082,7 +1080,7 @@ class Assembler:
         health: dict[str, str] = {}
         try:
             provider = get_surface(self.project_config.provider)
-            prompt_path = provider.system_prompt_path(self.project_dir)
+            prompt_path = provider.system_prompt_path(self.layout)
         except Exception as exc:
             # An unresolvable provider used to drop the key entirely, so the
             # report read as "nothing to check" — the one failure this check
@@ -1106,7 +1104,7 @@ class Assembler:
         free of filesystem work and a mocked Assembler cannot drag path
         resolution into a unit test.
         """
-        return discover_user_rules(self.project_dir)
+        return discover_user_rules(self.layout)
 
     # ----- Canonical layered layer -----
 
@@ -1217,7 +1215,7 @@ class Assembler:
             self._canonical_dir,
             composition,
             source_lookup,
-            project_dir=self.project_dir,
+            layout=self.layout,
             tier2_hook_source_dirs=hook_source_dirs,
         )
 
@@ -1423,7 +1421,7 @@ class Assembler:
         """Ensure <ai_hats_dir>/ is gitignored (logic in relocation.py, HATS-715)."""
         from . import relocation
 
-        relocation.ensure_gitignore_entry(self.project_dir)
+        relocation.ensure_gitignore_entry(self.project_dir, self.project_config.ai_hats_dir)
 
     def _strip_legacy_managed_block(self) -> bool:
         """One-shot: remove the pre-HATS-317 `# AI-HATS:START..END` block from `.gitignore`.

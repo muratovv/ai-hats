@@ -33,6 +33,8 @@ are both editable installs, so the second one fires in every unit-test run.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import importlib.metadata
 import shutil
 import subprocess
@@ -42,7 +44,6 @@ from pathlib import Path
 import pytest
 
 from ai_hats import retired_dists
-from ai_hats.paths import ai_hats_dir
 
 RETIRED_NAME = "ai-hats-tracker"
 RETIRED_SCRIPT = "ai-hats-tracker"
@@ -224,7 +225,7 @@ def test_t1_kill_switch_returns_empty_and_runs_no_subprocess(monkeypatch, tmp_pa
     _declares(monkeypatch, "click")
     _installed(monkeypatch, True)
 
-    assert retired_dists.prune_retired(tmp_path) == []
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == []
     assert run_spy.calls == [], "kill switch did not stop subprocess.run"
     assert which_spy.calls == [], "kill switch did not stop the uv lookup"
 
@@ -237,7 +238,7 @@ def test_t1b_kill_switch_honours_any_truthy_value(monkeypatch, tmp_path):
     _declares(monkeypatch, "click")
     _installed(monkeypatch, True)
 
-    assert retired_dists.prune_retired(tmp_path) == []
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == []
     assert run_spy.calls == []
     assert which_spy.calls == []
 
@@ -616,11 +617,11 @@ def test_t10b_prune_retired_keeps_partial_results_when_the_second_half_dies(monk
         raise RuntimeError("legacy venv exploded")
 
     monkeypatch.setattr(retired_dists, "strip_retired_scripts", boom)
-    legacy = ai_hats_dir(tmp_path) / ".venv"
+    legacy = ProjectLayout.at(tmp_path).base / ".venv"
     (legacy / "bin").mkdir(parents=True)
     _block_subprocess(monkeypatch)
 
-    assert retired_dists.prune_retired(tmp_path) == [RETIRED_NAME]
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == [RETIRED_NAME]
 
 
 def test_t10c_prune_retired_strips_the_legacy_venv_script(monkeypatch, tmp_path):
@@ -631,14 +632,14 @@ def test_t10c_prune_retired_strips_the_legacy_venv_script(monkeypatch, tmp_path)
     monkeypatch.setattr(retired_dists, "prune_running_interpreter", lambda: [])
     run_spy = _block_subprocess(monkeypatch)
 
-    legacy = ai_hats_dir(tmp_path) / ".venv"
+    legacy = ProjectLayout.at(tmp_path).base / ".venv"
     (legacy / "bin").mkdir(parents=True)
     script = legacy / "bin" / RETIRED_SCRIPT
     script.write_text("#!/bin/sh\n")
     keep = legacy / "bin" / "ai-hats"
     keep.write_text("#!/bin/sh\n")
 
-    assert retired_dists.prune_retired(tmp_path) == [str(script)]
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == [str(script)]
     assert not script.exists()
     assert keep.is_file()
     assert run_spy.calls == []
@@ -657,7 +658,7 @@ def test_t10d_no_legacy_venv_is_a_no_op(monkeypatch, tmp_path):
     monkeypatch.setattr(retired_dists, "strip_retired_scripts", strip_spy)
     _block_subprocess(monkeypatch)
 
-    assert retired_dists.prune_retired(tmp_path) == []
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == []
     assert strip_spy.calls == [], "the legacy-venv half ran without a legacy venv"
 
 
@@ -675,13 +676,13 @@ def test_t10e_legacy_venv_that_is_the_running_prefix_is_left_alone(monkeypatch, 
     monkeypatch.setattr(retired_dists, "prune_running_interpreter", lambda: [])
     _block_subprocess(monkeypatch)
 
-    legacy = ai_hats_dir(tmp_path) / ".venv"
+    legacy = ProjectLayout.at(tmp_path).base / ".venv"
     (legacy / "bin").mkdir(parents=True)
     script = legacy / "bin" / RETIRED_SCRIPT
     script.write_text("#!/bin/sh\n")
     monkeypatch.setattr(retired_dists.sys, "prefix", str(legacy))
 
-    assert retired_dists.prune_retired(tmp_path) == []
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == []
     assert script.is_file(), "the running interpreter's own script was stripped"
 
 
@@ -783,7 +784,7 @@ def test_editable_install_is_never_pruned(monkeypatch, tmp_path):
     spy = _block_subprocess(monkeypatch)
     monkeypatch.setattr("ai_hats.paths.editable_install_root", lambda _d="ai-hats": tmp_path)
 
-    assert retired_dists.prune_retired(tmp_path) == []
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == []
     assert spy.calls == [], "an editable install must not reach uv"
 
 
@@ -799,5 +800,5 @@ def test_non_editable_install_is_pruned(monkeypatch, tmp_path):
     run, calls = _fake_run(0)
     monkeypatch.setattr(retired_dists.subprocess, "run", run)
 
-    assert retired_dists.prune_retired(tmp_path) == ["ai-hats-tracker"]
+    assert retired_dists.prune_retired(ProjectLayout.at(tmp_path)) == ["ai-hats-tracker"]
     assert calls, "a non-editable install must reach uv — otherwise the guard test is vacuous"

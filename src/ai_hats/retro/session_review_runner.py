@@ -90,7 +90,7 @@ class SessionReviewRunner:
         self.project_dir = layout.root
         self.out_dir = layout.sessions.retros / "sessions"
         self.gitlog_dir = layout.sessions.runs
-        self._ws = rack_workspace(layout.root)
+        self._ws = rack_workspace(layout)
         self._subagent_runner = subagent_runner
 
     # ---- public API ----
@@ -390,7 +390,7 @@ class SessionReviewRunner:
         return SubAgentRunner(
             self.layout,
             payload,
-            session_mgr=make_session_manager(self.project_dir),
+            session_mgr=make_session_manager(self.layout),
         )
 
     def _review_model(self) -> str:

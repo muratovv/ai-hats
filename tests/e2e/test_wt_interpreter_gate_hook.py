@@ -26,6 +26,8 @@ from _helpers.hook_chain import (
     run_chain,
 )
 
+pytestmark = [pytest.mark.guards, pytest.mark.wt]
+
 MARKER = "GUARDRAIL (worktree-isolation)"
 
 

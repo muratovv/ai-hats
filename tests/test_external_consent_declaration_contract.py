@@ -115,15 +115,15 @@ def test_a_lifecycle_role_declares_only_external_wrapper_consent():
     }
 
 
-def test_the_maintainer_gate_does_not_own_consent():
+def test_the_carried_gate_does_not_own_consent():
     import yaml
 
     config = yaml.safe_load(
-        (_LIBRARY / "ai-hats-dev/roles/maintainer/config.yaml").read_text(encoding="utf-8")
+        (_LIBRARY / "ai-hats-dev/traits/ai-hats-gates/config.yaml").read_text(encoding="utf-8")
     )
     rows = config["composition"]["apps"]["rack"]["tasks"]
 
-    assert rows, "the role binds no gate at all"
+    assert rows, "the carrier trait binds no gate at all"
     for gate in rows:
         assert gate["on_error"] == "refuse", gate
         assert "consent" not in gate, (
@@ -158,9 +158,9 @@ def test_the_shipped_question_rides_every_road_into_done():
     assert question["consent"] is True
 
     gate = yaml.safe_load(
-        (_LIBRARY / "ai-hats-dev/roles/maintainer/config.yaml").read_text(encoding="utf-8")
+        (_LIBRARY / "ai-hats-dev/traits/ai-hats-gates/config.yaml").read_text(encoding="utf-8")
     )
-    # By NAME, never by being the only row: the role binds a gate per edge, and
+    # By NAME, never by being the only row: the carrier binds a gate per edge, and
     # the one this pairs with is the `->done` gate specifically.
     rows = gate["composition"]["apps"]["rack"]["tasks"]
     done_rows = [row for row in rows if row["run"].endswith("done-gate.sh")]

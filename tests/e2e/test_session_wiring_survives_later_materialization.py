@@ -17,7 +17,7 @@ import pytest
 
 from _helpers.hook_chain import CLAUDE_PROJECT_DIR_VAR, build_session_settings, pretooluse_hooks
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 def _resolve_script_path(cmd: str, project_path: Path) -> Path:

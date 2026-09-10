@@ -11,6 +11,8 @@ typed ``OperationAborted`` with actionable text — never a raw traceback.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 import subprocess
 import sys
@@ -61,7 +63,7 @@ def _kernel(tmp_path: Path, effects=None) -> tuple[Kernel, Path]:
     ]
     worktree = None
     if effects is not None:
-        worktree = WorktreeExtension(tmp_path, effects=effects)
+        worktree = WorktreeExtension(ProjectLayout.at(tmp_path), effects=effects)
         subscribers.append(worktree)
     kernel = Kernel(agent / "tasks", prefix="T", topology=topology, subscribers=subscribers)
     if worktree is not None:

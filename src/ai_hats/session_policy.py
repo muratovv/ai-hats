@@ -18,6 +18,7 @@ from typing import Any, Callable, Mapping
 from ai_hats_wt import IsolationMode
 
 from .config import Channel
+from .initialization import InitWizard, ProjectBootstrapper
 from .debt import (
     AuditWriterFactory,
     CompositionPayload,
@@ -288,6 +289,11 @@ class InitRunParams:
     # The project being initialized: the three steps resolve every path they write
     # from it, and it is resolved once at the entry point (ADR-0026 D2).
     project_dir: Path
+    # Who answers when ``select_provider`` must ask: a terminal, or a fake in tests.
+    wizard: InitWizard
+    # The one Assembler of the run, built at the root before the pipeline starts;
+    # ``bootstrap_project`` drives it, the other two steps read its config.
+    bootstrapper: ProjectBootstrapper
 
     @property
     def layout(self) -> ProjectLayout:
@@ -309,9 +315,9 @@ class InitRunParams:
     # to the user by ``prepare_execute_session``.
     task_prefix: str | None = None
     # Where the framework directory lives; same two readers as ``task_prefix``.
-    ai_hats_dir: str | None = None
+    ai_hats_dir: Path | None = None
     # An existing venv to adopt instead of the managed one; same two readers.
-    venv_path: str | None = None
+    venv_path: Path | None = None
     # Leaves .gitignore alone: ``bootstrap_project`` acts on it, and
     # ``prepare_execute_session`` says so in the summary.
     no_manage_gitignore: bool = False
@@ -323,12 +329,14 @@ class InitRunParams:
     # which is what ``Assembler.init`` takes.
     channel: Channel | None = None
     # The editable checkout ``channel=local`` installs from — ``bootstrap_project``.
-    harness_path: str | None = None
+    harness_path: Path | None = None
 
     def to_state(self, *, materialize_prompt: PromptWriter, scratch_dir: Path) -> dict[str, Any]:
         del materialize_prompt, scratch_dir  # no first message, nothing staged on disk
         return {
             "project_dir": self.project_dir,
+            "wizard": self.wizard,
+            "bootstrapper": self.bootstrapper,
             "provider": self.provider,
             "role": self.role,
             "task_prefix": self.task_prefix,
@@ -336,7 +344,7 @@ class InitRunParams:
             "venv_path": self.venv_path,
             "no_manage_gitignore": self.no_manage_gitignore,
             "no_wizard": self.no_wizard,
-            "channel": None if self.channel is None else self.channel.value,
+            "channel": self.channel,
             "harness_path": self.harness_path,
         }
 
@@ -394,7 +402,12 @@ class InitOutcome:
     # Built by ``prepare_execute_session`` (steps/init_steps.py). None when the run
     # decided against handing over — flags-only path, or no ai-hats on PATH.
     execute_cmd: list[str] | None = None
+    # What the steps reported, in order — the CLI prints them after the run.
+    notices: tuple[str, ...] = ()
 
     @classmethod
     def of(cls, result: PipelineResult) -> InitOutcome:
-        return cls(execute_cmd=result.produced.get("execute_cmd"))
+        return cls(
+            execute_cmd=result.produced.get("execute_cmd"),
+            notices=tuple(result.produced.get("notices", ())),
+        )

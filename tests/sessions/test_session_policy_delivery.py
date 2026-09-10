@@ -12,6 +12,8 @@ HATS-1167 plan review. Tokens are compared exactly rather than by substring —
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 import pytest
@@ -60,9 +62,14 @@ _HITL_CONTEXT_FLAG = {
 
 @pytest.mark.parametrize("surface", SURFACES)
 def test_hitl_context_false_drops_the_role_flag(project: Path, surface: str):
-    on = dry_run_hitl(project, role="test-role", provider=surface, policy=SessionPolicy())
+    on = dry_run_hitl(
+        ProjectLayout.at(project), role="test-role", provider=surface, policy=SessionPolicy()
+    )
     off = dry_run_hitl(
-        project, role="test-role", provider=surface, policy=SessionPolicy(context=False)
+        ProjectLayout.at(project),
+        role="test-role",
+        provider=surface,
+        policy=SessionPolicy(context=False),
     )
 
     flag = _HITL_CONTEXT_FLAG[surface]
@@ -73,7 +80,10 @@ def test_hitl_context_false_drops_the_role_flag(project: Path, surface: str):
 def test_hitl_context_false_keeps_cline_interactive(project: Path):
     """M5 regression: -i is launch mode, not context — suppressing one must not drop the other."""
     off = dry_run_hitl(
-        project, role="test-role", provider="cline", policy=SessionPolicy(context=False)
+        ProjectLayout.at(project),
+        role="test-role",
+        provider="cline",
+        policy=SessionPolicy(context=False),
     )
 
     assert "-i" in off.launch
@@ -81,7 +91,10 @@ def test_hitl_context_false_keeps_cline_interactive(project: Path):
 
 def test_hitl_context_false_writes_no_gemini_md(project: Path):
     off = dry_run_hitl(
-        project, role="test-role", provider="agy", policy=SessionPolicy(context=False)
+        ProjectLayout.at(project),
+        role="test-role",
+        provider="agy",
+        policy=SessionPolicy(context=False),
     )
 
     assert not any(e.target.name == "GEMINI.md" for e in off.plan.entries)
@@ -90,10 +103,14 @@ def test_hitl_context_false_writes_no_gemini_md(project: Path):
 @pytest.mark.parametrize("surface", ["agy", "cline"])
 def test_automate_context_false_drops_the_role_sections(project: Path, surface: str):
     on = dry_run_automate(
-        project, role="test-role", provider=surface, task="demo", policy=SessionPolicy()
+        ProjectLayout.at(project),
+        role="test-role",
+        provider=surface,
+        task="demo",
+        policy=SessionPolicy(),
     )
     off = dry_run_automate(
-        project,
+        ProjectLayout.at(project),
         role="test-role",
         provider=surface,
         task="demo",
@@ -106,7 +123,7 @@ def test_automate_context_false_drops_the_role_sections(project: Path, surface: 
 
 def test_claude_automate_context_false_carries_no_role_text(project: Path):
     off = dry_run_automate(
-        project,
+        ProjectLayout.at(project),
         role="test-role",
         provider="claude",
         task="demo",
@@ -118,7 +135,7 @@ def test_claude_automate_context_false_carries_no_role_text(project: Path):
 
 def test_claude_automate_hooks_false_passes_no_settings(project: Path):
     off = dry_run_automate(
-        project,
+        ProjectLayout.at(project),
         role="test-role",
         provider="claude",
         task="demo",

@@ -23,9 +23,10 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -189,8 +190,9 @@ def test_e2e_gc_lock_serializes_complete_flip_window(tmp_path: Path) -> None:
         # Reverted (no lock) it reclaims sha_b out from under the pending flip.
         gc_snippet = (
             "from pathlib import Path;"
+            "from ai_hats_core.layout import ProjectLayout;"
             "from ai_hats.environment_recovery import EnvironmentRecovery;"
-            f"EnvironmentRecovery(Path(r'{project}')).run()"
+            f"EnvironmentRecovery(ProjectLayout.at(Path(r'{project}'))).run()"
         )
         _run([versioned_python, "-c", gc_snippet], cwd=project, env=env, timeout=60)
 

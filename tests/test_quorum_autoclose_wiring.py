@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ai_hats.paths import hypotheses_dir
 from ai_hats.pipeline import registry
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.pipeline import build
@@ -74,7 +73,7 @@ def test_rejects_k_below_one():
 
 
 def _write_quorum_hyp(pd: Path) -> None:
-    d = hypotheses_dir(pd)
+    d = ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses"
     d.mkdir(parents=True)
     body = {
         "id": "HYP-001",
@@ -102,22 +101,24 @@ def test_step_closes_quorum_hyp(tmp_path: Path):
 
     assert delta == {"quorum_closed_hyps": ["HYP-001"]}
     # Read the migrated card back through the rack (its `state` is the status).
-    card = rack_workspace(pd).kernel_for("HYP-001").get("HYP-001")
+    card = rack_workspace(ProjectLayout.at(pd)).kernel_for("HYP-001").get("HYP-001")
     assert card is not None
     assert card.state == "refuted"
 
 
 def test_step_emits_empty_delta_when_nothing_closes(tmp_path: Path):
     pd = tmp_path / "proj"
-    hypotheses_dir(pd).mkdir(parents=True)
-    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # mounted but empty
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses").mkdir(parents=True)
+    migrate_catalog(
+        ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses", "hypotheses"
+    )  # mounted but empty
     assert QuorumAutoclose({"k": 3}).run(layout=ProjectLayout.at(pd)) == {}
 
 
 def test_step_noop_when_backlog_unmigrated(tmp_path: Path):
     # Pre-migration (no backlog.yaml): the HYP backlog is unmounted → {}.
     pd = tmp_path / "proj"
-    hypotheses_dir(pd).mkdir(parents=True)
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses").mkdir(parents=True)
     assert QuorumAutoclose({"k": 3}).run(layout=ProjectLayout.at(pd)) == {}
 
 
@@ -145,4 +146,6 @@ def test_step_runs_through_the_real_finalize_funnel(tmp_path: Path):
     out = build(step, name="funnel").run(state)
 
     assert out["quorum_closed_hyps"] == ["HYP-001"]
-    assert rack_workspace(pd).kernel_for("HYP-001").get("HYP-001").state == "refuted"
+    assert (
+        rack_workspace(ProjectLayout.at(pd)).kernel_for("HYP-001").get("HYP-001").state == "refuted"
+    )

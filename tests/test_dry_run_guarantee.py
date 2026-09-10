@@ -13,6 +13,8 @@ is how a socket bind hid inside ``ClineSurface.get_env``. The non-file half is
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import hashlib
 from pathlib import Path
 
@@ -30,10 +32,9 @@ def _fingerprint(project: Path) -> dict[str, str]:
     would pass while a build wrote freely to the real target — the guarantee has
     to cover the cache root too, or it only proves the empty half.
     """
-    from ai_hats.paths import cache_root
 
     out: dict[str, str] = {}
-    for root in (project, cache_root(project)):
+    for root in (project, ProjectLayout.at(project).cache.root):
         for p in sorted(root.rglob("*")) if root.is_dir() else ():
             if p.is_file():
                 out[str(p)] = hashlib.sha256(p.read_bytes()).hexdigest()
@@ -74,7 +75,7 @@ def project(tmp_path: Path, monkeypatch) -> Path:
 def test_hitl_dry_run_leaves_the_filesystem_byte_identical(project: Path, surface: str):
     before = _fingerprint(project)
 
-    report = dry_run_hitl(project, provider=surface)
+    report = dry_run_hitl(ProjectLayout.at(project), provider=surface)
 
     assert _fingerprint(project) == before
     assert report.escapes == ()
@@ -86,7 +87,7 @@ def test_automate_dry_run_leaves_the_filesystem_byte_identical(project: Path, su
     """Escapes are undone, so the fs is clean either way — that is the promise."""
     before = _fingerprint(project)
 
-    dry_run_automate(project, provider=surface, task="demo")
+    dry_run_automate(ProjectLayout.at(project), provider=surface, task="demo")
 
     assert _fingerprint(project) == before
 
@@ -100,7 +101,7 @@ def test_automate_no_longer_traverses_the_runner_bypass(project: Path, surface: 
     sub-agent through the builder, so there is nothing to warn about and nothing
     escapes: an empty ``escapes`` is the load-bearing half of this assertion.
     """
-    report = dry_run_automate(project, provider=surface, task="demo")
+    report = dry_run_automate(ProjectLayout.at(project), provider=surface, task="demo")
 
     assert not any("bypass 2" in n for n in report.notes)
     assert report.escapes == ()
@@ -109,7 +110,7 @@ def test_automate_no_longer_traverses_the_runner_bypass(project: Path, surface: 
 
 def test_claude_automate_delivers_the_builders_own_values(project: Path):
     """HATS-1207 S3 closed bypass 1 — the SDK now receives what the builder built."""
-    report = dry_run_automate(project, provider="claude", task="demo")
+    report = dry_run_automate(ProjectLayout.at(project), provider="claude", task="demo")
 
     assert not any("bypass 1" in n for n in report.notes)
     assert report.escapes == ()
@@ -128,7 +129,7 @@ def test_the_reported_env_names_what_ai_hats_adds_to_the_child(project: Path, su
     from ai_hats.constants import ENV_ROLE, ENV_ROOT_PID
     from ai_hats_observe.trace import ENV_SESSION_ID
 
-    report = dry_run_hitl(project, provider=surface)
+    report = dry_run_hitl(ProjectLayout.at(project), provider=surface)
 
     assert {ENV_SESSION_ID, ENV_ROLE, ENV_ROOT_PID, "TRACE_LOG_PATH"} <= set(report.env)
     assert report.to_dict()["env_keys"] == sorted(report.env)
@@ -144,7 +145,7 @@ def test_full_render_shows_the_composed_body(project: Path, surface: str):
 
     cline is excluded on purpose; see the sibling below.
     """
-    report = dry_run_hitl(project, provider=surface)
+    report = dry_run_hitl(ProjectLayout.at(project), provider=surface)
 
     assert report.prompt is not None, "this surface writes a prompt file"
     assert "Role body." in report.render(full=True)
@@ -158,7 +159,7 @@ def test_cline_hitl_has_no_prompt_file_to_dump(project: Path):
     Parametrizing it in would have passed on the role text appearing in the
     launch argv instead, which is a different claim entirely.
     """
-    report = dry_run_hitl(project, provider="cline")
+    report = dry_run_hitl(ProjectLayout.at(project), provider="cline")
 
     assert report.prompt is None
     assert "Role body." in " ".join(report.launch), "it rides the argv instead"

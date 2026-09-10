@@ -11,6 +11,7 @@ foreign names state no default at all; that they cannot is asserted here.
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
@@ -18,11 +19,13 @@ from typing import Any, Callable
 import pytest
 
 from ai_hats import env, migration_backup, paths
+from ai_hats.cli._entry import project_at
 from ai_hats.paths import library as library_paths
 from ai_hats.surfaces.codex import provider as codex_provider
 from ai_hats.surfaces.hook_channel import project_dir_from
 from ai_hats.surfaces.opencode import provider as opencode_provider
 from ai_hats_core import safe_delete
+from ai_hats_core.layout import ProjectLayout, cache_home
 from ai_hats_rack import cli_common, roots_registry
 from ai_hats_rack.resolver import resolve_root
 
@@ -71,10 +74,10 @@ READER_CONSTANTS = {
 #: variable set. ``project_dir`` is the clean fixture project.
 PROBES: dict[str, Callable[[Path], Path]] = {
     "AI_HATS_USER_HOME": lambda project_dir: paths.user_home(),
-    "AI_HATS_DIR": paths.ai_hats_dir,
+    "AI_HATS_DIR": lambda project_dir: ProjectLayout.compute(project_dir, os.environ).base,
     "AI_HATS_PROJECT_DIR": lambda project_dir: project_dir_from({}),
-    "AI_HATS_VENV": paths.venv_path,
-    "AI_HATS_CACHE_HOME": lambda project_dir: paths.cache_home(),
+    "AI_HATS_VENV": lambda project_dir: project_at(project_dir, os.environ).venv,
+    "AI_HATS_CACHE_HOME": lambda project_dir: cache_home(os.environ),
     "AI_HATS_TRASH_DIR": lambda project_dir: safe_delete._resolve_base()[0],
     "AI_HATS_BUMP_BACKUP_DIR": lambda project_dir: migration_backup._resolve_base()[0],
     "AI_HATS_CODEX_BASE_HOME": lambda project_dir: (
@@ -280,8 +283,8 @@ def test_the_pin_decides_which_of_the_two_defaults_is_in_force(
     stated = _render(DECLARED["AI_HATS_DIR"]["default"], clean_env)
 
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(clean_env))
-    assert paths.ai_hats_dir(clean_env) == elsewhere / "base"
+    assert ProjectLayout.compute(clean_env, os.environ).base == elsewhere / "base"
 
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(elsewhere))
     with pytest.warns(UserWarning, match="leaked session pin"):
-        assert paths.ai_hats_dir(clean_env) == stated
+        assert ProjectLayout.compute(clean_env, os.environ).base == stated

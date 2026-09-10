@@ -42,8 +42,6 @@ def evaluate_wrap_up(layout: ProjectLayout, session_id: str) -> WrapUpInfo | Non
     nudge degrades at the UX boundary (``auto_retro.make_decision``), not via a
     second ``except`` down here that would turn a bug into "0 tasks" (HATS-1259).
     """
-    project_dir = layout.root
-
     sdir = layout.sessions.runs / session_dirname(session_id)
     metrics_path = sdir / METRICS_JSON
     if not metrics_path.exists():
@@ -66,7 +64,7 @@ def evaluate_wrap_up(layout: ProjectLayout, session_id: str) -> WrapUpInfo | Non
     except ValueError:
         return None
     end = compute_session_end(start, sdir, session_id)
-    closed = tasks_closed_in_window(project_dir, start, end)
+    closed = tasks_closed_in_window(layout, start, end)
     if len(closed) < _WRAP_TASKS_THRESHOLD:
         return None
 

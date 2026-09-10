@@ -26,6 +26,8 @@ why:    composition can be correct on disk and still never reach the child —
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import secrets
@@ -49,7 +51,7 @@ from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.rack_workspace import ensure_backlog
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.observe]
 
 
 # ---------------------------------------------------------------------------
@@ -323,10 +325,9 @@ def phase_setup(project: Project) -> SetupContext:
 
     # ----- mount the HYP/PROP backlogs — rack only grows the `hyp` / `proposal`
     # groups once the sibling catalogs carry a backlog.yaml (HATS-1036) -----
-    from ai_hats.paths import hypotheses_dir
 
     for backlog in ("hypotheses", "proposals"):
-        ensure_backlog(project.path, backlog)
+        ensure_backlog(ProjectLayout.at(project).path, backlog)
 
     # ----- pre-seed 1 active HYP — forces reviewer to emit a hypothesis_verdict -----
     hyp_id = _rack_created(
@@ -352,7 +353,13 @@ def phase_setup(project: Project) -> SetupContext:
         "--hypothesis",
         "HYP created in the future should not reach the session-reviewer.",
     )
-    future_card_path = hypotheses_dir(project.path) / future_hyp_id / "task.yaml"
+    future_card_path = (
+        ProjectLayout.at(project.path).tracker.base
+        / "backlog"
+        / "hypotheses"
+        / future_hyp_id
+        / "task.yaml"
+    )
     card_data = yaml.safe_load(future_card_path.read_text())
     card_data["created"] = "2099-01-01"
     future_card_path.write_text(yaml.safe_dump(card_data, sort_keys=False))

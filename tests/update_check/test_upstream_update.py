@@ -8,6 +8,8 @@ cannot diverge on the guard set again.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from datetime import datetime, timezone
 
 from ai_hats.update_check import upstream_update
@@ -19,7 +21,7 @@ _SHA = "a" * 40
 
 def _seed_cache(project_dir, *, installed_sha=_SHA, behind=7, ahead=0) -> None:
     write_cache(
-        project_dir,
+        ProjectLayout.at(project_dir).cache,
         CacheEntry(
             checked_at=datetime.now(timezone.utc),
             installed_sha=installed_sha,
@@ -43,20 +45,20 @@ def test_local_channel_returns_none(tmp_path, monkeypatch):
     (tmp_path / PROJECT_CONFIG).write_text("harness:\n  channel: local\n  path: .\n")
     _seed_cache(tmp_path)
     _patch_detect(monkeypatch, _SHA)  # even matching SHA must not matter
-    assert upstream_update(tmp_path) is None
+    assert upstream_update(ProjectLayout.at(tmp_path)) is None
 
 
 def test_no_cache_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _patch_detect(monkeypatch, _SHA)
-    assert upstream_update(tmp_path) is None
+    assert upstream_update(ProjectLayout.at(tmp_path)) is None
 
 
 def test_behind_with_matching_sha_returns_entry(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=7, ahead=0)
     _patch_detect(monkeypatch, _SHA)
-    entry = upstream_update(tmp_path)
+    entry = upstream_update(ProjectLayout.at(tmp_path))
     assert entry is not None
     assert entry.behind == 7
 
@@ -66,7 +68,7 @@ def test_behind_with_foreign_sha_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=7, ahead=0)
     _patch_detect(monkeypatch, "f" * 40)
-    assert upstream_update(tmp_path) is None
+    assert upstream_update(ProjectLayout.at(tmp_path)) is None
 
 
 def test_not_behind_returns_none(tmp_path, monkeypatch):
@@ -74,7 +76,7 @@ def test_not_behind_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=0, ahead=5)
     _patch_detect(monkeypatch, _SHA)
-    assert upstream_update(tmp_path) is None
+    assert upstream_update(ProjectLayout.at(tmp_path)) is None
 
 
 def test_unknown_current_sha_returns_entry(tmp_path, monkeypatch):
@@ -83,4 +85,4 @@ def test_unknown_current_sha_returns_entry(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=7, ahead=0)
     _patch_detect(monkeypatch, None)
-    assert upstream_update(tmp_path) is not None
+    assert upstream_update(ProjectLayout.at(tmp_path)) is not None

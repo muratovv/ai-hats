@@ -12,7 +12,22 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**313 of 313 files catalogued — 321 flows.**
+**315 of 315 files catalogued — 323 flows.**
+
+## `test_ack_self_grant_chain.py`
+
+*pins HATS-1944*
+
+- **flow** — an agent handing itself a GATE flag inline, the way the gate's own red verdict used to invite, and the reading of that same flag it must keep
+- **cmds**
+
+  ```console
+  AI_HATS_RED_MASTER_ACK=1 make done-gate
+  grep -rn AI_HATS_RED_MASTER_ACK scripts/
+  ```
+
+- **expect** — the composed PreToolUse chain refuses the grant and leaves the grep alone
+- **why** — gate flags read by a script inside `make` or a git hook are reached by an inline prefix (unlike hook-read flags), so `master-ci`'s hatch was self-servable and the smoke gate's was skipped on four commits that way
 
 ## `test_adr_integrity_gate.py`
 
@@ -596,23 +611,6 @@ as a claim to check, not as evidence.
 
 - **expect** — reaps only what it can prove dead — an unregistered worktree shell, a pytest run dir whose .lock names an exited pid — and keeps live worktrees, live runs, and anything it cannot judge
 - **why** — the sweeper ran on every gate and deleted nothing (dry-run only), while 145 GB of killed-run residue accumulated in TMPDIR
-
-## `test_cli_unknown_subcommand_refused.py`
-
-*pins HATS-1932*
-
-- **flow** — a developer guessing a subcommand that does not exist
-- **cmds**
-
-  ```console
-  ai-hats githooks --help  # no-resolve: pins the refusal, no session is launched
-  ai-hats task list        # no-resolve: the retired backlog CLI names `rack`
-  ai-hats -- githooks      # no-resolve: `--` still reaches the provider path
-  ai-hats deploy           # no-resolve: an unlisted lone word is refused too
-  ```
-
-- **expect** — exit 2 with a message naming the real invocation, and no new session directory
-- **why** — without the guard the token reaches the provider as a prompt — five field sessions launched claude, printed claude's usage and were SIGTERM'd 6 s later, leaving a dead session directory instead of a CLI error
 
 ## `test_cline_clean_root.py`
 
@@ -2789,6 +2787,20 @@ as a claim to check, not as evidence.
 - **expect** — runtime hooks are wired into settings.json and materialized executable scripts return correct codes
 - **why** — without end-to-end hook propagation, skill runtime hooks are dropped during session initialization
 
+## `test_runtime_hook_script_missing_warns.py`
+
+*pins HATS-1862*
+
+- **flow** — a developer launching a session whose role composes a skill that declares a runtime hook, but the skill no longer ships the script
+- **cmds**
+
+  ```console
+  ai-hats -r hook-role
+  ```
+
+- **expect** — the session starts, and the pre-launch banner says which gate will not run and which file the skill is missing
+- **why** — the manifest writers used to drop such a row in silence, so the session ran with the gate off and nothing but a harness stderr line said so
+
 ## `test_runtime_hooks_execute_from_session_tree.py`
 
 *pins HATS-1268*
@@ -3776,6 +3788,7 @@ as a claim to check, not as evidence.
 
   ```console
   ai-hats --role definitely-not-a-real-role
+  ai-hats --dry-run            # role named only in ai-hats.yaml
   ```
 
 - **expect** — CLI exits with code 2 listing available roles without printing raw Python traceback
@@ -4635,3 +4648,20 @@ as a claim to check, not as evidence.
 
 - **expect** — a virtual environment is provisioned inside worktree .venv and imports worktree source
 - **why** — worktrees must provision isolated venvs to prevent importing main repository packages
+
+## `test_zone_gate_refusal.py`
+
+*pins HATS-1921*
+
+- **flow** — an agent merging a branch that changed a zone of the codebase
+- **cmds**
+
+  ```console
+  ai-hats wt merge HATS-1921
+  scripts/gates.sh touched
+  make merge-gate
+  make done-gate
+  ```
+
+- **expect** — the merge gate refuses naming `e2e-rack` — a stage no gate declares, demanded because the branch changed `packages/ai-hats-rack/`, or because it edited a test carrying that zone's marker — and the same branch with that one stage earned is let through; a branch that changed nothing zoned is never asked for it, and the done gate never asks at all
+- **why** — without it a change lands in master with only the tier that runs after the merge, so the tests its own area owns are first run when the breakage is already shared

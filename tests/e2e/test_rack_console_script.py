@@ -23,7 +23,7 @@ from _helpers.venv import network_available, venv_unavailable
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PACKAGE_DIR = REPO_ROOT / "packages" / "ai-hats-rack"
 
-pytestmark = pytest.mark.install_heavy
+pytestmark = [pytest.mark.install_heavy, pytest.mark.rack]
 
 
 def _run(cmd, *, cwd, env, timeout):

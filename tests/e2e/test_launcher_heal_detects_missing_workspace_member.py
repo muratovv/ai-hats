@@ -25,7 +25,10 @@ from tests.e2e._helpers.workspace import workspace_members
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # real uv installs at call time → capped via conftest
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # real uv installs at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"

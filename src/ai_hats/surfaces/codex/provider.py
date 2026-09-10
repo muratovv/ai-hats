@@ -18,6 +18,8 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Mapping
 
+from ai_hats_core.layout import ProjectLayout, cache_home
+
 from ai_hats.surfaces import Surface
 from ai_hats.surfaces.mcp import StdioMCPServer
 from ai_hats.session_artifacts import (
@@ -189,14 +191,14 @@ class CodexSurface(Surface):
             ),
         ]
 
-    def settings_lint_warnings(self, project_dir: Path) -> list[str]:
+    def settings_lint_warnings(self, layout: ProjectLayout) -> list[str]:
         """Probe CLI/auth readiness without reading or changing Codex config."""
-        del project_dir
+        del layout
         return _readiness_warnings()
 
-    def system_prompt_path(self, project_dir: Path) -> Path | None:
+    def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         """Codex receives ai-hats context inline; no project file is managed."""
-        del project_dir
+        del layout
         return None
 
     def rules_dir(self, session_dir: Path) -> Path:
@@ -207,31 +209,25 @@ class CodexSurface(Surface):
         # exact paths in this session's cache are available.
         return self._compose_sections(result)
 
-    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
-        return self.session_codex_home(project_dir, session_id) / "skills"
+    def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
+        return self.session_codex_home(layout, session_id) / "skills"
 
-    def session_codex_home(self, project_dir: Path, session_id: str) -> Path:
-        from ai_hats.paths import project_key
+    def session_codex_home(self, layout: ProjectLayout, session_id: str) -> Path:
 
         base_home = self._configured_base_home()
         return (
-            base_home
-            / _AI_HATS_HOME_DIR
-            / _SESSION_HOMES_DIR
-            / project_key(project_dir)
-            / session_id
+            base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR / layout.cache.root.name / session_id
         )
 
     @staticmethod
     def _configured_base_home() -> Path:
-        from ai_hats.paths import cache_home
 
         configured = os.environ.get(_ENV_CODEX_BASE_HOME) or os.environ.get(_ENV_CODEX_HOME)
         candidate = Path(configured).expanduser() if configured else Path.home() / ".codex"
         if not candidate.is_absolute() or not candidate.is_dir():
             raise RuntimeError("Codex base home must be an existing absolute directory")
         base_home = candidate.resolve()
-        resolved_cache_home = cache_home().resolve()
+        resolved_cache_home = cache_home(os.environ).resolve()
         if (
             base_home == resolved_cache_home
             or base_home in resolved_cache_home.parents
@@ -250,9 +246,8 @@ class CodexSurface(Surface):
 
     @staticmethod
     def _validate_sqlite_home(sqlite_home: Path, base_home: Path) -> Path:
-        from ai_hats.paths import cache_home
 
-        resolved_cache_home = cache_home().resolve()
+        resolved_cache_home = cache_home(os.environ).resolve()
         if sqlite_home == resolved_cache_home or resolved_cache_home in sqlite_home.parents:
             raise RuntimeError("Codex SQLite home must be outside the ai-hats cache home")
         managed_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR
@@ -304,10 +299,10 @@ class CodexSurface(Surface):
         description = metadata.get("description")
         return description if isinstance(description, str) and description else skill.name
 
-    def _skill_index(self, project_dir: Path, result, session_id: str) -> str:
+    def _skill_index(self, layout: ProjectLayout, result, session_id: str) -> str:
         if not result.skills:
             return ""
-        skills_root = self.session_skills_root(project_dir, session_id)
+        skills_root = self.session_skills_root(layout, session_id)
         lines = [
             "## AVAILABLE SKILLS",
             "Use a skill when its description matches the task. Before using it, read the exact "
@@ -318,15 +313,16 @@ class CodexSurface(Surface):
             lines.append(f"- **{skill.name}** — {self._skill_description(skill)} (`{skill_md}`)")
         return "\n".join(lines)
 
-    def _expanded_prompt(self, project_dir: Path, result, session_id: str) -> str:
+    def _expanded_prompt(self, layout: ProjectLayout, result, session_id: str) -> str:
+        project_dir = layout.root
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
         prompt = self.build_system_prompt(result)
-        index = self._skill_index(project_dir, result, session_id)
+        index = self._skill_index(layout, result, session_id)
         if index:
             prompt = f"{prompt}\n\n{index}" if prompt else index
-        prompt = expand_path_placeholders(prompt, project_dir)
+        prompt = expand_path_placeholders(prompt, layout)
         return expand_role_catalog(prompt, project_dir)
 
     @staticmethod
@@ -335,24 +331,23 @@ class CodexSurface(Surface):
         # whole key=value expression as one argv token for `codex -c`.
         return f"developer_instructions={json.dumps(prompt, ensure_ascii=False)}"
 
-    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        prompt = self._expanded_prompt(project_dir, result, session_id)
+    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
+        prompt = self._expanded_prompt(layout, result, session_id)
         artifacts.full_content = prompt
         artifacts.cli_args.extend(["-c", self._developer_override(prompt)])
 
-    def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
-        prompt = self._expanded_prompt(project_dir, result, session_id)
+    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
+        prompt = self._expanded_prompt(layout, result, session_id)
         artifacts.full_content = prompt
         artifacts.cli_args.extend(["-c", self._developer_override(prompt)])
 
-    def _deliver_skills(self, project_dir, result, session_id, artifacts) -> None:
-        from ai_hats.paths import session_cache_dir
+    def _deliver_skills(self, layout, result, session_id, artifacts) -> None:
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
         if not result.skills:
             return
-        cache_dir = session_cache_dir(project_dir, session_id)
-        session_home = self.session_codex_home(project_dir, session_id)
+        cache_dir = layout.cache.session(session_id)
+        session_home = self.session_codex_home(layout, session_id)
         base_home = self._base_codex_home(session_home)
         sqlite_home = self._configured_sqlite_home(base_home)
         resources = artifacts.resources
@@ -377,8 +372,8 @@ class CodexSurface(Surface):
                 )
             ),
         )
-        skills_root = self.session_skills_root(project_dir, session_id)
-        materialize_skills_dir(skills_root, result.skills, project_dir, artifacts.port)
+        skills_root = self.session_skills_root(layout, session_id)
+        materialize_skills_dir(skills_root, result.skills, layout, artifacts.port)
         artifacts.port.mkdir(base_home / "sessions")
         self._project_base_home(base_home, session_home, artifacts)
         stage_auth(base_home, session_home, artifacts.port)
@@ -444,11 +439,10 @@ class CodexSurface(Surface):
             session_id=metadata.session_id,
         )
 
-    def _recover_session_homes(self, project_dir: Path, session_id: str) -> list[str]:
-        from ai_hats.paths import project_key, session_cache_dir
+    def _recover_session_homes(self, layout: ProjectLayout, session_id: str) -> list[str]:
 
         base_home = self._configured_base_home()
-        project_key_value = project_key(project_dir)
+        project_key_value = layout.cache.root.name
         project_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR / project_key_value
         if not project_root.is_dir():
             return []
@@ -456,10 +450,7 @@ class CodexSurface(Surface):
         warnings: list[str] = []
         for session_home in sorted(project_root.iterdir(), key=lambda path: path.name):
             stale_session_id = session_home.name
-            if (
-                stale_session_id == session_id
-                or session_cache_dir(project_dir, stale_session_id).exists()
-            ):
+            if stale_session_id == session_id or layout.cache.session(stale_session_id).exists():
                 continue
             try:
                 if not session_home.is_dir() or session_home.is_symlink():
@@ -488,7 +479,7 @@ class CodexSurface(Surface):
 
     def build_session_artifacts(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: "CompositionResult",
         session_id: str,
         *,
@@ -498,14 +489,14 @@ class CodexSurface(Surface):
     ) -> BuiltArtifacts:
         if artifacts.resources is not None:
             try:
-                artifacts.notices.extend(self._recover_session_homes(project_dir, session_id))
+                artifacts.notices.extend(self._recover_session_homes(layout, session_id))
             except Exception as exc:
                 logger.warning("Codex session-home recovery failed", exc_info=True)
                 artifacts.notices.append(
                     f"Codex session-home recovery failed: {type(exc).__name__}: {exc}"
                 )
         return super().build_session_artifacts(
-            project_dir,
+            layout,
             result,
             session_id,
             run_mode=run_mode,
@@ -513,13 +504,13 @@ class CodexSurface(Surface):
             artifacts=artifacts,
         )
 
-    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_skills(layout, result, session_id, artifacts)
 
-    def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_skills(project_dir, result, session_id, artifacts)
+    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_skills(layout, result, session_id, artifacts)
 
-    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
+    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
         from ai_hats.hook_collection import collect_runtime_hooks
 
         from .runtime_hooks import build_hook_cli_args, materialize_hook_manifest
@@ -528,16 +519,16 @@ class CodexSurface(Surface):
         if not collect_runtime_hooks(result):
             return
         materialize_hook_manifest(
-            project_dir,
+            layout,
             result,
             session_id,
             artifacts,
-            skills_dir=self.session_skills_root(project_dir, session_id),
+            skills_dir=self.session_skills_root(layout, session_id),
         )
         artifacts.cli_args.extend(build_hook_cli_args())
 
-    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
     def mcp_form_cli_args(self, server: StdioMCPServer) -> list[str]:
         settings = {
@@ -560,27 +551,27 @@ class CodexSurface(Surface):
 
         return _rows(_load_manifest(environ), HookEvent.PRE_TOOL_USE)
 
-    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
-        self._deliver_hooks(project_dir, result, session_id, artifacts)
+    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
+        self._deliver_hooks(layout, result, session_id, artifacts)
 
-    def _build_settings_hitl(self, project_dir, result, session_id, artifacts) -> None:
-        del project_dir, result, session_id
+    def _build_settings_hitl(self, layout, result, session_id, artifacts) -> None:
+        del layout, result, session_id
         artifacts.cli_args.extend(
             ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"]
         )
 
-    def _build_settings_automate(self, project_dir, result, session_id, artifacts) -> None:
-        del project_dir, result, session_id
+    def _build_settings_automate(self, layout, result, session_id, artifacts) -> None:
+        del layout, result, session_id
         artifacts.cli_args.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
 
     def build_session_prompt(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: "CompositionResult",
         session_id: str,
     ) -> tuple[list[str], dict[str, str], str]:
         artifacts = self.build_session_artifacts(
-            project_dir,
+            layout,
             result,
             session_id,
             run_mode=RunMode.HITL,
@@ -653,7 +644,7 @@ class CodexSurface(Surface):
 
     def describe_automate_launch(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         result: "CompositionResult",
         session_id: str,
         artifacts: BuiltArtifacts,
@@ -668,7 +659,7 @@ class CodexSurface(Surface):
 
         del result, session_id, env
         prompt = assemble_meta_prompt(
-            project_dir,
+            layout,
             role_context="",
             task=task,
             ticket_id=ticket_id,
@@ -677,11 +668,12 @@ class CodexSurface(Surface):
         command = self.get_cli_command() + artifacts.cli_args + model_args
         return AutomateLaunch(launch=self.get_run_command(command, prompt), prompt=prompt)
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
+        project_dir = layout.root
         del session_dir
-        from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ai_hats_dir
+        from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 
         return {
-            ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
+            ENV_AI_HATS_DIR: str(layout.base),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
         }

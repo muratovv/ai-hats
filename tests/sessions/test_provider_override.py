@@ -30,8 +30,8 @@ class _StubProvider(Surface):
     def name(self) -> str:
         return OVERRIDE
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        return project_dir / "STUB.md"
+    def system_prompt_path(self, layout) -> Path:
+        return layout.root / "STUB.md"
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
@@ -42,7 +42,7 @@ class _StubProvider(Surface):
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         return ["stub-cli", *(args or [])]
 
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+    def get_env(self, session_dir: Path, layout) -> dict[str, str]:
         return {}
 
 

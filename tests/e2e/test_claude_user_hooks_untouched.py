@@ -15,15 +15,19 @@ why:    `--settings` is additive — measured on claude 2.1.247 for PreToolUse
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 
 import pytest
 
 from ai_hats_core import CompositionResult
-from ai_hats.paths import claude_dir, session_cache_dir
+from ai_hats.paths import claude_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.provider import ClaudeSurface
+
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
 
 SESSION_ID = "sid-user-hooks"
 USER_SETTINGS = {
@@ -47,7 +51,7 @@ def test_a_session_build_leaves_the_developers_own_hooks_alone(tmp_path: Path) -
     before = root_settings.read_bytes()
 
     artifacts = ClaudeSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         CompositionResult(name="r", priorities=[], rules=[], skills=[], injections=[]),
         SESSION_ID,
         run_mode=RunMode.HITL,
@@ -58,7 +62,9 @@ def test_a_session_build_leaves_the_developers_own_hooks_alone(tmp_path: Path) -
         "ai-hats rewrote the developer's own settings — HATS-1874 collapses ITS entries only"
     )
     handed_over = artifacts.cli_args[artifacts.cli_args.index("--settings") + 1]
-    assert Path(handed_over) == session_cache_dir(project, SESSION_ID) / "settings.json"
+    assert (
+        Path(handed_over) == ProjectLayout.at(project).cache.session(SESSION_ID) / "settings.json"
+    )
     assert "my_own_guard.sh" not in Path(handed_over).read_text(), (
         "the session file absorbed a user entry — the harness merges the two, "
         "so absorbing one means running it twice"

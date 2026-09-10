@@ -9,8 +9,8 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 from ai_hats_rack.migration import migrate_catalog
+from ai_hats_core.layout import ProjectLayout
 
 
 def _make_hyp(pd: Path, hyp_id: str):
@@ -25,8 +25,12 @@ def _make_hyp(pd: Path, hyp_id: str):
         "success_criterion": "x",
         "observation_window": "5 sessions",
     }
-    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
-    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+        yaml.safe_dump(body)
+    )
+    migrate_catalog(
+        ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses", "hypotheses"
+    )  # flat → dir-per-card
 
 
 def _make_prop(pd: Path, pid: str):
@@ -41,8 +45,8 @@ def _make_prop(pd: Path, pid: str):
         "votes": [],
         "status": "open",
     }
-    (proposals_dir(pd) / f"{pid}.yaml").write_text(yaml.safe_dump(body))
-    migrate_catalog(proposals_dir(pd), "proposals")  # flat → dir-per-card
+    (ProjectLayout.at(pd).tracker.proposals_dir / f"{pid}.yaml").write_text(yaml.safe_dump(body))
+    migrate_catalog(ProjectLayout.at(pd).tracker.proposals_dir, "proposals")  # flat → dir-per-card
 
 
 def test_reflect_all_dry_run_writes_handoff_no_pipeline(
@@ -56,7 +60,9 @@ def test_reflect_all_dry_run_writes_handoff_no_pipeline(
     assert res.exit_code == 0, res.output
 
     # Handoff written
-    handoff_files = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))
+    handoff_files = list(
+        (ProjectLayout.at(project_dir).sessions.retros / "reflect-all").glob("*-handoff.md")
+    )
     assert len(handoff_files) == 1, "handoff file expected after dry-run"
 
     # Pipeline NOT launched
@@ -75,7 +81,9 @@ def test_reflect_all_full_routes_to_judge(
     assert res.exit_code == 0, res.output
 
     # Handoff + judge launch
-    handoff_files = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))
+    handoff_files = list(
+        (ProjectLayout.at(project_dir).sessions.retros / "reflect-all").glob("*-handoff.md")
+    )
     assert len(handoff_files) >= 1
 
     assert len(mock_runners["wrap_calls"]) == 1

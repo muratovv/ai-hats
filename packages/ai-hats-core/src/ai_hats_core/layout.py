@@ -7,6 +7,8 @@ held by a conformance test, not shared code.
 
 from __future__ import annotations
 
+import hashlib
+import os
 import warnings
 from dataclasses import dataclass
 from enum import Enum
@@ -15,12 +17,15 @@ from typing import Mapping
 
 ENV_PROJECT_DIR = "AI_HATS_PROJECT_DIR"
 ENV_AI_HATS_DIR = "AI_HATS_DIR"
+ENV_CACHE_HOME = "AI_HATS_CACHE_HOME"
+ENV_XDG_CACHE_HOME = "XDG_CACHE_HOME"
+ENV_USER_HOME = "AI_HATS_USER_HOME"
 CONFIG_NAME = "ai-hats.yaml"
 
 
-def _is_onboarded(candidate: Path) -> bool:
-    # The ONE marker table. The four historical resolvers each kept their own —
-    # the integrator's never accepted ai-hats.yaml, rack's did: same cd, two roots.
+def is_onboarded(candidate: Path) -> bool:
+    """The ONE marker table. The four historical resolvers each kept their own —
+    the integrator's never accepted ai-hats.yaml, rack's did: same cd, two roots."""
     return (candidate / ".agent").is_dir() or (candidate / CONFIG_NAME).is_file()
 
 
@@ -77,10 +82,10 @@ def resolve_root(
     resolved = start.expanduser().resolve()
 
     hop = _main_worktree_root(resolved)
-    if hop is not None and _is_onboarded(hop):
+    if hop is not None and is_onboarded(hop):
         root = hop
     else:
-        root = next((c for c in (resolved, *resolved.parents) if _is_onboarded(c)), None)
+        root = next((c for c in (resolved, *resolved.parents) if is_onboarded(c)), None)
         if root is None:
             raise ProjectNotFoundError(start)
 
@@ -180,17 +185,109 @@ class SessionsLayout:
 
 
 @dataclass(frozen=True)
-class ProjectLayout:
-    """The project's geometry: (root, base) plus per-consumer sub-layouts.
+class LibraryLayout:
+    """The materialized library mirror — the assembler's and the hook writers' tree."""
 
-    Knowledge is split by consumer class (the taxonomy paths/_dirs.py already
-    names): a tracker consumer takes ``.tracker``, a session consumer takes
-    ``.sessions`` — neither sees the other's tree. Carries no config and reads
-    nothing at access time.
+    root: Path  # <ai_hats_dir>/library
+
+    @property
+    def rules(self) -> Path:
+        return self.root / "rules"
+
+    @property
+    def skills(self) -> Path:
+        return self.root / "skills"
+
+    @property
+    def hooks(self) -> Path:
+        return self.root / "hooks"
+
+
+@dataclass(frozen=True)
+class VersionsLayout:
+    """The blue-green install tree — geometry only.
+
+    Whether a version is complete or runnable is a filesystem question; the
+    integrator's ``version_refs`` answers it against these paths.
+    """
+
+    root: Path  # <ai_hats_dir>/versions
+
+    @property
+    def current_pointer(self) -> Path:
+        return self.root / "current"
+
+    def dir(self, sha: str) -> Path:
+        return self.root / sha
+
+    def sentinel(self, sha: str) -> Path:
+        return self.dir(sha) / ".complete"
+
+
+@dataclass(frozen=True)
+class CacheLayout:
+    """The machine-local, regenerable tree — outside the checkout on purpose."""
+
+    root: Path  # <cache home>/<project key>
+
+    @property
+    def sessions(self) -> Path:
+        return self.root / "sessions"
+
+    def session(self, session_id: str) -> Path:
+        return self.sessions / session_id
+
+    @property
+    def worktree_checkouts(
+        self,
+    ) -> Path:  # the trees themselves; their metadata is sessions.worktrees
+        return self.root / "worktrees"
+
+
+def cache_home(environ: Mapping[str, str]) -> Path:
+    """Cache-class base, outside any project: ``AI_HATS_CACHE_HOME`` →
+    ``XDG_CACHE_HOME``/ai-hats → ``<user home>/.cache/ai-hats``.
+
+    Both env vars name a BASE, never a final root — the layout always appends
+    ``project_key``, so a leaked var cannot merge two projects' caches.
+    """
+    raw = environ.get(ENV_CACHE_HOME)
+    if raw:
+        return Path(raw).expanduser()
+    xdg = environ.get(ENV_XDG_CACHE_HOME)
+    if xdg:
+        return Path(xdg).expanduser() / "ai-hats"
+    home = environ.get(ENV_USER_HOME)
+    return (Path(home).expanduser() if home else Path.home()) / ".cache" / "ai-hats"
+
+
+def project_key(root: Path) -> str:
+    """Stable per-project dir name: ``<slug>-<sha256(abs path)[:8]>``.
+
+    The digest is what makes it unique (two checkouts sharing a basename get
+    different keys); the slug is there so a human can read ``ls ~/.cache/ai-hats``.
+    """
+    resolved = root.expanduser().resolve()
+    digest = hashlib.sha256(str(resolved).encode()).hexdigest()[:8]
+    slug = "".join(c if (c.isalnum() or c in "._-") else "-" for c in resolved.name)
+    slug = slug.strip("-.") or "project"
+    return f"{slug}-{digest}"
+
+
+@dataclass(frozen=True)
+class ProjectLayout:
+    """The project's geometry: (root, base, cache) plus per-consumer sub-layouts.
+
+    Knowledge is split by consumer class: a tracker consumer takes ``.tracker``,
+    a session consumer ``.sessions``, a hook writer ``.library`` — none sees the
+    others' tree. Carries no config and reads nothing at access time: the cache
+    root, the one value that comes from the environment, is settled when the
+    layout is built.
     """
 
     root: Path  # the project checkout
     base: Path  # <root>/.agent/ai-hats, or its sanctioned override
+    cache_root: Path | None = None  # <cache home>/<project key>; None only for a bare constructor
 
     @classmethod
     def compute(
@@ -208,6 +305,7 @@ class ProjectLayout:
         project — a leaked session pin, dropped with a warn rather than allowed
         to redirect this project's writes.
         """
+        cache = cache_home(environ) / project_key(root)
         override = environ.get(ENV_AI_HATS_DIR)
         if override:
             pin = environ.get(ENV_PROJECT_DIR)
@@ -218,16 +316,24 @@ class ProjectLayout:
                     stacklevel=2,
                 )
             else:
-                return cls(root=root, base=Path(override).expanduser())
+                return cls(root=root, base=Path(override).expanduser(), cache_root=cache)
         if ai_hats_dir:
-            return cls(root=root, base=root / ai_hats_dir)
-        return cls(root=root, base=root / ".agent" / "ai-hats")
+            return cls(root=root, base=root / ai_hats_dir, cache_root=cache)
+        return cls(root=root, base=root / ".agent" / "ai-hats", cache_root=cache)
 
     @classmethod
-    def at(cls, root: Path | str) -> ProjectLayout:
-        """Deliberate anchor, no resolution: ``init`` on a bare directory, tests."""
+    def at(cls, root: Path | str, environ: Mapping[str, str] | None = None) -> ProjectLayout:
+        """Deliberate anchor, no resolution: ``init`` on a bare directory, tests.
+
+        ``environ`` only names the cache home — the project is not resolved.
+        """
         root = Path(root)
-        return cls(root=root, base=root / ".agent" / "ai-hats")
+        env = os.environ if environ is None else environ
+        return cls(
+            root=root,
+            base=root / ".agent" / "ai-hats",
+            cache_root=cache_home(env) / project_key(root),
+        )
 
     # -- per-consumer views ---------------------------------------------------
 
@@ -238,6 +344,16 @@ class ProjectLayout:
     @property
     def sessions(self) -> SessionsLayout:
         return SessionsLayout(self.base / "sessions")
+
+    @property
+    def library(self) -> LibraryLayout:
+        return LibraryLayout(self.base / "library")
+
+    @property
+    def cache(self) -> CacheLayout:
+        if self.cache_root is None:
+            raise LookupError("layout built without a cache root — build it with compute() or at()")
+        return CacheLayout(self.cache_root)
 
     # -- base-level singles, each with its own single consumer ----------------
 
@@ -254,5 +370,21 @@ class ProjectLayout:
         return self.base / ".venv"
 
     @property
-    def versions(self) -> Path:  # blue-green versioned venvs
-        return self.base / "versions"
+    def versions(self) -> VersionsLayout:  # blue-green versioned venvs
+        return VersionsLayout(self.base / "versions")
+
+    @property
+    def pipeline_steps(self) -> Path:  # user-authored steps, loaded by name before any YAML
+        return self.base / "pipeline_steps"
+
+    @property
+    def user_hooks(self) -> Path:  # project-authored, outside the managed namespace
+        return self.base / "user-hooks"
+
+    @property
+    def user_rules(self) -> Path:  # project-authored, read at compose time
+        return self.base / "user-rules"
+
+    @property
+    def last_backup(self) -> Path:
+        return self.base / ".last_backup"

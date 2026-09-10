@@ -11,6 +11,8 @@ why:    without session role isolation, active project defaults bleed into sub-a
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 import shutil
 import subprocess
@@ -85,7 +87,7 @@ def _claude_authenticated() -> bool:
     return "not logged in" not in blob and "please run /login" not in blob
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 @pytest.fixture(scope="module")
@@ -141,7 +143,7 @@ def _run_probe(
     asm = Assembler(project)
     result = asm.composer.compose(role, overlay=asm._get_overlay(role))
     provider = ClaudeSurface()
-    args, env, _ = provider.build_session_prompt(project, result, session_id)
+    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, session_id)
 
     cmd = [
         "claude",
@@ -294,8 +296,7 @@ def test_parallel_different_roles_isolated_with_barrier(
     assert out_b["DECISIVENESS_VISIBLE"].upper() == "NO"
 
     # Each session got a distinct cache dir.
-    from ai_hats.paths import session_cache_dir
 
-    cache_a = session_cache_dir(project, "e2e-par-judge")
-    cache_b = session_cache_dir(project, "e2e-par-assistant")
+    cache_a = ProjectLayout.at(project).cache.session("e2e-par-judge")
+    cache_b = ProjectLayout.at(project).cache.session("e2e-par-assistant")
     assert cache_a != cache_b

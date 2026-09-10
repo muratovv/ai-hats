@@ -23,7 +23,7 @@ from _helpers.env import clean_env
 from _helpers.venv import network_available, venv_unavailable
 from tests._checkout_guard import remedy_message
 
-pytestmark = [pytest.mark.integration, pytest.mark.install_heavy]
+pytestmark = [pytest.mark.integration, pytest.mark.install_heavy, pytest.mark.guards]
 
 PROBE_ENV = "HATS1245_PROBE"
 

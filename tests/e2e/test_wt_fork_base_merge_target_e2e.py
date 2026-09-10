@@ -21,7 +21,7 @@ import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.wt]
 
 
 def _rack_driver(proj):

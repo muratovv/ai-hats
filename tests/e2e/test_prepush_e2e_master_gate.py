@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.gates]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
@@ -54,11 +54,35 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _tier_stages() -> list[str]:
+    """The parts of the e2e tier `push-gate` requires, in its order.
+
+    Derived from the zone table plus the half no zone claims, never spelled out:
+    the list grows with every zone, and `e2e-catalog` shows why a `e2e-*` glob
+    would be the wrong shortcut.
+    """
+    zones = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(REPO_ROOT / "scripts" / "gates.sh"), "zones"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    parts = {ln.split("|")[2].strip() for ln in zones.stdout.splitlines() if ln.strip()}
+    parts.add("e2e-default")
+    return [stage for stage in _push_gate_stages() if stage in parts]
+
+
 def _write_runner(where: Path, rcs: dict[str, int] | None = None) -> Path:
     """A fake stage runner OUTSIDE the repo: every stage records itself and exits
-    as told (unset → green); `e2e` hands over to whatever `pytest` is on PATH,
-    so the tier's own invocation stays observable."""
+    as told (unset → green); each tier stage hands over to whatever `pytest` is
+    on PATH, so the tier's own invocation stays observable.
+
+    The handover does NOT reproduce the tier's marker expression — that lives in
+    `gates.sh` alone, and a copy here would rot against it while looking exact.
+    All this stub needs to make observable is that the tier's paths were run.
+    """
     arms = "".join(f"  {stage}) exit {rc} ;;\n" for stage, rc in (rcs or {}).items())
+    tier = "|".join(_tier_stages())
     runner = where / "runner.sh"
     runner.write_text(
         "#!/usr/bin/env bash\n"
@@ -66,8 +90,7 @@ def _write_runner(where: Path, rcs: dict[str, int] | None = None) -> Path:
         f'printf "%s\\n" "$1" >> "{where / "stages_run"}"\n'
         'case "$1" in\n'
         f"{arms}"
-        '  e2e) exec pytest -m "(integration or smoke) and not quarantine and not live_agy" '
-        "tests/e2e/ tests/smoke/ -q ;;\n"
+        f"  {tier}) exec pytest tests/e2e/ tests/smoke/ -q ;;\n"
         "esac\n"
         "exit 0\n"
     )
@@ -339,7 +362,7 @@ def test_run_mode_stops_at_the_first_red_and_the_tier_never_starts(tmp_path: Pat
     assert _stages_run(repo) == stages[: stages.index("lint") + 1]
     assert not _tier_ran(bindir), "the e2e tier ran despite a red cheap stage"
     assert "lint" not in _marked(repo, _tree(repo))
-    assert "e2e" not in _marked(repo, _tree(repo))
+    assert not set(_tier_stages()) & _marked(repo, _tree(repo))
 
 
 def test_run_mode_green_run_marks_every_stage_and_runs_the_tier(tmp_path: Path):
@@ -353,7 +376,7 @@ def test_run_mode_green_run_marks_every_stage_and_runs_the_tier(tmp_path: Path):
     assert _stages_run(repo) == _push_gate_stages()
     assert _tier_ran(bindir)
     assert _marked(repo, _tree(repo)) == set(_push_gate_stages())
-    marker = _store(repo) / _tree(repo) / "e2e"
+    marker = _store(repo) / _tree(repo) / _tier_stages()[0]
     assert f"tree={_tree(repo)}" in marker.read_text()
 
 
@@ -365,10 +388,12 @@ def test_run_mode_a_red_tier_earns_no_marker_for_it(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 1
-    assert _red(res, "e2e"), res.stderr
+    tier = _tier_stages()
+    assert _red(res, tier[0]), res.stderr
     marked = _marked(repo, _tree(repo))
-    assert "e2e" not in marked
-    assert marked == set(_push_gate_stages()) - {"e2e"}, "the green cheap stages keep their stamps"
+    assert marked == set(_push_gate_stages()) - set(tier), (
+        "the green cheap stages keep their stamps, and a tier stage after the red one never ran"
+    )
 
 
 def test_run_mode_a_second_run_pays_only_for_what_is_missing(tmp_path: Path):
@@ -381,7 +406,9 @@ def test_run_mode_a_second_run_pays_only_for_what_is_missing(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert _stages_run(repo) == [*_push_gate_stages(), "e2e"], "only the tier ran the second time"
+    tier, stages = _tier_stages(), _push_gate_stages()
+    first_run = stages[: stages.index(tier[0]) + 1]
+    assert _stages_run(repo) == [*first_run, *tier], "only the tier ran the second time"
 
 
 def test_run_mode_dirty_tree_is_judged_in_a_scratch_checkout(tmp_path: Path):
@@ -409,8 +436,8 @@ def test_run_mode_without_pytest_the_tier_is_red_and_unmarked(tmp_path: Path):
     res = _run(bindir=None, cwd=repo)
 
     assert res.returncode != 0
-    assert _red(res, "e2e"), res.stderr
-    assert "e2e" not in _marked(repo, _tree(repo))
+    assert _red(res, _tier_stages()[0]), res.stderr
+    assert not set(_tier_stages()) & _marked(repo, _tree(repo))
 
 
 # ===========================================================================

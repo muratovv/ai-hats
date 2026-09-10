@@ -19,6 +19,8 @@ why:    the resident path exists only to drop ~43 ms of interpreter and imports
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import re
@@ -34,10 +36,11 @@ from _helpers.git import init_repo
 from _helpers.sessions import stand_in_session
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.hook_server import HookServer, socket_path
 from ai_hats.surfaces.claude.provider import ClaudeSurface
+
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
 
 SESSION_ID = "sid-resident"
 DENY = '#!/bin/sh\ncat >/dev/null\nprintf "%s\\n" "the gate itself spoke" >&2\nexit 2\n'
@@ -80,12 +83,16 @@ def _session(tmp_path: Path, body: str = DENY):
         injections=[],
     )
     artifacts = ClaudeSurface().build_session_artifacts(
-        project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        result,
+        SESSION_ID,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
     env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="claude")
     env |= artifacts.extra_env | {"AI_HATS_PYTHON": sys.executable}
     env.pop("AI_HATS_GATE_BROKEN_ACK", None)
-    cache = session_cache_dir(project, SESSION_ID)
+    cache = ProjectLayout.at(project).cache.session(SESSION_ID)
     entry = json.loads((cache / "settings.json").read_text())["hooks"]["PreToolUse"][0]
     return project, env, cache, entry["hooks"][0]["command"]
 
@@ -244,7 +251,11 @@ def _composed_session(tmp_path: Path):
 
     result = Assembler(project).composer.compose("assistant")
     artifacts = ClaudeSurface().build_session_artifacts(
-        project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        result,
+        SESSION_ID,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
     env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="claude")
     env |= artifacts.extra_env | {"AI_HATS_PYTHON": sys.executable}
@@ -253,7 +264,7 @@ def _composed_session(tmp_path: Path):
         del env[name]
     for name in ("AI_HATS_YOLO", "AI_HATS_CONSENT_TICKET"):
         env.pop(name, None)
-    cache = session_cache_dir(project, SESSION_ID)
+    cache = ProjectLayout.at(project).cache.session(SESSION_ID)
     return project, env, cache, _session_entry(cache)
 
 

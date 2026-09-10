@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 from ai_hats.paths import PROJECT_CONFIG
 
+pytestmark = [pytest.mark.library, pytest.mark.surfaces]
+
 
 SCAFFOLD = "<!-- ai-hats:start -->\n@./.agent/ai-hats/imports.md\n<!-- ai-hats:end -->\n"
 

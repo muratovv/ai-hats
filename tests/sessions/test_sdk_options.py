@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 import pytest
@@ -66,7 +68,7 @@ def test_build_options_minimal(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="20260524-120000-abc",
     )
     assert opts.system_prompt == {
@@ -93,7 +95,7 @@ def test_build_options_priorities_render_in_append(project_dir: Path) -> None:
     opts = build_options(
         comp,
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
     )
     append = opts.system_prompt["append"]  # type: ignore[index]
@@ -126,7 +128,7 @@ def test_build_options_always_on_rule_appears_in_append(
     )
     append = build_options(
         comp,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         provider=ClaudeSurface(),
     ).system_prompt["append"]  # type: ignore[index]
@@ -158,7 +160,7 @@ def test_build_options_every_composed_rule_inlined(
     )
     append = build_options(
         comp,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         provider=ClaudeSurface(),
     ).system_prompt["append"]  # type: ignore[index]
@@ -184,7 +186,9 @@ def test_build_options_skills_absent_from_append_but_materialized(
         skills=[skill],
         injections=[],
     )
-    opts = build_options(comp, provider=ClaudeSurface(), project_dir=project_dir, session_id="sid")
+    opts = build_options(
+        comp, provider=ClaudeSurface(), layout=ProjectLayout.at(project_dir), session_id="sid"
+    )
     append = opts.system_prompt["append"]  # type: ignore[index]
     assert "## AVAILABLE SKILLS" not in append
     assert "doc-protocol" not in append
@@ -199,7 +203,10 @@ def test_build_options_skills_absent_from_append_but_materialized(
 
 
 def test_build_plugins_empty_when_no_skills(project_dir: Path) -> None:
-    assert _build_plugins(_empty_composition(), project_dir, "sid", ClaudeSurface()) == []
+    assert (
+        _build_plugins(_empty_composition(), ProjectLayout.at(project_dir), "sid", ClaudeSurface())
+        == []
+    )
 
 
 def test_build_options_plugins_populated_when_skills_present(
@@ -216,7 +223,7 @@ def test_build_options_plugins_populated_when_skills_present(
     )
     opts = build_options(
         comp,
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid-001",
         provider=ClaudeSurface(),
     )
@@ -241,7 +248,7 @@ def test_build_options_claude_session_id_passthrough(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         claude_session_id=sid,
     )
@@ -251,7 +258,7 @@ def test_build_options_claude_session_id_passthrough(project_dir: Path) -> None:
 def test_build_options_cwd_defaults_to_project_dir(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         provider=ClaudeSurface(),
     )
@@ -267,7 +274,7 @@ def test_build_options_cwd_uses_work_dir_when_given(
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         work_dir=wt,
     )
@@ -278,7 +285,7 @@ def test_build_options_model_passthrough(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         model="claude-haiku-4-5",
     )
@@ -290,7 +297,7 @@ def test_build_options_empty_model_omitted(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         model="",
     )
@@ -306,7 +313,7 @@ def test_build_options_mcp_config_path_converted_to_str(
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         mcp_config=mcp_file,
     )
@@ -317,7 +324,7 @@ def test_build_options_mcp_config_str_passthrough(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         mcp_config="/some/abs/path",
     )
@@ -328,7 +335,7 @@ def test_build_options_settings_passthrough(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         settings="/path/to/settings.json",
     )
@@ -340,7 +347,7 @@ def test_build_options_extra_env_copied(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         extra_env=env,
     )
@@ -354,7 +361,7 @@ def test_build_options_budget_and_turns(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         max_budget_usd=1.5,
         max_turns=10,
@@ -367,7 +374,7 @@ def test_build_options_resume_passthrough(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         resume="prior-session-uuid",
     )
@@ -378,7 +385,7 @@ def test_build_options_fork_session(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         fork_session=True,
     )
@@ -388,7 +395,7 @@ def test_build_options_fork_session(project_dir: Path) -> None:
 def test_build_options_fork_session_default_false(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         provider=ClaudeSurface(),
     )
@@ -399,7 +406,7 @@ def test_build_options_permission_mode(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         permission_mode="acceptEdits",
     )
@@ -410,7 +417,7 @@ def test_build_options_allowed_tools_passthrough(project_dir: Path) -> None:
     opts = build_options(
         _empty_composition(),
         provider=ClaudeSurface(),
-        project_dir=project_dir,
+        layout=ProjectLayout.at(project_dir),
         session_id="sid",
         allowed_tools=["Read", "Edit", "Bash(git *)"],
     )
@@ -433,7 +440,7 @@ def test_build_system_prompt_expands_ai_hats_dir_placeholder(
         skills=[],
         injections=["See files under <ai_hats_dir>/library/"],
     )
-    sp = _build_system_prompt(comp, project_dir, ClaudeSurface())
+    sp = _build_system_prompt(comp, ProjectLayout.at(project_dir), ClaudeSurface())
     append = sp["append"]
     # The literal token must NOT survive into the agent's prompt.
     assert "<ai_hats_dir>" not in append

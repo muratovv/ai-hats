@@ -16,9 +16,9 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.paths import runs_dir
 from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON, session_dirname
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats_core.layout import ProjectLayout
 
 SID = "20260605-100000-1"
 
@@ -53,7 +53,7 @@ _USAGE = {
 
 
 def _make_session(project_dir: Path, *, usage: dict | str | None) -> None:
-    sdir = runs_dir(project_dir) / session_dirname(SID)
+    sdir = ProjectLayout.at(project_dir).sessions.runs / session_dirname(SID)
     sdir.mkdir(parents=True)
     (sdir / METRICS_JSON).write_text(
         json.dumps(

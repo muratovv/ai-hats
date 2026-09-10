@@ -22,8 +22,8 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.paths import worktrees_dir
 from ai_hats_wt import WorktreeManager, WorktreeRemoveError
+from ai_hats_core.layout import ProjectLayout
 
 
 pytestmark = pytest.mark.integration
@@ -309,7 +309,7 @@ class TestCliForceRemoveFlag:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/cli-stuck",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_path = mgr.create()
         mgr.save_state()
@@ -339,7 +339,7 @@ class TestCliForceRemoveFlag:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/cli-force-rm",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_path = mgr.create()
         mgr.save_state()

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Fail when a workspace package's source outgrew its published version (HATS-943).
 
-Invariant per `packages/*` member: if its `src/**` changed vs the base ref, its
-`pyproject.toml` version MUST be strictly greater than the latest on PyPI — else
-the published wheel diverges from source and the remote channel resolves a stale
-`core` (`ModuleNotFoundError`, the HATS-923/937 skew class). `evaluate` is the
-pure, unit-tested decision; git/PyPI/pyproject reads are thin adapters.
+Invariant per `packages/*` member: if its `src/**` changed vs the base ref, that
+same diff MUST carry a version bump — else the published wheel diverges and the
+remote channel resolves a stale `core` (the HATS-923/937 skew class). Already
+ahead of PyPI passes too; BEHIND PyPI fails on its own terms. The bump half is
+asked of git, never of PyPI: master's push also triggers `release-packages.yml`,
+so seconds after a correct bump lands the published version EQUALS the tree's
+(HATS-1957). `evaluate` is the pure decision; the reads are thin adapters.
 """
 
 from __future__ import annotations
@@ -34,8 +36,15 @@ def evaluate(
     src_ver: Version | None,
     pypi_ver: Version | None,
     src_changed: bool,
+    *,
+    base_ver: Version | None = None,
 ) -> Verdict:
-    """Pure gate decision for one package. See module docstring for the invariant."""
+    """Pure gate decision for one package. See module docstring for the invariant.
+
+    ``base_ver`` is the version at the diff base — the offline half of the
+    verdict. ``None`` means it could not be read there, and the decision falls
+    back to the strict comparison against PyPI alone.
+    """
     if src_ver is None:
         return Verdict(package, True, "skipped (no static version)")
     if not src_changed:
@@ -44,6 +53,21 @@ def evaluate(
         return Verdict(package, True, f"never published (v{src_ver})")
     if src_ver > pypi_ver:
         return Verdict(package, True, f"v{src_ver} > published v{pypi_ver}")
+    if src_ver < pypi_ver:
+        return Verdict(
+            package,
+            False,
+            f"the tree is behind PyPI — v{src_ver} < published v{pypi_ver}; a "
+            f"published wheel outranks this checkout, so the version here was "
+            f"lowered or a publish ran from another tree",
+        )
+    if base_ver is not None and base_ver < src_ver:
+        return Verdict(
+            package,
+            True,
+            f"bumped v{base_ver} -> v{src_ver} in this change; PyPI is at "
+            f"v{pypi_ver} because the same push published it",
+        )
     return Verdict(
         package,
         False,
@@ -63,14 +87,35 @@ def _git(args: list[str], cwd: Path) -> str:
 def source_meta(pyproject_path: Path) -> tuple[str, Version | None]:
     """Return (project name, static Version | None) from a package pyproject."""
     project = tomllib.loads(pyproject_path.read_text()).get("project", {})
-    name = project.get("name", pyproject_path.parent.name)
+    return project.get("name", pyproject_path.parent.name), _static_version(project)
+
+
+def _static_version(project: dict) -> Version | None:
     raw = project.get("version")
     if raw is None:  # dynamic (setuptools-scm) or missing → not our concern
-        return name, None
+        return None
     try:
-        return name, Version(raw)
+        return Version(raw)
     except InvalidVersion:
-        return name, None
+        return None
+
+
+def version_at(ref: str, rel_path: str, repo_root: Path) -> Version | None:
+    """Static version of the pyproject at ``rel_path`` as of ``ref``.
+
+    ``None`` when the file is not there (a package added by this very diff) or
+    carries no static version — both mean "no base version to compare against".
+    """
+    proc = subprocess.run(  # noqa: S603, S607 — fixed argv, no shell
+        ["git", "show", f"{ref}:{rel_path}"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    return _static_version(tomllib.loads(proc.stdout).get("project", {}))
 
 
 def latest_pypi_version(name: str, *, fetch=None) -> Version | None:
@@ -109,7 +154,11 @@ def changed_packages(base_ref: str, packages_dir: Path, repo_root: Path) -> set[
 
 
 def resolve_base(base_ref: str, repo_root: Path) -> str | None:
-    """Return base_ref if it exists and shares a merge-base with HEAD, else None."""
+    """Return the merge-base of base_ref and HEAD, or None if there is none.
+
+    The COMMIT, not the ref that named it: the diff and the base-version read
+    below must span the same two trees, and a ref can move between them.
+    """
     try:
         proc = subprocess.run(
             ["git", "merge-base", base_ref, "HEAD"],
@@ -119,7 +168,7 @@ def resolve_base(base_ref: str, repo_root: Path) -> str | None:
             check=False,
         )
         if proc.returncode == 0 and proc.stdout.strip():
-            return base_ref
+            return proc.stdout.strip()
         return None
     except Exception:  # silent-ok: no usable base ref is None by contract
         return None
@@ -136,7 +185,18 @@ def run(repo_root: Path, base_ref: str, *, fetch=None) -> list[Verdict]:
             continue
         name, src_ver = source_meta(pyproject)
         pypi_ver = latest_pypi_version(name, fetch=fetch) if src_ver is not None else None
-        verdicts.append(evaluate(pkg_dir.name, src_ver, pypi_ver, pkg_dir.name in changed))
+        base_ver = version_at(
+            base_ref, f"{packages_dir.name}/{pkg_dir.name}/pyproject.toml", repo_root
+        )
+        verdicts.append(
+            evaluate(
+                pkg_dir.name,
+                src_ver,
+                pypi_ver,
+                pkg_dir.name in changed,
+                base_ver=base_ver,
+            )
+        )
     return verdicts
 
 
@@ -164,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
             f"[version-skew] {len(failed)} package(s) skewed vs PyPI — see above.", file=sys.stderr
         )
         return 1
-    print("[version-skew] all workspace packages ahead of / clean vs PyPI.", file=sys.stderr)
+    print("[version-skew] every changed workspace package carries its bump.", file=sys.stderr)
     return 0
 
 

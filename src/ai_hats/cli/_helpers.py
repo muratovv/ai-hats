@@ -19,9 +19,11 @@ from ..constants import is_debug_mode
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from ai_hats_core.composition import CompositionIncompleteError
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..libraries.models import CheckBindingError
-    from ..paths import NotAnAiHatsProjectError, ProjectConfigError
+    from ..paths import ProjectConfigError
+    from ..rack_workspace import NotAnAiHatsProjectError
     from ..surface_registry import UnknownSurfaceError
     from ..role_spec import RoleSpecError
 
@@ -63,6 +65,21 @@ def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     for name in exc.available:
         click.echo(f"  - {name}", err=True)
     click.echo("\nHint: 'ai-hats list roles' shows the full table.", err=True)
+    sys.exit(2)
+
+
+def _handle_composition_incomplete(exc: "CompositionIncompleteError") -> NoReturn:
+    """Render a `CompositionIncompleteError` as friendly stderr + exit 2.
+
+    Role existence is checked ahead of composing only for an explicitly passed
+    ``--role``; a role read from ``ai-hats.yaml`` reaches the composer and is
+    refused there instead. That is the arm every session without ``-r`` takes,
+    and the one a role deleted from the library lands on — unregistered here it
+    printed a traceback, which is the fail-open this table exists to remove.
+    """
+    click.echo(f"Error: {exc}", err=True)
+    click.echo("\nHint: 'ai-hats list roles' shows what is available.", err=True)
+    click.echo("Pick one with: ai-hats config set -r <role>", err=True)
     sys.exit(2)
 
 
@@ -157,17 +174,20 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
     Imported lazily: this module loads on every CLI path, the seam does not.
     """
     with catch_broken_install():
+        from ai_hats_core.composition import CompositionIncompleteError
         from ..composition_seam import MissingProviderError, RoleNotFoundError
         from ..libraries.models import CheckBindingError, ComponentKeyError
         from ai_hats_core.layout import ProjectNotFoundError
 
-        from ..paths import NotAnAiHatsProjectError, ProjectConfigError
+        from ..paths import ProjectConfigError
+        from ..rack_workspace import NotAnAiHatsProjectError
         from ..surface_registry import UnknownSurfaceError
         from ..role_spec import RoleSpecError
 
     return (
         (RoleSpecError, _handle_role_spec_error),
         (RoleNotFoundError, _handle_role_not_found),
+        (CompositionIncompleteError, _handle_composition_incomplete),
         (UnknownSurfaceError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),
@@ -224,25 +244,6 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
     )
     console.print(f"[cyan]→ Handing off to claude with {label}: {rel}[/]")
     os.execvp(claude_bin, [claude_bin, prompt])  # noqa: S606
-
-
-class DeadCwdError(click.ClickException):
-    """The current working directory no longer exists (HATS-788).
-
-    Commonly: the linked worktree you were standing in was just torn down by
-    `rack transition <id> done` / `wt merge`. Resolving the project root from a
-    removed cwd would otherwise crash (`Path.cwd()` → FileNotFoundError on
-    macOS) or, on Linux where `os.getcwd()` can return a stale path string,
-    silently fall through to the cwd fallback and let `ai_hats_dir()`'s
-    `mkdir -p` resurrect a phantom `.agent/` tracker. Fail loud instead and
-    point the operator back to a real directory.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(
-            "Current directory no longer exists (a worktree you were in may "
-            "have just been removed). cd to your project root and re-run."
-        )
 
 
 def broken_install_notice(exc: Exception) -> str:

@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.integration]
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def _seed_role(project_path: Path) -> None:

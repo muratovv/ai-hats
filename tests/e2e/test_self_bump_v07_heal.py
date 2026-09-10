@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
+pytestmark = pytest.mark.install
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

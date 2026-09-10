@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from datetime import datetime, timedelta, timezone
 
 
@@ -38,17 +40,16 @@ def _entry(
 
 def test_cache_path_is_under_the_out_of_tree_cache_root(tmp_path, monkeypatch):
     """HATS-1398: the update-check cache is machine state, so it leaves the project."""
-    from ai_hats.paths import cache_root
 
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    p = cache_path(tmp_path)
-    assert p == cache_root(tmp_path) / "update-check.json"
+    p = cache_path(ProjectLayout.at(tmp_path).cache)
+    assert p == ProjectLayout.at(tmp_path).cache.root / "update-check.json"
     assert not p.is_relative_to(tmp_path / "ai-hats-data")
 
 
 def test_read_cache_missing(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    assert read_cache(tmp_path) is None
+    assert read_cache(ProjectLayout.at(tmp_path).cache) is None
 
 
 def test_write_then_read_roundtrip(tmp_path, monkeypatch):
@@ -61,8 +62,8 @@ def test_write_then_read_roundtrip(tmp_path, monkeypatch):
         installed_label="v0.6.0",
         latest_label="v0.6.0-19-gabcdef0",
     )
-    write_cache(tmp_path, original)
-    loaded = read_cache(tmp_path)
+    write_cache(ProjectLayout.at(tmp_path).cache, original)
+    loaded = read_cache(ProjectLayout.at(tmp_path).cache)
     assert loaded is not None
     assert loaded.installed_sha == original.installed_sha
     assert loaded.latest_sha == original.latest_sha
@@ -117,19 +118,19 @@ def test_has_update_false_when_counts_unknown():
 
 def test_corrupt_cache_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    p = cache_path(tmp_path)
+    p = cache_path(ProjectLayout.at(tmp_path).cache)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{not valid json")
-    assert read_cache(tmp_path) is None
+    assert read_cache(ProjectLayout.at(tmp_path).cache) is None
 
 
 def test_missing_key_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    p = cache_path(tmp_path)
+    p = cache_path(ProjectLayout.at(tmp_path).cache)
     p.parent.mkdir(parents=True, exist_ok=True)
     # Missing remote_url — should fail the schema check gracefully.
     p.write_text('{"checked_at": "2026-05-19T10:00:00Z", "installed_sha": "x", "latest_sha": "y"}')
-    assert read_cache(tmp_path) is None
+    assert read_cache(ProjectLayout.at(tmp_path).cache) is None
 
 
 def test_legacy_cache_without_counts_parses_but_suppresses_banner(tmp_path, monkeypatch):
@@ -139,13 +140,13 @@ def test_legacy_cache_without_counts_parses_but_suppresses_banner(tmp_path, monk
     is the migration path; no explicit cache wipe needed.
     """
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    p = cache_path(tmp_path)
+    p = cache_path(ProjectLayout.at(tmp_path).cache)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
         '{"checked_at": "2026-05-19T10:00:00Z", "installed_sha": "aaa", '
         '"latest_sha": "bbb", "remote_url": "https://example.git"}'
     )
-    loaded = read_cache(tmp_path)
+    loaded = read_cache(ProjectLayout.at(tmp_path).cache)
     assert loaded is not None
     assert loaded.installed_sha == "aaa"
     assert loaded.behind is None

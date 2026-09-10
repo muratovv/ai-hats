@@ -23,7 +23,7 @@ from ai_hats.cli import main
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards]
 
 BROKEN_CMD = "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
 

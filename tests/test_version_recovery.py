@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import os
 import subprocess
@@ -10,13 +12,6 @@ import time
 import pytest
 
 from ai_hats import version_recovery, version_refs
-from ai_hats.paths import (
-    ai_hats_dir,
-    complete_sentinel,
-    current_pointer,
-    version_dir,
-    versions_root,
-)
 from ai_hats.paths import ENV_AI_HATS_DIR
 
 
@@ -33,11 +28,11 @@ def _mk_version(project_dir, sha, *, complete, age_hours=0.0):
     read_current_sha now requires to resolve `current` (HATS-657). HATS-790
     removed the bin/ai-hats console script, so no proxy binary is seeded —
     usability keys on bin/python + the .complete sentinel."""
-    vdir = version_dir(project_dir, sha)
+    vdir = ProjectLayout.at(project_dir).versions.dir(sha)
     (vdir / "bin").mkdir(parents=True, exist_ok=True)
     (vdir / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
     if complete:
-        complete_sentinel(project_dir, sha).write_text("", encoding="utf-8")
+        ProjectLayout.at(project_dir).versions.sentinel(sha).write_text("", encoding="utf-8")
     if age_hours:
         ts = time.time() - age_hours * 3600
         os.utime(vdir, (ts, ts))  # set LAST so child writes don't bump mtime
@@ -46,7 +41,7 @@ def _mk_version(project_dir, sha, *, complete, age_hours=0.0):
 
 def test_sweep_removes_old_incomplete(tmp_path):
     vdir = _mk_version(tmp_path, "deadbeef", complete=False, age_hours=48)
-    removed = version_recovery.sweep_incomplete_versions(tmp_path)
+    removed = version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
     assert removed == [vdir]
     assert not vdir.exists()
 
@@ -54,7 +49,7 @@ def test_sweep_removes_old_incomplete(tmp_path):
 def test_sweep_keeps_recent_incomplete(tmp_path):
     """Within the TTL window → may be an install in flight; never removed."""
     vdir = _mk_version(tmp_path, "deadbeef", complete=False, age_hours=0)
-    removed = version_recovery.sweep_incomplete_versions(tmp_path)
+    removed = version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
     assert removed == []
     assert vdir.exists()
 
@@ -62,7 +57,7 @@ def test_sweep_keeps_recent_incomplete(tmp_path):
 def test_sweep_keeps_complete(tmp_path):
     """A complete (sentinel) dir is R2's reclaim, not R1's — kept even when old."""
     vdir = _mk_version(tmp_path, "cafef00d", complete=True, age_hours=48)
-    removed = version_recovery.sweep_incomplete_versions(tmp_path)
+    removed = version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
     assert removed == []
     assert vdir.exists()
 
@@ -70,16 +65,16 @@ def test_sweep_keeps_complete(tmp_path):
 def test_sweep_keeps_current_even_if_incomplete(tmp_path):
     """Defensive: the active sha is never swept, regardless of age/state."""
     vdir = _mk_version(tmp_path, "cafef00d", complete=True, age_hours=48)
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
-    removed = version_recovery.sweep_incomplete_versions(tmp_path)
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
+    removed = version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
     assert removed == []
     assert vdir.exists()
 
 
 def test_sweep_idempotent(tmp_path):
     _mk_version(tmp_path, "deadbeef", complete=False, age_hours=48)
-    first = version_recovery.sweep_incomplete_versions(tmp_path)
-    second = version_recovery.sweep_incomplete_versions(tmp_path)
+    first = version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
+    second = version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
     assert len(first) == 1
     assert second == []
 
@@ -91,7 +86,7 @@ def test_sweep_ignores_legacy_venv(tmp_path):
     legacy.mkdir(parents=True, exist_ok=True)
     (legacy / "marker").write_text("keep", encoding="utf-8")
     _mk_version(tmp_path, "deadbeef", complete=False, age_hours=48)
-    version_recovery.sweep_incomplete_versions(tmp_path)
+    version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
     assert legacy.exists()
     assert (legacy / "marker").exists()
 
@@ -99,13 +94,13 @@ def test_sweep_ignores_legacy_venv(tmp_path):
 def test_sweep_skips_pointer_file(tmp_path):
     """The 'current' pointer file under versions/ is not a dir → never touched."""
     _mk_version(tmp_path, "cafef00d", complete=True)
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
-    version_recovery.sweep_incomplete_versions(tmp_path)
-    assert current_pointer(tmp_path).exists()
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
+    version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
+    assert ProjectLayout.at(tmp_path).versions.current_pointer.exists()
 
 
 def test_sweep_no_versions_root(tmp_path):
-    assert version_recovery.sweep_incomplete_versions(tmp_path) == []
+    assert version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path)) == []
 
 
 def test_sweep_mixed(tmp_path):
@@ -113,8 +108,8 @@ def test_sweep_mixed(tmp_path):
     old_bad = _mk_version(tmp_path, "0ld0bad0", complete=False, age_hours=48)
     new_bad = _mk_version(tmp_path, "neWbad00", complete=False, age_hours=0)
     done = _mk_version(tmp_path, "cafef00d", complete=True, age_hours=48)
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
-    removed = version_recovery.sweep_incomplete_versions(tmp_path)
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
+    removed = version_recovery.sweep_incomplete_versions(ProjectLayout.at(tmp_path))
     assert removed == [old_bad]
     assert not old_bad.exists()
     assert new_bad.exists() and done.exists()
@@ -125,7 +120,7 @@ def test_sweep_mixed(tmp_path):
 
 def _write_ref(project_dir, sha, *, pid, start_time_utc, name=None):
     """Plant a liveness ref pointing at versions/<sha> for a given pid."""
-    d = versions_root(project_dir) / ".refs"
+    d = ProjectLayout.at(project_dir).versions.root / ".refs"
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{name or pid}.json"
     f.write_text(
@@ -156,7 +151,7 @@ def live_proc():
 
 def _set_current(project_dir, sha):
     """Point `current` at a complete sha so read_current_sha resolves it."""
-    current_pointer(project_dir).write_text(f"{sha}\n", encoding="utf-8")
+    ProjectLayout.at(project_dir).versions.current_pointer.write_text(f"{sha}\n", encoding="utf-8")
 
 
 def test_reclaim_removes_complete_non_current_no_ref(tmp_path):
@@ -164,7 +159,7 @@ def test_reclaim_removes_complete_non_current_no_ref(tmp_path):
     cur = _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
     orphan = _mk_version(tmp_path, "0ld0c0de", complete=True)
-    removed = version_recovery.reclaim_orphan_versions(tmp_path)
+    removed = version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path))
     assert removed == [orphan]
     assert not orphan.exists()
     assert cur.exists()  # current untouched
@@ -176,7 +171,7 @@ def test_reclaim_removes_dead_ref_and_cleans_ref(tmp_path):
     _set_current(tmp_path, "cafef00d")
     orphan = _mk_version(tmp_path, "0ld0c0de", complete=True)
     ref = _write_ref(tmp_path, "0ld0c0de", pid=_dead_pid(), start_time_utc="old")
-    removed = version_recovery.reclaim_orphan_versions(tmp_path)
+    removed = version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path))
     assert removed == [orphan]
     assert not orphan.exists()
     assert not ref.exists()  # dead ref reclaimed in the same pass
@@ -193,7 +188,7 @@ def test_reclaim_keeps_live_ref(tmp_path, live_proc):
         pid=live_proc.pid,
         start_time_utc=version_refs._proc_start_time(live_proc.pid),
     )
-    removed = version_recovery.reclaim_orphan_versions(tmp_path)
+    removed = version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path))
     assert removed == []
     assert pinned.exists()
 
@@ -201,7 +196,7 @@ def test_reclaim_keeps_live_ref(tmp_path, live_proc):
 def test_reclaim_keeps_current(tmp_path):
     cur = _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
-    assert version_recovery.reclaim_orphan_versions(tmp_path) == []
+    assert version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path)) == []
     assert cur.exists()
 
 
@@ -210,7 +205,7 @@ def test_reclaim_keeps_incomplete(tmp_path):
     _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
     inc = _mk_version(tmp_path, "badc0de0", complete=False, age_hours=48)
-    assert version_recovery.reclaim_orphan_versions(tmp_path) == []
+    assert version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path)) == []
     assert inc.exists()
 
 
@@ -221,7 +216,7 @@ def test_reclaim_ignores_legacy_venv(tmp_path):
     _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
     _mk_version(tmp_path, "0ld0c0de", complete=True)
-    version_recovery.reclaim_orphan_versions(tmp_path)
+    version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path))
     assert legacy.exists() and (legacy / "marker").exists()
 
 
@@ -236,8 +231,8 @@ def test_reclaim_never_touches_refs_dir(tmp_path, live_proc):
         pid=live_proc.pid,
         start_time_utc=version_refs._proc_start_time(live_proc.pid),
     )
-    version_recovery.reclaim_orphan_versions(tmp_path)
-    assert (versions_root(tmp_path) / ".refs").is_dir()
+    version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path))
+    assert (ProjectLayout.at(tmp_path).versions.root / ".refs").is_dir()
     assert pinned.exists()
 
 
@@ -246,7 +241,7 @@ def test_reclaim_dead_ref_to_current_cleans_ref_keeps_current(tmp_path):
     cur = _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
     ref = _write_ref(tmp_path, "cafef00d", pid=_dead_pid(), start_time_utc="old")
-    assert version_recovery.reclaim_orphan_versions(tmp_path) == []
+    assert version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path)) == []
     assert cur.exists()
     assert not ref.exists()
 
@@ -255,8 +250,8 @@ def test_reclaim_idempotent(tmp_path):
     _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
     _mk_version(tmp_path, "0ld0c0de", complete=True)
-    first = version_recovery.reclaim_orphan_versions(tmp_path)
-    second = version_recovery.reclaim_orphan_versions(tmp_path)
+    first = version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path))
+    second = version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path))
     assert len(first) == 1 and second == []
 
 
@@ -266,14 +261,16 @@ def test_reclaim_keep_shas_protects_target(tmp_path):
     _set_current(tmp_path, "cafef00d")
     target = _mk_version(tmp_path, "newtarget", complete=True)
     other = _mk_version(tmp_path, "0ld0c0de", complete=True)
-    removed = version_recovery.reclaim_orphan_versions(tmp_path, keep_shas={"newtarget"})
+    removed = version_recovery.reclaim_orphan_versions(
+        ProjectLayout.at(tmp_path), keep_shas={"newtarget"}
+    )
     assert removed == [other]
     assert target.exists()
     assert not other.exists()
 
 
 def test_reclaim_no_versions_root(tmp_path):
-    assert version_recovery.reclaim_orphan_versions(tmp_path) == []
+    assert version_recovery.reclaim_orphan_versions(ProjectLayout.at(tmp_path)) == []
 
 
 # ---- reclaim_legacy_venv (HATS-653 / Phase B) ----
@@ -281,7 +278,7 @@ def test_reclaim_no_versions_root(tmp_path):
 
 def _mk_legacy_venv(project_dir):
     """Seed a plausible <ai_hats_dir>/.venv with bin/python."""
-    legacy = ai_hats_dir(project_dir) / ".venv"
+    legacy = ProjectLayout.at(project_dir).base / ".venv"
     (legacy / "bin").mkdir(parents=True, exist_ok=True)
     (legacy / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
     return legacy
@@ -290,7 +287,7 @@ def _mk_legacy_venv(project_dir):
 def test_reclaim_legacy_venv_removed_when_running_from_versioned(tmp_path, monkeypatch):
     legacy = _mk_legacy_venv(tmp_path)
     monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
-    reclaimed = version_recovery.reclaim_legacy_venv(tmp_path)
+    reclaimed = version_recovery.reclaim_legacy_venv(ProjectLayout.at(tmp_path))
     assert reclaimed == legacy
     assert not legacy.exists()
 
@@ -299,15 +296,15 @@ def test_reclaim_legacy_venv_kept_when_not_running_from_versioned(tmp_path, monk
     """current_run_sha None (running from .venv / override / editable) → keep."""
     legacy = _mk_legacy_venv(tmp_path)
     monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: None)
-    assert version_recovery.reclaim_legacy_venv(tmp_path) is None
+    assert version_recovery.reclaim_legacy_venv(ProjectLayout.at(tmp_path)) is None
     assert legacy.exists()
 
 
 def test_reclaim_legacy_venv_idempotent(tmp_path, monkeypatch):
     legacy = _mk_legacy_venv(tmp_path)
     monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
-    first = version_recovery.reclaim_legacy_venv(tmp_path)
-    second = version_recovery.reclaim_legacy_venv(tmp_path)
+    first = version_recovery.reclaim_legacy_venv(ProjectLayout.at(tmp_path))
+    second = version_recovery.reclaim_legacy_venv(ProjectLayout.at(tmp_path))
     assert first == legacy
     assert second is None
     assert not legacy.exists()
@@ -315,16 +312,16 @@ def test_reclaim_legacy_venv_idempotent(tmp_path, monkeypatch):
 
 def test_reclaim_legacy_venv_missing_is_noop(tmp_path, monkeypatch):
     monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
-    assert version_recovery.reclaim_legacy_venv(tmp_path) is None
+    assert version_recovery.reclaim_legacy_venv(ProjectLayout.at(tmp_path)) is None
 
 
 def test_reclaim_legacy_venv_never_touches_versions(tmp_path, monkeypatch):
     """The versioned install we run from is left intact; only .venv goes."""
     vdir = _mk_version(tmp_path, "cafef00d", complete=True)
-    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    ProjectLayout.at(tmp_path).versions.current_pointer.write_text("cafef00d\n", encoding="utf-8")
     legacy = _mk_legacy_venv(tmp_path)
     monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
-    version_recovery.reclaim_legacy_venv(tmp_path)
+    version_recovery.reclaim_legacy_venv(ProjectLayout.at(tmp_path))
     assert not legacy.exists()
     assert vdir.is_dir()
-    assert current_pointer(tmp_path).read_text().strip() == "cafef00d"
+    assert ProjectLayout.at(tmp_path).versions.current_pointer.read_text().strip() == "cafef00d"

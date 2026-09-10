@@ -17,8 +17,9 @@ from pathlib import Path
 import pytest
 
 from _helpers.hitl import drive_bare_hitl
+from ai_hats_core.layout import ProjectLayout
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def _files_under(root: Path) -> set[Path]:
@@ -73,7 +74,6 @@ def test_the_session_materialized_into_the_out_of_tree_root(
     Without this half, a session that silently materialized nothing at all would
     pass the test above.
     """
-    from ai_hats.paths import session_cache_root
 
     # Resolve against the SAME root the child was pinned to, or this asserts
     # about a directory no subprocess ever touched.
@@ -84,7 +84,7 @@ def test_the_session_materialized_into_the_out_of_tree_root(
     ).expect_ok()
 
     project = tmp_venv_project.path
-    cache_sessions = session_cache_root(project)
+    cache_sessions = ProjectLayout.at(project).cache.sessions
     assert not cache_sessions.exists(), "precondition: nothing built yet"
 
     drive_bare_hitl(tmp_venv_project, role="assistant").expect_no_hang().expect_exit_in({0, 130})

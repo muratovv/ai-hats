@@ -15,7 +15,7 @@ import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 
 def test_self_init_is_idempotent_on_repeat(tmp_venv_project) -> None:

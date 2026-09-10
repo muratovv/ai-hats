@@ -20,7 +20,7 @@ from ai_hats.cli import main
 from ai_hats.cli.worktree import _resolve_worktree
 from ai_hats_wt import WorktreeManager, WorktreePartialCleanupError
 from ai_hats_wt.locks import _state_key
-from ai_hats.paths import worktrees_dir
+from ai_hats_core.layout import ProjectLayout
 
 
 pytestmark = pytest.mark.integration
@@ -68,7 +68,7 @@ class TestStateKeyCasePreserving:
 
     def test_legacy_lowercase_state_migrates_on_load(self, git_project: Path) -> None:
         """Pre-482 lowercased state files migrate to the case-preserving key."""
-        states = worktrees_dir(git_project)
+        states = ProjectLayout.at(git_project).sessions.worktrees
         states.mkdir(parents=True, exist_ok=True)
         legacy_path = states / "task-hats-x.json"
         # Worktree path doesn't need to exist — _load_by_key returns None
@@ -86,7 +86,7 @@ class TestStateKeyCasePreserving:
 
         # Load via the new (case-preserving) key → migration triggers.
         result = WorktreeManager.load_for_branch(
-            git_project, "task/HATS-X", state_dir=worktrees_dir(git_project)
+            git_project, "task/HATS-X", state_dir=ProjectLayout.at(git_project).sessions.worktrees
         )
 
         # File renamed; legacy gone, primary key file existed at migration
@@ -98,7 +98,7 @@ class TestStateKeyCasePreserving:
 
     def test_no_migration_when_primary_exists(self, git_project: Path) -> None:
         """Primary key file present → don't touch legacy."""
-        states = worktrees_dir(git_project)
+        states = ProjectLayout.at(git_project).sessions.worktrees
         states.mkdir(parents=True, exist_ok=True)
         legacy = states / "task-hats-x.json"
         primary = states / "task-HATS-X.json"
@@ -119,7 +119,7 @@ class TestStateKeyCasePreserving:
 
     def test_no_migration_when_key_already_lowercase(self, git_project: Path) -> None:
         """key.lower() == key → nothing to migrate, no-op."""
-        states = worktrees_dir(git_project)
+        states = ProjectLayout.at(git_project).sessions.worktrees
         states.mkdir(parents=True, exist_ok=True)
         primary = states / "task-hats-x.json"
         # Don't create the file — function should no-op before any I/O.
@@ -149,12 +149,12 @@ class TestStateKeyCasePreserving:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/hats-086",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr.create()
         mgr.save_state()
         try:
-            states = worktrees_dir(git_project)
+            states = ProjectLayout.at(git_project).sessions.worktrees
             before = sorted(p.name for p in states.iterdir() if p.suffix == ".json")
             assert before == ["task-hats-086.json"], before
 
@@ -163,7 +163,7 @@ class TestStateKeyCasePreserving:
             # at the SAME key so save_state doesn't fork into a second
             # file on case-sensitive FS.
             loaded = WorktreeManager.load_for_task(
-                git_project, "HATS-086", state_dir=worktrees_dir(git_project)
+                git_project, "HATS-086", state_dir=ProjectLayout.at(git_project).sessions.worktrees
             )
             assert loaded is not None
             assert loaded.branch_name == "task/hats-086"
@@ -263,7 +263,7 @@ class TestResolveWorktreeAmbiguity:
         mgr = WorktreeManager(
             git_project,
             branch_name="feat/only-one",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr.create()
         mgr.save_state()
@@ -281,14 +281,14 @@ class TestResolveWorktreeAmbiguity:
         mgr_a = WorktreeManager(
             git_project,
             branch_name="feat/aaa",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr_a.create()
         mgr_a.save_state()
         mgr_b = WorktreeManager(
             git_project,
             branch_name="feat/bbb",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr_b.create()
         mgr_b.save_state()
@@ -419,7 +419,7 @@ class TestDeleteBranchClassification:
         mgr = WorktreeManager(
             git_project,
             branch_name="feat/cli-partial",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr.create()
         mgr.save_state()

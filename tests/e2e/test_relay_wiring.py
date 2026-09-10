@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.surfaces
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Interactive child: echoes ``GOT:hello`` when it reads ``hello``, exits on ``quit``.

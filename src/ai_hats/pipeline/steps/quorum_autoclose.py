@@ -53,14 +53,13 @@ class QuorumAutoclose(Step):
 
         from ...rack_workspace import autoclose_hypotheses, hyp_backlog_mounted, rack_workspace
 
-        project_dir = layout.root
-        ws = rack_workspace(project_dir)
+        ws = rack_workspace(layout)
         if not hyp_backlog_mounted(ws):
             return {}  # pre-migration: no HYP backlog mounted yet → nothing to sweep
         closed = [
             c.hyp_id
             for c in autoclose_hypotheses(
-                ws, caller_cwd=project_dir, k=self.k, actor=AUTOCLOSE_ACTOR
+                ws, caller_cwd=layout.root, k=self.k, actor=AUTOCLOSE_ACTOR
             )
         ]
         if closed:

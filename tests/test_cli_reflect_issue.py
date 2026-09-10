@@ -10,6 +10,8 @@ carry (source_task link, exit_criteria, baseline).
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 import pytest
@@ -17,20 +19,19 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
-from ai_hats.paths import hypotheses_dir, runs_dir
 from ai_hats.rack_workspace import HypView, active_hypotheses, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
 
 
 def _migrate(pd: Path) -> None:
     """Seed the HYP catalog's backlog.yaml + migrate any flat file to dir-per-card."""
-    migrate_catalog(hypotheses_dir(pd), "hypotheses")
+    migrate_catalog(ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses", "hypotheses")
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
-    (hypotheses_dir(pd)).mkdir(parents=True)
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses").mkdir(parents=True)
     _migrate(pd)  # seed backlog.yaml so the workspace mounts the HYP backlog
     monkeypatch.chdir(pd)
     return pd
@@ -47,13 +48,15 @@ def _write_active_hyp(pd: Path, hyp_id: str, **extras) -> None:
         "validation_log": [],
     }
     body.update(extras)
-    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
+    (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+        yaml.safe_dump(body)
+    )
     _migrate(pd)  # flat → dir-per-card so the workspace reads it
 
 
 def _card(pd: Path, hyp_id: str):
     """The stored card, read back through the rack kernel that owns the backlog."""
-    card = rack_workspace(pd).kernel_for(hyp_id).get(hyp_id)
+    card = rack_workspace(ProjectLayout.at(pd)).kernel_for(hyp_id).get(hyp_id)
     assert card is not None, f"{hyp_id} is not on disk"
     return card
 
@@ -61,7 +64,7 @@ def _card(pd: Path, hyp_id: str):
 def _view(pd: Path, hyp_id: str) -> HypView:
     """The active-HYP view the reflect/judge consumers render. Absent from it ⇒
     the card is gone or no longer active — both are failures for these tests."""
-    views = {h.id: h for h in active_hypotheses(rack_workspace(pd))}
+    views = {h.id: h for h in active_hypotheses(rack_workspace(ProjectLayout.at(pd)))}
     assert hyp_id in views, f"{hyp_id} is not an active hypothesis"
     return views[hyp_id]
 
@@ -70,11 +73,16 @@ def _hyp_ids(pd: Path) -> set[str]:
     """Every HYP card in the catalog, state-blind — the old ``list_all`` claim.
     Globs the dir-per-card layout because the rack facade's only listing
     (``active_hypotheses``) filters by state."""
-    return {p.parent.name for p in hypotheses_dir(pd).glob("HYP-*/task.yaml")}
+    return {
+        p.parent.name
+        for p in (ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses").glob(
+            "HYP-*/task.yaml"
+        )
+    }
 
 
 def _flat_files(pd: Path) -> list[Path]:
-    return list(hypotheses_dir(pd).glob("HYP-*.yaml"))
+    return list((ProjectLayout.at(pd).tracker.base / "backlog" / "hypotheses").glob("HYP-*.yaml"))
 
 
 def _mock_pipeline(monkeypatch, *, result_text: str, exit_code: int = 0):
@@ -226,7 +234,7 @@ def test_merge_unknown_target_fails_loud(project_dir, monkeypatch):
 
 def test_task_id_overrides_source_task(project_dir, monkeypatch):
     anchor = (
-        rack_workspace(project_dir)
+        rack_workspace(ProjectLayout.at(project_dir))
         .kernel_for("HATS-1")
         .create(actor="test", caller_cwd=project_dir, title="anchor")
         .task.id
@@ -301,7 +309,7 @@ def test_background_spawns_detached_subprocess_and_returns(
     assert "--bg" not in cmd and "--background" not in cmd
 
     # Log directory was created
-    assert (runs_dir(project_dir) / "reflect-issue").exists()
+    assert (ProjectLayout.at(project_dir).sessions.runs / "reflect-issue").exists()
 
 
 def test_bg_and_preview_are_mutually_exclusive(project_dir):

@@ -8,6 +8,8 @@ launch_provider → extract_marker → parser → rack HYP backlog.
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 from pathlib import Path
 
@@ -15,7 +17,6 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.paths import hypotheses_dir
 from ai_hats.rack_workspace import active_hypotheses, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
 from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, session_dirname
@@ -23,14 +24,14 @@ from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, s
 
 def _card(pd: Path, hyp_id: str):
     """The stored card, read back through the rack kernel that owns the backlog."""
-    card = rack_workspace(pd).kernel_for(hyp_id).get(hyp_id)
+    card = rack_workspace(ProjectLayout.at(pd)).kernel_for(hyp_id).get(hyp_id)
     assert card is not None, f"{hyp_id} is not on disk"
     return card
 
 
 def _view(pd: Path, hyp_id: str):
     """The active-HYP view the reflect/judge consumers render."""
-    views = {h.id: h for h in active_hypotheses(rack_workspace(pd))}
+    views = {h.id: h for h in active_hypotheses(rack_workspace(ProjectLayout.at(pd)))}
     assert hyp_id in views, f"{hyp_id} is not an active hypothesis"
     return views[hyp_id]
 
@@ -149,8 +150,12 @@ def test_reflect_issue_merge_full_pipeline(
         "hypothesis": "agent uses f-strings in SQL queries",
         "validation_log": [],
     }
-    (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(yaml.safe_dump(seed))
-    migrate_catalog(hypotheses_dir(project_dir), "hypotheses")  # flat → dir-per-card
+    (
+        ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses" / "HYP-001.yaml"
+    ).write_text(yaml.safe_dump(seed))
+    migrate_catalog(
+        ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses", "hypotheses"
+    )  # flat → dir-per-card
 
     trace = (
         "BEGIN_INTAKE_RESULT\n"
@@ -188,7 +193,9 @@ def test_reflect_issue_missing_markers_with_active_hyp_fails(
 ) -> None:
     """LLM produced output without the marker block — must fail-loud."""
     _bootstrap_silenced(monkeypatch)
-    (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(
+    (
+        ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses" / "HYP-001.yaml"
+    ).write_text(
         yaml.safe_dump(
             {
                 "id": "HYP-001",
@@ -201,7 +208,9 @@ def test_reflect_issue_missing_markers_with_active_hyp_fails(
             }
         )
     )
-    migrate_catalog(hypotheses_dir(project_dir), "hypotheses")  # flat → dir-per-card
+    migrate_catalog(
+        ProjectLayout.at(project_dir).tracker.base / "backlog" / "hypotheses", "hypotheses"
+    )  # flat → dir-per-card
     _install_subagent_trace(monkeypatch, project_dir, "no markers here\n")
 
     res = CliRunner().invoke(

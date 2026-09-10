@@ -67,9 +67,6 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     # `surfaces/`. It subclasses Surface and reuses that module's markers, so
     # it IS the provider layer at a new path — not a brick reaching into it.
     "surfaces",
-    # HATS-1184: the `self init` orchestration steps run assembly — integrator
-    # orchestration (like the `cli` subtree), not a role-composition brick.
-    "pipeline.steps.init_steps",
 )
 
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
@@ -326,9 +323,9 @@ def test_detector_flags_a_synthetic_cycle():
 RESOLUTION_NAMES = (
     "_project_dir",  # cli/_helpers walk-up (falls back to cwd)
     "default_project_dir",  # retired in step 4 — a revival trips here
-    "_is_ai_hats_project",  # paths/_dirs marker check
-    "_read_ai_hats_dir_from_yaml",  # raw config peek — bypasses fail-loud
-    "_read_venv_path_from_yaml",  # raw config peek — bypasses fail-loud
+    "_is_ai_hats_project",  # the paths-leaf marker check, retired in HATS-1883
+    "_read_ai_hats_dir_from_yaml",  # raw config peek, retired in HATS-1883
+    "_read_venv_path_from_yaml",  # raw config peek, retired in HATS-1883
     "resolve_root",  # rack's resolver (wait.py) / core's future one
     "find_project_root",  # rack's walk-up
 )
@@ -381,21 +378,15 @@ def _resolution_offenders() -> dict[str, tuple[str, ...]]:
     return offenders
 
 
-# Pinned 2026-09-04 after the step-6 drain (21 -> 8 modules). What remains is
-# the owners, the two rack-sanctioned copies, and the step-7/8 death row.
+# Pinned 2026-09-05 after the HATS-1883 contract (21 -> 5 modules). What remains
+# is the owners and the two rack-sanctioned copies.
 EXPECTED_RESOLUTION_OFFENDERS: dict[str, tuple[str, ...]] = {
     "ai_hats.cli._entry": ("resolve_root",),  # THE sanctioned factory (composition root)
     "ai_hats.cli.wait": (
         "resolve_root",
     ),  # rack's copy; semantics now match core, parity by conformance
-    "ai_hats.paths._dirs": (
-        "_is_ai_hats_project",
-        "_read_ai_hats_dir_from_yaml",
-        "_read_venv_path_from_yaml",
-    ),
     "ai_hats.paths.constants": ("ai-hats.yaml",),  # the literal's one legitimate home
     "ai_hats.rack_cli_provider": ("find_project_root",),
-    "ai_hats.relocation": ("_read_ai_hats_dir_from_yaml",),
     "ai_hats_core.layout": ("ai-hats.yaml", "resolve_root"),  # the owner
 }
 
@@ -415,4 +406,291 @@ def test_project_resolution_is_deny_by_default():
     assert actual == expected, (
         f"project-resolution pin drifted.\nNEW acquisition sites (deny-by-default): {grown}\n"
         f"DRAINED (update the pin, keep the ratchet tight): {drained}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Slice-1 tail: three negative universals, each red on the tree it was written
+# against (see the work log of the card that added them) before its fix landed.
+#
+# Edge counting below INCLUDES ``TYPE_CHECKING`` and deferred imports (ADR-0026
+# D5, the F4 ruling): a boundary blind to them is blind to two edges in five.
+
+REPO_ROOT = SRC.parent.parent
+_OBSERVE_SRC = REPO_ROOT / "packages" / "ai-hats-observe" / "src" / "ai_hats_observe"
+_OBSERVE_TESTS = REPO_ROOT / "packages" / "ai-hats-observe" / "tests"
+_INTEGRATOR_TESTS = REPO_ROOT / "tests"
+
+CLI = f"{PKG}.cli"
+
+
+def _all_import_nodes(tree: ast.AST):
+    """Every Import/ImportFrom — module-level, deferred AND under TYPE_CHECKING."""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            yield node
+
+
+def _cli_inbound_edges() -> dict[str, tuple[str, ...]]:
+    """Non-``cli`` modules that import anything under ``ai_hats.cli``.
+
+    ``cli`` is the top of the tree — the composition root and the process entry
+    points live there. A deep module importing it is reaching UP for something it
+    should have received (R2); an import of a private ``_name`` is that, twice.
+    """
+    mods = _modules()
+    nodeset = set(mods)
+    edges: dict[str, set[str]] = {}
+    for name, path in mods.items():
+        if name == CLI or name.startswith(CLI + "."):
+            continue
+        tree = ast.parse(path.read_text(), filename=str(path))
+        hits = {
+            t
+            for node in _all_import_nodes(tree)
+            for t in _targets(name, path.name == "__init__.py", node, nodeset)
+            if t == CLI or t.startswith(CLI + ".")
+        }
+        if hits:
+            edges[name] = hits
+    return {m: tuple(sorted(h)) for m, h in sorted(edges.items())}
+
+
+# The work list: every module reaching up into cli, with what it takes. Shrinks
+# only. ``__main__`` is the process entry point and stays; the rest are the
+# epic's "inbound edges into cli -> 0" metric, one card at a time.
+EXPECTED_CLI_INBOUND: dict[str, tuple[str, ...]] = {
+    "ai_hats.__main__": ("ai_hats.cli", "ai_hats.cli._helpers"),
+    "ai_hats._bump_internal": ("ai_hats.cli._entry", "ai_hats.cli.assembly"),  # process entry point
+    "ai_hats.consent_mcp.server": (
+        "ai_hats.cli._entry",
+    ),  # the consent MCP server, a process entry point
+    "ai_hats.assembler": ("ai_hats.cli.maintenance",),
+    "ai_hats.channel": ("ai_hats.cli.maintenance",),
+    "ai_hats.pipeline.steps.handoff": ("ai_hats.cli.reflect",),
+    "ai_hats.rack_cli_provider": ("ai_hats.cli._entry",),  # the rack-side process entry point
+    "ai_hats.pipeline.steps.maybe_spawn_session_reviewer": (
+        "ai_hats.cli",
+        "ai_hats.cli._entry",
+        "ai_hats.cli.reflect_session_main",
+    ),
+    "ai_hats.retro.auto_retro": ("ai_hats.cli._entry",),
+}
+
+
+def test_no_new_module_reaches_up_into_cli():
+    actual = _cli_inbound_edges()
+    expected = EXPECTED_CLI_INBOUND
+    grown = {m: n for m, n in actual.items() if m not in expected or set(n) - set(expected[m])}
+    drained = {
+        m: n for m, n in expected.items() if m not in actual or set(n) - set(actual.get(m, ()))
+    }
+    assert actual == expected, (
+        f"cli-inbound pin drifted.\nNEW edges into cli (deny-by-default): {grown}\n"
+        f"DRAINED (update the pin, keep the ratchet tight): {drained}\n"
+        f"paste-ready pin:\nEXPECTED_CLI_INBOUND = {actual!r}"
+    )
+
+
+_HOST_MODULES = ("_host", "_seam")  # observe's host module, and the name it retired
+
+
+def _names_a_store_on(node: ast.AST, aliases: frozenset[str] = frozenset()) -> str | None:
+    """The base name of ``<base>.<attr> = …`` / ``setattr(<base>, …)`` when it is a host module.
+
+    ``aliases`` are the names the file bound the module to (``import … as``).
+    """
+    names = set(_HOST_MODULES) | set(aliases)
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for t in targets:
+            if isinstance(t, ast.Attribute):
+                base = t.value
+                if isinstance(base, ast.Name) and base.id in names:
+                    return base.id
+                if isinstance(base, ast.Attribute) and base.attr in names:
+                    return base.attr
+    if isinstance(node, ast.Call):
+        fn = node.func
+        is_setattr = (isinstance(fn, ast.Name) and fn.id == "setattr") or (
+            isinstance(fn, ast.Attribute) and fn.attr == "setattr"
+        )
+        if is_setattr and node.args:
+            first = node.args[0]
+            if isinstance(first, ast.Name) and first.id in names:
+                return first.id
+            if isinstance(first, ast.Attribute) and first.attr in names:
+                return first.attr
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                if any(
+                    first.value.endswith(f".{m}") or f".{m}." in first.value for m in _HOST_MODULES
+                ):
+                    return first.value
+    return None
+
+
+def _host_stores_outside_the_module() -> dict[str, list[int]]:
+    """Every place that assigns INTO observe's host module from outside it.
+
+    ``attach()`` is the one writer; a store from anywhere else — the integrator's
+    mount, a test's monkeypatch — is the implicit wiring this gate retires.
+    """
+    stores: dict[str, list[int]] = {}
+    roots = (SRC, _INTEGRATOR_TESTS, _OBSERVE_SRC, _OBSERVE_TESTS)
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            if path.stem in _HOST_MODULES:
+                continue
+            tree = ast.parse(path.read_text(), filename=str(path))
+            aliases = frozenset(
+                a.asname or a.name
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom)
+                for a in node.names
+                if a.name in _HOST_MODULES
+            )
+            lines = [n.lineno for n in ast.walk(tree) if _names_a_store_on(n, aliases) is not None]
+            if lines:
+                stores[str(path.relative_to(REPO_ROOT))] = lines
+    return stores
+
+
+def test_nothing_assigns_into_observes_host_module():
+    assert _host_stores_outside_the_module() == {}, (
+        "observe's host is attached, never assigned into — use "
+        f"ai_hats_observe.cli.attach(Host(...)):\n{_host_stores_outside_the_module()}"
+    )
+
+
+def test_host_store_detector_fires_on_a_synthetic_store():
+    """Self-test: the detector must FIRE on each spelling it claims to catch."""
+    for src in (
+        "_host._CONSOLE = c",
+        "_seam._LAYOUT = f",
+        "cli._host._CONSOLE = c",
+        "setattr(_host, '_CONSOLE', c)",
+        "monkeypatch.setattr(_seam, '_LAYOUT', f)",
+        "monkeypatch.setattr('ai_hats_observe.cli._host._CONSOLE', c)",
+    ):
+        assert any(_names_a_store_on(n) for n in ast.walk(ast.parse(src))), src
+    aliased = "from ai_hats_observe.cli import _seam as _observe_seam\n_observe_seam._LAYOUT = f"
+    assert any(
+        _names_a_store_on(n, frozenset({"_observe_seam"})) for n in ast.walk(ast.parse(aliased))
+    )
+    assert not any(_names_a_store_on(n) for n in ast.walk(ast.parse("host().console.print(x)")))
+
+
+# Every ``f(project_dir) -> Path`` the paths leaf used to derive from a directory it
+# had to re-read the environment and the yaml for. ``ProjectLayout`` is the home of
+# each; a caller spelling the function, or the leaf growing it back, is re-deriving
+# a value it should hold.
+PATHS_DERIVATIONS = (
+    "ai_hats_dir",
+    "ensure_ai_hats_dir",
+    "traces_dir",
+    "pipeline_steps_dir",
+    "sessions_dir",
+    "runs_dir",
+    "retros_dir",
+    "audits_dir",
+    "handoffs_dir",
+    "worktrees_dir",
+    "tracker_dir",
+    "backlog_dir",
+    "tasks_dir",
+    "proposals_dir",
+    "hypotheses_dir",
+    "hypotheses_flat_dir",
+    "decisions_dir",
+    "state_md_path",
+    "cache_home",
+    "project_key",
+    "cache_root",
+    "session_cache_root",
+    "session_cache_dir",
+    "worktree_checkouts_dir",
+    "library_dir",
+    "rules_dir",
+    "skills_dir",
+    "hooks_dir",
+    "user_hooks_dir",
+    "user_rules_dir",
+    "last_backup_path",
+    "venv_path",
+    "versions_root",
+    "version_dir",
+    "current_pointer",
+    "complete_sentinel",
+    "is_complete",
+    "is_usable_version",
+    "read_current_sha",
+)
+PATHS = f"{PKG}.paths"
+
+
+def _paths_derivation_sites() -> dict[str, tuple[str, ...]]:
+    """module -> the derivations it imports from ``ai_hats.paths`` and uses.
+
+    Bound to the import, not to the bare name: ``Surface.rules_dir`` and a local
+    ``venv_path`` variable are not derivations, an ``from ..paths import tasks_dir``
+    is. ``paths`` itself is the definition site and is not a caller.
+    """
+    mods = _modules()
+    sites: dict[str, set[str]] = {}
+    for name, path in mods.items():
+        if name == PATHS or name.startswith(PATHS + "."):
+            continue
+        tree = ast.parse(path.read_text(), filename=str(path))
+        is_pkg = path.name == "__init__.py"
+        imported: set[str] = set()
+        module_aliases: set[str] = set()
+        for node in _all_import_nodes(tree):
+            if isinstance(node, ast.ImportFrom):
+                base = _targets(name, is_pkg, node, set(mods) | {PATHS})
+                if any(b == PATHS or b.startswith(PATHS + ".") for b in base):
+                    for a in node.names:
+                        if a.name in PATHS_DERIVATIONS:
+                            imported.add(a.asname or a.name)
+                        elif a.name == "paths" and node.module in (PKG, None):
+                            module_aliases.add(a.asname or a.name)
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name == PATHS:
+                        module_aliases.add(a.asname or a.name.split(".")[-1])
+        hits: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in imported:
+                hits.add(node.id)
+            elif (
+                isinstance(node, ast.Attribute)
+                and node.attr in PATHS_DERIVATIONS
+                and isinstance(node.value, ast.Name)
+                and node.value.id in module_aliases
+            ):
+                hits.add(node.attr)
+        if hits:
+            sites[name.removeprefix(PKG + ".")] = hits
+    return {m: tuple(sorted(h)) for m, h in sorted(sites.items())}
+
+
+# Empty since HATS-1883: the names left the leaf. The pin stays so a module
+# importing a revived one is red, and the test refuses the revival itself.
+EXPECTED_PATHS_DERIVATION_SITES: dict[str, tuple[str, ...]] = {}
+
+
+def test_no_new_module_derives_a_path_from_project_dir():
+    import ai_hats.paths as paths_leaf
+
+    revived = sorted(n for n in PATHS_DERIVATIONS if hasattr(paths_leaf, n))
+    assert not revived, f"a derivation came back to the paths leaf: {revived}"
+    actual = _paths_derivation_sites()
+    expected = EXPECTED_PATHS_DERIVATION_SITES
+    grown = {m: n for m, n in actual.items() if m not in expected or set(n) - set(expected[m])}
+    drained = {
+        m: n for m, n in expected.items() if m not in actual or set(n) - set(actual.get(m, ()))
+    }
+    assert actual == expected, (
+        f"paths-derivation pin drifted.\nNEW derivation sites (deny-by-default): {grown}\n"
+        f"DRAINED (update the pin, keep the ratchet tight): {drained}\n"
+        f"paste-ready pin:\nEXPECTED_PATHS_DERIVATION_SITES = {actual!r}"
     )

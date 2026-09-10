@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 from packaging.requirements import Requirement
 
-pytestmark = [pytest.mark.integration, pytest.mark.install_heavy]
+pytestmark = [pytest.mark.integration, pytest.mark.install_heavy, pytest.mark.install]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

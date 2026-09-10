@@ -10,20 +10,23 @@ for Agy).
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 from pathlib import Path
 
 from ai_hats.linked_context import load_linked_context
-from ai_hats.paths import tasks_dir
 from ai_hats.session_artifacts import assemble_meta_prompt
 from ai_hats_rack.models import TaskCard
 
 
 def _linked(project_dir: Path, ticket_id: str) -> str:
-    return load_linked_context(tasks_root=tasks_dir(project_dir), ticket_id=ticket_id)
+    return load_linked_context(
+        tasks_root=ProjectLayout.at(project_dir).tracker.tasks_dir, ticket_id=ticket_id
+    )
 
 
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
-    card_dir = tasks_dir(project_dir) / card.id
+    card_dir = ProjectLayout.at(project_dir).tracker.tasks_dir / card.id
     # The rack's atomic write needs the card dir to exist (the tracker's went
     # through ai_hats_core.atomic_write_text, which created parents itself).
     card_dir.mkdir(parents=True, exist_ok=True)
@@ -201,7 +204,10 @@ def test_assemble_meta_prompt_wires_linked_context_section(tmp_path: Path) -> No
         ),
     )
     out = assemble_meta_prompt(
-        project_dir, role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id="HATS-902"
+        ProjectLayout.at(project_dir),
+        role_context="# SYSTEM_ROLE\nstub",
+        task="go",
+        ticket_id="HATS-902",
     )
     assert "# TICKET_CONTEXT" in out
     assert "# LINKED_CONTEXT" in out
@@ -214,6 +220,9 @@ def test_assemble_meta_prompt_wires_linked_context_section(tmp_path: Path) -> No
         TaskCard(id="HATS-903", title="lonely", state="execute"),
     )
     out_nolinks = assemble_meta_prompt(
-        project_dir, role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id="HATS-903"
+        ProjectLayout.at(project_dir),
+        role_context="# SYSTEM_ROLE\nstub",
+        task="go",
+        ticket_id="HATS-903",
     )
     assert "# LINKED_CONTEXT" not in out_nolinks

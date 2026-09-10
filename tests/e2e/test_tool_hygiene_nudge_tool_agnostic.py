@@ -20,6 +20,8 @@ import pytest
 
 from _helpers.hook_chain import build_session_settings, run_chain
 
+pytestmark = pytest.mark.guards
+
 
 @pytest.fixture(scope="module")
 def hooked_project(shared_launcher, tmp_path_factory):

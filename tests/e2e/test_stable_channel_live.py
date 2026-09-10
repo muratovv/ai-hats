@@ -23,7 +23,10 @@ from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real index install → capped via conftest
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # HATS-678: real index install → capped via conftest
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):

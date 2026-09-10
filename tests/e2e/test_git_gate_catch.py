@@ -18,6 +18,8 @@ import pytest
 
 from _helpers.git import git as _git
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GATE = (
     REPO_ROOT

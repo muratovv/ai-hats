@@ -11,6 +11,8 @@ why:    without end-to-end hook propagation, skill runtime hooks are dropped dur
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import json
 import shutil
 import stat
@@ -22,6 +24,8 @@ import pytest
 from _helpers.hook_chain import composed_rows
 
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
+
+pytestmark = pytest.mark.guards
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -39,9 +43,11 @@ def _expected_command(project: Path) -> str:
     Derived from the same helpers the impl uses, so this test cannot silently
     drift from it — the drift that caused HATS-645.
     """
-    from ai_hats.paths import claude_plugin_skills_dir, session_cache_dir
+    from ai_hats.paths import claude_plugin_skills_dir
 
-    skills = claude_plugin_skills_dir(session_cache_dir(project, SESSION_ID) / "plugin")
+    skills = claude_plugin_skills_dir(
+        ProjectLayout.at(project).cache.session(SESSION_ID) / "plugin"
+    )
     return str(skills / SKILL / SCRIPT_RELPATH)
 
 
@@ -89,7 +95,6 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     _init_with_fixture_role(launcher, env, project)
 
     from ai_hats.assembler import Assembler
-    from ai_hats.paths import session_cache_dir
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
@@ -97,9 +102,13 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     asm = Assembler(project)
     result = asm.composer.compose("e2e-rthook-role")
     provider.build_session_artifacts(
-        project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        ProjectLayout.at(project),
+        result,
+        SESSION_ID,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
-    cache_settings = session_cache_dir(project, SESSION_ID) / "settings.json"
+    cache_settings = ProjectLayout.at(project).cache.session(SESSION_ID) / "settings.json"
 
     # A. The composed row for the skill, tagged with the matcher it was declared
     # under. Since HATS-1874 the rows live in the manifest and settings.json
@@ -152,7 +161,7 @@ def test_e2e_materialized_runtime_hook_is_live(installed_launcher, tmp_path):
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     ClaudeSurface().build_session_artifacts(
-        project,
+        ProjectLayout.at(project),
         Assembler(project).composer.compose("e2e-rthook-role"),
         SESSION_ID,
         run_mode=RunMode.HITL,

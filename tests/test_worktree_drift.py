@@ -16,13 +16,13 @@ from unittest.mock import patch
 
 import pytest
 
-from ai_hats.paths import worktrees_dir
 from ai_hats_wt import (
     WorktreeBaseBranchMismatchError,
     WorktreeDriftError,
     WorktreeManager,
     WorktreeStateIncompleteError,
 )
+from ai_hats_core.layout import ProjectLayout
 
 
 pytestmark = pytest.mark.integration
@@ -330,14 +330,14 @@ class TestLegacyStateCompat:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/legacy",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         wt_path = mgr.create()
         mgr.save_state()
         _commit_in_worktree(wt_path)
 
         # Rewrite state file the way pre-457 code did — strip the new field.
-        state_dir = worktrees_dir(git_project)
+        state_dir = ProjectLayout.at(git_project).sessions.worktrees
         state_file = state_dir / "task-legacy.json"
         data = json.loads(state_file.read_text())
         data.pop("base_sha_at_create", None)
@@ -345,7 +345,7 @@ class TestLegacyStateCompat:
 
         # Reload via the public API — _base_sha_at_create stays None.
         reloaded = WorktreeManager.load_for_branch(
-            git_project, "task/legacy", state_dir=worktrees_dir(git_project)
+            git_project, "task/legacy", state_dir=ProjectLayout.at(git_project).sessions.worktrees
         )
         assert reloaded is not None
         assert reloaded._base_sha_at_create is None
@@ -770,19 +770,19 @@ class TestStateRoundtrip:
         mgr = WorktreeManager(
             git_project,
             branch_name="task/persist",
-            state_dir=worktrees_dir(git_project),
+            state_dir=ProjectLayout.at(git_project).sessions.worktrees,
         )
         mgr.create()
         mgr.save_state()
 
-        state_file = worktrees_dir(git_project) / "task-persist.json"
+        state_file = ProjectLayout.at(git_project).sessions.worktrees / "task-persist.json"
         data = json.loads(state_file.read_text())
         assert "base_sha_at_create" in data
         assert data["base_sha_at_create"]
         assert len(data["base_sha_at_create"]) == 40  # full SHA
 
         reloaded = WorktreeManager.load_for_branch(
-            git_project, "task/persist", state_dir=worktrees_dir(git_project)
+            git_project, "task/persist", state_dir=ProjectLayout.at(git_project).sessions.worktrees
         )
         assert reloaded is not None
         assert reloaded._base_sha_at_create == data["base_sha_at_create"]

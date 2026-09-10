@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING, Mapping
 
 from .materialization import ApplyMaterializer, Materializer
@@ -95,7 +97,7 @@ def _withheld_from_child() -> dict[str, str]:
 
 def assemble_launch_env(
     provider,
-    project_dir: Path,
+    layout: ProjectLayout,
     session_dir: Path,
     *,
     session_id: str,
@@ -115,10 +117,10 @@ def assemble_launch_env(
     bound check resolves. Inherited ``os.environ`` stays out: the child gets it
     whatever ai-hats does, and listing it would bury what the launch contributes.
     """  # comment-length: allow — the omission it fixes was invisible for a reason
+    project_dir = layout.root
     from ai_hats_observe.session import session_env
 
     from .constants import ENV_ROOT_PID
-    from .paths import session_cache_dir
     from .session_identity import SessionIdentity
 
     # The ONE place a session's identity is produced. Gates running in
@@ -132,10 +134,10 @@ def assemble_launch_env(
         session_dir=session_dir,
         # Resolved where the provider object is in hand, so no consumer takes a
         # second surface lookup that could answer differently.
-        skills_root=str(provider.session_skills_root(project_dir, session_id) or ""),
+        skills_root=str(provider.session_skills_root(layout, session_id) or ""),
         # The consent store's home, published so a stdlib hook never
         # has to re-derive a hashed path.
-        session_cache_dir=str(session_cache_dir(project_dir, session_id)),
+        session_cache_dir=str(layout.cache.session(session_id)),
     )
     # ``claim`` separates a report from a launch: only the launch may take a
     # resource (cline binds a hub port). Same keys either way — a key set that
@@ -144,8 +146,8 @@ def assemble_launch_env(
     return {
         **withheld,
         **session_env(session_id, trace_path),
-        **provider.get_env(session_dir, project_dir),
-        **(provider.claim_launch_env(session_dir, project_dir) if claim else {}),
+        **provider.get_env(session_dir, layout),
+        **(provider.claim_launch_env(session_dir, layout) if claim else {}),
         **extra_env,
         # Last on purpose: the scalars are projections of the envelope, so the
         # identity overrides anything upstream spelled differently.
@@ -168,7 +170,7 @@ class AutomateLaunch:
 
 
 def assemble_meta_prompt(
-    project_dir: Path,
+    layout: ProjectLayout,
     *,
     role_context: str,
     task: str,
@@ -181,11 +183,11 @@ def assemble_meta_prompt(
     sections — and since agy and cline take the whole prompt as one argv token,
     the reported command was not the command.
     """
+    project_dir = layout.root
     from .linked_context import ticket_sections
-    from .paths import tasks_dir
 
     ticket_context, linked_context = ticket_sections(
-        tasks_root=tasks_dir(project_dir), ticket_id=ticket_id
+        tasks_root=layout.tracker.tasks_dir, ticket_id=ticket_id
     )
     sections = []
     if role_context:

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+
+from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -43,12 +45,13 @@ class WtWorktreeEffects:
 
     def __init__(
         self,
-        project_dir: Path,
+        layout: ProjectLayout,
         *,
         git_timeout: float | None = None,
         lifecycle: object | None = None,
     ) -> None:
-        self.project_dir = project_dir
+        self.layout = layout
+        self.project_dir = layout.root
         # HATS-1015 liveness budget: the per-git wall-clock ceiling threaded into
         # every worktree shell-out (default None = unbounded — behaviour unchanged).
         self._git_timeout = git_timeout
@@ -88,12 +91,10 @@ class WtWorktreeEffects:
             assert_head_is_canonical_base,
         )
 
-        from .paths import worktree_checkouts_dir, worktrees_dir
-
         # Probe order: adopt the worktree the caller is in (HATS-060/840) → reuse
         # the task's existing one → guard canonical base →
         # create with the role's carry; racing peer wins by adoption (479).
-        wt_state_dir = worktrees_dir(self.project_dir)
+        wt_state_dir = self.layout.sessions.worktrees
 
         adopt_probe = caller_cwd if caller_cwd is not None else self.project_dir
         if WorktreeManager.is_inside_linked_worktree(adopt_probe):
@@ -118,7 +119,7 @@ class WtWorktreeEffects:
             merge_target=merge_target,
             lifecycle=self._lifecycle,
             state_dir=wt_state_dir,
-            worktree_checkouts_dir=worktree_checkouts_dir(self.project_dir),  # HATS-1632
+            worktree_checkouts_dir=self.layout.cache.worktree_checkouts,
             git_timeout=self._git_timeout,
         )
         wt_hooks = collect_carry_for_project(self.project_dir, role)
@@ -164,8 +165,6 @@ class WtWorktreeEffects:
             WorktreeStateLostError,
         )
 
-        from .paths import worktrees_dir
-
         # Manager rebuilt with the hook bundle + injected state-dir (ADR-0013 D3/D4).
         # State lost: branch already merged → finalize without re-merge,
         # genuinely un-merged → fail-loud (WorktreeStateLostError).
@@ -173,7 +172,7 @@ class WtWorktreeEffects:
             self.project_dir,
             task_id,
             lifecycle=self._lifecycle,
-            state_dir=worktrees_dir(self.project_dir),
+            state_dir=self.layout.sessions.worktrees,
             git_timeout=self._git_timeout,
         )
         if active is None:
@@ -244,13 +243,11 @@ class WtWorktreeEffects:
         """
         from ai_hats_wt import WorktreeManager
 
-        from .paths import worktrees_dir
-
         active = WorktreeManager.load_for_task(
             self.project_dir,
             task_id,
             lifecycle=self._lifecycle,
-            state_dir=worktrees_dir(self.project_dir),
+            state_dir=self.layout.sessions.worktrees,
             git_timeout=self._git_timeout,
         )
         if active is None:

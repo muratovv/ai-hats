@@ -23,11 +23,13 @@ composition dict (role / traits / rules / skills / provenance) — also
 used by tests via :func:`read_metrics`.
 
 The runs-dir path follows the same convention as
-:func:`ai_hats.paths.runs_dir` but is inlined here so the test
+``SessionsLayout.runs`` but is inlined here so the test
 infrastructure doesn't import the production package.
 """
 
 from __future__ import annotations
+
+from ai_hats_core.layout import ProjectLayout
 
 import json
 import time
@@ -39,7 +41,7 @@ from ai_hats_observe.artifacts import METRICS_JSON
 def _runs_dir(project_root: Path) -> Path:
     """Canonical runs dir for a project root (``<ai_hats_dir>/sessions/runs``).
 
-    Mirrors :func:`ai_hats.paths.runs_dir` without importing the package
+    Mirrors ``SessionsLayout.runs`` without importing the package
     so the e2e helpers stay self-contained.
     """
     return project_root / ".agent" / "ai-hats" / "sessions" / "runs"
@@ -231,7 +233,6 @@ def stand_in_session(
     resolve passes the root it actually planted into.
     """  # comment-length: allow — why setting the id alone stopped working
     from ai_hats.env import ENV_HOOK_SOCKET
-    from ai_hats.paths import session_cache_dir
     from ai_hats.session_identity import SessionIdentity
 
     # A stand-in session inherits no OTHER session's resident dispatcher: in
@@ -249,7 +250,7 @@ def stand_in_session(
         # The consent store lives under it (HATS-1735). Through the production
         # function, never spelled here — a hand-built path in a fixture is the
         # copy the published field exists to prevent.
-        session_cache_dir=str(session_cache_dir(project, session_id)),
+        session_cache_dir=str(ProjectLayout.at(project).cache.session(session_id)),
     )
     env.update(identity.to_env())
     _write_role_materialization(session_dir, project, role)
@@ -274,7 +275,7 @@ def stand_in_wrapped_session(
     artifacts = BuiltArtifacts()
     result = Assembler(project).composer.compose(role)
     materialize_consent_wrappers(
-        project,
+        ProjectLayout.at(project),
         result,
         session_id,
         get_surface(provider),

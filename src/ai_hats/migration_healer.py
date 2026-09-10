@@ -35,14 +35,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats_core import scrubbed_git_env
 from .paths import (
     CLAUDE_PROJECT_DIR_VAR,
     CLAUDE_SETTINGS_JSON_REL,
     CLAUDE_SETTINGS_LOCAL_JSON_REL,
     LEGACY_PATH_MAP,
-    ai_hats_dir,
-    audits_dir,
     strip_claude_project_dir,
 )
 
@@ -202,14 +202,15 @@ def _compile_legacy_pattern() -> re.Pattern[str]:
 _LEGACY_RE = _compile_legacy_pattern()
 
 
-def _resolve_new_substr(legacy_substr: str, project_dir: Path) -> str | None:
+def _resolve_new_substr(legacy_substr: str, layout: ProjectLayout) -> str | None:
     """Map a matched legacy substring to its new-layout replacement.
 
     Returns ``None`` if the match doesn't correspond to a known
     ``LEGACY_PATH_MAP`` entry (defensive — should be unreachable given the
     regex is derived from the same map).
     """
-    base = ai_hats_dir(project_dir)
+    project_dir = layout.root
+    base = layout.base
     # Compute project-relative path for new location, since that's what we
     # write into user files (avoids absolute paths in tracked content).
     try:
@@ -248,9 +249,10 @@ def _is_skipped_dir(d: Path, managed_root: Path) -> bool:
         return False
 
 
-def _walk_candidate_files(project_dir: Path):
+def _walk_candidate_files(layout: ProjectLayout):
     """Yield candidate files for scanning, honoring skip rules."""
-    managed_root = ai_hats_dir(project_dir)
+    project_dir = layout.root
+    managed_root = layout.base
     stack: list[Path] = [project_dir]
     while stack:
         d = stack.pop()
@@ -283,8 +285,9 @@ def _is_text_candidate(path: Path) -> bool:
     return False
 
 
-def _is_json_target(path: Path, project_dir: Path) -> bool:
+def _is_json_target(path: Path, layout: ProjectLayout) -> bool:
     """True if `path` is a Stage A1 JSON allowlist target."""
+    project_dir = layout.root
     try:
         rel = path.relative_to(project_dir).as_posix()
     except ValueError:
@@ -341,7 +344,7 @@ def _make_ref(
     )
 
 
-def _scan_text_file(path: Path, project_dir: Path) -> list[LegacyRef]:
+def _scan_text_file(path: Path, layout: ProjectLayout) -> list[LegacyRef]:
     """Line-by-line scan of a text file for legacy substrings."""
     out: list[LegacyRef] = []
     try:
@@ -351,7 +354,7 @@ def _scan_text_file(path: Path, project_dir: Path) -> list[LegacyRef]:
     for lineno, line in enumerate(content.splitlines(), start=1):
         for match in _LEGACY_RE.finditer(line):
             legacy = match.group(0)
-            new = _resolve_new_substr(legacy, project_dir)
+            new = _resolve_new_substr(legacy, layout)
             if new is None:
                 continue
             out.append(
@@ -367,13 +370,13 @@ def _scan_text_file(path: Path, project_dir: Path) -> list[LegacyRef]:
     return out
 
 
-def _scan_json_strings(value, path: Path, project_dir: Path) -> list[LegacyRef]:
+def _scan_json_strings(value, path: Path, layout: ProjectLayout) -> list[LegacyRef]:
     """Recursively walk a parsed JSON value, emitting LegacyRef for matches."""
     out: list[LegacyRef] = []
     if isinstance(value, str):
         for match in _LEGACY_RE.finditer(value):
             legacy = match.group(0)
-            new = _resolve_new_substr(legacy, project_dir)
+            new = _resolve_new_substr(legacy, layout)
             if new is None:
                 continue
             out.append(
@@ -388,23 +391,23 @@ def _scan_json_strings(value, path: Path, project_dir: Path) -> list[LegacyRef]:
             )
     elif isinstance(value, dict):
         for v in value.values():
-            out.extend(_scan_json_strings(v, path, project_dir))
+            out.extend(_scan_json_strings(v, path, layout))
     elif isinstance(value, list):
         for v in value:
-            out.extend(_scan_json_strings(v, path, project_dir))
+            out.extend(_scan_json_strings(v, path, layout))
     return out
 
 
-def _scan_json_file(path: Path, project_dir: Path) -> list[LegacyRef]:
+def _scan_json_file(path: Path, layout: ProjectLayout) -> list[LegacyRef]:
     """Parse JSON, walk strings recursively for legacy substrings."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return []
-    return _scan_json_strings(data, path, project_dir)
+    return _scan_json_strings(data, path, layout)
 
 
-def scan_external_refs(project_dir: Path) -> list[LegacyRef]:
+def scan_external_refs(layout: ProjectLayout) -> list[LegacyRef]:
     """Walk `project_dir` and collect every legacy-path ref in user files.
 
     Excludes managed ai-hats namespace, VCS noise, and backup dirs. JSON
@@ -412,25 +415,25 @@ def scan_external_refs(project_dir: Path) -> list[LegacyRef]:
     else with a known text extension is scanned line-by-line.
     """
     refs: list[LegacyRef] = []
-    for path in _walk_candidate_files(project_dir):
-        if _is_json_target(path, project_dir):
-            refs.extend(_scan_json_file(path, project_dir))
+    for path in _walk_candidate_files(layout):
+        if _is_json_target(path, layout):
+            refs.extend(_scan_json_file(path, layout))
         elif _is_text_candidate(path):
-            refs.extend(_scan_text_file(path, project_dir))
+            refs.extend(_scan_text_file(path, layout))
     return refs
 
 
 # ---------- Healing — Stage A1 (JSON) ----------
 
 
-def _replace_legacy_in_value(value, project_dir: Path) -> tuple[object, int]:
+def _replace_legacy_in_value(value, layout: ProjectLayout) -> tuple[object, int]:
     """Recursively replace legacy substrings inside a parsed JSON value.
 
     Returns ``(new_value, replacement_count)``.
     """
     if isinstance(value, str):
         new_s, count = _LEGACY_RE.subn(
-            lambda m: _resolve_new_substr(m.group(0), project_dir) or m.group(0),
+            lambda m: _resolve_new_substr(m.group(0), layout) or m.group(0),
             value,
         )
         return new_s, count
@@ -438,7 +441,7 @@ def _replace_legacy_in_value(value, project_dir: Path) -> tuple[object, int]:
         new_d: dict = {}
         total = 0
         for k, v in value.items():
-            new_v, c = _replace_legacy_in_value(v, project_dir)
+            new_v, c = _replace_legacy_in_value(v, layout)
             new_d[k] = new_v
             total += c
         return new_d, total
@@ -446,14 +449,14 @@ def _replace_legacy_in_value(value, project_dir: Path) -> tuple[object, int]:
         new_list: list = []
         total = 0
         for v in value:
-            new_v, c = _replace_legacy_in_value(v, project_dir)
+            new_v, c = _replace_legacy_in_value(v, layout)
             new_list.append(new_v)
             total += c
         return new_list, total
     return value, 0
 
 
-def heal_json_file(path: Path, project_dir: Path) -> int:
+def heal_json_file(path: Path, layout: ProjectLayout) -> int:
     """Rewrite legacy substrings in a JSON file. Returns count of replacements.
 
     Preserves the original file's trailing newline. Idempotent: a re-run on
@@ -463,6 +466,7 @@ def heal_json_file(path: Path, project_dir: Path) -> int:
     :func:`safe_delete.replace` before the rewrite, so users can recover
     from a faulty heal pass.
     """
+    project_dir = layout.root
     from ai_hats_core.safe_delete import replace as _safe_replace
 
     try:
@@ -470,7 +474,7 @@ def heal_json_file(path: Path, project_dir: Path) -> int:
         data = json.loads(raw)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return 0
-    new_data, count = _replace_legacy_in_value(data, project_dir)
+    new_data, count = _replace_legacy_in_value(data, layout)
     if count == 0:
         return 0
     new_text = json.dumps(new_data, indent=2, ensure_ascii=False)
@@ -488,13 +492,14 @@ def heal_json_file(path: Path, project_dir: Path) -> int:
 # ---------- Healing — Stage A2 (text) ----------
 
 
-def is_file_git_clean(file: Path, project_dir: Path) -> bool:
+def is_file_git_clean(file: Path, layout: ProjectLayout) -> bool:
     """True if `file` has no uncommitted changes in git.
 
     Returns True if the file is untracked-but-not-modified, tracked-clean, or
     if git is unavailable / project isn't a git repo (no safety net, but no
     failure either). Returns False only when git reports modifications.
     """
+    project_dir = layout.root
     try:
         result = subprocess.run(
             ["git", "diff", "--quiet", "--", str(file)],
@@ -513,7 +518,7 @@ def is_file_git_clean(file: Path, project_dir: Path) -> bool:
     return True
 
 
-def heal_text_file(path: Path, project_dir: Path) -> int:
+def heal_text_file(path: Path, layout: ProjectLayout) -> int:
     """Rewrite legacy substrings in a text file. Returns replacement count.
 
     Caller is responsible for invoking ``is_file_git_clean`` first; this
@@ -524,6 +529,7 @@ def heal_text_file(path: Path, project_dir: Path) -> int:
     branch where ``is_file_git_clean`` returns True permissively and
     a faulty regex could otherwise irreversibly mangle user content.
     """
+    project_dir = layout.root
     from ai_hats_core.safe_delete import replace as _safe_replace
 
     try:
@@ -531,7 +537,7 @@ def heal_text_file(path: Path, project_dir: Path) -> int:
     except (OSError, UnicodeDecodeError):
         return 0
     new_content, count = _LEGACY_RE.subn(
-        lambda m: _resolve_new_substr(m.group(0), project_dir) or m.group(0),
+        lambda m: _resolve_new_substr(m.group(0), layout) or m.group(0),
         content,
     )
     if count == 0:
@@ -600,7 +606,7 @@ def _render_reenable_snippet(ref: LegacyRef) -> list[str]:
     ]
 
 
-def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
+def write_inventory(layout: ProjectLayout, refs: list[LegacyRef]) -> Path | None:
     """Write an audit-log of un-healed refs. Returns the path, or None if empty.
 
     Output lands under ``<ai_hats_dir>/sessions/audits/<utc_ts>-legacy-refs.md``.
@@ -608,9 +614,10 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
     diagnosis (HATS-549 Phase 2) carries the data-loss callout so users
     notice it before the broken hook fires.
     """
+    project_dir = layout.root
     if not refs:
         return None
-    out_dir = audits_dir(project_dir)
+    out_dir = layout.sessions.audits
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = out_dir / f"{ts}-legacy-refs.md"
@@ -663,7 +670,7 @@ _CLAUDE_PROJECT_DIR_VAR = CLAUDE_PROJECT_DIR_VAR
 _strip_project_dir_var = strip_claude_project_dir
 
 
-def is_ref_safe_to_heal(ref: LegacyRef, project_dir: Path) -> tuple[bool, str]:
+def is_ref_safe_to_heal(ref: LegacyRef, layout: ProjectLayout) -> tuple[bool, str]:
     """Decide whether ``ref`` should be auto-healed.
 
     HATS-549 Phase 2: refuse to rewrite a legacy → new substitution when
@@ -685,6 +692,7 @@ def is_ref_safe_to_heal(ref: LegacyRef, project_dir: Path) -> tuple[bool, str]:
     pre-Phase-2 behaviour for any constructor that doesn't populate
     the new fields.
     """
+    project_dir = layout.root
     if not ref.full_legacy_path or not ref.full_new_path:
         return True, "auto-heal"
     legacy_rel = _strip_project_dir_var(ref.full_legacy_path)
@@ -752,7 +760,7 @@ def _split_user_hook_command(command: str) -> str | None:
 
 def _disable_user_hooks_in_settings(
     settings_path: Path,
-    project_dir: Path,
+    layout: ProjectLayout,
     owned_basenames: frozenset[str],
 ) -> list[LegacyRef]:
     """Phase 4 pre-pass for ``.claude/settings.json{,.local}``.
@@ -775,6 +783,7 @@ def _disable_user_hooks_in_settings(
     silently skipped — not Phase 4's responsibility to surface JSON
     syntax errors.
     """
+    project_dir = layout.root
     from ai_hats_core.safe_delete import replace as _safe_replace
 
     try:
@@ -866,13 +875,14 @@ def _disable_user_hooks_in_settings(
     return removed
 
 
-def _owned_hook_basenames(project_dir: Path | None = None) -> frozenset[str]:
+def _owned_hook_basenames(layout: ProjectLayout | None = None) -> frozenset[str]:
     """Resolve the ai-hats-owned hook whitelist via a lazy import.
 
     Lazy to keep ``migration_healer`` free of a module-load cycle
     with :mod:`ai_hats.assembler` (which already lazy-imports
     ``migration_healer`` via the registry runner).
     """
+    project_dir = layout.root
     try:
         from .assembler import _ai_hats_owned_hook_basenames
 
@@ -884,7 +894,7 @@ def _owned_hook_basenames(project_dir: Path | None = None) -> frozenset[str]:
 # ---------- Orchestration ----------
 
 
-def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport:
+def heal_external_refs(layout: ProjectLayout, *, verbose: bool = True) -> HealReport:
     """Run a full heal pass: scan → A1 (JSON) → A2 (text) → B (inventory).
 
     Args:
@@ -895,6 +905,7 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
     Returns:
         ``HealReport`` summarizing healed and inventoried refs.
     """
+    project_dir = layout.root
     report = HealReport()
 
     # HATS-549 Phase 4 pre-pass: structurally walk settings.json and
@@ -904,18 +915,18 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
     # by the regex-substitution heal that follows — the explicit
     # disable is the load-bearing behaviour per the HATS-549 user
     # contract ("user must re-enable manually").
-    owned = _owned_hook_basenames(project_dir)
+    owned = _owned_hook_basenames(layout)
     for json_rel in JSON_TARGETS:
         path = project_dir / json_rel
         if not path.is_file():
             continue
-        disabled = _disable_user_hooks_in_settings(path, project_dir, owned)
+        disabled = _disable_user_hooks_in_settings(path, layout, owned)
         if disabled:
             report.inventoried.extend(disabled)
             if verbose:
-                _print_disabled(disabled, project_dir)
+                _print_disabled(disabled, layout)
 
-    refs = scan_external_refs(project_dir)
+    refs = scan_external_refs(layout)
     if not refs and not report.inventoried:
         return report
 
@@ -932,7 +943,7 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         # refs, but the regex-substitution path can't address them
         # one-at-a-time. Inventory all refs with the failing ones tagged
         # ``dst-missing`` so the user sees exactly which side is gone.
-        unsafe_refs = [r for r in file_refs if not is_ref_safe_to_heal(r, project_dir)[0]]
+        unsafe_refs = [r for r in file_refs if not is_ref_safe_to_heal(r, layout)[0]]
         if unsafe_refs:
             for r in file_refs:
                 if r in unsafe_refs:
@@ -941,41 +952,42 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
                     report.inventoried.append(r)
             continue
 
-        if _is_json_target(file_path, project_dir):
+        if _is_json_target(file_path, layout):
             # Stage A1 — always-on
-            count = heal_json_file(file_path, project_dir)
+            count = heal_json_file(file_path, layout)
             if count > 0:
                 report.healed_json.extend(file_refs)
                 if verbose:
-                    _print_healed(file_path, file_refs, project_dir)
+                    _print_healed(file_path, file_refs, layout)
             continue
 
         if _is_text_candidate(file_path):
             # Stage A2 — gated by git-clean
-            if not is_file_git_clean(file_path, project_dir):
+            if not is_file_git_clean(file_path, layout):
                 report.inventoried.extend(_retag(r, "git-dirty") for r in file_refs)
                 continue
-            count = heal_text_file(file_path, project_dir)
+            count = heal_text_file(file_path, layout)
             if count > 0:
                 report.healed_text.extend(file_refs)
                 if verbose:
-                    _print_healed(file_path, file_refs, project_dir)
+                    _print_healed(file_path, file_refs, layout)
             continue
 
         # Defensive — shouldn't happen given the scanner allowlist
         report.inventoried.extend(_retag(r, "unsupported-ext") for r in file_refs)
 
     if report.inventoried:
-        report.inventory_path = write_inventory(project_dir, report.inventoried)
+        report.inventory_path = write_inventory(layout, report.inventoried)
 
     if verbose:
-        _print_summary(report, project_dir)
+        _print_summary(report, layout)
 
     return report
 
 
-def _print_disabled(refs: list[LegacyRef], project_dir: Path) -> None:
+def _print_disabled(refs: list[LegacyRef], layout: ProjectLayout) -> None:
     """Emit per-entry 'Disabled:' lines to stderr for Phase 4 pre-pass."""
+    project_dir = layout.root
     for ref in refs:
         try:
             rel = ref.file.relative_to(project_dir).as_posix()
@@ -989,8 +1001,9 @@ def _print_disabled(refs: list[LegacyRef], project_dir: Path) -> None:
         )
 
 
-def _print_healed(file_path: Path, refs: list[LegacyRef], project_dir: Path) -> None:
+def _print_healed(file_path: Path, refs: list[LegacyRef], layout: ProjectLayout) -> None:
     """Emit per-file 'Healed:' lines to stderr."""
+    project_dir = layout.root
     try:
         rel = file_path.relative_to(project_dir).as_posix()
     except ValueError:
@@ -1003,8 +1016,9 @@ def _print_healed(file_path: Path, refs: list[LegacyRef], project_dir: Path) -> 
         )
 
 
-def _print_summary(report: HealReport, project_dir: Path) -> None:
+def _print_summary(report: HealReport, layout: ProjectLayout) -> None:
     """Emit final summary line to stderr."""
+    project_dir = layout.root
     healed_count = len(report.healed_json) + len(report.healed_text)
     if healed_count:
         print(

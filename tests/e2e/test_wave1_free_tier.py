@@ -20,7 +20,7 @@ import pytest
 # Without this, the pre-push gate's `-m "(integration or smoke) and not
 # quarantine"` selection deselects the file — it survived only by accident in
 # CI Job 1's `not integration` pool.
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
 def test_list_providers_includes_claude(tmp_project) -> None:

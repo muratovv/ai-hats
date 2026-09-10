@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_VENV, PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install, pytest.mark.wt]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LAUNCHER = REPO_ROOT / "scripts" / "ai-hats-launcher"

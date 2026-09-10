@@ -13,6 +13,8 @@ Coverage:
 
 from __future__ import annotations
 
+from ai_hats_core.layout import ProjectLayout
+
 import os
 import time
 from pathlib import Path
@@ -22,7 +24,6 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import session_cache_dir, session_cache_root
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
@@ -79,10 +80,10 @@ def test_build_session_prompt_byte_stable_across_two_calls(project_with_library)
     provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
-    args1, _, _ = provider.build_session_prompt(project, result, "stable-sid")
+    args1, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "stable-sid")
     bytes1 = Path(args1[1]).read_bytes()
 
-    args2, _, _ = provider.build_session_prompt(project, result, "stable-sid")
+    args2, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "stable-sid")
     bytes2 = Path(args2[1]).read_bytes()
 
     assert bytes1 == bytes2, "prompt.md must be byte-stable across two calls"
@@ -97,8 +98,8 @@ def test_build_session_prompt_byte_stable_distinct_session_ids(project_with_libr
     provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
-    args_a, _, _ = provider.build_session_prompt(project, result, "sid-a")
-    args_b, _, _ = provider.build_session_prompt(project, result, "sid-b")
+    args_a, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-a")
+    args_b, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-b")
 
     path_a = Path(args_a[1])
     path_b = Path(args_b[1])
@@ -168,12 +169,12 @@ def test_build_session_prompt_writes_under_cache_dir(project_with_library):
     provider = ClaudeSurface()
     result = asm.composer.compose("test-role")
 
-    args, _, _ = provider.build_session_prompt(project, result, "my-sid")
+    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "my-sid")
     prompt_path = Path(args[1])
     plugin_idx = args.index("--plugin-dir")
     plugin_path = Path(args[plugin_idx + 1])
 
-    cache_dir = session_cache_dir(project, "my-sid")
+    cache_dir = ProjectLayout.at(project).cache.session("my-sid")
     assert prompt_path == cache_dir / "prompt.md"
     assert plugin_path == cache_dir / "plugin"
     assert prompt_path.is_file()
@@ -185,7 +186,7 @@ def test_sweep_removes_orphans_older_than_ttl(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     ProjectConfig().save(project / PROJECT_CONFIG)
-    root = session_cache_root(project)
+    root = ProjectLayout.at(project).cache.sessions
     root.mkdir(parents=True)
 
     fresh = root / "fresh-sid"
@@ -204,7 +205,7 @@ def test_sweep_removes_orphans_older_than_ttl(tmp_path):
     past = time.time() - 25 * 3600
     os.utime(stale, (past, past))
 
-    _sweep_orphan_session_caches(project, ttl_hours=24)
+    _sweep_orphan_session_caches(ProjectLayout.at(project), ttl_hours=24)
 
     assert fresh.is_dir(), "fresh session dir must survive sweep"
     assert not stale.exists(), "stale session dir must be removed"
@@ -217,7 +218,7 @@ def test_sweep_is_idempotent_on_empty_cache_root(tmp_path):
     project.mkdir()
     ProjectConfig().save(project / PROJECT_CONFIG)
     # No <cache_root>/sessions/ exists.
-    _sweep_orphan_session_caches(project)  # must not raise
+    _sweep_orphan_session_caches(ProjectLayout.at(project))  # must not raise
 
 
 def test_cleanup_session_cache_removes_specific_sid(tmp_path):
@@ -225,7 +226,7 @@ def test_cleanup_session_cache_removes_specific_sid(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     ProjectConfig().save(project / PROJECT_CONFIG)
-    root = session_cache_root(project)
+    root = ProjectLayout.at(project).cache.sessions
     root.mkdir(parents=True)
 
     keep = root / "keep-sid"
@@ -236,7 +237,7 @@ def test_cleanup_session_cache_removes_specific_sid(tmp_path):
     drop.mkdir()
     (drop / "prompt.md").write_text("drop")
 
-    _cleanup_session_cache(project, "drop-sid")
+    _cleanup_session_cache(ProjectLayout.at(project).cache.session("drop-sid"))
 
     assert keep.is_dir()
     assert not drop.exists()
@@ -248,7 +249,7 @@ def test_cleanup_session_cache_is_idempotent(tmp_path):
     project.mkdir()
     ProjectConfig().save(project / PROJECT_CONFIG)
     # No cache root, no sid dir. Must not raise.
-    _cleanup_session_cache(project, "does-not-exist")
+    _cleanup_session_cache(ProjectLayout.at(project).cache.session("does-not-exist"))
 
 
 # --------------------------------------------------------------------- #
@@ -269,13 +270,13 @@ def test_build_session_prompt_recovers_from_stale_cache_dir(project_with_library
     result = asm.composer.compose("test-role")
 
     # Plant a stale file in the would-be cache dir.
-    cache_dir = session_cache_dir(project, "stale-sid")
+    cache_dir = ProjectLayout.at(project).cache.session("stale-sid")
     cache_dir.mkdir(parents=True)
     plugin_dir = cache_dir / "plugin"
     plugin_dir.mkdir()
     (plugin_dir / "leftover.txt").write_text("stale")
 
-    args, _, _ = provider.build_session_prompt(project, result, "stale-sid")
+    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "stale-sid")
     plugin_idx = args.index("--plugin-dir")
     plugin_path = Path(args[plugin_idx + 1])
 
@@ -375,12 +376,14 @@ def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
 
     # ClaudeSurface
     claude_p = ClaudeSurface()
-    _, claude_env, _ = claude_p.build_session_prompt(project, result, "sid-claude")
+    _, claude_env, _ = claude_p.build_session_prompt(
+        ProjectLayout.at(project), result, "sid-claude"
+    )
     assert "PATH" in claude_env
     assert str(skill_dir / "scripts") in claude_env["PATH"]
 
     # AgySurface
     agy_p = AgySurface()
-    _, agy_env, _ = agy_p.build_session_prompt(project, result, "sid-agy")
+    _, agy_env, _ = agy_p.build_session_prompt(ProjectLayout.at(project), result, "sid-agy")
     assert "PATH" in agy_env
     assert str(skill_dir / "scripts") in agy_env["PATH"]

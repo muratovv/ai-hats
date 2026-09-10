@@ -15,7 +15,6 @@ import pytest
 
 from ai_hats import wrap_runner
 from ai_hats.constants import PINNED_PYTHON
-from ai_hats.paths import runs_dir
 from ai_hats.wrap_runner import WrapRunner, interpreter_pin_notices
 from ai_hats_core.layout import ProjectLayout
 
@@ -29,7 +28,9 @@ def _runner(project):
     from ai_hats_core import CompositionResult
     from ai_hats_observe import SessionManager, SidecarTracer
 
-    hooks = HooksManager(project, ProjectConfig(), resolve_provider=lambda name: None)
+    hooks = HooksManager(
+        ProjectLayout.at(project), ProjectConfig(), resolve_provider=lambda name: None
+    )
     payload = CompositionPayload(
         result=CompositionResult(name="t", priorities=[], rules=[], skills=[], injections=[]),
         provider=None,
@@ -39,7 +40,7 @@ def _runner(project):
     return WrapRunner(
         ProjectLayout.at(project),
         payload,
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
         tracer_factory=SidecarTracer,
     )
 
