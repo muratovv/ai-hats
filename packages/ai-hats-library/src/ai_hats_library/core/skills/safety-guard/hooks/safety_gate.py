@@ -323,9 +323,13 @@ def _acked() -> bool:
 
 
 def _ack_hint(reason: str) -> str:
+    # The prefix form this used to advertise is dead on arrival: _acked() reads the
+    # hook's OWN environment, and the hook runs before the command is a process. It
+    # was measured denying the very line it told the agent to write.
     return (
-        f"{reason} If the supervisor approved this, re-run the single command as: "
-        f"{DESTRUCTIVE_ACK}=1 <command>"
+        f"{reason} If the supervisor approved this, they set {DESTRUCTIVE_ACK}=1 in the "
+        "environment that LAUNCHES the agent — a prefix on this command cannot reach "
+        "the guard, and is refused on its own."
     )
 
 

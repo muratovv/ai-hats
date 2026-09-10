@@ -246,6 +246,18 @@ def test_the_ack_opens_protected_data_but_never_the_root():
     assert "No consent flag overrides this" in _denied("rm -rf /", env_extra=ack)
 
 
+def test_the_refusal_does_not_advertise_the_prefix_it_would_refuse():
+    """HATS-1944 — the DEAD_ESCAPE shape, here rather than on the shared-state guard.
+
+    The hint used to read `AI_HATS_DESTRUCTIVE_ACK=1 <command>`; the ack is read from
+    the hook's OWN environment, so that line was measured being denied verbatim."""
+    reason = _denied("rm -rf volumes/")
+    assert "AI_HATS_DESTRUCTIVE_ACK" in reason, "the deny must still name its hatch"
+    assert "=1 <command>" not in reason, f"advertises a prefix that cannot work: {reason}"
+    assert "LAUNCHES" in reason, f"does not name the road that works: {reason}"
+    assert _denied("AI_HATS_DESTRUCTIVE_ACK=1 rm -rf volumes/"), "the prefix must not pass"
+
+
 def test_the_yolo_switch_disables_the_gate():
     """Documented kill switch — pinned so it cannot be removed silently."""
     assert _decide("rm -rf /", env_extra={"AI_HATS_YOLO": "1"}) == {}

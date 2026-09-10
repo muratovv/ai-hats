@@ -148,7 +148,14 @@ suite stubbed the very contracts the change broke.
    In order of importance: the verdict, what to do, what the red stage said
    (a failing test per line, a finding per line, or `master-ci`'s run URL),
    one line per green stage, the cached ones, the subject, and the dir holding
-   every stage's full output. Triage the red stage:
+   every stage's full output.
+
+   **`fix <stage>` assumes the failure is yours, and the gate cannot tell.** When
+   the red is in something this change did not touch, attribute before you fix or
+   ask for anything: skill **red-attribution**. Cheapest first — a stale base is a
+   more common cause than a broken master.
+
+   Triage the red stage:
 
    - a red pytest stage hands you the narrow command already — paste the
      `re-run just these` line. Do not rebuild it: the interpreter in it is the
@@ -239,3 +246,9 @@ There is no `AI_HATS_E2E_SKIP` and no `--ack`. `git push --no-verify` and forgin
 a marker are deliberate local acts by the trusted maintainer, never an accidental
 skip. The one knob is `AI_HATS_RED_MASTER_ACK=1`: it lets `master-ci` pass on a
 red master, for the card that fixes it, and says so in the run.
+
+That knob is the supervisor's, and it reaches the check only from the environment
+that LAUNCHED the agent. Writing it on your own command line is refused
+(`safety-guard`) — an approval you grant yourself is not one. If the red is not
+yours, the move is a classification, not a request for the flag:
+skill **red-attribution**.

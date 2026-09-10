@@ -103,6 +103,7 @@ def test_an_unparsable_payload_fails_open_across_the_whole_chain(hooked_project)
 #: below is what keeps the naming honest. (py_security_lint and
 #: comment_length_lint carry the same change on PostToolUse, a different event.)
 GUARDED = (
+    ("Bash", "ack_prefix_guard.py"),
     ("Bash", "safety_gate.py"),
     ("Bash", "wt_interpreter_gate.py"),
     ("Bash", "wt_git_gate.py"),
