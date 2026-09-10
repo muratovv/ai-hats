@@ -75,7 +75,7 @@ hook-подложкой и контрактом кодов возврата. **A
 | `silent-fallback`  | review-gate done-gate merge-gate                                                         | no broad except swallows a failure without reporting it                                                                 |
 | `test-isolation`   | review-gate done-gate merge-gate                                                         | the suite patches its own units no more than the recorded baseline                                                      |
 | `prose-refs`       | review-gate done-gate merge-gate push-gate                                               | paths, library prefixes, sections and symbols named in library prose resolve                                            |
-| `ticket-ids`       | review-gate done-gate merge-gate push-gate                                               | no tracker id in shipped library prose                                                                                  |
+| `ticket-ids`       | review-gate done-gate merge-gate push-gate                                               | no tracker id in library prose or in a doc a reader opens                                                               |
 | `consumer-refs`    | review-gate done-gate merge-gate                                                         | no library component names a component that composes it                                                                 |
 | `env-reference`    | review-gate done-gate merge-gate push-gate                                               | docs/reference-env.md matches the env declarations the code reads                                                       |
 | `gate-table`       | review-gate done-gate merge-gate push-gate                                               | ADR-0023's stage and gate tables match this file and the gates                                                          |
@@ -662,7 +662,7 @@ e2e**: тир стоял на `push-gate`, то есть после того, к
 | ------------- | ----------------------------------------------------------------- |
 | **HATS-1879** | стоимость одноразовой scratch-воркtree на прогон (D4)             |
 | **HATS-1605** | что осталось после D11: состав «набора в граните» (`merge-smoke`) |
-| **HATS-1940** | зоны интеграционного тира: 453 теста вне `tests/e2e` не размечены  |
+| **HATS-1940** | зоны интеграционного тира: 453 теста вне `tests/e2e` не размечены |
 | **HATS-1923** | e2e-тир красный на master, и `push-gate` стоит на нём             |
 | **HATS-1609** | содержание дороги тегирования релиза                              |
 | **HATS-927**  | branch protection и required CI status checks                     |

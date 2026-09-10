@@ -69,7 +69,7 @@ experiments/_lib/clean.sh experiments/smoke
 
 `experiments/smoke/` is the trivial experiment used to verify the infra itself —
 copy it as a starting point. The first real consumer is
-`experiments/hatrack-advance-to-review/` (HATS-1053/HATS-1051).
+`experiments/hatrack-advance-to-review/`.
 
 ## What gets collected per run
 
@@ -111,7 +111,7 @@ so every experiment ships its cost stats.
 - **Claude-only (v1).** `prepare` pins `provider: claude`, the permission
   allowlist is `.claude/settings.json`, and transcript collection follows
   Claude's session layout. Provider parameterization (gemini, cline) is
-  HATS-1056.
+  not built yet.
 - **Privacy.** `runs/` carries raw session recordings (JSONL, transcripts) —
   personal data. It is gitignored; never commit it. Commit only the report.
 - **Ambient env is scrubbed.** `prepare`/`run` strip `AI_HATS_*` session pins and

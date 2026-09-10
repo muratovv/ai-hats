@@ -3,7 +3,7 @@
 Pre-launch lines `WrapRunner` renders BEFORE the wrapped TUI spawns. The wrapped
 CLI tears the terminal into the alternate screen buffer the instant it starts,
 clobbering anything printed before it — so any message that must reach the human
-is rendered pre-spawn and held on screen by the **read-hold** (HATS-825/833/847).
+is rendered pre-spawn and held on screen by the **read-hold**.
 
 ## Notice model
 
@@ -21,12 +21,12 @@ nothing.
 
 `_startup_hold_seconds` (`src/ai_hats/startup_notices.py`): 10 s when notices
 exist on a TTY, `0` otherwise (headless runs are never delayed). The countdown
-is Enter-skippable (HATS-847) and Ctrl-C aborts the launch. `AI_HATS_STARTUP_HOLD`
+is Enter-skippable and Ctrl-C aborts the launch. `AI_HATS_STARTUP_HOLD`
 overrides the delay for every case (`0` disables).
 
 **The hold is the wait, not the render.** A zero delay skips the wait and shows
 the notices anyway, so a headless, CI or `AI_HATS_NON_INTERACTIVE` launch still
-says what it found. Until HATS-1753 it did not: the zero-delay branch returned
+says what it found. Until 2026-08-21 it did not: the zero-delay branch returned
 before printing, and those runs recorded every notice in `diagnostics.json`
 while showing none of them.
 
@@ -35,19 +35,19 @@ while showing none of them.
 All run in `WrapRunner.run()` between session creation and the PTY spawn,
 each fail-open — a broken check must never block session start:
 
-| Producer                         | Emits                                                                                     |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| `_resync_managed_hooks`          | NOTE per healed hook surface; WARN on failure / version-skew (HATS-833)                   |
-| `_check_skill_collisions`        | NOTE on mirror heal; WARN on a home-scope skill collision (HATS-901/907)                  |
-| `_check_skill_script_collisions` | WARN per skill-script filename collision (HATS-1114)                                      |
-| `_payload_startup_notices`       | WARN per hooks warning carried from the first-run compose seam (HATS-970)                 |
-| `_payload_startup_notices`       | one notice per composition `Diagnostic`, at the level its producer set (HATS-1753, below) |
-| finalize-hitl preload            | WARN when the finalize pipeline fails to eager-load (HATS-566)                            |
-| `_lint_provider_settings`        | WARN per provider-reported settings pitfall (HATS-1006, below)                            |
-| `_lint_env_drift`                | WARN when the editable dev env is stale — needs `uv sync` (HATS-1013, below)              |
-| `_check_broken_hook_refs`        | WARN per settings hook ref pointing at a missing file (HATS-1509, below)                  |
+| Producer                         | Emits                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| `_resync_managed_hooks`          | NOTE per healed hook surface; WARN on failure / version-skew                   |
+| `_check_skill_collisions`        | NOTE on mirror heal; WARN on a home-scope skill collision                      |
+| `_check_skill_script_collisions` | WARN per skill-script filename collision                                       |
+| `_payload_startup_notices`       | WARN per hooks warning carried from the first-run compose seam                 |
+| `_payload_startup_notices`       | one notice per composition `Diagnostic`, at the level its producer set (below) |
+| finalize-hitl preload            | WARN when the finalize pipeline fails to eager-load                            |
+| `_lint_provider_settings`        | WARN per provider-reported settings pitfall (below)                            |
+| `_lint_env_drift`                | WARN when the editable dev env is stale — needs `uv sync` (below)              |
+| `_check_broken_hook_refs`        | WARN per settings hook ref pointing at a missing file (below)                  |
 
-## Provider settings lint (HATS-1006)
+## Provider settings lint
 
 The provider CLI may detect problems in its own settings files but print them
 post-spawn, where the alt-screen eats them — the motivating incident: Claude
@@ -80,13 +80,13 @@ auto-heal). Per-file fail-open: a missing or malformed settings file
 contributes nothing — a broken settings file is the provider CLI's own loud
 failure.
 
-## Editable env-drift lint (HATS-1013)
+## Editable env-drift lint
 
 uv editable installs freeze dist-info metadata at sync time: after any
 workspace version bump, `importlib.metadata` — and everything on top of it
-(`--version`, `pip check`, the HATS-992 requires-verifier) — keeps reporting
-the last-synced version until `uv sync` runs. The motivating incident
-(HATS-991 F5): `ai-hats-tracker --version` said 0.5.0 in a venv whose source
+(`--version`, `pip check`, the requires-verifier) — keeps reporting
+the last-synced version until `uv sync` runs. The motivating incident:
+`ai-hats-tracker --version` said 0.5.0 in a venv whose source
 was already 0.6.0.
 
 `stale_dev_env_warnings` (`src/ai_hats/env_drift.py`) wraps
@@ -111,9 +111,9 @@ check. Warn-only (bare `uv sync` in exact mode would remove dev-extra
 packages, so the hint pins `--inexact`); fail-open on uv missing, timeout, or
 any exit code other than 0/1.
 
-## Broken hook refs (HATS-1509)
+## Broken hook refs
 
-A settings entry can outlive the script it names — the pre-HATS-1170 residue
+A settings entry can outlive the script it names — the pre-2026-07-24 residue
 `ai-hats:hats-437` points at `library/hooks/pre_bash_shared_state_guard.sh`, <!-- prose-refs: was -->
 which materialization deletes once the guard moves into the `safety-guard`
 skill and gets a skill-prefixed filename. The harness then prints
@@ -123,7 +123,7 @@ entry is ai-hats's to reclaim.
 `find_broken_hook_refs` (`src/ai_hats/migration_assert.py`) stats every
 path-like hook command. `WrapRunner._check_broken_hook_refs` runs it over
 `SESSION_SCAN_TARGETS` — `.claude/settings.json`, `.claude/settings.local.json`
-and agy's pre-HATS-1166 `.gemini/settings.json` remnant, whose entries carry
+and agy's pre-2026-07-24 `.gemini/settings.json` remnant, whose entries carry
 `command` on the matcher itself rather than under a nested `hooks` list.
 
 The remedy follows ownership, which is why `BrokenHookRef.managed` exists: an
@@ -139,12 +139,12 @@ own and only they can fix it.
     run 'ai-hats self update' to reclaim it.
 ```
 
-Reports only, never deletes: the sweep stays install-time (HATS-905). The same
+Reports only, never deletes: the sweep stays install-time. The same
 scan is a hard refusal at the end of every install-time path
 (`assert_runtime_hooks_resolve`) — but over the Claude pair only, so agy
 residue warns without ever failing a bump.
 
-## Composition diagnostics (HATS-1753)
+## Composition diagnostics
 
 Composition itself finds problems — a consent point disarmed by a later writer, a
 `composition.apps` block no integration collects, a gate declared twice, a row

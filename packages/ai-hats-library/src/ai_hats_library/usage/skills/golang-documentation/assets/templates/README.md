@@ -111,6 +111,7 @@ go test -race -tags=integration -timeout=300s ./...
 
 # Run linter
 golangci-lint run --fix ./...
+```
 -->
 
 ## 📄 License

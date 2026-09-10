@@ -27,7 +27,7 @@ session end
         _spawn_session_reviewer_background from retro/auto_retro.py)
        └─ if decision=run:
             ├─ background=false → run_session_review(...) in-process
-            │                     (HATS-1402; HATS_SKIP_RETRO set/popped
+            │                     (HATS_SKIP_RETRO set/popped
             │                      around the call via try/finally)
             └─ otherwise → _spawn_session_reviewer_background
                  (Popen, detached, env: HATS_SKIP_RETRO=1)
@@ -44,7 +44,7 @@ session end
     ├─ _maybe_harvest_verdicts → _harvest_verdicts   # pure-Python
     │    non-`n/a` hypothesis_verdicts → append_verdict into each
     │    HYP's validation_log (actor=rack:session-reviewer).
-    │    Runs before either error branch below (HATS-1422)
+    │    Runs before either error branch below
     ├─ on HarnessReliabilityError → file ONE meta-proposal
     │    (target=harness-incident) and `return 2` — the harvest above
     │    already ran; only the harness check below is skipped
@@ -59,11 +59,11 @@ Triggers:
 - **Auto** on session end (when `feedback.session_retro.policy=always`, or `policy=smart` with the `smart_threshold` met — `off` and `hint` never spawn a run). Detached background process, unless `background: false` selects the in-process branch.
 - **Manual** via `ai-hats reflect session --session <id>` (foreground; harness check skipped).
 
-`_maybe_harvest_verdicts` (HATS-1369) auto-persists every non-`n/a` verdict from the saved doc's `hypothesis_verdicts` into the matching HYP's `validation_log` (`session_id` = the reviewed session, `evidence`/`recommendation` copied verbatim), independent of whether `_harness_check` also reports missing coverage for other active HYPs. This is what makes an unattended HITL/subagent session — no manual reflect step — actually land a `validation_log` entry, so the existing `quorum_autoclose` sweep can act on it. It survives **both** error branches (HATS-1422): the doc is loaded and harvested before either is handled, so a `SessionReviewError` or a harness-layer failure — subprocess timeout, zero-output guard — no longer drops verdicts that are already on disk. A stale or partial doc still carries verdicts worth harvesting. `ai-hats reflect hypothesis` (below) remains the judge-driven, HITL-reviewed path to the same field — the two are independent writers, distinguished by actor (`rack:session-reviewer` vs `rack:reflect`).
+`_maybe_harvest_verdicts` auto-persists every non-`n/a` verdict from the saved doc's `hypothesis_verdicts` into the matching HYP's `validation_log` (`session_id` = the reviewed session, `evidence`/`recommendation` copied verbatim), independent of whether `_harness_check` also reports missing coverage for other active HYPs. This is what makes an unattended HITL/subagent session — no manual reflect step — actually land a `validation_log` entry, so the existing `quorum_autoclose` sweep can act on it. It survives **both** error branches: the doc is loaded and harvested before either is handled, so a `SessionReviewError` or a harness-layer failure — subprocess timeout, zero-output guard — no longer drops verdicts that are already on disk. A stale or partial doc still carries verdicts worth harvesting. `ai-hats reflect hypothesis` (below) remains the judge-driven, HITL-reviewed path to the same field — the two are independent writers, distinguished by actor (`rack:session-reviewer` vs `rack:reflect`).
 
 Meta-proposals are deduped per `(failed_session_id, target)` pair, not per session — the `harness-incident` and `session-reviewer` facets coexist, so one session id can carry two.
 
-### `ai-hats reflect hypothesis` (HATS-513 / ADR-0007)
+### `ai-hats reflect hypothesis` (ADR-0007)
 
 Two-phase bulk triage of accumulated HYP and PROP backlog:
 
@@ -72,7 +72,7 @@ Two-phase bulk triage of accumulated HYP and PROP backlog:
 
 With `--headless`: runs Phase 1 only (CI/cron-safe).
 
-The Phase 2 preamble carries two substitutions: `{draft_body}` and `{inbox_digest}` (`_build_inbox_digest`). The digest is a compact open-PROP inventory — counts, plus leaders by votes and by age — because Phase 2 otherwise sees only what Phase 1 chose to mention, which is how a judge session missed a 136-card inbox (HATS-1385). An overridden injection that drops `{inbox_digest}` gets the digest appended and a warning, never silence.
+The Phase 2 preamble carries two substitutions: `{draft_body}` and `{inbox_digest}` (`_build_inbox_digest`). The digest is a compact open-PROP inventory — counts, plus leaders by votes and by age — because Phase 2 otherwise sees only what Phase 1 chose to mention, which is how a judge session missed a 136-card inbox. An overridden injection that drops `{inbox_digest}` gets the digest appended and a warning, never silence.
 
 Both this command and `reflect all` also write a pre-flight handoff to `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md` (`_build_handoff`, `src/ai_hats/cli/reflect.py:900`) and share the `judge/<ts>-report.md` namespace.
 
@@ -112,7 +112,7 @@ Legacy single-phase triage. Replaced by `reflect hypothesis`. Kept for backward 
 `src/ai_hats/retro/loader.py` routes by the family of the `schema:` field — the
 `/vN` suffix is stripped before lookup, so the registry keys carry no version:
 
-| Family                 | Model              | Producer                              |
-| ---------------------- | ------------------ | ------------------------------------- |
-| `hats-session-review`  | `SessionReviewV1`  | session-reviewer (current)            |
-| `hats-reflect-session` | `ReflectSessionV1` | historical (pre-HATS-252) — read-only |
+| Family                 | Model              | Producer                   |
+| ---------------------- | ------------------ | -------------------------- |
+| `hats-session-review`  | `SessionReviewV1`  | session-reviewer (current) |
+| `hats-reflect-session` | `ReflectSessionV1` | historical — read-only     |

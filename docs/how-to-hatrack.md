@@ -66,12 +66,12 @@ When validating automation in a sandbox copy of a workspace, follow this executa
    ```
 
 3. **Verify isolation with a fail-safe write probe**:
-   Run the command targeting `HATS-9999` (which exists ONLY in the sandbox backlog). **Crucial**: Unset `AI_HATS_SESSION_ID` (`env -u AI_HATS_SESSION_ID`) so single-slot task ownership (HATS-955) does not mask isolation failures.
+   Run the command targeting that sandbox-only card. **Crucial**: Unset `AI_HATS_SESSION_ID` (`env -u AI_HATS_SESSION_ID`) so single-slot task ownership does not mask isolation failures.
    ```bash
    env -u AI_HATS_SESSION_ID AI_HATS_DIR=/tmp/sandbox/.agent/ai-hats \
      rack transition HATS-9999 execute --log "isolation test"
    ```
-   If isolation holds, `HATS-9999` in the sandbox transitions to `execute`. If isolation leaks to the live project root, the command fails with `unknown_task: HATS-9999` (because `HATS-9999` does not exist in live), safely protecting live data from corruption.
+   If isolation holds, the sandbox card transitions to `execute`. If isolation leaks to the live project root, the command fails with `unknown_task` (because the id does not exist in live), safely protecting live data from corruption.
 
 ---
 
@@ -86,7 +86,7 @@ When validating automation in a sandbox copy of a workspace, follow this executa
 HYP and PROP are **sibling backlogs** mounted next to tasks, not special cases
 of a task. Each declares its own states, fields and link kinds in its
 `backlog.yaml`. Ids route by prefix, so the read verbs reach all three without a
-flag: `rack context HYP-009` works exactly like `rack context HATS-042`. Only
+flag: `rack context HYP-NNN` works exactly like `rack context HATS-NNN`. Only
 the *write* verbs are grouped, under `rack hyp` / `rack proposal`.
 
 > **One rule** — never hand-edit `task.yaml`. A file lock guarantees atomic
@@ -103,9 +103,9 @@ verbs, the per-edge policy, and the work-log cadence.
 
 Typical in-session prompts:
 
-> "Open a task for wiring the kubernetes-ops skill into the sre role, parent HATS-200."
+> "Open a task for wiring the kubernetes-ops skill into the sre role, parent HATS-NNN."
 >
-> "Move HATS-358 to plan and draft a plan.md."
+> "Move HATS-NNN to plan and draft a plan.md."
 >
 > "File a hypothesis: filter regressions correlate with sub-agent refactors. Observation window 4 sessions."
 
@@ -141,7 +141,7 @@ rack transition HATS-NNN done        # the reviewer drives this one
 
 Two of those edges are **consent-gated**, so an agent can neither walk its own
 plan into implementation nor land its own branch on master without your
-approval: `plan → execute` and **every road into** `done` (HATS-1752 — the
+approval: `plan → execute` and **every road into** `done` (the
 forced close included). A direct `ai-hats wt merge` —
 the other road into master — is gated the same way.
 
@@ -236,7 +236,7 @@ bookkeep. From `execute` onward, walk the states normally.
 `--force` does **not** relax consent. Consent is a property of the move, not of
 the command — `consent | op --force` — so nothing you add to the command line
 switches the question off, and there is no set of "flags we do not ask on" left
-to join. The recipe still works; it asks once (HATS-1682).
+to join. The recipe still works; it asks once.
 
 ### d) File a HYP from a session
 
@@ -312,7 +312,7 @@ rack context HATS-042 --with 'plan*'  # embed matching document bodies
 Every verb takes `--json`.
 
 Cross-project reads work through the roots registry: `rack root add <path>`,
-then `rack ls --projects all` or `rack context projB:HATS-9`.
+then `rack ls --projects all` or `rack context projB:HATS-NNN`.
 
 ### STATE.md is reactive
 
@@ -509,7 +509,7 @@ rack hyp create "..." \
 ```
 
 The title is **positional**. There is no `--source-task` flag — the origin task
-is a link: `rack transition HYP-NNN --link source_task:HATS-029`. Status starts
+is a link: `rack transition HYP-NNN --link source_task:HATS-NNN`. Status starts
 at `active`. Sample shape — [3].
 
 ### Verdicts

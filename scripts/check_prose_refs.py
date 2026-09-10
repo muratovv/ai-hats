@@ -19,6 +19,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import _markdown
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 LIBRARY_RELPATH = "packages/ai-hats-library/src/ai_hats_library"
@@ -50,7 +52,6 @@ PATH_SUFFIXES = frozenset(
     {".py", ".sh", ".md", ".yaml", ".yml", ".json", ".toml", ".txt", ".cfg", ".ini"}
 )
 
-FENCE_RE = re.compile(r"^[ \t]*(```|~~~)")
 TICK_RE = re.compile(r"`([^`\n]{1,160})`")
 
 #: The stale library prefix is exact enough to judge OUTSIDE backticks too — it
@@ -242,18 +243,6 @@ def check_repo_path(token: str, source: Path, root: Path, anchors: frozenset[str
     return "names nothing in this tree"
 
 
-def strip_code_fences(text: str) -> list[tuple[int, str]]:
-    """(lineno, line) for prose lines only. A sample is not a claim."""
-    out, inside = [], False
-    for lineno, line in enumerate(text.splitlines(), 1):
-        if FENCE_RE.match(line):
-            inside = not inside
-            continue
-        if not inside:
-            out.append((lineno, line))
-    return out
-
-
 def corpus(root: Path) -> list[Path]:
     """Library prose, plus the docs a human reads.
 
@@ -287,7 +276,8 @@ def scan_file(
     rel = path.relative_to(root).as_posix()
     findings: list[Finding] = []
     unanchored = 0
-    for lineno, line in strip_code_fences(path.read_text(encoding="utf-8", errors="ignore")):
+    prose, _ = _markdown.prose_lines(path.read_text(encoding="utf-8", errors="ignore"))
+    for lineno, line in prose:
         # Outside code spans: a doc that documents the marker quotes it, and a
         # quoted marker must not silently exempt the line quoting it.
         if WAS_RE.search(TICK_RE.sub(" ", line)):

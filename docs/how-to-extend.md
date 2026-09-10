@@ -163,7 +163,7 @@ libraries/rules/my-rule/
 `rule.md` is the whole rule — its body is the only thing delivered, and the only
 description of itself it carries. A rule takes no sidecar: `metadata.yaml` used
 to hold a `description` for `ai-hats list rules`, but a second copy of a rule's
-meaning drifts from the body that governs (HATS-1836), so rules are catalogued
+meaning drifts from the body that governs, so rules are catalogued
 by name alone.
 
 ```bash
@@ -243,11 +243,11 @@ ai_hats:
 surface twice — declare a row per script:
 
 ```yaml
-    PreToolUse:
-      - matcher: Bash
-        script: hooks/interpreter_gate.py   # nudges on the wrong interpreter
-      - matcher: Bash
-        script: hooks/git_gate.py           # denies a destructive git command
+PreToolUse:
+  - matcher: Bash
+    script: hooks/interpreter_gate.py   # nudges on the wrong interpreter
+  - matcher: Bash
+    script: hooks/git_gate.py           # denies a destructive git command
 ```
 
 Two shapes are still refused at load, both loudly:
@@ -273,7 +273,7 @@ terminal tool `run_command` and spells its argument `CommandLine`, Codex calls
 the editor `apply_patch`, and `<surface>/claude_hook_adapter.py` maps both the
 name and the payload before your script ever runs. Enumerating other surfaces'
 names in your `matcher` is not needed and does not help — a row that says
-`Bash|run_command` guards exactly what `Bash` already guarded (HATS-1776).
+`Bash|run_command` guards exactly what `Bash` already guarded.
 
 Your script therefore reads ONE dialect: `tool_input.command`,
 `tool_input.file_path`, `tool_name`. Do not add a second reading for
@@ -399,7 +399,7 @@ Two behaviours worth knowing:
   - two *distinct* scripts whose filenames share a basename — they would
     collide on the materialized filename (reusing the *same* script across
     events is fine). The flattened `<skill>-<basename>` form that made this
-    a collision is retired (HATS-1480); the validation stays because the
+    a collision is retired; the validation stays because the
     declaration is still keyed by basename.
 
   A silently dropped runtime hook could be a safety hole (a guard that never
@@ -411,7 +411,7 @@ Two behaviours worth knowing:
 
 Events recognised today are `PreToolUse` and `PostToolUse` (the set is open).
 Materialized scripts run on tool use — treat them as a security surface (see
-`SECURITY.md`). The shipped HATS-437 shared-state guard is the canonical example
+`SECURITY.md`). The shipped shared-state guard is the canonical example
 of a wired `PreToolUse` hook (package data, always materialized); the
 `tool-call-hygiene` skill is the first **skill-declared** runtime hook — a
 non-blocking `PreToolUse` Bash guard that emits an `additionalContext` nudge
@@ -420,7 +420,7 @@ skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 --select S` and forwards any security findings via `additionalContext`.
 
 > **Write-path discipline — never derive a WRITE path from `__file__` depth.**
-> Since HATS-1268/1480 the session mirror copies the *whole* skill directory, so
+> Since 2026-08-08 the session mirror copies the *whole* skill directory, so
 > `__file__` does sit beside its siblings — but it sits inside a per-session tree
 > that dies with the session, and inside the skill's own source tree when the
 > hook is run directly. A hook that builds a WRITE target by walking up from
@@ -428,7 +428,7 @@ skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 > *whichever root it happens to be running from* — and when it is invoked from a
 > non-materialized location (the skill's dev repo, a smoke test) that
 > path can land **inside the committed source tree** (the secret-guard wrote a
-> telemetry `.log` into `skills/…/user-hooks/`, HATS-819). Instead, take the
+> telemetry `.log` into `skills/…/user-hooks/`). Instead, take the
 > writable anchor from **`$AI_HATS_DIR`** — the engine exports it into the
 > hook's environment (`ClaudeSurface.get_env`), resolving to `<ai_hats_dir>`.
 > It MAY be absent under a direct `claude` launch (no `ai-hats` wrap), so a hook
@@ -442,7 +442,7 @@ skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 Git honours exactly one `core.hooksPath`, so installing the `.githooks/`
 dispatchers could shadow a hook manager the repo already uses
 (simple-git-hooks, husky, lefthook, pre-commit). ai-hats therefore chains
-instead of shadowing (HATS-999):
+instead of shadowing:
 
 - **`core.hooksPath` unset** — it is pointed at `.githooks`; after the
   `.d/` chain each dispatcher also invokes `.git/hooks/<event>` (git's
@@ -558,7 +558,7 @@ does not break an older engine.
 
 > **Path-list sugar is shelved.** ADR-0012 also designs a declarative
 > `seed_in:` / `harvest_out:` path-list form (sugar over a built-in `capture` hook).
-> It is **not built** — shelved for want of a confirmed consumer (HATS-775 cancelled);
+> It is **not built** — shelved for want of a confirmed consumer (cancelled 2026-06-25);
 > use the `wt_in` / `wt_out` **hook form** above. This section documents only what ships.
 
 ## Custom pipelines (advanced)
@@ -583,7 +583,7 @@ steps:
 Available step IDs match the registry under `src/ai_hats/pipeline/steps/`.
 The post-spawn lifecycle (`make_audit` + `run_session_end`) is invoked by
 the runner from its `finally` block via the `finalize-hitl` /
-`finalize-subagent` sub-pipelines (HATS-535) — do NOT add those steps to
+`finalize-subagent` sub-pipelines — do NOT add those steps to
 your top-level pipeline. `launch_provider` survives as a deprecated
 alias for `provider`, but new pipelines should use the canonical name.
 
@@ -622,7 +622,7 @@ numbers or preserves overwritten values: once a launch is consumed, its keys are
 replaced, so a post-step placed after both launches always sees the second.
 See ADR-0001 [6].
 
-Since HATS-865 pipelines never compose: the launcher composes ONCE via the
+Since 2026-07-04 pipelines never compose: the launcher composes ONCE via the
 integrator seam and seeds the result under the `composition` initial key —
 `compose_role`, `materialize_system_prompt`, and `provider` all read that
 seeded value (launching without it fails the `provider` step's `requires`
@@ -638,7 +638,7 @@ PipelineHarness("smoke", project_dir).run({"composition": payload})
 > **Limitation today**: there is no public CLI flag to invoke an arbitrary
 > custom pipeline by name. Custom pipelines can only be launched from Python
 > via `PipelineHarness` as above. A public `ai-hats pipeline run <name>`
-> command is planned under HATS-1797. Until that lands, custom pipelines are
+> command is planned. Until it lands, custom pipelines are
 > useful mainly as scaffolding for future engine work, not as a day-to-day
 > extension point.
 
@@ -653,7 +653,7 @@ pipeline YAML, a custom step, or any change to ai-hats. Ship a **role** and an
 a shell function.
 
 This is the recommended path for plugin-style verbs while the
-[generic `ai-hats run <pipeline>` command](#custom-pipelines-advanced) (HATS-1797)
+[generic `ai-hats run <pipeline>` command](#custom-pipelines-advanced)
 is in flight.
 
 ### Worked example: `rebalance long` for a finance plugin
@@ -672,7 +672,7 @@ libraries/
 
 The `--prompt <name>` flag resolves `initial_injections/<name>.md` across the
 **full `library_paths` chain** (built-in core → usage → ai-hats-dev → entry-point packages → `~/.ai-hats/` → `~/.ai-hats/library_paths.yaml` → `cfg.library_paths` → `<project>/libraries/`), last-wins. So your plugin's
-prompts are discoverable by short name without any package fork (HATS-445).
+prompts are discoverable by short name without any package fork.
 
 **2. Shell wrapper** (in `~/.zshrc` or `~/.bashrc`):
 
@@ -713,7 +713,7 @@ The shell-alias path fits when:
 - Output is consumed by a human, not by a downstream pipeline step.
 
 You need a [custom pipeline](#custom-pipelines-advanced) and step plugins
-(HATS-268) when:
+when:
 
 - State must be **fetched in Python** before the agent runs
   (`load_portfolio`, `fetch_market_snapshot`, `persist_run_record`, …).
@@ -781,7 +781,7 @@ After `ai-hats self init`, the composed role is materialized into your project. 
 ## Migrating from a removed built-in component
 
 Sometimes ai-hats removes a component that previous releases shipped (the
-v0.7 example: `personal-workflow` trait — HATS-433). The component moves
+v0.7 example: `personal-workflow` trait). The component moves
 into user-scope; you re-instate it for yourself in two steps. Use this
 recipe whenever you see a `BREAKING` entry pointing at a component you relied on.
 
@@ -819,7 +819,7 @@ This pattern works for any removed trait / skill / rule: re-create under
 ## Engine internals, for verifying a composition
 
 Written for the `role-curator` / `maintainer` roles; moved out of the
-`library-curator` injection in HATS-1825, where it cost ~870 resident tokens a
+`library-curator` injection on 2026-08-26, where it cost ~870 resident tokens a
 turn to answer a question that arises only while verifying a change.
 
 ### The objects
@@ -847,7 +847,7 @@ turn to answer a question that arises only while verifying a change.
   `src/ai_hats/paths/library.py` (`paths` is a package, not `paths.py`;
   `assembler.py` only imports the layers helper under an alias). Precedence:
   `AI_HATS_LIBRARY_ROOT` → cwd source-checkout **only under `prefer_cwd`, which
-  read-only composition passes and writers never do (HATS-1501)** →
+  read-only composition passes and writers never do** →
   `project_dir` → `importlib.resources`. Full layer order (lowest → highest):
   builtin/core, builtin/usage, builtin/ai-hats-dev, `~/.ai-hats`, project config-specified,
   project-local `libraries/`, explicit extras. Resolution is **last-wins**
@@ -859,8 +859,7 @@ turn to answer a question that arises only while verifying a change.
 A **read-only** command run from inside a worktree composes THAT worktree's
 library, so your edit is what you see. That is the whole read-only family:
 `config show-prompt`, `--dry-run`, every `list` subcommand that reads the
-library (`list providers` reads none), and `config status`'s role tree
-(HATS-1501, HATS-1911).
+library (`list providers` reads none), and `config status`'s role tree.
 
 Two things inside that output still answer about the PROJECT, by design.
 `config status`'s **Health** block (version, venv, materialized
@@ -871,9 +870,9 @@ library answered.
 
 A command that **writes** — init, sync, anything materializing into `.agent/` —
 deliberately still keys off the project, which for a linked worktree is the MAIN
-checkout (`_project_dir` hops there so tracker ops reach the one live backlog,
-HATS-524). Composing one checkout's library into another project's `.agent` is
-HATS-1123; do not expect a worktree edit to reach a materialized artifact.
+checkout (`_project_dir` hops there so tracker ops reach the one live backlog).
+Composing one checkout's library into another project's `.agent` is
+a separate question; do not expect a worktree edit to reach a materialized artifact.
 
 To force either way explicitly:
 
@@ -920,4 +919,4 @@ Without the control the two are indistinguishable. The general technique is the
 
 **[5]** — [`docs/wt/`](wt/README.md) — Worktree (wt) documentation hub, architecture overview, and L1–L4 concurrency lock model.
 
-**[6]** — [`docs/adr/0001-pipelines-as-typed-dataflow.md`](adr/0001-pipelines-as-typed-dataflow.md) — ADR-0001, Update HATS-1249: producer binding when several steps produce the same state key.
+**[6]** — [`docs/adr/0001-pipelines-as-typed-dataflow.md`](adr/0001-pipelines-as-typed-dataflow.md) — ADR-0001, update: producer binding when several steps produce the same state key.

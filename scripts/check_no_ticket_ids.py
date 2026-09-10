@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""A tracker id must not ship inside library prose.
+"""A tracker id must not ship inside library prose, nor sit in a living doc.
 
 The library installs into other people's projects, where `PROJ-1430` is a dead
-link and `git log -S` is the road that actually travels.
+link. `.agent/` is gitignored, so the same holds for a fresh clone of this one.
 
-Two things make this checkable rather than a matter of taste: the pattern needs
-DIGITS, so CLI-grammar placeholders are not matches at all; and an id a machine
-PRINTS opts out by line marker, because that prose names the screen, not history.
-
-The gate carries its own positive control — see `control_hits`.
+Three things make this checkable rather than a matter of taste: the pattern
+needs DIGITS, so CLI-grammar placeholders are not matches; a fenced block is a
+sample, not a claim; and an id a machine PRINTS opts out by line marker. The
+gate carries its own positive control — see `control_hits`.
 """
 
 from __future__ import annotations
@@ -17,6 +16,8 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import _markdown
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -50,13 +51,25 @@ EXCLUDED_SEGMENTS = frozenset({"hooks", "git_hooks"})
 #: gate's positive control — see the module docstring.
 CONTROL_PATHS = ("docs/adr", "CHANGELOG.md")
 
+#: A dated record describes the tree of its own day. `check_prose_refs.py`
+#: exempts exactly this set; a test pins the two in agreement rather than making
+#: one gate import the other, so deleting either leaves the survivor working.
+DATED_RECORD_RE = re.compile(r"^docs/(?:adr/|migration-v)")
+
+#: The docs a human opens, beside the library. `README` and `CONTRIBUTING` are
+#: named because they sit at the root, not under `docs/`.
+ROOT_DOCS = ("README.md", "CONTRIBUTING.md")
+
 UNCOVERED = (
     "library code — `.py`, `.sh`, `.go`, `.json` in the library: a bare id with "
     "no words has to be REWRITTEN, not deleted, so it is a separate card",
     "`hooks/` and `git_hooks/`: same reason, and they are the highest-blast-"
     "radius surface in the repo",
-    "`docs/adr/` and `CHANGELOG.md`: the id there IS the record — they are this "
-    "gate's positive control instead",
+    "`docs/adr/`, `docs/migration-v*.md` and `CHANGELOG.md`: the id there IS the "
+    "record, and the first and last are this gate's positive control instead",
+    "fenced code blocks: a sample teaches the shape of a command, so the ids in "
+    "`rack transition HATS-042 --link depends_on:HATS-041` are templates rather "
+    "than citations. An unclosed fence is reported instead of swallowed",
     "other trackers' ids: only this repository's prefix is judged",
 )
 
@@ -72,17 +85,32 @@ class Finding:
 
 
 def corpus(root: Path) -> list[Path]:
+    """Library prose, plus the living docs a reader of this repository opens."""
+    seen: set[Path] = set()
     lib = root / LIBRARY_RELPATH
-    if not lib.is_dir():
-        return []
-    out = [
-        path
-        for path in lib.rglob("*")
-        if path.suffix in SUFFIXES
-        and path.is_file()
-        and not EXCLUDED_SEGMENTS & set(path.relative_to(lib).parts)
-    ]
-    return sorted(out)
+    if lib.is_dir():
+        seen |= {
+            path
+            for path in lib.rglob("*")
+            if path.suffix in SUFFIXES
+            and path.is_file()
+            and not EXCLUDED_SEGMENTS & set(path.relative_to(lib).parts)
+        }
+    seen |= living_docs(root)
+    return sorted(seen)
+
+
+def living_docs(root: Path) -> set[Path]:
+    """`docs/**.md` minus the dated records, plus the two root files."""
+    out = {root / name for name in ROOT_DOCS if (root / name).is_file()}
+    docs = root / "docs"
+    if docs.is_dir():
+        out |= {
+            path
+            for path in docs.rglob("*.md")
+            if not DATED_RECORD_RE.match(path.relative_to(root).as_posix())
+        }
+    return out
 
 
 def allowed(line: str) -> str | None:
@@ -93,13 +121,17 @@ def allowed(line: str) -> str | None:
     return match.group("reason").strip() or "(no reason given)"
 
 
-def scan_file(path: Path, root: Path) -> tuple[list[Finding], list[str]]:
+def scan_file(path: Path, root: Path) -> tuple[list[Finding], list[str], int | None]:
+    """Findings, allowances, and the line of an unclosed fence if there is one."""
     findings: list[Finding] = []
     allowances: list[str] = []
     rel = path.relative_to(root).as_posix()
-    for lineno, line in enumerate(
-        path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1
-    ):
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    if path.suffix == ".md":
+        lines, unclosed = _markdown.prose_lines(text)
+    else:
+        lines, unclosed = list(enumerate(text.splitlines(), start=1)), None
+    for lineno, line in lines:
         tokens = ID_RE.findall(line)
         if not tokens:
             continue
@@ -108,7 +140,7 @@ def scan_file(path: Path, root: Path) -> tuple[list[Finding], list[str]]:
             allowances.append(f"{rel}:{lineno}: {', '.join(tokens)} — {reason}")
             continue
         findings.extend(Finding(rel, lineno, token) for token in tokens)
-    return findings, allowances
+    return findings, allowances, unclosed
 
 
 def control_hits(root: Path) -> tuple[int, bool]:
@@ -135,19 +167,28 @@ def main(argv: list[str] | None = None) -> int:
     files = corpus(root)
     findings: list[Finding] = []
     allowances: list[str] = []
+    unclosed: list[str] = []
     for path in files:
-        file_findings, file_allowances = scan_file(path, root)
+        file_findings, file_allowances, opened_at = scan_file(path, root)
         findings.extend(file_findings)
         allowances.extend(file_allowances)
+        if opened_at is not None:
+            unclosed.append(f"{path.relative_to(root).as_posix()}:{opened_at}")
     findings.sort(key=lambda f: (f.path, f.line))
 
     for finding in findings:
         print(f"[{CHECK}] FAIL: {finding}", file=sys.stderr)
     for allowance in allowances:
         print(f"[{CHECK}] allowed — {allowance}", file=sys.stderr)
+    for where in sorted(unclosed):
+        print(
+            f"[{CHECK}] blind — {where} opens a code fence that never closes, so "
+            f"everything after it is out of this gate's reach",
+            file=sys.stderr,
+        )
 
     control, control_present = control_hits(root)
-    scope = f"{len(files)} library prose files"
+    scope = f"{len(files)} prose files (library + living docs)"
 
     if control_present and control == 0:
         print(
