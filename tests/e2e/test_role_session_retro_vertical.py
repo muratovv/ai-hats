@@ -51,7 +51,7 @@ from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.rack_workspace import ensure_backlog
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.observe]
 
 
 # ---------------------------------------------------------------------------

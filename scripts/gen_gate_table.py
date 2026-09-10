@@ -46,6 +46,8 @@ class Gate:
     name: str
     stages: tuple[str, ...]
     where: tuple[str, ...]
+    #: `diff` if this gate also demands the zones the change touches, else `none`.
+    zones: str
 
 
 def _bash(repo: Path, script: str, *args: str) -> str:
@@ -113,7 +115,8 @@ def read_gates(repo: Path) -> list[Gate]:
     gates = []
     for name, where in found.items():
         stages = _bash(repo, f"{SKILL_RELPATH}/{scripts[name]}", "--stages").split()
-        gates.append(Gate(name, tuple(stages), tuple(where)))
+        zones = _bash(repo, f"{SKILL_RELPATH}/{scripts[name]}", "--zones").strip()
+        gates.append(Gate(name, tuple(stages), tuple(where), zones))
     if not gates:
         raise SourceError("no gate is bound anywhere")
     return gates
@@ -130,11 +133,38 @@ def _table(headers: list[str], body: list[list[str]]) -> str:
     return "\n".join([line(headers), rule, *(line(cells) for cells in body)])
 
 
-def render_stages(stages: list[tuple[str, str]], gates: list[Gate]) -> str:
+def read_zones(repo: Path) -> dict[str, str]:
+    """`stage -> the zone marker that names it`, from `gates.sh zones`.
+
+    A zone stage is required by NO gate's declaration and by every card gate that
+    sees one of its prefixes in the diff. Rendering it like any other stage would
+    print a row saying only `push-gate`, and the `gate-table` check would then
+    enforce that half-truth.
+
+    The MARKER, not the paths: a zone spans one row per prefix and some span
+    fifteen, so a cell listing them is a wall no reader reads and a diff nobody
+    reviews. The table names the zone and points at the verb that prints its
+    paths — a pointer that cannot go stale, because it IS the table.
+    """
+    zones: dict[str, str] = {}
+    for line in _bash(repo, GATES_SH, "zones").splitlines():
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) != 3:
+            raise SourceError(f"{GATES_SH} zones: a row is not `prefix | marker | stage`: {line!r}")
+        _prefix, marker, stage = cells
+        zones[stage] = marker
+    return zones
+
+
+def render_stages(stages: list[tuple[str, str]], gates: list[Gate], zones: dict[str, str]) -> str:
     body = []
     for stage, desc in stages:
-        required = " ".join(g.name for g in gates if stage in g.stages) or "-"
-        body.append([f"`{stage}`", required, desc])
+        required = " ".join(g.name for g in gates if stage in g.stages)
+        if stage in zones:
+            asking = " ".join(g.name for g in gates if g.zones == "diff")
+            by_diff = f"{asking}, когда дифф трогает зону `{zones[stage]}` (`gates.sh zones`)"
+            required = f"{required}; {by_diff}" if required else by_diff
+        body.append([f"`{stage}`", required or "-", desc])
     return _table(["стадия", "требуют гейты", "что проверяет"], body)
 
 
@@ -157,8 +187,8 @@ def splice(doc: str, mark: str, table: str) -> str:
 
 
 def render(repo: Path, doc: str) -> str:
-    stages, gates = read_stages(repo), read_gates(repo)
-    doc = splice(doc, STAGES_MARK, render_stages(stages, gates))
+    stages, gates, zones = read_stages(repo), read_gates(repo), read_zones(repo)
+    doc = splice(doc, STAGES_MARK, render_stages(stages, gates, zones))
     return splice(doc, GATES_MARK, render_gates(gates))
 
 

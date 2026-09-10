@@ -24,7 +24,7 @@ import pytest
 
 from _helpers.git import commit_file, git, init_repo
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.gates]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL_SRC = (

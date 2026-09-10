@@ -24,6 +24,8 @@ from _helpers.hook_chain import (  # noqa: E402
     run_chain,
 )
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 GARBAGE_PAYLOAD = "this is not json at all {{{"
@@ -104,6 +106,7 @@ GUARDED = (
     ("Bash", "ack_prefix_guard.py"),
     ("Bash", "safety_gate.py"),
     ("Bash", "wt_interpreter_gate.py"),
+    ("Bash", "wt_git_gate.py"),
     ("EnterWorktree", "wt_entry_gate.py"),
     ("Write", "backlog_write_gate.py"),
     ("Write", "wt_gate.py"),

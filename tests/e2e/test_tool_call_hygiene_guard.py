@@ -20,6 +20,8 @@ import pytest
 
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GUARD = (
     REPO_ROOT

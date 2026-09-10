@@ -19,6 +19,8 @@ import pytest
 
 from _helpers.hook_chain import build_session_settings, pretooluse_hooks, run_chain
 
+pytestmark = pytest.mark.guards
+
 JOURNAL_REL = ".git/ai-hats/bypasses.jsonl"
 
 

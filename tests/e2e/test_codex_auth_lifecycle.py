@@ -21,7 +21,7 @@ from _helpers.env import clean_env
 from ai_hats.materialization import ApplyMaterializer
 from ai_hats.surfaces.codex.session_auth import reconcile_auth, stage_auth
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> None:

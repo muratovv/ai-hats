@@ -22,6 +22,8 @@ from _helpers.hook_chain import (  # noqa: E402
     run_tool_chain,
 )
 
+pytestmark = pytest.mark.guards
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 SHARED_ACK = "AI_HATS_SHARED_STATE_ACK"

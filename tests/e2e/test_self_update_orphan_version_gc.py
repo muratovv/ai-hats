@@ -20,9 +20,10 @@ from _helpers.project import pin_edge_channel
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 from ai_hats.paths import ENV_AI_HATS_VENV
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

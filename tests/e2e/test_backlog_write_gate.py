@@ -38,7 +38,7 @@ from _helpers.hook_chain import (
     run_tool_chain,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards, pytest.mark.rack]
 
 TRACKER = ".agent/ai-hats/tracker/backlog"
 KILL_SWITCH = "AI_HATS_BACKLOG_GATE_OFF"

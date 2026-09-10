@@ -18,9 +18,10 @@ import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # real launcher build + self update at call time → capped via conftest
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # real launcher build + self update at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap.sh"

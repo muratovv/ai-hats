@@ -38,7 +38,7 @@ from ai_hats_observe.artifacts import (
     USAGE_JSON,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIBRARY_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"

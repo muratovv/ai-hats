@@ -25,7 +25,11 @@ from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration  # HATS-1755: real Codex consent boundary
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.consent,
+    pytest.mark.surfaces,
+]  # HATS-1755: real Codex consent boundary
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"

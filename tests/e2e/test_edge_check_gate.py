@@ -23,7 +23,7 @@ import pytest
 
 from _helpers.git import git, init_repo
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "brainstorm->plan"
@@ -471,6 +471,7 @@ def venv_surfaces(shared_launcher) -> dict[str, bool]:
             str(venv / "bin" / "python"),
             "-c",
             "import json, pathlib; "
+            "from ai_hats_core.layout import ProjectLayout; "
             "from ai_hats.surface_registry import surface_names, get_surface; "
             "p = pathlib.Path('/tmp'); "
             "print(json.dumps({n: bool(get_surface(n).handles_artifact_categories() "

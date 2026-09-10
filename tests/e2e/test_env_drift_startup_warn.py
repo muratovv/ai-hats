@@ -22,7 +22,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.paths import PROJECT_CONFIG
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.install]
 
 DRIFT_TEXT = "dev env outdated: stale ai-hats-tracker 0.5.0 -> 0.6.0 — run 'uv sync'"
 

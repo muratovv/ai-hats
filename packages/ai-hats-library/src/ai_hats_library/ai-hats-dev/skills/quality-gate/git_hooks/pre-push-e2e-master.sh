@@ -28,7 +28,7 @@ set -uo pipefail
 zero='0000000000000000000000000000000000000000'
 
 GATE='push-gate'
-STAGES='e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e'
+STAGES='e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe'
 CHANNEL='githook'
 RUN_CMD='scripts/run-e2e-gate.sh'
 # A script takes a commit as a flag, not as a make variable. Read by gate.sh.
@@ -109,5 +109,10 @@ case "${1:-}" in
         gate_run "$GATE" "$STAGES" "$@"
         ;;
     --stages) printf '%s\n' "$STAGES" ;;
+    # It requires the whole partition by name, always — nothing here is decided
+    # by a diff. Answered anyway, because the renderer asks EVERY gate, and an
+    # unknown flag here falls into check mode, which reads git's pre-push
+    # protocol from stdin and waits there forever.
+    --zones) printf 'none\n' ;;
     *) check_mode ;;
 esac

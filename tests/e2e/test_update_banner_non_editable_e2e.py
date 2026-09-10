@@ -26,9 +26,10 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = (
-    pytest.mark.install_heavy
-)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = [
+    pytest.mark.install_heavy,
+    pytest.mark.install,
+]  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -182,7 +183,15 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
     # ----- swap probe target + run background check ----
     env[ENV_REPO_URL] = f"git+file://{fake_remote}"
     _run(
-        [str(venv_python), "-m", "ai_hats.update_check", str(project)],
+        [
+            str(venv_python),
+            "-m",
+            "ai_hats.update_check",
+            str(project),
+            # The cache root the real caller hands down, and the one every
+            # assertion below reads back.
+            str(ProjectLayout.at(project).cache.root),
+        ],
         cwd=project,
         env=env,
         timeout=60,

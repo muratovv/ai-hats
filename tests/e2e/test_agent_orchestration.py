@@ -20,7 +20,7 @@ from _helpers.project import Project
 from _helpers.sessions import read_metrics
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 # Pinned to haiku — cheapest viable model. The test exercises envelope

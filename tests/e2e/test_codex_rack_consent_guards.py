@@ -17,7 +17,7 @@ import pytest
 
 from ai_hats.surfaces.hook_channel import ChainDecision, HookRow
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.consent, pytest.mark.surfaces]
 
 
 def test_later_guard_denial_wins_over_consent_question(tmp_path: Path) -> None:

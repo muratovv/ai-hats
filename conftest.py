@@ -49,6 +49,148 @@ def pytest_configure(config):
     to report green.
     """
     signal.signal(signal.SIGTERM, _sigterm_as_keyboard_interrupt)
+    _tier_memo_open(config)
+
+
+#: Where the gate keeps what this tree has already proven, if a gate is running
+#: us. ``scripts/gates.sh`` sets it for the stages that PARTITION the e2e tier
+#: and for nothing else.
+TIER_MEMO_ENV = "AI_HATS_GATE_TIER_MEMO"
+#: The key the controller hands its xdist workers the same path under.
+TIER_MEMO_WORKERINPUT = "ai_hats_tier_memo"
+#: The key a worker sends its deselect count home under. The controller collects
+#: nothing of its own under xdist, so without this it never learns that a stage
+#: ran nothing BECAUSE everything in it was already proven.
+TIER_MEMO_WORKEROUTPUT = "ai_hats_tier_deselected"
+_tier_memo_path_for_this_run: Path | None = None
+_tier_memo_seen: set[str] = set()
+_tier_memo_sink = None
+_tier_memo_deselected = 0
+
+
+def _tier_memo_path(config) -> Path | None:
+    """The memo THIS run may use, or ``None``.
+
+    Taken OUT of the environment rather than read from it: a test of ours may
+    spawn pytest again — the hermetic unit gate does, twice — and an inherited
+    memo made that nested run write its own node ids into a gate's record and
+    the next one skip them, so the gate test failed for a reason that had
+    nothing to do with the gate. The stage handed the memo is the only run it
+    describes, so this process consumes the variable and its children see none.
+    An xdist worker is the exception: it gets the path by the hook below,
+    because the controller consumed it before any worker existed.
+
+    Never under ``--collect-only``: the partition laws are asked by collecting
+    each stage, and a memo answering there would shrink the sets that must add
+    up to the whole tier — the laws would go green while the tier lost tests.
+    """
+    worker = getattr(config, "workerinput", None)
+    raw = worker.get(TIER_MEMO_WORKERINPUT) if worker else os.environ.pop(TIER_MEMO_ENV, None)
+    if not raw or config.option.collectonly:
+        return None
+    return Path(raw)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node, error):
+    """Add a finished worker's deselect count to the controller's own.
+
+    `optionalhook` for the same reason as the hook below: the name is xdist's.
+    Workers shut down before the controller's `pytest_sessionfinish`, so the sum
+    is complete by the time the exit code is judged.
+    """
+    global _tier_memo_deselected
+    _tier_memo_deselected += (getattr(node, "workeroutput", None) or {}).get(
+        TIER_MEMO_WORKEROUTPUT, 0
+    )
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node):
+    """Hand an xdist worker the memo its controller consumed.
+
+    `optionalhook` because the name belongs to pytest-xdist: without that plugin
+    installed, pytest refuses to load a conftest declaring a hook it does not
+    know, and this file is the ROOT conftest — every run in every environment
+    would fail to start. Caught by `test_venv_strict_mode`, which runs pytest in
+    an environment built without it.
+
+    A worker that did not deselect what its siblings deselected would make the
+    two collections differ, which xdist refuses outright."""
+    if _tier_memo_path_for_this_run is not None:
+        node.workerinput[TIER_MEMO_WORKERINPUT] = str(_tier_memo_path_for_this_run)
+
+
+def _tier_memo_open(config) -> None:
+    """Read what this tree has passed, and open the sink for what it passes now.
+
+    Overlapping zones are the point: one gate run can name two stages that share
+    tests, and the test is the same test on the same tree. It runs in the first
+    and is deselected in the second.
+    """
+    global _tier_memo_sink, _tier_memo_path_for_this_run
+    memo = _tier_memo_path(config)
+    if memo is None:
+        return
+    _tier_memo_path_for_this_run = memo
+    if memo.exists():
+        try:
+            _tier_memo_seen.update(memo.read_text(encoding="utf-8").split())
+        except OSError as exc:
+            warnings.warn(
+                f"tier memo {memo} unreadable ({exc!r}) — running all of it", stacklevel=1
+            )
+    # xdist: reports reach the controller, so the controller alone writes. A
+    # worker opening this too would interleave lines into the same file.
+    if hasattr(config, "workerinput"):
+        return
+    try:
+        memo.parent.mkdir(parents=True, exist_ok=True)
+        _tier_memo_sink = memo.open("a", encoding="utf-8", buffering=1)
+    except OSError as exc:
+        warnings.warn(f"tier memo {memo} not writable ({exc!r}) — recording nothing", stacklevel=1)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Drop what this tree has already passed under another stage's name."""
+    global _tier_memo_deselected
+    if _tier_memo_path_for_this_run is None or not _tier_memo_seen:
+        return
+    keep = [item for item in items if item.nodeid not in _tier_memo_seen]
+    dropped = [item for item in items if item.nodeid in _tier_memo_seen]
+    if not dropped:
+        return
+    _tier_memo_deselected += len(dropped)
+    config.hook.pytest_deselected(items=dropped)
+    items[:] = keep
+
+
+def pytest_runtest_logreport(report):
+    """Record a test that PASSED, and only that.
+
+    A failure left in the memo would let the next stage report green for the red
+    it never ran — the one way this optimisation could lie."""
+    if _tier_memo_sink is None or report.when != "call" or not report.passed:
+        return
+    _tier_memo_sink.write(f"{report.nodeid}\n")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """A stage whose every test was already green on this tree ran nothing, and
+    pytest spells that 5. It is not a failure here: the tests exist, they passed,
+    and the stage is about to be stamped for the same tree they passed on."""
+    output = getattr(session.config, "workeroutput", None)
+    if output is not None:
+        output[TIER_MEMO_WORKEROUTPUT] = _tier_memo_deselected
+    if _tier_memo_deselected and exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED:
+        session.exitstatus = pytest.ExitCode.OK
+
+
+def pytest_unconfigure(config):
+    global _tier_memo_sink
+    if _tier_memo_sink is not None:
+        _tier_memo_sink.close()
+        _tier_memo_sink = None
 
 
 @pytest.fixture(autouse=True)

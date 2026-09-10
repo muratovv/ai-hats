@@ -25,7 +25,7 @@ from ai_hats.paths import PROJECT_CONFIG
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 AI_HATS_PYTHON = Path(sys.executable)
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.guards]
 
 GUARD = """#!/usr/bin/env bash
 set -uo pipefail

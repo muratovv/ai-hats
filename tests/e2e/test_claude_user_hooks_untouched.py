@@ -27,6 +27,8 @@ from ai_hats.paths import claude_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 
+pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
+
 SESSION_ID = "sid-user-hooks"
 USER_SETTINGS = {
     "hooks": {

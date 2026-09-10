@@ -112,11 +112,22 @@ suite stubbed the very contracts the change broke.
    (`make done-gate REV=<sha>` for a card already merged.) It runs only the
    stages the tree has not earned, in order, stops at the first red, and
    stamps each green one.
+
+   **A stage the gate does not declare** — `e2e-rack`, say, absent from
+   `<gate>.sh --stages` — is a **zone**: an area of the codebase and the tests
+   that assert it. The gates BEFORE the merge (`review`, `merge`) require what
+   they declare PLUS the zones your diff touches, so the set depends on what you
+   changed and cannot be declared in advance; `->done` never asks for them, so
+   you pay for your zone once — `<gate>.sh --zones` says which gate asks.
+   `bash scripts/gates.sh touched` prints what your change adds and
+   `bash scripts/gates.sh zones` the whole table; `make <gate>` earns them like
+   any other stage. Nothing is wrong with the gate — read it as the tests your
+   own area owns, asked for where you can still fix them alone.
 3. **Green** — the run's first line is `RESULT …, green`. Its last says what
    the transition after this one will additionally demand, so you can earn it
    now instead of being refused for it later:
 
-       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, master-ci
+       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, e2e-default, master-ci
 
    `next: nothing` means no gate on the road is short of anything. Transition.
 4. **Red** — the run's block, verdict first:
@@ -164,11 +175,13 @@ suite stubbed the very contracts the change broke.
 
    `master-ci` is the one red the tree cannot fix: master itself is red. Its
    knob (see "No bypass") is the supervisor's to set, never yours.
-5. **Touched what the gate does not name?** No card gate runs the `e2e`
-   stage, the full tier (`done-gate` runs `merge-smoke`, a curated subset).
-   Run it yourself and say so. Nothing refuses here, which is why it is not
-   optional. It outlives a foreground call, so run it in the background through
-   the wrapper, which exits with the tier's own status:
+5. **Touched what the gate does not name?** No card gate runs the whole tier
+   under one name: `->merge` asks for the zones your diff touches, `->done` for
+   `e2e-default` — the half no zone claims — plus `merge-smoke`, and never for
+   your zones again. What that leaves out is a zone your change breaks WITHOUT
+   touching its prefix, and nothing refuses there. Run the tier yourself and say
+   so. It outlives a foreground call, so run it in the background through the
+   wrapper, which exits with the tier's own status:
 
        timeout 1800 bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh \
            --log /tmp/e2e.log -- bash scripts/gates.sh e2e
@@ -176,7 +189,7 @@ suite stubbed the very contracts the change broke.
    Report the number in `/tmp/e2e.log.rc`, never the completion notice: that
    notice reports the whole command, so a hand-rolled `; echo $?` is what it
    announces — two red tiers arrived as `exit code 0` that way. What a gate
-   requires:
+   requires of every tree:
 
        bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks/done-gate.sh --stages
 

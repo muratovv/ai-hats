@@ -27,7 +27,7 @@ import pytest
 from ai_hats.paths import PROJECT_CONFIG
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library, pytest.mark.surfaces]
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

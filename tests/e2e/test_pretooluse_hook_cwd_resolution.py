@@ -22,6 +22,8 @@ import pytest
 
 from _helpers.hook_chain import composed_row
 
+pytestmark = pytest.mark.guards
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SETTINGS = Path(".claude") / "settings.json"

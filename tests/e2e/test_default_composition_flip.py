@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 AI_HATS_SUB = Path(".agent") / "ai-hats"
