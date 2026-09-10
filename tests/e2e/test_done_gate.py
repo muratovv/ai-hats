@@ -31,10 +31,17 @@ SKILL = "quality-gate"
 SKILL_SRC = (
     REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library" / "ai-hats-dev" / "skills" / SKILL
 )
-#: The role that carries the shipped binding — read, never edited, by this file.
+#: The role the gate's own injection names — read, never edited, by this file.
 MAINTAINER_ROLE = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
+)
+#: The TRAIT that carries the shipped binding since HATS-1955. The rows left the
+#: roles so three of them could share one copy; reading a role here would assert
+#: an empty block and pass for the wrong reason.
+GATES_TRAIT = (
+    REPO_ROOT
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-gates/config.yaml"
 )
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
@@ -101,7 +108,7 @@ def gate_stages(gate: str) -> list[str]:
 
 
 def shipped_apps() -> dict:
-    """The ``composition.apps`` block the ``maintainer`` role actually ships.
+    """The ``composition.apps`` block the ``ai-hats-gates`` trait actually ships.
 
     Read from the library rather than restated here, so the sandbox exercises
     the rows under review — a hand-copied literal drifts from them in silence,
@@ -110,7 +117,7 @@ def shipped_apps() -> dict:
     test that picked rows apart would be re-implementing a grammar it does not
     own.
     """
-    config = yaml.safe_load(MAINTAINER_ROLE.read_text(encoding="utf-8"))
+    config = yaml.safe_load(GATES_TRAIT.read_text(encoding="utf-8"))
     return config["composition"]["apps"]
 
 
@@ -308,7 +315,7 @@ def _write_marker(project: Path, tree: str, stages: list[str] | None = None) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
+def test_the_carrier_trait_binds_a_gate_to_both_roads_into_master():
     """S4 / the epic's acceptance: a live consumer, bound and proven to refuse.
 
     TWO rows since HATS-1545 — the app owns the grammar above `run:`, so a row

@@ -15,6 +15,8 @@ composition:
     - ai-hats-dev
     # the layer map: this role places components by layer.
     - ai-hats-framework
+    # this role drives cards to `review` and `done`, so it carries the gates.
+    - ai-hats-gates
     - dev::python
     - dev::shell
   rules: []
@@ -22,19 +24,6 @@ composition:
   # Consent is separate and comes from `trait-agent` (ADR-0030); these rows are
   # the quality gate. `at` names EVERY road into a state — a gate bound to the
   # single expected edge goes unasked wherever the card takes another.
-  apps:
-    rack:
-      tasks:
-        - run: quality-gate/hooks/review-gate.sh
-          at: ['->review']
-          on_error: refuse
-        - run: quality-gate/hooks/done-gate.sh
-          at: ['->done']
-          on_error: refuse
-    wt:
-      - run: quality-gate/hooks/merge-gate.sh
-        at: [pre-merge]
-        on_error: refuse
 injection: |
   # ROLE: ROLE CURATOR
 

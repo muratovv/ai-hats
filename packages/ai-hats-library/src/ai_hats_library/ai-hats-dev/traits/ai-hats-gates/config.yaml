@@ -1,0 +1,33 @@
+name: ai-hats-gates
+# The carrier of the three card gates (ADR-0023), so arming a role is composing
+# a trait rather than copying a block. Three roles take it — `maintainer`,
+# `role-curator`, and `behaviorist` through this project's `customizations` —
+# which is what keeps it a trait rather than an indirection this library folds
+# back into a single consumer.
+composition:
+  # Bound, therefore composed: a row naming an uncomposed skill is a refusal at
+  # resolution (`check_resolve.rebase_onto_mirror`), never an implicit compose.
+  # The roles that also take `ai-hats-dev` get it twice and dedup; `behaviorist`
+  # takes neither and would otherwise arm a gate whose bytes it cannot resolve.
+  skills:
+    - quality-gate
+  # `at` names EVERY road into a state — a gate bound to the single expected
+  # edge goes unasked wherever the card takes another (ADR-0017).
+  apps:
+    rack:
+      tasks:
+        - run: quality-gate/hooks/review-gate.sh
+          at: ['->review']
+          on_error: refuse
+        - run: quality-gate/hooks/done-gate.sh
+          at: ['->done']
+          on_error: refuse
+    wt:
+      - run: quality-gate/hooks/merge-gate.sh
+        at: [pre-merge]
+        on_error: refuse
+# No injection on purpose: the gate's DISCIPLINE (when a change owes an e2e
+# test, how to read a red stage) is prose the `ai-hats-dev` trait and the
+# `quality-gate` skill already carry. This trait is the wiring alone, so it
+# costs nothing in the prompt of a role that only needs to be armed.
+injection: ""

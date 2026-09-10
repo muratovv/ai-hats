@@ -23,6 +23,14 @@ from ai_hats.models import ComponentConfig
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 
+#: The two roles that edit this repo and drive cards to `done`. Named once: two
+#: tests below ask the same pair a different question, and a third copy is how
+#: they would start disagreeing about who "both roles" are.
+_GATED_ROLES = (
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml",
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml",
+)
+
 
 def _read(rel: str) -> str:
     return (REPO_ROOT / rel).read_text()
@@ -83,7 +91,7 @@ def test_new_skill_exists_with_frontmatter(skill_rel: str) -> None:
     assert "description:" in body
 
 
-# --- Maintainer composition (10 traits, expected list) ---------------------
+# --- Maintainer composition (expected trait list) --------------------------
 
 
 def test_maintainer_composition_has_expected_traits() -> None:
@@ -99,6 +107,7 @@ def test_maintainer_composition_has_expected_traits() -> None:
         "skill-engineer",
         "ai-hats-dev",
         "ai-hats-framework",
+        "ai-hats-gates",
         "dev::python",
         "dev::shell",
     }
@@ -170,10 +179,7 @@ def test_maintainer_role_injection_contains(needle: str) -> None:
 def test_shared_discipline_reaches_both_roles() -> None:
     """A trait nobody composes delivers nothing — the failure a file-level
     content test cannot see. Both roles that edit this repo must carry it."""
-    for path in (
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml",
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml",
-    ):
+    for path in _GATED_ROLES:
         assert "ai-hats-dev" in _load(path).composition.traits, path
 
 
@@ -204,22 +210,34 @@ def test_single_consumer_trait_was_folded_into_its_role() -> None:
     assert "ai-hats-maintainer" not in role.composition.traits
 
 
-def test_role_curator_carries_the_quality_gate() -> None:
-    """It edits `src/ai_hats/` and merges to master, so every road into
-    `review` / `done` / a merge owes the same refusal the maintainer owes."""
-    role = _load(
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/role-curator/config.yaml"
-    )
-    apps = role.composition.apps
-    runs = [r["run"] for r in apps["rack"]["tasks"]] + [r["run"] for r in apps["wt"]]
-    assert sorted(runs) == sorted(
+def test_the_gate_carrier_reaches_both_roles() -> None:
+    """Both roles edit `src/ai_hats/` and merge to master, so every road into
+    `review` / `done` / a merge owes the same refusal.
+
+    Asserted on the COMPOSITION edge, not on either role's own file: since
+    HATS-1955 the rows live in `ai-hats-gates`, and a copy left behind in a role
+    would satisfy a file-level read while the trait it no longer needs rots. The
+    gate's EFFECT is `tests/e2e/test_done_gate.py`'s — a row resolved is not a
+    row that ran.
+    """
+    for path in _GATED_ROLES:
+        assert "ai-hats-gates" in _load(path).composition.traits, path
+        assert not _load(path).composition.apps, (
+            f"{path} kept its own apps block; the carrier trait is the one copy"
+        )
+
+    apps = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-gates/config.yaml"
+    ).composition.apps
+    rows = apps["rack"]["tasks"] + apps["wt"]
+    assert sorted(r["run"] for r in rows) == sorted(
         [
             "quality-gate/hooks/review-gate.sh",
             "quality-gate/hooks/done-gate.sh",
             "quality-gate/hooks/merge-gate.sh",
         ]
     )
-    assert all(r["on_error"] == "refuse" for r in apps["rack"]["tasks"] + apps["wt"])
+    assert all(r["on_error"] == "refuse" for r in rows)
 
 
 def test_ai_hats_dev_attaches_doc_protocol() -> None:

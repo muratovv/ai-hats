@@ -28,8 +28,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CHECK = "gate-table"
 DOC_RELPATH = "docs/adr/0023-quality-gate.md"
 GATES_SH = "scripts/gates.sh"
-ROLE_RELPATH = (
-    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
+#: The gates' carrier, not a role that composes it: the rows moved to
+#: a trait so three roles could share one copy, and reading a role here would
+#: render an empty table the day a role stops declaring its own.
+CARRIER_RELPATH = (
+    "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/traits/ai-hats-gates/config.yaml"
 )
 SKILL_RELPATH = "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
 
@@ -92,8 +95,8 @@ def _frontmatter(text: str) -> str:
 
 
 def read_gates(repo: Path) -> list[Gate]:
-    """Every gate the role binds, in the role's order, then the git hooks'."""
-    config = yaml.safe_load((repo / ROLE_RELPATH).read_text(encoding="utf-8"))
+    """Every gate the carrier trait binds, in its order, then the git hooks'."""
+    config = yaml.safe_load((repo / CARRIER_RELPATH).read_text(encoding="utf-8"))
     found: dict[str, list[str]] = {}
     scripts: dict[str, str] = {}
     for trail, row in _walk_rows(config.get("composition", {}).get("apps", {}), ()):
