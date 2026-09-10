@@ -82,6 +82,16 @@ task_prefix: SBX
 ai_hats_dir: .agent/ai-hats
 """
 
+#: The augment road: the role's own file is never touched — the project adds the
+#: carrier to it. `ai-hats-gates` reaches `behaviorist` exactly this way.
+_OVERLAY_YAML = """\
+customizations:
+  {role}:
+    add:
+      traits:
+        - carrier
+"""
+
 _UNGATED_ROLE = f"""\
 name: ungated
 priorities:
@@ -147,6 +157,18 @@ def _seed_library(project: Path, *, bind: bool) -> None:
     (lib / "roles" / "ungated").mkdir(parents=True)
     (lib / "roles" / "ungated" / "config.yaml").write_text(_UNGATED_ROLE, encoding="utf-8")
 
+    # The augment road: the same rows on a TRAIT, so a role can be armed by an
+    # overlay instead of by editing the role. Shape of `ai-hats-gates`.
+    carrier = {
+        "name": "carrier",
+        "composition": {"skills": [SKILL], "apps": shipped_apps()},
+        "injection": "",
+    }
+    (lib / "traits" / "carrier").mkdir(parents=True)
+    (lib / "traits" / "carrier" / "config.yaml").write_text(
+        yaml.safe_dump(carrier, sort_keys=False), encoding="utf-8"
+    )
+
 
 @pytest.fixture
 def gate_project(shared_launcher, tmp_path: Path):
@@ -159,14 +181,19 @@ def gate_project(shared_launcher, tmp_path: Path):
     _launcher, base_env, _venv = shared_launcher
     counter = {"n": 0}
 
-    def make(role: str, *, bind: bool = True) -> tuple[Path, dict[str, str]]:
+    def make(
+        role: str, *, bind: bool = True, overlay: bool = False
+    ) -> tuple[Path, dict[str, str]]:
         counter["n"] += 1
         project = tmp_path / f"proj{counter['n']}"
         project.mkdir()
         # A MAIN checkout: `.git` must be a directory, or D9 clause 4 refuses
         # before any check runs.
         init_repo(project, branch="master", harden=True)
-        (project / "ai-hats.yaml").write_text(_PROJECT_YAML.format(role=role), encoding="utf-8")
+        project_yaml = _PROJECT_YAML.format(role=role)
+        if overlay:
+            project_yaml += _OVERLAY_YAML.format(role=role)
+        (project / "ai-hats.yaml").write_text(project_yaml, encoding="utf-8")
         (project / ".gitignore").write_text(".agent/\n", encoding="utf-8")
         (project / TASKS_SUB).mkdir(parents=True)
         (project / "scripts").mkdir()
@@ -593,6 +620,30 @@ def test_a_role_that_does_not_bind_the_gate_is_not_gated(gate_project, rack_bin)
     assert taken.returncode == 0, taken.stdout + taken.stderr
     assert json.loads(taken.stdout)["task"]["state"] == "done"
     assert not _checks_dir(project, task_id).exists(), "an unbound role must run no check"
+
+
+def test_a_role_armed_through_an_overlay_is_gated(gate_project, rack_bin):
+    """The augment road, end to end: the SAME `ungated` role the test above takes
+    untaxed refuses once the project adds the carrier trait to it.
+
+    This is the positive control the silent-skip defect demands. Its neighbour
+    proves a role runs no check; alone, that passes just as well when the gate
+    is broken, because a gate that cannot fire and a role that does not bind it
+    are the same observation. Only a case where the gate MUST refuse — and does
+    — separates them, and the role is held fixed across the pair so the overlay
+    is the single variable.
+    """
+    project, env = gate_project("ungated", overlay=True)
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    before = _card(project, task_id).read_bytes()
+
+    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=consented(env))
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert _state(project, task_id)["state"] == "review"
+    assert _card(project, task_id).read_bytes() == before
+    assert f"{EDGE} aborted by 'checks'" in refused.stderr
+    assert f"cd {wt} && make done-gate" in refused.stderr, refused.stderr
 
 
 # ---------------------------------------------------------------------------
