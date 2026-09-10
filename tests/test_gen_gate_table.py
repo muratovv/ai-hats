@@ -12,9 +12,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = REPO_ROOT / "scripts" / "gen_gate_table.py"
 DOC = REPO_ROOT / "docs" / "adr" / "0023-quality-gate.md"
 
+#: What `--write` must replace. Spelled so no rendered row can contain it by
+#: accident: a bare "old" was the sentinel until a stage sentence said "holds".
+STALE = "SENTINEL-THE-WRITE-MUST-REPLACE"
+
 SKELETON = (
-    "# a doc\n\nprose above\n\n<!-- gate-table:stages -->\nold\n<!-- /gate-table:stages -->\n\n"
-    "more prose\n\n<!-- gate-table:gates -->\nold\n<!-- /gate-table:gates -->\n\nprose below\n"
+    f"# a doc\n\nprose above\n\n<!-- gate-table:stages -->\n{STALE}\n"
+    "<!-- /gate-table:stages -->\n\nmore prose\n\n<!-- gate-table:gates -->\n"
+    f"{STALE}\n<!-- /gate-table:gates -->\n\nprose below\n"
 )
 
 
@@ -35,7 +40,7 @@ def test_write_then_check_is_green_and_the_prose_survives(tmp_path: Path):
     text = doc.read_text(encoding="utf-8")
     for prose in ("prose above", "more prose", "prose below"):
         assert prose in text
-    assert "old" not in text.split("<!-- gate-table:stages -->")[1].split("<!--")[0]
+    assert STALE not in text.split("<!-- gate-table:stages -->")[1].split("<!--")[0]
 
 
 def test_the_rendered_tables_carry_every_stage_and_every_gate(tmp_path: Path):

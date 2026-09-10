@@ -271,15 +271,6 @@ Only builds the handoff, does not invoke an interactive chat. Useful to:
 
 ---
 
-## How a hypothesis reaches closure
-
-ai-hats reflect session --session 20260512-112233-1
-```
-
-Runs the `session-reviewer` role in the foreground without detaching. Useful when debugging why a review was skipped or produced unexpected output.
-
----
-
 ## Flow 2: backlog triage (`reflect hypothesis`)
 
 Accumulated HYP and PROP items are triaged via `ai-hats reflect hypothesis` (two-phase pipeline).
@@ -318,10 +309,10 @@ HYP closed          PROP triaged
 | Symptom                                              | Where to look                                                                                                                                                                        |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | auto retro does not start                            | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                             |
-| validation_log empty after a session                 | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect hypothesis`                                         |
+| validation_log empty after a session                 | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect hypothesis`                                          |
 | meta-PROP with `failed_session_id=...`               | runtime harness caught a broken SessionReview artifact. Open `<ai_hats_dir>/sessions/retros/sessions/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry |
 | `reflect hypothesis` fails with "claude not in PATH" | install Claude Code or use `--headless` to run Phase 1 only                                                                                                                          |
-| `Overlay: cannot remove ...`                         | unrelated to the feedback loop — see [12]                                                                                                                                            |                                                                                                 |
+| `Overlay: cannot remove ...`                         | unrelated to the feedback loop — see [12]                                                                                                                                            |
 
 ---
 
@@ -339,13 +330,13 @@ HYP closed          PROP triaged
 
 **[6]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal with `votes[]`.
 
-**[7]** — `library/core/roles/session-reviewer/config.yaml` — role composition.
+**[7]** — `packages/ai-hats-library/src/ai_hats_library/core/roles/session-reviewer/config.yaml` — role composition.
 
-**[8]** — `library/core/skills/review-session/SKILL.md` — orchestrator: four-step session-review procedure.
+**[8]** — `packages/ai-hats-library/src/ai_hats_library/core/skills/review-session/SKILL.md` — orchestrator: four-step session-review procedure.
 
-**[9]** — `library/core/skills/review-hypothesis/SKILL.md` — verdict contract on the per-HYP pass.
+**[9]** — `packages/ai-hats-library/src/ai_hats_library/core/skills/review-hypothesis/SKILL.md` — verdict contract on the per-HYP pass.
 
-**[10]** — `library/core/skills/review-proposal/SKILL.md` — inbox vote / novel-PROP contract.
+**[10]** — `packages/ai-hats-library/src/ai_hats_library/core/skills/review-proposal/SKILL.md` — inbox vote / novel-PROP contract.
 
 **[11]** — [`docs/ARCHITECTURE.md#session-lifecycle`](ARCHITECTURE.md#session-lifecycle) — what runtime writes during a session, where `<id>` comes from.
 

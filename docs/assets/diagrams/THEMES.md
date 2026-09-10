@@ -1,10 +1,10 @@
 # d2 theme & font preview
 
-The same [`session-lifecycle.d2`](session-lifecycle.d2) source rendered in every built-in d2 theme, in two modes: **sketch** (hand-drawn) and **flat** (standard rendering). Used during HATS-348 to pick a base before custom palettes.
+The same [`session-lifecycle.d2`](session-lifecycle.d2) source rendered in every built-in d2 theme, in two modes: **sketch** (hand-drawn) and **flat** (standard rendering). Used to pick a base before custom palettes.
 
 Command: `d2 [--sketch] --theme=<id> in.d2 out.svg`
 
-> Final pick for HATS-348 was a custom brand-light palette (see [`PALETTES.md`](PALETTES.md)) on top of `theme-id: 0`. The gallery below stays as a reference for future diagrams that want a different starting point.
+> The final pick was a custom brand-light palette (see [`PALETTES.md`](PALETTES.md)) on top of `theme-id: 0`. The gallery below stays as a reference for future diagrams that want a different starting point.
 
 ---
 

@@ -2,6 +2,7 @@
 
 flow:   a maintainer runs the pre-push bundle, which must refuse the push when a
         tracker id has crept back into prose the library ships to other projects
+        or into a doc a reader of this repository opens
 cmds:
     bash scripts/gates.sh ticket-ids           # announces the stage it dispatched to
     bash scripts/gates.sh no-such-stage        # exit 2, and the usage names the stage
@@ -54,14 +55,15 @@ def _checker(root: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _plant(tmp_path: Path, body: str) -> Path:
-    """A tree with a library skill and the control corpus the gate needs alive."""
+def _plant(tmp_path: Path, body: str, doc: str = "clean\n") -> Path:
+    """A tree with a library skill, a living doc, and the control corpus."""
     root = tmp_path / "planted"
     skill = root / LIB_RELPATH / "core" / "skills" / "demo"
     skill.mkdir(parents=True)
     skill.joinpath("SKILL.md").write_text(body)
     (root / "docs" / "adr").mkdir(parents=True)
     (root / "docs" / "adr" / "0001-x.md").write_text("Recorded in HATS-1.\n")
+    (root / "docs" / "how-to.md").write_text(doc)
     return root
 
 
@@ -137,3 +139,32 @@ def test_the_checker_accepts_the_same_tree_once_the_id_is_gone(tmp_path: Path):
     combined = run.stdout + run.stderr
     assert run.returncode == 0, combined
     assert "ok: no tracker id" in combined, combined
+
+
+def test_the_checker_reads_a_living_doc_and_leaves_the_record_alone(tmp_path: Path):
+    """The docs half, as a real subprocess: `.agent/` is absent from a clone, so
+    an id in `docs/` is as dead a link as one the library ships — while the ADR
+    beside it keeps its ids and goes on serving as the positive control."""
+    root = _plant(tmp_path, "clean\n", doc="The plan home moved in HATS-637.\n")
+    run = _checker(root)
+    combined = run.stdout + run.stderr
+    assert run.returncode == 1, combined
+    fails = [line for line in combined.splitlines() if "FAIL" in line]
+    assert len(fails) == 1, combined
+    assert "docs/how-to.md:1" in fails[0], combined
+    assert "positive control: the pattern still finds" in combined, combined
+
+
+def test_a_sample_survives_a_nested_fence_and_the_prose_after_it_does_not(tmp_path: Path):
+    """One doc carries both halves of the fence rule, so one run has to separate
+    them: the CLI template inside a nested block is untouched, and the sentence
+    after the block — which a naive parity count would have swallowed — is not."""
+    doc = "````markdown\n```bash\nrack transition HATS-042 --link depends_on:HATS-041\n```\n````\n\nLanded in HATS-1430.\n"
+    root = _plant(tmp_path, "clean\n", doc=doc)
+    run = _checker(root)
+    combined = run.stdout + run.stderr
+    assert run.returncode == 1, combined
+    fails = [line for line in combined.splitlines() if "FAIL" in line]
+    assert len(fails) == 1, combined
+    assert "HATS-1430" in fails[0] and ":7:" in fails[0], combined
+    assert "HATS-042" not in "".join(fails), combined

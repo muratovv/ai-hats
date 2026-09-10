@@ -110,6 +110,13 @@ def test_fenced_code_block_is_a_sample_not_a_claim(repo: Path) -> None:
     assert _findings(repo) == []
 
 
+def test_a_nested_fence_leaves_the_rest_of_the_file_judged(repo: Path) -> None:
+    """The parity bug: a ```` block holding ``` ones un-judged every line after it."""
+    _skill(repo, "````markdown\n```bash\ncat file\n```\n````\n\nSee `src/pkg/gone.py`.")
+    found = _findings(repo)
+    assert any("src/pkg/gone.py" in f for f in found), found
+
+
 def test_opt_out_sentinel_skips_the_whole_file(repo: Path) -> None:
     _skill(repo, f"<!-- {prose_refs.OPT_OUT} -->\n\nSee `src/pkg/gone.py`.")
     findings, opted_out, _, _ = prose_refs.scan(repo)

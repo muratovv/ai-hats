@@ -21,7 +21,7 @@ with one pre-1.0 caveat documented below.
   flags. `ai-hats --tree` is the canonical inventory of the surface.
 - `ai-hats.yaml` schema. The top-level `schema_version` field tracks
   breaking shape changes; migrations live in `docs/migration*.md`. The
-  `migration_step` field (HATS-471) is NOT part of the schema contract
+  `migration_step` field is NOT part of the schema contract
   — it is an internal counter for one-shot side-effect replay, freely
   bumped by additive registry entries without a SemVer signal.
 - Tracker on-disk format: the `tracker/backlog/tasks/HATS-NNN/` layout,
@@ -137,12 +137,12 @@ the `wt` and `observe` packages that depend on it, then the data-only
 `library` and the first-party-free `rack`, neither of which has an ordering
 constraint). It runs on **manual dispatch** and
 **auto-triggers** on a push to master that touches `packages/*/pyproject.toml`
-(HATS-943 — bump⇒publish is one step; `skip-existing` no-ops an unchanged
+(bump⇒publish is one step; `skip-existing` no-ops an unchanged
 version). A final `verify-remote-install` job then does a fresh-venv
 `git+https` install and imports `ai_hats_core.migrations`, so a version-skewed
 release fails loud instead of shipping a DOA remote channel.
 
-**Surfaces are not published — there is nothing here for them** (HATS-1826). A
+**Surfaces are not published — there is nothing here for them**. A
 surface (`agy`, `claude`, `cline`, `codex`, `opencode`) is a folder in the
 `ai_hats.surfaces` area, shipped inside the `ai-hats` distribution and declared
 under `[project.entry-points."ai_hats.providers"]` in the root `pyproject.toml`
@@ -196,7 +196,7 @@ new versions in the root `dependencies`.
 **The `version-skew-guard` CI job enforces the bump:** any change to
 `packages/<pkg>/src/**` whose version is not strictly above the published PyPI
 version fails CI (`scripts/check_pkg_version_skew.py`). This is the barrier that
-would have caught HATS-923 / HATS-937 — a `core` module added without a version
+would have caught a `core` module added without a version
 bump, so the remote channel resolved a stale wheel (`ModuleNotFoundError`).
 
 ## CHANGELOG flow
@@ -306,7 +306,7 @@ curl -fsS https://pypi.org/pypi/ai-hats/json \
 # 2. Install the published wheel in a throwaway venv.
 uv venv /tmp/release-verify
 uv pip install --python /tmp/release-verify/bin/python "ai-hats==0.4.0"
-# HATS-790: no bin/ai-hats console script — invoke the package as a module.
+# No bin/ai-hats console script — invoke the package as a module.
 /tmp/release-verify/bin/python -m ai_hats --version    # → ai-hats 0.4.0
 rm -rf /tmp/release-verify
 ```
