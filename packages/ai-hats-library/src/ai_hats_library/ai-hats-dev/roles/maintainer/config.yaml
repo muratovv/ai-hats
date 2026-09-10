@@ -13,27 +13,12 @@ composition:
     # the repo's own working agreements.
     - ai-hats-dev
     - ai-hats-framework
+    # this role drives cards to `review` and `done`, so it carries the gates.
+    - ai-hats-gates
     - dev::python
     - dev::shell
   rules: []
   skills: []
-  # Consent is separate and comes from `trait-agent` (ADR-0030); these rows are
-  # the quality gate (ADR-0023). `at` names EVERY road into a state — a gate
-  # bound to the single expected edge goes unasked wherever the card takes
-  # another (ADR-0017).
-  apps:
-    rack:
-      tasks:
-        - run: quality-gate/hooks/review-gate.sh
-          at: ['->review']
-          on_error: refuse
-        - run: quality-gate/hooks/done-gate.sh
-          at: ['->done']
-          on_error: refuse
-    wt:
-      - run: quality-gate/hooks/merge-gate.sh
-        at: [pre-merge]
-        on_error: refuse
 # Composition rationale (author-facing — NOT injected into the agent prompt).
 # What sets the `maintainer` role apart from the base `assistant` role:
 #   - Repo discipline via the `ai-hats-dev` trait: E2E gate, branch/commit
