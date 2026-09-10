@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**315 of 315 files catalogued — 323 flows.**
+**316 of 316 files catalogued — 324 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -611,6 +611,23 @@ as a claim to check, not as evidence.
 
 - **expect** — reaps only what it can prove dead — an unregistered worktree shell, a pytest run dir whose .lock names an exited pid — and keeps live worktrees, live runs, and anything it cannot judge
 - **why** — the sweeper ran on every gate and deleted nothing (dry-run only), while 145 GB of killed-run residue accumulated in TMPDIR
+
+## `test_cli_unknown_subcommand_refused.py`
+
+*pins HATS-1932*
+
+- **flow** — a developer guessing a subcommand that does not exist
+- **cmds**
+
+  ```console
+  ai-hats githooks --help  # no-resolve: pins the refusal, no session is launched
+  ai-hats task list        # no-resolve: the retired backlog CLI names `rack`
+  ai-hats -- githooks      # no-resolve: `--` still reaches the provider path
+  ai-hats deploy           # no-resolve: an unlisted lone word is refused too
+  ```
+
+- **expect** — exit 2 with a message naming the real invocation, and no new session directory
+- **why** — without the guard the token reaches the provider as a prompt — five field sessions launched claude, printed claude's usage and were SIGTERM'd 6 s later, leaving a dead session directory instead of a CLI error
 
 ## `test_cline_clean_root.py`
 
