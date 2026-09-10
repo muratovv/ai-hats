@@ -1,9 +1,7 @@
 name: ai-hats-gates
-# The carrier of the three card gates (ADR-0023), so arming a role is composing
-# a trait rather than copying a block. Three roles take it — `maintainer`,
-# `role-curator`, and `behaviorist` through this project's `customizations` —
-# which is what keeps it a trait rather than an indirection this library folds
-# back into a single consumer.
+# The carrier of the three card gates (ADR-0023): the rows live here once, so a
+# role is armed by composing this trait — or by a project adding it through
+# `customizations` — instead of by copying the block into the role.
 composition:
   # Bound, therefore composed: a row naming an uncomposed skill is a refusal at
   # resolution (`check_resolve.rebase_onto_mirror`), never an implicit compose.

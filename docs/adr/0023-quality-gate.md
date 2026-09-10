@@ -233,7 +233,7 @@ flowchart TD
 ### D4 — Гейты и их содержание
 
 Что каждый гейт требует и где применяется — из `scripts/gates.sh` и привязок
-роли `maintainer` (`composition.apps`, ключ `gate:` в строке) [5]:
+трейта `ai-hats-gates`, который несут роли этого репозитория (`composition.apps`) [5]:
 
 <!-- gate-table:gates -->
 
