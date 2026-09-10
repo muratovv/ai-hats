@@ -36,7 +36,7 @@ class AcmeProvider(Surface):
         return "acme"
 
     def system_prompt_path(self, layout) -> Path:
-        return project_dir / "ACME.md"
+        return layout.root / "ACME.md"
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"

@@ -182,7 +182,9 @@ def test_installed_wheel_delivers_a_startable_server(tmp_path, monkeypatch):
     env = clean_env()
     env.pop("AI_HATS_LIBRARY_ROOT", None)
     env["AI_HATS_USER_HOME"] = str(tmp_path / "user-home")
-    env["CODEX_HOME"] = str(tmp_path / "codex-base")
+    codex_base = tmp_path / "codex-base"
+    codex_base.mkdir()
+    env["CODEX_HOME"] = str(codex_base)
     env["AI_HATS_CACHE_HOME"] = str(tmp_path / "cache")
 
     def run(args):
@@ -227,20 +229,22 @@ from ai_hats.consent_wrapper import materialize_consent_wrappers
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from ai_hats.surfaces.codex.provider import CodexSurface
 from ai_hats.session_report import consent_entry
+from ai_hats_core.layout import ProjectLayout
 project = Path(sys.argv[1])
 ProjectConfig(provider="codex", active_role="assistant", default_role="assistant").save(project / PROJECT_CONFIG)
 assembler = Assembler(project)
 assembler.init()
 result = assembler.composer.compose("assistant")
 surface, artifacts = CodexSurface(), BuiltArtifacts()
-surface.build_session_artifacts(project, result, "installed", run_mode=RunMode.HITL, artifacts=artifacts)
-materialize_consent_wrappers(project, result, "installed", surface, artifacts)
+layout = ProjectLayout.at(project)
+surface.build_session_artifacts(layout, result, "installed", run_mode=RunMode.HITL, artifacts=artifacts)
+materialize_consent_wrappers(layout, result, "installed", surface, artifacts)
 session_dir = project / ".agent/ai-hats/sessions/runs/installed"
 session_dir.mkdir(parents=True, exist_ok=True)
 (session_dir / "role_materialization.json").write_text(json.dumps({
     "role": "assistant", "checks": [], "consent": [consent_entry(p) for p in result.consent],
 }))
-env = assemble_launch_env(surface, project, project / ".agent/ai-hats/sessions/runs/installed",
+env = assemble_launch_env(surface, layout, project / ".agent/ai-hats/sessions/runs/installed",
     session_id="installed", trace_path="", role="assistant", root_pid=str(os.getpid()),
     extra_env=artifacts.extra_env, run_mode=RunMode.HITL, claim=False)
 print(json.dumps({"env": env, "args": artifacts.cli_args}))

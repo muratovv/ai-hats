@@ -332,12 +332,18 @@ def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
 
 def test_the_maintainer_role_is_ai_hats_specific_not_generic():
     """The gate refuses any project with no ``done-gate`` stage, so the role that
-    carries it must be one only this codebase wears."""
+    carries it must be one only this codebase wears.
+
+    The layer the config lives in and the subject its injection names are the whole
+    contract. Never assert on a composed component's NAME here — one such assert
+    matched a trait the role listed, and went red the day that trait was folded into
+    the role, changing nothing this test is about. `tests/sessions/test_role_split.py`
+    owns the composition contract.
+    """
     text = MAINTAINER_ROLE.read_text(encoding="utf-8")
     assert "/ai-hats-dev/roles/" in MAINTAINER_ROLE.as_posix(), (
         "ai-hats-dev/ is the layer for what only this repository composes"
     )
-    assert "ai-hats-maintainer" in text
     assert "ai-hats codebase" in text
 
 
