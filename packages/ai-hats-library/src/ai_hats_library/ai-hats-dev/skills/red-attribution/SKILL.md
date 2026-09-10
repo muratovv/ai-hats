@@ -21,32 +21,81 @@ what it ran.
 ## Procedure
 
 **1. Re-check the base before blaming the diff.** The cheapest cause of a red
-tier on a branch is a stale base, not the change. Merge or rebase onto current
-master and run again. One card's 13 failures went to 1 that way — spend this
-step before the expensive ones.
+tier on a branch is a stale base, not the change. One card's 13 failures went to
+1 this way — spend this step before the expensive ones.
+
+```bash
+git rev-list --count HEAD..master     # 0 = current; anything else, merge first
+git merge master --no-edit
+```
 
 **2. Rule out the local venv.** Mass failures that die partway through are more
-often a broken interpreter than a broken master. A venv fault looks exactly like
-foreign redness and is fixed in a minute.
+often a broken interpreter than a broken master, and a venv fault looks exactly
+like foreign redness.
 
-**3. Take a baseline in the SAME venv.** Run the same stage on the base commit,
-same interpreter, same markers. A baseline from a different venv proves nothing:
-one measured pair was 57 failures on the branch against 32 on master with large
-unique sets *in both directions* — neither number meant what it looked like.
+```bash
+.venv/bin/python -c 'import ai_hats, sys; print(ai_hats.__file__, sys.executable)'
+```
 
-**4. Diff the failure LISTS, not the counts.** Equal counts hide a swap. The
-usable verdict is a byte-identical list of node ids, or an explicit set
-difference. `N failed` on both sides is not evidence.
+The path must sit inside THIS worktree. A `.venv` pointing at another checkout is
+the fault itself — `quality-gate` prints the provisioning command when it sees one.
+
+**3. Take a baseline through the SAME mechanism.** Run the stage on your base
+commit the way you ran it on the branch — same command, same markers. A baseline
+taken another way proves nothing: one measured pair was 57 failures on the branch
+against 32 on master with large unique sets *in both directions*, and neither
+number meant what it looked like.
+
+```bash
+RUNCHECK=packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/bin/runcheck.sh
+BASE=$(git merge-base HEAD master)
+
+timeout 3000 bash "$RUNCHECK" --log /tmp/branch.log -- \
+    bash scripts/gates.sh run --fresh <stage>
+timeout 3000 bash "$RUNCHECK" --log /tmp/base.log -- \
+    bash scripts/gates.sh run --rev "$BASE" --fresh <stage>
+
+cat /tmp/branch.log.rc /tmp/base.log.rc     # the RUNNER's numbers, not a notice's
+```
+
+`--rev` runs the stage in a scratch checkout of that commit, so both sides are
+built the same way; `--fresh` stops a green marker short-circuiting either run.
+
+**4. Diff the failure LISTS, not the counts.** Equal counts hide a swap.
+
+```bash
+for f in branch base; do
+    grep -E '^(FAILED|ERROR) ' /tmp/$f.log \
+        | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u > /tmp/$f.ids
+done
+diff /tmp/base.ids /tmp/branch.ids     # empty = every red line is pre-existing
+```
+
+Lines only in `branch.ids` are yours. Lines in both are not — and a line only in
+`base.ids` is its own finding: the branch FIXED something, which is worth saying
+out loud rather than letting it pass unremarked.
 
 **5. Name the owner of every line the branch did not add.** An open card per
-failing node id — the card that broke it, or a new one. A line you cannot assign
-is not classified yet; say that, rather than rounding it to "pre-existing".
+failing node id — the card that broke it, or a new one.
 
-**6. Report the classification. Do not act on it alone.** Say which failures are
-yours (fix those), which are not, and who owns them. The decision to proceed on
-someone else's red is the supervisor's — and the flag that encodes it comes from
-the launching environment, never from your command line (`safety-guard` refuses
-the prefix).
+```bash
+rack ls --grep "<test file or node id>" --all-backlogs    # who already owns it
+rack create "<stage> red: <test>" --description "..."     # when nobody does
+```
+
+A line you cannot assign is not classified yet; say exactly that, rather than
+rounding it to "pre-existing".
+
+**6. Report the classification. Do not act on it alone.** One line the supervisor
+can act on — counts, owners, and what is unassigned:
+
+```bash
+rack transition <ID> --log "e2e <stage>: N red, M mine (fixed), K owned by <cards>, J unassigned"
+```
+
+The decision to proceed on someone else's red is the supervisor's — and the flag
+that encodes it comes from the launching environment, never from your command
+line (`safety-guard` refuses the prefix).
 
 ## Completion
 

@@ -42,10 +42,12 @@ except ImportError:  # helper absent -> say so; never skip quietly
         return False
 
 
-#: Mirrors ``ai_hats.constants.BYPASS_FLAG_SUFFIXES``. Pinned by a contract test.
+# Copied, never imported: under the SYSTEM python3 this shebang picks, `import
+# ai_hats` is a ModuleNotFoundError. test_ack_prefix_guard.py catches the drift.
+#: Mirrors ``ai_hats.constants.BYPASS_FLAG_SUFFIXES``.
 BYPASS_FLAG_SUFFIXES = ("_ACK", "_OFF", "_SKIP")
 
-#: Mirrors ``ai_hats.constants.BYPASS_FLAGS_OFF_CONVENTION``. Pinned by a contract test.
+#: Mirrors ``ai_hats.constants.BYPASS_FLAGS_OFF_CONVENTION``.
 BYPASS_FLAGS_OFF_CONVENTION = frozenset({"AI_HATS_SKIP_SELF_LOCATION_GUARD", "AI_HATS_YOLO"})
 
 #: Consent's own, and ``safety_gate.py`` REWRITES an approved command to carry
