@@ -1,185 +1,168 @@
 """DRAFT (HATS-1966) — how `canonical` gets used, per consumer.
 
-Illustrative only: this file is a review artifact, not a module. It will be
-deleted once the call sites it sketches are real. Read it top to bottom — each
-block is one consumer and shows the before/after where the behaviour changes.
+Illustrative only; deleted once the call sites it sketches are real. Each block
+is one consumer. Note that no consumer holds a session unless it actually needs
+a total — reading is iteration.
 """
 
 from __future__ import annotations
 
 from ai_hats_observe.canonical import (
-    VIEW_AB,
-    VIEW_FULL,
-    VIEW_JUDGE,
-    CanonicalSession,
+    ANSWER_ONLY,
+    WITH_REASONING,
+    Blocking,
     Completion,
+    HarnessActionRequired,
+    HarnessMustAct,
+    ItemEmitted,
     ItemKind,
-    Severity,
-    SignalKind,
-    from_jsonl,
-    from_sdk,
+    Notice,
+    PersonActionRequired,
+    PromptReceived,
+    ResponseEnded,
+    ResponseStarted,
+    Signal,
+    WorthRecording,
+    collect,
+    read_stream,
+    read_transcript,
+    select,
 )
 
 # ===========================================================================
-# 1. The parser produces it. The legacy shape is DERIVED, so `audit.md` keeps
-#    working while the new model becomes the source of truth (expand-contract).
+# 1. The parser. Legacy fields are folded out of the stream, so `audit.md`
+#    keeps working while the stream becomes the source of truth.
 # ===========================================================================
 
 
 class ClaudeParser:
     def parse(self, jsonl_path, trace_path):
-        session = from_jsonl(_read_records(jsonl_path))
+        run = collect(read_transcript(_records(jsonl_path)))
         return ParsedTranscript(
-            # legacy fields, now computed off the canonical model
-            turns=[_legacy_turn(ex) for ex in session.exchanges],
-            model_stats=_legacy_model_stats(session),
-            agg_usage=_as_dict(session.usage),      # counted once per response
+            turns=[_legacy_turn(r) for r in run.responses],
+            agg_usage=_as_dict(run.usage),      # the 2.61x fix, in one line
             flags=[],
-            # new fields
-            exchanges=session.exchanges,
-            signals=session.signals,
+            signals=run.signals,
         )
 
 
 # ===========================================================================
-# 2. The token fix, concretely. This is the whole 2.61x defect.
+# 2. Why the token number changes.
 # ===========================================================================
 
-# BEFORE — every fragment of one API call adds its (identical) usage again:
-#     for record in records:
-#         agg["input_tokens"] += record["message"]["usage"]["input_tokens"]
-#     # one response spanning 3 records is counted 3 times
-#
-# AFTER — usage rides the Response, which exists once per requestId:
-total = session.usage                    # -> Usage(input_tokens=..., ...)
-per_call = [r.usage for ex in session.exchanges for r in ex.responses]
-n_api_calls = len(per_call)              # real calls, not fragments
+# Cost arrives once, on ResponseEnded, because that is the one moment it is
+# known for the whole call. There is no per-fragment usage to accidentally sum:
+spend = sum(e.usage.output_tokens for e in events if isinstance(e, ResponseEnded))
+calls = run.api_calls                 # inference calls, not transcript records
 
 
 # ===========================================================================
-# 3. AuditWriter renders the full view — thinking included.
+# 3. AuditWriter renders straight off the stream — no intermediate tree.
 # ===========================================================================
 
 
-def render_audit(session: CanonicalSession) -> str:
+def render_audit(events) -> str:
     lines = []
-    for ex in VIEW_FULL.apply(session.exchanges):
-        lines.append(f"## {ex.ts}")
-        if ex.prompt:
-            lines.append(f"👤 {ex.prompt}")
-        for response in ex.responses:
-            for item in response.items:
-                match item.kind:
-                    case ItemKind.THINKING:
-                        lines.append(f"💭 {item.text}")
-                    case ItemKind.TOOL_CALL:
-                        lines.append(f"🔧 {item.name}({item.input})")
-                    case ItemKind.TOOL_RESULT:
-                        # today this never reaches audit.md at all
-                        mark = "✅" if item.ok else "❌"
-                        lines.append(f"{mark} -> {item.content}")
-                    case ItemKind.TEXT:
-                        lines.append(f"👾 {item.text}")
-            if response.completion is not Completion.COMPLETE:
-                lines.append(f"⚠️  response {response.completion}")
-
-    # the health axis renders once, at the end — a run killed by the platform
-    # stops looking like a run that simply finished early
-    for signal in session.signals:
-        lines.append(f"[{signal.severity}] {signal.kind}: {signal.detail}")
+    for event in select(events, WITH_REASONING):
+        match event:
+            case PromptReceived():
+                lines.append(f"👤 {event.text}")
+            case ItemEmitted() if event.item.kind is ItemKind.THINKING:
+                lines.append(f"💭 {event.item.text}")
+            case ItemEmitted() if event.item.kind is ItemKind.TOOL_CALL:
+                lines.append(f"🔧 {event.item.name}({event.item.input})")
+            case ItemEmitted() if event.item.kind is ItemKind.TOOL_RESULT:
+                lines.append(f"{'✅' if event.item.ok else '❌'} {event.item.content}")
+            case ItemEmitted() if event.item.kind is ItemKind.TEXT:
+                lines.append(f"👾 {event.item.text}")
+            case ResponseEnded() if event.completion is not Completion.COMPLETE:
+                lines.append(f"⚠️  {event.completion}")
+            case PersonActionRequired() | HarnessActionRequired():
+                lines.append(f"🛑 {event.reason}: {event.detail}")
+            case Notice():
+                lines.append(f"ℹ️  {event.reason}: {event.detail}")
     return "\n".join(lines)
 
 
 # ===========================================================================
-# 4. Per-consumer projections — the "smarter storage" requirement.
+# 4. Projections: the same stream, narrowed per consumer.
 # ===========================================================================
 
-judge_input = VIEW_JUDGE.apply(session.exchanges)   # no ThinkingItem: judge scores
-                                                    # the output, not the reasoning
-ab_input = VIEW_AB.apply(session.exchanges)         # thinking kept: an A/B run
-                                                    # compares *how* it got there
+judge_sees = select(events, ANSWER_ONLY)        # reasoning withheld — a judge
+                                                 # scores the answer, not the route
+comparison_sees = select(events, WITH_REASONING)  # an A/B run compares the route
+
+# Both still see every signal, so neither can mistake a killed run for a clean one.
 
 
 # ===========================================================================
-# 5. sdk_runner — two changes.
+# 5. sdk_runner.
 # ===========================================================================
 
 
 async def drain_one_turn(client, message):
-    messages = []
-    async for msg in client.receive_response():
-        messages.append(msg)
+    transcript = []
+    blocked = None
 
-    session = from_sdk(messages)
+    async for event in read_stream(client.receive_response()):
+        match event:
+            case ItemEmitted() if event.item.kind is ItemKind.TEXT:
+                transcript.append(event.item.text)   # an API-error notice is a
+                                                      # signal, never a TextItem,
+                                                      # so it cannot land here
+            case _ if isinstance(event, Blocking):
+                blocked = event
 
-    # (a) the transcript no longer carries API-error text. Today a
-    #     "You've hit your monthly spend limit" TextBlock becomes the agent's
-    #     answer — that happened in 15 runs in the corpus.
-    transcript = "".join(r.text for ex in session.exchanges for r in ex.responses)
-
-    # (b) the run's death is legible instead of silent
-    if killed := session.failed:
+    if blocked:
         return SdkRunResult(
-            exit_code=SDK_EXIT_ERROR,
-            stdout=transcript,
-            error=f"{killed.kind}: {killed.detail}",
-            # recorded, not acted on — retry policy is a different card
-            retry_after=killed.retry_after,
+            exit_code=1,
+            stdout="".join(transcript),
+            error=f"{blocked.reason}: {blocked.detail}",
+            retry_after=getattr(blocked, "retry_after", None),  # recorded, not obeyed
         )
 
 
 # ===========================================================================
-# 6. Callers that just want a yes/no on run health.
+# 6. Callers asking whose problem a failure is.
 # ===========================================================================
 
-if signal := session.failed:
-    match signal.kind:
-        case SignalKind.AUTH | SignalKind.BILLING:
-            ...   # a human has to act
-        case SignalKind.QUOTA | SignalKind.SERVICE:
-            ...   # signal.transient is True; signal.retry_after may be set
-        case SignalKind.INVALID_REQUEST:
-            ...   # our bug
-
-# and the drift detector becomes a real signal again: today 12 of 23 record
-# types are unclassified, so `unknown-entry-types` fires on 59.4% of sessions
-drifted = [s for s in session.signals if s.kind is SignalKind.UNSUPPORTED]
+match signal:
+    case PersonActionRequired():
+        ...     # nothing automated clears this; surface it and stop
+    case HarnessActionRequired(reason=HarnessMustAct.WAIT):
+        ...     # signal.retry_after says when capacity returns
+    case HarnessActionRequired(reason=HarnessMustAct.RETRY):
+        ...     # transient; another attempt is reasonable
+    case HarnessActionRequired(reason=HarnessMustAct.ABORT):
+        ...     # retrying cannot help
+    case Notice(reason=WorthRecording.UNSUPPORTED_RECORD):
+        ...     # schema drift, visible the first time it appears
 
 
 # ===========================================================================
-# 7. The usage report (new schema version) is a projection too.
+# 7. The usage report folds once, at the end.
 # ===========================================================================
 
 
-def build_usage_report(session: CanonicalSession) -> dict:
+def build_usage_report(events) -> dict:
+    run = collect(events)
     return {
         "schema_version": "usage/v2",
-        "usage_totals": _as_dict(session.usage),
-        "api_calls": sum(len(ex.responses) for ex in session.exchanges),
-        "signals": [
-            {
-                "kind": s.kind,
-                "severity": s.severity,
-                "ts": s.ts,
-                "retry_after": s.retry_after,
-                "raw_code": s.raw_code,
-            }
-            for s in session.signals
-        ],
-        # ... plus the existing v1 keys, with entry_types_seen now complete
+        "usage_totals": _as_dict(run.usage),
+        "api_calls": run.api_calls,
+        "signals": [_as_dict(s) for s in run.signals],
+        # ... plus the existing keys
     }
 
 
 # ===========================================================================
-# 8. HATS-1967 later tails the same model — IN_FLIGHT is the hinge.
+# 8. HATS-1967 tails the same reader — this is what the stream shape buys.
+#    No special live mode: the reader that parses a finished transcript is the
+#    reader that follows a running one.
 # ===========================================================================
 
 
-def tail(path):
-    for batch in _follow(path):
-        session = from_jsonl(batch)
-        for ex in session.exchanges:
-            for response in ex.responses:
-                if response.completion is Completion.IN_FLIGHT:
-                    continue          # still being written; wait for its terminal fragment
-                yield response
+def follow(path):
+    for event in read_transcript(_new_records_since_last_read(path)):
+        yield event          # a response still being written has simply not
+                             # produced its ResponseEnded yet

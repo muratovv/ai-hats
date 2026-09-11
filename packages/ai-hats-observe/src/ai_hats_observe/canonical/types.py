@@ -1,0 +1,135 @@
+"""Domain vocabulary: the scalars and the items a response is made of.
+
+Everything a field can hold is named here, so no call site has to guess what a
+bare ``str`` means.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, ClassVar, NewType
+
+# --- scalars ---------------------------------------------------------------
+
+Timestamp = NewType("Timestamp", str)
+"""ISO-8601 instant at which a surface says something happened."""
+
+EpochSeconds = NewType("EpochSeconds", int)
+"""Absolute wall-clock deadline, for waits that outlive this process."""
+
+ResponseId = NewType("ResponseId", str)
+"""Identity of one inference call. Stable across every fragment the surface
+emits for that call, which is what lets a consumer count a call — and its cost —
+exactly once."""
+
+ToolCallId = NewType("ToolCallId", str)
+"""Joins a tool invocation to its outcome."""
+
+ModelName = NewType("ModelName", str)
+"""Which model produced a response, so a switch mid-run is attributable."""
+
+
+# --- items -----------------------------------------------------------------
+
+
+class ItemKind(StrEnum):
+    """The dimension a projection selects on: a consumer that scores an answer
+    wants different items than one comparing how the answer was reached."""
+
+    TEXT = "text"
+    THINKING = "thinking"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+
+
+@dataclass(frozen=True)
+class TextItem:
+    """Prose addressed to the reader — the part of a run that is its answer."""
+
+    kind: ClassVar[ItemKind] = ItemKind.TEXT
+    text: str
+
+
+@dataclass(frozen=True)
+class ThinkingItem:
+    """Reasoning the model did on the way to an answer. Kept verbatim so a
+    comparison can ask *why* a run reached its result, and filtered out for
+    consumers that may only judge the result itself."""
+
+    kind: ClassVar[ItemKind] = ItemKind.THINKING
+    text: str
+    redacted: bool = False
+
+
+@dataclass(frozen=True)
+class ToolCallItem:
+    """An action the model asked the harness to take."""
+
+    kind: ClassVar[ItemKind] = ItemKind.TOOL_CALL
+    call_id: ToolCallId
+    name: str
+    input: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ToolResultItem:
+    """What came back from an action, and whether it worked. Carries
+    ``call_id`` so a consumer can attribute an outcome to the request that
+    caused it rather than to position in a list."""
+
+    kind: ClassVar[ItemKind] = ItemKind.TOOL_RESULT
+    call_id: ToolCallId
+    ok: bool
+    content: Any = None
+
+
+Item = TextItem | ThinkingItem | ToolCallItem | ToolResultItem
+
+
+# --- how a response ended --------------------------------------------------
+
+
+class Completion(StrEnum):
+    """Why a response stopped producing items.
+
+    Only terminal outcomes appear here. A response still being produced has no
+    completion at all — it is one for which no ``ResponseEnded`` has arrived —
+    so "still running" can never be mistaken for a state the surface reported.
+    """
+
+    COMPLETE = "complete"
+    """The model finished on its own terms."""
+
+    TRUNCATED_TRANSPORT = "truncated_transport"
+    """The connection died mid-answer; what was received is partial."""
+
+    TRUNCATED_BUDGET = "truncated_budget"
+    """An output ceiling cut the answer short; re-running with more room may
+    complete it."""
+
+    REFUSED = "refused"
+    """The model declined to answer."""
+
+    UNKNOWN = "unknown"
+    """The stream ended without the surface saying why. Distinct from every
+    value above: those are reported outcomes, this one is our admission that we
+    did not observe one."""
+
+
+@dataclass(frozen=True)
+class Usage:
+    """Billable cost of one inference call."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+
+    def __add__(self, other: "Usage") -> "Usage":
+        return Usage(
+            self.input_tokens + other.input_tokens,
+            self.output_tokens + other.output_tokens,
+            self.cache_read_input_tokens + other.cache_read_input_tokens,
+            self.cache_creation_input_tokens + other.cache_creation_input_tokens,
+        )
