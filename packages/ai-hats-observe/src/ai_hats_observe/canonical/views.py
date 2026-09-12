@@ -7,6 +7,7 @@ iterable of events and returns one — they compose, and none of them collects.
 
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass, field
 from typing import Iterable, Iterator
 
@@ -48,6 +49,42 @@ def select(events: Iterable[Event], kinds: frozenset[ItemKind]) -> Iterator[Even
             case ItemDelta() if ItemKind.TEXT not in kinds:
                 continue
         yield event
+
+
+# --- time order ------------------------------------------------------------
+
+# A reader emits in causal order, which is not time order: a response is closed
+# only once something later proves it ended, so its end carries an earlier stamp
+# than the tool results that arrived while it was open. The disorder is bounded
+# by POSITION, not by time — measured over 693 transcripts an event never
+# reaches back more than 2 places, while in seconds it reaches back as far as 12
+# days, because a paused session closes its last response whenever it resumes.
+# So a buffer a few events deep restores exact time order at no latency, where a
+# time-based watermark would have to wait out the pause.
+REORDER_DEPTH = 8
+
+
+def in_time_order(events: Iterable[Event], depth: int = REORDER_DEPTH) -> Iterator[Event]:
+    """Re-emit ``events`` ordered by timestamp.
+
+    Holds at most ``depth`` events — four times the worst disorder measured — and
+    releases the earliest each time the buffer is full. An event carrying no
+    timestamp keeps the position it arrived in, so a source that reports no time
+    passes through untouched rather than being flung to the front.
+    """
+    buffered: list[tuple[str, int, Event]] = []
+    watermark = ""
+    for seq, event in enumerate(events):
+        ts = getattr(event, "ts", None)
+        if ts is None:
+            ts = watermark
+        elif ts > watermark:
+            watermark = ts
+        heapq.heappush(buffered, (ts, seq, event))
+        if len(buffered) > depth:
+            yield heapq.heappop(buffered)[2]
+    while buffered:
+        yield heapq.heappop(buffered)[2]
 
 
 # --- collecting, for consumers that are not live ---------------------------

@@ -43,7 +43,16 @@ from .types import (
     ToolCallItem,
     Usage,
 )
-from .views import ANSWER_ONLY, EVERYTHING, WITH_REASONING, Collected, collect, select
+from .views import (
+    ANSWER_ONLY,
+    EVERYTHING,
+    REORDER_DEPTH,
+    WITH_REASONING,
+    Collected,
+    collect,
+    in_time_order,
+    select,
+)
 
 __all__ = [
     "ANSWER_ONLY",
@@ -51,6 +60,7 @@ __all__ = [
     "Collected",
     "Completion",
     "EVERYTHING",
+    "REORDER_DEPTH",
     "EpochSeconds",
     "Event",
     "HarnessActionRequired",
@@ -78,6 +88,7 @@ __all__ = [
     "WITH_REASONING",
     "WorthRecording",
     "collect",
+    "in_time_order",
     "AsyncEventReader",
     "EventReader",
     "select",
