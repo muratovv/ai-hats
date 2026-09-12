@@ -45,6 +45,11 @@ class WorthRecording(StrEnum):
     MODEL_SWITCHED = "model_switched"
     CONTEXT_COMPACTED = "context_compacted"
 
+    # Capacity is running low but nothing has been refused yet. Only a live
+    # stream reports this, and only before the wall is hit — it is the one
+    # signal that arrives in time to change what a caller does.
+    APPROACHING_LIMIT = "approaching_limit"
+
     # A record shape we do not model. Reported rather than dropped so schema drift is
     # visible the first time it appears, instead of silently changing what our numbers
     # mean.
