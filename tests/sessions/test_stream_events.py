@@ -8,6 +8,8 @@ driven deterministically.
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncio
 
 import pytest
@@ -18,6 +20,7 @@ from ai_hats_observe.canonical import (
     HarnessActionRequired,
     HarnessMustAct,
     ItemEmitted,
+    ToolResultReceived,
     ItemKind,
     Notice,
     PersonActionRequired,
@@ -135,7 +138,15 @@ def drain(messages) -> list:
 
 
 def _items(events, kind: ItemKind) -> list:
-    return [e.item for e in events if isinstance(e, ItemEmitted) and e.item.kind is kind]
+    """Things of one kind, whichever event carried them — a tool result is its
+    own event now, parented by the call rather than by a response."""
+    out: list[Any] = []
+    for e in events:
+        if isinstance(e, ItemEmitted) and e.item.kind is kind:
+            out.append(e.item)
+        elif isinstance(e, ToolResultReceived) and kind is ItemKind.TOOL_RESULT:
+            out.append(e)
+    return out
 
 
 def _signals(events) -> list:
@@ -176,7 +187,7 @@ class TestNormalTurn:
             "ItemEmitted",  # thinking
             "ItemEmitted",  # text
             "ItemEmitted",  # tool call
-            "ItemEmitted",  # tool result, still inside the open response
+            "ToolResultReceived",  # parented by the call, not the response
             "ResponseEnded",  # closed when the next call starts
             "ResponseStarted",
             "ItemEmitted",
@@ -247,10 +258,14 @@ class TestNormalTurn:
             ]
         )
 
-        emitted = [
-            e for e in events if isinstance(e, ItemEmitted) and e.item.kind is ItemKind.TOOL_RESULT
-        ]
-        assert emitted[0].response_id == "msg_a"
+        emitted = [e for e in events if isinstance(e, ToolResultReceived)]
+        assert emitted[0].call_id == "call_1"
+        # a later response ran in between, and folding still files the outcome
+        # under the call that asked rather than under the most recent response
+        run = collect(events)
+        by_id = {r.response_id: r for r in run.responses}
+        assert [r.content for r in by_id["msg_a"].results] == ["ok"]
+        assert by_id["msg_b"].results == []
 
     def test_server_side_tools_are_tool_calls_too(self):
         """The API executed it instead of us, but the model still asked for it —

@@ -10,7 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Iterator
 
-from .events import Event, ItemDelta, ItemEmitted, ResponseEnded, ResponseStarted
+from .events import (
+    Event,
+    ItemDelta,
+    ItemEmitted,
+    ResponseEnded,
+    ResponseStarted,
+    ToolResultReceived,
+)
 from .signals import Blocking, Signal
 from .types import Item, ItemKind, ModelName, ResponseId, Usage
 
@@ -36,6 +43,8 @@ def select(events: Iterable[Event], kinds: frozenset[ItemKind]) -> Iterator[Even
         match event:
             case ItemEmitted() if event.item.kind not in kinds:
                 continue
+            case ToolResultReceived() if ItemKind.TOOL_RESULT not in kinds:
+                continue
             case ItemDelta() if ItemKind.TEXT not in kinds:
                 continue
         yield event
@@ -52,6 +61,8 @@ class Response:
     response_id: ResponseId
     model: ModelName | None = None
     items: list[Item] = field(default_factory=list)
+    # answers to this response's calls, which arrive after it has ended
+    results: list[ToolResultReceived] = field(default_factory=list)
     usage: Usage = Usage()
     completion: str | None = None
 
@@ -95,6 +106,7 @@ def collect(events: Iterable[Event]) -> Collected:
     """Fold a stream into ``Collected``. Consumes the stream."""
     out = Collected()
     by_id: dict[ResponseId, Response] = {}
+    caller: dict[str, Response] = {}
     for event in events:
         match event:
             case ResponseStarted():
@@ -102,7 +114,16 @@ def collect(events: Iterable[Event]) -> Collected:
                 by_id[event.response_id] = r
                 out.responses.append(r)
             case ItemEmitted():
-                by_id[event.response_id].items.append(event.item)
+                response = by_id[event.response_id]
+                response.items.append(event.item)
+                if event.item.kind is ItemKind.TOOL_CALL:
+                    caller[event.item.call_id] = response
+            case ToolResultReceived():
+                # attached to the response that asked, which is the tree a
+                # report wants even though the stream could not nest it
+                owner = caller.get(event.call_id)
+                if owner is not None:
+                    owner.results.append(event)
             case ResponseEnded():
                 r = by_id[event.response_id]
                 r.usage = event.usage

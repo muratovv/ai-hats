@@ -34,7 +34,7 @@ from ai_hats_observe.canonical import (
     Signal,
     TextItem,
     ToolCallItem,
-    ToolResultItem,
+    ToolResultReceived,
     WorthRecording,
     collect,
 )
@@ -109,7 +109,15 @@ def events_of(tmp_path: Path, records: list[dict[str, Any]], name: str = "t.json
 
 
 def items(events: Iterator[Any] | list[Any], kind: ItemKind) -> list[Any]:
-    return [e.item for e in events if isinstance(e, ItemEmitted) and e.item.kind is kind]
+    """Things of one kind, whichever event carried them — a tool result is its
+    own event now, parented by the call rather than by a response."""
+    out: list[Any] = []
+    for e in events:
+        if isinstance(e, ItemEmitted) and e.item.kind is kind:
+            out.append(e.item)
+        elif isinstance(e, ToolResultReceived) and kind is ItemKind.TOOL_RESULT:
+            out.append(e)
+    return out
 
 
 def signals(events: list[Any]) -> list[Signal]:
@@ -199,7 +207,7 @@ def test_thinking_is_retained_verbatim(tmp_path: Path) -> None:
 
 
 def test_tool_results_link_back_to_their_call_for_success_and_failure(tmp_path: Path) -> None:
-    """A ToolResultItem's call_id names the ToolCallItem that asked for it, and
+    """A ToolResultReceived's call_id names the ToolCallItem that asked for it, and
     ``ok`` carries ``is_error`` — 3458 failures were invisible before.
 
     Positive control: the successful result is asserted linked as well, so the
@@ -238,22 +246,22 @@ def test_tool_results_link_back_to_their_call_for_success_and_failure(tmp_path: 
     assert results["call-bad"].content == "command not found"
 
 
-def test_a_tool_result_is_attributed_to_the_response_that_called(tmp_path: Path) -> None:
-    """Two calls in flight: each result lands on its own response, not the last."""
+def test_a_tool_result_names_the_call_that_asked_not_the_latest_one(tmp_path: Path) -> None:
+    """Two calls in flight: each result names its own call, including a late one."""
     records = [
         assistant("req-a", [{"type": "tool_use", "id": "c-a", "name": "Read", "input": {}}]),
         user([{"type": "tool_result", "tool_use_id": "c-a", "content": "A"}]),
         assistant("req-b", [{"type": "tool_use", "id": "c-b", "name": "Read", "input": {}}]),
         user([{"type": "tool_result", "tool_use_id": "c-b", "content": "B"}]),
-        # a late result for the first call must still name the first response
+        # a late result for the first call must still name that first call
         user([{"type": "tool_result", "tool_use_id": "c-a", "content": "A-again"}]),
     ]
-    owners = {
-        e.item.content: e.response_id
+    answered = {
+        e.content: e.call_id
         for e in events_of(tmp_path, records)
-        if isinstance(e, ItemEmitted) and e.item.kind is ItemKind.TOOL_RESULT
+        if isinstance(e, ToolResultReceived)
     }
-    assert owners == {"A": "req-a", "B": "req-b", "A-again": "req-a"}
+    assert answered == {"A": "c-a", "B": "c-b", "A-again": "c-a"}
 
 
 # --- 4. contamination ------------------------------------------------------
@@ -740,4 +748,47 @@ def test_items_carry_the_canonical_types(tmp_path: Path) -> None:
     ]
     events = events_of(tmp_path, records)
     kinds = {type(e.item) for e in events if isinstance(e, ItemEmitted)}
-    assert kinds == {ToolCallItem, ToolResultItem, TextItem}
+    kinds |= {type(e) for e in events if isinstance(e, ToolResultReceived)}
+    assert kinds == {ToolCallItem, ToolResultReceived, TextItem}
+
+
+def test_no_item_ever_arrives_after_its_response_has_ended(tmp_path: Path) -> None:
+    """The contract the tool-result re-parenting bought.
+
+    A response used to be held open across a tool round-trip so its result had
+    somewhere to live, which put its cost after the moment the model stopped.
+    The result is parented by its call now, so this holds.
+
+    Positive control: the fixture's first response emits three items before it
+    ends, so the assertion cannot be satisfied by a reader that emits nothing.
+    """
+    records = [
+        assistant(
+            "req-a",
+            [
+                {"type": "thinking", "thinking": "considering"},
+                {"type": "text", "text": "checking"},
+                {"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "ls"}},
+            ],
+        ),
+        user([{"type": "tool_result", "tool_use_id": "c1", "content": "out"}]),
+        assistant("req-b", [{"type": "text", "text": "done"}], stop_reason="end_turn"),
+    ]
+    events = events_of(tmp_path, records)
+
+    ended: set[str] = set()
+    emitted_per_response: dict[str, int] = {}
+    for event in events:
+        if isinstance(event, ResponseEnded):
+            ended.add(event.response_id)
+        elif isinstance(event, ItemEmitted):
+            assert event.response_id not in ended, (
+                f"{event.item.kind} arrived after {event.response_id} had ended"
+            )
+            emitted_per_response[event.response_id] = (
+                emitted_per_response.get(event.response_id, 0) + 1
+            )
+
+    # POSITIVE CONTROL: items really were emitted, so the loop above had work
+    assert emitted_per_response["req-a"] == 3
+    assert ended == {"req-a", "req-b"}

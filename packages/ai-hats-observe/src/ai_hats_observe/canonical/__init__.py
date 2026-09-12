@@ -16,6 +16,7 @@ from .events import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    ToolResultReceived,
 )
 from .reader import AsyncEventReader, EventReader
 from .signals import (
@@ -40,7 +41,6 @@ from .types import (
     Timestamp,
     ToolCallId,
     ToolCallItem,
-    ToolResultItem,
     Usage,
 )
 from .views import ANSWER_ONLY, EVERYTHING, WITH_REASONING, Collected, collect, select
@@ -73,7 +73,7 @@ __all__ = [
     "Timestamp",
     "ToolCallId",
     "ToolCallItem",
-    "ToolResultItem",
+    "ToolResultReceived",
     "Usage",
     "WITH_REASONING",
     "WorthRecording",

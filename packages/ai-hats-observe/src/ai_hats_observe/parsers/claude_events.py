@@ -23,6 +23,7 @@ from ..canonical.events import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    ToolResultReceived,
 )
 from ..canonical.signals import (
     HarnessActionRequired,
@@ -43,7 +44,6 @@ from ..canonical.types import (
     Timestamp,
     ToolCallId,
     ToolCallItem,
-    ToolResultItem,
     Usage,
 )
 
@@ -165,7 +165,9 @@ class ClaudeTranscriptReader:
         # can never bill twice even if the surface reorders fragments
         self._counted: set[ResponseId] = set()
         self._ended: set[ResponseId] = set()
-        self._call_owner: dict[ToolCallId, ResponseId] = {}
+        # membership only: a result whose call we never saw is a gap worth
+        # reporting, but the result is parented by call_id, not by response
+        self._seen_calls: set[ToolCallId] = set()
 
     # -- EventReader -------------------------------------------------------
 
@@ -325,7 +327,7 @@ class ClaudeTranscriptReader:
                 if call_id in state.calls:
                     return
                 state.calls.add(call_id)
-                self._call_owner[call_id] = state.response_id
+                self._seen_calls.add(call_id)
                 inputs = block.get("input")
                 yield ItemEmitted(
                     state.response_id,
@@ -368,20 +370,16 @@ class ClaudeTranscriptReader:
 
     def _tool_result(self, block: dict[str, Any], ts: Timestamp | None) -> Iterator[Event]:
         call_id = ToolCallId(str(block.get("tool_use_id", "")))
-        owner = self._call_owner.get(call_id)
-        if owner is None:
-            # Attributing it to "whatever ran last" would invent a link the
-            # transcript does not carry, so the gap is reported instead.
+        if call_id not in self._seen_calls:
+            # An outcome for a call this transcript never recorded is a gap, and
+            # saying so beats inventing the link.
             yield self._notice("orphan-tool-result", ts=ts)
             return
-        yield ItemEmitted(
-            owner,
-            ToolResultItem(
-                call_id=call_id,
-                ok=not bool(block.get("is_error")),
-                content=block.get("content"),
-            ),
-            ts,
+        yield ToolResultReceived(
+            call_id=call_id,
+            ok=not bool(block.get("is_error")),
+            content=block.get("content"),
+            ts=ts,
         )
 
     def _prompt(self, text: str, ts: Timestamp | None) -> Iterator[Event]:

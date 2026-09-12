@@ -23,8 +23,18 @@ it rather than to the shape everyone else must carry.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, ClassVar
 from .signals import Signal
-from .types import Completion, Item, ModelName, ResponseId, Timestamp, Usage
+from .types import (
+    Completion,
+    Item,
+    ItemKind,
+    ModelName,
+    ResponseId,
+    Timestamp,
+    ToolCallId,
+    Usage,
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +83,24 @@ class ItemDelta:
 
 
 @dataclass(frozen=True)
+class ToolResultReceived:
+    """The harness's answer to a tool call.
+
+    Its own event, parented by the call rather than by the response, because
+    the harness produced it and the model did not. That is what lets a response
+    end when the model stops talking instead of being held open across a
+    round-trip it is not making — so its cost is reported at the right moment
+    and no item ever arrives after its response has ended.
+    """
+
+    kind: ClassVar[ItemKind] = ItemKind.TOOL_RESULT
+    call_id: ToolCallId
+    ok: bool
+    content: Any = None
+    ts: Timestamp | None = None
+
+
+@dataclass(frozen=True)
 class ResponseEnded:
     """An inference call finished, with its outcome and its cost.
 
@@ -88,4 +116,12 @@ class ResponseEnded:
     ts: Timestamp | None = None
 
 
-Event = PromptReceived | ResponseStarted | ItemDelta | ItemEmitted | ResponseEnded | Signal
+Event = (
+    PromptReceived
+    | ResponseStarted
+    | ItemDelta
+    | ItemEmitted
+    | ToolResultReceived
+    | ResponseEnded
+    | Signal
+)

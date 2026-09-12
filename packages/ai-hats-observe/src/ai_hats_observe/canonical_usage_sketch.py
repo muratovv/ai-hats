@@ -45,7 +45,7 @@ class ClaudeParser:
         run = collect(ClaudeTranscriptReader(jsonl_path).read())
         return ParsedTranscript(
             turns=[_legacy_turn(r) for r in run.responses],
-            agg_usage=_as_dict(run.usage),      # the 2.61x fix, in one line
+            agg_usage=_as_dict(run.usage),  # the 2.61x fix, in one line
             flags=[],
             signals=run.signals,
         )
@@ -58,7 +58,7 @@ class ClaudeParser:
 # Cost arrives once, on ResponseEnded, because that is the one moment it is
 # known for the whole call. There is no per-fragment usage to accidentally sum:
 spend = sum(e.usage.output_tokens for e in events if isinstance(e, ResponseEnded))
-calls = run.api_calls                 # inference calls, not transcript records
+calls = run.api_calls  # inference calls, not transcript records
 
 
 # ===========================================================================
@@ -93,8 +93,8 @@ def render_audit(events) -> str:
 # 4. Projections: the same stream, narrowed per consumer.
 # ===========================================================================
 
-judge_sees = select(events, ANSWER_ONLY)        # reasoning withheld — a judge
-                                                 # scores the answer, not the route
+judge_sees = select(events, ANSWER_ONLY)  # reasoning withheld — a judge
+# scores the answer, not the route
 comparison_sees = select(events, WITH_REASONING)  # an A/B run compares the route
 
 # Both still see every signal, so neither can mistake a killed run for a clean one.
@@ -112,9 +112,9 @@ async def drain_one_turn(client, message):
     async for event in ClaudeStreamReader(client.receive_response()).read():
         match event:
             case ItemEmitted() if event.item.kind is ItemKind.TEXT:
-                transcript.append(event.item.text)   # an API-error notice is a
-                                                      # signal, never a TextItem,
-                                                      # so it cannot land here
+                transcript.append(event.item.text)  # an API-error notice is a
+                # signal, never a TextItem,
+                # so it cannot land here
             case _ if isinstance(event, Blocking):
                 blocked = event
 
@@ -133,15 +133,15 @@ async def drain_one_turn(client, message):
 
 match signal:
     case PersonActionRequired():
-        ...     # nothing automated clears this; surface it and stop
+        ...  # nothing automated clears this; surface it and stop
     case HarnessActionRequired(reason=HarnessMustAct.WAIT):
-        ...     # signal.retry_after says when capacity returns
+        ...  # signal.retry_after says when capacity returns
     case HarnessActionRequired(reason=HarnessMustAct.RETRY):
-        ...     # transient; another attempt is reasonable
+        ...  # transient; another attempt is reasonable
     case HarnessActionRequired(reason=HarnessMustAct.ABORT):
-        ...     # retrying cannot help
+        ...  # retrying cannot help
     case Notice(reason=WorthRecording.UNSUPPORTED_RECORD):
-        ...     # schema drift, visible the first time it appears
+        ...  # schema drift, visible the first time it appears
 
 
 # ===========================================================================
@@ -168,9 +168,9 @@ def build_usage_report(events) -> dict:
 
 
 def follow(path):
-    reader = ClaudeTranscriptReader(path)      # holds its own position
+    reader = ClaudeTranscriptReader(path)  # holds its own position
     while not reader.exhausted:
-        yield from reader.read()               # only what was appended since
-        _wait()                                # a response still being written
-                                               # has simply not produced its
-                                               # ResponseEnded yet
+        yield from reader.read()  # only what was appended since
+        _wait()  # a response still being written
+        # has simply not produced its
+        # ResponseEnded yet

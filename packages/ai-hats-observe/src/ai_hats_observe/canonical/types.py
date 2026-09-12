@@ -72,21 +72,7 @@ class ToolCallItem:
     input: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class ToolResultItem:
-    """What came back from an action, and whether it worked.
-
-    Carries ``call_id`` so an outcome is attributed to the request that caused
-    it rather than to position in a list.
-    """
-
-    kind: ClassVar[ItemKind] = ItemKind.TOOL_RESULT
-    call_id: ToolCallId
-    ok: bool
-    content: Any = None
-
-
-Item = TextItem | ThinkingItem | ToolCallItem | ToolResultItem
+Item = TextItem | ThinkingItem | ToolCallItem
 
 
 # --- how a response ended --------------------------------------------------

@@ -37,7 +37,7 @@ from ai_hats_observe.canonical import (
     ThinkingItem,
     ToolCallId,
     ToolCallItem,
-    ToolResultItem,
+    ToolResultReceived,
     Usage,
     WorthRecording,
 )
@@ -145,7 +145,8 @@ class ClaudeStreamReader:
         self._started: set[ResponseId] = set()
         # call_id -> the response that asked for it, so an outcome is attributed
         # to its request rather than to position in the stream.
-        self._call_owner: dict[ToolCallId, ResponseId] = {}
+        # membership only: the result is parented by call_id now
+        self._seen_calls: set[ToolCallId] = set()
         self._last_response: ResponseId | None = None
         # Whether a blocking signal already went out, so the ResultMessage that
         # reports the same failure again does not double-announce it.
@@ -281,7 +282,7 @@ class ClaudeStreamReader:
             # and argued the same way; only the executor differs. Dropping it to
             # a Notice would make an audit understate what the agent did.
             case sdk.ToolUseBlock() | sdk.ServerToolUseBlock():
-                self._call_owner[ToolCallId(block.id)] = response_id
+                self._seen_calls.add(ToolCallId(block.id))
                 return [
                     ItemEmitted(
                         response_id,
@@ -323,12 +324,15 @@ class ClaudeStreamReader:
         fallback: ResponseId | None = None,
     ) -> Event:
         call_id = ToolCallId(tool_use_id)
-        response_id = self._call_owner.get(call_id) or fallback or self._current_response()
-        if response_id is None:
+        if (
+            call_id not in self._seen_calls
+            and fallback is None
+            and self._current_response() is None
+        ):
             return self._unsupported(
                 "tool_result", detail=f"outcome for {tool_use_id} before any response"
             )
-        return ItemEmitted(response_id, ToolResultItem(call_id=call_id, ok=ok, content=content))
+        return ToolResultReceived(call_id=call_id, ok=ok, content=content)
 
     def _current_response(self) -> ResponseId | None:
         return self._open.response_id if self._open is not None else self._last_response
