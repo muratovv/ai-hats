@@ -14,7 +14,7 @@
 #   gates.sh list                       # stage | what it checks
 #   gates.sh <stage>                    # run ONE stage, bare — what CI calls
 #   gates.sh all                        # the local bundle; earns no marker
-#   gates.sh --prepare                  # a venv for this checkout (a precondition)
+#   gates.sh --prepare                  # this checkout's venv, at this tree's pins
 #   gates.sh check [--rev C] <stage>... # which of these lack a marker; runs nothing
 #   gates.sh run   [--rev C] [--fresh] <stage>...   # run the unmarked, stamp each
 #   gates.sh subject [--rev C]          # what a run would judge, and where
@@ -103,7 +103,7 @@ security         | pip-audit over the interpreter's whole environment (CI-author
 version-skew     | a changed package bumps its version in the same diff, and none is behind PyPI (network)
 python-pin       | every copy of the Python pin agrees and CI runs it
 tmp-sweep        | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing
-prepare          | precondition: a venv for this checkout; it asserts nothing
+prepare          | precondition: this checkout's venv, at this tree's pins; it asserts nothing
 TABLE
 }
 
@@ -510,18 +510,19 @@ ci_e2e_observe() {
 }
 
 # Make THIS checkout runnable, so `$PY` resolves to an interpreter that imports
-# this tree and not another one. NOT a stage: it asserts nothing. Asked before a
-# run inside a scratch checkout, which has no `.venv` at all; the hook it
-# delegates to is the one every task worktree gets, and a usable `.venv` makes
-# it a no-op.
+# this tree, at the versions this tree pins, and not another one. NOT a stage:
+# it asserts nothing. Asked before EVERY run: a scratch checkout has no `.venv`
+# at all, and an in-place one can be holding what the tree declared before its
+# last rebase. The hook it delegates to is the one every task worktree gets;
+# `--sync` is what tells that hook a merely-usable venv is not enough here.
 ci_prepare() {
-    echo "[gates] prepare (a venv for this checkout, if it needs one)" >&2
+    echo "[gates] prepare (this checkout's venv, at this tree's pins)" >&2
     local hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/worktree-venv/hooks/provision-venv.sh"
     if [[ ! -f "$hook" ]]; then
         echo "[gates] no provision-venv hook at $hook — nothing to prepare" >&2
         return 1
     fi
-    AI_HATS_WORKTREE_PATH="$repo_root" bash "$hook"
+    AI_HATS_WORKTREE_PATH="$repo_root" bash "$hook" --sync
 }
 
 # NOTE: excluded from `all` — it queries PyPI, so an offline dev box would fail
@@ -1141,14 +1142,17 @@ cmd_run() {
     runner="$(_runner_in "$checkout")"
     [[ -f "$runner" ]] || _die 70 "no stage runner at $runner"
 
-    if [[ "$where" == "scratch" ]]; then
-        # A non-zero rc is REPORTED and the run goes on: a stage failing for
-        # want of a dependency says so loudly; skipping here would say nothing.
-        if _capture "$run_dir/prepare.log" _in "$checkout" bash "$runner" --prepare; then
-            notes+=("prepare: $(_last_line "$run_dir/prepare.log" worktree-venv)")
-        else
-            notes+=("the runner could not prepare $checkout — ran anyway; see $run_dir/prepare.log")
-        fi
+    # Both roads, not just scratch. A scratch checkout is minted empty and so
+    # can only be under-provisioned; an in-place one carries whatever its .venv
+    # held when it was last touched, which after a rebase (or a pull in MAIN) is
+    # the PREVIOUS tree's dependencies. Guarding this on "scratch" left the road
+    # the stages actually take on a task worktree unchecked (HATS-1939).
+    # A non-zero rc is REPORTED and the run goes on: a stage failing for
+    # want of a dependency says so loudly; skipping here would say nothing.
+    if _capture "$run_dir/prepare.log" _in "$checkout" bash "$runner" --prepare; then
+        notes+=("prepare: $(_last_line "$run_dir/prepare.log" worktree-venv)")
+    else
+        notes+=("the runner could not prepare $checkout — ran anyway; see $run_dir/prepare.log")
     fi
 
     # A dirty desk is judged in a scratch checkout of the subject, so the WHOLE
@@ -1300,7 +1304,7 @@ case "$verb" in
             echo "  list | check <stage>... | run <stage>... | subject — the markers" >&2
             echo "  touched: the zone stages this change demands (a diff, not a marker)" >&2
             echo "  zones: the zone table — prefix | marker | stage" >&2
-            echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
+            echo "  --prepare: this checkout's venv, at this tree's pins (a precondition, never a check)" >&2
             exit 2
         fi
         ;;

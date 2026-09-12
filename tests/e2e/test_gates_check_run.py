@@ -50,13 +50,14 @@ def runner(tmp_path: Path) -> Path:
     from `GATES_TEST_RC_<STAGE>`; unset means green. What a stage PRINTS comes
     from `GATES_TEST_OUT_<STAGE>`, which is how a test hands a stage a real
     pytest short summary. `--prepare` is the one non-stage verb the primitive
-    asks of a runner, and it is a no-op here.
+    asks of a runner; it does no work here, but the checkout it was asked about
+    lands in `prepares.log` so a test can tell that it was asked at all.
     """
     log = tmp_path / "calls.log"
     script = tmp_path / "runner.sh"
     script.write_text(
         "#!/usr/bin/env bash\n"
-        'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
+        f'if [[ "$1" == "--prepare" ]]; then echo "$PWD" >> "{log.parent}/prepares.log"; exit 0; fi\n'
         f'printf "%s|%s|%s\\n" "$1" "$PWD" "${{PYTEST_ADDOPTS:-}}" >> "{log}"\n'
         'said="GATES_TEST_OUT_$(printf "%s" "$1" | tr "a-z-" "A-Z_")"\n'
         'if [[ -n "${!said:-}" ]]; then printf "%s\\n" "${!said}"; fi\n'
@@ -75,6 +76,12 @@ def _rows(runner: Path) -> list[list[str]]:
 def _calls(runner: Path) -> list[tuple[str, str]]:
     """(stage, cwd) per call."""
     return [(stage, cwd) for stage, cwd, _ in _rows(runner)]
+
+
+def _prepares(runner: Path) -> list[str]:
+    """The cwd of every `--prepare` the primitive asked for."""
+    log = runner.parent / "prepares.log"
+    return log.read_text().splitlines() if log.exists() else []
 
 
 def _addopts(runner: Path) -> dict[str, str]:
@@ -534,3 +541,31 @@ def test_the_real_repository_wires_up_without_side_effects():
 
     assert out.returncode in (0, 1), out.stderr
     assert out.stdout.split() in ([], ["python-pin"])
+
+
+def test_every_road_prepares_the_checkout_it_is_about_to_judge(repo: Path, runner: Path):
+    """Stages resolve `$PY` to `<checkout>/.venv`, and nothing else ever asks
+    whether what is installed there is what the tree declares. A worktree that
+    outlived a rebase therefore judged a commit against the PREVIOUS tree's
+    dependencies, and the mismatch surfaced from whatever imported the moved
+    package first — reading as a defect in that code (HATS-1939).
+
+    Both roads are asserted together on purpose: the scratch road is the
+    positive control. Without it an in-place count of zero would be equally
+    well explained by a recorder that never worked.
+    """
+    in_place = _gate(repo, runner, "run", "unit")
+    assert "in place" in in_place.stdout + in_place.stderr, in_place.stdout + in_place.stderr
+    assert len(_prepares(runner)) == 1, (
+        "an in-place run judged the checkout without once asking whether its "
+        "venv still matches the tree"
+    )
+
+    # Two commits, then judge the middle one: it is neither HEAD (so the road is
+    # scratch) nor a tree this test has already stamped (so the stage runs).
+    commit_file(repo, "second.md", "more\n", "a second commit")
+    commit_file(repo, "third.md", "more still\n", "a third commit")
+    scratch = _gate(repo, runner, "run", "--rev", "HEAD~1", "unit")
+
+    assert "scratch" in scratch.stdout + scratch.stderr, scratch.stdout + scratch.stderr
+    assert len(_prepares(runner)) == 2, "the scratch road stopped preparing"
