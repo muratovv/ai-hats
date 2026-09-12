@@ -5,6 +5,8 @@ is one consumer. Note that no consumer holds a session unless it actually needs
 a total — reading is iteration.
 """
 
+# ruff: noqa — call sites, not code: the names they stand in for do not exist yet.
+
 from __future__ import annotations
 
 from ai_hats_observe.canonical import (
