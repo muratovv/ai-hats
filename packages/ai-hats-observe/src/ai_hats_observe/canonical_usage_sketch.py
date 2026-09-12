@@ -24,10 +24,13 @@ from ai_hats_observe.canonical import (
     Signal,
     WorthRecording,
     collect,
-    read_stream,
-    read_transcript,
     select,
 )
+from ai_hats_observe.parsers.claude import ClaudeTranscriptReader
+
+# ClaudeStreamReader lives in ai_hats.surfaces.claude — observe defines the
+# EventReader protocol, each surface implements it, and the dependency only ever
+# points that way (test_observe_boundary enforces it). Named, not imported.
 
 # ===========================================================================
 # 1. The parser. Legacy fields are folded out of the stream, so `audit.md`
@@ -37,7 +40,7 @@ from ai_hats_observe.canonical import (
 
 class ClaudeParser:
     def parse(self, jsonl_path, trace_path):
-        run = collect(read_transcript(_records(jsonl_path)))
+        run = collect(ClaudeTranscriptReader(jsonl_path).read())
         return ParsedTranscript(
             turns=[_legacy_turn(r) for r in run.responses],
             agg_usage=_as_dict(run.usage),      # the 2.61x fix, in one line
@@ -104,7 +107,7 @@ async def drain_one_turn(client, message):
     transcript = []
     blocked = None
 
-    async for event in read_stream(client.receive_response()):
+    async for event in ClaudeStreamReader(client.receive_response()).read():
         match event:
             case ItemEmitted() if event.item.kind is ItemKind.TEXT:
                 transcript.append(event.item.text)   # an API-error notice is a
@@ -163,6 +166,9 @@ def build_usage_report(events) -> dict:
 
 
 def follow(path):
-    for event in read_transcript(_new_records_since_last_read(path)):
-        yield event          # a response still being written has simply not
-                             # produced its ResponseEnded yet
+    reader = ClaudeTranscriptReader(path)      # holds its own position
+    while not reader.exhausted:
+        yield from reader.read()               # only what was appended since
+        _wait()                                # a response still being written
+                                               # has simply not produced its
+                                               # ResponseEnded yet

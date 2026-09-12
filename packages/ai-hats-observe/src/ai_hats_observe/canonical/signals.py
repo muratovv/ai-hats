@@ -30,14 +30,14 @@ class HarnessMustAct(StrEnum):
     """The harness can decide what to do without a person."""
 
     WAIT = "wait"
-    """Capacity will return by itself; ``retry_after`` says when."""
+    """Capacity returns by itself; ``retry_after`` says when."""
 
     RETRY = "retry"
     """Transient upstream failure, worth another attempt now."""
 
     ABORT = "abort"
     """Retrying cannot help — the request itself is wrong, or the cause is
-    unknown. Stop and surface it."""
+    unknown."""
 
 
 class WorthRecording(StrEnum):
@@ -45,6 +45,7 @@ class WorthRecording(StrEnum):
 
     MODEL_SWITCHED = "model_switched"
     CONTEXT_COMPACTED = "context_compacted"
+
     UNSUPPORTED_RECORD = "unsupported_record"
     """A record shape we do not model. Reported rather than dropped so schema
     drift is visible the first time it appears, instead of silently changing
@@ -55,13 +56,11 @@ class WorthRecording(StrEnum):
 class _Signal:
     ts: Timestamp | None = None
     detail: str | None = None
+    # the surface's own code, kept verbatim for forensics
     raw_code: str | None = None
-    """The surface's own code, kept verbatim for forensics."""
-
+    # which reader spoke: the two Claude sources see different things — only the
+    # live stream carries quota pre-warnings, only the transcript carries status
     source: str | None = None
-    """Which reader produced this. The two Claude sources see different things —
-    only the live stream carries quota pre-warnings, only the transcript carries
-    HTTP status — so a consumer sometimes needs to know which one spoke."""
 
 
 @dataclass(frozen=True)
@@ -76,9 +75,9 @@ class HarnessActionRequired(_Signal):
     """Blocks the run; the harness chooses the response."""
 
     reason: HarnessMustAct = HarnessMustAct.ABORT
+    # when the blocking condition lifts, where the surface says so; whether to
+    # wait for it is the caller's decision, not this record's
     retry_after: EpochSeconds | None = None
-    """When the blocking condition lifts, when the surface tells us. A fact
-    about the failure — deciding whether to wait for it belongs to the caller."""
 
 
 @dataclass(frozen=True)
@@ -86,12 +85,12 @@ class Notice(_Signal):
     """Does not block the run."""
 
     reason: WorthRecording = WorthRecording.UNSUPPORTED_RECORD
+    # on MODEL_SWITCHED: which model took over
     model: ModelName | None = None
-    """Set on ``MODEL_SWITCHED``: which model took over."""
 
 
 Signal = PersonActionRequired | HarnessActionRequired | Notice
 
 Blocking = PersonActionRequired | HarnessActionRequired
-"""The two that end a run. A consumer asking only "did this run survive" tests
-against this pair rather than reading a severity."""
+"""The two that end a run — what a consumer tests against to ask "did this
+survive", instead of reading a severity."""

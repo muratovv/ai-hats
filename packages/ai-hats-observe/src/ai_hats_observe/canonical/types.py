@@ -67,6 +67,7 @@ class ToolCallItem:
     """An action the model asked the harness to take."""
 
     kind: ClassVar[ItemKind] = ItemKind.TOOL_CALL
+    # call_id is what a result later joins back to
     call_id: ToolCallId
     name: str
     input: dict[str, Any] = field(default_factory=dict)
@@ -74,9 +75,11 @@ class ToolCallItem:
 
 @dataclass(frozen=True)
 class ToolResultItem:
-    """What came back from an action, and whether it worked. Carries
-    ``call_id`` so a consumer can attribute an outcome to the request that
-    caused it rather than to position in a list."""
+    """What came back from an action, and whether it worked.
+
+    Carries ``call_id`` so an outcome is attributed to the request that caused
+    it rather than to position in a list.
+    """
 
     kind: ClassVar[ItemKind] = ItemKind.TOOL_RESULT
     call_id: ToolCallId

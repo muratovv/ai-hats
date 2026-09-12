@@ -1,7 +1,8 @@
 """The session as a stream of append-only events.
 
 A run is read as it happens, so the stream is the interface and any collected
-form is a projection built on top of it. Nothing here holds a whole session.
+form is a projection built on top of it. This module is the vocabulary only —
+the readers that produce it live in ``reader``.
 
 **Every event is emitted exactly once.** An item belongs to one
 ``ItemEmitted``; a response's cost and outcome arrive once, in ``ResponseEnded``.
@@ -22,8 +23,6 @@ it rather than to the shape everyone else must carry.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import AsyncIterable, AsyncIterator, Iterable, Iterator, Mapping
-
 from .signals import Signal
 from .types import Completion, Item, ModelName, ResponseId, Timestamp, Usage
 
@@ -59,8 +58,7 @@ class ItemEmitted:
 @dataclass(frozen=True)
 class ItemDelta:
     """A fragment of an item still being generated, for surfaces that stream
-    below item granularity. ``index`` positions it within its response so the
-    pieces reassemble in order.
+    below item granularity.
 
     A surface that reports whole items never emits this; one that streams tokens
     emits deltas followed by the ``ItemEmitted`` that closes the item. Consumers
@@ -68,6 +66,7 @@ class ItemDelta:
     """
 
     response_id: ResponseId
+    # position within the response, so fragments reassemble in order
     index: int
     text: str
     ts: Timestamp | None = None
@@ -90,27 +89,3 @@ class ResponseEnded:
 
 
 Event = PromptReceived | ResponseStarted | ItemDelta | ItemEmitted | ResponseEnded | Signal
-
-
-# --- adapters --------------------------------------------------------------
-#
-# One per surface. Each is a generator: it yields as it reads and never
-# accumulates, so the same adapter serves a finished transcript and a live one.
-
-
-def read_transcript(records: Iterable[Mapping]) -> Iterator[Event]:
-    """Claude session transcript -> events.
-
-    ``records`` is consumed once and lazily; to follow a growing transcript,
-    hand it successive slices rather than re-reading from the start.
-    """
-    raise NotImplementedError("S1")
-
-
-async def read_stream(messages: AsyncIterable[object]) -> AsyncIterator[Event]:
-    """Claude Agent SDK message stream -> the same events.
-
-    Async because the source is; the event vocabulary is identical, so a
-    consumer written against one reader works against the other.
-    """
-    raise NotImplementedError("S4")
