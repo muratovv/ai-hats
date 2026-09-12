@@ -29,15 +29,14 @@ class PersonMustAct(StrEnum):
 class HarnessMustAct(StrEnum):
     """The harness can decide what to do without a person."""
 
+    # Capacity returns by itself; ``retry_after`` says when.
     WAIT = "wait"
-    """Capacity returns by itself; ``retry_after`` says when."""
 
+    # Transient upstream failure, worth another attempt now.
     RETRY = "retry"
-    """Transient upstream failure, worth another attempt now."""
 
+    # Retrying cannot help — the request itself is wrong, or the cause is unknown.
     ABORT = "abort"
-    """Retrying cannot help — the request itself is wrong, or the cause is
-    unknown."""
 
 
 class WorthRecording(StrEnum):
@@ -46,10 +45,10 @@ class WorthRecording(StrEnum):
     MODEL_SWITCHED = "model_switched"
     CONTEXT_COMPACTED = "context_compacted"
 
+    # A record shape we do not model. Reported rather than dropped so schema drift is
+    # visible the first time it appears, instead of silently changing what our numbers
+    # mean.
     UNSUPPORTED_RECORD = "unsupported_record"
-    """A record shape we do not model. Reported rather than dropped so schema
-    drift is visible the first time it appears, instead of silently changing
-    what our numbers mean."""
 
 
 @dataclass(frozen=True)
@@ -91,6 +90,6 @@ class Notice(_Signal):
 
 Signal = PersonActionRequired | HarnessActionRequired | Notice
 
+# The two that end a run — what a consumer tests against to ask "did this survive",
+# instead of reading a severity.
 Blocking = PersonActionRequired | HarnessActionRequired
-"""The two that end a run — what a consumer tests against to ask "did this
-survive", instead of reading a severity."""

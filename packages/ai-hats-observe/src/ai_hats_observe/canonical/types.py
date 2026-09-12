@@ -12,22 +12,21 @@ from typing import Any, ClassVar, NewType
 
 # --- scalars ---------------------------------------------------------------
 
+# ISO-8601 instant at which a surface says something happened.
 Timestamp = NewType("Timestamp", str)
-"""ISO-8601 instant at which a surface says something happened."""
 
+# Absolute wall-clock deadline, for waits that outlive this process.
 EpochSeconds = NewType("EpochSeconds", int)
-"""Absolute wall-clock deadline, for waits that outlive this process."""
 
+# Identity of one inference call. Stable across every fragment the surface emits for
+# that call, which is what lets a consumer count a call — and its cost — exactly once.
 ResponseId = NewType("ResponseId", str)
-"""Identity of one inference call. Stable across every fragment the surface
-emits for that call, which is what lets a consumer count a call — and its cost —
-exactly once."""
 
+# Joins a tool invocation to its outcome.
 ToolCallId = NewType("ToolCallId", str)
-"""Joins a tool invocation to its outcome."""
 
+# Which model produced a response, so a switch mid-run is attributable.
 ModelName = NewType("ModelName", str)
-"""Which model produced a response, so a switch mid-run is attributable."""
 
 
 # --- items -----------------------------------------------------------------
@@ -101,23 +100,22 @@ class Completion(StrEnum):
     so "still running" can never be mistaken for a state the surface reported.
     """
 
+    # The model finished on its own terms.
     COMPLETE = "complete"
-    """The model finished on its own terms."""
 
+    # The connection died mid-answer; what was received is partial.
     TRUNCATED_TRANSPORT = "truncated_transport"
-    """The connection died mid-answer; what was received is partial."""
 
+    # An output ceiling cut the answer short; re-running with more room may complete it.
     TRUNCATED_BUDGET = "truncated_budget"
-    """An output ceiling cut the answer short; re-running with more room may
-    complete it."""
 
+    # The model declined to answer.
     REFUSED = "refused"
-    """The model declined to answer."""
 
+    # The stream ended without the surface saying why. Distinct from every value above:
+    # those are reported outcomes, this one is our admission that we did not observe
+    # one.
     UNKNOWN = "unknown"
-    """The stream ended without the surface saying why. Distinct from every
-    value above: those are reported outcomes, this one is our admission that we
-    did not observe one."""
 
 
 @dataclass(frozen=True)

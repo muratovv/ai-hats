@@ -18,12 +18,12 @@ from .types import Item, ItemKind, ModelName, ResponseId, Usage
 
 EVERYTHING = frozenset(ItemKind)
 
+# For consumers entitled to judge what a run produced but not how it got there — the
+# reasoning is withheld so it cannot be scored.
 ANSWER_ONLY = frozenset({ItemKind.TEXT, ItemKind.TOOL_CALL, ItemKind.TOOL_RESULT})
-"""For consumers entitled to judge what a run produced but not how it got
-there — the reasoning is withheld so it cannot be scored."""
 
+# For comparing two runs, where *how* an answer was reached is the subject.
 WITH_REASONING = EVERYTHING
-"""For comparing two runs, where *how* an answer was reached is the subject."""
 
 
 def select(events: Iterable[Event], kinds: frozenset[ItemKind]) -> Iterator[Event]:
