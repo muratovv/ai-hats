@@ -61,6 +61,9 @@ class _PassthroughGroup(click.Group):
             raise
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Click mutates `args` in place while parsing, consuming `--` — so the
+        # user's escape has to be read before super() runs (HATS-1932).
+        raw = list(args)
         result = super().parse_args(ctx, args)
         protected = getattr(ctx, "_protected_args", None)
         if protected and (
@@ -68,6 +71,18 @@ class _PassthroughGroup(click.Group):
         ):
             ctx.args = list(protected) + list(ctx.args)
             ctx._protected_args = []
+
+        # A resolved subcommand keeps its own flags: on click 8 it sits in
+        # ``protected`` while its `--help` lands in ``ctx.args``, so reading
+        # ctx.args alone would refuse `ai-hats wt --help`. ``or leftover``: click 9.
+        leftover = list(ctx.args)
+        routed = list(protected or ()) or leftover
+        if routed and self.get_command(ctx, routed[0]) is None:
+            from ._argv_guard import classify, command_paths, own_flags
+
+            refusal = classify(raw, leftover, command_paths(self), own_flags(self))
+            if refusal:
+                raise click.UsageError(refusal, ctx=ctx)
         return result
 
     def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
@@ -214,8 +229,13 @@ def main(
 ):
     """ai-hats — AI agent role composition framework.
 
-    Without a subcommand, launches a wrapped provider CLI session.
-    Positional text or unknown flags are passed through to the provider.
+    Without a subcommand, launches a wrapped provider CLI session. Positional
+    text and unknown flags are passed through to the provider — except ai-hats'
+    own flags (--help, -h, --version) and words ai-hats owns, which are refused
+    rather than sent as a prompt. Put `--` first to mean the text literally:
+
+    \b
+        ai-hats -- githooks --help
     """
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
