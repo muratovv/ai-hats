@@ -1,6 +1,6 @@
 """Materialization facade — single derivation point for "compose for role X".
 
-HATS-456 (Phase 2 closure of HATS-452 ADR-0005 D1). Before this module,
+Phase 2 closure of ADR-0005 D1. Before this module,
 multiple sites inlined the same ``composer.compose(role,
 overlays=_get_overlays(role))`` sequence (HITL runner, sub-agent runner,
 the on-disk Assembler writer, the ``MaterializeSystemPrompt`` pipeline
@@ -17,7 +17,7 @@ Plan deviation note. The plan (F1) proposed a second function
 full compose+build pair. During Phase 1 migration we found that every
 real consumer needs the intermediate ``CompositionResult`` for some
 parallel concern (hooks install, audit snapshot, stats payload,
-HATS-267 override). Nobody just wants the text. Per design-minimalism,
+sub-agent prompt override). Nobody just wants the text. Per design-minimalism,
 the unused function was dropped before Phase 2. If a real text-only
 consumer appears later, it's a 5-line addition.
 """
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 
 def discover_user_rules(layout: ProjectLayout) -> tuple[Path, ...]:
-    """Project-authored rule files, name-sorted (HATS-1203).
+    """Project-authored rule files, name-sorted.
 
     Unfiltered by design: unlike library rules there is no catalog to select
     from, so dropping a file into ``user-rules/`` IS the opt-in.
@@ -66,7 +66,7 @@ def compose_for_role(
     ``MaterializeSystemPrompt`` step, ``Assembler.set_role`` writer,
     and ancillary compose-only sites in Assembler) routes through this
     function — direct calls to ``assembler.composer.compose(...)``
-    outside this module are a HATS-456 drift signal (caught by
+    outside this module are a drift signal (caught by
     ``test_no_direct_compose_outside_facade``).
 
     **Private to this module**: every consumer names a purpose instead — see the

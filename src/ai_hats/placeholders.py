@@ -3,7 +3,7 @@
 Library skill / role / rule bodies embed literal ``<ai_hats_dir>/...`` paths
 for documentation clarity. Without expansion, the LLM sometimes obeys the
 placeholder verbatim and writes artefacts under a literal directory named
-``<ai_hats_dir>/`` in the project root (HATS-380).
+``<ai_hats_dir>/`` in the project root.
 
 Expansion happens at every writer layer (each "last gate" before the
 prompt or path reaches the agent / filesystem):
@@ -12,10 +12,10 @@ prompt or path reaches the agent / filesystem):
 - :meth:`ai_hats.surfaces.agy.provider.AgySurface.build_session_prompt` and
   :meth:`ai_hats.surfaces.claude.provider.ClaudeSurface.build_session_prompt` (the
   per-session composed prompt) plus the plugin-dir materialization in
-  :mod:`ai_hats.plugin_dir` (HATS-380 parity for SKILL.md content).
+  :mod:`ai_hats.plugin_dir` (parity for SKILL.md content).
 - :func:`ai_hats.session_artifacts.assemble_meta_prompt`.
 - The pipeline ``save_artifact`` step
-  (:class:`ai_hats.pipeline.steps.save.SaveArtifact`, HATS-395) —
+  (:class:`ai_hats.pipeline.steps.save.SaveArtifact`) —
   the path template is expanded before ``.format(...)`` is applied
   so the literal placeholder never reaches ``Path()``.
 """
@@ -79,7 +79,7 @@ def render_backlog_fsm_edges(layout: ProjectLayout) -> str:
     Source of truth: the definition rack itself resolves for the tasks catalog —
     a catalog's own ``backlog.yaml`` wins, packaged default otherwise. The
     prompt table and the CLI's refusal are then two views of ONE file rather
-    than a mirror kept in sync by a test (HATS-1257 completes HATS-1042).
+    than a mirror kept in sync by a test.
 
     An edge carrying a ``name:`` is annotated with it — that name is typeable in
     place of the target state (``rack transition <ID> reclaim``).

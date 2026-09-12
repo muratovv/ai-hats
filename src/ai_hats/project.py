@@ -1,6 +1,6 @@
 """``Project`` — the one missing value: layout + config + resolved library layers.
 
-SKETCH (HATS-1606): illustrates the contract; helper bodies elided.
+SKETCH: illustrates the contract; helper bodies elided.
 
 No factory in this module ON PURPOSE: the value is resolved at the composition
 root (``cli/_entry.py``), exactly once per process, and passed down. Deep code

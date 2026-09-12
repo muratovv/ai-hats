@@ -1,10 +1,10 @@
 """The carrier side of the binding channel for the rack (``composition.apps.rack``).
 
-Successor of the ``lifecycle_hooks`` executor retired in HATS-1147 (ADR-0019
-D8): a binding declared by a trait or role fires on the FSM edge it names, in
+Successor of the ``lifecycle_hooks`` executor retired under ADR-0019
+D8: a binding declared by a trait or role fires on the FSM edge it names, in
 the lock, before the single persist.
 
-HATS-1541 (ADR-0019 D11) moved the *decisions* out. What ``edge:`` means, which
+ADR-0019 D11 moved the *decisions* out. What ``edge:`` means, which
 of the carried rows this instance's topology has an edge for, and what the
 subscriptions are is now ``ai_hats_rack.checks``; what stays here is what only
 the integrator can do — compose the role, resolve the script
@@ -41,7 +41,7 @@ from .libraries.models import CheckBindingError
 
 
 def _shipped_deadline(request: CheckRequest) -> Deadline:
-    """The ceiling a check runs under (HATS-1603).
+    """The ceiling a check runs under.
 
     The rack forbids itself a core dependency, so it ships the moment its task
     lock expires and the type is minted here. Without one — a road that holds no
@@ -105,8 +105,7 @@ class AiHatsCheckPort:
             self.owner.root,
             self.APP,
             # Scoped to the backlog's owner: unscoped, another project's session
-            # chose the rows, and one declaring none closed the card ungated
-            # (HATS-1631).
+            # chose the rows, and one declaring none closed the card ungated.
             identity=session_identity_for(self.owner.root),
         )
 
@@ -148,13 +147,13 @@ class AiHatsCheckPort:
     def _worktree_path(self, task_id: str) -> Path | None:
         """The task's live worktree, resolved ONCE for every binding on the edge.
 
-        HATS-1540 R2: before this, each gate re-derived
+        Before this, each gate re-derived
         ``<ai_hats_dir>/sessions/worktrees/task-<id>.json`` and parsed the JSON
         by hand — three spellings of one lookup, and a gate that got it wrong
         judged the wrong tree. A pure read (``peek_worktree_path``), because a
         refused transition must leave lifecycle state exactly as it found it.
         The memo keeps that "once" now that the rack calls back per row.
-        """  # comment-length: allow — why it is cached is the HATS-1540 contract
+        """  # comment-length: allow — why it is cached is explained above
         if task_id not in self._worktrees:
             self._worktrees[task_id] = self._lookup_worktree(task_id)
         return self._worktrees[task_id]
@@ -184,7 +183,7 @@ class AiHatsCheckPort:
         The companion of the worktree path, and only meaningful once that one is
         absent: a torn-down worktree and a card that never had one both read as
         "no worktree", and a gate told only that much waves the merged one
-        through (HATS-1664, measured at 13 firings of 17).
+        through (measured at 13 firings of 17).
         """
         from ai_hats_wt import WorktreeManager
 
@@ -211,7 +210,7 @@ class AiHatsCheckPort:
         One file per (task, point, binding). ``run_hook`` truncates the log it is
         handed, so a name built from the point alone let the second binding on an
         edge wipe the first one's file — and ``_note_truncation`` went on
-        pointing the first one's reason at it (HATS-1137). The discriminator is
+        pointing the first one's reason at it. The discriminator is
         the dedup identity ``check_points.resolve_checks`` keys on, so a retry
         of the same edge still lands on that binding's own previous log.
         """  # comment-length: allow — the collision recurred once already
@@ -242,7 +241,7 @@ def _binding(check: ResolvedCheck) -> str:
 def check_port_factory(owner: ProjectLayout | None) -> CheckPortFactory:
     """This integrator's ``CheckPortFactory``: one executor per gated catalog.
 
-    The whole of what ai-hats contributes to the channel since HATS-1575. Which
+    The whole of what ai-hats contributes to the channel. Which
     topology a row is matched against, which selectors a backlog answers to and
     which instances get a subscriber at all are the rack's to decide, and it
     decides them from the definition it runs (``ai_hats_rack.checks``); deriving

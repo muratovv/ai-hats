@@ -19,7 +19,7 @@ class FeedbackPolicy(str, Enum):
 
 
 class Channel(str, Enum):
-    """Harness source channel (HATS-764). Maps an audience to an install spec.
+    """Harness source channel. Maps an audience to an install spec.
 
     - ``local``  — ai-hats dev: editable install of a working tree; moving target.
     - ``edge``   — own repos: ``git+https://<repo>@<branch-HEAD-sha>``; moving target.
@@ -43,7 +43,7 @@ class SessionRetroConfig(_YamlModel):
     # Optional model override for the single session-reviewer LLM call.
     # When None, the provider CLI's default model is used.
     review_model: str | None = None
-    # Deprecated alias retained for back-compat with pre-HATS-252 ai-hats.yaml
+    # Deprecated alias retained for back-compat with older ai-hats.yaml
     # files (`reflect_model:`). When `review_model` is unset and this field is
     # present, the validator copies it across and emits a DeprecationWarning.
     reflect_model: str | None = None
@@ -71,7 +71,7 @@ class FeedbackConfig(_YamlModel):
 
 
 class HarnessConfig(_YamlModel):
-    """Harness source — where ``ai-hats self update`` pulls ai-hats from (HATS-764).
+    """Harness source — where ``ai-hats self update`` pulls ai-hats from.
 
     - ``channel`` — ``local`` | ``edge`` | ``stable`` (default ``stable``). An
       unknown value fails loud via the :class:`Channel` enum.
@@ -96,7 +96,7 @@ class HarnessConfig(_YamlModel):
     def _warn_unknown_keys(cls, data: Any) -> Any:
         """WARN (stderr) on an unknown nested key before ``extra="ignore"`` drops
         it — keeps the forward-compat behaviour observable, consistent with
-        ``ProjectConfig._strip_unknown_fields`` (HATS-764 review)."""
+        ``ProjectConfig._strip_unknown_fields`` (review)."""
         if isinstance(data, dict):
             for key in sorted(set(data) - set(cls.model_fields)):
                 print(

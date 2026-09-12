@@ -2,7 +2,7 @@
 
 The contract they answer lives in the area (``ai_hats.surfaces``); this module is
 the application half: the entry-point group, the alias table and the errors a
-caller sees when a name does not resolve (ADR-0026 D14, HATS-1826).
+caller sees when a name does not resolve (ADR-0026 D14).
 """
 
 from __future__ import annotations
@@ -39,10 +39,10 @@ def _load_provider_entry_points() -> None:
     There is no built-in shortcut: `claude` reaches this process the same way any
     surface does, through the group ai-hats declares in its own pyproject. It used
     to self-register here first, which meant its declaration was never exercised
-    and a broken one would have gone unnoticed (HATS-1826).
+    and a broken one would have gone unnoticed.
 
     A broken or duplicate third-party entry point is warned and skipped; a
-    first-party one fails loudly (HATS-1121).
+    first-party one fails loudly.
     """
     try:
         entry_points = list(_provider_entry_points())
@@ -91,7 +91,7 @@ class UnknownSurfaceError(ValueError):
     """Unknown provider name at ``get_surface``. Subclasses ``ValueError`` so
     existing ``except ValueError`` catchers keep working; carries ``name`` +
     ``available`` for the friendly CLI launch handler (mirrors
-    ``RoleNotFoundError`` — HATS-965)."""
+    ``RoleNotFoundError``)."""
 
     def __init__(self, name: str, available: list[str]) -> None:
         self.name = name
@@ -103,7 +103,7 @@ def get_surface(name: str) -> Surface:
     """Get a provider instance for a registered surface name.
 
     Lookup only: an unregistered name refuses. ai-hats used to try to
-    ``uv pip install`` the surface first — that bypass is closed (HATS-1826).
+    ``uv pip install`` the surface first — that bypass is closed.
     """
     _ensure_entry_points_loaded()
     canonical_name = PROVIDER_ALIASES.get(name, name)
@@ -127,7 +127,7 @@ def detect_surface_presence(name: str, home: Path | None = None) -> bool:
     """Whether this surface's own home directory exists under ``home``.
 
     Where to look is the surface's answer (``detected_home_dirs``), not a table
-    beside it: until HATS-1826 a hand-kept catalog carried a second copy of those
+    beside it: previously, a hand-kept catalog carried a second copy of those
     directory names for surfaces that might not be installed — and every declared
     surface now ships with ai-hats, so a name that does not resolve is not a
     surface whose directories anyone could name.

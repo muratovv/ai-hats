@@ -15,7 +15,7 @@ from ._entry import resolve_project
 from ._helpers import _guard_not_inside_linked_worktree, console
 
 
-# HATS-482 (B-07): branch-name input filter for `wt create`. Permissive on
+# Branch-name input filter for `wt create`. Permissive on
 # case (mixed case is now safe with case-preserving `_state_key`), strict
 # on chars that break path math, git itself, or state-file naming:
 #   * leading dot/dash/slash → git refuses anyway, fail earlier with hint;
@@ -41,7 +41,7 @@ def _resolve_worktree(branch: str | None = None):
 
     Returns None when nothing can be found.
 
-    HATS-482 (R-08): when no branch is supplied AND CWD is not in a linked
+    When no branch is supplied AND CWD is not in a linked
     worktree, refuse to silently grab ``list_active()[0]`` when ``>1``
     worktree is tracked — raises :class:`click.UsageError` listing branches
     so the operator explicitly disambiguates.  ``len(active) == 1`` keeps
@@ -93,7 +93,7 @@ def _resolve_worktree(branch: str | None = None):
             state_dir=layout.sessions.worktrees,
         )
 
-    # HATS-482 / R-08: fail-on-ambiguity instead of silent first-active.
+    # Fail-on-ambiguity instead of silent first-active.
     active = WorktreeManager.list_active(
         project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=layout.sessions.worktrees
     )
@@ -112,7 +112,7 @@ def _peel_selector(args: list[str]) -> str | None:
 
     A parser, not a resolver — the caller resolves, so an unresolvable selector
     refuses instead of falling back to cwd. ``args[0]`` is a selector only when
-    it names an active worktree; otherwise it is the command (HATS-859).
+    it names an active worktree; otherwise it is the command.
     """
     from ai_hats_wt import WorktreeManager
     from ..wt_lifecycle import HOOK_LIFECYCLE
@@ -137,7 +137,7 @@ def _peel_selector(args: list[str]) -> str | None:
 
 
 def _effective_dir(wt_path: Path, subdir: str | None = None) -> Path:
-    """Where `wt exec` should run (HATS-1205 — an env wrapper, not a teleporter).
+    """Where `wt exec` should run (an env wrapper, not a teleporter).
 
     ``-C`` wins; else the caller's cwd when it is inside this worktree; else the
     worktree root. Paths are resolved before comparison: on macOS a worktree
@@ -159,7 +159,7 @@ def _effective_dir(wt_path: Path, subdir: str | None = None) -> Path:
 
 
 def _owner_root(run_dir: Path, wt_path: Path) -> Path:
-    """The checkout root whose environment `run_dir` belongs to (HATS-1205).
+    """The checkout root whose environment `run_dir` belongs to.
 
     Nearest ancestor carrying a ``pyproject.toml``, bounded by the worktree
     root — so a subproject gets its own ``src`` instead of the outer repo's
@@ -197,7 +197,7 @@ def wt_create(branch: str):
     project_dir = layout.root
 
     # Refuse to create from inside a linked worktree
-    # (helper-extracted in HATS-482 / B-08 so merge/discard/list share it).
+    # (helper-extracted so merge/discard/list share it).
     _guard_not_inside_linked_worktree()
 
     # Resolve the configured base/merge-target (both None => today's
@@ -210,7 +210,7 @@ def wt_create(branch: str):
         console.print(f"[red]{exc}[/]")
         sys.exit(1)
 
-    # HATS-518/942: refuse if main-repo HEAD is not on the worktree merge target
+    # Refuse if main-repo HEAD is not on the worktree merge target
     # (canonical set when unconfigured). Otherwise the worktree captures the
     # wrong merge target and `wt merge` silently lands on it.
     try:
@@ -256,7 +256,7 @@ def wt_create(branch: str):
 
 
 def _print_blockers(blockers, *, note_unprobed_checks: bool = True) -> None:
-    """Render what else would refuse this merge (HATS-1654) — rendering only.
+    """Render what else would refuse this merge — rendering only.
 
     The guards fire one per run, so a merge can cost a run per fact. Saying what
     was NOT probed matters as much: an empty list must not read as "clear to
@@ -304,22 +304,22 @@ def wt_merge(
     drift (use --accept-drift to override after re-verifying).
     """
     from ai_hats_wt import (
-        Blocker,  # HATS-1654
-        WorktreeBaseBranchMismatchError,  # HATS-533
+        Blocker,
+        WorktreeBaseBranchMismatchError,
         WorktreeDirtyError,
         WorktreeDriftError,
-        WorktreeMainRepoMidMergeError,  # HATS-587 / F4
-        WorktreeMergeConflictError,  # HATS-1651
-        WorktreeMergeLeftoverError,  # HATS-1651
+        WorktreeMainRepoMidMergeError,
+        WorktreeMergeConflictError,
+        WorktreeMergeLeftoverError,
         WorktreePartialCleanupError,
-        WorktreeRebasedBranchError,  # HATS-1370
+        WorktreeRebasedBranchError,
         WorktreeRemoveError,
-        WorktreeMergeAborted,  # HATS-1540 / ADR-0019
-        WorktreeStateIncompleteError,  # HATS-714
-        WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
+        WorktreeMergeAborted,  # ADR-0019
+        WorktreeStateIncompleteError,
+        WorktreeTeardownAborted,  # ADR-0013 D8
     )
 
-    # HATS-482 / B-08: guard before resolving the project.
+    # Guard before resolving the project.
     _guard_not_inside_linked_worktree()
 
     mgr = _resolve_worktree(branch)
@@ -346,7 +346,7 @@ def wt_merge(
             skip_hooks=skip_hooks,
         )
     except WorktreeTeardownAborted as e:
-        # HATS-823 / ADR-0013 D8: a wt_out hook failed; teardown aborted
+        # ADR-0013 D8: a wt_out hook failed; teardown aborted
         # fail-closed, the worktree + gitignored data are preserved. The hook
         # detail (recovery + --skip-hooks escape) rides as the __cause__; fall
         # back to the abort itself for a future causeless (non-hook) veto.
@@ -380,11 +380,10 @@ def wt_merge(
     except WorktreeBaseBranchMismatchError as e:
         # Main-repo HEAD wandered off `_original_branch` between
         # `wt create` and `wt merge`. The merge would otherwise silently
-        # land on `e.current` instead of `e.expected` — same wrong-branch
-        # class as HATS-486. Refuse before any mutation; surface a
-        # copy-pasteable recipe naming the right branch and the main-repo
-        # path. Escape current/expected defensively (branch names can in
-        # principle contain Rich-markup characters).
+        # land on `e.current` instead of `e.expected`. Refuse before any
+        # mutation; surface a copy-pasteable recipe naming the right branch
+        # and the main-repo path. Escape current/expected defensively
+        # (branch names can in principle contain Rich-markup characters).
         from rich.markup import escape as _escape
 
         layout = resolve_project().layout
@@ -400,7 +399,7 @@ def wt_merge(
         _print_blockers(other_blockers("base-mismatch"))
         sys.exit(1)
     except WorktreeMainRepoMidMergeError as e:
-        # HATS-587 / F4: main repo already mid-merge (foreign MERGE_HEAD).
+        # Main repo already mid-merge (foreign MERGE_HEAD).
         # Refuse cleanly with the resolve recipe — no traceback. Worktree
         # and branch are untouched (guard runs before any mutation), so
         # the operator can clean up the main repo and re-run unchanged.
@@ -478,7 +477,7 @@ def wt_merge(
         _print_blockers(other_blockers("drift"))
         sys.exit(1)
     except WorktreeRemoveError as e:
-        # HATS-488 / B-03: merge committed, but worktree dir cleanup
+        # Merge committed, but worktree dir cleanup
         # failed for a non-junk reason (held-open files, perms). Branch
         # state JSON intact; operator can investigate and retry.
         from rich.markup import escape as _escape
@@ -492,7 +491,7 @@ def wt_merge(
         )
         sys.exit(2)
     except WorktreePartialCleanupError as e:
-        # HATS-482 / B-02: merge committed, worktree dir gone, but branch
+        # Merge committed, worktree dir gone, but branch
         # cleanup failed for a known cause. State JSON intact so the
         # operator can retry after fixing the cause.
         # branch_name + stderr_tail come from git output (untrusted re:
@@ -542,10 +541,10 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
         WorktreeDirtyError,
         WorktreePartialCleanupError,
         WorktreeRemoveError,
-        WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
+        WorktreeTeardownAborted,  # ADR-0013 D8
     )
 
-    # HATS-482 / B-08: guard before resolving the project.
+    # Guard before resolving the project.
     _guard_not_inside_linked_worktree()
 
     mgr = _resolve_worktree(branch)
@@ -559,7 +558,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
     try:
         mgr.discard(force=force, force_remove=force_remove, skip_hooks=skip_hooks)
     except WorktreeTeardownAborted as e:
-        # HATS-823 / ADR-0013 D8: `discard` is still fail-closed on a wt_out hook
+        # ADR-0013 D8: `discard` is still fail-closed on a wt_out hook
         # — the data may matter even when the work doesn't. The hook detail
         # (--skip-hooks escape) rides as the __cause__; fall back to the abort
         # itself for a future causeless (non-hook) veto.
@@ -571,7 +570,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
         console.print(f"[red]Refused[/]: {e}")
         sys.exit(1)
     except WorktreeRemoveError as e:
-        # HATS-488 / B-03: data-preservation guard fired — git couldn't
+        # Data-preservation guard fired — git couldn't
         # delete the worktree dir and operator hasn't opted in to rm-rf.
         # Path + stderr_tail come from git output / fs error (untrusted
         # re: Rich markup); escape before console.print.
@@ -587,7 +586,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
         )
         sys.exit(2)
     except WorktreePartialCleanupError as e:
-        # HATS-482 / B-02: worktree dir gone, branch survived.
+        # Worktree dir gone, branch survived.
         # branch_name + stderr_tail come from git output (untrusted re:
         # Rich markup); escape before console.print.
         from rich.markup import escape as _escape
@@ -612,7 +611,7 @@ def wt_list():
 
     layout = resolve_project().layout
     project_dir = layout.root
-    # HATS-482 / B-08: guard CWD-from-inside-linked-worktree.
+    # Guard CWD-from-inside-linked-worktree.
     _guard_not_inside_linked_worktree()
     worktrees = WorktreeManager.list_worktrees(project_dir)
     tracked_branches = {
@@ -695,7 +694,7 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
         env.pop(_var, None)
     run_dir = _effective_dir(wt_path, subdir)
     # src alone Franken-mixes — packages/*/src must come from the
-    # worktree. HATS-1205: rooted at whichever project owns run_dir.
+    # worktree. Rooted at whichever project owns run_dir.
     env["PYTHONPATH"] = workspace_pythonpath(
         _owner_root(run_dir, wt_path), env.get("PYTHONPATH", "")
     )

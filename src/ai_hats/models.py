@@ -1,8 +1,8 @@
-"""Facade over the per-domain schemas (HATS-863) — pure re-exports.
+"""Facade over the per-domain schemas — pure re-exports.
 
 The god-module was split per ADR-0014 §2: libraries/config own their schemas
-(wt schema lives in ``ai_hats_wt.carry``; the tracker re-export was dropped in
-HATS-1260). T18 dismantles what remains when those domains lift into packages.
+(wt schema lives in ``ai_hats_wt.carry``; the tracker re-export was dropped).
+T18 dismantles what remains when those domains lift into packages.
 """
 
 from __future__ import annotations

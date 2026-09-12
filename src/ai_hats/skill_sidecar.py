@@ -1,7 +1,7 @@
-"""Detect skills still shipping a hook-bearing ``metadata.yaml`` (HATS-815).
+"""Detect skills still shipping a hook-bearing ``metadata.yaml``.
 
-After the HATS-814 cutover the engine reads hook wiring from ``SKILL.md``
-frontmatter top-level ``ai_hats:``; a leftover ``metadata.yaml`` that still
+Hook wiring now comes from ``SKILL.md`` frontmatter top-level ``ai_hats:``,
+not the old ``metadata.yaml`` sidecar; a leftover ``metadata.yaml`` that still
 carries ``git_hooks`` / ``runtime_hooks`` would hard-fail compose
 (:class:`~ai_hats.models.LeftoverSidecarHooksError`). This module is the
 **detection-only** companion: a pure scan that names every such skill across a
@@ -20,9 +20,10 @@ from typing import Iterable
 
 import yaml
 
-# Hook keys the 814 cutover moved into SKILL.md frontmatter ``ai_hats:``. A
-# leftover sidecar carrying any (truthy) is what trips the compose-guard.
-# ``worktree`` is the HATS-823 carry block (wt_in / wt_out) — frontmatter-only
+# Hook keys that moved into SKILL.md frontmatter ``ai_hats:`` from the old
+# metadata.yaml sidecar. A leftover sidecar carrying any (truthy) is what
+# trips the compose-guard.
+# ``worktree`` is the wt_in / wt_out carry block — frontmatter-only
 # from day one, so a leftover ``worktree:`` in metadata.yaml is the same
 # silent-drop hazard the guard exists to catch.
 # ``lifecycle_hooks`` and ``plan_sections`` name RETIRED

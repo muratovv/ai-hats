@@ -1,4 +1,4 @@
-"""HATS-764 — harness channel resolver.
+"""Harness channel resolver.
 
 A pure mapping ``channel → ChannelResolution`` that collapses the three
 scattered source-selection branches in ``self update`` (``--revision`` ref
@@ -34,7 +34,7 @@ class ChannelResolveError(RuntimeError):
     """An effectful channel fetch failed loud (PyPI unreachable, offline edge).
 
     Raised instead of falling back to another channel — the caller surfaces a
-    clear message and a non-zero exit (HATS-764 §3: no silent fallback).
+    clear message and a non-zero exit (no silent fallback).
     """
 
 
@@ -126,9 +126,9 @@ def resolve_channel(
 def _coerce_to_https(url: str) -> str:
     """Map a git+ssh URL form to *bare* https so ``git ls-remote`` needs no keys.
 
-    Default is git+https (HATS-766); an ``AI_HATS_REPO_URL`` override may still
-    carry ``git+ssh://`` (HATS-337) — the probe only needs the bare https.
-    HATS-987: relocated here from ``update_check.checker`` (a channel/install
+    Default is git+https; an ``AI_HATS_REPO_URL`` override may still
+    carry ``git+ssh://`` — the probe only needs the bare https.
+    Relocated here from ``update_check.checker`` (a channel/install
     primitive) so edge resolution never depends on that optional module.
     """
     prefixes = ("git+ssh://git@", "git+https://", "git+")
@@ -173,7 +173,7 @@ def resolve_edge_probe_url(yaml_repo: str | None = None) -> str:
 
     Same precedence as :func:`resolve_edge_repo` but coerced to *bare* https (the
     probe needs no ``git+``). Centralises the URL build that ``cli/maintenance``'s
-    edge guard used to duplicate (HATS-987).
+    edge guard used to duplicate.
     """
     return _coerce_to_https(_raw_edge_repo(yaml_repo))
 
@@ -195,9 +195,9 @@ def fetch_latest_stable_version(url: str = PYPI_JSON_URL, *, timeout: int = 10) 
     """Latest published ai-hats version from the PyPI JSON API (``info.version``).
 
     Fails LOUD via :class:`ChannelResolveError` when PyPI is unreachable or the
-    package is not yet published (404) — NO silent fallback to edge
-    (HATS-764 §3). The 764 reality is the ``ai-hats`` PyPI name is still free;
-    HATS-765 owns the live publish + live e2e. Unit-tested here with a stub.
+    package is not yet published (404) — NO silent fallback to edge.
+    The ``ai-hats`` PyPI name is still free right now; live publish and live
+    e2e are tracked separately. Unit-tested here with a stub.
     """
     if not url.startswith("https://"):  # defense: only the pinned https endpoint
         raise ChannelResolveError(f"refusing non-https PyPI URL: {url!r}")

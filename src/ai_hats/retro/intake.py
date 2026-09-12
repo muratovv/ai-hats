@@ -1,4 +1,4 @@
-"""Parser for `reflect-issue` pipeline output (HATS-1044 R6: integrator-owned).
+"""Parser for `reflect-issue` pipeline output (integrator-owned).
 
 The `hypothesis-intake` role emits a YAML block between
 ``BEGIN_INTAKE_RESULT``/``END_INTAKE_RESULT`` markers; the `extract_marker`

@@ -1,16 +1,16 @@
 """``make_audit`` step — derive structured ``audit.md`` from claude JSONL.
 
 Canonical post-spawn audit derivation, shared by both HITL (``human.yaml``)
-and Automate (``execute.yaml``) pipelines (HATS-535). Reads claude's
+and Automate (``execute.yaml``) pipelines. Reads claude's
 per-session JSONL at ``~/.claude/projects/<key>/<claude_session_id>.jsonl``
 and rewrites ``<session_dir>/audit.md`` with structured turn markers
 (``👤``/``👾``/🔧/💭) plus token aggregation in ``metrics.json``.
 
-Before HATS-535, this logic lived inside ``runtime._finalize_session`` and
+Before this step existed, this logic lived inside ``runtime._finalize_session`` and
 fired ONLY on the HITL path — the SubAgent path produced a meta-only
 ``audit.md`` despite claude SDK persisting the same JSONL. Lifting the
-call into its own step closes that asymmetry (mirror of HATS-523, which
-brought ``meta_prompt.txt`` to HITL parity with SubAgent).
+call into its own step closes that asymmetry (mirroring the earlier change
+that brought ``meta_prompt.txt`` to HITL parity with SubAgent).
 
 ``failure_policy = "continue"``: audit derivation is best-effort. If the
 JSONL is missing (claude never started, project_key encoding mismatch,
@@ -19,7 +19,7 @@ degraded but non-empty output. A hard exception here would orphan the
 session-end print and update banner — neither acceptable.
 
 ``KeyboardInterrupt`` is swallowed internally for the same reason a second
-Ctrl+C must not kill cleanup partway (HATS-086 invariant, inherited from
+Ctrl+C must not kill cleanup partway (an invariant, inherited from
 the pre-refactor ``_finalize_session`` discipline).
 """
 

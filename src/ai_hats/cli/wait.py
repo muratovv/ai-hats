@@ -1,9 +1,9 @@
-"""``ai-hats wait`` — block the live session until an event happens (HATS-986).
+"""``ai-hats wait`` — block the live session until an event happens.
 
 The three exit codes are the point. A shell ``until`` loop cannot tell "not true
 yet" from "predicate is broken", so a typo'd predicate waits forever and the
-silence reads exactly like a successful wait. Every probe is bounded too
-(HATS-1598): one hung probe otherwise makes ``--timeout`` unreachable.
+silence reads exactly like a successful wait. Every probe is bounded too:
+one hung probe otherwise makes ``--timeout`` unreachable.
 
 The predicate's ``1`` means "not yet", not the ``BROKE`` of ADR-0020 D2 — a hook
 has no "not yet" to express; the ADR carries the same note from its side.

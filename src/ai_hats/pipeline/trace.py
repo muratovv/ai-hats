@@ -1,4 +1,4 @@
-"""Pipeline trace events + JSONL writer (HATS-274).
+"""Pipeline trace events + JSONL writer.
 
 Opt-in observability: when a ``Pipeline.run`` call has an ``on_step``
 callback, the inner loop fires one ``TraceEvent`` after every step

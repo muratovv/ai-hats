@@ -138,8 +138,8 @@ def match_operation(
     """The declared operation ``argv`` invokes on ``surface``, or ``None``.
 
     The verb is read by the registry, never here: this half and the PreToolUse
-    gate had drifted into two grammars, and three shapes already disagreed
-    (HATS-1816). A branch that parsed argv locally would restore the drift.
+    gate had drifted into two grammars, and three shapes already disagreed.
+    A branch that parsed argv locally would restore the drift.
     """
     for operation, selectors in policy.items():
         spec = operations.spec_for(operation, registry=registry)
@@ -242,7 +242,7 @@ def run_wrapped(
     source_state = None
     if "rack.transition" in config.policy:
         # The registry reads the verb here too: a local parse would be the third
-        # grammar in this file, which is the defect HATS-1816 removed.
+        # grammar in this file, which is the defect the rewrite removed.
         reading = operations.read("rack.transition", surface, argv)
         if reading is not None:
             task_id = reading.subject

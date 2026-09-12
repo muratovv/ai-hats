@@ -1,4 +1,4 @@
-"""Self-heal stale legacy-path refs after layout migration (HATS-397).
+"""Self-heal stale legacy-path refs after layout migration.
 
 When ``Assembler._migrate_layout_v4_*`` moves content out of the namespace
 ai-hats owns (``.agent/{hooks,rules,skills,backlog,...}/`` →
@@ -20,7 +20,7 @@ The healer scans for those refs after migration and:
     ``<ai_hats_dir>/sessions/audits/<ts>-legacy-refs.md`` listing every ref
     that was not auto-healed.
 
-Trigger: HATS-397, proxmox ``ai-hats self update`` regression where
+Trigger: proxmox ``ai-hats self update`` regression where
 ``.claude/settings.json:11`` referenced ``.agent/hooks/pre_bash_secret_guard.py``
 after the file moved to ``<ai_hats_dir>/library/hooks/``.
 """
@@ -61,7 +61,7 @@ class LegacyRef:
         new_substr: Replacement substring under the new layout.
         full_legacy_path: Full path including the tail after the prefix
             (e.g. ``.agent/hooks/pre_bash_secret_guard.py``). Used by the
-            Phase 2 dst-existence check (HATS-549) to verify the
+            Phase 2 dst-existence check to verify the
             substitution would land somewhere meaningful.
         full_new_path: Full post-substitution path (legacy tail appended
             to ``new_substr``). Compared against on-disk state to decide
@@ -132,8 +132,8 @@ SKIP_DIR_NAMES: frozenset[str] = frozenset(
 # TEXT_EXTENSIONS. By convention these are historical records that
 # legitimately reference old paths as facts-in-time — auto-rewriting
 # would invert the prose meaning (e.g. "canonical X instead of legacy X").
-# Source: HATS-416 — observed false-positive across 3 consecutive bumps
-# where the HATS-412 CHANGELOG entry describing the legacy-path bug got
+# Observed false-positive across 3 consecutive bumps
+# where the CHANGELOG entry describing the legacy-path bug got
 # its own description rewritten.
 SKIP_FILENAMES: frozenset[str] = frozenset(
     {
@@ -297,7 +297,7 @@ def _is_json_target(path: Path, layout: ProjectLayout) -> bool:
 
 # Characters that terminate a path-like token in a surrounding string.
 # Used to extract the "tail" after the legacy prefix so we can build the
-# full pre-substitution path for the HATS-549 dst-existence check.
+# full pre-substitution path for the dst-existence check.
 _PATH_TERMINATORS: frozenset[str] = frozenset(
     {" ", "\t", "\n", "\r", '"', "'", "`", "<", ">", "(", ")", "[", "]"}
 )
@@ -462,7 +462,7 @@ def heal_json_file(path: Path, layout: ProjectLayout) -> int:
     Preserves the original file's trailing newline. Idempotent: a re-run on
     already-healed content returns 0.
 
-    HATS-470: old content is snapshotted to the trash session via
+    Old content is snapshotted to the trash session via
     :func:`safe_delete.replace` before the rewrite, so users can recover
     from a faulty heal pass.
     """
@@ -524,7 +524,7 @@ def heal_text_file(path: Path, layout: ProjectLayout) -> int:
     Caller is responsible for invoking ``is_file_git_clean`` first; this
     function blindly applies the rewrite.
 
-    HATS-470: old content is snapshotted to the trash session via
+    Old content is snapshotted to the trash session via
     :func:`safe_delete.replace` — important for the non-git fallback
     branch where ``is_file_git_clean`` returns True permissively and
     a faulty regex could otherwise irreversibly mangle user content.
@@ -583,7 +583,7 @@ def _render_reenable_snippet(ref: LegacyRef) -> list[str]:
     review-pass on what the hook actually does before re-enabling).
 
     Uses ``json.dumps`` + ``textwrap.indent`` so the rendered snippet
-    survives future schema additions for free (HATS-549 review Q.3).
+    survives future schema additions for free.
     """
     import textwrap
 
@@ -611,7 +611,7 @@ def write_inventory(layout: ProjectLayout, refs: list[LegacyRef]) -> Path | None
 
     Output lands under ``<ai_hats_dir>/sessions/audits/<utc_ts>-legacy-refs.md``.
     Entries are grouped by file then by reason — the ``dst-missing``
-    diagnosis (HATS-549 Phase 2) carries the data-loss callout so users
+    diagnosis carries the data-loss callout so users
     notice it before the broken hook fires.
     """
     project_dir = layout.root
@@ -665,7 +665,7 @@ def write_inventory(layout: ProjectLayout, refs: list[LegacyRef]) -> Path | None
 # ---------- Phase 2 — destination-existence check ----------
 
 # Local aliases — shared canonical definitions live in ``paths`` so
-# the healer / asserter / future callers stay in sync (HATS-549 Q.1).
+# the healer / asserter / future callers stay in sync.
 _CLAUDE_PROJECT_DIR_VAR = CLAUDE_PROJECT_DIR_VAR
 _strip_project_dir_var = strip_claude_project_dir
 
@@ -673,7 +673,7 @@ _strip_project_dir_var = strip_claude_project_dir
 def is_ref_safe_to_heal(ref: LegacyRef, layout: ProjectLayout) -> tuple[bool, str]:
     """Decide whether ``ref`` should be auto-healed.
 
-    HATS-549 Phase 2: refuse to rewrite a legacy → new substitution when
+    Phase 2: refuse to rewrite a legacy → new substitution when
     NEITHER the legacy source file NOR the new destination file exists
     on disk. That state is the data-loss signal — blindly rewriting the
     path produces a settings.json that points at nowhere and corrupts
@@ -742,7 +742,7 @@ def _split_user_hook_command(command: str) -> str | None:
     * Fresh v3 → v4: the ``.agent/hooks/`` form. Step 6 moves the
       file from legacy to ``user-hooks/`` and the healer disables the
       entry.
-    * Stuck state inherited from a pre-HATS-549 bump that auto-healed
+    * Stuck state inherited from an older bump that auto-healed
       to ``library/hooks/``: the reconciliation pass moves the file
       back out of the managed namespace and the healer disables here
       as well.
@@ -771,7 +771,7 @@ def _disable_user_hooks_in_settings(
     ai-hats-owned whitelist. Cascade-drops empty ``hooks[]`` arrays,
     empty matcher blocks, and empty hook-event keys. A matcher carrying
     ``_ai_hats_managed`` is ours by its own tag and is skipped whole
-    (HATS-1463: the whitelist alone misclassifies it once the manifest is gone).
+    (the whitelist alone misclassifies it once the manifest is gone).
 
     Returns a list of :class:`LegacyRef` (with ``reason="user-hook-disabled"``)
     for the Stage B inventory — that's where the user gets the
@@ -908,12 +908,12 @@ def heal_external_refs(layout: ProjectLayout, *, verbose: bool = True) -> HealRe
     project_dir = layout.root
     report = HealReport()
 
-    # HATS-549 Phase 4 pre-pass: structurally walk settings.json and
+    # Phase 4 pre-pass: structurally walk settings.json and
     # REMOVE hook entries pointing at user-owned legacy hooks
     # (basename NOT in the ai-hats whitelist). This must run BEFORE
     # ``scan_external_refs`` so the disabled entries don't get rescued
     # by the regex-substitution heal that follows — the explicit
-    # disable is the load-bearing behaviour per the HATS-549 user
+    # disable is the load-bearing behaviour per the user
     # contract ("user must re-enable manually").
     owned = _owned_hook_basenames(layout)
     for json_rel in JSON_TARGETS:
@@ -936,7 +936,7 @@ def heal_external_refs(layout: ProjectLayout, *, verbose: bool = True) -> HealRe
         by_file.setdefault(ref.file, []).append(ref)
 
     for file_path, file_refs in by_file.items():
-        # HATS-549 Phase 2: per-file dst-existence gate. If ANY ref in
+        # Phase 2: per-file dst-existence gate. If ANY ref in
         # this file points at a substitution where both legacy source
         # and new destination are absent from disk, refuse to heal the
         # whole file — the file may carry a mix of healthy and stale
@@ -1030,7 +1030,7 @@ def _print_summary(report: HealReport, layout: ProjectLayout) -> None:
             rel = report.inventory_path.relative_to(project_dir).as_posix()
         except ValueError:
             rel = str(report.inventory_path)
-        # HATS-549 Phase 2: data-loss callout — surface ``dst-missing``
+        # Phase 2: data-loss callout — surface ``dst-missing``
         # count separately so users notice the bad case in the noise.
         dst_missing = sum(1 for r in report.inventoried if r.reason == "dst-missing")
         if dst_missing:

@@ -1,9 +1,9 @@
-"""Claude plugin-dir materialization (HATS-307, refined in HATS-294).
+"""Claude plugin-dir materialization.
 
 The spawned role's skills are materialized under the per-session cache
 (``<cache_root>/sessions/<sid>/plugin/``, outside the project) and passed to
 ``claude`` via ``--plugin-dir``. Lives with the surface, not in core: the ``.claude-plugin``
-manifest layout is claude's, not a shared concept (HATS-1211 review).
+manifest layout is claude's, not a shared concept.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def _rebuild_plugin_dir(
             continue
         dest = skills_root / skill.name
         port.copy_tree(skill.source_path, dest)
-        # HATS-380 parity: expand <ai_hats_dir>; HATS-1051: inject the FSM edge
+        # Expand <ai_hats_dir> for parity; inject the FSM edge
         # table. Read from the SOURCE — under a PlanMaterializer the copy does
         # not exist, and reading the dest would silently drop this write.
         source_md = skill.source_path / "SKILL.md"

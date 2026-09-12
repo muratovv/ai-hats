@@ -1,15 +1,15 @@
-"""Crash-recovery sweep for the versioned install layout (HATS-648 / R1).
+"""Crash-recovery sweep for the versioned install layout.
 
 An ``ai-hats self update`` killed mid-pip leaves an incomplete ``versions/<sha>/``
 (no ``.complete`` sentinel). This removes that residue so ``versions/`` stays
 bounded — **idempotently and conservatively**: never touches ``current`` or any
 **complete** dir (a complete dir may be a live pinned run's env — reclaiming
-those is R2's job, HATS-649), only removes residue older than a TTL (no liveness
+those is the orphan-version reclaim's job), only removes residue older than a TTL (no liveness
 signal exists for a half-install, so age is the stand-in), and deletes via
 ``safe_delete.discard``. Called at the ``create_session`` chokepoint and at
 ``self update`` start, with the same age guard at both.
 
-Phase B (HATS-653) adds ``reclaim_legacy_venv``: once this process runs from a
+``reclaim_legacy_venv`` handles the legacy venv: once this process runs from a
 complete versioned venv, the orphaned pre-versioning ``<ai_hats_dir>/.venv`` is
 dead weight and is reclaimed (reversible — backed by the launcher self-heal).
 """
@@ -24,10 +24,10 @@ from ai_hats_core.layout import ProjectLayout
 
 from .version_refs import current_run_sha, is_complete, load_refs, read_current_sha, ref_is_live
 
-# Reused from the HATS-294 session-cache sweep: conservative 24h window. The
+# Reused from the session-cache sweep: conservative 24h window. The
 # risk an "incomplete" dir is actually an install in flight lasts seconds, so
 # 24h errs heavily toward never deleting a live build. Not a CLI knob (no
-# current use case); R2 may revisit alongside its retention policy.
+# current use case); the orphan-version reclaim may revisit alongside its retention policy.
 DEFAULT_TTL_HOURS = 24
 
 
@@ -54,7 +54,7 @@ def sweep_incomplete_versions(
         if sha == current:
             continue  # never touch the active version
         if is_complete(layout.versions, sha):
-            continue  # complete → R2's liveness-based reclaim, not ours
+            continue  # complete → the orphan-version reclaim's job, not ours
         try:
             if entry.stat().st_mtime >= cutoff:
                 continue  # within TTL → may be an install in flight
@@ -63,7 +63,7 @@ def sweep_incomplete_versions(
         # Incomplete, aged out, not current → crash residue. Reclaim it.
         safe_delete.discard(
             entry,
-            reason="incomplete versioned-install residue (HATS-648)",
+            reason="incomplete versioned-install residue",
             project_dir=layout.root,
         )
         removed.append(entry)
@@ -73,7 +73,7 @@ def sweep_incomplete_versions(
 def reclaim_orphan_versions(layout: ProjectLayout, keep_shas: set[str] | None = None) -> list[Path]:
     """Reclaim complete, non-``current`` ``versions/<sha>/`` dirs with no live ref.
 
-    **Reclaim-on-certain-death** (HATS-649 / R2): a complete version is removed
+    **Reclaim-on-certain-death**: a complete version is removed
     iff it is not the active ``current`` and no **live** liveness ref pins it.
     Liveness is decided by ``root_pid`` + OS ``start_time`` (see
     :func:`ai_hats.version_refs.ref_is_live`) — single-host, **no TTL**: a reused
@@ -90,7 +90,7 @@ def reclaim_orphan_versions(layout: ProjectLayout, keep_shas: set[str] | None = 
     version, a ``keep_shas`` entry, an incomplete dir (owned by
     :func:`sweep_incomplete_versions`), or the ``.refs`` store itself is left
     untouched. The legacy ``.venv`` lives outside ``versions/`` and is never
-    considered (its reclaim is HATS-653).
+    considered (:func:`reclaim_legacy_venv` handles it separately).
 
     Idempotent. Returns reclaimed dirs for no-silent-caps logging by the caller.
     """
@@ -130,7 +130,7 @@ def reclaim_orphan_versions(layout: ProjectLayout, keep_shas: set[str] | None = 
         # Complete, not current, no live ref → orphaned. Reclaim it.
         safe_delete.discard(
             entry,
-            reason="orphaned versioned-install (HATS-649)",
+            reason="orphaned versioned-install",
             project_dir=layout.root,
         )
         removed.append(entry)
@@ -140,7 +140,7 @@ def reclaim_orphan_versions(layout: ProjectLayout, keep_shas: set[str] | None = 
 def reclaim_legacy_venv(layout: ProjectLayout) -> Path | None:
     """Reclaim the legacy ``<ai_hats_dir>/.venv`` once versioned is authoritative.
 
-    Phase B (HATS-653): after lazy migration to the versioned layout the old
+    After lazy migration to the versioned layout the old
     ``.venv`` only resolves as a fallback (when ``versions/current`` is absent or
     broken). Once this process runs from a complete versioned venv it is dead
     weight whose fallback value only decays, so reclaim it.
@@ -165,7 +165,7 @@ def reclaim_legacy_venv(layout: ProjectLayout) -> Path | None:
         return None  # already reclaimed or never migrated → no-op
     safe_delete.discard(
         legacy,
-        reason="legacy .venv superseded by versioned install (HATS-653)",
+        reason="legacy .venv superseded by versioned install",
         project_dir=layout.root,
     )
     return legacy

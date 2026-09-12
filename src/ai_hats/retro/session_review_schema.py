@@ -1,4 +1,4 @@
-"""SessionReviewV1: unified post-session artifact (HATS-252).
+"""SessionReviewV1: unified post-session artifact.
 
 One canonical schema replacing the v1 split between SessionRetroV1 (facts) and
 ReflectSessionV1 (analysis). Pure-Python computes the factual fields; a single

@@ -1,4 +1,4 @@
-"""The ordered library roots a resolver searches (HATS-1269 S1).
+"""The ordered library roots a resolver searches.
 
 Lifted out of ``Assembler._build_library_paths`` so worktree teardown can build
 the same list without a full ``Assembler`` — whose ``__init__`` loads
@@ -89,7 +89,7 @@ def user_global_library_paths() -> list[Path]:
 def worktree_local_libraries(project_dir: Path) -> Path | None:
     """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
 
-    Inside a linked worktree ``project_dir`` hopped to MAIN (HATS-524), so the
+    Inside a linked worktree ``project_dir`` hopped to MAIN, so the
     git-tracked ``libraries/`` would resolve to MAIN — invisible to worktree
     edits. Re-point only when cwd is in a worktree whose main checkout IS
     ``project_dir``. The ``is_relative_to`` pre-gate skips the git probe on the
@@ -97,7 +97,7 @@ def worktree_local_libraries(project_dir: Path) -> Path | None:
 
     Lives beside :func:`build_library_paths` because every caller of that one
     owes this: a caller that skips it searches a root set the composition does
-    not have, and a declaration it cannot see reads as absent (HATS-1141).
+    not have, and a declaration it cannot see reads as absent.
     """  # comment-length: allow — the second paragraph IS the reason it moved here
     cwd = Path.cwd()
     try:
@@ -140,7 +140,7 @@ def build_library_paths(
     """
     paths: list[Path] = list(builtin_library_layers(project_dir, prefer_cwd=prefer_cwd, cwd=cwd))
 
-    # HATS-871 / ADR-0016: out-of-tree packages contribute their skills/ via the
+    # ADR-0016: out-of-tree packages contribute their skills/ via the
     # ``ai_hats.skills`` entry-point (open registry). Shipped tier — ranks above
     # the builtins, below the user/config/project overrides that follow.
     from .skill_sources import skill_source_roots
@@ -167,7 +167,7 @@ def find_component_dir(roots: Sequence[Path], subdir: str, name: str) -> Path | 
     """Last-wins search for ``<root>/<subdir>/<name>`` across ordered ``roots``.
 
     The path half of component resolution, kept out of ``resolver`` so a brick
-    can reach it without importing the composition layer (ADR-0014 / HATS-865);
+    can reach it without importing the composition layer (ADR-0014);
     ``LibraryResolver.resolve`` delegates here, so there is one search, not two.
     Namespace notation (``dev::python``) is already mapped to a subpath by the
     caller.

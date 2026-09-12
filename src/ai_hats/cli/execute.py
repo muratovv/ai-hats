@@ -9,11 +9,11 @@ One command, two modes:
 
 The ``--prompt`` flag resolves either to a file under
 ``initial_injections/<name>.md`` across the full ``library_paths`` chain
-(by short name, last-wins — HATS-445) or to a filesystem path. The
+(by short name, last-wins) or to a filesystem path. The
 resolved content becomes the first user-visible message.
 
 All entry-points (bare ``ai-hats``, ``ai-hats agent``, ``ai-hats reflect *``)
-go through ``pipeline.launch`` over a built-in YAML pipeline (HATS-269).
+go through ``pipeline.launch`` over a built-in YAML pipeline.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from ._helpers import with_model_flag
 def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
     """Resolve ``--prompt`` into the text to inject as first user message.
 
-    Lookup order (HATS-445):
+    Lookup order:
       1. ``arg is None`` → return ``None``.
       2. ``initial_injections/<arg>.md`` across the full ``library_paths``
          chain via :meth:`LibraryResolver.resolve_injection` — last-wins,
@@ -85,12 +85,12 @@ _BATCH_ONLY_FLAGS = (
 
 
 def _reject_inert_flags(interactive: bool, extra_args: tuple[str, ...]) -> None:
-    """Refuse a flag the chosen mode cannot act on (HATS-1218).
+    """Refuse a flag the chosen mode cannot act on.
 
     The help text said "(batch only)" while the CLI accepted the flag and
     dropped it, and ``--batch`` swallowed ``extra_args`` with no note at all —
     the same accept-and-ignore shape as the provider override. Follows the
-    HATS-827 precedent below: fail at the boundary, naming the mode.
+    provider-override precedent below: fail at the boundary, naming the mode.
     """
     if not interactive:
         if extra_args:

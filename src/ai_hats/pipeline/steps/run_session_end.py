@@ -4,17 +4,17 @@ Final HITL-only stage of the ``finalize-hitl`` sub-pipeline. Runs
 after ``make_audit`` and ``maybe_spawn_session_reviewer`` so the banner
 prints the retro decision already taken by the upstream step.
 
-History: pre-HATS-530 this step owned the auto-retro decision/spawn
-block; HATS-530 extracted that into ``maybe_spawn_session_reviewer``.
+History: this step used to own the auto-retro decision/spawn
+block; that logic was extracted into ``maybe_spawn_session_reviewer``.
 This step then also dispatched SESSION_END lifecycle hooks via
 ``HooksRunner`` — but that channel had zero real consumers (the
-``hooks:`` composition channel was never executed; HATS-707 deleted it),
+``hooks:`` composition channel was never executed and was later deleted),
 so dispatch was removed. What remains is the cyan retro reminder banner.
 SubAgent's ``finalize-subagent`` pipeline does NOT include this step
 (no TTY for the banner).
 
 The single sub-phase is wrapped in ``try/except (Exception,
-KeyboardInterrupt)`` per the HATS-086 invariant — a second Ctrl+C must
+KeyboardInterrupt)`` per the interrupt-safety invariant — a second Ctrl+C must
 not kill cleanup partway. Reads ``retro_decision`` (optional input)
 produced by ``maybe_spawn_session_reviewer``; absent it → no banner
 (silent no-op).
@@ -74,7 +74,7 @@ class RunSessionEnd(Step):
 def _print_retro_banner(retro: dict) -> None:
     """Render the cyan retro reminder + wrap-up nudge.
 
-    Extracted verbatim from the pre-HATS-535 ``_print_session_end``
+    Extracted verbatim from the original ``_print_session_end``
     body so behaviour is preserved modulo placement (now AFTER
     SESSION_END hooks rather than before).
     """

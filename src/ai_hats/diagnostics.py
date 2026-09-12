@@ -1,6 +1,6 @@
 """One value type for a user-facing problem, and one place its text is spelled.
 
-HATS-1753. A product module states the problem — level, what, which file, what
+A product module states the problem — level, what, which file, what
 fixes it — and stops there; which channel carries it is the caller's decision.
 Zero internal imports on purpose: composition modules import this, and a cycle
 would be the one thing that keeps them printing to stderr instead.

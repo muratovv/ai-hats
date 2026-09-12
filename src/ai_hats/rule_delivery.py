@@ -1,4 +1,4 @@
-"""HATS-700 / HATS-1515 — rule-delivery contract checker.
+"""Rule-delivery contract checker.
 
 Invariant: every ``see rule `X` `` pointer in a shipped trait/role injection must
 point at a rule that exists in the library.
@@ -133,7 +133,7 @@ def find_dangling_rule_pointers(
 
 
 def _installed_library_root() -> Path:
-    """The shipped library tree, resolved from the package (HATS-1437)."""
+    """The shipped library tree, resolved from the package."""
     import ai_hats_library
 
     return Path(ai_hats_library.__file__).parent

@@ -1,4 +1,4 @@
-"""Runtime-hook materialization tests for the OpenCode surface (HATS-1788)."""
+"""Runtime-hook materialization tests for the OpenCode surface."""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> Non
 
 
 def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> None:
-    """HATS-1792: the manifest carries role permission policy even without hooks."""
+    """The manifest carries role permission policy even without hooks."""
     provider = OpenCodeSurface()
     plain = tmp_path / "skill-sources" / "hatrack"
     plain.mkdir(parents=True)
@@ -191,7 +191,7 @@ def test_plugin_asset_is_fail_open_on_missing_pin_and_maps_tools() -> None:
 
 
 def test_plugin_asset_answers_permission_asks_through_server_api() -> None:
-    """HATS-1792: decisions ride the bus event + server reply, rules may defer."""
+    """Decisions ride the bus event + server reply, rules may defer."""
     source = plugin_source()
 
     assert '"permission.asked"' in source

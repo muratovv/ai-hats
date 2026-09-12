@@ -1,4 +1,4 @@
-"""OpenCode surface plugin for ai-hats (HATS-1788)."""
+"""OpenCode surface plugin for ai-hats."""
 
 from __future__ import annotations
 

@@ -1,9 +1,9 @@
-"""Worktree lifecycle hook execution (HATS-823, ADR-0012 D7).
+"""Worktree lifecycle hook execution (ADR-0012 D7).
 
 Runs a single component-declared ``wt_in`` / ``wt_out`` script. Execution
-mechanics moved to :mod:`ai_hats.hook_exec` (ADR-0020 D2, HATS-1151); what stays
+mechanics moved to :mod:`ai_hats.hook_exec` (ADR-0020 D2); what stays
 here is this channel's own vocabulary: the timeout budget kept below the
-lifecycle lock (HATS-711 class), the ``AI_HATS_*`` env it hands a hook, and what
+lifecycle lock, the ``AI_HATS_*`` env it hands a hook, and what
 a missing script means now that hooks spawn in place. Policy — ``wt_out``
 fail-closed vs ``wt_in`` warn-continue — remains the worktree manager's.
 """
@@ -18,7 +18,7 @@ from ai_hats_core.deadline import Deadline
 from .env import WT_HOOK_TIMEOUT, read_budget
 from .hook_exec import HookOutcomeKind, HookRun, run_hook
 
-# What this channel ASKS for. HATS-1593: it is a request, not the timeout — the
+# What this channel ASKS for. It is a request, not the timeout — the
 # lock the caller holds mints the ceiling and `run_hook` takes the smaller of
 # the two. A constant here cannot know which of four locks is held above it.
 WT_HOOK_TIMEOUT_S: float = WT_HOOK_TIMEOUT.default
@@ -69,7 +69,7 @@ def run_worktree_hook(
         project_dir=project_dir,
         worktree_path=worktree_path,
         # This channel's own vocabulary, kept verbatim: `AI_HATS_EVENT` has live
-        # readers outside this repo, and renaming it is HATS-1142's migration.
+        # readers outside this repo, and renaming it is a migration of its own.
         extra_env={"AI_HATS_BRANCH_NAME": branch_name, "AI_HATS_EVENT": event},
         log_path=log_path,
     )
@@ -85,10 +85,10 @@ def _wt_point(event: str) -> str:
 
 
 def _wt_reason(run: HookRun, script: Path) -> str:
-    """HATS-1269: scripts spawn in place, so a missing one means the declaring
+    """Scripts spawn in place, so a missing one means the declaring
     skill stopped shipping it — say that, not a re-materialize step that no
     longer exists. The run already knows which failure it was, so this no longer
-    re-stats the file to find out (HATS-1572)."""
+    re-stats the file to find out."""
     if run.kind is HookOutcomeKind.SCRIPT_MISSING:
         return f"{run.reason} — the declaring skill no longer ships this script"
     return run.reason

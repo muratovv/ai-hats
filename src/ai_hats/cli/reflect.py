@@ -14,7 +14,7 @@ Subcommands:
     Audit a target role against the user's project context. Pre-flight composes
     the target and materializes its layered breakdown under a per-session
     namespace (each run owns its `<session_id>/` subdir, so parallel runs don't
-    race — HATS-308); the `reflect-role` pipeline launches `role-judge`, which reads
+    race); the `reflect-role` pipeline launches `role-judge`, which reads
     those files and writes the report itself to
     `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md` — the
     path is the role's own carve-out, so this pipeline ships no `save_artifact`.
@@ -212,7 +212,7 @@ def reflect_all_cmd(dry_run: bool):
     sys.exit(SessionOutcome.of(result).exit_code_or(1))
 
 
-# ---- reflect hypothesis (HATS-513: 2-phase judge split) ----
+# ---- reflect hypothesis (2-phase judge split) ----
 
 
 @reflect.command("hypothesis")
@@ -961,7 +961,7 @@ def _build_handoff(layout: ProjectLayout) -> Path:
     return path
 
 
-# ---- open-PROP digest (Phase 2 preamble; HATS-1385) ----
+# ---- open-PROP digest (Phase 2 preamble) ----
 
 #: What the runtime safety net stamps on an auto-filed PROP — see
 #: `cli/reflect_session_main.py` TARGET_* and `_build_meta_proposal_body`.
@@ -973,7 +973,7 @@ _DIGEST_TOP = 5
 
 def _is_auto_filed(prop) -> bool:
     """Target AND title AND no vote — each clause has a measured victim without
-    the others (HATS-1385): a card *about* the harness wears the harness target
+    the others: a card *about* the harness wears the harness target
     (PROP-107, 5 votes), and `--failed-session-id` marks authorship, not origin."""
     return prop.target in _AUTO_TARGETS and prop.title.startswith(_AUTO_TITLES) and not prop.votes
 
@@ -989,9 +989,9 @@ def _build_inbox_digest(layout: ProjectLayout) -> str:
     """Compact open-PROP inventory for the Phase 2 preamble.
 
     A digest, not the handoff's dump: that section measured ~126K chars on a
-    147-card inbox, and the judge handed it still missed the inbox (HATS-1323).
+    147-card inbox, and the judge handed it still missed the inbox.
     Ranked on two axes — votes AND age — because vote counts predating the
-    HATS-1397 reviewer fix are systematically depressed.
+    reviewer fix are systematically depressed.
     """
     props = open_proposals(rack_workspace(layout))
     if not props:
@@ -1013,7 +1013,7 @@ def _build_inbox_digest(layout: ProjectLayout) -> str:
         lines += [
             "",
             f"Longest open (top {_DIGEST_TOP}) — the second axis: votes cast before "
-            "the HATS-1397 reviewer fix run low, so age carries what votes cannot:",
+            "the reviewer fix run low, so age carries what votes cannot:",
         ]
         by_age = sorted(rest, key=lambda p: _prop_number(p.id))
         lines += [f"- {p.id} ({len(p.votes)} votes) — {p.title}" for p in by_age[:_DIGEST_TOP]]
@@ -1028,7 +1028,7 @@ def _build_inbox_digest(layout: ProjectLayout) -> str:
 def _fill_inbox_digest(preamble: str, layout: ProjectLayout) -> str:
     """Substitute `{inbox_digest}`; append it when an overridden injection has
     dropped the placeholder — a judge silently launched without the inbox is the
-    HATS-1323 failure itself, so this says so rather than shipping the gap."""
+    failure mode itself, so this says so rather than shipping the gap."""
     digest = _build_inbox_digest(layout)
     if "{inbox_digest}" in preamble:
         return preamble.replace("{inbox_digest}", digest)

@@ -1,4 +1,4 @@
-"""v0.6 -> v0.7 canonical-layout migration (HATS-408).
+"""v0.6 -> v0.7 canonical-layout migration.
 
 Pure core module — no click, no commit. The CLI wrapper in
 ``ai_hats.cli.maintenance`` owns flag parsing and the atomic git-commit envelope,
@@ -54,9 +54,9 @@ _TIER2_PARENTS_DIR_MODE: dict[str, str] = {
 # Tier-2 file-mode parents — each child *file* with one of the allowed
 # suffixes is a finding (hooks were written by v0.6 as flat scripts:
 # library/hooks/session_start.sh, library/hooks/session_end.py, etc., per
-# HATS-314 commit 2eb329d which migrated ``.agent/hooks/`` flat layout to
+# commit 2eb329d which migrated ``.agent/hooks/`` flat layout to
 # ``<ai_hats_dir>/library/hooks/`` keeping the flat shape via
-# ``as_dir=False``). HATS-408 second-round review C1: the previous
+# ``as_dir=False``). The previous
 # directory-only collector missed the v0.6 shape entirely AND would have
 # swept undocumented user-owned ``library/hooks/<subdir>/`` content.
 _TIER2_PARENTS_FILE_MODE: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -67,7 +67,7 @@ _TIER2_PARENTS_FILE_MODE: dict[str, tuple[str, tuple[str, ...]]] = {
 # a user-edit flag because they are framework bookkeeping.
 _TIER2_BOOKKEEPING_NAMES: frozenset[str] = frozenset(
     {
-        ".library_rules",  # v0.6 marker (pre-HATS-294) listing library rules
+        ".library_rules",  # v0.6 marker listing library rules
         ".ai-hats-managed",  # v0.6 marker (skills / hooks)
     }
 )
@@ -283,7 +283,7 @@ def is_user_edit(actual: bytes, baseline: str | None) -> bool:
 
     A ``None`` baseline means we cannot reconstruct the v0.6 shape (manifest-
     blind orphan, or a component the current compose path no longer
-    resolves). Per the HATS-408 plan §0 fork A, these are treated as user
+    resolves). These are treated as user
     edits — conservative default for a release gate that destroys files.
     """
     if baseline is None:
@@ -422,8 +422,8 @@ def plan_migration(
     :func:`ai_hats.placeholders.expand_path_placeholders` on every
     rendered byte before write, so any baseline whose source content
     contains the literal ``<ai_hats_dir>`` token would diff-mismatch the
-    expanded on-disk byte stream and falsely classify as a user edit
-    (HATS-408 review A1). Tier-2 mirror bytes are NOT placeholder-expanded
+    expanded on-disk byte stream and falsely classify as a user edit.
+    Tier-2 mirror bytes are NOT placeholder-expanded
     by v0.6 (they were verbatim file copies from the library source),
     so they skip this step.
     """
@@ -645,7 +645,7 @@ def execute_deletions(
 ) -> list[Path]:
     """Move every finding to trash. Sweep empty parent dirs up to ``canonical_dir``.
 
-    HATS-470: routed through :func:`ai_hats_core.safe_delete.discard` instead
+    Routed through :func:`ai_hats_core.safe_delete.discard` instead
     of raw ``unlink`` / ``rmtree``. Victims land under
     ``$TMPDIR/ai-hats/trash-<ts>-<pid>/<relpath>`` for recovery.
 
@@ -654,7 +654,7 @@ def execute_deletions(
     ``user-rules/`` — defence in depth on top of the planner already not
     classifying it as a finding.
 
-    HATS-408 review (B2 — symlink safety) — preserved via
+    Symlink safety — preserved via
     :func:`safe_delete.discard` semantics:
 
     * Uses lexical ``.absolute()`` for the user-rules guard so a malicious
@@ -682,8 +682,8 @@ def execute_deletions(
         # Check both so we don't silently skip a broken symlink finding.
         if not absolute.exists() and not absolute.is_symlink():
             continue
-        # HATS-408 review B5: per-path try/except OSError surfaces one
-        # stderr line per failure and the loop continues. HATS-470:
+        # Per-path try/except OSError surfaces one
+        # stderr line per failure and the loop continues.
         # TrashFullError propagates (fatal — bump aborts).
         try:
             discard(absolute, reason="v07-migration", project_dir=project_dir)
@@ -711,7 +711,7 @@ def execute_deletions(
     return removed
 
 
-# ---------- Public helpers (HATS-415: callable from Assembler) ----------
+# ---------- Public helpers (callable from Assembler) ----------
 
 
 def migration_guidance(tier: int, kind: str, path_name: str) -> str:

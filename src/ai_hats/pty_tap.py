@@ -1,9 +1,9 @@
-"""PTY-tap seam contract (HATS-1192).
+"""PTY-tap seam contract.
 
 Lets an out-of-tree plugin observe/drive a live session PTY with no relay code in
-core. A plugin (ai-hats-relay, HATS-1197) supplies a factory via pipeline
+core. A plugin (ai-hats-relay) supplies a factory via pipeline
 composition; ``_pty_spawn`` calls it. No factory seeded → the seam is inert
-(byte-for-byte historical behaviour). Rationale + wiring: tasks/HATS-1192.
+(byte-for-byte historical behaviour).
 """
 
 from __future__ import annotations

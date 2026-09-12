@@ -18,7 +18,7 @@ The loader resolves each ``id`` against ``pipeline.registry``, builds the
 Step with its declared ``params``, attaches the optional ``harness``
 policy, and assembles a ``Pipeline``. It imports no step: the registry
 imports the module an id is declared at, so a pipeline costs only the
-steps its YAML names (HATS-1783). Build-time consistency (every
+steps its YAML names. Build-time consistency (every
 step's ``requires`` is producible) is then re-checked at ``pipeline.run``
 against the actual initial state.
 

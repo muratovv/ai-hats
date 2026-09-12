@@ -1,4 +1,4 @@
-"""Post-run harness guard for reporting pipeline steps (HATS-378).
+"""Post-run harness guard for reporting pipeline steps.
 
 A pipeline step that spawns a sub-agent (interactive or otherwise) and
 has been marked ``harness.reporting = true`` calls
@@ -6,7 +6,7 @@ has been marked ``harness.reporting = true`` calls
 the finalized metrics and raises a :class:`HarnessReliabilityError`
 when the run is silently empty.
 
-Timeout retry/escalation (HATS-321) lives in this module too — Phase 2
+Timeout retry/escalation lives in this module too — Phase 2
 will land it; Phase 1 ships only the zero-output guard.
 """
 

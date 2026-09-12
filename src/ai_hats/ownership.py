@@ -1,11 +1,11 @@
-"""Task-ownership registry — one serialized JSON file + one lock (HATS-955).
+"""Task-ownership registry — one serialized JSON file + one lock.
 
 Lets a second agent safely reclaim a task left mid-flight: detect abandonment,
 and guarantee the previous owner can't silently re-take it. Keyed by task id;
 every op reads the whole registry under the lock, sweeps dead records, decides in
 RAM, atomic-writes. Liveness = reclaim-on-certain-death (owner ``root_pid`` +
 ``start_time_utc``, reuse-proof), no TTL, single-host; the inline liveness helpers
-deliberately copy ``version_refs`` (one consumer). Full rationale: HATS-955 plan.
+deliberately copy ``version_refs`` (one consumer).
 """
 
 from __future__ import annotations
@@ -218,7 +218,7 @@ def release_session_pid(path: Path, session_id: str, root_pid: int) -> int:
     count removed. No-op (0) if the registry file does not exist.
 
     Release-on-finish for sequential sub-agents that share one runner
-    ``root_pid`` (HATS-1045). The ``root_pid`` predicate is load-bearing:
+    ``root_pid``. The ``root_pid`` predicate is load-bearing:
     ``session_id`` alone is not cross-process unique (UTC-second + per-process
     counter), so id-colliding peers must not release each other's holds.
     """

@@ -1,4 +1,4 @@
-"""``python -m ai_hats`` — the sole package entry point (HATS-790, HATS-1120)."""
+"""``python -m ai_hats`` — the sole package entry point."""
 
 from __future__ import annotations
 

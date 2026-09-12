@@ -23,7 +23,7 @@ class UserConfigError(ValueError):
 
 
 class UserConfig(_YamlModel):
-    """~/.ai-hats/customizations.yaml — user-level role customizations (HATS-421).
+    """~/.ai-hats/customizations.yaml — user-level role customizations.
 
     Symmetric to ``ProjectConfig.customizations`` but lives in the user's home
     directory and applies to every project the user opens. Same ``OverlayConfig``
@@ -60,7 +60,7 @@ class UserConfig(_YamlModel):
         """Canonical location: ``<user_home>/.ai-hats/customizations.yaml``.
 
         ``user_home`` honours the ``AI_HATS_USER_HOME`` env override
-        (HATS-532) so e2e tests can isolate the global-layer file
+        so e2e tests can isolate the global-layer file
         without overriding ``HOME`` (which would break claude auth).
         """
         from ..paths import user_home

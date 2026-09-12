@@ -1,6 +1,6 @@
 """Runtime — PTY wrapping, sub-agent launch.
 
-Thin re-export hub (HATS-715): WrapRunner -> wrap_runner, SubAgentRunner ->
+Thin re-export hub: WrapRunner -> wrap_runner, SubAgentRunner ->
 subagent_runner, shared helpers -> runtime_common. The import surface is
 preserved so `from ai_hats.runtime import X` keeps working for every symbol."""
 

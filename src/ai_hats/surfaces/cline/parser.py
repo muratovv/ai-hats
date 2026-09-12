@@ -1,9 +1,9 @@
-"""Cline transcript parser (HATS-960, Adapter B).
+"""Cline transcript parser (Adapter B).
 
 Parses cline's single-object ``<id>.messages.json`` into observe's
 surface-agnostic ``ParsedTranscript`` + ``usage/v1``. A cline-field port of
-``ClaudeParser``; the field/token-key mapping is grounded in the HATS-960 card
-(R2, verified cline v3.0.3).
+``ClaudeParser``; the field/token-key mapping is grounded in behaviour
+verified against cline v3.0.3.
 """
 
 from __future__ import annotations

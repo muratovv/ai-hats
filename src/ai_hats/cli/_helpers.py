@@ -44,9 +44,9 @@ def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     """Render a `RoleNotFoundError` as a friendly stderr message and exit 2.
 
     Single source of truth for the unknown-role UX. Reached from the root
-    group's dispatch (HATS-1228), so it now genuinely covers every surface that
+    group's dispatch, so it now genuinely covers every surface that
     composes — including ``ai-hats reflect *``, which this docstring claimed
-    since HATS-547 while ``reflect.py`` caught nothing and shipped a traceback.
+    while ``reflect.py`` caught nothing and shipped a traceback.
 
     Output contract (asserted by
     ``tests/e2e/test_unknown_role_friendly_error.py``):
@@ -55,7 +55,7 @@ def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     - Lists every available role one-per-line under an
       ``Available roles:`` header.
     - Hints at ``ai-hats list roles`` for the full table.
-    - Exits 2 (Click's UsageError convention; HATS-507 mirror).
+    - Exits 2 (Click's UsageError convention).
 
     No ``Traceback`` ever reaches the user — that's the whole point of
     the typed-exception design and this helper.
@@ -87,11 +87,11 @@ def _handle_unknown_provider(exc: "UnknownSurfaceError") -> NoReturn:
     """Render an ``UnknownSurfaceError`` as friendly stderr + exit 2.
 
     The provider analogue of ``_handle_role_not_found`` for the bare-launch
-    surface (HATS-965): names the bad provider, lists registered ones, hints at
+    surface: names the bad provider, lists registered ones, hints at
     ``ai-hats list providers``. No ``Traceback`` reaches the user. Output
     contract asserted by ``tests/e2e/test_unknown_provider_friendly_error.py``.
 
-    No install instruction: ai-hats does not install surfaces (HATS-1826), so the
+    No install instruction: ai-hats does not install surfaces, so the
     only actionable fact is which names do resolve.
     """
     click.echo(f"Error: Provider {exc.name!r} not found.\n", err=True)
@@ -105,7 +105,7 @@ def _handle_unknown_provider(exc: "UnknownSurfaceError") -> NoReturn:
 def _handle_missing_provider(exc: "MissingProviderError") -> NoReturn:
     """Render a ``MissingProviderError`` as friendly stderr + exit 2.
 
-    The absent-provider analogue of ``_handle_unknown_provider`` (HATS-1224):
+    The absent-provider analogue of ``_handle_unknown_provider``:
     no name to echo back, so it leads with the remediation command. Output
     contract asserted by ``tests/e2e/test_missing_provider_friendly_error.py``.
     """
@@ -144,7 +144,7 @@ def _handle_bad_project_config(exc: "ProjectConfigError") -> NoReturn:
 def _handle_not_a_project(exc: "NotAnAiHatsProjectError") -> NoReturn:
     """Render a ``NotAnAiHatsProjectError`` as a friendly message + exit 2.
 
-    Lifted verbatim out of ``main_entry`` (HATS-839) so it can join the registry
+    Lifted verbatim out of ``main_entry`` so it can join the registry
     below; ``main_entry`` still owns the pre-click phase and routes through it.
     """
     console.print(f"[red]Error:[/] {exc}")
@@ -161,7 +161,7 @@ def _handle_check_binding_error(exc: "CheckBindingError") -> NoReturn:
 
     The message already carries every fact the composer had (declaring
     component, skill/script, the reason) — what was missing was a renderer:
-    composing raises this from ``resolve_checks``, and HATS-1541 measured 63
+    composing raises this from ``resolve_checks``, which used to print 63
     lines of traceback and exit 1 on ``ai-hats --dry-run``.
     """
     click.echo(f"Error: {exc}", err=True)
@@ -194,9 +194,9 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         (ProjectNotFoundError, _handle_no_project),
         (ProjectConfigError, _handle_bad_project_config),
         (CheckBindingError, _handle_check_binding_error),
-        # HATS-1545 F7: a key defect is the same class of message as a binding
+        # A key defect is the same class of message as a binding
         # defect — both are a declared gate that cannot install, and a traceback
-        # is what HATS-1541 measured and removed for the sibling type.
+        # was removed for the sibling type the same way.
         (ComponentKeyError, _handle_check_binding_error),
     )
 
@@ -204,7 +204,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
 def dispatch_friendly_error(exc: BaseException) -> bool:
     """Render ``exc`` through its registered handler (which exits 2), or return False.
 
-    The single opt-out-proof rendering point (HATS-1228): surfaces used to catch
+    The single opt-out-proof rendering point: surfaces used to catch
     these per call site, so one that forgot — ``cli/reflect.py``, five compose
     sites and no arms — shipped a traceback. Matching is by ``isinstance``:
     ``MissingProviderError`` is itself a ``RuntimeError`` subclass.
@@ -247,7 +247,7 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
 
 
 def broken_install_notice(exc: Exception) -> str:
-    """The one broken-install notice, rendered for THIS install shape (HATS-1368)."""
+    """The one broken-install notice, rendered for THIS install shape."""
     from .._bootstrap import repair_command
 
     return (
@@ -259,7 +259,7 @@ def broken_install_notice(exc: Exception) -> str:
 
 
 class InconsistentInstallError(click.ClickException):
-    """Raised when an internal import fails due to a broken or inconsistent install (HATS-1120)."""
+    """Raised when an internal import fails due to a broken or inconsistent install."""
 
     def __init__(self, exc: Exception) -> None:
         super().__init__(broken_install_notice(exc))
@@ -271,9 +271,9 @@ class InconsistentInstallError(click.ClickException):
 
 
 def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
-    """Handle an ImportError/module AttributeError at the CLI boundary and exit (HATS-1120).
+    """Handle an ImportError/module AttributeError at the CLI boundary and exit.
 
-    If debug/verbose mode is enabled or the exception is not a broken install symptom (HATS-1132),
+    If debug/verbose mode is enabled or the exception is not a broken install symptom,
     re-raises the original exception so the full traceback is displayed.
     Otherwise, renders InconsistentInstallError to stderr and exits with status 1 without a raw traceback.
     """
@@ -288,7 +288,7 @@ def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
 
 @contextlib.contextmanager
 def catch_broken_install():
-    """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120, HATS-1132)."""
+    """Context manager wrapping CLI lazy imports to catch broken install errors."""
     from ..self_heal import is_broken_install_exception
 
     try:
@@ -302,7 +302,7 @@ def catch_broken_install():
 def _assembler(project_dir: Path, *, prefer_cwd: bool = False):
     """The caller resolves the project; this helper only survives the import guard.
 
-    ``prefer_cwd`` is for commands that only READ (HATS-1911) — see
+    ``prefer_cwd`` is for commands that only READ — see
     ``Assembler.__init__``.
     """
     with catch_broken_install():
@@ -315,9 +315,9 @@ def _guard_not_inside_linked_worktree() -> None:
     """Refuse lifecycle ops issued from inside a linked worktree, except those
     designed to be run there (`wt exec`, `wt env`).
 
-    HATS-788: checks the **raw `Path.cwd()`**, NOT a passed `project_dir`.
+    Checks the **raw `Path.cwd()`**, NOT a passed `project_dir`.
     Callers used to hand this `_project_dir()`, which has already HOPPED to the
-    main checkout (HATS-524), so `is_inside_linked_worktree` inspected MAIN and
+    main checkout, so `is_inside_linked_worktree` inspected MAIN and
     the guard silently no-op'd from inside a worktree — letting a
     teardown command (`wt merge`/`discard`, `rack transition <id> done`) run
     `git worktree remove --force` on the operator's own cwd. Resolving cwd
@@ -326,7 +326,7 @@ def _guard_not_inside_linked_worktree() -> None:
     `Path.cwd()` is safe here: the guard runs *before* any teardown, while the
     worktree (and thus cwd) still exists.
 
-    Originally inline in ``wt_create`` (HATS-060); lifted to a helper so
+    Originally inline in ``wt_create``; lifted to a helper so
     ``wt_merge`` / ``wt_discard`` / ``wt_list`` / ``rack transition`` share it.
 
     Prints a guidance message and ``sys.exit(1)`` on breach. Returns None

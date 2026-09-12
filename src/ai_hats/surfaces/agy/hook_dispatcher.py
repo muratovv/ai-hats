@@ -1,10 +1,10 @@
-"""Global Hook Dispatcher for AGY surface (HATS-1166).
+"""Global Hook Dispatcher for AGY surface.
 
 Located entirely inside the `ai_hats.surfaces.agy` package.
 Executes session-specific hooks from `<session_cache_dir>/hooks.json` when invoked
 by the global AGY hook registered in `~/.gemini/antigravity-cli/settings.json`.
 
-The cache dir arrives pre-resolved in `AI_HATS_SESSION_CACHE_DIR` (HATS-1398):
+The cache dir arrives pre-resolved in `AI_HATS_SESSION_CACHE_DIR`:
 this process runs on every tool call, so it reads the pin rather than re-deriving
 a path the session builder already knew.
 """
@@ -60,7 +60,7 @@ def _session_identity() -> dict | None:
         if os.environ.get(ENV_SESSION_ID):
             sys.stderr.write(
                 "ai-hats-hook-dispatcher: session carries no AI_HATS_SESSION_IDENTITY "
-                "— it predates HATS-1594 and its hooks are unreachable; restart it.\n"
+                "— it predates the dispatcher and its hooks are unreachable; restart it.\n"
             )
         return None
     try:
@@ -94,7 +94,7 @@ class _ManifestError(RuntimeError):
 
 
 def _session_hooks_file() -> Path:
-    """This session's hooks manifest, from the dir the builder pinned (HATS-1398).
+    """This session's hooks manifest, from the dir the builder pinned.
 
     Two ways to have none, and both are a delivery failure rather than an
     unguarded session: no pin at all, and a pin whose manifest is gone.
@@ -102,7 +102,7 @@ def _session_hooks_file() -> Path:
     pinned = os.environ.get(ENV_SESSION_CACHE_DIR)
     if not pinned:
         raise _ManifestError(
-            "AI_HATS_SESSION_CACHE_DIR unset — this session predates HATS-1398 "
+            "AI_HATS_SESSION_CACHE_DIR unset — this session predates the dispatcher "
             "and its hooks are unreachable; restart it"
         )
 
@@ -260,7 +260,7 @@ def _reply(verdict: ChainVerdict, payload: dict) -> int:
 
     The status is kept ALONGSIDE it for the imposed class rather than replaced
     by it: exit 1 is this surface's BROKE verdict by an earlier deliberate
-    choice (ADR-0020 D2, HATS-1598, pinned by its own e2e), and dropping it
+    choice (ADR-0020 D2, pinned by its own e2e), and dropping it
     would trade one half of the answer for the other.
     """  # comment-length: allow — which form binds on this surface is the contract
     relay_stderr(verdict)
@@ -284,7 +284,7 @@ def _reply(verdict: ChainVerdict, payload: dict) -> int:
         if verdict.exit_code not in (None, 0):
             return verdict.exit_code
         # A refusal ai-hats IMPOSED is BROKE on this surface and says so with the
-        # status too (ADR-0020 D2, HATS-1598): the gate never produced a verdict,
+        # status too (ADR-0020 D2): the gate never produced a verdict,
         # and the status is the channel agy acts on for that. One a hook UTTERED
         # travels as the decision above and nothing else — that form is its
         # author's choice, and inventing a status for it would overrule them.
@@ -386,7 +386,7 @@ def dispatch_hook(
     # this tool call go ahead? A refusal stops it, and the user's own hooks gate
     # a call that will not happen. Anything else — including a delivery failure
     # the human opened the hatch on — means it DOES, and their channel is not
-    # ours to close along with ours (HATS-1339's "losing one channel must not
+    # ours to close along with ours (the invariant "losing one channel must not
     # disarm both", which holds on exactly this half).
     code = _reply(verdict, payload)
     if code != 0 or verdict.decision is not ChainDecision.ALLOW:

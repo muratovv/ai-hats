@@ -1,4 +1,4 @@
-"""The contract every surface answers — ADR-0026 D14, HATS-1826.
+"""The contract every surface answers — ADR-0026 D14.
 
 A surface is one way of running an agent. This module says what all of them have in
 common and names none of them: which surfaces exist is the application's question,
@@ -52,7 +52,7 @@ class SurfaceRunResult:
     """How the sub-agent process ended — what the caller branches on.
 
     What the run *cost* is not here: that goes to the ``MetricsSink`` handed to
-    ``SubagentEngine.run``. Until HATS-1826 this carried ``total_cost_usd``,
+    ``SubagentEngine.run``. This used to carry ``total_cost_usd``,
     ``num_turns``, ``stop_reason`` and the surface's session id as typed fields,
     which put ai-hats' metrics schema inside the contract every surface implements
     — adding one metric meant editing all of them.
@@ -69,7 +69,7 @@ class MetricsSink(Protocol):
     """Where a surface reports what its run cost; ai-hats decides where that lands.
 
     The surface names its own keys and never learns the on-disk layout — the same
-    inversion ``BuiltArtifacts.port`` performs for session artifacts (HATS-1211).
+    inversion ``BuiltArtifacts.port`` performs for session artifacts.
     """
 
     def record(self, values: Mapping[str, object]) -> None: ...
@@ -88,8 +88,8 @@ class TranscriptResolver(Protocol):
     """``Surface.resolve_transcript`` seen from outside — where a session's log landed.
 
     Named here because the application passes it down as a value rather than importing
-    a surface to find a file (HATS-1087): it rides ``CompositionPayload`` to the runners
-    and ``AuditParams`` to the audit step. Until HATS-1826 it had two spellings and no
+    a surface to find a file: it rides ``CompositionPayload`` to the runners
+    and ``AuditParams`` to the audit step. It used to have two spellings and no
     owner — ``debt.TranscriptResolver = object`` and a bare ``Callable`` on the payload —
     which is the shape ``debt.py`` exists to prevent.
     """
@@ -160,7 +160,7 @@ class Surface(abc.ABC):
         """Directory where rules files should be placed."""
 
     def session_skills_root(self, layout: ProjectLayout, session_id: SessionId) -> Path | None:
-        """Where this surface mirrors the session's composed skills (HATS-1540).
+        """Where this surface mirrors the session's composed skills.
 
         The root a bound check resolves its script from in-session, one level
         above the per-skill directory. ``None`` means this surface mirrors no
@@ -234,7 +234,7 @@ class Surface(abc.ABC):
         """Build and materialize session artifacts per category and delivery mode.
 
         The caller owns ``artifacts`` and therefore its ``port``: hand one carrying
-        a ``PlanMaterializer`` and the whole build becomes a dry-run (HATS-1211).
+        a ``PlanMaterializer`` and the whole build becomes a dry-run.
         """
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
@@ -257,7 +257,7 @@ class Surface(abc.ABC):
     def transcript_parser(self) -> TranscriptParser:
         """The parser ``AuditWriter`` uses for this surface's session record.
 
-        HATS-948: the parser rides the surface (no separate registry). Default
+        The parser rides the surface (no separate registry). Default
         is trace-only; a surface with a structured session log (Claude JSONL)
         overrides with a richer parser.
         """
@@ -273,7 +273,7 @@ class Surface(abc.ABC):
     ) -> list[Path]:
         """Resolve the path(s) to this surface's structured session transcript(s).
 
-        HATS-1087 / HATS-1400: ``transcript_parser`` knows HOW to parse; this knows
+        ``transcript_parser`` knows HOW to parse; this knows
         WHERE to find the file(s). Default [] — no structured transcript → the
         trace-log fallback (TraceParser on ``session.trace_path``). A surface
         with a structured session log (Claude JSONL, agy brain segments, cline ``.messages.json``)
@@ -286,14 +286,14 @@ class Surface(abc.ABC):
         """ai-hats project-hook commands this surface leaked into user-global config.
 
         ai-hats wires hooks only into *project* config; a copy in user-global
-        config double-fires and 404s off project-root (HATS-961). Base surfaces
+        config double-fires and 404s off project-root. Base surfaces
         manage no user-global hooks → none; ClaudeSurface overrides to scan
         ``~/.claude/settings.json``.
         """
         return []
 
     def settings_lint_warnings(self, layout: ProjectLayout) -> list[str]:
-        """Known surface-settings pitfalls to surface at session start (HATS-1006).
+        """Known surface-settings pitfalls to surface at session start.
 
         Base surfaces lint nothing; ClaudeSurface overrides to check the Claude
         settings chain for permission rules the CLI has deprecated.
@@ -319,7 +319,7 @@ class Surface(abc.ABC):
 
         Default: none. ``wrap_runner`` calls this on EVERY surface, so a
         claude-only override left agy/cline/gemini raising AttributeError
-        before launch (HATS-1130).
+        before launch.
         """
         return base_cmd
 
@@ -374,8 +374,8 @@ class Surface(abc.ABC):
         """The sub-agent launch this surface performs — argv and prompt together.
 
         One expression for ``SubAgentRunner`` and for ``--dry-run``: a report
-        assembled by a second function is a report about a different launch
-        (HATS-1552). Default covers every CLI surface; an SDK surface overrides.
+        assembled by a second function is a report about a different launch.
+        Default covers every CLI surface; an SDK surface overrides.
         """
         del result, session_id, env
         prompt = assemble_meta_prompt(
@@ -412,7 +412,7 @@ class Surface(abc.ABC):
         """Env values a launch must claim for real — ``{}`` for most surfaces.
 
         Called only on the launch path. Keys must be a subset of
-        :meth:`get_env`'s, so a report names them either way (HATS-1554).
+        :meth:`get_env`'s, so a report names them either way.
         """
         del session_dir, layout
         return {}
@@ -433,7 +433,7 @@ class Surface(abc.ABC):
 
         Returns ``(extra_args, extra_env, meta_prompt)``. ``meta_prompt`` is
         the EXACT bytes that the surface will see as system-prompt override
-        (HATS-523: persisted to ``<session_dir>/meta_prompt.txt`` by
+        (persisted to ``<session_dir>/meta_prompt.txt`` by
         ``WrapRunner.run`` for post-hoc audit / regression detection,
         symmetric with ``SubAgentRunner.run``). Empty string when the
         surface has no system-prompt channel.
@@ -450,14 +450,14 @@ class Surface(abc.ABC):
     ) -> list[str]:
         """Materialize the composed role's skills for runtime discovery.
 
-        HATS-307: returns extra CLI args (e.g. ``["--plugin-dir", <path>]``)
+        Returns extra CLI args (e.g. ``["--plugin-dir", <path>]``)
         that make the spawned surface session see the role's skills via its
         own Skill registry. ``session_id`` keys the cache dir; plugin lives
         at ``<cache_dir>/plugin/`` and is cleaned with the whole cache dir
         at session_end.
 
         Default: no-op — the surface has no per-spawn skill materialization
-        mechanism (Agy case — see HATS-367 follow-up).
+        mechanism (Agy case).
         """
         del layout, result, session_id
         return []
@@ -472,12 +472,12 @@ class Surface(abc.ABC):
 
         ``result`` is the active role's composition (``None`` on the legacy
         bare-bump path with no active role); ``ClaudeSurface`` reads the
-        skills' ``runtime_hooks:`` declarations from it (HATS-597).
+        skills' ``runtime_hooks:`` declarations from it.
 
         Default: no-op. Providers without a runtime-hook channel (Agy)
         rely on the rule layer plus skill-contributed git hooks.
 
-        HATS-437: ClaudeSurface overrides to write a PreToolUse entry
+        ``ClaudeSurface`` overrides to write a PreToolUse entry
         for ``library/hooks/pre_bash_shared_state_guard.sh`` into
         ``.claude/settings.json``, plus any skill-declared runtime hooks.
         """
@@ -488,7 +488,7 @@ class Surface(abc.ABC):
         self, layout: ProjectLayout, result: CompositionResult | None = None
     ) -> list[tuple[str, str]]:
         """Managed runtime-hook wiring drift as ``[(name, "wiring")]``. Default:
-        none (no settings.json channel); ``ClaudeSurface`` overrides (HATS-833)."""
+        none (no settings.json channel); ``ClaudeSurface`` overrides."""
         del layout, result
         return []
 
@@ -498,8 +498,8 @@ class Surface(abc.ABC):
         Used by surfaces without a scaffold (e.g. Agy) to maintain the
         AI-HATS-managed section of `./GEMINI.md` between `INJECTION_START` /
         `INJECTION_END` markers. For surfaces that declare a scaffold
-        (Claude — HATS-284), this method is dormant: `Assembler.set_role`
-        skips the call entirely (HATS-286), and the lowercase-marker early
+        (Claude), this method is dormant: `Assembler.set_role`
+        skips the call entirely, and the lowercase-marker early
         return below provides a defense-in-depth no-op if it is invoked
         anyway.
         """

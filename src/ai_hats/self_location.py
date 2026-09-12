@@ -1,17 +1,18 @@
-"""Runtime self-location guard (HATS-791, Alt 3 — refuse-and-instruct).
+"""Runtime self-location guard (refuse-and-instruct).
 
 The "shadow" problem: a stale ``ai-hats`` installed into some *foreign*
 (non-managed) virtualenv — typically a project's own app-venv into which a
 user once ``pip install``ed ai-hats — gets reached ahead of the host launcher
-and runs mis-resolved against the wrong project. HATS-790 (Alt 5) removed the
-``[project.scripts] ai-hats`` console-script generator, so a managed venv no
+and runs mis-resolved against the wrong project. Removing the
+``[project.scripts] ai-hats`` console-script generator means a managed venv no
 longer materialises a shadowable ``bin/ai-hats`` proxy — that closed the
 common direnv-prepend vector. This module is the **backstop** for the residual
 case: someone running ``python -m ai_hats`` directly from a foreign venv.
 
 Design: this is defense-in-depth, NOT a primary gate. The generator that
-created shadows is already gone (HATS-790). A *missed* shadow merely reproduces
-pre-HATS-791 behaviour; a *false-positive* would brick a perfectly good CLI.
+created shadows is already gone. A *missed* shadow merely reproduces the
+behaviour from before this guard existed; a *false-positive* would brick a
+perfectly good CLI.
 So the policy biases HARD toward fail-open — :func:`classify_invocation` only
 ever returns ``"foreign"`` when it is positively certain the running
 interpreter is a real venv that is none of the sanctioned shapes. Every
@@ -44,7 +45,7 @@ def _under_managed_namespace(prefix: Path) -> bool:
     """True iff ``prefix`` lives under a project's ``.agent/ai-hats/`` tree.
 
     Matches both the default ``<project>/.agent/ai-hats/.venv`` and the
-    blue-green ``<project>/.agent/ai-hats/versions/<sha>/`` (HATS-647) layouts
+    blue-green ``<project>/.agent/ai-hats/versions/<sha>/`` layouts
     — any path whose ancestry contains the ``.agent/ai-hats`` segment pair is
     framework-managed and therefore sanctioned, regardless of which managed
     project owns it. We key on the directory-name pair rather than resolving a

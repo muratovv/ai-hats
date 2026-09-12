@@ -1,4 +1,4 @@
-"""Tests for pipeline trace mode (HATS-274).
+"""Tests for pipeline trace mode.
 
 Covers:
   - per-step event emission with correct keys / values / duration

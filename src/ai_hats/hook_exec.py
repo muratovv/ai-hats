@@ -1,4 +1,4 @@
-"""One hook-execution primitive — ADR-0020 D2 (HATS-1151).
+"""One hook-execution primitive — ADR-0020 D2.
 
 The primitive owns mechanics; callers own policy. The reason is the tail of the
 child's stdout, so a refusing hook states its case in the caller's own output
@@ -62,8 +62,8 @@ class HookOutcomeKind(Enum):
 
     ``HookVerdict`` says how a channel must TREAT a run; this says WHY, so a
     channel can phrase it in its own vocabulary. The checks channel needs that:
-    "hook" names a real channel there, and calling a binding line one misleads
-    (HATS-1572). Matching on ``reason`` would work today and rot on the first
+    "hook" names a real channel there, and calling a binding line one misleads.
+    Matching on ``reason`` would work today and rot on the first
     rewording, so the fact travels as a value.
     """  # comment-length: allow — why this sits beside HookVerdict is the contract
 
@@ -150,10 +150,10 @@ def run_hook(
 
     ``budget`` is what the channel asks for, ``deadline`` what the caller is
     bounded by; the run gets the smaller, so no channel compares its own
-    constant against a lock (HATS-1593).
+    constant against a lock.
 
-    The keyword arguments below widen the primitive to the git channel
-    (HATS-1828). Each defaults to what the other four channels already do, so
+    The keyword arguments below widen the primitive to the git channel.
+    Each defaults to what the other four channels already do, so
     their path through this function is unchanged:
 
     * ``argv`` — arguments the channel's own protocol hands the script. git
@@ -499,7 +499,7 @@ def _call_envelope(
     actor: str | None,
     selector: str | None,
 ) -> str:
-    """The per-CALL facts as one versioned object (HATS-1724).
+    """The per-CALL facts as one versioned object.
 
     Every field is ALWAYS present; one that does not apply here is ``null``.
     That is the whole point: a scalar's absence is indistinguishable from a
@@ -621,7 +621,7 @@ def _named_outcome(verdict: HookVerdict, code: int) -> str:
 
 def _append_stderr(log_path: Path | None, err_path: Path) -> None:
     """Fold the child's stderr into the log under a header, so the file keeps
-    both streams the way the pre-HATS-1151 runner did (``stderr=STDOUT``).
+    both streams the way the previous runner did (``stderr=STDOUT``).
 
     Copied stream-to-stream: the whole point of spooling stderr to disk is that
     no caller ever holds it, and reading it back to write it out would undo that.
@@ -676,7 +676,7 @@ def _open_stdout_sink(log_path: Path | None, header: str | None = None):
 
 def _open_scratch_sink():
     """A throwaway on-disk sink. stderr always gets one: a pipe would hold the
-    whole stream in this process (HATS-823 D7 — ``uv pip install`` reports
+    whole stream in this process (``uv pip install`` reports
     progress there), and only its tail is ever wanted."""
     tmp = tempfile.NamedTemporaryFile(prefix="ai-hats-hook-", suffix=".out", delete=False)
     return tmp, Path(tmp.name)
@@ -706,7 +706,7 @@ def with_truncation_note(reason: str, run: HookRun) -> str:
 
     Public because a channel that words the outcome itself still owes the
     operator this: a partial verdict read as a whole one is the silent
-    truncation HATS-1137 already paid for once.
+    truncation this fix already paid for once.
     """
     return _note_truncation(reason, run.truncated, run.output_size, run.log_path)
 

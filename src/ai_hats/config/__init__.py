@@ -1,4 +1,4 @@
-"""Integrator config schemas (HATS-863) — one module per config file/domain:
+"""Integrator config schemas — one module per config file/domain:
 ``project`` (ai-hats.yaml), ``user`` (~ai-hats user layer), ``harness``
 (channel + feedback), ``overlay`` (per-role customizations), ``migrations``.
 Integrator-owned per ADR-0014 §2.

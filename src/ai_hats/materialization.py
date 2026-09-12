@@ -1,4 +1,4 @@
-"""Materialization port — the one seam every session write goes through (HATS-1211).
+"""Materialization port — the one seam every session write goes through.
 
 One interface, two implementations: :class:`ApplyMaterializer` writes and records,
 :class:`PlanMaterializer` records the same entry and touches nothing (``--dry-run``).

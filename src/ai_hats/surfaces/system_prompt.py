@@ -1,6 +1,6 @@
 """Assembling a surface's system prompt, and writing it into a managed block.
 
-Beside the contract rather than inside it (ADR-0026 D14, HATS-1826). Reading a rule's
+Beside the contract rather than inside it (ADR-0026 D14). Reading a rule's
 ``metadata.yaml``, a skill's frontmatter and a marker-delimited file is knowledge of
 this application's layout, and a contract carrying it makes every implementor inherit
 ai-hats internals to declare itself. The seams stay on ``Surface``: what left the
@@ -33,8 +33,9 @@ def compose_sections(result: CompositionResult) -> str:
 
     No skill index: every surface has a native skill registry that already carries
     each description, so the text index was a duplicate. It was a per-surface toggle
-    (HATS-701) whose last ``True`` caller went with HATS-993 and which all five
-    surfaces then passed ``False`` — a branch no caller reached, removed in HATS-1826.
+    whose last ``True`` caller was agy, once it joined the native-registry providers,
+    and which all five surfaces then passed ``False`` — a branch no caller reached,
+    later removed.
     """
     sections: list[str] = []
 

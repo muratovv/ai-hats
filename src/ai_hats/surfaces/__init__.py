@@ -1,4 +1,4 @@
-"""Surfaces — the area's only entrance (ADR-0026 D5/D14, HATS-1826).
+"""Surfaces — the area's only entrance (ADR-0026 D5/D14).
 
 A surface is one way of running an agent. Every implementation answers the same
 contract and none of them is named here: a caller that needs *a* surface asks

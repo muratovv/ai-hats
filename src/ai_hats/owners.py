@@ -1,4 +1,4 @@
-"""Open registry of living owner mechanisms (HATS-905).
+"""Open registry of living owner mechanisms.
 
 Every mechanism that materializes files outside ``<ai_hats_dir>`` registers
 its ``owner_key`` at import time. The generic sweeper treats an on-disk

@@ -1,4 +1,4 @@
-"""Age-bounded retention for ``sessions/runs/`` (HATS-1339, S5).
+"""Age-bounded retention for ``sessions/runs/``.
 
 The run tree had no GC of any kind and grows monotonically in every consumer
 project. Two tiers, and the unit of expiry is **one file inside a run dir** — a
@@ -6,13 +6,13 @@ run dir is never removed, so a session id never stops resolving:
 
 * **facts** — ``audit.md``, ``metrics.json``, ``retro.log``, ``diagnostics.json``:
   retained forever. ``retro.facts`` links every retro to ``../runs/<sid>/audit.md``
-  and reads ``metrics.json`` for the session window, and HATS-1374 is the
-  precedent for silently blinding the reflect loop by trimming its inputs.
+  and reads ``metrics.json`` for the session window; trimming those inputs has
+  already once silently blinded the reflect loop.
 * **bulk** — the provider transcripts, the PTY trace, the composed prompt and the
   materialization/usage records: expire past :data:`BULK_MAX_AGE_DAYS`.
 
 Structurally an allowlist, in the shape ``retired_dists`` uses to make pruning
-something still needed *impossible rather than unlikely* (HATS-1280): a file is
+something still needed *impossible rather than unlikely*: a file is
 removed only if its exact name is in the finite expirable set, from which the
 retained set is subtracted at import. A name nobody here has heard of — a new
 artifact a future writer adds, a sidecar, a hand-dropped note — matches neither

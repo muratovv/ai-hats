@@ -42,7 +42,7 @@ class ProjectConfigError(ValueError):
 
 
 def user_home() -> Path:
-    """User home for ai-hats-managed global artefacts (HATS-532).
+    """User home for ai-hats-managed global artefacts.
 
     Precedence:
       1. ``AI_HATS_USER_HOME`` env var — runtime override, ``~`` expanded.
@@ -126,7 +126,7 @@ def editable_install_root(dist_name: str = "ai-hats") -> Path | None:
 
     Reads the dist's PEP 610 ``direct_url.json`` and returns the ``file://`` path
     when ``dir_info.editable`` is set — a reusable way for any consumer to locate
-    its own editable checkout (e.g. surface-plugin self-heal, HATS-966). Read-only;
+    its own editable checkout (e.g. surface-plugin self-heal). Read-only;
     tolerant of missing / malformed metadata (returns None).
     """
     import json

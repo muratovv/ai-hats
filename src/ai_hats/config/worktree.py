@@ -1,4 +1,4 @@
-"""Worktree base/merge-target config (HATS-942) — fork/dogfood workflows.
+"""Worktree base/merge-target config — fork/dogfood workflows.
 
 :class:`WorktreeConfig` lets a project point the worktree FSM at a base branch
 to cut task worktrees FROM and a separate merge target to land them INTO
@@ -18,7 +18,7 @@ from ai_hats_core import YamlModel as _YamlModel
 
 
 class WorktreeConfig(_YamlModel):
-    """``worktree:`` section of ai-hats.yaml (HATS-942).
+    """``worktree:`` section of ai-hats.yaml.
 
     ``base_branch`` = start-point new task worktrees are cut FROM (unset => HEAD);
     ``merge_target`` = branch ``wt merge`` lands INTO + the create-time HEAD guard

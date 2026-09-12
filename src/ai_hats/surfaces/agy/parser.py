@@ -1,4 +1,4 @@
-"""Antigravity (agy) transcript parser (HATS-1391).
+"""Antigravity (agy) transcript parser.
 
 Parses Antigravity CLI's ``transcript.jsonl`` (located under
 ``~/.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/transcript.jsonl``)
@@ -164,7 +164,7 @@ def _resolve_agy_tokens(
 ) -> tuple[dict[str, int] | None, str | None]:
     """Token counts plus where they came from — the one ladder both reports use.
 
-    Only metrics.json is a measurement (HATS-1433). Scraping the rendered TUI
+    Only metrics.json is a measurement. Scraping the rendered TUI
     text and counting characters are guesses; a guess that reaches a record
     unmarked is read as fact by every consumer downstream. Returning the
     provenance here is what keeps ``metrics.json`` and ``usage.json`` from
@@ -209,7 +209,7 @@ def _apply_tokens(report: dict, tokens: dict[str, int] | None, provenance: str |
     """Write the resolved counts and their provenance flag into a usage report.
 
     The usage half of the same decision ``parse`` makes, so the two reports of
-    one session cannot describe it differently (HATS-1433).
+    one session cannot describe it differently.
     """
     agg = report.get("aggregates")
     if isinstance(agg, dict):
@@ -275,7 +275,7 @@ class AgyParser:
             report = self._trace.parse_usage(None, trace_path)
             # Turns off the trace parse, not off `report`: the old
             # getattr(report, "turns") read a dict and always saw None, leaving
-            # the estimate tier dead on this path since HATS-1427.
+            # the estimate tier dead on this path ever since report became a dict.
             traced_turns = self._trace.parse(None, trace_path).turns
             agg_tokens, provenance = _resolve_agy_tokens(trace_path, traced_turns)
             _apply_tokens(report, agg_tokens, provenance)

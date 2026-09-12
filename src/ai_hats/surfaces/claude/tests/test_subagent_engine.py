@@ -1,4 +1,4 @@
-"""What the SDK engine returns, and what it reports instead (HATS-1826).
+"""What the SDK engine returns, and what it reports instead.
 
 Nothing exercised ``SubagentEngine.run`` before this file: the whole suite stayed
 green through the change that moved a run's cost out of the return value, which is

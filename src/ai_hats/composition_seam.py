@@ -1,4 +1,4 @@
-"""Integrator compose seam — composes ONCE, returns a CompositionPayload (HATS-865).
+"""Integrator compose seam — composes ONCE, returns a CompositionPayload.
 
 The single place launch paths derive a composition for prompt delivery
 (ADR-0005 D1): effective-role resolution, role-existence validation, the HITL
@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 def make_session_manager(layout: ProjectLayout):
     """A run-path ``SessionManager`` with the real ``EnvironmentRecovery`` wired.
 
-    observe defaults to a package-pure no-op recovery (HATS-948); the integrator
+    observe defaults to a package-pure no-op recovery; the integrator
     injects the version-GC recovery at this seam so it fires at the
-    ``create_session`` chokepoint on every run (HATS-649). Read-only ``session``
+    ``create_session`` chokepoint on every run. Read-only ``session``
     CLI paths never create sessions, so they keep the bare no-op default.
     """
     from .environment_recovery import EnvironmentRecovery
@@ -50,7 +50,7 @@ class RoleNotFoundError(Exception):
 
     Carries the requested name plus the sorted list of available role names so
     the CLI handler can render a friendly error without re-querying the
-    resolver (moved from ``pipeline.steps.compose`` in HATS-865 — validation
+    resolver (moved from ``pipeline.steps.compose`` — validation
     now happens at the seam, before any pipeline runs).
     """
 
@@ -129,11 +129,11 @@ def _project_context(
     The single home for the chain — build / preview / carry all resolve
     through here instead of growing copies (review 2026-07-04).
 
-    ``prefer_cwd`` belongs to read-only callers alone (HATS-1501): letting a
+    ``prefer_cwd`` belongs to read-only callers alone: letting a
     worktree's own library win is correct only when nothing is written. It rides
     the Assembler's own parameter: a prebuilt list passed as ``extra`` duplicated
     the builtin + user-global layers, which last-wins then let outrank
-    project-configured — a preview layered unlike the session (HATS-1911).
+    project-configured — a preview layered unlike the session.
     """
     from .assembler import Assembler
     from .role_spec import parse_role_spec
@@ -153,7 +153,7 @@ class MissingProviderError(RuntimeError):
     registry) for the *unnamed* case; carries ``available`` so the CLI handler
     renders without re-querying the registry. Subclasses ``RuntimeError`` so
     ``config show-prompt``'s broad catch keeps working — the same
-    backwards-compat move as ``UnknownSurfaceError(ValueError)`` (HATS-1224).
+    backwards-compat move as ``UnknownSurfaceError(ValueError)``.
     """
 
     def __init__(self, available: list[str]) -> None:
@@ -218,8 +218,8 @@ def _maybe_sync_active_role(
     session starts (hoisted from ``WrapRunner.run``, semantics intact).
 
     ``warnings_sink`` collects the set_role materialize warnings so the caller can
-    route them through the read-hold instead of a bare pre-launch print (HATS-970).
-    ``result`` is the seam's composition of ``effective_role`` (HATS-1435)."""
+    route them through the read-hold instead of a bare pre-launch print.
+    ``result`` is the seam's composition of ``effective_role``."""
     first_run_hitl = interactive and effective_role and not role_override
     if first_run_hitl and (not cfg.active_role or cfg.provider != eff_provider):
         asm.set_role(effective_role, eff_provider, warnings_sink=warnings_sink, result=result)
@@ -237,13 +237,13 @@ def build_composition_payload(
 ) -> CompositionPayload:
     """Compose the effective role once and bundle everything runners need.
 
-    Ordering preserves the pre-HATS-865 observable sequence: explicit-role
+    Ordering preserves the older observable sequence: explicit-role
     validation, the provider check (``MissingProviderError``), provider
     resolution, then the HITL first-run ``set_role`` side effect.
     ``strict=False`` skips the explicit-role raises for tolerant callers
-    (retro reviewer spawn — HATS-271 owns its failure mode). ``interactive``
+    (retro reviewer spawn, which owns its own failure mode). ``interactive``
     gates ONLY that ``set_role`` persist — ``provider_name`` wins over
-    ``cfg.provider`` on either path (HATS-1218).
+    ``cfg.provider`` on either path.
     """
     from ai_hats_observe import AuditWriter, Session
     from .surface_registry import get_surface
@@ -344,11 +344,11 @@ def build_preview_payload(
 
 
 def compose_for_checks(project_dir: Path, role: str | None = None) -> CompositionResult | None:
-    """Fail-CLOSED compose for the ``checks:`` gate channel (HATS-1141).
+    """Fail-CLOSED compose for the ``checks:`` gate channel.
 
     ``role`` is the session's own role expression when a session is asking, and
     ``None`` only outside one — where ``active_role`` genuinely is the answer.
-    It was hardcoded ``None`` through HATS-1594, so a session launched with
+    It used to be hardcoded ``None``, so a session launched with
     ``--role`` had its gates composed from whatever the config still said.
 
     The exact opposite of :func:`compose_for_carry` below, and deliberately so:
@@ -371,7 +371,7 @@ def compose_for_checks(project_dir: Path, role: str | None = None) -> Compositio
     return compose_to_arm(asm, effective, runtime_overlay=runtime_overlay)
 
 
-# HATS-1594 retired `session_skills_root_for_checks`. It re-read
+# `session_skills_root_for_checks` was retired. It re-read
 # `ProjectConfig.provider` to find the mirror, so a session launched with `-p`
 # resolved against a surface it was not running. The root is now decided once at
 # launch and carried on `SessionIdentity.skills_root` — there is no second
@@ -380,13 +380,13 @@ def compose_for_checks(project_dir: Path, role: str | None = None) -> Compositio
 
 def compose_for_carry(project_dir: Path, role: str | None = None):
     """Fail-open compose for worktree-carry collection; a ``CompositionResult``
-    or ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts
-    tracker→wt via the ``needs_worktree`` effect. An *exception* degrades to
+    or ``None``. Tracker-side callers route here — TEMP until this path is
+    re-cut through the ``needs_worktree`` effect. An *exception* degrades to
     ``None`` with a WARN: carry trouble must never block worktree creation.
 
     ``result.errors`` is left to the caller, exactly as in ``compose_for_checks``
     above — ``wt_carry.collect_carry_for_role`` warns there and keeps whatever
-    composed, because only it knows how many carry rows survived (HATS-1592).
+    composed, because only it knows how many carry rows survived.
     """
     try:
         asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
@@ -412,9 +412,9 @@ def _composition_snapshot(
     runtime_overlay: OverlayConfig | None = None,
     spec: RoleSpec | None = None,
 ) -> dict:
-    """Build the composition snapshot dict for ``Session.init_audit`` (HATS-442).
+    """Build the composition snapshot dict for ``Session.init_audit``.
 
-    Moved from ``runtime_common`` (HATS-865): it walks private Assembler API
+    Moved from ``runtime_common``: it walks private Assembler API
     (overlays + provenance), so it computes at the compose seam and the DICT
     travels down in the payload — bricks never drive assembler machinery.
     """
@@ -448,7 +448,7 @@ def _composition_snapshot(
 
 
 def _static_cost_analyzer(project_dir: Path):
-    """Carve-out #1 (HATS-865): finalize learns the role only at run time (from
+    """Finalize learns the role only at run time (from
     transcripts), so the static always-on cross-check stays a late-bound
     callable — composed here, threaded runner → finalize initial state."""
 

@@ -11,7 +11,7 @@ from .models import ComponentConfig, ComponentType, resolve_namespace
 def read_rule_body(rule_dir: Path) -> str:
     """Read a rule's ``rule.md`` body, or ``""`` if the file is absent.
 
-    HATS-700: the file on disk is the single source of truth for a rule's
+    The file on disk is the single source of truth for a rule's
     deliverable text. Consumers that need a body read it on demand from the
     resolved ``source_path`` — the provider (for always-on rules, at
     prompt-build) and the v0.7 migration baseline — instead of the composer
@@ -81,7 +81,7 @@ class LibraryResolver:
 
         Searches each library root for ``initial_injections/<name>.md``.
         Last-wins, same as components — a project-local override beats
-        user-global, which beats built-in (HATS-445).
+        user-global, which beats built-in.
 
         Initial injections are NOT components (no ``config.yaml``, no
         type enum), so this lives next to ``resolve_rule_dir`` rather

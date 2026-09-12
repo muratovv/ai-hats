@@ -1,6 +1,6 @@
 """``compute_usage`` step — derive ``usage.json`` from claude JSONL.
 
-HATS-664. Sibling of ``make_audit`` (``pipeline/steps/make_audit.py``): same
+Sibling of ``make_audit`` (``pipeline/steps/make_audit.py``): same
 post-session JSONL source (``~/.claude/projects/<key>/<id>.jsonl``), same
 fail-soft contract, wired into the same ``finalize-hitl`` / ``finalize-subagent``
 pipelines — but emits a SEPARATE artifact. ``make_audit`` owns the
@@ -8,8 +8,8 @@ human-readable ``audit.md`` (turn markers) + flat ``metrics.json``; this step
 owns the machine-readable ``usage.json`` (``usage/v1``: measured always-on,
 ordered timeline, aggregates, sidechain linkage). Keeping them as two steps and
 two artifacts means the rich timeline never bloats the flat ``metrics.json`` that
-``session list --json`` reads, and each has its own failure surface (HATS-664
-supervisor decision).
+``session list --json`` reads, and each has its own failure surface (supervisor
+decision).
 
 The heavy lifting is the pure ``usage.parse_session_usage`` — this step is the
 thin live-session driver: locate the JSONL, run the parser, optionally enrich
@@ -162,7 +162,7 @@ class ComputeUsage(Step):
         skip this. The measured proxy (first cache_creation) stays authoritative;
         the static figure is the per-component breakdown the comparison sibling
         diffs against. On any failure, leave ``always_on["static"]`` = None
-        (absent, not a fake zero). HATS-865: the composition-layer walk lives in
+        (absent, not a fake zero). The composition-layer walk lives in
         the analyzer callable (built at the compose seam), not here.
         """
         try:

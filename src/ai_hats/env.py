@@ -1,4 +1,4 @@
-"""The home for an environment variable name the ``ai_hats`` package reads (HATS-1414).
+"""The home for an environment variable name the ``ai_hats`` package reads.
 
 A name spelled here and imported is a name a reader can find: one edit renames
 it, and this file is the register to scan. It is the first place a new one goes.
@@ -6,7 +6,7 @@ it, and this file is the register to scan. It is the first place a new one goes.
 The claim used to be "all ``os.environ`` variables", which no edit could have
 made true — so it said nothing, and a plan item asking where to register
 ``AI_HATS_HOOK_TIMEOUT_S`` was closed as having no answer while this file sat
-here (HATS-1858 §23, HATS-1868). What holds instead:
+here. What holds instead:
 
 * A **sibling distribution** — ``ai-hats-rack``, ``ai-hats-core``,
   ``ai-hats-observe``, ``ai-hats-library`` — does not depend on ``ai_hats`` and
@@ -325,7 +325,7 @@ def ai_hats_dir_override() -> str | None:
 
     Meaning: Runtime override for the framework base directory (by default ``.agent/ai-hats``).
     Pair-scoped with ``AI_HATS_PROJECT_DIR`` to prevent leaked session pins across projects.
-    Documentation: ``docs/how-to-configure.md`` (Directory resolution, HATS-897).
+    Documentation: ``docs/how-to-configure.md`` (Directory resolution).
     """
     return _read(ENV_AI_HATS_DIR)
 
@@ -335,7 +335,7 @@ def project_dir_pin() -> str | None:
 
     Meaning: Project root pin set at session spawn alongside ``AI_HATS_DIR`` to validate
     override scoping and ignore foreign leaked environment variables.
-    Documentation: HATS-897 (Leaked session pin guard).
+    Documentation: Leaked session pin guard.
     """
     return _read(AI_HATS_PROJECT_DIR_ENV)
 
@@ -344,7 +344,7 @@ def venv_override() -> str | None:
     """Read ``AI_HATS_VENV`` env var.
 
     Meaning: Absolute path runtime override for the Python virtual environment location.
-    Documentation: ``docs/how-to-configure.md`` (Python environment resolution, HATS-334).
+    Documentation: ``docs/how-to-configure.md`` (Python environment resolution).
     """
     return _read(ENV_AI_HATS_VENV)
 
@@ -354,7 +354,7 @@ def library_root_override() -> str | None:
 
     Meaning: Environment override for the builtin library root directory containing
     the ``core`` and ``usage`` composition layers.
-    Documentation: ``docs/architecture.md`` (Builtin library resolution, HATS-831).
+    Documentation: ``docs/architecture.md`` (Builtin library resolution).
     """
     return _read(ENV_LIBRARY_ROOT)
 
@@ -363,7 +363,7 @@ def tool_home_override(env_var: str) -> str | None:
     """Read arbitrary tool home environment variable ``env_var``.
 
     Meaning: Generic environment override for tool-specific home directory pattern (``~/.<name>``).
-    Documentation: Shared transcript-discovery and tool-home resolution (HATS-1087).
+    Documentation: Shared transcript-discovery and tool-home resolution.
     """
     return _read(env_var)
 
@@ -374,7 +374,7 @@ def cache_home_override() -> str | None:
     Meaning: Runtime override for the BASE of the machine-only cache class, which lives
     outside the project. Never a project's final cache root — ``ProjectLayout.cache.root``
     always appends the per-project key, so a leaked value cannot merge two projects' caches.
-    Documentation: ``docs/ARCHITECTURE.md`` (Materialization), HATS-1398.
+    Documentation: ``docs/ARCHITECTURE.md`` (Materialization).
     """
     return _read(ENV_AI_HATS_CACHE_HOME)
 
@@ -384,7 +384,7 @@ def xdg_cache_home() -> str | None:
 
     Meaning: Platform cache base; ai-hats appends ``ai-hats/`` to it. Ranks below
     ``AI_HATS_CACHE_HOME`` and above ``user_home()`` when resolving the cache class.
-    Documentation: ``docs/ARCHITECTURE.md`` (Materialization), HATS-1398.
+    Documentation: ``docs/ARCHITECTURE.md`` (Materialization).
     """
     return _read(ENV_XDG_CACHE_HOME)
 

@@ -1,7 +1,7 @@
 """Agy surface adapter — maps the `agy` (Antigravity) CLI to the ai-hats `Surface`.
 
 Materialization contract (``build_session_artifacts`` / ADR-0018). ``<sc>`` is the
-out-of-project per-session cache ``<cache_root>/sessions/<sid>/`` (HATS-1398):
+out-of-project per-session cache ``<cache_root>/sessions/<sid>/``:
 
 - **Role / system prompt** — ``build_system_prompt`` composes PRIORITIES + the
   merged role/trait injection + always-on RULES. Written to
@@ -109,7 +109,7 @@ class AgySurface(Surface):
 
     @contextmanager
     def execution_context(self, layout: ProjectLayout) -> Generator[None, None, None]:
-        """Clean execution context — HATS-1166: file-hiding hacks retired (native-by-default)."""
+        """Clean execution context — file-hiding hacks retired (native-by-default)."""
         yield
 
     def build_system_prompt(self, result: CompositionResult) -> str:
@@ -120,7 +120,7 @@ class AgySurface(Surface):
         return layout.cache.session(session_id) / "rules" / ".agents" / "skills"
 
     def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
-        """HATS-1540: what a bound check resolves its script from in-session."""
+        """What a bound check resolves its script from in-session."""
         return self._session_skills_dir(layout, session_id)
 
     def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
@@ -164,7 +164,7 @@ class AgySurface(Surface):
 
     def _materialize_skills(self, layout, result, session_id, artifacts) -> Path:
         # Not via materialize_runtime_skills: that is a published extension point
-        # and cannot take the port (HATS-1211 / HATS-1207 R4).
+        # and cannot take the port.
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
         self._cache_dir(layout, session_id, artifacts)
@@ -200,7 +200,7 @@ class AgySurface(Surface):
         return rows
 
     def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
-        """Global dispatcher registration (HATS-1166) plus the session manifest it reads."""
+        """Global dispatcher registration plus the session manifest it reads."""
         from ai_hats.env import ENV_SESSION_CACHE_DIR
 
         cache_dir = self._cache_dir(layout, session_id, artifacts)
@@ -231,7 +231,7 @@ class AgySurface(Surface):
         from ai_hats.skills_dir import materialize_skills_dir
 
         # A published extension point cannot carry the port, so this path always
-        # writes — it is one of the builder bypasses HATS-1207 removes.
+        # writes — it is one of the builder bypasses a later cleanup removes.
         materialize_skills_dir(
             self._session_skills_dir(layout, session_id),
             result.skills,
@@ -243,7 +243,7 @@ class AgySurface(Surface):
     def ensure_runtime_hooks(
         self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
     ) -> None:
-        """HATS-1166: Runtime hooks write to session cache hooks.json via build_session_artifacts."""
+        """Runtime hooks write to session cache hooks.json via build_session_artifacts."""
         pass
 
     def build_session_prompt(

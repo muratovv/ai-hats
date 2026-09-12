@@ -1,9 +1,9 @@
 """Integrator-side worktree effects — the wt binding for the backlog FSM.
 
-ADR-0014 P0 #3 / HATS-866: the FSM emits worktree side-effects through a
+ADR-0014 P0 #3: the FSM emits worktree side-effects through a
 ``WorktreeEffects`` protocol; THIS module is the only binding of those effects
-to :mod:`ai_hats_wt`. ``rack_wiring.build_rack_kernel`` injects it (HATS-1262:
-the `ai_hats_tracker` package that once owned both names is deleted); a kernel
+to :mod:`ai_hats_wt`. ``rack_wiring.build_rack_kernel`` injects it (the
+`ai_hats_tracker` package that once owned both names is deleted); a kernel
 without a handler is a pure FSM (no worktree).
 """
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def collect_carry_for_project(
     project_dir: Path, role: str = ""
 ) -> dict[str, list[dict[str, object]]]:
-    """Collect the effective role's worktree carry (fail-open, HATS-865).
+    """Collect the effective role's worktree carry (fail-open).
 
     Compose lives in ``composition_seam.compose_for_carry``; the chokepoint
     receives the ready result.
@@ -39,7 +39,7 @@ class WtWorktreeEffects:
     """wt-backed ``WorktreeEffects`` implementation.
 
     Bodies moved verbatim from ``TaskManager._setup_worktree`` /
-    ``_teardown_worktree`` (HATS-866) — semantics unchanged; wt exceptions
+    ``_teardown_worktree`` — semantics unchanged; wt exceptions
     propagate to the caller (the CLI translates them to red exits).
     """
 
@@ -52,7 +52,7 @@ class WtWorktreeEffects:
     ) -> None:
         self.layout = layout
         self.project_dir = layout.root
-        # HATS-1015 liveness budget: the per-git wall-clock ceiling threaded into
+        # Liveness budget: the per-git wall-clock ceiling threaded into
         # every worktree shell-out (default None = unbounded — behaviour unchanged).
         self._git_timeout = git_timeout
         if lifecycle is None:  # resolved once here, not re-imported per method
@@ -62,12 +62,12 @@ class WtWorktreeEffects:
         self._lifecycle = lifecycle
 
     def assert_canonical_base(self) -> None:
-        """HATS-518 guard for the forced-execute path (no worktree is created)."""
+        """Guard for the forced-execute path (no worktree is created)."""
         from ai_hats_wt import assert_head_is_canonical_base
 
         from .wt_config import resolve_worktree_branches
 
-        _base, merge_target = resolve_worktree_branches(self.project_dir)  # HATS-942
+        _base, merge_target = resolve_worktree_branches(self.project_dir)
         assert_head_is_canonical_base(self.project_dir, merge_target)
 
     def setup(
@@ -80,10 +80,9 @@ class WtWorktreeEffects:
     ) -> Path | None:
         """Create or adopt the task's isolated worktree on ``→ execute``.
 
-        Returns the worktree path — adopted (caller already inside one,
-        HATS-060/840; racing peer's create, HATS-479), the task's existing one
-        (HATS-061), or freshly created — or None for non-git projects.
-        ``outer_deadline`` is the caller's ceiling (HATS-1603).
+        Returns the worktree path — adopted (caller already inside one;
+        racing peer's create), the task's existing one, or freshly created —
+        or None for non-git projects. ``outer_deadline`` is the caller's ceiling.
         """
         from ai_hats_wt import (
             WorktreeCreateError,
@@ -91,9 +90,9 @@ class WtWorktreeEffects:
             assert_head_is_canonical_base,
         )
 
-        # Probe order: adopt the worktree the caller is in (HATS-060/840) → reuse
+        # Probe order: adopt the worktree the caller is in → reuse
         # the task's existing one → guard canonical base →
-        # create with the role's carry; racing peer wins by adoption (479).
+        # create with the role's carry; racing peer wins by adoption.
         wt_state_dir = self.layout.sessions.worktrees
 
         adopt_probe = caller_cwd if caller_cwd is not None else self.project_dir
@@ -108,7 +107,7 @@ class WtWorktreeEffects:
 
         from .wt_config import resolve_worktree_branches
 
-        base_branch, merge_target = resolve_worktree_branches(self.project_dir)  # HATS-942
+        base_branch, merge_target = resolve_worktree_branches(self.project_dir)
         assert_head_is_canonical_base(self.project_dir, merge_target)
 
         branch = f"task/{task_id.lower()}"
@@ -152,12 +151,12 @@ class WtWorktreeEffects:
     ) -> str | None:
         """Merge (``merge=True``) or discard the task's worktree.
 
-        Returns "merged" / "discarded" for the card's work_log (HATS-866/AC5),
+        Returns "merged" / "discarded" for the card's work_log,
         or None when no worktree action happened. Merge failures
-        re-raise so the transition aborts fail-loud (HATS-481); ``force``
-        bypasses only the clean-tree merge gate (HATS-596); discard failures
+        re-raise so the transition aborts fail-loud; ``force``
+        bypasses only the clean-tree merge gate; discard failures
         on an admin close are swallowed. ``outer_deadline`` is the caller's
-        ceiling (the rack task lock on the FSM road) — HATS-1603.
+        ceiling (the rack task lock on the FSM road).
         """
         from ai_hats_wt import (
             OriginalBranchMissingError,
@@ -201,7 +200,7 @@ class WtWorktreeEffects:
 
         try:
             if merge:
-                # HATS-596: force reaches merge guards. HATS-1603: so does the
+                # Force reaches merge guards. So does the
                 # caller's ceiling, or wt:pre-merge outlives the rack lock.
                 active.merge(
                     force=force,
@@ -235,7 +234,7 @@ class WtWorktreeEffects:
             )
 
     def discard_if_empty(self, task_id: str) -> bool:
-        """Reclaim ``task_id``'s worktree iff it has no unmerged work (HATS-979).
+        """Reclaim ``task_id``'s worktree iff it has no unmerged work.
 
         Called at epicification: a task that gained a child is a tracker now, so
         its execute-time worktree is dead weight. Kept when it carries a dirty
@@ -269,7 +268,7 @@ class WtWorktreeEffects:
 
 
 def _has_pending_hunk_review(worktree_path: Path | None) -> bool:
-    """True if un-drained hunk review notes live in the worktree (HATS-818)."""
+    """True if un-drained hunk review notes live in the worktree."""
     if worktree_path is None:
         return False
     notes = worktree_path / ".hunk" / "notes.json"

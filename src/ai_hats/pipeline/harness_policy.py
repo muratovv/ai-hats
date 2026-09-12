@@ -1,4 +1,4 @@
-"""Harness reliability policy for pipeline steps (HATS-378).
+"""Harness reliability policy for pipeline steps.
 
 A ``HarnessPolicy`` is an opt-in, additive marker attached to a pipeline
 step via its YAML config. The harness reads it after a sub-agent run to

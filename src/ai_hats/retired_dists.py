@@ -1,9 +1,9 @@
-"""Remove distributions ai-hats has retired but the venv still carries (HATS-1280).
+"""Remove distributions ai-hats has retired but the venv still carries.
 
 ``self update`` installs, it does not synchronize: a dependency a new version
 DROPPED stays installed, console script and all. For ``ai-hats-tracker`` that
-left a working legacy backlog CLI over the same store — the surface epic
-HATS-1159 exists to remove, surviving the upgrade under another name.
+left a working legacy backlog CLI over the same store — the surface-retirement
+epic exists to remove, surviving the upgrade under another name.
 
 Runs from :mod:`ai_hats._bump_internal`, the hook ``self update`` invokes in a
 fresh interpreter against the freshly-installed tree. That placement is the
@@ -43,10 +43,10 @@ from ._bootstrap import _normalise, expected_runtime_deps
 
 #: Retired distribution → the console scripts it installs. Explicit, not derived:
 #: a dependency-closure diff would need graph resolution the installer does not
-#: expose, and the retired set is finite and known (HATS-1280 ruling).
+#: expose, and the retired set is finite and known.
 RETIRED_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
     "ai-hats-tracker": ("ai-hats-tracker",),
-    # HATS-1826 folded the surface distributions into `ai-hats`. Only the two
+    # A prior consolidation folded the surface distributions into `ai-hats`. Only the two
     # that reached PyPI are listed: `ai-hats-codex` and `ai-hats-opencode` never
     # published (the index answers 404), so no venv can be carrying them.
     "ai-hats-agy": ("ai-hats-hook-dispatcher",),
@@ -70,7 +70,7 @@ def _still_declared() -> set[str]:
     Probing our own dist first is what makes the guard real. ``expected_runtime_deps``
     swallows a missing ai-hats and answers ``[]`` — indistinguishable from "declares
     nothing", so an interpreter that cannot read its own metadata (a PYTHONPATH source
-    run, a clobbered dist-info) would otherwise read as "prune everything" (HATS-1280).
+    run, a clobbered dist-info) would otherwise read as "prune everything".
     """
     retired = {_normalise(name) for name in RETIRED_DISTRIBUTIONS}
     try:
@@ -146,7 +146,7 @@ def strip_retired_scripts(venv_dir: Path, project_dir: Path | None = None) -> li
 
     For the legacy ``.venv`` only — see the module docstring for why the
     distribution itself must stay. Goes through ``safe_delete`` so a wrong prune
-    is recoverable from the trash session rather than gone (HATS-470).
+    is recoverable from the trash session rather than gone.
     """
     from ai_hats_core.safe_delete import discard
 
@@ -160,9 +160,7 @@ def strip_retired_scripts(venv_dir: Path, project_dir: Path | None = None) -> li
                 try:
                     if not (path.is_file() or path.is_symlink()):
                         continue
-                    discard(
-                        path, reason="retired distribution (HATS-1280)", project_dir=project_dir
-                    )
+                    discard(path, reason="retired distribution", project_dir=project_dir)
                 except (OSError, ValueError) as exc:
                     _warn(f"cannot remove retired {path}: {type(exc).__name__}")
                     continue

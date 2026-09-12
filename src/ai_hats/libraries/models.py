@@ -1,5 +1,5 @@
-"""Library domain schema (HATS-863, ex ``ai_hats.models``) — component configs,
-rule/skill metadata, hook wiring. T18 (HATS-876) lifts this module into the
+"""Library domain schema (ex ``ai_hats.models``) — component configs,
+rule/skill metadata, hook wiring. T18 lifts this module into the
 ``ai-hats-library`` package.
 """
 
@@ -38,7 +38,7 @@ class ComponentType(str, Enum):
 
 
 class CheckBindingError(ValueError):
-    """A declared check binding cannot install (HATS-1140, ADR-0019 D6)."""
+    """A declared check binding cannot install (ADR-0019 D6)."""
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class AppBinding:
     but not *interpreted*: ai-hats checks only that a row
     names at least one point, because a row bound to nothing is a gate that never
     fires — the silent absence this channel exists to remove. What each name
-    MEANS stays the owning application's question (HATS-1545 F3).
+    MEANS stays the owning application's question.
 
     A row carrying ``consent`` is valid only below ``apps.consent_gate``
     (ADR-0030). It has no script; the session wrapper compiles its operation path
@@ -90,7 +90,7 @@ class AppBinding:
         return self.run.split("/", 1)[1] if "/" in self.run else ""
 
     def identity(self) -> tuple[str, tuple[str, ...], str, str]:
-        """What makes two rows the same row (HATS-1545 R6).
+        """What makes two rows the same row.
 
         ``on_error`` is excluded because it is the one field that MERGES —
         two declarations of one row keep the stricter. Cargo is compared whole
@@ -117,7 +117,7 @@ def parse_app_bindings(
 
     A row is recognised STRUCTURALLY — a mapping carrying ``run:`` or
     ``consent:`` — so the grammar above it belongs to the application and ai-hats
-    never checks its depth (HATS-1545 R4, widened by HATS-1682). Flattening here
+    never checks its depth. Flattening here
     is what makes provenance survive: the declarer is stamped on each row before
     any two components' rows meet, so no merge step can drop it (D4).
     """
@@ -270,14 +270,14 @@ class Composition(_YamlModel):
     traits: list[str] = Field(default_factory=list)
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
-    #: Per-application declaration blocks, carried verbatim (HATS-1545 R1). The
+    #: Per-application declaration blocks, carried verbatim. The
     #: value is opaque: ai-hats knows no app's grammar, only that a mapping with
     #: ``run:`` inside it is a row.
     apps: dict[str, Any] = Field(default_factory=dict)
 
 
 class ComponentKeyError(ValueError):
-    """A component config carries a key no reader can act on (HATS-1545 R2)."""
+    """A component config carries a key no reader can act on."""
 
 
 def load_component_yaml(path: Path) -> dict[str, Any]:
@@ -289,7 +289,7 @@ def load_component_yaml(path: Path) -> dict[str, Any]:
     channel exists to remove, and unlike every other defect here it cannot be
     warned about after the fact: the losing declaration is already gone from the
     structure by the time any reader sees it. So it is the one class that
-    refuses rather than warns (HATS-1545 R2).
+    refuses rather than warns.
 
     Composed, then constructed from the same node tree: the audit reads the
     parse events, which is where a duplicate is still observable.
@@ -354,12 +354,12 @@ def _refuse_retired_checks_key(composition: yaml.Node | None, path: Path) -> Non
     Falling through to the strip-unknown WARN would drop a declared gate and
     carry on — the silence this channel exists to remove. So the retired key gets
     its own refusal, and it says where the rows moved (supervisor ruling
-    2026-08-10; HATS-1545 F2).
+    2026-08-10).
     """
     if _child_node(composition, "checks") is None:
         return
     raise ComponentKeyError(
-        f"{path}: 'composition.checks:' was retired in HATS-1545 — its rows now live under "
+        f"{path}: 'composition.checks:' was retired — its rows now live under "
         f"'composition.apps.<app>', where the application owns the grammar below its own key. "
         f"Move each row: the skill/script pair becomes 'run: <skill>/<script>', 'on:' becomes "
         f"'at:' (YAML 1.1 reads a bare 'on' as True), and a rack row names the backlog it gates "
@@ -419,7 +419,7 @@ class ComponentConfig(_YamlModel):
     def _strip_unknown_composition_keys(data: dict[str, Any], path: Path) -> None:
         """Pop keys under ``composition:`` no field owns; one stderr WARN each.
 
-        HATS-1152 under the HATS-581 policy: strip, so an OLDER binary survives a
+        Strip, so an OLDER binary survives a
         config a NEWER one wrote — but never silently, because a mistyped binding
         is a gate that never installs. Unlike ``ProjectConfig``, the popped value
         is not stashed for round-trip: library configs have no ``save()`` path.
@@ -454,8 +454,8 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
     "pre-rebase",
     # Drift-introducing events — a merge / pull / branch checkout rewrites
     # tracked files, leaving the (untracked, generated) .githooks/ stale. Still
-    # VALID hook events a skill may declare; HATS-833 removed the self-heal that
-    # used them (healing is now session-start only via HooksManager.sync_hooks).
+    # VALID hook events a skill may declare; the self-heal that used them was
+    # removed (healing is now session-start only via HooksManager.sync_hooks).
     "post-merge",
     "post-checkout",
 )
@@ -474,7 +474,7 @@ RUNTIME_HOOK_EVENTS: tuple[str, ...] = (
 
 
 class RuntimeHook(_YamlModel):
-    """A single provider runtime hook declared by a skill (HATS-597).
+    """A single provider runtime hook declared by a skill.
 
     Unlike ``git_hooks`` (a bare ``list[str]`` of script paths), a runtime
     hook carries two fields — the provider tool ``matcher`` and the ``script``
@@ -492,7 +492,7 @@ class RuntimeHook(_YamlModel):
 
 class LeftoverSidecarHooksError(RuntimeError):
     """A skill still ships a ``metadata.yaml`` carrying hook keys after the
-    frontmatter cutover (HATS-814).
+    frontmatter cutover.
 
     The engine reads ``git_hooks`` / ``runtime_hooks`` from ``SKILL.md``
     frontmatter top-level ``ai_hats:`` now; a leftover hook-bearing sidecar would
@@ -509,22 +509,22 @@ class SkillMetadata(_YamlModel):
     hook event names (see GIT_HOOK_EVENTS); values are lists of script
     paths relative to the skill directory.
 
-    `runtime_hooks` (HATS-597) lets a skill declare provider runtime hooks
+    `runtime_hooks` lets a skill declare provider runtime hooks
     (e.g. Claude Code PreToolUse / PostToolUse). Keys are runtime hook event
     names (see RUNTIME_HOOK_EVENTS); values are lists of RuntimeHook records
     `{matcher, script}`. The assembler materializes the scripts and the
     provider wires them into the native hook channel.
 
-    `triggers` / `skip` (HATS-264): activation hints used to render the
+    `triggers` / `skip`: activation hints used to render the
     canonical `routing.md` trigger→skill table. Each item is a short phrase
     describing user intent or a context where this skill applies (or, for
     `skip`, where it should be passed over). Both are optional; skills with
     empty `triggers` are omitted from routing.md but still appear in
     `skills_index.md`.
 
-    `worktree` (HATS-823) rides **opaque** — a raw dict per the ADR-0014 §2
+    `worktree` rides **opaque** — a raw dict per the ADR-0014 §2
     boundary rule (library never imports wt types); the integrator parses it
-    via ``ai_hats_wt.carry.parse_worktree_carry`` at compose time (HATS-863).
+    via ``ai_hats_wt.carry.parse_worktree_carry`` at compose time.
     """
 
     name: str = ""
@@ -561,7 +561,7 @@ class SkillMetadata(_YamlModel):
     @model_validator(mode="before")
     @classmethod
     def _normalize_runtime_hooks(cls, data: Any) -> Any:
-        """Parse + validate the ``runtime_hooks:`` block (HATS-597).
+        """Parse + validate the ``runtime_hooks:`` block.
 
         Unlike ``git_hooks`` (which silently skips unknown events), runtime
         hooks **fail loud** on an unknown event or a malformed row: a dropped
@@ -648,7 +648,7 @@ class SkillMetadata(_YamlModel):
 
     @classmethod
     def from_skill_dir(cls, skill_dir: Path) -> SkillMetadata:
-        """Build from ``SKILL.md`` frontmatter top-level ``ai_hats:`` (HATS-814).
+        """Build from ``SKILL.md`` frontmatter top-level ``ai_hats:``.
 
         Hook wiring lives under a top-level ``ai_hats:`` frontmatter key
         (governance: ``ai_hats`` = framework hook wiring ONLY, never prose).
@@ -673,28 +673,28 @@ class SkillMetadata(_YamlModel):
             if isinstance(raw, dict):
                 leaked = [k for k in _HOOK_KEYS if raw.get(k)]
                 if leaked:
-                    # Remedy single-sourced with the HATS-815 bump diagnostic.
+                    # Remedy single-sourced with Assembler._warn_leftover_hook_sidecars's
+                    # bump-time WARN.
                     raise LeftoverSidecarHooksError(leftover_sidecar_remedy(skill_dir.name, leaked))
         fm = read_frontmatter(skill_dir / "SKILL.md")
         ai_hats = fm.get("ai_hats")
         if not isinstance(ai_hats, dict):
             ai_hats = {}
         if ai_hats.get("plan_sections"):
-            # Tombstone (HATS-1160 / HATS-1149 A): consumer plan_sections channel
-            # deleted — fail LOUD, never no-op; a dropped section weakens the gate.
+            # Tombstone: consumer plan_sections channel deleted — fail LOUD,
+            # never no-op; a dropped section weakens the gate.
             raise ValueError(
                 f"skill {skill_dir.name!r}: the plan_sections: channel was removed "
-                f"(HATS-1160, HATS-1149 decision A) and no longer extends the "
-                f"plan-gate. Remove the declaration, or re-introduce the channel "
-                f"as an integrator-side live-collect."
+                f"and no longer extends the plan-gate. Remove the declaration, or "
+                f"re-introduce the channel as an integrator-side live-collect."
             )
         if ai_hats.get("lifecycle_hooks"):
-            # Tombstone (HATS-1147, ADR-0019 D8): consumer lifecycle_hooks channel
-            # deleted — fail LOUD, never no-op; a dropped edge gate is a gate that
-            # never installs (the HYP-078 hole this retirement exists to close).
+            # Tombstone (ADR-0019 D8): consumer lifecycle_hooks channel deleted —
+            # fail LOUD, never no-op; a dropped edge gate is a gate that never
+            # installs (the HYP-078 hole this retirement exists to close).
             raise ValueError(
                 f"skill {skill_dir.name!r}: the lifecycle_hooks: channel was removed "
-                f"(HATS-1147, ADR-0019 D8) and no longer gates rack FSM edges. "
+                f"(ADR-0019 D8) and no longer gates rack FSM edges. "
                 f"Remove the declaration, or re-introduce the channel as an "
                 f"integrator-side live-collect."
             )

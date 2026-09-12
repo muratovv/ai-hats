@@ -1,4 +1,4 @@
-"""Schema-versioned migration registry (HATS-471).
+"""Schema-versioned migration registry.
 
 Migrations run **once per project**, gated by ``ProjectConfig.migration_step``
 (a monotonic counter for one-shot install-time side effects — file moves,
@@ -21,7 +21,7 @@ directly from ``init`` / ``set_role``, so idempotency must hold for those direct
 invocations, not just the gated replay.
 
 The generic step-gated *runner* now lives in ``ai_hats_core.migrations``
-(``Migration[Ctx]`` / ``run_pending`` / ``latest_step``, HATS-868 T7); this
+(``Migration[Ctx]`` / ``run_pending`` / ``latest_step``); this
 module is its **Assembler-bound instance** — the ``MIGRATIONS`` registry (each
 entry's ``run`` takes the ``Assembler`` for ``self.provider`` / ``agent_dir`` /
 ``composer.resolver``) plus the banner + step-binding adapter below. Do not
@@ -64,8 +64,8 @@ def _recorded_move(src: "Path", dst: "Path", *, reason: str, project_dir: "Path"
     """Move ``src`` to ``dst`` leaving a safe_delete trash record.
 
     A bare ``shutil.move`` out of the managed namespace left no snapshot and
-    no audit line, so an eviction was only reconstructable from inode ctime
-    (HATS-1123). Copy-then-discard so the source is recorded before it goes.
+    no audit line, so an eviction was only reconstructable from inode ctime.
+    Copy-then-discard so the source is recorded before it goes.
     """
     shutil.copy2(str(src), str(dst))
     _safe_discard(src, reason=reason, project_dir=project_dir)
@@ -80,7 +80,7 @@ _RUNNING_BANNER = "[ai-hats] running migration step={step} label={label}"
 
 # ``Migration`` (the registry-entry dataclass) now lives in
 # ``ai_hats_core.migrations``, re-exported above; this module owns only the
-# Assembler-bound registry + adapter (HATS-868 T7).
+# Assembler-bound registry + adapter.
 
 
 # ----- migration wrappers --------------------------------------------------
@@ -88,7 +88,7 @@ _RUNNING_BANNER = "[ai-hats] running migration step={step} label={label}"
 # Each wrapper adapts a migration to the ``Callable[[Assembler], None]`` registry
 # signature. The v3 / v07 migration bodies still live in ``Assembler`` (they need
 # ``self.provider`` / ``self.composer.resolver``); the v4-layout *logic* was moved
-# here in HATS-715 (``migrate_layout_v4*``, take-``a``), with Assembler keeping
+# here (``migrate_layout_v4*``, take-``a``), with Assembler keeping
 # thin delegators for the tested API.
 
 
@@ -114,9 +114,9 @@ def _m_heal_external_refs(a: "Assembler") -> None:
 
 
 def _m_migrate_claude_md_to_v3(a: "Assembler") -> None:
-    """Retired by HATS-1201 — kept as a no-op because step numbers are bound
+    """Retired — kept as a no-op because step numbers are bound
     to the on-disk counter and must never be reordered or renumbered. The v3
-    scaffold it used to write no longer exists (HATS-1170); step 7 removes
+    scaffold it used to write no longer exists; step 7 removes
     what it left behind."""
     del a
 
@@ -137,14 +137,14 @@ def _strip_marked_block(text: str, start: str, end: str) -> str:
 
 
 def _m_strip_orphaned_claude_scaffold(a: "Assembler") -> None:
-    """Drop the ai-hats block HATS-1170 orphaned in root ``CLAUDE.md``.
+    """Drop the orphaned ai-hats block in root ``CLAUDE.md``.
 
     Root ``CLAUDE.md`` is user territory now, so only ai-hats's own markers go
     — the aggregator block and the legacy uppercase injection block; whatever
     the user wrote around them survives byte-for-byte, and a file left as pure
     whitespace was all ours and goes entirely. ``CLINE.md`` / ``GEMINI.md``
     are untouched: their blocks under the same markers are still live.
-    HATS-1203 removed HATS-1201's skip-while-user-rules-exist gate — the
+    The skip-while-user-rules-exist gate was later removed — the
     composed prompt carries user-rules now, so this block delivers nothing.
     """
     claude_md = a.project_dir / "CLAUDE.md"
@@ -170,7 +170,7 @@ def _m_strip_orphaned_claude_scaffold(a: "Assembler") -> None:
 
 
 def _m_retire_agy_token_zeros(a: "Assembler") -> None:
-    """Withdraw the token counts agy never emitted (HATS-1397).
+    """Withdraw the token counts agy never emitted.
 
     agy has no usage field, so every ``tokens`` block ever written for it is a
     placeholder — and it read as a measurement: on the real archive 119 of 237
@@ -215,7 +215,7 @@ def _m_retire_agy_token_zeros(a: "Assembler") -> None:
         )
 
 
-# ----- v4-layout migration logic (HATS-715: moved out of Assembler) --------
+# ----- v4-layout migration logic (moved out of Assembler) --------
 #
 # Take the Assembler for shared helpers (a._idempotent_move /
 # a._safe_discard_with_warn / a._ai_hats_owned_hook_basenames); the migration
@@ -223,7 +223,7 @@ def _m_retire_agy_token_zeros(a: "Assembler") -> None:
 
 
 def migrate_layout_v4(a: "Assembler") -> None:
-    """HATS-471: unified v3→v4 layout migration entry-point.
+    """Unified v3→v4 layout migration entry-point.
 
     Consolidates the three historical splits — sessions / tracker / library —
     into a single call site so the migration registry has one entry per
@@ -239,13 +239,13 @@ def migrate_layout_v4(a: "Assembler") -> None:
 
 
 def migrate_layout_v4_library(a: "Assembler") -> None:
-    """One-shot migration of library-mirror artefacts (HATS-314).
+    """One-shot migration of library-mirror artefacts.
 
     Moves `.agent/{rules,skills,hooks}/` → `<ai_hats_dir>/library/...`.
     `.claude/skills/` and `.githooks/` are NOT touched — they stay as
     copy-publish targets owned by external tooling.
 
-    HATS-549 Phase 4: the ``.agent/hooks/`` entry is partitioned
+    Phase 4: the ``.agent/hooks/`` entry is partitioned
     before the generic move — managed files (basename in the
     ai-hats-owned whitelist) head to ``<ai_hats_dir>/library/hooks/``
     as before; foreign files (anything else, including subdirs)
@@ -265,14 +265,14 @@ def migrate_layout_v4_library(a: "Assembler") -> None:
 
 
 def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
-    """HATS-549 Phase 4: partition legacy ``.agent/hooks/`` and reconcile
+    """Phase 4: partition legacy ``.agent/hooks/`` and reconcile
     pre-Phase-4 stuck states. Two passes:
 
     1. **Legacy partition** — route each ``.agent/hooks/`` entry by basename
        whitelist: ai-hats-owned hooks → ``<ai_hats_dir>/library/hooks/``,
        everything else (subdirs, arbitrary files) → ``<ai_hats_dir>/user-hooks/``.
     2. **Managed-namespace reconciliation** — move foreign files left in
-       ``library/hooks/`` by a pre-549 auto-heal out to ``user-hooks/`` (except
+       ``library/hooks/`` by an older auto-heal out to ``user-hooks/`` (except
        framework bookkeeping like ``.manifest``), so the next bump cleanly heals
        stuck states.
 
@@ -334,7 +334,7 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
     if not managed_dst.resolve().is_relative_to(a.project_dir.resolve()):
         print(
             f"[ai-hats] WARN: hooks-reconcile: {managed_dst} is outside "
-            f"{a.project_dir} (AI_HATS_DIR override) — skipping (HATS-1123).",
+            f"{a.project_dir} (AI_HATS_DIR override) — skipping.",
             file=sys.stderr,
         )
     elif managed_dst.is_dir():
@@ -360,7 +360,7 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
 
 
 def migrate_layout_v4_tracker(a: "Assembler") -> None:
-    """One-shot migration of tracker + root-class artefacts (HATS-313).
+    """One-shot migration of tracker + root-class artefacts.
 
     Moves backlog/, hypotheses/, decisions/, STATE.md, and .last_backup
     from their legacy .agent/ locations to <ai_hats_dir>/tracker/* (and
@@ -408,7 +408,7 @@ def migrate_layout_v4_sessions(a: "Assembler") -> None:
 
 
 def _m_drop_retired_wt_hooks(a: "Assembler") -> None:
-    """Discard the retired ``library/wt-hooks/`` tree (HATS-1269).
+    """Discard the retired ``library/wt-hooks/`` tree.
 
     Worktree hooks spawn in place from the declaring skill, so nothing writes or
     sweeps this dir any more and an upgraded project would keep a managed tree
@@ -434,9 +434,9 @@ def _m_drop_retired_wt_hooks(a: "Assembler") -> None:
 
 
 def _m_drop_retired_runtime_hooks(a: "Assembler") -> None:
-    """Discard the retired ``library/hooks/`` tree (HATS-1480).
+    """Discard the retired ``library/hooks/`` tree.
 
-    Runtime hooks live in session cache (HATS-1268), so nothing writes or
+    Runtime hooks live in session cache, so nothing writes or
     sweeps this dir any more and an upgraded project would keep a managed tree
     with no owner. Only what the manifest claimed is removed — an unmanaged file
     beside it is somebody's, and the dir goes only once it is empty.
@@ -468,7 +468,7 @@ MIGRATIONS: list[Migration] = [
     Migration(
         step=2,
         run=_m_strip_legacy_managed_block,
-        label="gitignore HATS-317 cleanup",
+        label="gitignore cleanup",
     ),
     Migration(
         step=3,
@@ -478,7 +478,7 @@ MIGRATIONS: list[Migration] = [
     Migration(
         step=4,
         run=_m_heal_external_refs,
-        label="heal external refs HATS-397",
+        label="heal external refs",
     ),
     Migration(
         step=5,
@@ -493,22 +493,22 @@ MIGRATIONS: list[Migration] = [
     Migration(
         step=7,
         run=_m_strip_orphaned_claude_scaffold,
-        label="drop orphaned claude.md scaffold HATS-1201",
+        label="drop orphaned claude.md scaffold",
     ),
     Migration(
         step=8,
         run=_m_retire_agy_token_zeros,
-        label="retire fabricated agy token zeros HATS-1397",
+        label="retire fabricated agy token zeros",
     ),
     Migration(
         step=9,
         run=_m_drop_retired_wt_hooks,
-        label="drop retired library/wt-hooks HATS-1269",
+        label="drop retired library/wt-hooks",
     ),
     Migration(
         step=10,
         run=_m_drop_retired_runtime_hooks,
-        label="drop retired library/hooks HATS-1480",
+        label="drop retired library/hooks",
     ),
 ]
 
@@ -545,7 +545,7 @@ def run_pending(assembler: "Assembler") -> int:
     ``bump``; exceptions propagate with their stack. Returns the number of
     entries executed (0 when already at ``latest_step``).
 
-    Refuses outright on a dir with no ``ai-hats.yaml`` (HATS-1123): the config
+    Refuses outright on a dir with no ``ai-hats.yaml``: the config
     loader returns defaults for a missing file and ``migration_step`` defaults
     to 0, so an uninitialised dir — a git worktree, since ai-hats.yaml is
     gitignored — replayed the entire registry. ``init`` seeds the counter for

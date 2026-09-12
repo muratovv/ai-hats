@@ -427,7 +427,9 @@ def test_warns_when_cwd_checkout_shadows_unrelated_project(tmp_path, monkeypatch
         builtin_library_root(tmp_path / "two", prefer_cwd=True, cwd=tmp_path / "one")
 
     assert len(caught) == 1
-    assert "HATS-1501" in str(caught[0].message)
+    # the knob the reader can act on — unique to this warning, and unlike a card
+    # id it stays resolvable outside this repository
+    assert "AI_HATS_LIBRARY_ROOT" in str(caught[0].message)
 
 
 def test_no_warn_when_no_project_named(tmp_path, monkeypatch):

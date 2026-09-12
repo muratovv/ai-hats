@@ -1,4 +1,4 @@
-"""Session-level custom tags (HATS-163).
+"""Session-level custom tags.
 
 Tags are arbitrary ``k=v`` metadata attached to a session at launch time by the
 caller/orchestrator (alert fingerprint, client id, pipeline run, experiment

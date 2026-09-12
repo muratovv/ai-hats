@@ -1,4 +1,4 @@
-"""Named constants for builtin-library SOURCE resolution (HATS-831).
+"""Named constants for builtin-library SOURCE resolution.
 
 A dependency-free leaf within the ``paths`` package. Lifting these out of inline
 magic strings makes them referenceable — by the resolver (``library``), the
@@ -9,7 +9,7 @@ consumers (assembler, pipeline loader/harness), and the single-home guard test
 from __future__ import annotations
 
 # Installed package whose data dir IS the shipped builtin library tree —
-# the standalone ai-hats-library data package (HATS-876/T18; was ai_hats.library).
+# the standalone ai-hats-library data package (T18; was ai_hats.library).
 LIBRARY_PKG = "ai_hats_library"
 
 # Composition layers under the library root, lowest priority first.
@@ -30,7 +30,7 @@ HOOKS_DIRNAME = "hooks"
 # Builtin core-pipeline YAML location under the library root.
 PIPELINES_SUBPATH = ("core", "pipelines")
 
-# Project config filename (moved from ai_hats.constants, HATS-917)
+# Project config filename (moved from ai_hats.constants)
 PROJECT_CONFIG = "ai-hats.yaml"
 
 # Re-exported from the env leaf, not re-declared — one spelling, one

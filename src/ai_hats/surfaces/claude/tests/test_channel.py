@@ -1,4 +1,4 @@
-"""claude's five answers (HATS-1868). The flow itself is ``test_hook_dispatch``.
+"""claude's five answers. The flow itself is ``test_hook_dispatch``.
 
 What is claude-specific and therefore here: which arrival it reads, where its
 manifest sits, and the exact JSON the harness acts on. The last one is measured

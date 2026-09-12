@@ -1,4 +1,4 @@
-"""``--dry-run``: what a launch would deliver, without delivering it (HATS-1211).
+"""``--dry-run``: what a launch would deliver, without delivering it.
 
 Runs the real assembly with a ``PlanMaterializer``, so the report is the session
 minus the spawn — not a reconstruction of it. Nothing is written: no session
@@ -63,13 +63,14 @@ def _exclusive_rebuild(cache_dir: Path, port: Materializer, *, materialize: bool
     """Serialise the wipe-and-rebuild of the session-cache dir.
 
     Only ``--materialize`` writes, and its sid is FIXED, so two concurrent runs
-    share one directory. That is the multi-writer case HATS-1248 argued away for
-    a sid-keyed dir — a fixed sid brings it back, and without this a peer's
-    ``rmtree`` lands in the middle of our build (HATS-1551 review).
+    share one directory. That is the multi-writer case a sid-keyed dir was
+    built to avoid — a fixed sid brings it back, and without this a peer's
+    ``rmtree`` lands in the middle of our build.
 
     The lock sits BESIDE the target, never inside it: the rebuild begins by
-    removing the directory (HATS-604's reason, same shape). A plan-mode port
-    locks nothing, because it writes nothing.
+    removing the directory (the same reason the plugin-dir rebuild's lock
+    sits beside its target). A plan-mode port locks nothing, because it
+    writes nothing.
     """  # comment-length: allow — why a fixed sid needs a lock at all
     with port.lock(cache_dir.parent / f"{cache_dir.name}.lock"):
         if materialize and cache_dir.exists():
@@ -159,7 +160,7 @@ def dry_run_hitl(
 
 
 def _launch_notices(prov, layout: ProjectLayout, result, policy: SessionPolicy) -> list[str]:
-    """What the runner would say at startup about THIS surface (HATS-1548).
+    """What the runner would say at startup about THIS surface.
 
     A dry-run that stays quiet where the launch warns is the same silence the
     notices exist to remove — the operator learns it one session too late.

@@ -27,7 +27,7 @@ from .reflect_session_schema import ReflectSessionV1
 from .session_review_schema import SessionReviewV1
 
 #: dispatch table — schema family → pydantic model class for the LATEST version.
-#: ``hats-session-retro`` (legacy SessionRetroV1) was retired in HATS-252; old
+#: ``hats-session-retro`` (legacy SessionRetroV1) was retired; old
 #: files on disk become unreadable through this loader and should be migrated
 #: or treated as historical artefacts.
 SCHEMA_FAMILY_TO_MODEL: dict[str, type[BaseModel]] = {

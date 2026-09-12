@@ -1,4 +1,4 @@
-"""CompositionPayload — integrator-composed bundle injected into bricks (HATS-865).
+"""CompositionPayload — integrator-composed bundle injected into bricks.
 
 Brick-legal leaf: runtime machinery imports this module, so it must never
 import the composition layer at runtime (TYPE_CHECKING only). Definition of

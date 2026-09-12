@@ -55,7 +55,7 @@ def test_a_reclaimed_cache_dir_refuses_rather_than_passing_the_call(
 ) -> None:
     """Pin set + no manifest is a reclaimed cache dir, not a hook-less session.
 
-    HATS-1339 chose to report and keep going here; HATS-1439 is what that cost —
+    The earlier choice was to report and keep going here; an incident is what that cost —
     a live session ran with every gate off and one stderr line to show for it.
     The choice is reversed: this refuses like every other surface, and
     ``AI_HATS_GATE_BROKEN_ACK`` is the way past that a human can actually use.
@@ -104,7 +104,7 @@ def _marker_hook(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_dispatcher_executes_hook_from_pinned_cache_dir(tmp_path: Path, monkeypatch) -> None:
-    """The pin is the channel — the manifest lives wherever it points (HATS-1398)."""
+    """The pin is the channel — the manifest lives wherever it points."""
     project = tmp_path / "project"
     project.mkdir()
     cache_dir = tmp_path / "out-of-tree" / "sessions" / "sid-exec"
@@ -148,7 +148,7 @@ def test_a_gone_session_manifest_holds_the_users_hooks_back_too(
 def test_dispatcher_without_the_pin_refuses_instead_of_exiting_quietly(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """An ai-hats session with no pin has unreachable hooks (HATS-1373 class).
+    """An ai-hats session with no pin has unreachable hooks (a known failure class).
 
     Passing quietly is what "this session has no hooks" looks like, so it hid
     unreachable guards rather than reporting them.
@@ -165,7 +165,7 @@ def test_dispatcher_without_the_pin_refuses_instead_of_exiting_quietly(
 
 @pytest.mark.parametrize("raw", ["", "   ", "abc", "0", "-5", "nonsense60"])
 def test_unusable_budget_override_keeps_the_default(monkeypatch, raw: str) -> None:
-    """A typo in the override must not disarm the bound (HATS-1598).
+    """A typo in the override must not disarm the bound.
 
     Every value here is one an operator could plausibly export; if any of them
     resolved to 0 or a negative, the hook would run unbounded again — the exact
@@ -266,7 +266,7 @@ def test_the_tool_name_is_taken_from_the_payload_when_argv_is_silent(
 def test_a_rewritten_input_leaves_in_the_key_agy_speaks(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """The consent ticket (HATS-1642). Answered under `command`, agy finds no
+    """The consent ticket. Answered under `command`, agy finds no
     rewrite and runs the original line — a gate that asks and is then ignored."""
     cache_dir = _session(tmp_path, monkeypatch, "sid-ticket")
     ticket = "AI_HATS_CONSENT" + "_TICKET=t git push --force"

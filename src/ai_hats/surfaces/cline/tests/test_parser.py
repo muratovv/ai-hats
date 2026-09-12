@@ -1,4 +1,4 @@
-"""Byte-checked tests for ``ClineParser`` (HATS-960).
+"""Byte-checked tests for ``ClineParser``.
 
 Fixture-driven assertions on a sanitized ``.messages.json`` — no real cline, no
 auth. Each test pins one facet of the cline-field mapping (camelCase ``metrics``,

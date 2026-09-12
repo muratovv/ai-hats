@@ -2,10 +2,10 @@
 
 They reach names under ``ai_hats.surfaces`` that the facade does not export, which is
 what an area test is for — ``tests/test_area_boundary.py`` forbids exactly that to
-everyone else. They lived in ``tests/test_provider_session_prompt.py`` until HATS-1826
-and reached in from outside, where nothing was watching.
+everyone else. They lived in ``tests/test_provider_session_prompt.py`` until the area
+consolidation, and reached in from outside, where nothing was watching.
 
-HATS-813: the skill-index description lookup parses real YAML, keeps its name fallback,
+The skill-index description lookup parses real YAML, keeps its name fallback,
 and never crashes a prompt build on a malformed frontmatter block.
 """
 
@@ -21,7 +21,7 @@ LOGGER = "ai_hats.surfaces.system_prompt"
 
 
 def test_unreadable_user_rule_is_skipped_and_reported(tmp_path, caplog):
-    """HATS-1826: the skip used to be a bare ``continue``.
+    """The skip used to be a bare ``continue``.
 
     A user rule that cannot be read is not fatal — one bad file must not cost the
     whole prompt. But a silent skip is indistinguishable from an empty rule, so the

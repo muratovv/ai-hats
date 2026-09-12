@@ -1,6 +1,6 @@
-"""Legacy claude skills-mirror cleanup and collision detection (HATS-307/294).
+"""Legacy claude skills-mirror cleanup and collision detection.
 
-Materialization moved to ``surfaces/claude/plugin_dir.py`` (HATS-1211): it is
+Materialization moved to ``surfaces/claude/plugin_dir.py``: it is
 claude's own layout, not a core concept. What stays here is the legacy-mirror
 sweep and the auto-discovery collision report.
 """
@@ -22,11 +22,11 @@ from ai_hats_core.safe_delete import discard
 
 @dataclass(frozen=True)
 class SkillCollision:
-    """One composed skill also present in a Claude Code auto-discovery dir (HATS-901).
+    """One composed skill also present in a Claude Code auto-discovery dir.
 
-    ``scope`` is the heal partition key (HATS-931): a ``"project"`` collision
+    ``scope`` is the heal partition key: a ``"project"`` collision
     always auto-heals at session start — project `.claude/skills` is ai-hats-owned,
-    not a user-authoring surface — while a ``"home"`` collision only warns (HATS-465).
+    not a user-authoring surface — while a ``"home"`` collision only warns.
 
     ``verdict`` refines the warn wording for home collisions: ``"identical"`` —
     byte-equal to the plugin copy; ``"managed"`` — marker-listed; ``"differs"`` —
@@ -46,7 +46,7 @@ def duplicate_skill_registrations(
     plugin_skills_root: Path,
     home: Path,
 ) -> list[SkillCollision]:
-    """Detect composed skills that will double-register this session (HATS-901).
+    """Detect composed skills that will double-register this session.
 
     Claude Code registers skills by name, so a same-name dir under
     ``<home>/.claude/skills/`` or ``<project>/.claude/skills/`` duplicates
@@ -79,14 +79,13 @@ def duplicate_skill_registrations(
 
 
 def drop_legacy_skills_mirror(project_dir: Path, names: Iterable[str] | None = None) -> list[str]:
-    """Discard a stale ai-hats `.claude/skills/` export mirror (HATS-901, HATS-931).
+    """Discard a stale ai-hats `.claude/skills/` export mirror.
 
     Victims = marker-listed names (when `.ai-hats-managed` exists) ∪ ``names`` —
-    HATS-931 passes the project-scope collision names so pre-marker (marker-less)
+    the caller passes the project-scope collision names so pre-marker (marker-less)
     mirrors heal too; ownership proof is the composed-skill name match (see task
     card). Returns the names removed. Every candidate is re-validated as a plain
-    child; a ``skills_dir`` that is/links to ``~/.claude/skills`` is never swept
-    (HATS-465).
+    child; a ``skills_dir`` that is/links to ``~/.claude/skills`` is never swept.
     """
     skills_dir = claude_skills_dir(project_dir)
     marker = skills_dir / ".ai-hats-managed"
@@ -123,10 +122,10 @@ def drop_legacy_skills_mirror(project_dir: Path, names: Iterable[str] | None = N
 
 
 def drop_legacy_claude_publish(project_dir: Path) -> list[str]:
-    """Discard pre-HATS-289 ``.claude/`` publish artefacts (manifest-listed +
+    """Discard legacy ``.claude/`` publish artefacts (manifest-listed +
     well-known belt-and-suspenders set).
 
-    Shared sweep procedure for ``owner_key=claude-publish`` (HATS-905): the
+    Shared sweep procedure for ``owner_key=claude-publish``: the
     scaffold-migration path and the generic unclaimed-marker sweeper call the
     same code. Returns the relative names actually removed.
     """
@@ -166,9 +165,9 @@ def drop_legacy_claude_publish(project_dir: Path) -> list[str]:
 
 
 def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
-    """Discard pre-HATS-1165 root skill & artifact mirrors (.agy/skills, .gemini/skills, .cline/skills, .agents).
+    """Discard legacy root skill & artifact mirrors (.agy/skills, .gemini/skills, .cline/skills, .agents).
 
-    Clean-root role materialization (HATS-1165) moves all session materializations
+    Clean-root role materialization moves all session materializations
     strictly inside the per-session cache dir (`session_cache_dir`). This function
     sweeps legacy root-level materialization directories left over in project roots.
     """
@@ -219,7 +218,7 @@ def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
 
 def _is_safe_relative(base_dir: Path, name: str) -> bool:
     """:func:`_is_plain_child` generalized to nested relative entries
-    (HATS-905: githooks/publish manifests list ``a/b`` paths); victims must
+    (githooks/publish manifests list ``a/b`` paths); victims must
     resolve strictly inside ``base_dir``."""
     if not name or "\\" in name:
         return False
@@ -236,7 +235,7 @@ def _is_safe_relative(base_dir: Path, name: str) -> bool:
 
 
 def _is_plain_child(skills_dir: Path, name: str) -> bool:
-    """HATS-907 P1: a marker line names a victim only as a single path
+    """A marker line names a victim only as a single path
     component — traversal/absolute lines in a committable marker are inert."""
     if name in (".", "..") or "/" in name or "\\" in name or Path(name).is_absolute():
         return False

@@ -1,4 +1,4 @@
-"""What a session IS, carried to the processes it spawns (HATS-1594).
+"""What a session IS, carried to the processes it spawns.
 
 ADR-0019 D9 says a session composes exactly one role and runs exactly one
 provider — the session is the key. Until now nothing carried that: four gate
@@ -18,9 +18,9 @@ inputs (``role``, ``provider``) and the anchors that address everything else
 (``id``, ``project_dir``, ``session_dir``, ``skills_root``). Everything else
 stays where it is — on disk when it is large, growing or auditable; a named
 scalar when it is a resource handle with an existing addressed consumer.
-Notably absent, and deliberately: the composition itself. HATS-1540 retired the
-channel's frozen binding list so a session predating a binding still resolves
-it; freezing it here would reinstate what that task removed.
+Notably absent, and deliberately: the composition itself. The channel's frozen
+binding list was retired so a session predating a binding still resolves
+it; freezing it here would reinstate what removing it fixed.
 """  # comment-length: allow — the membership rule is the contract
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def drop_identity(environ: MutableMapping[str, str]) -> list[str]:
     without the envelope, is a session that half-exists, and ``from_env`` refuses
     that rather than reading it as absence. Three call sites each hand-rolled
     their own key list and each got a different subset, so the list lives here
-    with the writer instead (HATS-1613 review).
+    with the writer instead.
     """
     return [key for key in IDENTITY_ENV_KEYS if environ.pop(key, None) is not None]
 
@@ -68,8 +68,8 @@ def identity_for_project(
     """The session that governs ``project_dir``, or ``None`` when none does.
 
     A session of ANOTHER project is not a degraded session here — for this
-    project it is no session at all, and outside one the config is the answer
-    (HATS-1594). Hence ``None`` and not a refusal: it restores this project's
+    project it is no session at all, and outside one the config is the answer.
+    Hence ``None`` and not a refusal: it restores this project's
     own gates rather than blocking the operator who ran the command.
 
     Foreignness is judged by the envelope's own ``project_dir``, never by the
@@ -89,7 +89,7 @@ def identity_for_project(
 class IdentityFault(Enum):
     """Why the identity could not be read — the fact, apart from its wording.
 
-    Consumers owe these two different reactions (HATS-1643): a session launched
+    Consumers owe these two different reactions: a session launched
     by an older ai-hats can fall back to the configured role, because nothing is
     torn — the envelope was never written. A torn or version-drifted envelope is
     a trust failure, and the type's own contract says never a skip. Matching the

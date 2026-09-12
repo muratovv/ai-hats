@@ -1,4 +1,4 @@
-"""Builtin library SOURCE resolution — worktree-aware (HATS-826 / HATS-831).
+"""Builtin library SOURCE resolution — worktree-aware.
 
 THE single home for "where is the builtin ``library/`` the engine composes
 from?". This is the SHIPPED source (``core``/``usage``/``hooks``/``core/pipelines``),
@@ -7,12 +7,12 @@ distinct from ``ProjectLayout.library`` (the materialized
 
 ``importlib.resources.files(LIBRARY_PKG)`` hard-pins the editable install
 to the MAIN repo regardless of cwd, so library edits made inside a linked
-worktree are otherwise invisible to composition (HATS-826). Routing EVERY
+worktree are otherwise invisible to composition. Routing EVERY
 consumer (layers, hooks, core pipelines) through these helpers makes
 worktree-awareness uniform — and a guard test
 (``test_builtin_library_resolver_single_home``) bans the ``files(LIBRARY_PKG)``
-call anywhere else, so the resolution cannot silently diverge again (HATS-831).
-HATS-876/T18: builtin library = the standalone ``ai_hats_library`` package; the
+call anywhere else, so the resolution cannot silently diverge again.
+T18: builtin library = the standalone ``ai_hats_library`` package; the
 installed tier routes through ``as_file`` to survive a data-only wheel (P1 #14).
 """
 
@@ -50,8 +50,8 @@ def _detect_source_library_root(start: Path) -> Path | None:
     A source checkout holds an ``ai_hats_library`` package serving the full manifest
     (:func:`is_library_root`) — inside the monorepo/worktree
     (``packages/ai-hats-library/src/…``) or a
-    standalone git-split checkout (``src/ai_hats_library``). HATS-876 dropped the
-    former ``src/ai_hats`` co-requirement so a **library-only checkout** resolves too
+    standalone git-split checkout (``src/ai_hats_library``). Dropping the
+    former ``src/ai_hats`` co-requirement lets a **library-only checkout** resolve too
     (ADR-0014 §6); a downstream project has neither layout and stays on the installed
     package. Returns the layer-root dir or ``None``.
     """
@@ -125,9 +125,9 @@ def _is_surprising_divergence(
     """True when cwd's library shadows a project that meant a different one.
 
     Silent by design in the two everyday cases: no project named at all (cwd is
-    then the only signal — the HATS-826 fallback), and worktrees of one repo,
+    then the only signal — the worktree-aware fallback), and worktrees of one repo,
     which diverge by construction. What remains is a checkout shadowing an
-    unrelated project — the surprise worth a line (HATS-1501).
+    unrelated project — the surprise worth a line.
     """
     if not project_named:
         return False
@@ -143,7 +143,7 @@ def _warn_library_divergence(cwd_root: Path, pinned_root: Path | None, used: boo
     verb = "resolved from" if used else "available in"
     warnings.warn(
         f"builtin library {verb} cwd ({cwd_root}) differs from the project's "
-        f"({pinned_root or 'installed package'}) — HATS-1501. Set "
+        f"({pinned_root or 'installed package'}). Set "
         f"AI_HATS_LIBRARY_ROOT to choose explicitly.",
         stacklevel=1,
     )
@@ -164,7 +164,7 @@ def builtin_library_root(
 ) -> Path | None:
     """Resolve the builtin ``library/`` source root.
 
-    Resolution order (HATS-826 / HATS-1127 / HATS-1501), highest precedence first:
+    Resolution order, highest precedence first:
 
     1. ``AI_HATS_LIBRARY_ROOT`` env override — explicit, greppable seam
        (tests, power users), validated against the full manifest or rejected.
@@ -178,14 +178,14 @@ def builtin_library_root(
 
     ``prefer_cwd`` splits two questions that need opposite answers. Composing
     to WRITE must key off ``project_dir``: composing checkout A's library while
-    materializing into project B's ``.agent`` is how HATS-1123 shipped one
-    worktree's hook bytes into another project, and HATS-1127 closed it by
-    pinning both to ``project_dir`` — that is the default here, unchanged.
+    materializing into project B's ``.agent`` once shipped one
+    worktree's hook bytes into another project, which is why both are now
+    pinned to ``project_dir`` — that is the default here, unchanged.
     Composing to READ (``config show-prompt`` and friends) must key off cwd, or
     a library edit inside a linked worktree is invisible: ``_project_dir`` hops
     a worktree to the MAIN checkout by design so tracker ops reach the one live
-    backlog (HATS-524), and reusing that answer rendered master's text at exit 0
-    while you edited the worktree's (HATS-1501). Nothing is written on that
+    backlog, and reusing that answer once rendered master's text at exit 0
+    while you edited the worktree's. Nothing is written on that
     path, so cwd cannot contaminate a target.
 
     Returns the root dir whose children are ``core``/``usage``/``hooks``/… or
@@ -232,7 +232,7 @@ def builtin_library_layers(
     Derived from :func:`builtin_library_root` (see it for ``prefer_cwd`` and
     ``cwd``). Every REQUIRED layer must exist under the resolved root, else we
     fall through to the installed package (never a partial builtin); an optional
-    layer is included when present and skipped when not (HATS-1834).
+    layer is included when present and skipped when not.
     """
     root = (
         builtin_library_root(project_dir, prefer_cwd=prefer_cwd, cwd=cwd)

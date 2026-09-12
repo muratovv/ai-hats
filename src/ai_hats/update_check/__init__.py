@@ -34,7 +34,7 @@ def is_disabled() -> bool:
 
 
 def is_local_channel(project_dir: Path) -> bool:
-    """True iff the harness channel for ``project_dir`` is ``LOCAL`` (HATS-781).
+    """True iff the harness channel for ``project_dir`` is ``LOCAL``.
 
     A LOCAL build is an editable checkout external to the consuming repo —
     the developer drives updates with ``git``, not ``ai-hats self update``, so
@@ -63,7 +63,7 @@ def is_local_channel(project_dir: Path) -> bool:
 def upstream_update(layout: ProjectLayout) -> CacheEntry | None:
     """The cache entry iff the *running* build is genuinely behind upstream, else None.
 
-    The one canonical reader of the behind signal (HATS-846): bundles
+    The one canonical reader of the behind signal: bundles
     is_local_channel (LOCAL is git-driven, never "behind") + has_update +
     running-SHA sha_matches, so the banner and hook self-heal can't diverge on the
     guard set (a guard-test pins the signal to a single reader). is_disabled is NOT

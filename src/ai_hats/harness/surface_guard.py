@@ -1,4 +1,4 @@
-"""Universal surface safety guard for sub-agent execution across all providers (claude / agy / cline) (HATS-1105).
+"""Universal surface safety guard for sub-agent execution across all providers (claude / agy / cline).
 
 Provides pre-flight isolation checks and post-flight worktree audits to guarantee
 that sub-agents running in headless print mode (-p) maintain workspace safety

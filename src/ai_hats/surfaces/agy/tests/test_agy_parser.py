@@ -1,4 +1,4 @@
-"""Unit tests for AgyParser and AgySurface.resolve_transcript (HATS-1391)."""
+"""Unit tests for AgyParser and AgySurface.resolve_transcript."""
 
 from __future__ import annotations
 
@@ -181,7 +181,7 @@ def test_agy_parser_merges_multiple_jsonl_paths(tmp_path: Path) -> None:
 
 
 def test_the_richer_source_wins_when_the_transcript_is_a_tail_fragment(tmp_path):
-    """agy rotates its brain segment on a checkpoint (HATS-1397).
+    """agy rotates its brain segment on a checkpoint.
 
     Measured on a live HITL run: the resolved transcript held 4 records of a
     42-record conversation, while trace.log held all 7 user turns. With no
@@ -459,7 +459,7 @@ def test_no_source_at_all_still_reports_unavailable(tmp_path: Path) -> None:
 
     parsed = AgyParser().parse(jsonl_path, trace)
 
-    # THEN the pre-HATS-1427 contract stands: zeros, and the flag that says why
+    # THEN the older contract stands: zeros, and the flag that says why
     assert parsed.agg_usage["output_tokens"] == 0
     assert FLAG_NO_TOKEN_TELEMETRY in parsed.flags
     assert FLAG_TOKEN_TELEMETRY_ESTIMATED not in parsed.flags

@@ -1,4 +1,4 @@
-"""Pre-bump backup snapshot (HATS-549).
+"""Pre-bump backup snapshot.
 
 Before any install-time work touches the project tree, snapshot the
 ai-hats-managed surface to ``/tmp/`` as a tarball — the always-on recovery path
@@ -13,8 +13,7 @@ user's project and is skipped. Env: ``AI_HATS_BUMP_BACKUP_DIR=<path>`` overrides
 the base dir; ``=-`` hard-disables (one stderr WARN/call) for CI / ephemeral
 envs. A snapshot write failure (ENOSPC / read-only fs) raises ``BackupError`` and
 callers abort rather than silently lose recovery. Retention: last
-``MAX_RETENTION`` per project slug, older unlinked best-effort. See
-``tracker/backlog/tasks/HATS-549/plan.md`` for full design.
+``MAX_RETENTION`` per project slug, older unlinked best-effort.
 """
 
 from __future__ import annotations
@@ -85,7 +84,7 @@ EXCLUDED_BASENAMES: frozenset[str] = frozenset(
 
 # PEP 405 marks every venv root with this file, whatever the root is called —
 # the managed install's root is ``versions/<sha>/``, which no name list saw
-# (HATS-1662: 44 s of zlib and a 96 MB tarball on every `self init`).
+# (44 s of zlib and a 96 MB tarball on every `self init`).
 VENV_MARKER = "pyvenv.cfg"
 
 
@@ -244,7 +243,7 @@ def snapshot_pre_bump(
     # consistent return type and the user has proof a bump ran. The
     # tarball will be ~empty but valid.
     def _filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        # Drop symlinks (HATS-549 review S.1): preserves backup
+        # Drop symlinks: preserves backup
         # restorability — a symlink pointing outside project_dir would
         # be archived as-is and silently violate the safety contract
         # on extract. On macOS APFS a symlink to an absolute path can
@@ -306,7 +305,7 @@ def latest_snapshot(project_dir: Path) -> Path | None:
     """Newest snapshot tarball for ``project_dir``, or ``None`` when there is none.
 
     Read-only counterpart to :func:`snapshot_pre_bump`, for callers that need the
-    recovery handle without writing one (HATS-595 DATA remediation).
+    recovery handle without writing one (DATA remediation).
     """
     base, hard_disabled = _resolve_base()
     if hard_disabled or base is None or not base.is_dir():

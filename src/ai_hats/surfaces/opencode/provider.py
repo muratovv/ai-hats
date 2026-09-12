@@ -1,4 +1,4 @@
-"""OpenCode adapter for ai-hats (HATS-1788).
+"""OpenCode adapter for ai-hats.
 
 Role context, skills and runtime hooks are materialized into the ai-hats
 session cache and delivered through OpenCode's per-session ``OPENCODE_CONFIG``
@@ -275,7 +275,7 @@ class OpenCodeSurface(Surface):
     # --- hooks -----------------------------------------------------------------------
 
     def _permission_rules(self, layout: ProjectLayout) -> list[dict[str, str]]:
-        """Role-owned permission policy shipped in the hook manifest (HATS-1792).
+        """Role-owned permission policy shipped in the hook manifest.
 
         The generated opencode.json carries no permission keys (Q2: decisions
         live in the role, not in a global-looking config). The single rule

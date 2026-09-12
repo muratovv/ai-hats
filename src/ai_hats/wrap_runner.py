@@ -1,6 +1,6 @@
 """HITL runner: PTY-wrapped interactive Claude session (WrapRunner).
 
-Extracted from runtime.py (HATS-715); shared helpers live in runtime_common."""
+Extracted from runtime.py; shared helpers live in runtime_common."""
 
 from __future__ import annotations
 
@@ -85,9 +85,9 @@ _COLLISION_HINTS = {
 
 
 def _collision_hint(c) -> str:
-    """Post-HATS-931 the warn list is home-scope only (project collisions
-    auto-heal; HATS-465 keeps home user-owned); the project branch is a
-    defensive fallback for a collision the heal unexpectedly left behind."""
+    """The warn list is home-scope only (project collisions auto-heal; home
+    stays user-owned by design); the project branch is a defensive fallback
+    for a collision the heal unexpectedly left behind."""
     if c.verdict == "managed":
         if c.scope == "home":
             return "ai-hats never manages user-level skills — remove manually if unwanted"
@@ -96,7 +96,7 @@ def _collision_hint(c) -> str:
 
 
 def _format_skill_collisions(collisions) -> str:
-    """HATS-901: name the skills Claude Code will register twice this session."""
+    """Name the skills Claude Code will register twice this session."""
     lines = [
         f"{len(collisions)} skill(s) will register twice this session "
         "(auto-discovery dir + ai-hats session plugin):"
@@ -106,7 +106,7 @@ def _format_skill_collisions(collisions) -> str:
 
 
 def _format_mirror_heal(removed: list[str], trash_root) -> str:
-    """HATS-907 heal note: self-serve recovery — names + trash destination."""
+    """Heal note: self-serve recovery — names + trash destination."""
     listed = ", ".join(removed[:6]) + ("" if len(removed) <= 6 else f" (+{len(removed) - 6} more)")
     where = f" — recoverable in trash: {trash_root}" if trash_root else ""
     return (
@@ -116,7 +116,7 @@ def _format_mirror_heal(removed: list[str], trash_root) -> str:
 
 
 def _broken_hook_refs_text(refs, *, project_dir: Path, ours: bool) -> str:
-    """One instruction for the refs of one ownership (HATS-1522).
+    """One instruction for the refs of one ownership.
 
     This text is the only instruction anyone gets — nobody reads the source
     after it — so it answers three questions on its own: what broke and how
@@ -160,13 +160,13 @@ _REPAIR_CMD = (
 
 
 def _venv_is_ai_hats_managed(base: Path) -> bool:
-    """True when ``bootstrap.sh --repair`` would rebuild *this* venv (HATS-1521).
+    """True when ``bootstrap.sh --repair`` would rebuild *this* venv.
 
     Two facts, both required. The venv must live under the framework dir — that is
     exactly what ``--repair`` deletes, and it leaves a user-owned ``AI_HATS_VENV``
     alone (``scripts/bootstrap.sh``). And ai-hats must be installed *into* it: an
     editable install points back at somebody's checkout, which a rebuild from
-    GitHub would silently replace — the HATS-1522 reasoning, one file over.
+    GitHub would silently replace — the same reasoning, one file over.
     """
     try:
         prefix = Path(sys.prefix).resolve()
@@ -178,7 +178,7 @@ def _venv_is_ai_hats_managed(base: Path) -> bool:
 
 
 def _interpreter_pin_text(running: str, *, venv: str, managed: bool) -> str:
-    """Warn note for a venv off the pin; the remedy follows ownership (HATS-1521).
+    """Warn note for a venv off the pin; the remedy follows ownership.
 
     Not ``self update``: it moves the interpreter only when it installs a *new*
     version (that branch builds on ``PINNED_PYTHON``), and on a current sha it
@@ -223,9 +223,9 @@ def interpreter_pin_notices(running: str, *, venv: str, managed: bool) -> list[S
 class WrapRunner:
     """PTY-proxied CLI wrapper for interactive sessions.
 
-    HATS-865: a brick — receives the ready :class:`CompositionPayload` from
+    A brick — receives the ready :class:`CompositionPayload` from
     the integrator compose seam and never touches the composition layer.
-    HATS-867: the observe writer handles (``session_mgr``, ``tracer_factory``)
+    The observe writer handles (``session_mgr``, ``tracer_factory``)
     are injected too — the runner never imports observe at runtime.
     """
 
@@ -247,7 +247,7 @@ class WrapRunner:
     def _resync_managed_hooks(
         self, session: Session | None = None, result=None
     ) -> list[StartupNotice]:
-        """Retired per HATS-1480 / D5: all managed hook surfaces are materialized
+        """Retired: all managed hook surfaces are materialized
         at init/session-build time; no session-start drift net remains."""
         return []
 
@@ -256,8 +256,8 @@ class WrapRunner:
         of a bare pre-launch print the alternate screen buffer eats.
 
         Two producers, one hold: hooks warnings arrive as bare strings and are
-        warnings by construction (HATS-970); composition diagnostics arrive typed
-        and keep the level their producer chose (HATS-1753).
+        warnings by construction; composition diagnostics arrive typed
+        and keep the level their producer chose.
         """
         return [
             *(StartupNotice("warn", w) for w in self.payload.startup_warnings),
@@ -265,7 +265,7 @@ class WrapRunner:
         ]
 
     def _check_interpreter_pin(self, *, running: str | None = None) -> list[StartupNotice]:
-        """HATS-1521: WARN when this venv is not on the pinned interpreter.
+        """WARN when this venv is not on the pinned interpreter.
 
         The session IS the venv's python (`$VENV/bin/python -m ai_hats`), so
         `sys.version_info` answers it without reading `pyvenv.cfg`. Never blocks:
@@ -278,8 +278,8 @@ class WrapRunner:
         )
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
-        """HATS-901: WARN when a composed skill will double-register this session;
-        HATS-907: a marker-proven project-scope mirror is auto-healed instead.
+        """WARN when a composed skill will double-register this session;
+        a marker-proven project-scope mirror is auto-healed instead.
 
         Fail-open — a broken auto-discovery dir must never block launch.
         """
@@ -312,7 +312,7 @@ class WrapRunner:
         return notices
 
     def _heal_managed_mirror(self, session: Session, healable) -> StartupNotice:
-        """HATS-907: sweep the marker-proven stale mirror pre-spawn. Gated on
+        """Sweep the marker-proven stale mirror pre-spawn. Gated on
         version-skew + hard-delete mode; fail-open. Rationale: task card."""
         from .plugin_dir import drop_legacy_skills_mirror
         from ai_hats_core.safe_delete import hard_delete_mode, session_root
@@ -349,7 +349,7 @@ class WrapRunner:
             return StartupNotice("warn", summary)
 
     def _lint_provider_settings(self, session: "Session") -> list[StartupNotice]:
-        """HATS-1006: WARN per provider-reported settings pitfall — the surface's
+        """WARN per provider-reported settings pitfall — the surface's
         own warnings print post-spawn where the alt-screen clobbers them.
         Fail-open; the lint itself lives with the surface
         (``Surface.settings_lint_warnings``, docs/session-start-notices.md).
@@ -368,7 +368,7 @@ class WrapRunner:
         return [StartupNotice("warn", text) for text in findings]
 
     def _lint_env_drift(self, session: "Session") -> list[StartupNotice]:
-        """HATS-1013: WARN when the editable dev env is stale — uv freezes
+        """WARN when the editable dev env is stale — uv freezes
         dist-info at sync time, so ``importlib.metadata`` / ``--version`` lie
         after a version bump until ``uv sync``. Fail-open; detection lives in
         :mod:`.env_drift` (gated to the dev checkout there).
@@ -409,10 +409,10 @@ class WrapRunner:
             server.close()
 
     def _check_broken_hook_refs(self, session: "Session") -> list[StartupNotice]:
-        """HATS-1509: WARN per settings hook ref pointing at a missing script —
+        """WARN per settings hook ref pointing at a missing script —
         the harness prints 'No such file or directory' on every matching call,
         with no hint that an ``ai-hats:``-tagged one is ours to reclaim. Reports
-        only; the install-time sweep stays the sole deleter (HATS-905). Fail-open.
+        only; the install-time sweep stays the sole deleter. Fail-open.
         """
         try:
             from . import migration_assert
@@ -441,7 +441,7 @@ class WrapRunner:
         return notices
 
     def _sweep_consent_store(self, session: "Session") -> None:
-        """HATS-1682: clear stale consent tickets once per session.
+        """Clear stale consent tickets once per session.
 
         Nobody else can. The store's own sweeps ride `mint` and `consume`, so a
         refused ticket sits until the next gated transition — and the agent may
@@ -461,7 +461,7 @@ class WrapRunner:
     def _check_skill_script_collisions(
         self, session: "Session", result: "CompositionResult"
     ) -> list[StartupNotice]:
-        """HATS-1114: WARN when composed skills contain script filename collisions.
+        """WARN when composed skills contain script filename collisions.
         Returns startup warnings so the hold banner surfaces them to the human before
         the TUI launch.
         """
@@ -482,8 +482,8 @@ class WrapRunner:
         startup_notices: list[StartupNotice],
         env: dict[str, str] | None = None,
     ) -> None:
-        """Show any startup notices and hold before the wrapped TUI spawns
-        (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
+        """Show any startup notices and hold before the wrapped TUI spawns.
+        Delegates the "notices ⇒ show and wait" policy to
         :func:`show_and_hold_startup_notices`; supplies a Ctrl-C-aware countdown
         as the wait. Ctrl-C propagates — ``run()``'s handler turns it into a clean
         exit (130) that finalizes the session and never spawns the CLI.
@@ -501,7 +501,7 @@ class WrapRunner:
 
     @staticmethod
     def _poll_enter(timeout: float) -> bool:
-        """Block up to ``timeout`` seconds for the user to press Enter (HATS-847).
+        """Block up to ``timeout`` seconds for the user to press Enter.
 
         On a TTY, ``select`` waits for stdin to become readable; the terminal is
         still in cooked mode here (the PTY has not spawned), so it reports ready
@@ -524,7 +524,7 @@ class WrapRunner:
     @staticmethod
     def _sleep_countdown(seconds: float, *, announce: bool) -> None:
         """Sleep ``seconds``; when ``announce``, show a live 1-Hz countdown that
-        Enter cuts short (HATS-847) — Ctrl-C still aborts via the SIGINT that
+        Enter cuts short — Ctrl-C still aborts via the SIGINT that
         propagates out of the wait."""
         whole = int(seconds)
         if not announce or whole <= 0:
@@ -552,15 +552,15 @@ class WrapRunner:
         Returns (exit_code, session) so callers that need the session
         artefacts (transcript_path, audit, etc.) get them directly.
 
-        HATS-452 (D2 in ADR-0005). ``WrapRunner`` is the **HITL** runner —
+        D2 in ADR-0005. ``WrapRunner`` is the **HITL** runner —
         a human is at the keyboard and the role's full composition reaches
         the agent through ``build_session_prompt``. It deliberately has
         **no** ``system_prompt_override`` channel: prompt injection in HITL
         is meaningless and the previously-exposed Optional override was the
-        literal trap that caused HATS-452. Callers needing an explicit
+        literal trap that made this necessary. Callers needing an explicit
         prompt use ``SubAgentRunner`` (Automate path).
 
-        HATS-865: role resolution, the first-run ``set_role`` side effect,
+        Role resolution, the first-run ``set_role`` side effect,
         and the ONE composition all happened at the integrator compose seam
         (``composition_seam.build_composition_payload``) — this runner only
         delivers ``self.payload``.
@@ -586,7 +586,7 @@ class WrapRunner:
         provider_name = provider.name
         active_role = payload.effective_role
 
-        # HATS-649 (R2): the session-cache sweep + incomplete-version sweep +
+        # The session-cache sweep + incomplete-version sweep +
         # orphan-version reclaim + this run's liveness-ref write now run inside
         # `create_session` (EnvironmentRecovery), the universal seam both
         # WrapRunner and SubAgentRunner traverse — so the previously
@@ -599,7 +599,7 @@ class WrapRunner:
             lambda: _cleanup_session_cache(self.layout.cache.session(session.session_id)),
         )
 
-        # HATS-452 (D2): no override channel on WrapRunner — the payload's
+        # No override channel on WrapRunner — the payload's
         # composition flows straight into the builder.
         builder_notices: list[StartupNotice] = []
         artifacts = BuiltArtifacts(resources=run)
@@ -624,7 +624,7 @@ class WrapRunner:
                 if skew:
                     builder_notices.append(StartupNotice("warn", skew))
             else:
-                # HATS-1207 R4 / HATS-1241: the legacy entry point predates both
+                # The legacy entry point predates both
                 # SessionPolicy and the check snapshot — loudly, not in silence.
                 session_args, session_env, meta_prompt = provider.build_session_prompt(
                     self.layout, result, session.session_id
@@ -647,8 +647,8 @@ class WrapRunner:
         )
         # Persist materialized system prompt to
         # <session_dir>/meta_prompt.txt — symmetric with SubAgentRunner
-        # (runtime.py ~1091). Exact bytes that reached the provider (post
-        # HATS-380 placeholder expansion). Saved before hooks / _pty_spawn so
+        # (runtime.py ~1091). Exact bytes that reached the provider
+        # (placeholder expansion). Saved before hooks / _pty_spawn so
         # the artefact survives early failures.
         session.save_meta_prompt(meta_prompt)
 
@@ -733,7 +733,7 @@ class WrapRunner:
         startup_notices.extend(self._check_broken_hook_refs(session))
         startup_notices.extend(self._check_interpreter_pin())
         self._sweep_consent_store(session)
-        # HATS-1581. LAST here on purpose: unlike its fail-open neighbours a
+        # LAST here on purpose: unlike its fail-open neighbours a
         # refusal does not return, so everything above must speak first. And
         # after the launch record, which is what the gate reads.
         startup_notices.extend(
@@ -757,8 +757,8 @@ class WrapRunner:
         # ``_run_finalize_hitl`` runs), a session that straddles a working-tree
         # update — editable install plus a mid-session ``git pull`` — reads the
         # *new* YAML against the *old* registry; see the StepRegistryError in
-        # session 20260527-085647-1, after the HATS-530 merge landed while the wrap
-        # was still alive. HATS-1783 widened what this pins: resolving an id now
+        # session 20260527-085647-1, after a concurrent merge landed while the wrap
+        # was still alive. This scope later widened: resolving an id now
         # imports its step module too, so warming freezes the modules as well as
         # the file. Fail-open — a session does not end because its epilogue could
         # not be prepared, and the notice says so.
@@ -791,7 +791,7 @@ class WrapRunner:
         #   2. finalize-hitl pipeline — make_audit + run_session_end
         #   3. _print_session_end — green summary (outer finally; SIGINT-safe)
         # Each layer's exceptions are isolated so a downstream crash
-        # never prevents the session-id print (HATS-086 invariant).
+        # never prevents the session-id print (invariant).
         tracer = self.tracer_factory(session)
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         t0 = time.monotonic()
@@ -936,15 +936,16 @@ class WrapRunner:
         session (TIOCSCTTY in child after setsid). This is required for nested
         programs (e.g. claude → $EDITOR via Ctrl-G) whose pgrp transfer relies on
         kernel-side tcsetpgrp/setpgid against a real ctty. stdlib pty.spawn does
-        not call TIOCSCTTY, which broke that path. See HATS-207.
+        not call TIOCSCTTY, which broke that path.
 
-        That same ctty is load-bearing for HATS-1339: this process is the only
-        holder of the pty master, so a SIGKILL here drops carrier and the kernel
-        hangs up the surface — which is why the sweep may reclaim a dead owner's
-        cache at once without stranding the process that reads it. Spawning over
-        pipes, or handing the master fd to anyone else, silently retires that
-        guarantee; ``test_a_killed_wrappers_surface_child_goes_with_it`` is what
-        notices. Sub-agents get NO such guarantee — see ``subagent_runner``.
+        That same ctty is load-bearing for the session-cache sweep: this
+        process is the only holder of the pty master, so a SIGKILL here drops
+        carrier and the kernel hangs up the surface — which is why the sweep
+        may reclaim a dead owner's cache at once without stranding the
+        process that reads it. Spawning over pipes, or handing the master fd
+        to anyone else, silently retires that guarantee;
+        ``test_a_killed_wrappers_surface_child_goes_with_it`` is what notices.
+        Sub-agents get NO such guarantee — see ``subagent_runner``.
         """  # comment-length: allow — one injected seam + two kernel contracts
         import select
         import signal
@@ -1113,7 +1114,7 @@ class WrapRunner:
                             if cur[0] & (termios.ICRNL | termios.INLCR | termios.IGNCR):
                                 tty.setraw(stdin_fd)
                                 tracer.session.log_sys(
-                                    f"HATS-220 termios drift on stdin (iflag={cur[0]:#x}) — restored raw",
+                                    f"Termios drift on stdin (iflag={cur[0]:#x}) — restored raw",
                                 )
                         except termios.error:
                             pass

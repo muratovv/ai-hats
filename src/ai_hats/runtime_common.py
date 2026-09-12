@@ -1,6 +1,6 @@
 """Runtime helpers shared by wrap_runner (HITL) and subagent_runner (Automate):
 hooks execution, session finalize/print, escape-hatch + PTY-reset, and
-session-cache cleanup. Extracted from runtime.py (HATS-715)."""
+session-cache cleanup. Extracted from runtime.py."""
 
 from __future__ import annotations
 
@@ -61,11 +61,11 @@ SUBAGENT_EXIT_ERROR = 1
 
 # Emitted on stdout before each PTY child spawn to
 # neutralise terminal state a prior TUI session may have leaked (idempotent on a
-# clean terminal). HATS-220: a leaked modifyOtherKeys=2 re-encoded plain Enter —
-# see the ticket. Each sequence:
+# clean terminal). A leaked modifyOtherKeys=2 re-encoded plain Enter. Each
+# sequence:
 #   \x1b[=0;1u    — kitty-keyboard ABSOLUTE set (flags=0, mode=1); replaces the
 #                   unreliable relative `\x1b[<u` pop.
-#   \x1b[>4;0m    — modifyOtherKeys=0 (the HATS-220 leaker); keeps Enter→\r.
+#   \x1b[>4;0m    — modifyOtherKeys=0 (the leaking mode); keeps Enter→\r.
 #   \x1b[20l      — LNM off (DEC ANSI mode 20); defensive.
 #   \x1b>         — DECKPNM; keypad Enter sends \r, not \x1bOM.
 #   \x1b[?2004l   — disable bracketed paste.
@@ -97,7 +97,7 @@ def _scan_escape(
     count: int = _ESCAPE_COUNT,
     window_s: float = _ESCAPE_WINDOW_S,
 ) -> tuple[bytes, bool]:
-    """Scan one stdin chunk for the triple-Ctrl-C escape gesture (HATS-679).
+    """Scan one stdin chunk for the triple-Ctrl-C escape gesture.
 
     Pure function (no I/O) so the escalation logic is unit-testable without a
     PTY. ``presses`` carries Ctrl-C timestamps across calls and is mutated in
@@ -135,7 +135,7 @@ def _press_trips(
 ) -> bool:
     """Bank one Ctrl-C press; ``True`` once ``count`` of them fall within ``window_s``.
 
-    Both escape hatches count through this one accumulator (HATS-1426): the PTY
+    Both escape hatches count through this one accumulator: the PTY
     byte-scanner above and the finalize-window SIGINT shield below. ``presses``
     is mutated in place — stale timestamps drop off the left, and a trip clears
     the deque so the next streak starts fresh.
@@ -150,12 +150,12 @@ def _press_trips(
 
 
 class FinalizeAborted(BaseException):
-    """The operator tripped the escape hatch during session finalize (HATS-1426).
+    """The operator tripped the escape hatch during session finalize.
 
     Deliberately neither an ``Exception`` nor a ``KeyboardInterrupt``: every
-    finalize phase catches ``(Exception, KeyboardInterrupt)`` per the HATS-086
-    invariant, so either spelling would be swallowed by the very next phase and
-    finalize would grind on against the operator's intent.
+    finalize phase catches ``(Exception, KeyboardInterrupt)`` by design, so
+    either spelling would be swallowed by the very next phase and finalize
+    would grind on against the operator's intent.
     """
 
 
@@ -178,9 +178,9 @@ def sigint_shield(
 
     Once the provider exits the terminal is back in cooked mode, so a stray
     Ctrl-C lands as ``KeyboardInterrupt`` inside whichever finalize step is
-    running — one press used to cost that whole step, silently (HATS-1426).
+    running — one press used to cost that whole step, silently.
     Sub-threshold presses print a line and are dropped; the trip raises
-    :class:`FinalizeAborted`. Counting matches the PTY hatch (HATS-679).
+    :class:`FinalizeAborted`. Counting matches the PTY hatch.
     Fail-open off the main thread — unshielded finalize beats no finalize.
     """
     presses: deque[float] = deque()
@@ -212,7 +212,7 @@ def sigint_shield(
 
 
 def _claim_session_cache(cache_dir: Path) -> None:
-    """Record this process as the owner of the session's cache dir (HATS-1339).
+    """Record this process as the owner of the session's cache dir.
 
     The opening bracket of ``_cleanup_session_cache`` below: claimed at the
     runners' session-start seam so a peer's sweep reaps the dir on proof of
@@ -224,7 +224,7 @@ def _claim_session_cache(cache_dir: Path) -> None:
     (dotfiles included) and would read the anchor as an escaped write and rmtree
     the tree. NOT before ``build_session_artifacts`` either: creating the dir
     early makes the builder's own ``mkdir`` a no-op, which drops it from the
-    launch record and breaks its equality with the dry-run plan (HATS-1552).
+    launch record and breaks its equality with the dry-run plan.
     The window costs nothing — until the anchor lands, the pid in the session id
     already names the owner.
     """  # comment-length: allow — both wrong seams fail silently, one per paragraph
@@ -234,7 +234,7 @@ def _claim_session_cache(cache_dir: Path) -> None:
 
 
 def _claim_surface_child(cache_dir: Path, pid: int) -> None:
-    """Name the surface CLI as the cache's second owner (HATS-1339 D3).
+    """Name the surface CLI as the cache's second owner.
 
     Called by both runners the moment the child has a pid. The wrapper owns the
     dir; this is the process that reads the skills and hooks OUT of it, and on
@@ -247,12 +247,12 @@ def _claim_surface_child(cache_dir: Path, pid: int) -> None:
 
 
 def _cleanup_session_cache(cache_dir: Path) -> None:
-    """Remove the session's per-session cache dir (HATS-294).
+    """Remove the session's per-session cache dir.
 
     Drops the whole ``<cache_root>/sessions/<session_id>/`` tree
     (prompt.md + plugin/ + anything else providers stashed there).
     ``ignore_errors`` keeps us robust against repeated cleanup attempts and
-    missing paths. A SIGKILL skips this entirely; since HATS-1339 the next run's
+    missing paths. A SIGKILL skips this entirely; the next run's
     sweep reclaims that dir on proof the owner is dead, not after a TTL.
     """
     # Per-session cache: ephemeral, dropped here and reclaimed on owner death by
@@ -274,7 +274,7 @@ def _session_timed_out(session: Session) -> bool:
 def _flag_sensor_error(session: Session) -> None:
     """Record in metrics.json that enrichment blew up, so the gap is readable.
 
-    HATS-1374: the enrichment pipeline is ``failure_policy=continue`` and its
+    The enrichment pipeline is ``failure_policy=continue`` and its
     exception was swallowed into a log line, so a session with no counters was
     indistinguishable from one that legitimately had none.
     """
@@ -328,20 +328,20 @@ def _finalize_sub_agent(
     optional timed_out/error/tags/duration_s fields. Surface-agnostic —
     behaves identically for claude and agy.
 
-    ``extra_metrics`` (HATS-474): provider-specific keys to merge into
+    ``extra_metrics``: provider-specific keys to merge into
     the metrics dict — e.g. ``claude_session_id``, ``total_cost_usd``,
     ``num_turns``, ``stop_reason`` from the Claude Agent SDK path.
     ``None`` values inside are skipped so legacy subprocess callers
     (Agy) that have no such telemetry keep producing the same
     metrics.json shape they always did.
 
-    ``work_dir`` (HATS-535): cwd the SDK ran under — encoded as
+    ``work_dir``: cwd the SDK ran under — encoded as
     claude's project_key when locating ``~/.claude/projects/<key>/
     <claude_session_id>.jsonl``. When provided alongside a
     ``claude_session_id`` in ``extra_metrics``, the
     ``finalize-subagent`` sub-pipeline runs and produces a structured
     ``audit.md`` (👤/👾/🔧/💭) for the SubAgent path — closing the
-    HITL/Automate asymmetry that motivated HATS-535. Callers without
+    HITL/Automate asymmetry. Callers without
     ``work_dir`` (legacy / non-Claude subprocess paths)
     keep producing the meta-only ``audit.md`` they always did — opt-in
     enrichment, no behaviour change for the unfixed callsites.
@@ -364,7 +364,7 @@ def _finalize_sub_agent(
                 # `AuditWriter._render_audit` then read `metrics.get("provider",
                 # "unknown")` → audit.md said `Surface: unknown` for every
                 # SubAgent / `execute --batch` session. Surface is known by
-                # `SubAgentRunner` (its `CompositionPayload.provider`, HATS-865)
+                # `SubAgentRunner` (its `CompositionPayload.provider`)
                 # and is threaded through here.
                 "provider": provider,
                 "model": model,
@@ -399,7 +399,7 @@ def _finalize_sub_agent(
                 },
             )
 
-            # HATS-535: structured audit.md via finalize-subagent. HATS-1087: a
+            # Structured audit.md via finalize-subagent. A
             # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
             claude_session_id = None
             if extra_metrics:
@@ -512,7 +512,7 @@ def _print_session_end(
 ) -> None:
     """Render the green ``✨ Session <id> complete!`` summary.
 
-    HATS-535: the **retro reminder banner** lines (cyan
+    The **retro reminder banner** lines (cyan
     "Reflect through N sessions" + wrap-up nudge) used to print inline
     here. They now print at the tail of ``RunSessionEnd`` (in the
     ``finalize-hitl`` sub-pipeline), AFTER ``SESSION_END`` hooks fire.
@@ -580,7 +580,7 @@ def _finalize_session_basic(
 ) -> dict:
     """Per-runner minimal HITL finalize: log + metrics.json + smoke test.
 
-    HATS-535: split from the legacy ``_finalize_session`` megafunction.
+    Split from the legacy ``_finalize_session`` megafunction.
     Audit derivation (``AuditWriter``) + retro decision + SESSION_END
     hooks + reviewer spawn moved to the ``finalize-hitl`` sub-pipeline
     (``MakeAudit`` + ``RunSessionEnd``), invoked by the caller AFTER
@@ -589,7 +589,7 @@ def _finalize_session_basic(
     SIGINT).
 
     Each phase is wrapped in ``try/except (Exception, KeyboardInterrupt)``
-    per the HATS-086 invariant — a second Ctrl+C must not kill cleanup
+    by design — a second Ctrl+C must not kill cleanup
     partway. Returns ``trace_stats`` so the caller can thread it into
     ``_print_session_end`` without re-reading ``trace.log``.
     """
@@ -597,7 +597,7 @@ def _finalize_session_basic(
     try:
         # Path A (live PTY ⏺-marker audit) removed. The
         # surrounding try/except is reserved as a scaffold for future
-        # finalize-time tracer cleanup hooks — the HATS-086 SIGINT-safety
+        # finalize-time tracer cleanup hooks — the SIGINT-safety
         # pattern (catch both Exception and KeyboardInterrupt so a second
         # Ctrl+C does not kill cleanup partway) is uniform across every
         # phase in this function, and re-introducing it later by hand is
@@ -699,12 +699,12 @@ def _run_finalize_hitl(
     audit_writer_factory=None,
     transcript_resolver=None,
 ) -> None:
-    """Invoke the ``finalize-hitl`` sub-pipeline (HATS-535).
+    """Invoke the ``finalize-hitl`` sub-pipeline.
 
     The pipeline runs ``make_audit`` then ``run_session_end`` (retro banner).
     Caller (WrapRunner.run's finally) wraps this in its own try/except so a
     finalize-pipeline crash never blocks the outer ``_print_session_end``.
-    ``static_cost_analyzer`` (HATS-865): runner-threaded carve-out so
+    ``static_cost_analyzer``: runner-threaded carve-out so
     ``compute_usage`` can cross-check always-on cost without composing.
     """
     _log_pipeline_errors(
@@ -736,10 +736,10 @@ def _run_finalize_subagent(
     audit_writer_factory=None,
     transcript_resolver=None,
 ) -> None:
-    """Invoke the ``finalize-subagent`` sub-pipeline (HATS-535).
+    """Invoke the ``finalize-subagent`` sub-pipeline.
 
     Pipeline runs ``make_audit`` only — SubAgent path intentionally
-    omits ``run_session_end`` to preserve pre-HATS-535 behaviour
+    omits ``run_session_end`` to preserve its original behaviour
     (no SESSION_END hooks, no auto-retro for sub-agents).
     """
     _log_pipeline_errors(

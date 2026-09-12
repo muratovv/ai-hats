@@ -1,13 +1,13 @@
-"""Layout-name constants — a dependency-free leaf module (HATS-758).
+"""Layout-name constants — a dependency-free leaf module.
 
-The modules extracted from ``assembler`` in HATS-715 (``relocation``,
+The modules extracted from ``assembler`` (``relocation``,
 ``migrations``) need these layout names but must not import them back from the
 high-level ``assembler`` "god module" — that re-created a module-level import
 cycle. Keeping the names in a leaf with **no internal imports** lets every layer
 share them without any cycle. ``assembler`` re-imports them, so
 ``from ai_hats.assembler import AGENT_DIR`` keeps working unchanged.
-HATS-948: ``TraceTag``/``ENV_SESSION_ID`` moved to ``ai_hats_observe.trace``.
-HATS-1613: the one exception to "no internal imports" is the ``env`` leaf, which
+``TraceTag``/``ENV_SESSION_ID`` moved to ``ai_hats_observe.trace``.
+The one exception to "no internal imports" is the ``env`` leaf, which
 the leaf gate exempts by name — ``ENV_ROLE``/``ENV_ROOT_PID`` are re-exported
 from there rather than re-declared (ADR-0025 D1).
 """  # comment-length: allow — the leaf's import contract is the point of the module
@@ -34,7 +34,7 @@ LAUNCHER_CONTRACT_FILE = "launcher-contract"
 
 
 # Env-var names shared across modules; single-file knobs stay local.
-# (ENV_SESSION_ID lives in ai_hats_observe.trace — observe's schema, HATS-948.)
+# (ENV_SESSION_ID lives in ai_hats_observe.trace — observe's schema.)
 ENV_REPO_URL = "AI_HATS_REPO_URL"
 # Launcher → `self init` channel for the editable host source, so init
 # seeds `harness.channel: local` without depending on which interpreter it runs under.
@@ -64,7 +64,7 @@ CONSENT_OWNED_KEYS = frozenset(
 #: in a project that only consumes ai-hats — is withheld from a sub-agent with nobody
 #: remembering to declare it. A roster fails the other way, and did: it was written
 #: from the shipped-hook vocabulary and so missed `AI_HATS_E2E_CATALOG_ACK`, which a
-#: repo script reads (HATS-1743 review).
+#: repo script reads.
 BYPASS_FLAG_SUFFIXES = ("_ACK", "_OFF", "_SKIP")
 
 #: A register of the convention's EXCEPTIONS, never a second opinion on it: `YOLO`
@@ -121,7 +121,7 @@ BYPASS_FLAGS_NOT_INHERITED = frozenset(
 
 
 def is_debug_mode(argv: list[str] | None = None) -> bool:
-    """Return True if debug or verbose mode is enabled via env or CLI flags (HATS-1120)."""
+    """Return True if debug or verbose mode is enabled via env or CLI flags."""
     import os
     import sys
 

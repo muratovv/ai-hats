@@ -1,8 +1,8 @@
 """e2e (HATS-1853)
 
 flow:   a maintainer runs the pre-push bundle, which must refuse the push when a
-        tracker id has crept back into prose the library ships to other projects
-        or into a doc a reader of this repository opens
+        tracker id has crept back into prose the library ships to other projects,
+        into a doc a reader of this repository opens, or into `src/`
 cmds:
     bash scripts/gates.sh ticket-ids           # announces the stage it dispatched to
     bash scripts/gates.sh no-such-stage        # exit 2, and the usage names the stage
@@ -55,8 +55,8 @@ def _checker(root: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _plant(tmp_path: Path, body: str, doc: str = "clean\n") -> Path:
-    """A tree with a library skill, a living doc, and the control corpus."""
+def _plant(tmp_path: Path, body: str, doc: str = "clean\n", code: str = "") -> Path:
+    """A tree with a library skill, a living doc, `src/`, and the control corpus."""
     root = tmp_path / "planted"
     skill = root / LIB_RELPATH / "core" / "skills" / "demo"
     skill.mkdir(parents=True)
@@ -64,6 +64,9 @@ def _plant(tmp_path: Path, body: str, doc: str = "clean\n") -> Path:
     (root / "docs" / "adr").mkdir(parents=True)
     (root / "docs" / "adr" / "0001-x.md").write_text("Recorded in HATS-1.\n")
     (root / "docs" / "how-to.md").write_text(doc)
+    module = root / "src" / "ai_hats" / "thing.py"
+    module.parent.mkdir(parents=True)
+    module.write_text(code)
     return root
 
 
@@ -168,3 +171,24 @@ def test_a_sample_survives_a_nested_fence_and_the_prose_after_it_does_not(tmp_pa
     assert len(fails) == 1, combined
     assert "HATS-1430" in fails[0] and ":7:" in fails[0], combined
     assert "HATS-042" not in "".join(fails), combined
+
+
+def test_the_checker_reads_src_and_spares_the_todo_that_points_forward(tmp_path: Path):
+    """The code half, as a real subprocess, with both directions on one line.
+
+    A comment citing a card is a dead link to anyone without the tracker, and
+    `git log -S` finds that commit for any reader of the repository. A
+    `TODO(<id>)` is the opposite: the work is in no commit yet, so the card is
+    the only pointer there is. Masking the blessed form rather than skipping the
+    line is what keeps the citation beside it from riding along.
+    """
+    code = "# TODO(HATS-1785): a real type here. Shape settled in HATS-1430.\n"
+    root = _plant(tmp_path, "clean\n", code=code)
+    run = _checker(root)
+    combined = run.stdout + run.stderr
+    assert run.returncode == 1, combined
+    fails = [line for line in combined.splitlines() if "FAIL" in line]
+    assert len(fails) == 1, combined
+    assert "src/ai_hats/thing.py:1" in fails[0], combined
+    assert "HATS-1430" in fails[0] and "HATS-1785" not in fails[0], combined
+    assert "spared: 1 `TODO(HATS-<id>)` site" in combined, combined

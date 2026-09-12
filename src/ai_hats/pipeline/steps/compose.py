@@ -1,6 +1,6 @@
 """``compose_role`` step — projects the seeded composition into the funnel.
 
-HATS-865: the step no longer composes. The integrator caller composes ONCE at
+The step no longer composes. The integrator caller composes ONCE at
 the compose seam (``ai_hats.composition_seam.build_composition_payload``) and
 seeds the :class:`~ai_hats.composition_payload.CompositionPayload` into the
 pipeline initial state under the ``composition`` key; this step is a pure
@@ -31,7 +31,7 @@ class ComposeRole(Step):
         )
 
     def run(self, *, composition: Any = None, **_: Any) -> dict[str, Any]:
-        # HATS-452 (D3): an absent/empty composition OMITS the key (never "").
+        # An absent/empty composition OMITS the key (never "").
         if composition is None:
             return {}
         return {"system_prompt": composition.result.merged_injection or None}

@@ -1,4 +1,4 @@
-"""Liveness refs for the versioned-install layout (HATS-649 / R2).
+"""Liveness refs for the versioned-install layout.
 
 A run that executes from a managed ``versions/<sha>/`` venv writes a ref tying
 its OS process to the sha it pinned. The orphan-version reclaim
@@ -8,7 +8,7 @@ iff a **live** ref points to it — liveness decided by ``root_pid`` +
 written at the ``create_session`` chokepoint and cleaned (when dead) by the same
 reclaim pass, so they never leak.
 
-**Reclaim-on-certain-death, no TTL** (HATS-649 supervisor decision): a reused
+**Reclaim-on-certain-death, no TTL** (supervisor decision): a reused
 pid has a different ``start_time_utc`` than the one recorded at write, so a dead
 run is classified as dead *with certainty* — no time-based backstop is needed on
 a single host. Cross-host / shared-FS coordination is out of scope (a ref's
@@ -105,12 +105,13 @@ def current_run_sha(versions: VersionsLayout) -> str | None:
     checkout, or any prefix outside ``versions/``. Those runs pin no managed
     version, so they write no ref.
 
-    Doubly load-bearing in Phase B (HATS-653): this same predicate guards
+    Doubly load-bearing: this same predicate guards
     :func:`ai_hats.version_recovery.reclaim_legacy_venv` — a non-``None`` result
     proves we run from a complete versioned venv (so the legacy ``.venv`` is
     idle and safe to reclaim), while ``None`` (legacy / override / editable run)
-    keeps ``.venv`` untouched. R2's ``versions/<sha>/`` reclaim never touches
-    ``.venv``; B's reclaim does, but only under this guard.
+    keeps ``.venv`` untouched. :func:`ai_hats.version_recovery.reclaim_orphan_versions`
+    never touches ``.venv``; :func:`ai_hats.version_recovery.reclaim_legacy_venv` does,
+    but only under this guard.
     """
     try:
         prefix = Path(sys.prefix).resolve()

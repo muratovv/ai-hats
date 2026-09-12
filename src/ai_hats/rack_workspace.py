@@ -1,12 +1,12 @@
-"""Integrator-side rack backlog facade for the retro/reflect consumers (HATS-1044 R6).
+"""Integrator-side rack backlog facade for the retro/reflect consumers.
 
 The reflect / judge / quorum-autoclose / session-review consumers reach the
 HYP and PROP backlogs through the rack :class:`Workspace` here instead of the
 retired ``ai_hats_tracker`` stores; the retro session window reads closed task
-cards through :func:`closed_tasks` (HATS-1259). Reads return small views (the
+cards through :func:`closed_tasks`. Reads return small views (the
 fields those consumers render); writes go through the field-owning extensions
 (``hyp-verdicts``/``prop-votes``) and named FSM edges. Card CREATE goes through
-``kernel.create`` like every other write (HATS-1596): its ``fields``/``links``
+``kernel.create`` like every other write: its ``fields``/``links``
 mappings carry a custom backlog's declared fields and link kinds, so this road
 needs no writer of its own.
 
@@ -55,7 +55,7 @@ def rack_workspace(layout: ProjectLayout) -> Workspace:
     """Discover the workspace for a project: the tasks catalog plus the sibling
     HYP/PROP catalogs under ``<ai_hats_dir>/tracker`` (mounted once migrated).
 
-    Carries the check executor (HATS-1575). This road is not read-only —
+    Carries the check executor. This road is not read-only —
     :func:`set_proposal_status` walks a PROP along a named FSM edge — so a
     workspace mounted without it runs every bound gate of every backlog as a
     silent no-op, the tasks catalog included.
@@ -75,10 +75,10 @@ def ensure_backlog(layout: ProjectLayout, definition_name: str) -> None:
     absent, so a write path (e.g. ``reflect issue``) can mount HYP/PROP on a
     project that never had one — parity with the pre-rack auto-create; idempotent.
 
-    HATS-839 applies here and not on the rack path: the rack has its own validating
+    This validation applies here and not on the rack path: the rack has its own validating
     resolver, but this facade is reached from ``cli/_helpers._project_dir``, which
     falls back to a bare cwd. Validate before the ``parents=True`` mkdir below, or a
-    stray root gets a phantom tracker (HATS-1264).
+    stray root gets a phantom tracker.
     """
     catalog = layout.tracker.tasks_dir.parent / definition_name
     dest = catalog / "backlog.yaml"
@@ -134,7 +134,7 @@ class PropView:
 
 @dataclass(frozen=True)
 class ClosedTaskView:
-    """A closed task card as the retro session window consumes it (HATS-1259).
+    """A closed task card as the retro session window consumes it.
 
     ``completed_at`` is the terminal-transition stamp, not ``updated`` — the
     latter is re-written by every card edit, so a long-closed task touched during
@@ -293,7 +293,7 @@ def closed_tasks(layout: ProjectLayout) -> list[ClosedTaskView]:
 def _create_card(
     ws: Workspace, prefix: str, *, title: str, fields: dict, links: dict[str, list[str]]
 ) -> str:
-    """Create through the kernel of the backlog ``prefix`` routes to (HATS-1596).
+    """Create through the kernel of the backlog ``prefix`` routes to.
 
     One write path, so a HYP/PROP card gets what every other card gets: an alloc
     lock that times out instead of waiting forever, the write-strict schema, the

@@ -166,10 +166,10 @@ def warm(config: PipelineConfig) -> None:
     """Parse and build ``config`` now, so running it later touches no disk.
 
     For a caller that will run a pipeline at the end of a session it is about to
-    start (HATS-566): on an editable install the YAML on disk can be replaced
+    start: on an editable install the YAML on disk can be replaced
     mid-session by a ``git pull``, and it would then be read against the step
     modules this process already holds. Doing it up front freezes both together —
-    since HATS-1783 the step modules are imported by the same act, so this pins the
+    the step modules are imported by the same act, so this pins the
     ids as well as the file. Failure is the caller's to report: the sub-pipeline is
     best-effort and warming it is not the moment to end a session.
     """

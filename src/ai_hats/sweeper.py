@@ -1,13 +1,13 @@
-"""Generic unclaimed-marker sweeper (HATS-905).
+"""Generic unclaimed-marker sweeper.
 
 Colocated markers are the source of truth for what a mechanism materialized
 outside ``<ai_hats_dir>``. When a marker's ``owner_key`` is absent from the
 living-owner registry (``ai_hats.owners``) the mechanism is dead — the marker
 victims are swept, but only entries whose CONTENT is proven engine-owned:
 hash recorded in the marker, an embedded ownership string, or the shipped
-legacy semantics of the two pre-HATS-905 dead surfaces.
+legacy semantics of the two dead surfaces that predate this sweeper.
 
-Marker convention (HATS-911): new line-manifest markers are written via
+Marker convention: new line-manifest markers are written via
 :func:`write_marker` — ``# ai-hats-owner: <owner_key>`` header, then one
 ``<sha256-12>  <relpath>`` line per owned entry (dirs hash via
 ``fs_digest.dir_digest``). The hash is the content-proof: sweep discards an
@@ -60,19 +60,19 @@ class LineManifestSurface:
 @dataclass(frozen=True)
 class SettingsTagsSurface:
     """Managed-tag entries inside a provider's settings.json. The tag is the
-    embedded ownership proof (same semantics as the live sweep, HATS-833)."""
+    embedded ownership proof (same semantics as the live sweep)."""
 
     owner_key: str
     settings_relpath: str = _SETTINGS_RELPATH
     tag_prefix: str = "ai-hats:"
-    # agy's pre-HATS-1166 remnant spells the same ai-hats: tag under "tag".
+    # agy's legacy remnant spells the same ai-hats: tag under "tag".
     tag_key: str = "_ai_hats_managed"
 
 
 @dataclass(frozen=True)
 class ProcSurface:
     """A dead surface whose validated sweep procedure predates the generic
-    sweeper — one procedure, every caller shares it (HATS-907 absorb contract)."""
+    sweeper — one procedure, every caller shares it (absorb contract)."""
 
     owner_key: str
     marker_relpath: str
@@ -132,7 +132,7 @@ def default_surfaces() -> tuple[Surface, ...]:
             owner_key="local-runtime-hooks",
             settings_relpath=_LOCAL_SETTINGS_RELPATH,
         ),
-        # HATS-1336: agy stopped writing the project root in HATS-1166 and left
+        # agy stopped writing the project root in an earlier version and left
         # no owner behind, so this location sweeps on sight.
         SettingsTagsSurface(
             owner_key="agy-root-runtime-hooks",
@@ -506,7 +506,7 @@ def write_marker(
 
 
 def run_unclaimed_sweep(project_dir: Path, *, binary_behind: bool) -> None:
-    """Install-time entry point: gates, sweep, user-facing report (HATS-905).
+    """Install-time entry point: gates, sweep, user-facing report.
 
     A stale binary must not judge liveness (version skew), and without a
     trash session there is no undo — both defer with a WARN naming the

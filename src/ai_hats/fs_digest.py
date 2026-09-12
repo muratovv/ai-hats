@@ -1,4 +1,4 @@
-"""Content digest over a directory tree — a stdlib leaf (HATS-1217).
+"""Content digest over a directory tree — a stdlib leaf.
 
 Lifted out of ``plugin_dir`` so the materialization port does not depend on the
 legacy-mirror sweep: the hash is shared by the port, the sweeper and that sweep,

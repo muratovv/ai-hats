@@ -1,11 +1,11 @@
-"""Pure-Python session-fact extractor (HATS-252).
+"""Pure-Python session-fact extractor.
 
 Computes factual fields for SessionReviewV1 without an LLM:
 metrics, artifacts (files_changed/commits/tasks_closed), links, role, project,
 date, session window. Extracted from the legacy SessionRetroBuilder so the
 factual layer survives the merge into a single LLM call.
 
-The window invariants (HATS-212) — files_changed and tasks_closed are scoped
+The window invariants — files_changed and tasks_closed are scoped
 to ``[session_start, session_end]`` — are preserved here.
 """
 
@@ -106,9 +106,9 @@ def compute_facts(layout: ProjectLayout, session_id: str) -> SessionFacts:
 
 
 def _parse_composition(session_dir: Path) -> dict | None:
-    """Read composition snapshot from metrics.json — HATS-442.
+    """Read composition snapshot from metrics.json.
 
-    Returns ``None`` for old sessions that lack the field (pre-HATS-442)
+    Returns ``None`` for old sessions that lack the field (from before it was added)
     or any session whose metrics.json is missing/unparsable.
     """
     metrics_path = session_dir / METRICS_JSON
@@ -131,7 +131,7 @@ def _normalize(session_id: str) -> str:
 def _parse_metrics(session_dir: Path) -> SessionMetrics:
     """metrics.json → the retro's snapshot, flagged when nothing was measured.
 
-    HATS-1374: a missing or corrupt record used to yield ``exit_code=0,
+    A missing or corrupt record used to yield ``exit_code=0,
     turns=0, tool_calls=0`` — a clean-looking row copied verbatim into retro
     frontmatter for a session nobody measured.
     """

@@ -1,11 +1,11 @@
-"""Crash-safe advisory lock for the versioned-install critical sections (HATS-650 / R3).
+"""Crash-safe advisory lock for the versioned-install critical sections.
 
-R2 (HATS-649) gave ``versions/`` a GC pass (reclaim orphaned versions + sweep
+The version-recovery work gave ``versions/`` a GC pass (reclaim orphaned versions + sweep
 incomplete residue) and ``self update`` an acquire pass (install + ``.complete``
 + flip ``current``). Both mutate the same ``versions/`` tree, and concurrent
 ``ai-hats`` processes are the norm — a sub-agent fan-out spawns N children, each
 running the GC at the ``create_session`` chokepoint over the **same** tree. The
-corrupting interleaving R3 closes: an installer writes ``.complete`` then flips
+corrupting interleaving this lock closes: an installer writes ``.complete`` then flips
 ``current``; in that window the target dir is complete, non-``current`` and has
 no live ref (the installer runs from the *old* sha), so a concurrent GC reclaims
 it and the flip lands on a deleted dir → the tool bricks.
@@ -15,8 +15,8 @@ This module serializes those sections with a single ``versions/.gc.lock``.
 **Why a library, not a hand-rolled lockfile** — this is a ~15-line wrapper over
 ``filelock`` (already a dependency), *not* a lock implementation. ``filelock``
 uses ``fcntl`` advisory locks on POSIX, so the **kernel auto-releases the lock
-when the holder process dies** (all its fds close). That is exactly the R3
-property: a ``kill -9`` while the lock is held never wedges future cleanup — the
+when the holder process dies** (all its fds close). That is exactly the property
+this lock needs: a ``kill -9`` while the lock is held never wedges future cleanup — the
 forbidden create-lockfile/delete-on-exit scheme would leak a stale file the next
 process refuses to pass. The lock file itself is harmless to leave on disk; it
 carries no state, only the kernel-held lock does. Mirrors ``worktree._acquire``
@@ -49,7 +49,7 @@ INSTALL_LOCK_TIMEOUT = 300.0
 # contention it skips (the holder is already cleaning/installing) rather than
 # block a session start behind a slow install. A short wait absorbs brief
 # GC-vs-GC overlap; a held install times out fast and is swallowed by the
-# caller. (Deferred optimization, HATS-650 Out-of-scope: drop to 0 for an
+# caller. (Deferred optimization, out-of-scope: drop to 0 for an
 # immediate try-skip.)
 GC_LOCK_TIMEOUT = 2.0
 
@@ -65,7 +65,7 @@ def gc_lock_path(versions: VersionsLayout) -> Path:
 
 
 class VersionLockError(Exception):
-    """Raised when acquiring the version GC/acquire lock times out (HATS-650)."""
+    """Raised when acquiring the version GC/acquire lock times out."""
 
 
 @contextmanager

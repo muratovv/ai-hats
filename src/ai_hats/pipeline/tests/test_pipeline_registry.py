@@ -68,7 +68,7 @@ def test_names_returns_sorted():
 
 def test_names_lists_a_built_in_nothing_has_imported():
     """A caller asking "is this step wired?" gets the same answer either side of
-    the import — declared and imported are both resolvable (HATS-1783)."""
+    the import — declared and imported are both resolvable."""
     assert "compose_role" not in reg._REGISTRY
     assert "compose_role" in reg.names()
 
@@ -95,7 +95,7 @@ def test_a_resolved_step_is_never_re_resolved(monkeypatch):
 
 
 def test_register_refuses_a_built_in_nothing_has_resolved_yet():
-    """The one-id-one-owner contract does not depend on run order (HATS-1799).
+    """The one-id-one-owner contract does not depend on run order.
 
     Built-ins are advertised, not registered, so a ``_REGISTRY``-only check let a
     project step take ``provider`` in any process that had not resolved it — the

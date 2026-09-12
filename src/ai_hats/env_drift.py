@@ -1,4 +1,4 @@
-"""Stale editable dev-env detection (HATS-1013).
+"""Stale editable dev-env detection.
 
 uv editable installs freeze dist-info metadata at sync time, so after any
 version bump ``importlib.metadata`` / ``--version`` lie until ``uv sync``.

@@ -1,9 +1,9 @@
 """Role-assembly commands: init, set, customize, status, bump.
 
-HATS-407: ``rollback`` was removed — ``config set`` is yaml-only, ``init`` /
+``rollback`` was removed — ``config set`` is yaml-only, ``init`` /
 ``bump`` only touch git-tracked scaffold files (``./CLAUDE.md`` / ``.gitignore``)
 and the gitignored canonical aggregator, so ``git checkout`` is the recovery
-path documented in the v0.7 CHANGELOG (HATS-409).
+path documented in the v0.7 CHANGELOG.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 @contextmanager
 def _config_lock(path: Path) -> Iterator[None]:
-    """Serialize customize's read-modify-write (HATS-526: lost-update race)."""
+    """Serialize customize's read-modify-write (lost-update race)."""
     try:
         with file_lock(path):
             yield
@@ -53,7 +53,7 @@ def _stdin_is_tty() -> bool:
 def _detected_providers() -> list[str]:
     """Providers whose home-config directory exists on the host.
 
-    HATS-1179: asks every registered surface, through the surface-agnostic
+    Asks every registered surface, through the surface-agnostic
     `detect_surface_presence(name)`. Returns matches in deterministic order.
     """
     from ..surface_registry import detect_surface_presence, surface_names
@@ -77,7 +77,7 @@ def _wizard_provider_prompt(
     Every provider whose config dir exists is marked ``detected``. A click
     default is pre-selected ONLY when exactly one provider is detected — when
     zero or several are present the choice is ambiguous, so the user picks
-    explicitly rather than silently inheriting the dict-first provider (HATS-613).
+    explicitly rather than silently inheriting the dict-first provider.
     """
     from ..surface_registry import get_surface, is_surface_installed, surface_names
 
@@ -102,7 +102,7 @@ def _wizard_provider_prompt(
             markers.append(f"detected — found ~/{found_dir}")
 
         if not installed:
-            # Every known surface ships inside ai-hats since HATS-1826, and the
+            # Every known surface ships inside ai-hats, and the
             # wizard installs nothing — so this reads as a broken install, not a
             # pending one.
             markers.append("not installed")
@@ -936,7 +936,7 @@ def status():
 
     # Harness channel — a config-side read (NOT _gather_install_info,
     # which is install-level with no config access). The full install-Source
-    # line redesign stays HATS-767; this is the minimal config view.
+    # line redesign is deferred; this is the minimal config view.
     from ..models import Channel
 
     channel = asm.project_config.harness.channel
@@ -947,7 +947,7 @@ def status():
     }[channel]
     console.print(f"Channel: [bold]{channel.value}[/]  [dim]({_hint})[/]")
 
-    # Dependency tree (HATS-421: each node tagged with source layer).
+    # Dependency tree (each node tagged with source layer).
     if st["role"] and st["tree"]:
         provenance = st["tree"].get("provenance", {})
 
@@ -983,7 +983,7 @@ def status():
             "[dim]Legend:[/] [dim](built-in)[/]  [magenta](global)[/]  [cyan](project)[/]"
         )
 
-    # Health — HATS-497: prefixed with install-level diagnostics (version,
+    # Health — prefixed with install-level diagnostics (version,
     # interpreter, venv, source, library, resolved-via, repo HEAD) so a
     # single ``config status`` answers both project-config and "where does
     # my ai-hats live" questions. The project-side check (system_prompt)
@@ -1089,13 +1089,13 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
 def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     """Run the bump pipeline in-process. Returns process exit code.
 
-    HATS-407 + HATS-415 + HATS-470: ``bump`` is no longer exposed as
+    ``bump`` is no longer exposed as
     ``ai-hats self bump`` — it's an internal operation reachable only
     via :mod:`ai_hats._bump_internal` (fresh-subprocess path used by
-    ``self update``, HATS-400) or via ``self init`` after the in-process
+    ``self update``) or via ``self init`` after the in-process
     assembler hook.
 
-    HATS-469: ``Assembler.bump`` was replaced by ``_refresh`` — the
+    ``Assembler.bump`` was replaced by ``_refresh`` — the
     bump pipeline is now an explicit composition here:
 
     1. ``_run_v07_migration`` — v0.6 → v0.7 layout heal (CLI-kwarg-gated,
@@ -1119,7 +1119,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     asm = _assembler(resolve_project_lenient().layout.root)
     backup_path = None
     try:
-        # 0. HATS-549: pre-bump snapshot BEFORE any destructive step.
+        # 0. Pre-bump snapshot BEFORE any destructive step.
         # _run_v07_migration / registry healer / _migrate_layout_v4 all
         # mutate the project tree; the tarball under /tmp is the
         # always-on recovery handle. Hard-fail on BackupError —
@@ -1146,11 +1146,11 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
         # 4. Diagnostics — user-initiated path; expects state report.
         asm._run_diagnostics()
 
-        # 5. HATS-549 Phase 3: end-of-bump smoke-assert. Every hook
+        # 5. End-of-bump smoke-assert. Every hook
         # command path in .claude/settings.json{,.local} must resolve
         # to an existing file — otherwise Claude Code prints
         # "No such file or directory" on every matching tool call.
-        # The error message carries the Phase 1 backup path so the
+        # The error message carries the pre-bump backup path so the
         # user has a one-liner recovery handle.
         assert_runtime_hooks_resolve(asm.project_dir, backup_path=backup_path)
     except AssemblyError as e:

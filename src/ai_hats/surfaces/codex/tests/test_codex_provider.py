@@ -1,4 +1,4 @@
-"""Contract tests for the Codex CLI surface (HATS-1531)."""
+"""Contract tests for the Codex CLI surface."""
 
 from __future__ import annotations
 

@@ -1,9 +1,9 @@
 """CLI interface — Click-based command-line tool.
 
 `main_entry` is the package entry point invoked by ``python -m ai_hats``
-(``src/ai_hats/__main__.py``). HATS-790 (Alt 5) removed the
-``[project.scripts] ai-hats`` console script, so ``python -m ai_hats`` is now
-the only entry — no venv materialises a shadowable ``bin/ai-hats`` proxy.
+(``src/ai_hats/__main__.py``). Removing the ``[project.scripts] ai-hats``
+console script made ``python -m ai_hats`` the only entry — no venv
+materialises a shadowable ``bin/ai-hats`` proxy.
 ``main_entry`` thin-wraps `main` (the click group) to make `--tree`
 order-independent relative to `--help`. Subcommands are defined in sibling
 modules (assembly, task, worktree, …) and mounted onto `main` at the bottom of
@@ -23,12 +23,12 @@ from ._helpers import console, with_model_flag
 
 class _PassthroughGroup(click.Group):
     """Click group that treats unknown flag-like leftover args as extras
-    instead of failing with 'No such command'. HATS-087 / HATS-1202.
+    instead of failing with 'No such command'.
 
     Click 8.x splits the parser leftover into ``ctx._protected_args[:1]``
     (the candidate subcommand name) and ``ctx.args[1:]``. If the first
-    leftover token starts with ``-`` or is not a registered subcommand
-    (HATS-1202), it is treated as provider flags or a bare positional prompt,
+    leftover token starts with ``-`` or is not a registered subcommand,
+    it is treated as provider flags or a bare positional prompt,
     NOT a subcommand. This override moves those tokens back into ``ctx.args``
     so the no-subcommand path runs and the bare ``def main(ctx, ...)`` body
     sees them.
@@ -46,7 +46,7 @@ class _PassthroughGroup(click.Group):
     def invoke(self, ctx: click.Context):
         """Render the CLI's typed errors friendly, wherever they were raised.
 
-        HATS-1228: every command reachable from this group — the bare-launch
+        Every command reachable from this group — the bare-launch
         callback, subcommands, nested groups — funnels through here, so friendly
         handling is no longer per-site opt-in (``cli/reflect.py`` composed five
         times and caught nothing). Unregistered exceptions keep their traceback:
@@ -62,7 +62,7 @@ class _PassthroughGroup(click.Group):
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         # Click mutates `args` in place while parsing, consuming `--` — so the
-        # user's escape has to be read before super() runs (HATS-1932).
+        # user's escape has to be read before super() runs.
         raw = list(args)
         result = super().parse_args(ctx, args)
         protected = getattr(ctx, "_protected_args", None)
@@ -382,7 +382,7 @@ from . import (  # noqa: E402
 config_mod.config.add_command(assembly.set_role)
 config_mod.config.add_command(assembly.customize)
 config_mod.config.add_command(assembly.status)
-config_mod.config.add_command(assembly.show_prompt)  # HATS-452 Phase 1
+config_mod.config.add_command(assembly.show_prompt)
 main.add_command(config_mod.config)
 
 
@@ -390,7 +390,7 @@ main.add_command(config_mod.config)
 # gh extension self ... — instantly signals 'operations on the tool itself,
 # not on your project'.
 #
-# HATS-407: ``self rollback`` removed. Per-session compose (HATS-294) plus
+# ``self rollback`` removed. Per-session compose plus
 # yaml-only ``config set`` means the only mutable on-disk state is yaml +
 # git-tracked scaffold files — ``git checkout`` is the user-facing recovery
 # path.
@@ -408,7 +408,7 @@ self_group.add_command(maintenance.heal_editables)
 # ``self migrate-v07`` removed — migration is inline in ``bump``.
 # ``self bump`` removed from CLI surface; the operation now runs
 # via :mod:`ai_hats._bump_internal` (subprocess from ``self update``,
-# preserves HATS-400 fresh-interpreter semantics) and inline from ``init``.
+# preserves fresh-interpreter semantics) and inline from ``init``.
 main.add_command(self_group)
 
 # List
@@ -417,7 +417,7 @@ main.add_command(list_cmd.list_cmd)
 # Execute — unified launch primitive. Wraps WrapRunner / SubAgentRunner.
 main.add_command(execute_mod.execute_cmd)
 
-# Agent — sub-agent launcher (HATS-242, was 'run'). Now a thin wrapper over execute.
+# Agent — sub-agent launcher (was 'run'). Now a thin wrapper over execute.
 main.add_command(agent_mod.run_subagent)
 
 # Worktree
@@ -430,7 +430,7 @@ main.add_command(session.session)
 main.add_command(wait_mod.wait_cmd)
 
 # The legacy `ai-hats task` groups (task/hyp/proposal/attach) are
-# unmounted — rack is the only backlog surface; the tracker package dies at HATS-1262.
+# unmounted — rack is the only backlog surface; the tracker package is being removed entirely.
 
 # Observe session-browse CLI (list/show/audit) defaults to wt-free
 # resolvers; attach the integrator's AI_HATS_DIR/yaml-aware layout so
@@ -449,8 +449,8 @@ def _integrator_layout() -> ProjectLayout:
 def _observe_provider_adapter(provider: str):
     """Transcript discovery + parser of the surface that recorded the session.
 
-    Backfill must read each session through its own provider, not a fixed one
-    (HATS-1374). An unrecorded or retired provider name yields no reader, so the
+    Backfill must read each session through its own provider, not a fixed one.
+    An unrecorded or retired provider name yields no reader, so the
     session is reported as having no transcript instead of being mis-parsed.
     """
     from ..surface_registry import UnknownSurfaceError, get_surface
@@ -517,7 +517,7 @@ def _extract_tree_path(argv: list[str]) -> list[str]:
 # run from anywhere — never worth refusing (a shadow printing its version harms
 # nothing). Skipping them also keeps the guard off the in-process ``main_entry``
 # tree tests (which run with ``src`` on ``PYTHONPATH``, where editable detection
-# can't see ``direct_url.json``). HATS-791.
+# can't see ``direct_url.json``).
 _GUARD_EXEMPT_FLAGS = frozenset({"--version", "--help", "-h", "--tree"})
 
 
@@ -533,14 +533,14 @@ def _is_guard_exempt_invocation(argv: list[str]) -> bool:
 def _guard_self_location() -> None:
     """Refuse-and-instruct when running from a FOREIGN (non-managed) venv.
 
-    HATS-791 backstop for the "shadow" problem (a stale ai-hats in some
+    Backstop for the "shadow" problem (a stale ai-hats in some
     project app-venv reached ahead of the host launcher). Wired into
     :func:`main_entry` — the real-invocation path (launcher → ``python -m
     ai_hats`` → ``__main__`` → ``main_entry``) — and DELIBERATELY NOT into the
     bare ``main`` click group, so in-process ``CliRunner`` tests (which invoke
     ``main`` directly) never reach it and the guard cannot break the suite.
 
-    Bias HARD toward fail-open: the shadow generator is already gone (HATS-790),
+    Bias HARD toward fail-open: the shadow generator is already gone,
     so a missed shadow merely reproduces old behaviour while a false-positive
     bricks the CLI. Any resolution error → sanctioned (we never raise out of
     here). The actual sanctioned/foreign decision is the pure
@@ -590,7 +590,7 @@ def _guard_self_location() -> None:
 
 
 def main_entry() -> None:
-    """Package entry point — invoked by ``python -m ai_hats`` (HATS-790).
+    """Package entry point — invoked by ``python -m ai_hats``.
 
     Intercepts ``--tree`` before click parses, so:
       - ``ai-hats --tree`` renders the full tree;
@@ -602,11 +602,11 @@ def main_entry() -> None:
     ``--help --tree`` to the default help, and click has no native way
     to attach an optional positional path to a top-level flag.
 
-    HATS-337: the legacy ``_maybe_reexec_into_local_venv`` python wrapper
-    was removed — the bash launcher (HATS-339) is now the single
+    The legacy ``_maybe_reexec_into_local_venv`` python wrapper
+    was removed — the bash launcher is now the single
     host-level entry-point and owns venv selection / re-exec.
 
-    HATS-791: self-location guard fires FIRST. Real invocations land here
+    Self-location guard fires FIRST. Real invocations land here
     (launcher → ``python -m ai_hats`` → ``__main__`` → ``main_entry``); the
     in-process ``CliRunner`` calls ``main`` directly and so bypasses the guard.
     """
@@ -620,7 +620,7 @@ def main_entry() -> None:
             sys.exit(0)
         # Same registry the root group dispatches through, kept here
         # too because this boundary also covers the pre-click phase above
-        # (HATS-839: a write op resolved to a non-project root).
+        # (a write op resolved to a non-project root).
         from ._helpers import dispatch_friendly_error
 
         try:

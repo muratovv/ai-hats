@@ -62,7 +62,7 @@ def assemble_launch_command(
     session_args: list[str],
     provider_session_id: str,
 ) -> list[str]:
-    """The one place a HITL launch argv is assembled (HATS-1211 R8).
+    """The one place a HITL launch argv is assembled.
 
     Shared by ``WrapRunner`` and ``--dry-run`` so the reported command cannot be
     a reconstruction of the launched one.
@@ -79,7 +79,7 @@ def _withheld_from_child() -> dict[str, str]:
 
     An approval is scoped to the session it was given in — the export "pre-approves
     the whole session" (`rule_pause_before_shared_state_write`) — and a sub-agent is
-    a different session: own id, own dir, own composition (HATS-1743).
+    a different session: own id, own dir, own composition.
 
     Two sources, and only the second one holds the line: the named roster keeps the
     launch record byte-identical on every machine, while the shape test over the LIVE
@@ -108,7 +108,7 @@ def assemble_launch_env(
     run_mode: RunMode,
     claim: bool = True,
 ) -> dict[str, str]:
-    """Everything ai-hats ADDS to the child's environment (HATS-1548).
+    """Everything ai-hats ADDS to the child's environment.
 
     Sibling of :func:`assemble_launch_command`, and for the same reason: the
     launch merged six sources inline while the report merged two of them, so
@@ -162,7 +162,7 @@ class AutomateLaunch:
 
     The two are returned together because for a CLI surface they are the same
     thing — the whole prompt is one argv token — and deriving one separately
-    from the other is exactly how they drifted (HATS-1552).
+    from the other is exactly how they drifted.
     """
 
     launch: list[str]
@@ -176,7 +176,7 @@ def assemble_meta_prompt(
     task: str,
     ticket_id: str,
 ) -> str:
-    """The prompt bytes a CLI sub-agent is launched with (HATS-1552).
+    """The prompt bytes a CLI sub-agent is launched with.
 
     Sibling of :func:`assemble_launch_command`. The dry-run held a second,
     tidier version of this that dropped ``WORKING_DIRECTORY`` and both ticket
@@ -214,7 +214,7 @@ def assemble_meta_prompt(
 def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:
     """The id this session may claim as its identity — ``""`` when unclaimed.
 
-    HATS-1397: only a surface that puts the id on its own command line will
+    Only a surface that puts the id on its own command line will
     write a transcript under it. agy deletes it, cline inherits the base
     no-op, and claude omits it on ``--resume``. Recording it regardless names
     a session that exists nowhere, which also hides the trace-recovery path.
@@ -227,7 +227,7 @@ class CollectedMetrics:
     """The ``MetricsSink`` a real run hands the surface: keep what it reports.
 
     The surface names its own keys; where they land is decided here, in
-    ``_finalize_sub_agent``'s ``extra_metrics`` (HATS-1826).
+    ``_finalize_sub_agent``'s ``extra_metrics``.
     """
 
     values: dict[str, object] = field(default_factory=dict)

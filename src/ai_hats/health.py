@@ -1,4 +1,4 @@
-"""Per-layer triage of an ai-hats install (HATS-595).
+"""Per-layer triage of an ai-hats install.
 
 The layer decides the remediation: DATA is hand-authored (snapshot only),
 MANAGED is rebuilt by ``self init``, RUNTIME by ``self update``.
@@ -150,10 +150,10 @@ def _drift_report(layout: ProjectLayout) -> LayerReport:
 
 @contextmanager
 def _collapsed_warnings() -> Iterator[None]:
-    """Emit each distinct warning raised inside the block once (HATS-1163).
+    """Emit each distinct warning raised inside the block once.
 
     A triage resolves ``ai_hats_dir`` once per check, so a path-resolution notice
-    (e.g. the HATS-897 leaked-pin warning) fires once per row and buries the table
+    (e.g. the leaked-pin warning) fires once per row and buries the table
     it is printed above. Collapsing by message keeps the signal and drops the spam;
     nothing is swallowed, because every distinct message is re-raised.
     """
@@ -189,7 +189,7 @@ def worst_status(reports: list[LayerReport]) -> Status:
 
 
 def check_venv_consistency(project_dir: Path) -> list[str]:
-    """HATS-1234: Graded escalation ladder for venv and environment consistency.
+    """Graded escalation ladder for venv and environment consistency.
 
     Hierarchy:
     - Level 1 (Local regenerable build artifacts / pycache): Auto-heal stale bytecode

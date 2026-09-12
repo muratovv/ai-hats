@@ -64,10 +64,11 @@ is reported as `(no reason given)`.
 ## Relationship to the `ticket-ids` CI stage
 
 Same invariant, two ranges. The hook is per-commit and staged-scope, so it
-catches an id at the keystroke. `scripts/check_no_ticket_ids.py` sweeps the whole
-library and runs inside `merge-gate` and `push-gate` — that is the one nothing
-lands on the base branch without. The hook shortens the loop; the stage is the
-boundary.
+catches an id at the keystroke. `scripts/check_no_ticket_ids.py` sweeps a wider
+corpus than the hook — the library, the docs a reader opens, and the project's
+own code — and runs inside `merge-gate` and `push-gate`, which is the one
+nothing lands on the base branch without. The hook shortens the loop; the stage
+is the boundary.
 
 ## Override
 

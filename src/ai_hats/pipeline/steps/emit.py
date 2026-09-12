@@ -2,7 +2,7 @@
 
 ``EmitStdout`` prints a single state key's value to stdout — the
 canonical terminator for read-only "what would happen" pipelines like
-``preview.yaml`` (HATS-452 Phase 1). Composable with any producer that
+``preview.yaml``. Composable with any producer that
 emits a string under a known key.
 """
 

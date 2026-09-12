@@ -1,4 +1,4 @@
-"""SessionReviewRunner — single-LLM-call post-session review (HATS-252).
+"""SessionReviewRunner — single-LLM-call post-session review.
 
 Replaces the prior two-step flow (SessionRetroBuilder → ReflectSessionRunner).
 Pure-Python computes factual fields via :mod:`facts`; one LLM call (role
@@ -106,7 +106,7 @@ class SessionReviewRunner:
 
         Raises :class:`SessionReviewError` on validation/schema failure
         (target=session-reviewer). Raises :class:`HarnessReliabilityError`
-        (HATS-378) when the harness-layer guard fires — those propagate
+        when the harness-layer guard fires — those propagate
         unwrapped so callers can route the meta-PROP to
         ``target=harness-incident``.
         """
@@ -124,7 +124,7 @@ class SessionReviewRunner:
             return self._save(review)
         except HarnessReliabilityError:
             # Don't wrap — caller routes harness-incident vs
-            # session-reviewer via meta-PROP target (HATS-378 Phase 3).
+            # session-reviewer via meta-PROP target.
             raise
         except Exception as exc:  # noqa: BLE001 — surface every failure to harness
             error_msg = f"{type(exc).__name__}: {exc}"
@@ -241,7 +241,7 @@ class SessionReviewRunner:
 
     @staticmethod
     def _render_composition(facts) -> str:
-        """HATS-442: surface the effective composition with source-tags.
+        """Surface the effective composition with source-tags.
 
         Returns an empty string when the snapshot is absent (old sessions),
         so the prompt stays clean for legacy data.
@@ -316,18 +316,18 @@ class SessionReviewRunner:
             )
         return "\n\n".join(parts)
 
-    # Content-aware audit *delivery* (generation stays lossless,
-    # HATS-681/666/683). The bulk of audit bytes is the first-turn 👤
+    # Content-aware audit *delivery* (generation stays lossless).
+    # The bulk of audit bytes is the first-turn 👤
     # ingested-evidence echo (PROJECT_STATE backlog dump / Reflect-all handoff /
     # harness-context) — redundant, since the reviewer already has the target's
     # real content. So: (1) bound that first-turn block to a small head-keep cap
     # (a real request sits at its head); (2) keep ALL real signal verbatim — NO
     # tight budget. Capping signal was itself the cause of "cannot cite
-    # evidence" → n/a verdicts (the HATS-666/680 chain). A high safety-valve
+    # evidence" → n/a verdicts (a chain of prior incidents). A high safety-valve
     # catches pathological runaways only.
     _INGESTED_CAP = 2000  # bound the first-turn 👤 ingested-evidence echo
 
-    # HATS-424 invariant: end-of-session events (self-retro Skill calls, final
+    # Invariant: end-of-session events (self-retro Skill calls, final
     # commits, transitions, judge-report writes) live in the audit tail. The
     # safety-valve trim keeps both ends so late-session signal survives even a
     # pathological-size audit.
@@ -380,7 +380,7 @@ class SessionReviewRunner:
 
         # Compose ONCE at this integrator-side seam; the retry loop
         # in _run_and_validate shares the composition. strict=False — a broken
-        # session-reviewer role surfaces via HATS-271 (empty transcript), not
+        # session-reviewer role surfaces as an empty transcript, not
         # a seam raise.
         payload = build_composition_payload(
             self.project_dir,
@@ -546,14 +546,14 @@ class SessionReviewRunner:
 
     @staticmethod
     def _coerce_observations(observations: Any) -> list[str]:
-        """Coerce observation entries to strings (HATS-610).
+        """Coerce observation entries to strings.
 
         The session-reviewer LLM occasionally emits an ``observations``
         bullet as a single-key mapping (``{'<title>': '<detail>'}``)
         instead of a plain string. ``SessionReviewV1.observations`` is
         ``list[str]`` (``extra="forbid"``), so such an entry crashes
         ``_merge`` *outside* the retry loop — un-recoverable, killing the
-        whole retro (root cause of the flaky e2e in HATS-610).
+        whole retro (the root cause of a flaky e2e).
 
         ``observations`` are non-critical narrative, so coerce rather than
         crash (HYP/PROP refs stay strict — those mutate the tracker):

@@ -1,11 +1,11 @@
 """Startup self-heal for runtime and editable-install metadata drift.
 
-Closes the bootstrap chicken-and-egg that survived HATS-207: a user upgrading
-from a pre-HATS-207 wheel runs `ai-hats self update` from the OLD in-memory code
-(which still passes ``--no-deps``); pip installs the new wheel without the
-new declared deps; the next `ai-hats` invocation crashes with
-``ModuleNotFoundError``. This module detects that state on every CLI startup
-and on every ``ai-hats self update`` and self-heals it.
+Closes the bootstrap chicken-and-egg that survived an earlier fix: a user
+upgrading from an older wheel runs `ai-hats self update` from the OLD
+in-memory code (which still passes ``--no-deps``); pip installs the new
+wheel without the new declared deps; the next `ai-hats` invocation crashes
+with ``ModuleNotFoundError``. This module detects that state on every CLI
+startup and on every ``ai-hats self update`` and self-heals it.
 
 Stdlib-only on purpose — must not import anything from the project, since
 the project itself is what may be missing dependencies.
@@ -13,7 +13,7 @@ the project itself is what may be missing dependencies.
 Two entry points:
 
 * :func:`bootstrap_or_die` — called first in ``__main__.main()``, ahead of the
-  ``ai_hats.cli`` import it protects (HATS-1368). Detects missing runtime deps
+  ``ai_hats.cli`` import it protects. Detects missing runtime deps
   and stale editable step entry points; repairs the install; ``os.execv``
   re-execs the same command in a fresh interpreter.
 * :func:`verify_after_install` — called via ``python -m ai_hats._bootstrap
@@ -85,7 +85,7 @@ def _editable_source_dir() -> str | None:
 
     Only a local editable install has one. PEP 610 marks it ``dir_info.editable``;
     a wheel from PyPI carries ``archive_info`` instead, so this returns ``None``
-    there and every caller keeps its pre-HATS-1367 behaviour. ``None`` too when
+    there and every caller keeps its previous behaviour. ``None`` too when
     the metadata is absent or malformed, or the recorded checkout is gone —
     absent, unreadable and foreign all mean the same thing here: nothing local to
     re-point at. POSIX-only path handling, matching this module's re-exec contract.
@@ -146,7 +146,7 @@ def find_editable_entry_point_drift() -> list[str]:
     Both groups, because both are how ai-hats reaches its own code: a step the
     loader resolves by id, and a surface the registry looks up by name. Neither
     has a fallback table by design (ADR-0026 D3), so stale metadata does not
-    degrade — it removes the thing (HATS-1810, HATS-1826).
+    degrade — it removes the thing.
     """
     src = _editable_source_dir()
     if src is None:
@@ -169,7 +169,7 @@ def find_editable_entry_point_drift() -> list[str]:
 def _declared_requirements() -> list[str]:
     """Requirement lines ai-hats declares — live pyproject first, METADATA second.
 
-    HATS-1368: on an editable install METADATA is a snapshot taken at install
+    On an editable install METADATA is a snapshot taken at install
     time, and its drift from the code actually on ``.pth`` is one-sided in BOTH
     directions — it can under-declare (a workspace member added since, invisible
     to the gate) or over-declare (a member deleted since, healed forever as a
@@ -239,9 +239,9 @@ def attempt_self_heal(missing: list[str], *, repair_editable: bool = False) -> b
 def _refresh_import_paths() -> None:
     """Make what uv just installed visible to THIS interpreter.
 
-    HATS-1368: an editable install lands as a ``.pth`` file, and ``.pth`` files
+    An editable install lands as a ``.pth`` file, and ``.pth`` files
     are processed only at interpreter startup — without re-running the site hook
-    the healed module stays unimportable here, and the HATS-1359 recheck reads a
+    the healed module stays unimportable here, and the post-heal recheck reads a
     successful heal as a no-op.
     """
     import site
@@ -257,7 +257,7 @@ def _refresh_import_paths() -> None:
 def _repair_argv(missing: list[str]) -> list[str]:
     """The one repair invocation — what bootstrap runs and what it tells users to run.
 
-    HATS-1367: installing an editable install's deps BY NAME is the no-op uv
+    Installing an editable install's deps BY NAME is the no-op uv
     audits as already-satisfied; only re-pointing the checkout rewrites the
     metadata that went stale. Two renderings of one command, so the printed
     rescue can never drift from the attempted heal.
@@ -276,7 +276,7 @@ def _rescue_command(missing: list[str]) -> str:
 def repair_command() -> str:
     """The command to hand a user whose install is broken in an unknown way.
 
-    HATS-1368: ``self update`` is a dead end when the import that broke is the
+    ``self update`` is a dead end when the import that broke is the
     CLI that would run it — an editable install with stale metadata answers the
     advice with the very error that produced it. Re-pointing the checkout is the
     repair that runs from outside the broken tree.
@@ -337,7 +337,7 @@ def bootstrap_or_die() -> None:
 def _is_first_party(ep: importlib.metadata.EntryPoint) -> bool:
     """True when ai-hats itself ships this entry point.
 
-    Duplicates provider_entry_points._is_first_party_entry_point (HATS-1121).
+    Duplicates provider_entry_points._is_first_party_entry_point.
     _bootstrap is contractually stdlib-only and must not depend on project modules
     it may be verifying.
     """
@@ -450,7 +450,7 @@ def _check_pycache_coherence() -> list[str]:
 def find_integrity_failures() -> list[str]:
     """Report why the installed ai-hats tree is unusable, one line per failure.
 
-    HATS-1116: :func:`find_missing_runtime_deps` only sees third-party
+    :func:`find_missing_runtime_deps` only sees third-party
     distributions, so it cannot notice an ai_hats tree whose own modules
     disagree with each other — the exact state that shipped a green install.
     """

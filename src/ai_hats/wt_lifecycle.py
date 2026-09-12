@@ -1,6 +1,6 @@
 """ai-hats worktree lifecycle bundle — the hook-running extension-point impl.
 
-ADR-0013 P1 / HATS-849. The worktree *core* (:mod:`ai_hats_wt`) is
+ADR-0013 P1. The worktree *core* (:mod:`ai_hats_wt`) is
 hook-agnostic: it fires ``on_created`` / ``before_teardown`` extension-points at
 each lifecycle site and owns the per-route teardown control-flow, but knows
 nothing about hooks. THIS module is the ai-hats accretion that plugs in: it
@@ -45,7 +45,7 @@ WT_PRE_MERGE = "pre-merge"
 
 
 class WorktreeHookError(Exception):
-    """A ``wt_out`` lifecycle hook failed and teardown is fail-closed (HATS-823).
+    """A ``wt_out`` lifecycle hook failed and teardown is fail-closed.
 
     Relocated from the worktree engine by ADR-0013 D8: this is *hook
     vocabulary*, so it belongs with the lifted hook layer, not the hook-agnostic
@@ -56,17 +56,17 @@ class WorktreeHookError(Exception):
 
 
 def _wt_hook_log_dir(state_dir, branch_name: str):
-    # ADR-0013 D4 / HATS-851: resolve hook-logs off the manager's INJECTED
+    # ADR-0013 D4: resolve hook-logs off the manager's INJECTED
     # state-dir base (ctx.state_dir), not a recomputed layout.sessions.worktrees,
     # so state + hook-logs stay co-located even under a custom-base driver.
     return state_dir / f"{_state_key(branch_name)}.logs"
 
 
 def _skill_search_roots(project_dir: Path, worktree_path: Path | None) -> list[Path]:
-    """Library roots to look a carry row's declaring skill up in (HATS-1269).
+    """Library roots to look a carry row's declaring skill up in.
 
     The worktree's own ``libraries/`` ranks highest: composition *inside* a
-    worktree re-points the project-local layer to it (HATS-831), so that copy is
+    worktree re-points the project-local layer to it, so that copy is
     what create saw — while teardown runs from the main checkout, where it would
     otherwise be invisible.
     """
@@ -212,7 +212,7 @@ class HookRunningLifecycle:
                 extra_env={"AI_HATS_BRANCH_NAME": ctx.branch_name},
                 # The dedup identity, not the basename: two rows whose scripts
                 # share a basename would otherwise truncate each other's log
-                # while the first one's reason still points at it — the HATS-1137
+                # while the first one's reason still points at it — the
                 # defect `rack_consumers._escaped` exists to prevent.
                 log_path=log_dir / check_log_name(WT_PRE_MERGE, check),
             )
@@ -320,7 +320,7 @@ def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str
 
 
 def _raise_merge_aborted(branch_name: str, reason: str) -> NoReturn:
-    """Refuse the merge with the tree intact (HATS-1540).
+    """Refuse the merge with the tree intact.
 
     No ``--skip-hooks`` recipe, unlike its teardown sibling: that escape exists
     to accept losing harvested data, and there is no equivalent thing to accept

@@ -126,11 +126,11 @@ def _check_overwrites(steps: tuple[Step, ...]) -> None:
 
     Two steps producing one key is legal — the interleaved shape reads each
     value before the next overwrites it. Only an *unread* overwrite is a defect,
-    and telling them apart needs step order, which this walk has (HATS-1249).
+    and telling them apart needs step order, which this walk has.
 
     "Read" is tracked per producer STEP, not per key: consuming any one of a
     step's outputs clears all of them, because per-key strictness would reject
-    the legitimate interleaved shape. See ADR-0001 §Update HATS-1249.
+    the legitimate interleaved shape. See ADR-0001 §Update (2026-07-27).
     """
     owner: dict[str, int] = {}
     read: set[int] = set()
@@ -172,7 +172,7 @@ def _check_run_signature(steps: tuple[Step, ...]) -> None:
     ``_run_steps`` projects kwargs strictly from the declaration, so an
     undeclared param is never passed and every call raises ``TypeError`` — under
     ``failure_policy="continue"`` the step is then skipped for its whole life
-    while the pipeline stays green (HATS-1892).
+    while the pipeline stays green.
 
     Strict against ``requires`` alone: ``optional`` means the key may be absent,
     and a required param riding an absent key is the same TypeError.

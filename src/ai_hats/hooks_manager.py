@@ -1,8 +1,7 @@
-"""Managed-hook materialization (HATS-837 extract from Assembler, updated HATS-1480).
+"""Managed-hook materialization (extracted from Assembler, later updated).
 
 Owns skill-declared git hooks (``.githooks/``). Worktree hooks spawn in place
-from their declaring skills (HATS-1269); runtime hooks live in the session tree
-(HATS-1268).
+from their declaring skills; runtime hooks live in the session tree.
 
 Narrow DI: ``project_dir`` + a live ``project_config`` reference + a
 ``resolve_provider`` callable.
@@ -27,7 +26,7 @@ from . import owners
 
 
 def _read_manifest(path: Path) -> set[str]:
-    """Managed names recorded in a ``.manifest`` — plain or hashed format (HATS-911)."""
+    """Managed names recorded in a ``.manifest`` — plain or hashed format."""
     from .sweeper import read_marker_names
 
     return read_marker_names(path)
@@ -53,7 +52,7 @@ class HookError(Exception):
 
 
 class HooksManager:
-    """Materialize managed-hook surfaces (HATS-837, HATS-1480).
+    """Materialize managed-hook surfaces.
 
     See module docstring for the narrow-DI contract.
     """
@@ -100,7 +99,7 @@ class HooksManager:
             return False
 
 
-# ----- git-hook mechanics (HATS-837: merged from the former githooks.py) -----
+# ----- git-hook mechanics (merged from the former githooks.py) -----
 # Pure functions over (project_dir, CompositionResult); the HooksManager methods
 # above are the OOP seam onto them.
 
@@ -129,7 +128,7 @@ def install_git_hooks(
     Conflict policy:
     - `.githooks/<event>` exists WITHOUT our marker → leave alone, warn.
     - `core.hooksPath` pre-set elsewhere → take over, recording the displaced
-      dir for dispatcher chaining, and announce loudly (HATS-999).
+      dir for dispatcher chaining, and announce loudly.
     """
     warnings: list[str] = []
     _retire_pre_1337_layout(project_dir)
@@ -182,7 +181,7 @@ def _managed_dispatchers(githooks_dir: Path) -> list[Path]:
     """Every `.githooks/<event>` that proves, by content, it is ours.
 
     Ownership is proven by the marker the dispatcher carries, never by a list of
-    names: the manifest that used to hold those names is gone (HATS-1337), and a
+    names: the manifest that used to hold those names is gone, and a
     hand-written foreign hook of the same name must stay untouched.
     """
     if not githooks_dir.is_dir():
@@ -285,7 +284,7 @@ def _install_dispatcher(dispatcher_path: Path) -> bool:
 
 
 def _same_hooks_path(a: str, b: str, project_dir: Path) -> bool:
-    """True when two core.hooksPath values resolve to the same dir (HATS-969).
+    """True when two core.hooksPath values resolve to the same dir.
 
     A relative value is taken against ``project_dir`` (git's working-tree root),
     mirroring how git interprets a relative ``core.hooksPath``."""
@@ -365,7 +364,7 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
 
     if existing:
         warnings.append(
-            f"core.hooksPath: '{existing}' → '{target}' (taken over, HATS-999). "
+            f"core.hooksPath: '{existing}' → '{target}' (taken over). "
             f"Previous hooks keep running: the dispatcher chains to "
             f"'{existing}/<event>' after ai-hats hooks. "
             f"Revert: git config core.hooksPath {existing}"
