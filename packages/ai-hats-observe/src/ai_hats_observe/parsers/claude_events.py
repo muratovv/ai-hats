@@ -416,11 +416,16 @@ class ClaudeTranscriptReader:
                     reason=WorthRecording.CONTEXT_COMPACTED,
                 )
             case "informational":
-                # `notice`/`info` are harness chatter; a `warning` is a shape
-                # WorthRecording has no member for, so it lands on
-                # UNSUPPORTED_RECORD with a raw_code that names it.
+                # `notice`/`info` are harness chatter; a `warning` is worth
+                # reporting.
                 if record.get("level") == "warning":
-                    yield self._notice("system/informational", ts=ts, detail=detail)
+                    yield Notice(
+                        ts=ts,
+                        detail=detail,
+                        raw_code="system/informational",
+                        source=SOURCE,
+                        reason=WorthRecording.SURFACE_WARNING,
+                    )
             case _ if subtype in _SILENT_SYSTEM_SUBTYPES:
                 return
             case _:

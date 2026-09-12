@@ -112,6 +112,10 @@ class Completion(StrEnum):
     # The model declined to answer.
     REFUSED = "refused"
 
+    # Stopped from outside — an interrupt. Neither a failure nor a dropped
+    # connection, so it must not read as one.
+    CANCELLED = "cancelled"
+
     # The stream ended without the surface saying why. Distinct from every value above:
     # those are reported outcomes, this one is our admission that we did not observe
     # one.

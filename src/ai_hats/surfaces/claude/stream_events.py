@@ -405,7 +405,14 @@ class ClaudeStreamReader:
                 # recognised and deliberately silent.
                 level = str(data.get("level") or "").lower()
                 if level in {"warning", "error"}:
-                    return [self._unsupported(raw_code, detail=_detail(data))]
+                    return [
+                        Notice(
+                            reason=WorthRecording.SURFACE_WARNING,
+                            detail=_detail(data),
+                            raw_code=raw_code,
+                            source=SOURCE,
+                        )
+                    ]
                 return []
             case _ if subtype in _SILENT_SYSTEM_SUBTYPES:
                 return []
@@ -530,7 +537,7 @@ def _completion(stop_reason: str | None, terminal_reason: str | None) -> Complet
     if stop_reason:
         return _STOP_REASON_COMPLETIONS.get(stop_reason, Completion.UNKNOWN)
     if terminal_reason in _CANCELLED_TERMINAL_REASONS:
-        return Completion.TRUNCATED_TRANSPORT
+        return Completion.CANCELLED
     return Completion.UNKNOWN
 
 

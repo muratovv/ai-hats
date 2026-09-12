@@ -45,6 +45,11 @@ class WorthRecording(StrEnum):
     MODEL_SWITCHED = "model_switched"
     CONTEXT_COMPACTED = "context_compacted"
 
+    # The surface reported something a reader should know that is not a failure
+    # and not drift — a degraded feature, an optional connection lost. Distinct
+    # from UNSUPPORTED_RECORD, which must stay rare enough to mean schema drift.
+    SURFACE_WARNING = "surface_warning"
+
     # Capacity is running low but nothing has been refused yet. Only a live
     # stream reports this, and only before the wall is hit — it is the one
     # signal that arrives in time to change what a caller does.

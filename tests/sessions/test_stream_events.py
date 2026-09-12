@@ -508,7 +508,7 @@ class TestResultMessage:
 
         assert run.usage.input_tokens == 10  # not the result's 999
 
-    def test_a_cancelled_turn_ends_its_response_as_truncated(self):
+    def test_a_cancelled_turn_reads_as_cancelled_not_as_a_dropped_connection(self):
         events = drain(
             [
                 _assistant(TextBlock(text="half an ans")),
@@ -517,7 +517,7 @@ class TestResultMessage:
         )
 
         ended = [e for e in events if isinstance(e, ResponseEnded)][0]
-        assert ended.completion is Completion.TRUNCATED_TRANSPORT
+        assert ended.completion is Completion.CANCELLED
 
     def test_http_status_chooses_who_must_act(self):
         events = drain([_result(is_error=True, api_error_status=429, errors=["overloaded"])])
