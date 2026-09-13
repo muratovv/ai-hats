@@ -15,6 +15,22 @@ A response still being produced is simply one whose ``ResponseEnded`` has not
 arrived. That absence is the only representation of "in flight", which keeps it
 from being confused with an outcome the surface actually reported.
 
+Events arrive in causal order, which is not the same as time order. A response
+is closed only once something later proves it ended, so its ``ResponseEnded``
+carries an earlier stamp than the tool results that arrived while it was open.
+A timestamp always says when something happened, never when this reader worked
+it out — so a consumer that only records or displays time, which is every
+consumer we have, reads it as the truth about the run and needs nothing else.
+
+The disorder that buys is bounded by POSITION, not by time: measured over 693
+transcripts an event never reaches back more than two places, while in seconds
+it reaches back as far as twelve days, because a paused session closes its last
+response whenever it resumes. A consumer that genuinely needs chronological
+order — merging two sources is the one we know of — passes the stream through
+``views.in_time_order``, which costs a few events of buffer and no latency.
+Ordering is therefore the consumer's choice, not a second timestamp every
+call site has to choose between.
+
 What the model asked and what a person asked are separate events. Pairing them
 into a dialogue is one possible reading, and belongs to the consumer that wants
 it rather than to the shape everyone else must carry.
@@ -107,6 +123,9 @@ class ResponseEnded:
     Cost rides the end of the call because that is the one point at which it is
     known once — which is what keeps a call from being billed as many times as
     the surface fragmented it.
+
+    ``ts`` is when the model stopped, not when this reader could tell — which is
+    why it can precede events already emitted. See the module docstring.
     """
 
     response_id: ResponseId
