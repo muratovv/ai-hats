@@ -23,6 +23,12 @@ from .artifacts import (
     is_measured,
     session_start_dt,
 )
+from .canonical.signals import (
+    Blocking,
+    HarnessActionRequired,
+    PersonActionRequired,
+    Signal,
+)
 from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
 
@@ -34,6 +40,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: How much of a signal's own prose the audit line carries.
+SIGNAL_DETAIL = 300
+
 
 def _merge_flags(prior: object, new: list[str]) -> list[str]:
     """Union of a record's existing flags and this parse's, insertion-ordered."""
@@ -42,6 +51,62 @@ def _merge_flags(prior: object, new: list[str]) -> list[str]:
         if flag not in merged:
             merged.append(flag)
     return merged
+
+
+def _signal_label(signal: Signal) -> str:
+    """Who has to act, in the words a reader of the audit thinks in."""
+    reason = str(signal.reason).replace("_", " ")
+    if isinstance(signal, PersonActionRequired):
+        return f"⛔ run blocked — a person must {reason}"
+    if isinstance(signal, HarnessActionRequired):
+        when = f", not before {_utc(signal.retry_after)}" if signal.retry_after else ""
+        return f"⛔ run blocked — the harness must {reason}{when}"
+    return f"ℹ️ {reason}"
+
+
+def _utc(epoch: int) -> str:
+    try:
+        return datetime.fromtimestamp(epoch, timezone.utc).isoformat(timespec="seconds")
+    except (OSError, OverflowError, ValueError):
+        return f"epoch {epoch}"
+
+
+def _signal_line(signal: Signal) -> str:
+    parts = [_signal_label(signal)]
+    if signal.raw_code:
+        parts.append(f"[{signal.raw_code}]")
+    if signal.ts:
+        parts.append(f"at {signal.ts}")
+    if signal.detail:
+        flat = " ".join(signal.detail.split())
+        parts.append(f"— {flat[:SIGNAL_DETAIL]}")
+    return " ".join(parts)
+
+
+def _render_signals(signals: list[Signal]) -> list[str]:
+    """What happened to the run, above the turns that look like it went fine.
+
+    Blocking signals are listed one by one — each answers "why did this stop".
+    Notices repeat (one per record of a kind) and are folded, so a wall of them
+    cannot bury the line that matters.
+    """
+    if not signals:
+        return []
+    first: dict[Any, str] = {}
+    seen: dict[Any, int] = {}
+    for index, signal in enumerate(signals):
+        key = (
+            index
+            if isinstance(signal, Blocking)
+            else (type(signal).__name__, str(signal.reason), signal.raw_code)
+        )
+        seen[key] = seen.get(key, 0) + 1
+        first.setdefault(key, _signal_line(signal))
+    lines = ["## Signals", ""]
+    for key, line in first.items():
+        lines.append(f"- {line}{f' ×{seen[key]}' if seen[key] > 1 else ''}")
+    lines.append("")
+    return lines
 
 
 class AuditWriter:
@@ -59,6 +124,7 @@ class AuditWriter:
         session: Session,
         turns: list[Turn],
         model_stats: dict[str, dict] | None = None,
+        signals: list[Signal] | None = None,
     ) -> str:
         metrics = _load_metrics_safe(session) or {}
 
@@ -105,6 +171,8 @@ class AuditWriter:
             lines.append(Session._render_composition_md(composition).rstrip())
             lines.append("")
 
+        lines.extend(_render_signals(signals or []))
+
         for i, turn in enumerate(turns, 1):
             # Support both trace format "17:32:34.581" and ISO "2026-03-27T18:15:00"
             ts_display = turn.timestamp
@@ -117,11 +185,15 @@ class AuditWriter:
                 # HATS-683: lossless — render user_input in full. Audit *size* is
                 # managed at the delivery layer (`_truncate_audit`, HATS-684), not
                 # by truncating the canonical record. Pure-noise skill bodies are
-                # already dropped upstream in `_extract_user_text` (HATS-666).
+                # already dropped upstream by the parser's prompt filter (HATS-666).
                 lines.append(f"👤 {turn.user_input}")
             lines.append("")
             if turn.thinking_secs:
                 lines.append(f"💭 Thinking {turn.thinking_secs}s")
+            # R6: the reasoning itself, for the readers entitled to ask how an
+            # answer was reached. Size is bounded at delivery (`_truncate_audit`).
+            for thought in turn.thinking:
+                lines.append(f"💭 {thought}")
             for tool in turn.tools:
                 lines.append(f"🔧 {tool}")
             if turn.response:
@@ -200,7 +272,9 @@ class AuditWriter:
         self._write_metrics(
             session, turns, parsed.model_stats, parsed.agg_usage, flags=parsed.flags
         )
-        audit_content = self._format_audit(session, turns, model_stats=parsed.model_stats)
+        audit_content = self._format_audit(
+            session, turns, model_stats=parsed.model_stats, signals=parsed.signals
+        )
         if not turns:
             audit_content = self._with_transcript_fallback(session, audit_content)
         session.write_artifact_text(session.audit_path, audit_content)

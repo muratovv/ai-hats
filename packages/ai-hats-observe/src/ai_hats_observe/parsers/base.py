@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Protocol, runtime_checkable
 
+from ..canonical.signals import Signal
+from ..canonical.views import Response
+
 
 @dataclass
 class Turn:
@@ -19,7 +22,12 @@ class Turn:
     user_input: str | None = None
     tools: list[str] = field(default_factory=list)
     response: str = ""
+    # How long the surface says the model reasoned, where it reports a duration
+    # (the trace chrome does). Never derived from the text below — a character
+    # count presented as seconds is a fabricated measurement.
     thinking_secs: int = 0
+    # The reasoning itself, kept verbatim where the surface emits it.
+    thinking: list[str] = field(default_factory=list)
 
 
 def _empty_agg_usage() -> dict[str, int]:
@@ -38,12 +46,22 @@ class ParsedTranscript:
     ``model_stats``/``agg_usage`` carry token telemetry only where the surface
     emits it; a parse without it leaves them empty/zero — structured turns or
     not — and says so in ``flags``. Read those before treating a zero as measured.
+
+    ``flags`` says how well we could read the record; ``signals`` says what
+    happened to the run. Separate axes: a run killed by the platform is
+    perfectly readable, and without the second one it reads as a short clean run.
     """
 
     turns: list[Turn]
     model_stats: dict[str, dict] = field(default_factory=dict)
     agg_usage: dict[str, int] = field(default_factory=_empty_agg_usage)
     flags: list[str] = field(default_factory=list)
+    # One entry per inference call, cost counted once — the canonical record the
+    # legacy fields above are derived from. Empty on a surface not yet reading
+    # its record as canonical events.
+    responses: list[Response] = field(default_factory=list)
+    # Run health: auth, quota, service, model switches, unmodelled records.
+    signals: list[Signal] = field(default_factory=list)
 
 
 @runtime_checkable

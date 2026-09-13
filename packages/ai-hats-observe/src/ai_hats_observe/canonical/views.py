@@ -13,6 +13,7 @@ from typing import Iterable, Iterator
 
 from .events import (
     Event,
+    PromptReceived,
     ItemDelta,
     ItemEmitted,
     ResponseEnded,
@@ -20,7 +21,7 @@ from .events import (
     ToolResultReceived,
 )
 from .signals import Blocking, Signal
-from .types import Item, ItemKind, ModelName, ResponseId, Usage
+from .types import Completion, Item, ItemKind, ModelName, ResponseId, Usage
 
 # --- selecting items -------------------------------------------------------
 
@@ -101,7 +102,7 @@ class Response:
     # answers to this response's calls, which arrive after it has ended
     results: list[ToolResultReceived] = field(default_factory=list)
     usage: Usage = Usage()
-    completion: str | None = None
+    completion: Completion | None = None
 
     @property
     def text(self) -> str:
@@ -146,10 +147,17 @@ def collect(events: Iterable[Event]) -> Collected:
     caller: dict[str, Response] = {}
     for event in events:
         match event:
+            case PromptReceived():
+                out.prompts.append(event.text)
             case ResponseStarted():
-                r = Response(response_id=event.response_id, model=event.model)
-                by_id[event.response_id] = r
-                out.responses.append(r)
+                # One call may be announced twice when a session is read from
+                # several transcript files. Folding it onto the response already
+                # known keeps a call — and its cost — counted once.
+                r = by_id.get(event.response_id)
+                if r is None:
+                    r = Response(response_id=event.response_id, model=event.model)
+                    by_id[event.response_id] = r
+                    out.responses.append(r)
             case ItemEmitted():
                 response = by_id[event.response_id]
                 response.items.append(event.item)

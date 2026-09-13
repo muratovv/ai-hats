@@ -99,3 +99,47 @@ def test_the_default_depth_clears_the_worst_disorder_measured() -> None:
     """2 places was the deepest disorder over 693 transcripts; the default keeps
     headroom over it rather than sitting exactly on the observed maximum."""
     assert REORDER_DEPTH >= 2 * 2
+
+
+def test_a_call_announced_twice_is_still_billed_once() -> None:
+    """A session read from several transcript files announces one call more than
+    once. Folding must recognise it, or every such session is double-billed.
+
+    Positive control: two genuinely distinct calls still count as two, so the
+    guard cannot pass by collapsing everything into one.
+    """
+    from ai_hats_observe.canonical import collect
+
+    twice = collect(
+        [
+            ResponseStarted(response_id="r1"),
+            ResponseEnded("r1", Completion.COMPLETE, Usage(10, 5, 0, 0)),
+            ResponseStarted(response_id="r1"),
+            ResponseEnded("r1", Completion.COMPLETE, Usage(10, 5, 0, 0)),
+        ]
+    )
+    assert twice.api_calls == 1
+    assert twice.usage.input_tokens + twice.usage.output_tokens == 15
+
+    # POSITIVE CONTROL: distinct ids are not collapsed
+    distinct = collect(
+        [
+            ResponseStarted(response_id="r1"),
+            ResponseEnded("r1", Completion.COMPLETE, Usage(10, 5, 0, 0)),
+            ResponseStarted(response_id="r2"),
+            ResponseEnded("r2", Completion.COMPLETE, Usage(10, 5, 0, 0)),
+        ]
+    )
+    assert distinct.api_calls == 2
+    assert distinct.usage.input_tokens + distinct.usage.output_tokens == 30
+
+
+def test_a_prompt_reaches_the_fold() -> None:
+    """``Collected.prompts`` was declared and never filled, so a consumer asking
+    the fold for the dialogue got silence rather than an error."""
+    from ai_hats_observe.canonical import PromptReceived, collect
+
+    assert collect([PromptReceived(text="go"), PromptReceived(text="again")]).prompts == [
+        "go",
+        "again",
+    ]
