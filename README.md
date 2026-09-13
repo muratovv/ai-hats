@@ -111,6 +111,17 @@ Everything else is discoverable from the tool itself: `ai-hats --tree` prints th
 
 The shipped library splits into `core/` (engine fundament) and `usage/` (curated content). You change behavior by composing or replacing roles rather than editing core code — add your own role, override a built-in like `session-reviewer`, point ai-hats at an external library repo, or ship a role as a one-liner shell alias. Recipes and the override-precedence chain — [how-to-extend](docs/how-to-extend.md).
 
+## Documentation
+
+| I want to…                                     | Read                                                 |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| Set up ai-hats on a project for the first time | [how-to-configure](docs/how-to-configure.md)         |
+| Look up what a term means                      | [glossary](docs/glossary.md)                         |
+| Write my own role, trait, rule or skill        | [how-to-extend](docs/how-to-extend.md)               |
+| Drive the backlog day to day                   | [how-to-hatrack](docs/how-to-hatrack.md)             |
+| Understand how a lesson becomes a rule         | [how-to-feedback-loop](docs/how-to-feedback-loop.md) |
+| Understand the internals                       | [architecture](docs/ARCHITECTURE.md)                 |
+
 Every document in the repo is cataloged in [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
