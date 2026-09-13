@@ -14,7 +14,9 @@ why:    every token number ai-hats published was inflated by summing a usage
 
 # A real subprocess, because this entry point IS the contract: the retroactive
 # sweep over historical transcripts calls it from bash, so an in-process call
-# would not exercise the boundary the numbers cross.
+# would not exercise the boundary the numbers cross. The two fixtures are the
+# two shapes HATS-1966 measured over the local corpus — a call the CLI split
+# across records, and one the platform refused — rather than invented cases.
 # comment-length: allow — names why this tier is the one that can prove it
 
 from __future__ import annotations

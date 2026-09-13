@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**316 of 316 files catalogued — 324 flows.**
+**317 of 317 files catalogued — 325 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3274,6 +3274,20 @@ as a claim to check, not as evidence.
 
 - **expect** — ephemeral session cache files are written out-of-tree without modifying workspace files
 - **why** — without out-of-tree session caching, background sessions trigger fseventsd and pollute git status
+
+## `test_session_usage_signals.py`
+
+*pins HATS-1966*
+
+- **flow** — a transcript in which one API call was split across three records, and a second in which the platform refused the call, are read by the bash-composable usage entry point
+- **cmds**
+
+  ```console
+  python -m ai_hats_observe.usage <transcript.jsonl>
+  ```
+
+- **expect** — the split call is billed once and reported as one api_call, and the refusal reaches the report as a signal naming who must act
+- **why** — every token number ai-hats published was inflated by summing a usage dict the CLI repeats on each fragment of one call, and a run the platform killed was indistinguishable from a short one
 
 ## `test_session_wiring_survives_later_materialization.py`
 
