@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <em>Compose an agent from reusable roles, run it on any of five agent CLIs, and let every session leave evidence behind.</em><br>
+  <em>Configure any agent CLI for a job once, run as many agents as the work needs, and let every session leave evidence behind.</em><br>
   <sub>Do. Reflect. Repeat.</sub>
 </p>
 
@@ -36,12 +36,12 @@ Have you ever watched the same AI agent step on the same rakes across projects? 
 
 ai-hats answers this in four parts.
 
-- **Role-based.** A role is a composition of reusable `traits`, `rules`, `skills` and `hooks`, assembled once and injected into the system prompt. A fix to one component reaches every role that includes it on the next session — no copy-paste, no drift. Terms — [1].
-- **Multi-harness.** One role set, five harnesses: `claude`, `agy` (Gemini), `cline`, `codex`, `opencode`. The composition is built per session and delivered in each harness's own dialect, so switching is `ai-hats config set -p <provider>` and nothing else.
-- **Framework.** The machinery around the agent's work, not just its prompt: isolated git worktrees so a task never dirties your checkout ([2]), a backlog of tasks / hypotheses / proposals with enforced state machines behind the `rack` CLI ([3]), a consent gate that turns a declared destructive operation into a question to you and refuses self-granting, and a shipped library of roles to start from.
-- **Behavior feedback.** After every session a reviewer appends a **verdict** — `confirmed`, `refuted` or `inconclusive` — to each active hypothesis's `validation_log`. Evidence accumulates across sessions; only then does a hypothesis close and a pattern become a rule or a skill. What the agent learns reaches the next prompt **after** it is proven, not when it is guessed ([4]).
+- **Role-based.** A role is one uniform way to configure a harness for a job — an SRE, a technical writer, a Go developer. It sets more than the opening context: the runtime comes with it. Hooks that fire on the agent's tool calls, consent gates that turn a destructive command into a question, the skills it may reach for. Terms and the composition model — [glossary](docs/glossary.md), [architecture](docs/ARCHITECTURE.md).
+- **Multi-harness.** ai-hats levels the role systems of different agent CLIs into a single set. You stop asking how a job is expressed in harness X: describe it once, and it is delivered in each harness's own dialect. See [harnesses](#harnesses) below.
+- **Framework, multi-scale out of the box.** Want five Claude developers, two SREs and a technical writer running at once? No problem — the agents don't collide, they compound. Each works in an isolated git worktree, they share context through the `rack` backlog instead of over each other's heads, and the feedback below improves the roles all of them run on. Worktree workflow — [how-to-advanced §2](docs/how-to-advanced.md); backlog — [how-to-hatrack](docs/how-to-hatrack.md).
+- **Behavior feedback.** A session is not a black box: it is scored, measured, and can be behavior-tested. An edit to a role is settled by an A/B experiment rather than by argument, and what the agent learns reaches the next prompt only after it is proven — not when it is guessed. The loop — [how-to-feedback-loop](docs/how-to-feedback-loop.md); experiments — [how-to-experiments](docs/how-to-experiments.md).
 
-The first three layers are the runtime; the fourth is the loop that changes it.
+The first three are the runtime; the fourth is the loop that changes it.
 
 <!-- TODO(HATS-1950 S2): встроить композитную диаграмму assets/diagrams/runtime-and-loop.svg — runtime (роль-композиция · пять поверхностей · обвязка) | feedback loop -->
 
@@ -50,30 +50,22 @@ The first three layers are the runtime; the fourth is the loop that changes it.
 **Prerequisite:** [uv](https://docs.astral.sh/uv/) is the single host requirement — the env engine that also provisions Python. The one-command install auto-installs it if absent.
 
 ```bash
-# 1. install the launcher, create the venv, wire this project
-curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r <role> -p <provider>
+cd ~/dev/my-project     # run this from the project you want to wire
 
-# 2. start a session with the composed role
-ai-hats
+curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r assistant -p claude
 ```
 
-`ai-hats` is a **host tool**, driven by a ~30-line bash launcher in `~/.local/bin/ai-hats` that exec's `python -m ai_hats`. It is never installed as a dependency of your project's own venv, and there is no `<venv>/bin/ai-hats` console script.
+One command, three steps: it installs the `ai-hats` launcher into `~/.local/bin/`, creates the managed venv, and initializes this project. If it warns that `~/.local/bin` is not on your `$PATH`, add it and reopen the shell — otherwise the next command won't resolve:
 
-### Installation
+```bash
+ai-hats                 # start a session with the composed role
+```
 
-| Method                | Command                                                                     | When to use                            |
-| --------------------- | --------------------------------------------------------------------------- | -------------------------------------- |
-| **One command**       | `curl -LsSf .../scripts/bootstrap.sh \| bash -s -- -r <role> -p <provider>` | fresh host — installs uv if missing    |
-| **Zero-install**      | `uvx ai-hats self init`                                                     | try it, or wire one project (needs uv) |
-| **Launcher per host** | `curl -sSL .../scripts/install-launcher.sh \| bash`                         | persistent `ai-hats` on `$PATH`        |
-
-Then wire a project: `ai-hats self init` runs an interactive wizard that detects your stack, recommends a role, and configures the feedback policy. Scripted variant — `ai-hats self init -p claude -r go-dev --no-wizard`. Full walkthrough — [5]; alternative install paths and `ai-hats.yaml` overlay recipes — [6].
-
-If `self update` ever can't repair a broken install in-band, recover out-of-band with `bash -s -- --repair` on the bootstrap script ([6] §10).
+No uv yet and just want a look? `uvx ai-hats self init` wires a single project from the published release without installing anything permanent. Other install paths, overlay recipes, and out-of-band repair — [how-to](docs/how-to.md); the full setup walkthrough, including the interactive wizard — [how-to-configure](docs/how-to-configure.md).
 
 ## Harnesses
 
-Five harnesses ship in-tree, discovered through the `ai_hats.providers` entry point — an open registry, so an out-of-tree package can add one. `gemini` is an accepted alias for `agy`.
+Harnesses are discovered through the `ai_hats.providers` entry point — an open registry, so a package outside this repo can add one. These ship in-tree:
 
 | Harness    | Agent CLI            |
 | ---------- | -------------------- |
@@ -83,56 +75,48 @@ Five harnesses ship in-tree, discovered through the `ai_hats.providers` entry po
 | `codex`    | Codex                |
 | `opencode` | opencode             |
 
-Support is not uniform across all five — runtime hooks, transcript-backed observability, sub-agents and the consent gate each land differently per harness.
+`gemini` is an accepted alias for `agy`. Support is not uniform: runtime hooks, transcript-backed observability, sub-agents and the consent gate each land differently per harness.
 
-<!-- TODO(HATS-1950 S3): ссылка на матрицу статуса поддержки docs/surfaces.md — «per-capability support matrix — [N]» -->
+<!-- TODO(HATS-1950 S3): ссылка на матрицу статуса поддержки docs/surfaces.md — «per-capability support matrix» -->
 
-List what your host has: `ai-hats list providers`.
+Ask your own host what it has: `ai-hats list providers`.
+
+## Roles
+
+A role is picked at init and switched any time with `ai-hats config set -r <role>`. The ones you are most likely to start from:
+
+| Role                                | Takes the job of                      |
+| ----------------------------------- | ------------------------------------- |
+| `assistant`                         | a general-purpose default             |
+| `dev-python` · `go-dev` · `dev-web` | development in one language           |
+| `architect`                         | design and interface decisions        |
+| `sre`                               | operations, incidents, infrastructure |
+| `tech-writer`                       | documentation and prose               |
+| `maintainer`                        | repo upkeep, reviews, releases        |
+
+`ai-hats list roles` prints the full set, including the ones the engine runs for itself — the session reviewer and the judges behind the feedback loop. Composing your own, or overriding a shipped one — [how-to-extend](docs/how-to-extend.md).
 
 ## CLI
 
-Nine top-level groups: `agent`, `config`, `execute`, `list`, `reflect`, `self`, `session`, `wait`, `wt`. The backlog is not one of them — cards live behind the `rack` CLI ([3]).
-
-The full reference with descriptions and options is the tool itself: `ai-hats --tree` (subtrees: `ai-hats --tree wt`, or deeper: `ai-hats --tree config feedback`).
-
 ```bash
-ai-hats                                    # session with current settings
-ai-hats -p claude -r architect             # override harness and role
-ai-hats agent sre --task "investigate XYZ" # sub-agent in an isolated worktree
-ai-hats config status                      # health-check the composition
-ai-hats self update                        # update the package (self-healing)
+ai-hats self init                  # wire a project — interactive wizard
+ai-hats self update                # update the tool, self-healing
+ai-hats                            # session with current settings
+ai-hats -p claude -r sre           # override harness and role for one run
 ```
+
+Everything else is discoverable from the tool itself: `ai-hats --tree` prints the whole command tree, `ai-hats --tree wt` one subtree of it. The backlog is a separate CLI — `rack`.
 
 ## Customization
 
-The shipped library splits into `core/` (engine fundament) and `usage/` (curated content). You change behaviour by composing or replacing roles rather than editing core code — add your own role, override a built-in like `session-reviewer`, point ai-hats at an external library repo, or ship a role as a one-liner shell alias. Recipes and the override-precedence chain — [7].
+The shipped library splits into `core/` (engine fundament) and `usage/` (curated content). You change behavior by composing or replacing roles rather than editing core code — add your own role, override a built-in like `session-reviewer`, point ai-hats at an external library repo, or ship a role as a one-liner shell alias. Recipes and the override-precedence chain — [how-to-extend](docs/how-to-extend.md).
 
-Internal model, directory layout, skill format, session lifecycle and the reflection loop — [8]. Documentation entry-point — [9].
+Every document in the repo is cataloged in [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Beta.** Until `v1.0.0` the version reads `0.MAJOR.MINOR`: a breaking change lands on a MAJOR bump and ships with a migration guide ([9]); MINOR is additive or fix-only. See [Releases](https://github.com/muratovv/ai-hats/releases) and [CHANGELOG.md](CHANGELOG.md).
+**Beta.** Until `v1.0.0` the version reads `0.MAJOR.MINOR`: a breaking change lands on a MAJOR bump and ships with a migration guide; MINOR is additive or fix-only. See [Releases](https://github.com/muratovv/ai-hats/releases) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) — development setup, library layout, diagram house style. Security policy: [SECURITY.md](SECURITY.md). License: [MIT](LICENSE).
-
-## References
-
-**[1]** — [`docs/glossary.md`](docs/glossary.md) — naming source-of-truth for core terms (role, provider, session, reflect, backlog, …).
-
-**[2]** — [`docs/how-to-advanced.md`](docs/how-to-advanced.md) — advanced flows: custom pipeline steps (§1), worktree workflow (§2).
-
-**[3]** — [`docs/how-to-hatrack.md`](docs/how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.
-
-**[4]** — [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md) — feedback policies, verdicts, and the reflection internals.
-
-**[5]** — [`docs/how-to-configure.md`](docs/how-to-configure.md) — narrative walkthrough for first-time setup (wizard, role pick, customization, feedback policy, venv).
-
-**[6]** — [`docs/how-to.md`](docs/how-to.md) — `ai-hats.yaml` overlay recipes and alternative install paths.
-
-**[7]** — [`docs/how-to-extend.md`](docs/how-to-extend.md) — shipped library layout, override precedence, recipes for your own roles / traits / rules / skills.
-
-**[8]** — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — internal model, directory layout, skill format, sample `config.yaml`.
-
-**[9]** — [`docs/INDEX.md`](docs/INDEX.md) — documentation catalog and entry-point, including the per-version migration guides.
