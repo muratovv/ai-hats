@@ -657,7 +657,7 @@ under the [MIT License](LICENSE).
 
 ## Documentation references
 
-User-facing docs (`README.md`, `docs/*.md`, `CONTRIBUTING.md`) use one of three link styles depending on the kind of target. Pick by **what** is being linked, not by **where** the link appears.
+Reference docs (`docs/*.md`, `CONTRIBUTING.md`) use one of three link styles depending on the kind of target. Pick by **what** is being linked, not by **where** the link appears. `README.md` is the exception — see below.
 
 | Link kind                                 | Style                                                                                   |
 | ----------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -666,6 +666,14 @@ User-facing docs (`README.md`, `docs/*.md`, `CONTRIBUTING.md`) use one of three 
 | CLI command, env var, file path-as-string | **inline code** — `` `rack transition ...` ``, `` `<ai_hats_dir>/...` ``                |
 
 **Rationale.** Cross-doc links earn a citation slot at the bottom because they survive doc reshuffles, declutter the body, and form a quick "what does this doc depend on" index. Anchors and CLI strings stay inline because they're navigation / identifiers, not citations.
+
+### `README.md` is exempt (HATS-1950)
+
+**The README links inline, and carries no `## References` section.** Numbered references answer a research-register question — *what does this claim rest on* — and a reader who audits sources accepts a jump to the bottom as the price. The README answers a different one: *what is this, and where do I click next*. Same words, different job; the citation apparatus is dead weight on a pitch.
+
+Evidence, not taste: a survey of 22 well-regarded OSS READMEs (ripgrep, fd, bat, starship, zoxide, uv, ruff, deno, bun, helix, neovim, lazygit, gh, mise, atuin, k9s, jq, fzf, hyperfine, click, tokio, mdBook) found **none** using numbered references, and none carrying a `References` heading. Eight use reference-style `[text][ref]` — which keeps the link clickable and self-describing while moving the URL out of the prose. Numbers keep neither.
+
+So in `README.md`: inline `[text](path)` everywhere, plus one curated `## Documentation` table as the index the numbered block used to provide. The exemption stops at the README — every doc under `docs/` keeps the numbered convention above.
 
 **Numbered-refs format**:
 
