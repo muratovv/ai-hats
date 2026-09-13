@@ -41,8 +41,6 @@ ai-hats answers this in four parts.
 - **Framework, multi-scale out of the box.** Want five Claude developers, two SREs and a technical writer running at once? No problem — the agents don't collide, they compound. Each works in an isolated git worktree, they share context through the `rack` backlog instead of over each other's heads, and the feedback below improves the roles all of them run on. Worktree workflow — [how-to-advanced §2](docs/how-to-advanced.md); backlog — [how-to-hatrack](docs/how-to-hatrack.md).
 - **Behavior feedback.** A session is not a black box: it is scored, measured, and can be behavior-tested. An edit to a role is settled by an A/B experiment rather than by argument, and what the agent learns reaches the next prompt only after it is proven — not when it is guessed. The loop — [how-to-feedback-loop](docs/how-to-feedback-loop.md); experiments — [how-to-experiments](docs/how-to-experiments.md).
 
-The first three are the runtime; the fourth is the loop that changes it.
-
 <!-- TODO(HATS-1950 S2): встроить композитную диаграмму assets/diagrams/runtime-and-loop.svg — runtime (роль-композиция · пять поверхностей · обвязка) | feedback loop -->
 
 ## Quick start
@@ -52,16 +50,18 @@ The first three are the runtime; the fourth is the loop that changes it.
 ```bash
 cd ~/dev/my-project     # run this from the project you want to wire
 
-curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r assistant -p claude
-```
+# installs the launcher into ~/.local/bin/ and creates the managed venv
+curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash
 
-One command, three steps: it installs the `ai-hats` launcher into `~/.local/bin/`, creates the managed venv, and initializes this project. If it warns that `~/.local/bin` is not on your `$PATH`, add it and reopen the shell — otherwise the next command won't resolve:
-
-```bash
+ai-hats self init       # wizard: detects your stack, picks a role and a harness
 ai-hats                 # start a session with the composed role
 ```
 
-No uv yet and just want a look? `uvx ai-hats self init` wires a single project from the published release without installing anything permanent. Other install paths, overlay recipes, and out-of-band repair — [how-to](docs/how-to.md); the full setup walkthrough, including the interactive wizard — [how-to-configure](docs/how-to-configure.md).
+The wizard is its own step on purpose: a piped installer owns stdin, so it cannot ask you anything. Run it from your terminal and it detects the stack, recommends a role, and sets the feedback policy. If bootstrap warns that `~/.local/bin` is not on your `$PATH`, add it and reopen the shell — otherwise `ai-hats` won't resolve.
+
+Scripted or CI instead of a wizard? Pass the answers and skip it: `ai-hats self init -p claude -r go-dev --no-wizard`. Bootstrap takes `-r`/`-p` too, and then runs init for you.
+
+No uv yet and just want a look? `uvx ai-hats self init` wires a single project from the published release without installing anything permanent. Other install paths, overlay recipes, and out-of-band repair — [how-to](docs/how-to.md); the full setup walkthrough — [how-to-configure](docs/how-to-configure.md).
 
 ## Harnesses
 
@@ -92,9 +92,10 @@ A role is picked at init and switched any time with `ai-hats config set -r <role
 | `architect`                         | design and interface decisions        |
 | `sre`                               | operations, incidents, infrastructure |
 | `tech-writer`                       | documentation and prose               |
-| `maintainer`                        | repo upkeep, reviews, releases        |
 
-`ai-hats list roles` prints the full set, including the ones the engine runs for itself — the session reviewer and the judges behind the feedback loop. Composing your own, or overriding a shipped one — [how-to-extend](docs/how-to-extend.md).
+`ai-hats list roles` prints the full set, including the ones the engine runs for itself — the session reviewer and the judges behind the feedback loop.
+
+**Read `maintainer` before writing your own.** It is not a role to pick for your project — it maintains *this* repo, and ships in the `ai-hats-dev` library layer rather than `usage/` for that reason. It is the reference: ten traits, each with an author-facing note on why it is there, plus a full injection. That is what a finished role looks like. Composing your own, or overriding a shipped one — [how-to-extend](docs/how-to-extend.md).
 
 ## CLI
 
