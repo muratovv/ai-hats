@@ -41,7 +41,15 @@ ai-hats answers this in four parts.
 - **Framework, multi-scale out of the box.** Want five Claude developers, two SREs and a technical writer running at once? No problem — the agents don't collide, they compound. Each works in an isolated git worktree, they share context through the `rack` backlog instead of over each other's heads, and the feedback below improves the roles all of them run on. Worktree workflow — [how-to-advanced §2](docs/how-to-advanced.md); backlog — [how-to-hatrack](docs/how-to-hatrack.md).
 - **Behavior feedback.** A session is not a black box: it is scored, measured, and can be behavior-tested. An edit to a role is settled by an A/B experiment rather than by argument, and what the agent learns reaches the next prompt only after it is proven — not when it is guessed. The loop — [how-to-feedback-loop](docs/how-to-feedback-loop.md); experiments — [how-to-experiments](docs/how-to-experiments.md).
 
-<!-- TODO(HATS-1950 S2): встроить композитную диаграмму assets/diagrams/runtime-and-loop.svg — runtime (роль-композиция · пять поверхностей · обвязка) | feedback loop -->
+<p align="center">
+  <img src="docs/assets/diagrams/runtime-and-loop.svg" alt="Runtime and the behavior-feedback loop" width="460">
+</p>
+
+<p align="center">
+  <sub>The loop closes on the runtime: what one session proves, the next session starts from.</sub>
+</p>
+
+<!-- Source: docs/assets/diagrams/runtime-and-loop.d2 — render: docs/assets/diagrams/render.sh -->
 
 ## Quick start
 

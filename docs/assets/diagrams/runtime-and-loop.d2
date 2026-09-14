@@ -1,0 +1,43 @@
+vars: @./_palette
+
+direction: down
+
+# README hero diagram (HATS-1950). Two halves: what runs a session, and what
+# changes the roles it runs on — with session artifacts as the bridge and the
+# orange arrow closing the loop. This is the pitch picture; the detailed flows
+# live in ARCHITECTURE.md (composition-flow, session-lifecycle,
+# auto-reflect-session).
+#
+# `direction: down` is measured, not taste: the same graph laid out to the
+# right renders 5461x384, a 14:1 strip no README column can hold. A per-
+# container `direction: right` does not help either — neither dagre nor elk
+# honours it here (elk: 496x1832, taller still). Every diagram in this folder
+# is portrait, and so is this one.
+#
+# Deliberately does NOT enumerate the harnesses: that list rots the day a
+# sixth one lands, and the names already live in the README table.
+
+runtime: RUNTIME {
+  role: A role\ntraits · rules · skills · hooks
+  harness: On any harness\none set, each CLI's own dialect
+  scale: As many agents as the work needs\na worktree each · one shared backlog
+
+  role -> harness: composed\nper session
+  harness -> scale: launch
+}
+
+artifacts: Session artifacts\naudit · metrics · transcript {shape: cylinder}
+
+loop: BEHAVIOR FEEDBACK {
+  hyp: A hypothesis about\nthe agent's own behavior {shape: page}
+  proven: Proven — becomes\na rule or a skill
+
+  hyp -> proven: evidence holds,\nsession after session
+}
+
+runtime -> artifacts: every session\nleaves evidence
+artifacts -> loop: scored, measured,\nbehavior-tested
+# Label kept to two short words on purpose: anything longer overlaps the
+# artifacts cylinder this edge runs past. The full sentence lives in the
+# README caption under the image.
+loop -> runtime: improves\nthe role {style.stroke: "#e8632b"; style.stroke-width: 2}
