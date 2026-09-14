@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 
 from .fs_digest import dir_digest
 
@@ -80,6 +81,8 @@ class MaterializationEntry:
             raise ValueError(f"{self.kind.value} entry cannot carry a tree digest")
         if self.private and self.kind is not WriteKind.WRITE_TEXT:
             raise ValueError(f"{self.kind.value} entry cannot be private")
+        if self.data is not None:  # the caller's dict stays the caller's
+            object.__setattr__(self, "data", MappingProxyType(dict(self.data)))
 
     @property
     def bytes(self) -> bytes | None:
@@ -87,7 +90,7 @@ class MaterializationEntry:
         if self.content is not None:
             return self.content.encode()
         if self.data is not None:
-            return render_json(self.data).encode()
+            return render_json(dict(self.data)).encode()
         return None
 
     @property

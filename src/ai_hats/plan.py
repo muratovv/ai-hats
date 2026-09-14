@@ -10,6 +10,7 @@ today's composition reaches the composition half through ``plan_adapter``.
 from __future__ import annotations
 
 import contextlib
+import os
 import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -225,7 +226,11 @@ _CREATING = (
 
 def validate(plan: MaterializationPlan) -> None:
     """Refuse a plan two entries create one target in, that writes outside its
-    root without saying so, or whose consent an operation adapter cannot read."""
+    root without saying so, or whose consent an operation adapter cannot read.
+
+    A target counts once per creating entry whatever stands between them: a
+    remove in the middle does not make the second creation a rebuild.
+    """
     from ai_hats_library.hooks.consent_gate import operations
 
     seen: dict[Path, int] = {}
@@ -234,8 +239,9 @@ def validate(plan: MaterializationPlan) -> None:
             seen[entry.target] = seen.get(entry.target, 0) + 1
     if duplicates := [target for target, n in seen.items() if n > 1]:
         raise DuplicateTargets(duplicates)
+    root = Path(os.path.normpath(plan.root))
     for entry in plan.entries:
-        if not entry.escape and not entry.target.is_relative_to(plan.root):
+        if not entry.escape and not Path(os.path.normpath(entry.target)).is_relative_to(root):
             raise EscapeUndeclared(entry.target, plan.root)
     for consent in plan.composition.consent:
         spec = operations.spec_for(consent.operation)
@@ -259,7 +265,16 @@ def apply(plan: MaterializationPlan) -> None:
     shadowed = {e.target for e in plan.entries if e.kind in _SHADOWING}
     with _lock(plan.root):
         for entry in plan.entries:
+            if entry.kind is WriteKind.COPY_TREE and _stale(entry):
+                raise StalePlan(entry)
+        for entry in plan.entries:
             _PERFORM[entry.kind](entry, shadowed)
+
+
+def _stale(entry: MaterializationEntry) -> bool:
+    return (
+        entry.tree_digest is not None and dir_digest(cast(Path, entry.source)) != entry.tree_digest
+    )
 
 
 _SHADOWING = (
@@ -297,6 +312,25 @@ def _same_bytes(path: Path, payload: bytes) -> bool:
     return path.is_file() and not path.is_symlink() and path.read_bytes() == payload
 
 
+def _make_way_for_a_file(path: Path) -> None:
+    """Whatever stands where a file belongs — a link, a directory — goes first.
+
+    Writing through a symlink would reach outside the plan; a directory would
+    swallow the copy and leave the file missing.
+    """
+    if path.is_symlink():
+        path.unlink()  # safe-delete: ok a link standing where the plan puts a file
+    elif path.is_dir():
+        shutil.rmtree(path)  # safe-delete: ok a directory standing where the plan puts a file
+    else:
+        _ensure_parent(path)
+
+
+def _write_bytes(path: Path, content: str) -> None:
+    _make_way_for_a_file(path)
+    path.write_text(content, encoding="utf-8")
+
+
 def _write_text(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
     content, payload = cast(str, entry.content), cast(bytes, entry.bytes)
     if entry.private:
@@ -304,27 +338,26 @@ def _write_text(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
 
         if _same_bytes(entry.target, payload) and entry.target.stat().st_mode & 0o777 == 0o600:
             return
+        _make_way_for_a_file(entry.target)
         atomic_write_text(entry.target, content, mode=0o600)
         return
     if _same_bytes(entry.target, payload):
         return
-    _ensure_parent(entry.target)
-    entry.target.write_text(content)
+    _write_bytes(entry.target, content)
 
 
 def _write_executable(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
     content, payload = cast(str, entry.content), cast(bytes, entry.bytes)
     if not _same_bytes(entry.target, payload):
-        _ensure_parent(entry.target)
-        entry.target.write_text(content)
+        _write_bytes(entry.target, content)
     if entry.target.stat().st_mode & 0o777 != 0o700:
         entry.target.chmod(0o700)
 
 
 def _copy_tree(entry: MaterializationEntry, shadowed: set[Path]) -> None:
     source, target = cast(Path, entry.source), entry.target
-    if entry.tree_digest is not None and dir_digest(source) != entry.tree_digest:
-        raise StalePlan(entry)
+    if target.is_symlink():
+        target.unlink()  # safe-delete: ok a link standing where the plan puts a tree
     wanted: set[Path] = set()
     for file in sorted(p for p in source.rglob("*") if p.is_file()):
         dest = target / file.relative_to(source)
@@ -333,14 +366,15 @@ def _copy_tree(entry: MaterializationEntry, shadowed: set[Path]) -> None:
             continue
         if (
             dest.is_file()
+            and not dest.is_symlink()
             and dest.read_bytes() == file.read_bytes()
             and dest.stat().st_mode & 0o777 == file.stat().st_mode & 0o777
         ):
             continue
-        _ensure_parent(dest)
+        _make_way_for_a_file(dest)
         shutil.copy2(file, dest)
     if target.is_dir():
-        for stray in sorted(p for p in target.rglob("*") if p.is_file()):
+        for stray in sorted(p for p in target.rglob("*") if p.is_file() or p.is_symlink()):
             if stray not in wanted and stray not in shadowed:
                 stray.unlink()  # safe-delete: ok stray file in a session mirror the plan owns
 
@@ -359,14 +393,16 @@ def _symlink(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
 
 def _merge_json(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
     data = dict(cast(Mapping[str, object], entry.data))
-    if not json_differs(entry.target, data):
+    if not entry.target.is_symlink() and not json_differs(entry.target, data):
         return
-    _ensure_parent(entry.target)
-    entry.target.write_text(render_json(data))
+    _write_bytes(entry.target, render_json(data))
 
 
 def _remove_tree(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
-    if entry.target.is_symlink() or entry.target.exists():
+    """Ensure absent — a link or a file at the target is removed as itself, not followed."""
+    if entry.target.is_symlink() or entry.target.is_file():
+        entry.target.unlink()  # safe-delete: ok caller-owned session artifact
+    elif entry.target.is_dir():
         shutil.rmtree(entry.target)  # safe-delete: ok caller-owned session artifact
 
 

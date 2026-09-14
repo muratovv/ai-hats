@@ -26,12 +26,15 @@ from ai_hats.plan_adapter import adapt
 from ai_hats.surface_registry import get_surface
 
 
-@pytest.fixture(scope="module")
-def maintainer(tmp_path_factory):
-    project = tmp_path_factory.mktemp("proj")
+@pytest.fixture
+def maintainer(tmp_path: Path):
+    """Function-scoped on purpose: a module-scoped assembler would be built
+    before the per-test user-home isolation and read the developer's roots."""
+    project = tmp_path / "proj"
+    project.mkdir()
     asm = Assembler(project)
     result = compose_to_run(asm, "maintainer")
-    plan, sources = adapt(result, identity="maintainer", resolver=asm.resolver)
+    plan, sources = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=())
     return asm, result, plan, sources
 
 
@@ -150,10 +153,10 @@ def test_every_absence_is_none_never_an_empty_value(maintainer):
 
 def test_two_adapts_of_one_composition_are_equal_and_a_changed_input_is_not(maintainer):
     asm, result, plan, _sources = maintainer
-    again, _ = adapt(result, identity="maintainer", resolver=asm.resolver)
+    again, _ = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=())
     assert again == plan
     extra = dataclasses.replace(result, skills=[*result.skills, result.skills[0]])
-    changed, _ = adapt(extra, identity="maintainer", resolver=asm.resolver)
+    changed, _ = adapt(extra, identity="maintainer", resolver=asm.resolver, overlays=())
     assert changed != plan
 
 
@@ -183,6 +186,10 @@ def test_a_declared_payload_that_is_missing_is_a_diagnostic_and_no_hook(tmp_path
         "---\nname: guard\nai_hats:\n  runtime_hooks:\n    PreToolUse:\n"
         "      - matcher: Bash\n        script: hooks/gone.sh\n---\n# guard\n"
     )
+    (tmp_path / "roles" / "r").mkdir(parents=True)
+    (tmp_path / "roles" / "r" / "config.yaml").write_text(
+        "name: r\ncomposition:\n  skills: [guard]\n"
+    )
     result = CompositionResult(
         name="r",
         priorities=[],
@@ -190,8 +197,79 @@ def test_a_declared_payload_that_is_missing_is_a_diagnostic_and_no_hook(tmp_path
         skills=[ResolvedComponent("guard", ComponentKind.SKILL, skill)],
         injections=[],
     )
-    plan, _ = adapt(result, identity="r", resolver=LibraryResolver([tmp_path]))
+    plan, _ = adapt(result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=())
     assert plan.hooks.runtime == ()
     assert [d.level for d in plan.diagnostics] == [Level.WARN]
     assert "skills::guard" in plan.diagnostics[0].message
     assert "hooks/gone.sh" in plan.diagnostics[0].message
+
+
+def test_trace_reads_a_same_layer_remove_and_add_as_the_composer_does(maintainer):
+    """``remove: [X]`` + ``add: [X]`` in one layer is the move-to-end reorder,
+    and X stays composed — the trace must hold one row for it, not two."""
+    asm, _result, _plan, _sources = maintainer
+    rule = "rule_backlog_discipline"
+    overlay = OverlayConfig(add_rules=[rule], remove_rules=[rule])
+    result = compose_to_run(asm, "maintainer", runtime_overlay=overlay)
+    plan, _ = adapt(
+        result, identity="maintainer", resolver=asm.resolver, overlays=[(overlay, "project")]
+    )
+    rows = [t for t in plan.trace if t.term == f"rules::{rule}"]
+    assert rows == [TraceEntry(f"rules::{rule}", "trait-agent", None)], (
+        "the composer keeps the trait's copy (first wins) and drops the role-level remove"
+    )
+    assert plan.diagnostics == ()
+
+
+def test_a_namespaced_skill_names_its_payload_the_same_way_on_every_channel(tmp_path: Path):
+    from ai_hats.resolver import LibraryResolver
+    from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
+
+    skill = tmp_path / "skills" / "dev" / "py"
+    (skill / "hooks").mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: dev::py\nai_hats:\n  git_hooks:\n    pre-commit: [hooks/g.sh]\n---\n# x\n"
+    )
+    (skill / "hooks" / "g.sh").write_text("#!/bin/sh\n")
+    (skill / "hooks" / "g.sh").chmod(0o755)
+    result = CompositionResult(
+        name="r",
+        priorities=[],
+        rules=[],
+        skills=[ResolvedComponent("dev::py", ComponentKind.SKILL, skill)],
+        injections=[],
+        checks=(
+            ResolvedCheck(
+                app="wt",
+                path=(),
+                run="dev::py/hooks/g.sh",
+                at=("pre-merge",),
+                cargo={},
+                on_error="warn",
+                script_path=skill / "hooks" / "g.sh",
+                declared_by="r",
+            ),
+        ),
+    )
+    plan, _ = adapt(result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=())
+    assert plan.hooks.git[0].run == "skills/dev/py/hooks/g.sh"
+    assert plan.hooks.workflow[0].run == "skills/dev/py/hooks/g.sh"
+    assert plan.skills == ("skills::dev::py",)
+
+
+def test_no_path_hides_anywhere_in_the_comparable_half(maintainer):
+    _asm, _result, plan, _sources = maintainer
+    found: list[str] = []
+
+    def walk(value, where):
+        if isinstance(value, Path):
+            found.append(where)
+        elif dataclasses.is_dataclass(value):
+            for f in dataclasses.fields(value):
+                walk(getattr(value, f.name), f"{where}.{f.name}")
+        elif isinstance(value, (tuple, list)):
+            for i, item in enumerate(value):
+                walk(item, f"{where}[{i}]")
+
+    walk(plan, "plan")
+    assert found == []

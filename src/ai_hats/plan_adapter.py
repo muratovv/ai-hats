@@ -50,13 +50,14 @@ def adapt(
     *,
     identity: str,
     resolver: LibraryResolver,
-    overlays: Sequence[tuple[OverlayConfig, str]] = (),
+    overlays: Sequence[tuple[OverlayConfig, str]],
 ) -> tuple[CompositionPlan, Sources]:
     """Today's composition as the plan's composition half, plus where its bytes live.
 
-    ``overlays`` are the layers the composer applied, each with its label
-    (``global`` / ``project`` / ``runtime``); they and the trait configs are what
-    attribute each term to the composite or override that brought it.
+    ``overlays`` are exactly the layers the composer applied, each with its
+    label (``global`` / ``project`` / ``runtime``): they name the text a layer
+    appended and the layer that brought or removed a term. A layer left out is
+    an injection the adapter cannot name — a refusal, not a guess.
     """
     from .surfaces import compose_sections
 
@@ -73,7 +74,7 @@ def adapt(
             skills=tuple(_skill_name(s.name) for s in result.skills),
             hooks=_hooks(result, diagnostics),
             consent=_consent(result),
-            trace=_trace(result, identity, resolver, overlays),
+            trace=_trace(result, identity, resolver, overlays, diagnostics),
             diagnostics=tuple(diagnostics),
         ),
         Sources(
@@ -128,8 +129,10 @@ def _prompt_members(
         if not text.strip():
             continue
         if text not in named:
+            head = text.splitlines()[0][:80]
             raise AdaptError(
-                "an injection reached the prompt that no role, trait or overlay declared"
+                f"an injection reached the prompt that no role, trait or overlay declared "
+                f"(starts {head!r}); pass every layer the composer applied"
             )
         members.append(PromptMember("body", named[text]))
 
@@ -212,7 +215,7 @@ def _hooks(result: CompositionResult, diagnostics: list[Diagnostic]) -> Hooks:
             app=check.app,
             object=".".join(check.path) if check.path else None,
             at=at,
-            run=f"skills/{check.run}",
+            run=_payload(check.skill, check.script),
             on_error=OnError(check.on_error),
         )
         for check in result.checks
@@ -247,13 +250,16 @@ def _trace(
     identity: str,
     resolver: LibraryResolver,
     overlays: Sequence[tuple[OverlayConfig, str]],
+    diagnostics: list[Diagnostic],
 ) -> tuple[TraceEntry, ...]:
-    """Who brought each term — the same walk the composer takes, attributed.
+    """Who brought each term — the composer's own walk, attributed.
 
-    Traits come from the role's config and the overlays; a rule or skill is
-    attributed to the first trait declaring it (the composer's first-wins
-    dedup), then to the role, then to an overlay. A term an overlay removed
-    keeps its entry with ``removed_by``.
+    Traits: the role's list, then each layer's removes and adds in order — a
+    same-layer remove+add is the reorder the composer performs, and the trace
+    shows it as such. Rules and skills: the first trait declaring one holds
+    it, then the role, then a layer; a removal takes effect only when the name
+    is not in the role's own list once the layers are applied — the composer's
+    rule, so a re-added name never leaves.
     """
     role = resolver.resolve_role_config(result.name)
     traits: list[tuple[str, str]] = [
@@ -281,41 +287,36 @@ def _trace(
             brought.setdefault(_rule_name(rule), trait)
         for skill in cfg.composition.skills:
             brought.setdefault(_skill_name(skill), trait)
-    if role is not None:
-        for rule in role.composition.rules:
-            brought.setdefault(_rule_name(rule), result.name)
-        for skill in role.composition.skills:
-            brought.setdefault(_skill_name(skill), result.name)
+    own = {_rule_name(r): None for r in (role.composition.rules if role else [])} | {
+        _skill_name(s): None for s in (role.composition.skills if role else [])
+    }
+    for name in own:
+        brought.setdefault(name, result.name)
+    requested: dict[str, str] = {}
     for layer, label in overlays:
         by = _override_name(label, identity)
-        for rule in layer.add_rules:
-            brought.setdefault(_rule_name(rule), by)
-        for skill in layer.add_skills:
-            brought.setdefault(_skill_name(skill), by)
-        for rule in layer.remove_rules:
-            if _rule_name(rule) in brought:
-                removed.append(
-                    TraceEntry(_rule_name(rule), brought.pop(_rule_name(rule)), removed_by=by)
-                )
-        for skill in layer.remove_skills:
-            if _skill_name(skill) in brought:
-                removed.append(
-                    TraceEntry(_skill_name(skill), brought.pop(_skill_name(skill)), removed_by=by)
-                )
+        for name in (*map(_rule_name, layer.remove_rules), *map(_skill_name, layer.remove_skills)):
+            own.pop(name, None)
+            requested[name] = by
+        for name in (*map(_rule_name, layer.add_rules), *map(_skill_name, layer.add_skills)):
+            own[name] = None
+            brought.setdefault(name, by)
+    for name, by in requested.items():
+        if name not in own and name in brought:
+            removed.append(TraceEntry(name, brought.pop(name), removed_by=by))
 
-    present = [
-        *(TraceEntry(trait, by, removed_by=None) for trait, by in traits),
-        *(
-            TraceEntry(
-                _rule_name(r.name), brought.get(_rule_name(r.name), identity), removed_by=None
+    present = [TraceEntry(trait, by, removed_by=None) for trait, by in traits]
+    for name in (
+        *map(_rule_name, (r.name for r in result.rules)),
+        *(_skill_name(s.name) for s in result.skills),
+    ):
+        if name not in brought:
+            diagnostics.append(
+                Diagnostic(
+                    Level.WARN,
+                    f"{name} composed, but no role, trait or overlay declares it; "
+                    f"attributed to the expression",
+                )
             )
-            for r in result.rules
-        ),
-        *(
-            TraceEntry(
-                _skill_name(s.name), brought.get(_skill_name(s.name), identity), removed_by=None
-            )
-            for s in result.skills
-        ),
-    ]
+        present.append(TraceEntry(name, brought.get(name, identity), removed_by=None))
     return (*present, *removed)

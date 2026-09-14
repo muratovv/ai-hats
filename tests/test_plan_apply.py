@@ -274,3 +274,99 @@ def test_a_symlink_pointing_elsewhere_is_repointed(tmp_path: Path):
     apply(_plan(root, MaterializationEntry(WriteKind.SYMLINK, link, source=tmp_path / "b")))
 
     assert link.readlink() == tmp_path / "b"
+
+
+def test_remove_tree_ensures_absence_of_a_symlink_and_of_a_plain_file(tmp_path: Path):
+    root = tmp_path / "s"
+    root.mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "elsewhere" / "keep.txt").write_text("keep")
+    (root / "link").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    (root / "file.txt").write_text("x")
+
+    apply(
+        _plan(
+            root,
+            MaterializationEntry(WriteKind.REMOVE_TREE, root / "link"),
+            MaterializationEntry(WriteKind.REMOVE_TREE, root / "file.txt"),
+        )
+    )
+
+    assert not (root / "link").is_symlink() and not (root / "file.txt").exists()
+    assert (tmp_path / "elsewhere" / "keep.txt").read_text() == "keep", "the link, not its target"
+
+
+def test_a_stale_source_tree_is_refused_before_any_entry_is_performed(tmp_path: Path, writes):
+    plan = _seven_kinds(tmp_path)
+    src = next(e.source for e in plan.entries if e.kind is WriteKind.COPY_TREE)
+    (src / "extra.txt").write_text("edited after planning")
+    (plan.root / "stale").rename(tmp_path / "keep-stale")  # so the counter sees only apply's writes
+    (plan.root / "stale").mkdir()
+    writes.clear()
+
+    with pytest.raises(StalePlan):
+        apply(plan)
+
+    assert writes == []
+    assert not (plan.root / "prompt.md").exists()
+
+
+def test_a_symlink_at_a_file_target_is_replaced_never_written_through(tmp_path: Path):
+    root = tmp_path / "s"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("untouched")
+    (root / "p.md").symlink_to(outside)
+
+    apply(_plan(root, MaterializationEntry(WriteKind.WRITE_TEXT, root / "p.md", content="new")))
+
+    assert outside.read_text() == "untouched"
+    assert not (root / "p.md").is_symlink() and (root / "p.md").read_text() == "new"
+
+
+def test_a_symlink_at_a_tree_target_is_replaced_never_synced_through(tmp_path: Path):
+    root = tmp_path / "s"
+    root.mkdir()
+    src = _skill(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "precious.txt").write_text("mine")
+    (root / "skills").mkdir()
+    (root / "skills" / "s").symlink_to(elsewhere, target_is_directory=True)
+
+    apply(
+        _plan(
+            root,
+            MaterializationEntry(
+                WriteKind.COPY_TREE, root / "skills" / "s", source=src, tree_digest=dir_digest(src)
+            ),
+        )
+    )
+
+    assert (elsewhere / "precious.txt").read_text() == "mine"
+    assert not (root / "skills" / "s").is_symlink()
+    assert (root / "skills" / "s" / "SKILL.md").read_text() == "# s\n"
+
+
+def test_a_directory_where_a_file_belongs_gives_way_to_the_file(tmp_path: Path):
+    root = tmp_path / "s"
+    src = _skill(tmp_path)
+    (root / "skills" / "s" / "SKILL.md").mkdir(parents=True)
+
+    apply(
+        _plan(
+            root,
+            MaterializationEntry(
+                WriteKind.COPY_TREE, root / "skills" / "s", source=src, tree_digest=dir_digest(src)
+            ),
+        )
+    )
+
+    assert (root / "skills" / "s" / "SKILL.md").is_file()
+
+
+def test_a_dot_dot_target_cannot_pass_as_inside_the_root(tmp_path: Path):
+    root = tmp_path / "s"
+    sneaky = root / ".." / "outside.json"
+    with pytest.raises(EscapeUndeclared):
+        validate(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, sneaky, data={})))
