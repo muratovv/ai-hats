@@ -32,6 +32,10 @@ class EventLogOutcome:
     # The first fault, as text. A writer that faulted stopped at that tick, so
     # the file is complete up to it and silent after — the trace says which.
     error: str | None = None
+    # How many sources were ever located. Zero with no error is its own finding:
+    # the writer ran the whole session and the record it was told to follow
+    # never appeared where it was told to look.
+    sources: int = 0
 
 
 class EventLogWriter:
@@ -134,7 +138,9 @@ class EventLogWriter:
                     self._tick()
             except Exception as exc:  # same contract as the thread: report, never raise
                 self._fault(f"{type(exc).__name__}: {exc}")
-        return EventLogOutcome(events_written=self._written, error=self._error)
+        return EventLogOutcome(
+            events_written=self._written, error=self._error, sources=len(self._readers)
+        )
 
 
 __all__ = ["EventLogOutcome", "EventLogWriter"]

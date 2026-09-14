@@ -125,6 +125,19 @@ def test_close_drains_what_a_live_reader_held_back(tmp_path: Path) -> None:
     assert outcome.events_written == len(list(read_events(log)))
 
 
+def test_a_record_that_never_appears_is_reported_as_no_source(tmp_path: Path) -> None:
+    """A writer told to follow a record that never shows up — keyed under the
+    wrong root, say — must not look like a session that had nothing to record:
+    the outcome says no source was located, and no file is created."""
+    writer = _writer(tmp_path, tmp_path / "never.jsonl")
+    assert writer.tick() == 0
+
+    outcome = writer.close()
+
+    assert (outcome.events_written, outcome.sources, outcome.error) == (0, 0, None)
+    assert not (tmp_path / EVENT_LOG_JSONL).exists()
+
+
 def test_a_source_that_appears_only_at_close_is_still_drained(tmp_path: Path) -> None:
     """A short run can end before the thread ever ticked after the record
     appeared. ``close()`` must adopt the source, then end it, then drain — a

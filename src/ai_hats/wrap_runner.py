@@ -794,12 +794,13 @@ class WrapRunner:
         # Each layer's exceptions are isolated so a downstream crash
         # never prevents the session-id print (invariant).
         tracer = self.tracer_factory(session)
-        # Started before the surface, so its first record is followed from its
-        # first line; closed in _finalize_session_basic once the surface exited.
+        # Started before the surface; closed in _finalize_session_basic. Keyed by
+        # the cwd the pty child inherits, not the project root: a worktree
+        # session's root is the main checkout, where its record never appears.
         event_log = start_event_log(
             provider,
             session,
-            project_dir=self.project_dir,
+            project_dir=Path.cwd(),
             provider_session_id=claude_session_id,
         )
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment

@@ -356,9 +356,7 @@ def _finalize_sub_agent(
             # the live log first, once, the way the HITL arm does.
             if event_log is not None:
                 try:
-                    outcome = event_log.close()
-                    stopped = f", writer stopped early: {outcome.error}" if outcome.error else ""
-                    session.log_sys(f"events.jsonl: {outcome.events_written} events{stopped}")
+                    _close_event_log(event_log, session)
                 except Exception:
                     logger.warning("event log close failed", exc_info=True)
             if stdout:
@@ -625,6 +623,20 @@ def start_event_log(
         return None
 
 
+def _close_event_log(event_log: "EventLogWriter", session: "Session") -> None:
+    """Drain and close the live log once, and say in the trace what it holds —
+    including the case that is a finding rather than a count: a writer that ran
+    the whole session and never located the record it was told to follow."""
+    outcome = event_log.close()
+    if outcome.error:
+        detail = f", writer stopped early: {outcome.error}"
+    elif outcome.sources == 0:
+        detail = " — no record was located for the provider session"
+    else:
+        detail = ""
+    session.log_sys(f"events.jsonl: {outcome.events_written} events{detail}")
+
+
 def _finalize_session_basic(
     session: "Session",
     *,
@@ -656,9 +668,7 @@ def _finalize_session_basic(
         # The surface has exited, so its record is complete: the writer drains
         # what a live reader held back and the file is closed out here, once.
         if event_log is not None:
-            outcome = event_log.close()
-            stopped = f", writer stopped early: {outcome.error}" if outcome.error else ""
-            session.log_sys(f"events.jsonl: {outcome.events_written} events{stopped}")
+            _close_event_log(event_log, session)
     except (Exception, KeyboardInterrupt):
         logger.warning("event log close failed", exc_info=True)
 
