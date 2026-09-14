@@ -125,6 +125,10 @@ class EventLogWriter:
         if self._error is None:
             try:
                 with self._lock:
+                    # Adopt a source that appeared since the last pass BEFORE
+                    # ending the readers: one adopted during the drain would
+                    # never be told the run is over.
+                    self._tick()
                     for reader in self._readers.values():
                         reader.close()
                     self._tick()

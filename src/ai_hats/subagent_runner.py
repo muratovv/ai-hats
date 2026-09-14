@@ -9,6 +9,7 @@ import logging
 import os
 import subprocess
 import time
+import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -47,6 +48,7 @@ from .runtime_common import (
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
+    start_event_log,
 )
 
 if TYPE_CHECKING:
@@ -403,6 +405,16 @@ class SubAgentRunner:
             try:
                 engine = provider.engine()
                 if engine is not None:
+                    # Minted here, not left to the surface, so its record can be
+                    # followed before the surface reports an id. HITL's rule too.
+                    provider_session_id = str(uuid.uuid4())
+                    session.record_provider_session_id(provider_session_id)
+                    observe_kwargs["event_log"] = start_event_log(
+                        provider,
+                        session,
+                        project_dir=work_dir,
+                        provider_session_id=provider_session_id,
+                    )
                     metrics = CollectedMetrics()
                     run_result = engine.run(
                         result=result,
@@ -416,6 +428,7 @@ class SubAgentRunner:
                         timeout_s=timeout_s,
                         metrics=metrics,
                         artifacts=artifacts,
+                        provider_session_id=provider_session_id,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     surface_session_id = metrics.values.get("claude_session_id")

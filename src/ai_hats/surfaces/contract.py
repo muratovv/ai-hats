@@ -130,6 +130,10 @@ class SubagentEngine(abc.ABC):
         timeout_s: int,
         metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
+        # The id the runner minted for the surface's own record, so the record
+        # can be followed while the run is on; an engine that cannot pass one
+        # on ignores it and reports the id the surface chose in ``metrics``.
+        provider_session_id: str | None = None,
     ) -> SurfaceRunResult:
         pass
 

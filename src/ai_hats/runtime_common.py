@@ -320,6 +320,7 @@ def _finalize_sub_agent(
     session_factory=None,
     audit_writer_factory=None,
     transcript_resolver=None,
+    event_log: "EventLogWriter | None" = None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
@@ -351,6 +352,15 @@ def _finalize_sub_agent(
     # audit.md and metrics for the whole sub-agent run.
     try:
         with sigint_shield():
+            # The surface is done, so its record is complete: drain and close
+            # the live log first, once, the way the HITL arm does.
+            if event_log is not None:
+                try:
+                    outcome = event_log.close()
+                    stopped = f", writer stopped early: {outcome.error}" if outcome.error else ""
+                    session.log_sys(f"events.jsonl: {outcome.events_written} events{stopped}")
+                except Exception:
+                    logger.warning("event log close failed", exc_info=True)
             if stdout:
                 session.write_artifact_text(session.session_dir / TRANSCRIPT_TXT, stdout)
             if stderr:

@@ -125,6 +125,24 @@ def test_close_drains_what_a_live_reader_held_back(tmp_path: Path) -> None:
     assert outcome.events_written == len(list(read_events(log)))
 
 
+def test_a_source_that_appears_only_at_close_is_still_drained(tmp_path: Path) -> None:
+    """A short run can end before the thread ever ticked after the record
+    appeared. ``close()`` must adopt the source, then end it, then drain — a
+    reader adopted during the drain is never told the run is over and holds
+    the last response open for good."""
+    transcript = tmp_path / "t.jsonl"
+    log = tmp_path / EVENT_LOG_JSONL
+    writer = _writer(tmp_path, transcript)
+    assert writer.tick() == 0, "the record does not exist yet"
+    transcript.write_text("".join(RECORDS), encoding="utf-8")
+
+    outcome = writer.close()
+
+    expected = list(ClaudeTranscriptReader(transcript).read())
+    assert list(read_events(log)) == expected
+    assert outcome.events_written == len(expected)
+
+
 # --- identity with a finished-record read -----------------------------------
 
 
