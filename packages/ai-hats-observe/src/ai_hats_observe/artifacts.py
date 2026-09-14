@@ -27,6 +27,10 @@ ROLE_MATERIALIZATION_JSON = "role_materialization.json"
 REASONING_LOG = "reasoning.log"
 PTY_RAW_LOG = "pty_raw.log"
 RETRO_LOG = "retro.log"
+# The session's canonical events, one JSON object per line. audit.md and
+# usage.json are both projections of this, and the provider transcript it was
+# read from expires — so this is the record, and it is retained as a fact.
+EVENT_LOG_JSONL = "events.jsonl"
 
 
 # The audit/v1 ``flags`` vocabulary — why a record carries no measurement

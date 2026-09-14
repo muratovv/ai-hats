@@ -31,7 +31,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.observe]
 #: The facts tier, named literally rather than imported: a rename that silently
 #: dropped one of these from the retained set is exactly what this test exists to
 #: catch, and importing the set under test would rename right along with it.
-FACTS = ("audit.md", "metrics.json", "retro.log", "diagnostics.json")
+FACTS = ("audit.md", "metrics.json", "retro.log", "diagnostics.json", "events.jsonl")
 
 #: Bulk artifacts old enough to expire. ``trace.log`` is deliberately absent —
 #: it is the same tier, planted below with a fresh mtime.

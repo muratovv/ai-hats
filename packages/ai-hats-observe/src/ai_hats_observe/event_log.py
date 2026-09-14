@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+from .artifacts import EVENT_LOG_JSONL
 from .canonical.events import (
     Event,
     ItemDelta,
@@ -49,11 +50,6 @@ from .canonical.types import (
     ToolCallItem,
     Usage,
 )
-
-#: Default name of the artifact inside a session dir. Kept here rather than in
-#: ``artifacts.py`` while the schema is new: the writer is the only thing that
-#: knows this file exists, and a name promoted too early is a name to migrate.
-EVENT_LOG_JSONL = "events.jsonl"
 
 #: Stamped on every line, not on a header: a headerless file can be appended to
 #: by a live writer and truncated by a crash without a reader losing the version.
