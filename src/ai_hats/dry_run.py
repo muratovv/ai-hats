@@ -154,6 +154,7 @@ def dry_run_hitl(
         escapes=escapes,
         checks=checks,
         consent=payload.result.consent,
+        composition=payload.plan,
         notes=tuple(notes),
         prompt_text=artifacts.full_content,
     )
@@ -265,5 +266,6 @@ def dry_run_automate(
         notes=tuple(notes),
         checks=checks,
         consent=payload.result.consent,
+        composition=payload.plan,
         prompt_text=described.prompt,
     )

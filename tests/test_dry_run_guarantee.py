@@ -163,3 +163,16 @@ def test_cline_hitl_has_no_prompt_file_to_dump(project: Path):
 
     assert report.prompt is None
     assert "Role body." in " ".join(report.launch), "it rides the argv instead"
+
+
+def test_the_dry_run_carries_the_composition_half_by_kind(project: Path):
+    """What the prompt never shows — hooks by kind and consent ends — is in the
+    report (ADR-0036 D5; the blindness that let an unarmed role close a card)."""
+    report = dry_run_hitl(ProjectLayout.at(project), provider="claude")
+
+    composition = report.to_dict()["composition"]
+    assert composition["identity"] == "test-role"
+    assert composition["skills"] == ["skills::s"]
+    assert set(composition["hooks"]) == {"git", "runtime", "workflow", "worktree"}
+    assert composition["consent"] == []
+    assert "\ncomposition  test-role\n" in report.render()

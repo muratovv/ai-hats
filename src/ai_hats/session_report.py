@@ -18,6 +18,7 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import ConsentPoint
 
     from .check_snapshot import ReportedCheck
+    from .plan import CompositionPlan
 
 
 def _human_size(n: int) -> str:
@@ -89,6 +90,41 @@ def _consent_key(consent: dict) -> str:
     return "-"  # declared under an app no guard of this build reads
 
 
+def _render_composition(c: dict) -> list[str]:
+    """The composition half by kind — the hooks and points the prompt never shows."""
+    blocks: dict[str, int] = {}
+    for member in c["prompt"]["members"]:
+        blocks[member["block"]] = blocks.get(member["block"], 0) + 1
+    lines = [
+        f"composition  {c['identity']}",
+        "  prompt    " + ", ".join(f"{n} {block}" for block, n in blocks.items()),
+        f"  skills    {len(c['skills'])}: " + " ".join(c["skills"]),
+        "  hooks",
+    ]
+    hooks = c["hooks"]
+    if not any(hooks.values()):
+        lines.append("    (none)")
+    lines += [f"    git       {h['at']:<11} {h['run']}" for h in hooks["git"]]
+    lines += [f"    runtime   {h['at']}  {h['matcher']}  {h['run']}" for h in hooks["runtime"]]
+    for h in hooks["workflow"]:
+        where = h["app"] if h["object"] is None else f"{h['app']}.{h['object']}"
+        lines.append(f"    workflow  {where} {h['at']!r}  {h['run']}  on_error={h['on_error']}")
+    for h in hooks["worktree"]:
+        on = "" if h["on"] is None else "[" + ",".join(h["on"]) + "]"
+        lines.append(f"    worktree  {h['at']}{on}  {h['run']}")
+    removed = [t for t in c["trace"] if t["removed_by"] is not None]
+    if removed:
+        lines.append("  removed")
+        lines += [
+            f"    {t['term']}  brought by {t['brought_by']}, removed by {t['removed_by']}"
+            for t in removed
+        ]
+    if c["diagnostics"]:
+        lines.append("  diagnostics")
+        lines += [f"    {d['level'].upper()}  {d['message']}" for d in c["diagnostics"]]
+    return lines
+
+
 @dataclass(frozen=True)
 class SessionReport:
     role: str
@@ -116,9 +152,14 @@ class SessionReport:
     #: tool call reads it from here — a role property reaching the surface the
     #: way every other one does, through the session's own envelope.
     consent: tuple[ConsentPoint, ...] = ()
+    #: The composition half of the plan — what the session is made of, by kind.
+    #: ``None`` on a path that has not adapted its composition yet.
+    composition: CompositionPlan | None = None
 
     def to_dict(self) -> dict:
-        return {
+        from .plan import composition_record
+
+        payload = {
             "role": self.role,
             "provider": self.provider,
             "run_mode": self.run_mode,
@@ -159,6 +200,9 @@ class SessionReport:
             "escapes": [str(p) for p in self.escapes],
             "notes": list(self.notes),
         }
+        if self.composition is not None:
+            payload["composition"] = composition_record(self.composition)
+        return payload
 
     def render(self, *, full: bool = False) -> str:
         d = self.to_dict()
@@ -227,6 +271,9 @@ class SessionReport:
                 f"  {_consent_where(c):<14} {c['selector']!r:<20}"
                 f" -> {_consent_key(c):<22} by {c['declared_by']}"
             )
+
+        if "composition" in d:
+            lines += ["", *_render_composition(d["composition"])]
 
         if d["notes"]:
             lines.append("")

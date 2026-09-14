@@ -1,5 +1,38 @@
 {
   "checks": [],
+  "composition": {
+    "consent": [],
+    "diagnostics": [],
+    "hooks": {
+      "git": [],
+      "runtime": [],
+      "workflow": [],
+      "worktree": []
+    },
+    "identity": "test-role",
+    "prompt": {
+      "members": [
+        {
+          "block": "PRIORITIES",
+          "name": "test-role::priorities"
+        },
+        {
+          "block": "body",
+          "name": "test-role::prompt"
+        }
+      ]
+    },
+    "skills": [
+      "skills::s"
+    ],
+    "trace": [
+      {
+        "brought_by": "test-role",
+        "removed_by": null,
+        "term": "skills::s"
+      }
+    ]
+  },
   "consent": [],
   "cwd": "<worktree, assigned at launch>",
   "duplicates": [],
@@ -49,29 +82,23 @@
   ],
   "materialized": [
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run"
     },
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run/skills"
     },
     {
-      "detail": "",
       "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
-      "file_count": 1,
       "kind": "copy_tree",
-      "size": 38,
+      "size": null,
       "source": "<tmp>/lib/skills/s",
       "target": "<cache>/sessions/dry-run/skills/s"
     }

@@ -707,6 +707,7 @@ class WrapRunner:
             cwd=str(self.layout.cwd),  # where the pty child runs, not the root
             checks=reported_checks,
             consent=result.consent,
+            composition=payload.plan,
             notes=report_notes,
         )
         session.save_role_materialization(report.to_dict())

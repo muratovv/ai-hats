@@ -234,3 +234,113 @@ def test_a_role_declaring_no_consent_says_so_instead_of_dropping_the_section(tmp
 
     assert "\nconsent\n" in text
     assert "(none declared)" in text
+
+
+def _composition():
+    from ai_hats.diagnostics import Level
+    from ai_hats.plan import (
+        CompositionPlan,
+        Consent,
+        Diagnostic,
+        GitHook,
+        Hooks,
+        OnError,
+        Prompt,
+        PromptMember,
+        RuntimeHook,
+        TraceEntry,
+        WorkflowHook,
+        WorktreeHook,
+    )
+
+    return CompositionPlan(
+        identity="maintainer + sre",
+        prompt=Prompt(
+            text="# t\n",
+            members=(
+                PromptMember("PRIORITIES", "maintainer::priorities"),
+                PromptMember("body", "maintainer::prompt"),
+                PromptMember("RULES", "rules::rule_backlog_discipline"),
+            ),
+        ),
+        skills=("skills::safety-guard", "skills::hatrack"),
+        hooks=Hooks(
+            git=(GitHook("pre-push", "skills/quality-gate/git_hooks/pre-push-e2e-master.sh"),),
+            runtime=(
+                RuntimeHook("PreToolUse", "Bash", "skills/safety-guard/hooks/safety_gate.py"),
+            ),
+            workflow=(
+                WorkflowHook(
+                    "rack",
+                    "tasks",
+                    "->done",
+                    "skills/quality-gate/hooks/done-gate.sh",
+                    OnError.REFUSE,
+                ),
+                WorkflowHook(
+                    "wt", None, "pre-merge", "skills/quality-gate/hooks/merge-gate.sh", OnError.WARN
+                ),
+            ),
+            worktree=(WorktreeHook("wt_out", ("merge",), "skills/x/hooks/drain.sh"),),
+        ),
+        consent=(
+            Consent("rack.transition", "plan->execute", "plan", "execute", "trait-agent", None),
+        ),
+        trace=(
+            TraceEntry("trait-agent", "maintainer", None),
+            TraceEntry("skills::hatrack", "trait-agent", "overrides::project"),
+        ),
+        diagnostics=(Diagnostic(Level.WARN, "git hook pre-commit of skills::x: y is missing"),),
+    )
+
+
+def test_composition_section_shows_hooks_by_kind_and_consent_ends(tmp_path: Path):
+    report = replace(_report(tmp_path), composition=_composition())
+
+    payload = report.to_dict()
+    text = report.render()
+
+    composition = payload["composition"]
+    assert composition["identity"] == "maintainer + sre"
+    assert composition["prompt"]["members"][2] == {
+        "block": "RULES",
+        "name": "rules::rule_backlog_discipline",
+    }
+    assert "text" not in composition["prompt"], "bytes stay out of the record"
+    assert composition["hooks"]["workflow"][0] == {
+        "app": "rack",
+        "object": "tasks",
+        "at": "->done",
+        "run": "skills/quality-gate/hooks/done-gate.sh",
+        "on_error": "refuse",
+    }
+    assert composition["consent"][0] == {
+        "operation": "rack.transition",
+        "at": "plan->execute",
+        "from": "plan",
+        "to": "execute",
+        "declared_by": "trait-agent",
+        "disarmed_by": None,
+    }
+    assert composition["trace"][1]["removed_by"] == "overrides::project"
+    assert composition["diagnostics"] == [
+        {"level": "warn", "message": "git hook pre-commit of skills::x: y is missing"}
+    ]
+
+    assert "\ncomposition  maintainer + sre\n" in text
+    assert "git       pre-push" in text
+    assert "runtime   PreToolUse  Bash  skills/safety-guard/hooks/safety_gate.py" in text
+    assert (
+        "workflow  rack.tasks '->done'  skills/quality-gate/hooks/done-gate.sh  on_error=refuse"
+        in text
+    )
+    assert "workflow  wt 'pre-merge'" in text
+    assert "worktree  wt_out[merge]  skills/x/hooks/drain.sh" in text
+    assert "skills::hatrack" in text and "removed by overrides::project" in text
+    assert "WARN" in text and "y is missing" in text
+
+
+def test_a_report_without_a_composition_carries_no_section(tmp_path: Path):
+    report = _report(tmp_path)
+    assert "composition" not in report.to_dict()
+    assert "\ncomposition" not in report.render()

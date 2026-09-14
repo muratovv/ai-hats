@@ -357,6 +357,7 @@ class SubAgentRunner:
             cwd="<worktree, assigned at launch>",
             checks=reported_checks,
             consent=result.consent,
+            composition=self.payload.plan,
             notes=tuple(notes),
         )
         session.save_role_materialization(report.to_dict())

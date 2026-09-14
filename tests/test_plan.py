@@ -21,8 +21,8 @@ from ai_hats.plan import (
     TraceEntry,
     WorkflowHook,
     WorktreeHook,
-    adapt,
 )
+from ai_hats.plan_adapter import adapt
 from ai_hats.surface_registry import get_surface
 
 
