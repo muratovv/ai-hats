@@ -253,6 +253,32 @@ def _emit_sessions_json(sessions) -> None:
     click.echo(json.dumps(out, indent=2, sort_keys=True))
 
 
+def _signal_lines(signals) -> list[str]:
+    """Run health as ``usage/v2`` reports it: what happened, and — for the two
+    obligations that end a run — whose problem it is and the surface's own code.
+
+    A separate axis from ``flags`` (parse quality), and rendered apart for the
+    same reason: a run killed by a quota wall parses cleanly and carries no flag.
+    """
+    if not isinstance(signals, list):
+        return []
+    entries = [s for s in signals if isinstance(s, dict)]
+    if not entries:
+        return []
+    counts: dict[str, int] = {}
+    for entry in entries:
+        kind = str(entry.get("kind"))
+        counts[kind] = counts.get(kind, 0) + 1
+    lines = ["  signals: " + ", ".join(f"{k} x{v}" for k, v in counts.items())]
+    for entry in entries:
+        obligation = entry.get("obligation")
+        if obligation in ("person_must_act", "harness_must_act"):
+            lines.append(
+                f"  blocked: {entry.get('kind')} — {obligation} (code {entry.get('raw_code') or '?'})"
+            )
+    return lines
+
+
 def _render_usage(session) -> None:
     """Render a compact Usage section from the session's ``usage.json``.
 
@@ -268,7 +294,12 @@ def _render_usage(session) -> None:
     ``None``/``?`` noise. Dynamic, transcript-derived values (skill / agent
     names, parser flags) are printed with markup disabled so a stray ``[`` in
     the data can never be mis-parsed as rich markup.
-    """
+
+    That same "only what is present" rule is what makes this read both schema
+    versions: ``usage/v1`` files on disk are not migrated (HATS-1966 R7), so a
+    v1 report renders exactly as before while a v2 one also shows its API-call
+    count and its signals. The header names which version was read.
+    """  # comment-length: allow — reading both schema versions is the contract
     import json
 
     if not session.usage_path.exists():
@@ -301,6 +332,12 @@ def _render_usage(session) -> None:
         if isinstance(static_total, int):
             lines.append(f"  always_on (static): {static_total:,} tok{suffix}")
 
+    # usage/v2 only: inference calls, which is what cost is proportional to.
+    # A v1 report has no such key and renders exactly as it always did.
+    calls = u.get("api_calls")
+    if isinstance(calls, int) and calls:
+        lines.append(f"  api_calls: {calls}")
+
     agg = u.get("aggregates") or {}
     skills = agg.get("skill_loads") or {}
     if skills:
@@ -316,6 +353,8 @@ def _render_usage(session) -> None:
     sidechain = u.get("sidechain") or {}
     if sidechain.get("is_sidechain"):
         lines.append(f"  sidechain: {sidechain.get('agent_name') or '?'}")
+
+    lines.extend(_signal_lines(u.get("signals")))
 
     flags = u.get("flags") or []
     if flags:

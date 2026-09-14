@@ -1,23 +1,45 @@
-"""Claude Code transcript parser (HATS-948, T15).
+"""Claude Code transcript parser (HATS-948, T15; HATS-1966).
 
 Structured parse of the ``claude`` binary's JSONL session log when present, else
-the trace-chrome fallback (delegated to ``TraceParser``). Owns every Claude-JSONL
-assumption (field names, block types), keeping ``AuditWriter`` surface-agnostic.
+the trace-chrome fallback (delegated to ``TraceParser``). The JSONL itself is
+read by ``ClaudeTranscriptReader``, which owns every Claude-JSONL assumption and
+yields canonical events; this module derives the legacy ``ParsedTranscript``
+shape from them, keeping ``AuditWriter`` surface-agnostic.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from .. import usage as _usage
+from ..canonical.events import (
+    Event,
+    ItemEmitted,
+    PromptReceived,
+    ResponseStarted,
+    ToolResultReceived,
+)
+from ..canonical.types import (
+    Item,
+    TextItem,
+    ThinkingItem,
+    ToolCallId,
+    ToolCallItem,
+    Usage,
+)
+from ..canonical.views import Response, collect
 from .base import ParsedTranscript, Turn
+from .claude_events import ClaudeTranscriptReader
 from .trace import TraceParser
 
 logger = logging.getLogger(__name__)
+
+#: How much of a failed tool result reaches the audit line. The message is the
+#: point; the payload that follows it belongs to the transcript.
+ERROR_EXCERPT = 200
 
 
 class ClaudeParser:
@@ -42,8 +64,7 @@ class ClaudeParser:
     def parse(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> ParsedTranscript:
         paths = self._normalize_paths(jsonl_path)
         if paths:
-            turns, model_stats, agg_usage = self._parse_jsonl(paths)
-            return ParsedTranscript(turns=turns, model_stats=model_stats, agg_usage=agg_usage)
+            return self._parse_jsonl(paths)
         if jsonl_path:
             logger.debug("JSONL not found at %s — falling back to trace", jsonl_path)
         return self._trace.parse(None, trace_path)
@@ -58,122 +79,126 @@ class ClaudeParser:
             return _usage.parse_session_usage(paths[0])
         return self._trace.parse_usage(None, trace_path)
 
-    def _parse_jsonl(
-        self, jsonl_paths: Path | Iterable[Path]
-    ) -> tuple[list[Turn], dict[str, dict], dict]:
-        """Parse Claude Code JSONL files → (turns, per-model stats, aggregated usage)."""
-        turns: list[Turn] = []
-        current: Turn | None = None
-        model_stats: dict[str, dict] = {}
-        agg_usage: dict[str, int] = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_read_input_tokens": 0,
-            "cache_creation_input_tokens": 0,
-        }
-        prev_model: str | None = None
+    @classmethod
+    def from_events(cls, events: Iterable[Event]) -> ParsedTranscript:
+        """Build the parsed shape from any stream of canonical events.
 
+        The source is deliberately not named here. A live transcript and a
+        replayed event log produce the same stream, so an audit rendered from
+        the session's own event log is the same audit — which is what makes
+        that log a record of the session rather than a copy of one.
+        """
+        events = list(events)
+        collected = collect(events)
+        return ParsedTranscript(
+            turns=cls._turns(events),
+            model_stats=_model_stats(collected.responses),
+            agg_usage=_agg_usage(collected.responses),
+            responses=collected.responses,
+            signals=collected.signals,
+        )
+
+    def _parse_jsonl(self, jsonl_paths: Path | Iterable[Path]) -> ParsedTranscript:
+        """Read the transcript(s) as canonical events; derive the rest from them.
+
+        Everything the legacy shape reports is a projection of one event stream,
+        so ``turns`` and the token counters can no longer disagree about what the
+        session contained.
+        """
         paths = (
             [Path(jsonl_paths)]
             if isinstance(jsonl_paths, (Path, str))
             else [Path(p) for p in jsonl_paths]
         )
-        lines: list[str] = []
-        for p in paths:
-            try:
-                lines.extend(p.read_text().splitlines())
-            except OSError:
-                continue
+        return self.from_events(
+            event for path in paths for event in ClaudeTranscriptReader(path).read()
+        )
 
-        for line in lines:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+    # -- the legacy turn shape, derived ------------------------------------
 
-            msg_type = obj.get("type")
-            ts = obj.get("timestamp", "")[:19]
-            message = obj.get("message", {})
-            content = message.get("content", [])
+    @classmethod
+    def _turns(cls, events: Iterable[Event]) -> list[Turn]:
+        """Fold the stream into turns: what a person asked, and what followed.
 
-            if msg_type == "user":
-                user_text = self._extract_user_text(content)
-                if user_text:
-                    current = Turn(timestamp=ts, user_input=user_text)
-                    turns.append(current)
+        The reader reports every prompt the surface carries, including the
+        harness's own injections; which of them reads as a turn is this audit's
+        question, not the record's.
+        """
+        turns: list[Turn] = []
+        current: Turn | None = None
+        prev_model: str | None = None
+        # where each call's line sits, so its outcome can land on that line
+        placed: dict[ToolCallId, tuple[Turn, int]] = {}
 
-            elif msg_type == "assistant" and current is not None:
-                model = message.get("model", "unknown")
-                usage = message.get("usage", {})
-                tok_in = usage.get("input_tokens", 0)
-                tok_out = usage.get("output_tokens", 0)
+        for event in events:
+            match event:
+                case PromptReceived():
+                    text = cls._displayable_prompt(event.text)
+                    if text:
+                        current = Turn(timestamp=(event.ts or "")[:19], user_input=text)
+                        turns.append(current)
+                case ResponseStarted() if event.model:
+                    if current is not None and prev_model and event.model != prev_model:
+                        current.tools.append(f"⚙️ Model: {event.model}")
+                    prev_model = event.model
+                case ItemEmitted() if current is not None:
+                    cls._place_item(current, event.item, placed)
+                case ToolResultReceived():
+                    cls._record_outcome(event, placed)
+        return turns
 
-                if model not in model_stats:
-                    model_stats[model] = {"in": 0, "out": 0, "calls": 0}
-                model_stats[model]["in"] += tok_in
-                model_stats[model]["out"] += tok_out
-                model_stats[model]["calls"] += 1
-
-                agg_usage["input_tokens"] += tok_in
-                agg_usage["output_tokens"] += tok_out
-                agg_usage["cache_read_input_tokens"] += usage.get("cache_read_input_tokens", 0)
-                agg_usage["cache_creation_input_tokens"] += usage.get(
-                    "cache_creation_input_tokens", 0
-                )
-
-                # Track model switches within turns
-                if prev_model and model != prev_model:
-                    current.tools.append(f"⚙️ Model: {model}")
-                prev_model = model
-
-                if isinstance(content, list):
-                    for block in content:
-                        if not isinstance(block, dict):
-                            continue
-                        bt = block.get("type")
-                        if bt == "thinking":
-                            thinking = block.get("thinking", "")
-                            if thinking:
-                                current.thinking_secs = max(1, len(thinking) // 200)
-                            else:
-                                current.thinking_secs = max(current.thinking_secs, 1)
-                        elif bt == "tool_use":
-                            name = block.get("name", "?")
-                            inp = block.get("input", {})
-                            summary = self._summarize_tool_input(name, inp)
-                            current.tools.append(f"{name}: {summary}")
-                        elif bt == "text":
-                            text = block.get("text", "").strip()
-                            if text:
-                                current.response = text
-
-        return turns, model_stats, agg_usage
+    @classmethod
+    def _place_item(
+        cls, turn: Turn, item: Item, placed: dict[ToolCallId, tuple[Turn, int]]
+    ) -> None:
+        match item:
+            case TextItem():
+                text = item.text.strip()
+                if text:
+                    # Accumulated, never overwritten: the last text-bearing
+                    # fragment used to win, and 45.3% of turns lost the rest.
+                    turn.response = f"{turn.response}\n\n{text}" if turn.response else text
+            case ThinkingItem():
+                text = "[redacted thinking]" if item.redacted else item.text.strip()
+                if text:
+                    turn.thinking.append(text)
+            case ToolCallItem():
+                summary = cls._summarize_tool_input(item.name, item.input)
+                turn.tools.append(f"{item.name}: {summary}")
+                placed[item.call_id] = (turn, len(turn.tools) - 1)
 
     @staticmethod
-    def _extract_user_text(content) -> str | None:
-        """Extract user text from message content, filtering system/command messages."""
-        if isinstance(content, str):
-            text = content.strip()
-        elif isinstance(content, list):
-            has_tool_result = any(
-                isinstance(c, dict) and c.get("type") == "tool_result" for c in content
-            )
-            if has_tool_result:
-                return None
-            parts = [c["text"] for c in content if isinstance(c, dict) and c.get("type") == "text"]
-            text = " ".join(parts).strip()
-        else:
-            return None
+    def _record_outcome(
+        result: ToolResultReceived, placed: dict[ToolCallId, tuple[Turn, int]]
+    ) -> None:
+        """Mark the call's line with what came back.
 
+        A line with no mark is a call whose outcome this record never reported —
+        which is a different thing from one that succeeded.
+        """
+        where = placed.get(result.call_id)
+        if where is None:
+            return
+        turn, index = where
+        if result.ok:
+            turn.tools[index] = f"{turn.tools[index]} ✓"
+            return
+        turn.tools[index] = f"{turn.tools[index]} ✗ {_result_excerpt(result.content)}".rstrip()
+
+    # -- text -------------------------------------------------------------
+
+    @staticmethod
+    def _displayable_prompt(text: str) -> str | None:
+        """The prompt as a turn opener, or ``None`` for harness chatter."""
+        text = text.strip()
         if not text:
             return None
-        # Filter Claude Code system messages
+        # Claude Code system messages and slash commands.
         if text.startswith(("<", "/")):
             return None
-        # HATS-666: a Skill invocation re-injects the full SKILL.md as a user
-        # text message ("Base directory for this skill: <path>"). That body is
-        # 100% redundant with the `🔧 Skill: <name>` tool line the audit already
-        # renders — filter it like a tool_result so it never becomes a 👤 turn.
+        # HATS-666: a Skill invocation re-injects the whole SKILL.md as a user
+        # message, 100% redundant with the `🔧 Skill: <name>` tool line already
+        # rendered — filtered like a tool_result, never a 👤 turn of its own.
         if text.startswith("Base directory for this skill:"):
             return None
         return text
@@ -194,3 +219,46 @@ class ClaudeParser:
             if isinstance(v, str) and v:
                 return v[:80]
         return str(inp)[:80]
+
+
+# --- projections over the collected run ------------------------------------
+
+
+def _model_stats(responses: list[Response]) -> dict[str, dict]:
+    """Per model: calls and tokens. ``calls`` counts API calls, not fragments."""
+    stats: dict[str, dict] = {}
+    for response in responses:
+        row = stats.setdefault(str(response.model or "unknown"), {"in": 0, "out": 0, "calls": 0})
+        row["in"] += response.usage.input_tokens
+        row["out"] += response.usage.output_tokens
+        row["calls"] += 1
+    return stats
+
+
+def _agg_usage(responses: list[Response]) -> dict[str, int]:
+    total = Usage()
+    for response in responses:
+        total = total + response.usage
+    return {
+        "input_tokens": total.input_tokens,
+        "output_tokens": total.output_tokens,
+        "cache_read_input_tokens": total.cache_read_input_tokens,
+        "cache_creation_input_tokens": total.cache_creation_input_tokens,
+    }
+
+
+def _result_excerpt(content: Any) -> str:
+    """The failure message, flattened to one line the audit can carry."""
+    if isinstance(content, list):
+        parts = [
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        text = "\n".join(part for part in parts if part)
+    elif content is None:
+        text = ""
+    else:
+        text = str(content)
+    flat = " ".join(text.split())
+    return f"{flat[:ERROR_EXCERPT]} …" if len(flat) > ERROR_EXCERPT else flat

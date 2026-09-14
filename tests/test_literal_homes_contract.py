@@ -157,7 +157,7 @@ def _load(target: str) -> type:
 def test_step_registry_names_frozen():
     """Built-in step registry is frozen (drift guard).
 
-    The 23 canonical step IDs are declared under the ``ai_hats.steps`` entry-point
+    The 24 canonical step IDs are declared under the ``ai_hats.steps`` entry-point
     group. Any addition/removal must be deliberate and reflected here.
     """
     expected = [
@@ -184,6 +184,7 @@ def test_step_registry_names_frozen():
         "save_artifact",
         "select_provider",
         "spawn_session_review",
+        "write_event_log",
     ]
     assert sorted(_declared_steps()) == expected
 

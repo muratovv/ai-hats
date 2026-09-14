@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**316 of 316 files catalogued — 324 flows.**
+**318 of 318 files catalogued — 326 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3275,6 +3275,35 @@ as a claim to check, not as evidence.
 - **expect** — ephemeral session cache files are written out-of-tree without modifying workspace files
 - **why** — without out-of-tree session caching, background sessions trigger fseventsd and pollute git status
 
+## `test_session_event_log.py`
+
+*pins HATS-1966*
+
+- **flow** — a developer runs a sub-agent session and then reads the session's own machine-readable record of what happened in it
+- **cmds**
+
+  ```console
+  ai-hats agent assistant --task "Reply with just: ok" --model claude-haiku-4-5
+  cat <session_dir>/events.jsonl
+  ```
+
+- **expect** — the session dir holds events.jsonl beside the audit.md / usage.json it already wrote, every line stamped events/v1 and decoding to a canonical event, with the assistant's call reported once and carrying its usage
+- **why** — the artifact is written by a pipeline step inside the session process, so an in-process test of the step says nothing about what a finished session leaves on disk — and a session that quietly stops writing it looks exactly like a session that had nothing to record
+
+## `test_session_usage_signals.py`
+
+*pins HATS-1966*
+
+- **flow** — a transcript in which one API call was split across three records, and a second in which the platform refused the call, are read by the bash-composable usage entry point
+- **cmds**
+
+  ```console
+  python -m ai_hats_observe.usage <transcript.jsonl>
+  ```
+
+- **expect** — the split call is billed once and reported as one api_call, and the refusal reaches the report as a signal naming who must act
+- **why** — every token number ai-hats published was inflated by summing a usage dict the CLI repeats on each fragment of one call, and a run the platform killed was indistinguishable from a short one
+
 ## `test_session_wiring_survives_later_materialization.py`
 
 *pins HATS-1268, HATS-1439*
@@ -3463,7 +3492,7 @@ as a claim to check, not as evidence.
   <tmp>/venv/bin/python -c "load_pipeline(<one-step yaml>)"
   ```
 
-- **expect** — the installed dist advertises all 23 built-in step ids under `ai_hats.steps`; loading a YAML that names `pre_log` builds the step, imports `ai_hats.pipeline.steps.log` and NO other step module, and an unknown id fails loudly naming what is known
+- **expect** — the installed dist advertises all 24 built-in step ids under `ai_hats.steps`; loading a YAML that names `pre_log` builds the step, imports `ai_hats.pipeline.steps.log` and NO other step module, and an unknown id fails loudly naming what is known
 - **why** — the step ids left the source tree for `[project.entry-points]` in pyproject.toml, and nothing in the source tree can tell whether that block reached the built distribution's `entry_points.txt`. A unit test of the registry passes against the developer's editable install no matter what the wheel carries; drop the block and every pipeline stops resolving, in an artefact no in-tree test opens. This runs the resolver against a real install, from a venv the checkout is not on the path of
 
 ## `test_step_entry_point_update.py`

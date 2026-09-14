@@ -13,10 +13,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from .. import SurfaceHint
+    from ai_hats_observe.canonical.reader import EventReader
     from ai_hats_observe.parsers.base import TranscriptParser
 
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
+from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 from .. import (
     MetricsSink,
     Surface,
@@ -155,6 +157,11 @@ class ClaudeSurface(Surface):
     def transcript_parser(self) -> TranscriptParser:
         # Claude emits a structured JSONL session log → richer parse.
         return ClaudeParser()
+
+    def event_reader(self) -> Callable[[Path], EventReader]:
+        # The class IS the factory: one reader per transcript path, holding its
+        # own position so a grown file yields only what is new.
+        return ClaudeTranscriptReader
 
     def resolve_transcript(
         self,

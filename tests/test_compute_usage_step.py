@@ -22,6 +22,7 @@ from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats_observe import Session
 from ai_hats.pipeline.steps.compute_usage import ComputeUsage
 from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON
+from ai_hats_observe.usage import SCHEMA_VERSION
 
 TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
 
@@ -106,7 +107,7 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
     assert delta == {"usage_path": usage_path}
     assert usage_path.exists()
     report = json.loads(usage_path.read_text())
-    assert report["schema_version"] == "usage/v1"
+    assert report["schema_version"] == SCHEMA_VERSION
     assert report["aggregates"]["skill_loads"] == {"backlog-manager": 1}
     assert report["aggregates"]["tool_success_rate"] == 0.75
 
@@ -155,7 +156,7 @@ def test_discovers_the_jsonl_when_no_session_id_was_taken(
     )
     assert usage_path.exists()
     report = json.loads(usage_path.read_text())
-    assert report["schema_version"] == "usage/v1"
+    assert report["schema_version"] == SCHEMA_VERSION
 
 
 def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):

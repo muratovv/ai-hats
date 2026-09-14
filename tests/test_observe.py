@@ -455,7 +455,7 @@ def test_build_no_turns_no_transcript_is_metaonly(tmp_path):
     assert "## Metrics" in audit
 
 
-def test_extract_user_text_filters_skill_body_injection():
+def test_prompt_filter_drops_skill_body_injection():
     """HATS-666: a Skill invocation re-injects the full SKILL.md as a user
     text message ("Base directory for this skill: …"). It is 100% redundant
     with the `🔧 Skill: <name>` tool line and must be filtered like a
@@ -466,10 +466,10 @@ def test_extract_user_text_filters_skill_body_injection():
         "Base directory for this skill: /Users/x/.agent/ai-hats/skills/backlog-manager\n\n"
         "# Backlog Manager\n\nOrchestrate the lifecycle ...\n" + ("blah " * 2000)
     )
-    assert ClaudeParser._extract_user_text(skill_body) is None
+    assert ClaudeParser._displayable_prompt(skill_body) is None
     # A real user message is untouched.
     assert (
-        ClaudeParser._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
+        ClaudeParser._displayable_prompt("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
     )
 
 

@@ -4,9 +4,43 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.0]
+
+A session is read as a stream of canonical events, and the usage report is built
+on it. `ai_hats_observe.canonical` carries two axes: content (a `Response`
+identified by the call, its items, and how it completed) and run health
+(`PersonActionRequired` / `HarnessActionRequired` / `Notice`, named after who
+must act rather than after a provider's error vocabulary). Surface adapters
+implement `EventReader`; `ClaudeTranscriptReader` is the first.
 
 ### Fixed
+
+- A call's token cost is counted once however many transcript records carried
+  it. The previous reader summed a per-record `usage` that repeats byte-identical
+  across the fragments of one API call, inflating every total — measured 2.48x
+  over the 40 largest real transcripts. This moves the numbers in `usage.json`,
+  `metrics.json` and the audit header; existing reports are not migrated.
+- Every text fragment of a turn reaches the audit. The previous reader
+  overwrote, keeping only the last, which discarded intermediate reasoning in
+  45.3% of turns.
+- A tool's outcome reaches the audit, success or failure. Tool results were
+  dropped wholesale, so a failed tool call was invisible.
+- An API-error notice can no longer be rendered as the agent's answer.
+- Thinking is retained as text instead of `len(text) // 200` reported as
+  seconds.
+
+### Added
+
+- `ai_hats_observe.parsers.claude.ClaudeParser.from_events` — the parsed shape
+  from any stream of canonical events, so a replayed event log produces the same
+  audit as the transcript it came from (identical over 300 real transcripts).
+- `usage/v2`: `api_calls` (inference calls, which is what cost is proportional
+  to) and `signals` (the run-health axis). `flags` keeps its meaning — parse
+  quality only. A `usage/v1` report on disk still renders.
+- `ai_hats_observe.event_log` — a session's events as one JSON object per line,
+  written append-first so a reader tolerates a file still being written.
+- `ParsedTranscript.responses` and `.signals`, both defaulting empty, so a
+  surface adopts them when its own parser is ready.
 
 - New session directories use mode `0700`, and sensitive session artifacts use
   mode `0600` across creation, append, copy, and atomic-replacement paths. The

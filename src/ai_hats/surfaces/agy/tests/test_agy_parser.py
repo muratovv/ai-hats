@@ -10,6 +10,7 @@ from ai_hats_observe.artifacts import (
     FLAG_TOKEN_TELEMETRY_ESTIMATED,
 )
 from ai_hats.surfaces.agy.provider import AgySurface
+from ai_hats_observe.usage import SCHEMA_VERSION
 
 
 def test_agy_parser_fallback_when_jsonl_absent(tmp_path: Path) -> None:
@@ -20,7 +21,9 @@ def test_agy_parser_fallback_when_jsonl_absent(tmp_path: Path) -> None:
     parsed = parser.parse(None, trace_path)
     assert parsed.turns  # trace fallback produces turns
     usage = parser.parse_usage(None, trace_path)
-    assert usage["schema_version"] == "usage/v1"
+    # the surface stamps whatever version observe publishes; which one that is
+    # is pinned in packages/ai-hats-observe/tests/test_schema_version.py
+    assert usage["schema_version"] == SCHEMA_VERSION
 
 
 def test_agy_parser_parses_transcript_jsonl(tmp_path: Path) -> None:
