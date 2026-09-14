@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
-from typing import TYPE_CHECKING, Mapping, Protocol
+from typing import TYPE_CHECKING, Callable, Mapping, Protocol
 
 
 from ai_hats_core import CompositionResult
@@ -42,6 +42,7 @@ from .mcp import StdioMCPServer
 from .hook_channel import HookRow
 
 if TYPE_CHECKING:
+    from ai_hats_observe.canonical.reader import EventReader
     from ai_hats_observe.parsers.base import TranscriptParser
 
 logger = logging.getLogger(__name__)
@@ -262,6 +263,19 @@ class Surface(abc.ABC):
         overrides with a richer parser.
         """
         return TraceParser()
+
+    def event_reader(self) -> Callable[[Path], EventReader] | None:
+        """Builds the reader that turns ONE of this surface's transcripts into
+        canonical events — same rule as ``transcript_parser``: it rides the
+        surface, there is no registry.
+
+        Default ``None``, not a reader that yields nothing: ``None`` means this
+        surface has no canonical reading yet, so the session writes no
+        ``events.jsonl`` at all — while an empty artifact would claim a session
+        that emitted nothing. Claude is the only surface that overrides today;
+        agy, cline, codex and opencode keep the default (HATS-1966).
+        """  # comment-length: allow — the None branch IS the contract
+        return None
 
     def resolve_transcript(
         self,

@@ -15,6 +15,9 @@ steps:
   # Sibling of make_audit — same post-session JSONL, emits the
   # machine-readable usage.json (usage/v1) consumed by the comparison task.
   - id: compute_usage
+  # Sibling of compute_usage over the same transcript — writes events.jsonl,
+  # the canonical record audit.md and usage.json are both projections of.
+  - id: write_event_log
   - id: maybe_spawn_session_reviewer
   - id: run_session_end
   - id: quorum_autoclose

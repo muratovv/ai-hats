@@ -7,7 +7,7 @@ cmds:
     uv build --wheel --out-dir <tmp>/wheels <per-worker clone of the repo>
     uv venv <tmp>/venv && uv pip install --no-deps <wheel> pyyaml
     <tmp>/venv/bin/python -c "load_pipeline(<one-step yaml>)"
-expect: the installed dist advertises all 23 built-in step ids under
+expect: the installed dist advertises all 24 built-in step ids under
         `ai_hats.steps`; loading a YAML that names `pre_log` builds the step,
         imports `ai_hats.pipeline.steps.log` and NO other step module, and an
         unknown id fails loudly naming what is known
@@ -161,8 +161,8 @@ def test_a_real_install_resolves_a_built_in_step_through_its_metadata(probed: di
         "the built-in step declarations did not reach the distribution's metadata "
         '(check `[project.entry-points."ai_hats.steps"]` in pyproject.toml)'
     )
-    assert len(result["advertised"]) == 23, (
-        f"the wheel advertises {len(result['advertised'])} step ids, not 23: {result['advertised']}"
+    assert len(result["advertised"]) == 24, (
+        f"the wheel advertises {len(result['advertised'])} step ids, not 24: {result['advertised']}"
     )
     assert result["steps"] == [STEP_ID], (
         f"the pipeline did not build from its YAML: {result['steps']}"

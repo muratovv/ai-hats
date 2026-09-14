@@ -31,6 +31,9 @@ implement `EventReader`; `ClaudeTranscriptReader` is the first.
 
 ### Added
 
+- `ai_hats_observe.parsers.claude.ClaudeParser.from_events` — the parsed shape
+  from any stream of canonical events, so a replayed event log produces the same
+  audit as the transcript it came from (identical over 300 real transcripts).
 - `usage/v2`: `api_calls` (inference calls, which is what cost is proportional
   to) and `signals` (the run-health axis). `flags` keeps its meaning — parse
   quality only. A `usage/v1` report on disk still renders.

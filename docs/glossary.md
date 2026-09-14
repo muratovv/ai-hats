@@ -30,7 +30,7 @@ A [Provider](#provider) for another agent CLI registered through the `ai_hats.pr
 
 ## Session
 
-One invocation of the provider CLI under a chosen role. Entry points: `ai-hats` (no subcommand, or with positional prompt text / provider flags), `ai-hats agent <role>`, `ai-hats execute …`. Per-session artefacts land in `<ai_hats_dir>/sessions/runs/session_<id>/` (`audit.md`, `metrics.json`, `usage.json` — the machine-readable `usage/v2` context-cost report; `transcript.txt`, `meta_prompt.txt` — the exact bytes the provider saw as system-prompt override). The runtime ends a session with a `session_end` event that may trigger a per-session retrospective — see [Reflect](#reflect).
+One invocation of the provider CLI under a chosen role. Entry points: `ai-hats` (no subcommand, or with positional prompt text / provider flags), `ai-hats agent <role>`, `ai-hats execute …`. Per-session artefacts land in `<ai_hats_dir>/sessions/runs/session_<id>/` (`audit.md`, `metrics.json`, `usage.json` — the machine-readable `usage/v2` context-cost report; `events.jsonl` — the session's canonical events, one JSON object per line, which `audit.md` and `usage.json` are both projections of (a surface with no canonical reading of its own transcript writes no such file rather than an empty one); `transcript.txt`, `meta_prompt.txt` — the exact bytes the provider saw as system-prompt override). The runtime ends a session with a `session_end` event that may trigger a per-session retrospective — see [Reflect](#reflect).
 
 Lifecycle diagram — see [2].
 

@@ -84,7 +84,7 @@ def _seed_project_with_retro_policy(
 
 def test_pipeline_wires_make_audit_then_spawn(tmp_path, monkeypatch):
     """Step IDs in `finalize-subagent` are exactly
-    [make_audit, compute_usage, maybe_spawn_session_reviewer].
+    [make_audit, compute_usage, write_event_log, maybe_spawn_session_reviewer].
 
     Pins the wiring at the YAML level — any future drift (e.g. someone
     re-adding `run_session_end` without considering SubAgent contract,
@@ -96,6 +96,7 @@ def test_pipeline_wires_make_audit_then_spawn(tmp_path, monkeypatch):
     assert step_names == [
         "make_audit",
         "compute_usage",
+        "write_event_log",
         "maybe_spawn_session_reviewer",
     ], f"finalize-subagent step order drifted: {step_names}"
 
