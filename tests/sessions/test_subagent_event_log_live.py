@@ -10,6 +10,7 @@ finds it.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -41,16 +42,16 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
     asm.set_role("maintainer", provider_name="claude")
-    monkeypatch.chdir(project)
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     # Where claude keeps its transcripts, kept inside this test's sandbox.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-home"))
     return project
 
 
-def test_a_subagent_session_leaves_its_event_log_written_live(project: Path, monkeypatch):
+def test_a_subagent_session_leaves_its_event_log_written_live(project: Path):
     from ai_hats.composition_seam import build_composition_payload
     from ai_hats.runtime import SubAgentRunner
+    from ai_hats.surfaces.claude.provider import ClaudeSubagentEngine, ClaudeSurface
     from ai_hats_observe import SessionManager
 
     handed: list = []
@@ -73,8 +74,14 @@ def test_a_subagent_session_leaves_its_event_log_written_live(project: Path, mon
             stop_reason="end_turn",
         )
 
-    monkeypatch.setattr("ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking", fake_sdk)
-    payload = build_composition_payload(project, role_override="maintainer")
+    class StubbedSdk(ClaudeSurface):
+        # The SDK call is the engine's injected seam; the surface hands it in.
+        def engine(self):
+            return ClaudeSubagentEngine(self, run_blocking=fake_sdk)
+
+    payload = replace(
+        build_composition_payload(project, role_override="maintainer"), provider=StubbedSdk()
+    )
     runner = SubAgentRunner(
         ProjectLayout.at(project),
         payload,
