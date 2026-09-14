@@ -111,7 +111,7 @@ def test_the_facts_tier_is_exactly_these_names():
     same constant it is meant to guard — moving a name out of the tier keeps that
     test green while the file it named starts being deleted."""
     assert RETAINED_ARTIFACTS == frozenset(
-        {"audit.md", "metrics.json", "retro.log", "diagnostics.json"}
+        {"audit.md", "metrics.json", "retro.log", "diagnostics.json", "events.jsonl"}
     )
 
 
@@ -290,3 +290,29 @@ def test_an_undeletable_artifact_is_counted_and_logged(tmp_path, caplog):
     assert report.errors == 1
     assert report.files_removed == 0
     assert "cannot drop" in caplog.text
+
+
+def test_the_event_log_outlives_the_transcript_it_was_read_from(tmp_path):
+    """``events.jsonl`` is the record ``audit.md`` and ``usage.json`` project
+    from, and it is read out of a provider transcript that expires as bulk. Once
+    that transcript is gone this file is the only copy, so it is a fact.
+
+    Until it was named here it survived only by being unknown to this module —
+    kept by the allowlist default rather than by a decision, which is not a
+    guarantee anyone can rely on.
+
+    Positive control: the transcript it was read from is dropped in the same
+    sweep, so survival cannot be explained by the sweep having done nothing.
+    """
+    run = _runs(tmp_path) / OLD_SID
+    events = _artifact(run, "events.jsonl", age_days=BULK_MAX_AGE_DAYS * 100)
+    transcript = _artifact(run, "transcript.jsonl", age_days=BULK_MAX_AGE_DAYS * 100)
+    usage = _artifact(run, "usage.json", age_days=BULK_MAX_AGE_DAYS * 100)
+
+    report = _sweep(tmp_path)
+
+    assert events.exists(), "the only surviving record of the session was deleted"
+    # POSITIVE CONTROL: the sweep really ran, and really reaps its bulk tier
+    assert not transcript.exists()
+    assert not usage.exists()
+    assert report.files_removed == 2

@@ -4,10 +4,12 @@ The run tree had no GC of any kind and grows monotonically in every consumer
 project. Two tiers, and the unit of expiry is **one file inside a run dir** — a
 run dir is never removed, so a session id never stops resolving:
 
-* **facts** — ``audit.md``, ``metrics.json``, ``retro.log``, ``diagnostics.json``:
-  retained forever. ``retro.facts`` links every retro to ``../runs/<sid>/audit.md``
+* **facts** — ``audit.md``, ``metrics.json``, ``retro.log``, ``diagnostics.json``,
+  ``events.jsonl``: retained forever. ``retro.facts`` links every retro to ``../runs/<sid>/audit.md``
   and reads ``metrics.json`` for the session window; trimming those inputs has
-  already once silently blinded the reflect loop.
+  already once silently blinded the reflect loop. ``events.jsonl`` is the record
+  ``audit.md`` is a projection of, and the provider transcript it was read from
+  is bulk — so once that expires it is the only copy left.
 * **bulk** — the provider transcripts, the PTY trace, the composed prompt and the
   materialization/usage records: expire past :data:`BULK_MAX_AGE_DAYS`.
 
@@ -44,6 +46,7 @@ from pathlib import Path
 
 from ai_hats_observe.artifacts import (
     AUDIT_MD,
+    EVENT_LOG_JSONL,
     META_PROMPT_TXT,
     METRICS_JSON,
     PTY_RAW_LOG,
@@ -74,7 +77,7 @@ DIAGNOSTICS_JSON = "diagnostics.json"
 
 #: The facts tier. Never expired, at any age, for any reason.
 RETAINED_ARTIFACTS: frozenset[str] = frozenset(
-    {AUDIT_MD, METRICS_JSON, RETRO_LOG, DIAGNOSTICS_JSON}
+    {AUDIT_MD, METRICS_JSON, RETRO_LOG, DIAGNOSTICS_JSON, EVENT_LOG_JSONL}
 )
 
 #: The only names a sweep may ever unlink. Spelled through observe's constants so
