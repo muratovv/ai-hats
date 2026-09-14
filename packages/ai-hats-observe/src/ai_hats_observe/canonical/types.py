@@ -108,6 +108,26 @@ class Completion(StrEnum):
     UNKNOWN = "unknown"
 
 
+# --- gates -----------------------------------------------------------------
+
+
+class GatePoint(StrEnum):
+    """Where a gate sits in the run — named after the moment, never after a
+    surface's own hook vocabulary, so every surface's hooks map onto three."""
+
+    BEFORE_TOOL = "before_tool"
+    AFTER_TOOL = "after_tool"
+    AT_STOP = "at_stop"
+
+
+class GateDecision(StrEnum):
+    """What a gate concluded. ``ask`` hands the call to a person; the run waits."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+    ASK = "ask"
+
+
 @dataclass(frozen=True)
 class Usage:
     """Billable cost of one inference call."""

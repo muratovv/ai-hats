@@ -43,6 +43,8 @@ from typing import Any, ClassVar
 from .signals import Signal
 from .types import (
     Completion,
+    GateDecision,
+    GatePoint,
     Item,
     ItemKind,
     ModelName,
@@ -135,6 +137,30 @@ class ResponseEnded:
     ts: Timestamp | None = None
 
 
+@dataclass(frozen=True)
+class GateVerdict:
+    """What a gate said about the run: the composed chain judging a tool call,
+    or a surface's own hook at a stop.
+
+    Content, not a signal: it is something that happened *in* the run, and the
+    run goes on. Every verdict is recorded, a bare ``allow`` included — which
+    gates ran on a call is the one thing no transcript carries.
+    """
+
+    point: GatePoint
+    decision: GateDecision
+    # the deciding hook; empty when nothing objected
+    hook: str = ""
+    reason: str = ""
+    # advice fed back to the model, each piece with its author
+    nudges: tuple[tuple[str, str], ...] = ()
+    tool: str | None = None
+    call_id: ToolCallId | None = None
+    # which producer spoke: the chain itself, or a surface's transcript
+    source: str | None = None
+    ts: Timestamp | None = None
+
+
 Event = (
     PromptReceived
     | ResponseStarted
@@ -142,5 +168,6 @@ Event = (
     | ItemEmitted
     | ToolResultReceived
     | ResponseEnded
+    | GateVerdict
     | Signal
 )

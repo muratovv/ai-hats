@@ -11,6 +11,7 @@ Under review; not wired to anything yet.
 
 from .events import (
     Event,
+    GateVerdict,
     ItemDelta,
     ItemEmitted,
     PromptReceived,
@@ -32,6 +33,8 @@ from .signals import (
 from .types import (
     Completion,
     EpochSeconds,
+    GateDecision,
+    GatePoint,
     Item,
     ItemKind,
     ModelName,
@@ -65,6 +68,9 @@ __all__ = [
     "REORDER_DEPTH",
     "EpochSeconds",
     "Event",
+    "GateDecision",
+    "GatePoint",
+    "GateVerdict",
     "HarnessActionRequired",
     "HarnessMustAct",
     "Item",

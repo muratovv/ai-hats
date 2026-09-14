@@ -19,6 +19,9 @@ from ai_hats_observe.canonical import (
     ANSWER_ONLY,
     WITH_REASONING,
     Blocking,
+    GateDecision,
+    GatePoint,
+    GateVerdict,
     ItemEmitted,
     ItemKind,
     ResponseStarted,
@@ -129,6 +132,57 @@ def test_each_event_reaches_the_file_as_one_write(
 
 def test_an_absent_artifact_reads_as_no_events(tmp_path: Path) -> None:
     assert list(read_events(tmp_path / "never-written.jsonl")) == []
+
+
+# --- gate verdicts -----------------------------------------------------------
+
+
+VERDICTS = [
+    GateVerdict(
+        point=GatePoint.BEFORE_TOOL,
+        decision=GateDecision.DENY,
+        hook="safety_gate.py",
+        reason="rm -rf outside the worktree",
+        nudges=(("budget_nudge.py", "prefer rack transition"),),
+        tool="Bash",
+        call_id="toolu_01",
+        source="chain",
+        ts="2026-09-14T12:00:00Z",
+    ),
+    GateVerdict(point=GatePoint.AFTER_TOOL, decision=GateDecision.ALLOW, source="chain"),
+    GateVerdict(
+        point=GatePoint.AT_STOP,
+        decision=GateDecision.ASK,
+        hook="claude-stop-hook.sh",
+        source="claude/transcript",
+        ts="2026-09-14T12:00:01Z",
+    ),
+]
+
+
+def test_a_gate_verdict_round_trips(tmp_path: Path, session_events: list) -> None:
+    """A verdict is an event like any other: written, read back equal, with
+    every field a consumer attributes it by — the deciding hook, the call it
+    judged, and who spoke."""
+    path = tmp_path / EVENT_LOG_JSONL
+    events = [*session_events[:2], *VERDICTS, *session_events[2:]]
+
+    write_events(events, path)
+
+    assert list(read_events(path)) == events
+
+
+def test_a_gate_verdict_is_carried_by_a_projection_and_folded_by_none(
+    tmp_path: Path, session_events: list
+) -> None:
+    """The log is the deliverable; the collected shape audit.md and usage.json
+    are built from does not change because gates spoke. A projection still
+    passes the verdict through — narrowing what a consumer reads must not hide
+    that a call was refused."""
+    events = [*session_events[:2], *VERDICTS, *session_events[2:]]
+
+    assert collect(events) == collect(session_events)
+    assert [e for e in select(events, ANSWER_ONLY) if isinstance(e, GateVerdict)] == VERDICTS
 
 
 # --- projections -----------------------------------------------------------

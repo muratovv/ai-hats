@@ -21,6 +21,7 @@ from typing import Any, Iterable, Iterator
 from .artifacts import EVENT_LOG_JSONL, private_opener
 from .canonical.events import (
     Event,
+    GateVerdict,
     ItemDelta,
     ItemEmitted,
     PromptReceived,
@@ -40,6 +41,8 @@ from .canonical.signals import (
 from .canonical.types import (
     Completion,
     EpochSeconds,
+    GateDecision,
+    GatePoint,
     Item,
     ItemKind,
     ModelName,
@@ -213,11 +216,46 @@ def encode(event: Event) -> dict[str, Any]:
                 "stop_reason": event.stop_reason,
                 "ts": event.ts,
             }
+        case GateVerdict():
+            body = {
+                "event": "gate_verdict",
+                "point": str(event.point),
+                "decision": str(event.decision),
+                "hook": event.hook,
+                "reason": event.reason,
+                "nudges": [{"hook": hook, "text": text} for hook, text in event.nudges],
+                "tool": event.tool,
+                "call_id": event.call_id,
+                "source": event.source,
+                "ts": event.ts,
+            }
         case PersonActionRequired() | HarnessActionRequired() | Notice():
             body = {"event": "signal", **signal_fields(event)}
         case _:
             raise TypeError(f"no encoding for {type(event).__name__}")
     return {"v": EVENT_SCHEMA_VERSION, **body}
+
+
+def _gate_verdict_from(record: dict[str, Any]) -> GateVerdict | None:
+    point, decision = record.get("point"), record.get("decision")
+    if point not in set(GatePoint) or decision not in set(GateDecision):
+        return None
+    tool, call_id, source = record.get("tool"), record.get("call_id"), record.get("source")
+    return GateVerdict(
+        point=GatePoint(point),
+        decision=GateDecision(decision),
+        hook=str(record.get("hook") or ""),
+        reason=str(record.get("reason") or ""),
+        nudges=tuple(
+            (str(nudge.get("hook") or ""), str(nudge.get("text") or ""))
+            for nudge in record.get("nudges") or ()
+            if isinstance(nudge, dict)
+        ),
+        tool=tool if isinstance(tool, str) else None,
+        call_id=ToolCallId(call_id) if isinstance(call_id, str) else None,
+        source=source if isinstance(source, str) else None,
+        ts=_ts(record.get("ts")),
+    )
 
 
 def decode(record: dict[str, Any]) -> Event | None:
@@ -269,6 +307,8 @@ def decode(record: dict[str, Any]) -> Event | None:
                 stop_reason=stop_reason if isinstance(stop_reason, str) else None,
                 ts=ts,
             )
+        case "gate_verdict":
+            return _gate_verdict_from(record)
         case "signal":
             return _signal_from(record)
     return None
