@@ -442,6 +442,64 @@ def test_the_arrival_helper_maps_only_what_binds() -> None:
     assert Arrival.of("Notification").native == "Notification"
 
 
+class TestTheVerdictIsRecordedInTheSessionsEventLog:
+    """Every dispatcher passes through here, so this is where a verdict becomes
+    part of the session's record — the one thing no transcript carries."""
+
+    def test_the_verdict_is_appended_to_the_sessions_event_log(
+        self, _run, tmp_path: Path, hook_repo: Path
+    ) -> None:
+        from ai_hats.session_identity import SessionIdentity
+        from ai_hats_observe.canonical import GateDecision, GatePoint, GateVerdict
+        from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
+
+        session_dir = tmp_path / "session_x"
+        session_dir.mkdir()
+        identity = SessionIdentity(
+            id="x",
+            role="assistant",
+            provider="claude",
+            project_dir=hook_repo,
+            session_dir=session_dir,
+        )
+        channel = Recorder(rows=[_hook(tmp_path, "deny.sh", "echo 'not here' >&2\nexit 2")])
+
+        _run(channel, environ=identity.to_env())
+
+        (said,) = channel.said
+        assert said.decision is ChainDecision.DENY, "positive control: the chain really denied"
+        (event,) = read_events(session_dir / EVENT_LOG_JSONL)
+        assert isinstance(event, GateVerdict)
+        assert event.point is GatePoint.BEFORE_TOOL
+        assert event.decision is GateDecision.DENY
+        assert (event.hook, event.reason) == (said.hook, said.reason)
+        assert (event.tool, event.source) == ("Bash", "chain")
+        assert event.ts, "a verdict without a time cannot be placed in the run"
+
+    def test_outside_a_session_nothing_is_recorded_and_the_answer_stands(
+        self, _run, tmp_path: Path
+    ) -> None:
+        channel = Recorder()
+
+        _run(channel)
+
+        assert channel.said[0].decision is ChainDecision.ALLOW
+        assert list(tmp_path.rglob("events.jsonl")) == []
+
+    def test_a_verdict_that_cannot_be_recorded_is_said_on_stderr_never_raised(
+        self, _run, capsys
+    ) -> None:
+        """A session id with no envelope is the one shape ``from_env`` refuses;
+        the gate still answers, and the loss is said where hook output goes."""
+        channel = Recorder()
+
+        status = _run(channel, environ={"AI_HATS_SESSION_ID": "too-old"})
+
+        assert channel.said[0].decision is ChainDecision.ALLOW
+        assert status == 0
+        assert "gate verdict not recorded" in capsys.readouterr().err
+
+
 def test_a_nudge_keeps_its_author_through_the_flow(_run, tmp_path: Path) -> None:
     doc = json.dumps(
         {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "prefer Grep"}}
