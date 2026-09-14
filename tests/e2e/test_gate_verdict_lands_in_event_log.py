@@ -89,7 +89,8 @@ def _spoken(done) -> dict:
 
 
 def test_each_verdict_lands_in_the_sessions_event_log(session) -> None:
-    """Refused, then allowed: two hook processes, two lines, in order."""
+    """Refused, then allowed: two hook processes, two lines, in order — the
+    recording HATS-1967 put into every dispatcher, seen from outside it."""
     refused = run_claude_dispatch(
         session.project, session.env, tool="Bash", tool_input={"command": f"cat {OFF_LIMITS}"}
     )

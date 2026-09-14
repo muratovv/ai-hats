@@ -52,6 +52,8 @@ PRODUCER_SOURCE = textwrap.dedent(
 
 
 def test_producers_in_separate_processes_never_tear_or_merge_a_line(tmp_path: Path) -> None:
+    """Four producers, one file — the shape HATS-1967 gave events.jsonl once the
+    session's writer and the hook processes started appending at the same time."""
     from _helpers.env import checkout_pythonpath
 
     log = tmp_path / EVENT_LOG_JSONL

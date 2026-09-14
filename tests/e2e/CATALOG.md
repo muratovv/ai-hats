@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**318 of 318 files catalogued — 326 flows.**
+**321 of 321 files catalogued — 329 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1271,6 +1271,39 @@ as a claim to check, not as evidence.
 - **expect** — backlog manager detects all child tasks completed and auto-transitions epic task card
 - **why** — without epic auto-transition, completed epics remain open requiring manual state updates
 
+## `test_event_log_concurrent_append.py`
+
+*pins HATS-1967*
+
+- **flow** — several hook processes record their verdicts while the session's own writer is appending — every producer in its own process, one file
+- **cmds**
+
+  ```console
+  # four processes, each appending 300 events through append_event()
+  python -c "from ai_hats_observe.event_log import append_event; ..."
+  cat <session_dir>/events.jsonl
+  ```
+
+- **expect** — exactly 1200 lines, every one decoding to the event its producer wrote, payloads intact — including the 20 KB ones
+- **why** — a hook process and the session's writer cannot see each other; the promise that their lines never interleave is made to the kernel (one write(2) per line under O_APPEND) and only holds across process boundaries, which no in-process test can cross
+
+## `test_event_log_written_during_the_session.py`
+
+*pins HATS-1967*
+
+- **flow** — an operator runs an interactive session; while the surface is still running, the session's events.jsonl already holds what the surface has done so far, and when the surface exits the file is complete without ever having been rewritten
+- **cmds**
+
+  ```console
+  # the real PTY spawn with a stand-in surface that writes its transcript
+  # record by record, then waits for input
+  ai-hats -r assistant
+  tail -f <session_dir>/events.jsonl   # in a second terminal
+  ```
+
+- **expect** — events.jsonl carries the first response while the surface child is alive; after the child exits the file equals a finished-record read of the transcript, on the same inode it was created on
+- **why** — the live writer runs on a thread beside a real pty child and is closed from the finalize chain — an in-process test drives its tick by hand and cannot see whether the thread follows a record a real child is appending to, nor whether the close lands after the child is reaped
+
 ## `test_execute_batch_requires_role.py`
 
 *pins HATS-827*
@@ -1315,6 +1348,23 @@ as a claim to check, not as evidence.
 
 - **expect** — a card with no code passes; a live worktree is judged by ITS scripts/gates.sh against the stages the gate declares, and refused with the missing ones and the command that earns them; a merged card is judged by its merge commit; a green run names what the gates after it still lack
 - **why** — a gate used to be sixty lines that differed from its siblings in two strings; a few-line declaration over one primitive cannot drift
+
+## `test_gate_verdict_lands_in_event_log.py`
+
+*pins HATS-1967*
+
+- **flow** — an operator's session has a gate that refuses one path; while the session runs, its own events.jsonl says which gate refused which call
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # the string a settings.json entry holds,
+                                # run once for a refused call, once for an
+                                # allowed one
+  cat <session_dir>/events.jsonl
+  ```
+
+- **expect** — one gate_verdict line per call, appended by the hook process into the session's own log — deny naming the guard and the tool, then allow — and the verdict claude received is unchanged by the recording
+- **why** — the verdict is recorded from inside the hook process, not the session process, so an in-process test of dispatch() cannot see whether a real hook run finds its session and lands the line beside the session's other artifacts — the one fact no transcript carries
 
 ## `test_gates_check_run.py`
 
@@ -3288,7 +3338,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — the session dir holds events.jsonl beside the audit.md / usage.json it already wrote, every line stamped events/v1 and decoding to a canonical event, with the assistant's call reported once and carrying its usage
-- **why** — the artifact is written by a pipeline step inside the session process, so an in-process test of the step says nothing about what a finished session leaves on disk — and a session that quietly stops writing it looks exactly like a session that had nothing to record
+- **why** — the artifact is written while the session runs, by a writer that follows the surface's own record from inside the session process, so an in-process test of the writer says nothing about what a finished session leaves on disk — and a session that quietly stops writing it looks exactly like a session that had nothing to record
 
 ## `test_session_usage_signals.py`
 

@@ -147,7 +147,8 @@ def _wait_for_first_response(log: Path, seconds: float) -> list:
 def test_the_event_log_is_written_while_the_surface_runs(tmp_path: Path) -> None:
     """Positive control for the assertion that matters: with ``start_event_log``
     stubbed to return ``None`` the first block below fails (no file while the
-    child is alive), so a green run proves the thread followed a live record."""
+    child is alive), so a green run proves the thread HATS-1967 started followed
+    a live record."""
     from ptyprocess import PtyProcess
 
     from _helpers.env import checkout_pythonpath
