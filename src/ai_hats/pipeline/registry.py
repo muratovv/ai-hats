@@ -3,13 +3,13 @@
 Built-in steps are **declared**, not registered: ``pyproject.toml`` advertises
 each id under the ``ai_hats.steps`` group, and :func:`get` imports the module
 named there the first time that id is used. Nothing imports a step to make it
-resolvable (HATS-1783) — that side effect is what put the loader in an import
+resolvable — that side effect is what put the loader in an import
 cycle with ``cli``. Third parties keep both doors: advertise the same group, or
 call :func:`register` at their own import time, as ``user_steps`` does.
 
 One id, one owner, through either door: :func:`register` refuses a name that is
 already registered **or** advertised, so a project step cannot take a built-in's
-id — whether or not anything has resolved that built-in yet (HATS-1799).
+id — whether or not anything has resolved that built-in yet.
 
 ADR-0026 D15: an entry point is a **non-import** edge no AST walk can see, so
 this seam is outside import-based test selection by design — a change to the
@@ -47,7 +47,7 @@ def register(name: str, factory: StepFactory) -> None:
     Taken means either half of what :func:`names` reports: already registered,
     or advertised and not yet resolved. Checking only ``_REGISTRY`` would make
     the refusal depend on whether something had happened to resolve the built-in
-    first, so in a fresh process a project step would shadow it (HATS-1799).
+    first, so in a fresh process a project step would shadow it.
     """
     if name in _REGISTRY:
         raise StepRegistryError(f"step already registered: {name!r}")
@@ -81,7 +81,7 @@ def _no_metadata_error(name: str) -> StepRegistryError:
 
     Entry points reach a process through **installed** metadata, so the built-in
     steps are unresolvable in a bare source tree (``PYTHONPATH=src`` with nothing
-    installed) and in an install whose ``entry_points.txt`` predates HATS-1783.
+    installed) and in an install whose ``entry_points.txt`` predates step entry-point declarations.
     Refusing is the decision, not an accident: the alternative — a module-path
     table in this file as a fallback — would be a second owner of the same
     mapping (ADR-0026 D3), and it would keep every pipeline running while the
@@ -93,7 +93,7 @@ def _no_metadata_error(name: str) -> StepRegistryError:
         f"{STEP_ENTRY_POINT_GROUP!r} entry-point group, so no built-in step exists "
         "for this process. The built-ins are declared in ai-hats' pyproject.toml and "
         "reach the process through installed metadata — a bare source tree, or an "
-        "install whose metadata predates HATS-1783, advertises none. Reinstall the "
+        "install whose metadata predates step entry-point declarations, advertises none. Reinstall the "
         "package (`uv sync`, or `pip install -e .`) and retry."
     )
 

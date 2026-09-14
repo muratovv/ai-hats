@@ -46,8 +46,7 @@ class Composer:
         because each ``_apply_overlay`` call mutates the same composition
         lists (remove-first-then-append, current semantic preserved within
         each layer). Within a single overlay, ``add: X`` + ``remove: X`` is
-        a documented "move X to that layer's tail" reorder operation
-        (HATS-421).
+        a documented "move X to that layer's tail" reorder operation.
 
         Two parameter forms are supported for backwards compatibility:
 
@@ -128,8 +127,8 @@ class Composer:
             errors=errors,
         )
 
-        # HATS-1456 (S2b): resolve deferred rule removals against the composed set
-        # so an overlay can drop a TRAIT-brought rule (mirroring HATS-1046 skills).
+        # Resolve deferred rule removals against the composed set
+        # so an overlay can drop a TRAIT-brought rule (mirroring the skill-removal logic below).
         effective_rule_removes = requested_rule_removes - set(config.composition.rules)
         if effective_rule_removes:
             removed_rule_names: set[str] = set()
@@ -165,7 +164,7 @@ class Composer:
 
         # Resolve deferred removals against the composed set so an
         # overlay can drop a TRAIT-brought skill. A skill re-added to the role's
-        # own list (remove+add reorder, HATS-421) is exempt; an unknown errors.
+        # own list (remove+add reorder) is exempt; an unknown errors.
         effective_removes = requested_skill_removes - set(config.composition.skills)
         if effective_removes:
             removed_names: set[str] = set()
@@ -255,7 +254,7 @@ class Composer:
                     )
                 )
         # Rule removals are deferred: a trait may bring the rule later, so the
-        # verdict is resolved post-resolution in compose() (HATS-1456 / S2b).
+        # verdict is resolved post-resolution in compose().
         for rule in overlay.remove_rules:
             requested_rule_removes.add(rule)
             if rule in comp.rules:
@@ -363,7 +362,7 @@ class Composer:
             # demand from ``source_path`` (read_rule_body). Non-always-on bodies
             # are intentionally undelivered (trait/role summaries are the
             # delivery channel). Loading every composed rule body per session was
-            # ~16 KB reaching no channel. Symmetric to HATS-706 (skills).
+            # ~16 KB reaching no channel. Symmetric to the same choice made for skills.
             rules.append(
                 ResolvedComponent(
                     name=rule_name,
@@ -414,7 +413,7 @@ def _resolved_consent(rows: "list[AppBinding]", found: list[Diagnostic] | None =
     Resolved per POINT and not per row: a trait names several points in one row,
     and a role must be able to switch ONE of them off without repeating the
     others. Composition order is trait-then-role, so the last writer wins and
-    `consent: false` in the role overrides `true` from the trait (HATS-1682).
+    `consent: false` in the role overrides `true` from the trait.
     """
     from ai_hats_core import ConsentPoint
 
@@ -446,7 +445,7 @@ def _warn_on_disarm(
     row: "AppBinding",
     found: list[Diagnostic],
 ) -> None:
-    """A later `false` over an earlier `true`, said out loud (HATS-1682 B10).
+    """A later `false` over an earlier `true`, said out loud.
 
     Last-writer-wins stays the rule — a role must be able to switch off a point
     its trait declared. What must not stay is the silence: the later writer need

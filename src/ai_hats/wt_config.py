@@ -1,4 +1,4 @@
-"""Resolve worktree base_branch / merge_target from ProjectConfig (HATS-942).
+"""Resolve worktree base_branch / merge_target from ProjectConfig.
 
 The wt package (``ai_hats_wt``) stays config-agnostic; ai-hats reads the config
 here and passes resolved branch names into the guard / manager. ``None`` means

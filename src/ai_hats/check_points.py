@@ -1,4 +1,4 @@
-"""Row resolution and composition-time validation (HATS-1140, HATS-1545).
+"""Row resolution and composition-time validation.
 
 Loud by construction: every way a declared gate can fail to install raises
 ``CheckBindingError`` here, at composition, rather than reporting into
@@ -9,16 +9,16 @@ content refuses in the compose facade itself, so this one is no longer alone. Ra
 before a result exists, so even a caller that declared tolerance never
 receives a composition carrying a broken binding.
 
-**Scoped to the app ai-hats itself fires** since HATS-1541 (ADR-0019 D11). "Loud
+**Scoped to the app ai-hats itself fires** (ADR-0019 D11). "Loud
 at composition" still covers everything structural — the skill composes, the
 script exists under it and can exec — but what a row MEANS under a foreign app
-is checked by the application that owns it, when it next runs. Since HATS-1545
-the app is a key of the declaration rather than a prefix of a point name, so
+is checked by the application that owns it, when it next runs. The app is a
+key of the declaration rather than a prefix of a point name, so
 ai-hats no longer needs to know any application's namespaces to route a row.
 
-One clause came back in HATS-1682: a point's *spelling* is refused here for a
+One clause came back: a point's *spelling* is refused here for a
 foreign app too, because a misspelt point is a disarmed binding nothing else
-would ever have read. HATS-1720 added the second half — whether a row that RUNS
+would ever have read. The second half followed — whether a row that RUNS
 a script may stand on a legal selector at all. Both live in ``_APP_RULES``, and
 both predicates are imported from the app that owns the grammar. Consent is no
 longer among them: its policy has its own compiler in ``consent_wrapper`` and
@@ -71,8 +71,8 @@ def wt_points() -> dict[str, bool]:
     One entry, because a point is a name WITH a call site. ``create`` and
     ``teardown[merge|discard|cleanup]`` sat here fired by nobody: a binding to
     one validated at composition and then never ran — the silent no-op ADR-0019
-    exists to remove. HATS-1577 removed the names so that binding is refused;
-    HATS-1146 returns them together with the call site, not before it.
+    exists to remove. The names were removed so that binding is refused;
+    a later change returns them together with the call site, not before it.
     """  # comment-length: allow — why the catalog shrank is the decision
     return {"pre-merge": False}
 
@@ -128,14 +128,13 @@ def selector_ends(
     """The parsed ends of a rack selector — ``(None, None)`` for anything else.
 
     The guard is stdlib-only and cannot import the parser, so the envelope it
-    reads carries the ends ALREADY parsed rather than the grammar (HATS-1719,
-    design.md §4.3). ai-hats still never spells that grammar: it asks the owner
+    reads carries the ends ALREADY parsed rather than the grammar
+    (design.md §4.3). ai-hats still never spells that grammar: it asks the owner
     and copies the answer.
 
     ``path`` is what names that owner once consent moved under the gate: keyed on
     ``app`` alone this answered ``(None, None)`` for EVERY row the composition
-    produces, and two readers that trusted the field went quiet with it
-    (HATS-1790).
+    produces, and two readers that trusted the field went quiet with it.
     """
     if point_owner(app, path) != "rack":
         return None, None
@@ -170,7 +169,7 @@ def _rack_gate_veto(selector: str) -> str | None:
 _APP_RULES: dict[str, tuple[tuple[str | None, Callable[[str], str | None]], ...]] = {
     "rack": (
         # Is the name in the grammar at all? Asked of EVERY row, because a
-        # consent-only row is refused nowhere else (HATS-1682 A5).
+        # consent-only row is refused nowhere else.
         (None, _rack_selector_form),
         # May a row that RUNS a script stand on it? A wide output takes a legal
         # name and turns a gate into a lock-in.
@@ -187,7 +186,7 @@ def _carried_keys(row: AppBinding) -> frozenset[str]:
 
 
 def _validate_selector(row: AppBinding) -> None:
-    """Refuse a row its app will not stand, at composition (HATS-1682, HATS-1720).
+    """Refuse a row its app will not stand, at composition.
 
     Two questions, answered by the owner both times. First the NAME: is it in the
     grammar at all. Then the ROW: may something that runs a script, or asks the
@@ -199,7 +198,7 @@ def _validate_selector(row: AppBinding) -> None:
     What can be answered here is whether the name is in the grammar at all — and
     it must be, because the declaration is now a security boundary: a
     consent-only ``plan-execute`` (no arrow) disarmed both roads into master and no
-    channel said a word (A5).
+    channel said a word.
     """  # comment-length: allow — which half of the check lives where is the fix
     carried = _carried_keys(row)
     for name in row.at:
@@ -223,7 +222,7 @@ def resolve_checks(
     ``diagnostics`` is the collector for what this resolution wants to say.
     Absent, the findings go to stderr as before — which is the right channel
     for a plain CLI run and the wrong one under a wrapped session, where the
-    alternate screen buffer eats them (HATS-1753).
+    alternate screen buffer eats them.
     """
     if not declared:
         return ()
@@ -233,7 +232,7 @@ def resolve_checks(
     resolved: dict[tuple[str, tuple[str, ...], str, str], ResolvedCheck] = {}
     for row in declared:
         # Form first, and for EVERY row: a consent-only row is refused nowhere
-        # else, and a typo in one disarms a gate in silence (HATS-1682 A5).
+        # else, and a typo in one disarms a gate in silence.
         _validate_selector(row)
         if not row.run:
             # A consent-only row runs nothing: no script to find, and
@@ -331,7 +330,7 @@ _FROM_ENV: Any = object()
 def _label(check: ResolvedCheck | AppBinding) -> str:
     """What a message calls this row. A consent-only row names no script, and
     "binds  under apps.wt" printed the hole where the ``run`` would be instead
-    of saying what the row IS (HATS-1682)."""
+    of saying what the row IS."""
     if not check.run:
         return f"checks: {check.declared_by!r} declares consent under apps.{check.app}"
     return f"checks: {check.declared_by!r} binds {check.run} under apps.{check.app}"
@@ -361,7 +360,7 @@ def _sayings() -> dict:
 def check_failure_reason(check: ResolvedCheck, run, *, identity: Any = _FROM_ENV) -> str:
     """What an operator reads when a bound check does not pass.
 
-    Two classes, kept apart (HATS-1572). A child that RAN and refused speaks for
+    Two classes, kept apart. A child that RAN and refused speaks for
     itself, verbatim. A channel that never got to run one says so, and says why —
     reading those two as one message sends the operator to fix a script when what
     needs fixing is which bytes the session resolved.
@@ -392,7 +391,7 @@ def check_failure_reason(check: ResolvedCheck, run, *, identity: Any = _FROM_ENV
 
 
 def _stale_mirror_note(check: ResolvedCheck, identity: Any) -> str:
-    """Why a refusal may be about the session rather than the tree (HATS-1651).
+    """Why a refusal may be about the session rather than the tree.
 
     A session executes the skill bytes frozen at its launch (ADR-0019 D9), on
     purpose. The cost is that the gate and whatever writes what the gate checks
@@ -437,9 +436,10 @@ def _absent_bytes(identity: Any) -> str:
     """The class-(b) half of the sentence, with the session read here and nowhere
     earlier (the ``FROM_ENV`` idiom of :mod:`check_resolve`).
 
-    Read on this path only: eagerly would re-arm what HATS-1594 removed, and
-    reading it in the CALLER would let an envelope this outcome does not depend
-    on replace a gate's refusal with a complaint about the envelope.
+    Read on this path only: eagerly would re-arm the second lookup already
+    retired, and reading it in the CALLER would let an envelope this outcome
+    does not depend on replace a gate's refusal with a complaint about the
+    envelope.
     """
     from .check_resolve import CheckResolutionError, absent_bytes_notice, session_identity
 
@@ -527,10 +527,10 @@ def _validate_owned_points(row: AppBinding) -> None:
     That a row names at least one point is checked for every app, at parse time
     (``_app_row``); this is the half only the owner can do. The point set comes
     from ``_OWNED_POINTS`` rather than one app's function, so a second owned app
-    (HATS-1581) cannot be validated against the first one's catalog.
+    cannot be validated against the first one's catalog.
 
     The ``on_error`` clause reaches only rows that RUN something: an explicit
-    ``on_error`` with no ``run`` is refused at parse (HATS-1682), so this can no
+    ``on_error`` with no ``run`` is refused at parse, so this can no
     longer tell a consent-only row that its failure policy endangers data.
     """  # comment-length: allow — which rows the policy clause can reach is the fix
     label = _label(row)
@@ -575,15 +575,15 @@ def _escaped(part: str) -> str:
 
 
 def check_log_token(check: ResolvedCheck) -> str:
-    """One row's dedup identity as a filename-safe token (HATS-1137).
+    """One row's dedup identity as a filename-safe token.
 
     ONE function for every point that logs. ``run_hook`` truncates the log it is
     handed, so a name built from anything coarser than the row's identity lets a
     second row wipe the first one's file while the first one's reason goes on
-    pointing at it. HATS-1540 reintroduced exactly that at ``wt:pre-merge`` by
+    pointing at it. That same defect resurfaced at ``wt:pre-merge`` by
     naming the log after the script's basename; sharing this is what stops the
     next point from doing it again. The path is in the token because two
-    backlogs may bind the same script (HATS-1545 R6).
+    backlogs may bind the same script.
     """  # comment-length: allow — the defect recurred once already
     trail = "".join(f"~{_escaped(part)}" for part in check.path)
     skill = _escaped(resolve_namespace(check.skill))
@@ -595,7 +595,7 @@ def check_log_name(event: str, check: ResolvedCheck) -> str:
 
     The event is ESCAPED rather than stripped of one character: the arrow
     grammar put ``>`` — a shell redirect — into the event key, and a refusal
-    hands this path to an operator to paste (HATS-1719). Escaping keeps the
+    hands this path to an operator to paste. Escaping keeps the
     mapping reversible, so two events cannot collide on one name and reopen the
     truncation defect :func:`check_log_token` exists to close.
     """
@@ -608,7 +608,7 @@ def _cargo_tag(check: ResolvedCheck) -> str:
     Always appended, never conditionally: the token must not be COARSER than the
     identity ``resolve_checks`` keys on, or two rows that survive dedup share a
     log name and the second truncates the first one's transcript while the first
-    one's reason still points at it (HATS-1137, again in HATS-1540, again here).
+    one's reason still points at it — the same defect recurring again.
     A discriminator that is present only "when needed" is that same bug waiting
     for the case its condition did not foresee.
     """  # comment-length: allow — the defect recurred twice; the token rule is why

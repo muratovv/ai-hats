@@ -1,6 +1,6 @@
 """``provider`` step — allocate session + spawn provider.
 
-Renamed from ``launch_provider`` in HATS-535 alongside the split that
+Renamed from ``launch_provider`` alongside the split that
 extracted audit derivation into the dedicated ``make_audit`` step and
 session-end hooks/retro into ``run_session_end`` (both invoked via the
 ``finalize-hitl`` / ``finalize-subagent`` sub-pipelines from the
@@ -72,7 +72,7 @@ class Provider(Step):
                     "tags",
                     "extra_args",
                     # An optional PtyTap factory seeded upstream (the
-                    # pty_tee step, HATS-1197); forwarded to the HITL PTY seam.
+                    # pty_tee step); forwarded to the HITL PTY seam.
                     "pty_tap_factory",
                 }
             ),
@@ -118,7 +118,7 @@ class Provider(Step):
             eff_extra = list(extra_args or [])
             if prompt_text:
                 eff_extra = [prompt_text, *eff_extra]
-            # HATS-452 (D2 in ADR-0005): WrapRunner is HITL — no override
+            # D2 in ADR-0005: WrapRunner is HITL — no override
             # channel; the payload's composition reaches the agent via
             # ``build_session_prompt`` inside ``run``.
             runner = WrapRunner(
@@ -149,7 +149,7 @@ class Provider(Step):
         # zero-output guard when ``harness_policy`` is supplied — no
         # external guard call needed for the sub-agent branch.
         # No funnel-supplied ``system_prompt_override`` — the
-        # override channel stays reserved for explicit HATS-267 callers.
+        # override channel stays reserved for explicit prompt-injection callers.
         session = runner.run(
             task=prompt_text,
             ticket_id=ticket,

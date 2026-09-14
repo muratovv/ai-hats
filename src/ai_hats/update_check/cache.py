@@ -11,7 +11,7 @@ The schema carries ``behind`` / ``ahead`` counts (from
 plus optional human-readable ``installed_label`` / ``latest_label``
 (``git describe --tags``). ``has_update`` is True only when installed is
 strictly behind upstream — closes the false-positive class where the
-installed HEAD is *ahead* of the cached upstream SHA (HATS-432).
+installed HEAD is *ahead* of the cached upstream SHA.
 """
 
 from __future__ import annotations

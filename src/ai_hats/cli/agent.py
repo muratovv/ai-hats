@@ -1,7 +1,7 @@
 """`ai-hats agent` — launch a sub-agent session with an isolated worktree.
 
 A thin front-end over ``_batch_launch.run_batch``, shared with
-``ai-hats execute --batch`` (HATS-1218). What stays here is this command's own
+``ai-hats execute --batch``. What stays here is this command's own
 UX: a positional role and ``--task`` as literal text (``execute --prompt``
 resolves names/paths through ``initial_injections`` instead).
 """

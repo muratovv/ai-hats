@@ -1,4 +1,4 @@
-"""Run one git event's hook chain (HATS-1337).
+"""Run one git event's hook chain.
 
 Everything the installed `.githooks/<event>` stub used to do in bash lives here,
 so that file can stay frozen: it only finds an interpreter and delegates. Order,
@@ -125,7 +125,7 @@ def _previous_hook(project_dir: Path, githooks_dir: Path, event: str) -> Path | 
 
     ai-hats owns `core.hooksPath`, but simple-git-hooks / husky keep writing to
     the location they owned before the takeover, and they regenerate on their own
-    schedule — so this resolves live rather than from a snapshot (HATS-999).
+    schedule — so this resolves live rather than from a snapshot.
     """
     try:
         proc = subprocess.run(
@@ -346,7 +346,7 @@ def _hatch_line(run: HookRun) -> str:
 
     A gate's own verdict needs no hatch — arguing with it is between the author
     and whoever it stopped. Everything ai-hats itself imposed owes the human a
-    named exit, or it just manufactures `--no-verify` (ADR-0020 D3, HATS-1828).
+    named exit, or it just manufactures `--no-verify` (ADR-0020 D3).
     """
     if run.kind is HookOutcomeKind.TIMED_OUT:
         return f"the gate hit its budget — raise {GIT_HOOK_TIMEOUT_ENV} if it needs longer"
@@ -360,7 +360,7 @@ def _skip_reason(run: HookRun, script: Path) -> str | None:
 
     The hatch is read HERE and not at the top, so the deny below always states a
     name that actually works — the deny-names-its-hatch invariant is worth
-    nothing if the flag it names is inert (HATS-1253 P4).
+    nothing if the flag it names is inert.
     """
     if run.kind not in _MATERIALIZATION_KINDS:
         return None

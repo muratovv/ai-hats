@@ -1,4 +1,4 @@
-"""Harness reliability error types (HATS-378).
+"""Harness reliability error types.
 
 These errors carry diagnostic context for downstream meta-PROP routing.
 A failure raised as a :class:`HarnessReliabilityError` (or subclass)

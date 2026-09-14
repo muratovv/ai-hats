@@ -1,8 +1,8 @@
 """Materializer for directory-convention skill registries.
 
-Extracted from ClineSurface (HATS-963/981) for providers whose harness
+Extracted from ClineSurface for providers whose harness
 discovers skills from a directory convention (agy's ``rules/.agents/skills/``).
-That dir was project-scoped when this module was written; since HATS-1166 it is
+That dir was project-scoped when this module was written; it is now
 session-scoped, so the rebuild is a plain wipe-and-copy — see
 :func:`materialize_skills_dir`.
 """
@@ -120,7 +120,7 @@ def materialize_skills_dir(
 ) -> None:
     """Wipe ``skills_dir`` and copy ``skills`` in.
 
-    HATS-1248: this used to be a ref-counted rebuild behind a filelock — a JSON
+    This used to be a ref-counted rebuild behind a filelock — a JSON
     marker keyed by session_id, so parallel sessions would not sweep each other's
     skills. But the target is itself keyed by session_id, so the map could only
     hold a second entry when two processes minted the SAME id, and then they

@@ -24,9 +24,9 @@ PROJECT_DIR="$(dirname "$GITHOOKS_DIR")"
 
 # ADR-0025 D3. The line above is this stub's OWN answer to "which project", so a
 # pin naming a different one belongs to somebody else's session: drop the keys
-# travelling with it rather than resolve an interpreter under a foreign checkout
-# (HATS-897, HATS-1525). `unset`, not a local blank — `githooks_run` hands this
-# environment to every gate, drop-in and chained hook.
+# travelling with it rather than resolve an interpreter under a foreign
+# checkout. `unset`, not a local blank — `githooks_run` hands this environment
+# to every gate, drop-in and chained hook.
 if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
     ah_pin="${AI_HATS_PROJECT_DIR/#\~/${HOME:-}}"
     ah_pin="$(cd "$ah_pin" 2>/dev/null && pwd -P || echo "$ah_pin")"

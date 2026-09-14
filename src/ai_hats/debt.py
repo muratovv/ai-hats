@@ -1,6 +1,6 @@
 """Types the code carries but has not decided yet — declared once, in one place.
 
-Two failures this file exists to prevent, both seen in review (HATS-1783): a module
+Two failures this file exists to prevent, both seen in review: a module
 declaring its own ``TracerFactory = object`` because it never read the neighbour that
 already had one, and the next agent guessing whether that neighbour's ``Tracer`` and
 this one's ``TracerFactory`` are the same value.

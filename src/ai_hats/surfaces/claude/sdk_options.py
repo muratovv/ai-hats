@@ -1,4 +1,4 @@
-"""ClaudeAgentOptions builder — Phase 1 of HATS-474 SDK migration.
+"""ClaudeAgentOptions builder — Phase 1 of the SDK migration.
 
 Pure-ish factory mapping an ai-hats ``CompositionResult`` plus per-call
 inputs to a :class:`claude_agent_sdk.ClaudeAgentOptions` object. The
@@ -11,14 +11,14 @@ Reused by:
 
 - ``SubAgentRunner._run_attempt`` (one-shot SDK path)
 
-**Behaviour change** (documented in plan ``HATS-474``): the legacy
+**Behaviour change** (documented in the migration plan): the legacy
 sub-agent path built its prompt with a builder that omitted rule bodies. The
 new builder reuses
 :meth:`ClaudeSurface.build_system_prompt` so HITL (WrapRunner) and
 Automate (SubAgentRunner) paths get the same composition surface, and
 sub-agents now see safety rules they previously lacked.
 
-Skill discovery is NOT carried by the system prompt for Claude (HATS-701):
+Skill discovery is NOT carried by the system prompt for Claude:
 :func:`_build_plugins` materializes the composed skills as a native SDK plugin —
 the same ``--plugin-dir`` registry HITL uses — which already lists every skill
 with its full description, so a text index would be a 2-3x duplicate.
@@ -55,10 +55,10 @@ def _build_system_prompt(
     """Return the ``system_prompt`` payload as the SDK's preset+append shape.
 
     Reuses :meth:`Surface.build_system_prompt` (the runner's injected
-    provider instance — HATS-865) so the structured sections (PRIORITIES,
+    provider instance) so the structured sections (PRIORITIES,
     merged role injection, always-on RULES) match HITL exactly. No skill index
-    rides along — Claude discovers skills via the materialized SDK plugin
-    (HATS-701); see :func:`_build_plugins`. The ``<ai_hats_dir>``
+    rides along — Claude discovers skills via the materialized SDK plugin;
+    see :func:`_build_plugins`. The ``<ai_hats_dir>``
     placeholder is expanded here so the agent never sees the literal token.
     """
     from ai_hats.placeholders import expand_path_placeholders
@@ -199,7 +199,7 @@ def automate_options(
 
     ``system_prompt`` and ``plugins`` are taken from the artifacts the builder
     already produced, so nothing here materializes anything: a report that wrote
-    to disk would not be a dry-run (HATS-1552).
+    to disk would not be a dry-run.
     """
     return build_options(
         composition_result,
@@ -246,11 +246,11 @@ def build_first_user_message(
 ) -> str:
     """Compose the first user message for a sub-agent session.
 
-    ``TICKET_CONTEXT``, ``LINKED_CONTEXT`` (HATS-689), ``TASK`` — in that
+    ``TICKET_CONTEXT``, ``LINKED_CONTEXT``, ``TASK`` — in that
     order. Per-task runtime context rides the first user turn; the per-role
     composition rides ``system_prompt``. Empty sections are skipped, all-empty
-    returns ``""``. A fourth section, ``PROJECT_STATE``, was dropped in
-    HATS-681 and its parameter in HATS-1100.
+    returns ``""``. A fourth section, ``PROJECT_STATE``, was dropped, and its
+    parameter removed later.
 
     ``LINKED_CONTEXT`` carries the cards of the ticket's directly-linked
     tasks, assembled by ``linked_context.load_linked_context``. This is the
@@ -259,7 +259,7 @@ def build_first_user_message(
 
     Callers reach this through :func:`assemble_first_user_message`, which is
     what loads the sections — going direct is how the engine ended up sending
-    a one-line stand-in for the card (HATS-1552).
+    a one-line stand-in for the card.
     """
     sections: list[str] = []
     if ticket_context:
@@ -274,7 +274,7 @@ def build_first_user_message(
 def assemble_first_user_message(layout: ProjectLayout, *, task: str, ticket_id: str) -> str:
     """The SDK's first user turn — one expression for the engine and the audit.
 
-    HATS-1552: the engine sent ``Ticket: <id>`` while the saved audit rendered
+    The engine sent ``Ticket: <id>`` while the saved audit rendered
     the whole card plus ``LINKED_CONTEXT``, so ``meta_prompt.txt`` named a
     message the SDK had never received.
     """

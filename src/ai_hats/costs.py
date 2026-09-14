@@ -30,12 +30,12 @@ class CostBreakdown:
     @property
     def always_on_tokens(self) -> int:
         """Tokens resident in the base prompt every turn (injection + rule
-        bodies + each skill's name/description). HATS-957."""
+        bodies + each skill's name/description)."""
         return sum(c.always_on_tokens for c in self.components)
 
     @property
     def on_demand_tokens(self) -> int:
-        """Tokens loaded only when a skill is invoked (its body). HATS-957."""
+        """Tokens loaded only when a skill is invoked (its body)."""
         return sum(c.on_demand_tokens for c in self.components)
 
 
@@ -69,7 +69,7 @@ def count_tokens_sdk(
 def _skill_always_on_text(skill_name: str, skill_md_text: str) -> str:
     """The always-on slice of a skill: what stays resident in the base prompt —
     its name + frontmatter ``description`` (the available-skills entry the model
-    reads to know when to trigger). The body loads on demand. HATS-957.
+    reads to know when to trigger). The body loads on demand.
 
     Malformed frontmatter falls back to the name alone rather than crash the
     cost analysis (this is a reporting path, not the loud composition path)."""
@@ -154,7 +154,7 @@ def _build_breakdown(
 ) -> CostBreakdown:
     """Count tokens and split each component into always-on vs on-demand.
 
-    HATS-957 model: rule + injection are inlined in the base prompt
+    Rule + injection are inlined in the base prompt
     (always_on = full, on_demand = 0); a skill keeps only its name+description
     resident (always_on), its body loads on demand (on_demand = full − always_on).
     A skill needs two texts counted (full + its always-on slice), every other
@@ -214,7 +214,7 @@ def _collect_trait(
     """Collect components from a single trait.
 
     Each entry is ``(category, name, full_text, always_on_text)`` — see
-    :func:`_build_breakdown` for the always-on vs on-demand split (HATS-957)."""
+    :func:`_build_breakdown` for the always-on vs on-demand split."""
     config = composer.resolver.resolve_trait_config(trait_name)
     if config is None:
         errors.append(f"Trait '{trait_name}' not found")

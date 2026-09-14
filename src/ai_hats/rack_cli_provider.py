@@ -1,5 +1,5 @@
 """Integrator wiring for the ``rack`` CLI, discovered via the
-``ai_hats_rack.kernel_factory`` entry point (HATS-1038 C1).
+``ai_hats_rack.kernel_factory`` entry point.
 
 The rack NEVER imports the integrator (import-hygiene pin); it loads THIS
 factory by metadata and calls back through the duck-typed provider, so the
@@ -46,7 +46,7 @@ def _state_md_for(root: Any) -> Path:
 
     An anchorless backlog indexes itself: at ``<ai_hats_dir>/STATE.md`` when it
     carries the conventional tail, beside the cards otherwise. Both stay inside
-    the backlog the operator named, which is the whole point (HATS-1573).
+    the backlog the operator named, which is the whole point.
     """
     owner = _owner_layout(root)
     if owner is not None:
@@ -167,7 +167,7 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
     tid = task_id or getattr(exc, "task_id", "") or "<id>"
     branch = getattr(exc, "branch_name", "") or f"task/{tid.lower()}"
     if isinstance(exc, WorktreeMergeAborted):
-        # HATS-1540: name the subsystem that refused. HATS-1538 cost a session
+        # Name the subsystem that refused. A past incident cost a session
         # to a symptom that pointed at plan-gate, so `checks` says so here and
         # the check's own words carry the recipe.
         return ("checks_refused", f"Refused (checks) — cannot merge for {tid}.", [str(exc)])
@@ -177,7 +177,7 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
             f"Refused (worktree state lost) — task {tid} cannot be silently marked DONE. {exc}",
             [
                 f"Branch '{branch}' has commits that are NOT in the base branch "
-                "(an already-merged branch finalizes on its own — HATS-697).",
+                "(an already-merged branch finalizes on its own).",
                 "Apply the un-merged work, then finalize:",
                 f"  git merge --no-ff {branch}",
                 f"  rack transition {tid} --state done",
@@ -218,7 +218,7 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
             ],
         )
     # Any other wt-engine refusal (base-branch, mid-merge, incomplete): typed and
-    # loud, but no bespoke recipe — the message carries facts (HATS-1263 Q2).
+    # loud, but no bespoke recipe — the message carries facts.
     return ("worktree_error", f"Refused (worktree) for {tid}: {exc}", [])
 
 

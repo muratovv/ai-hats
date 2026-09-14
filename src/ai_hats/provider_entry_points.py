@@ -1,9 +1,9 @@
-"""Surface-plugin entry-point discovery — a dependency-free leaf (HATS-978).
+"""Surface-plugin entry-point discovery — a dependency-free leaf.
 
 Discovery, not composition: hosting these in ``providers`` forced ``self_heal``
-to import the composition layer (HATS-865/ADR-0014 violation). This leaf lets
+to import the composition layer (ADR-0014 violation). This leaf lets
 ``providers`` (registration) and ``self_heal`` (broken-editable detection) share
-the primitive without depending on each other. Group = the HATS-870 IoC seam.
+the primitive without depending on each other. Group = the IoC seam.
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ def _is_first_party_entry_point(ep: Any) -> bool:
 
     The test is the declaring distribution's name (`ai-hats` or `ai_hats`), not the
     entry-point name — so every surface ai-hats ships answers True, including the
-    four folded in by HATS-1826, and a third-party plugin's dist answers False.
+    four folded into ai-hats, and a third-party plugin's dist answers False.
     Surface loading uses it to raise loudly on a first-party load failure
-    (HATS-1121) instead of swallowing it as a warning line.
+    instead of swallowing it as a warning line.
     """
     dist = getattr(ep, "dist", None)
     if dist is None:

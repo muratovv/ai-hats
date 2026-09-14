@@ -5,8 +5,8 @@ The path template supports ``{ts}`` plus any state key (e.g.
 than ``ts``) are declared as ``requires`` so the pipeline core
 projects them through to ``run``.
 
-If the template embeds the framework path placeholder ``<ai_hats_dir>``
-(HATS-380 / HATS-395), the step also requires ``project_dir`` and
+If the template embeds the framework path placeholder ``<ai_hats_dir>``,
+the step also requires ``project_dir`` and
 expands the placeholder via :func:`expand_path_placeholders` before
 the ``.format(...)`` call. Without this expansion the literal string
 ``<ai_hats_dir>`` would survive into the filesystem path and create
@@ -66,10 +66,10 @@ class SaveArtifact(Step):
             # ``<ai_hats_dir>`` expands to a *project-relative* path when the
             # ai-hats dir lives under ``project_dir`` (the default). Anchor it
             # to ``project_dir`` so the write never depends on the process CWD
-            # (HATS-671: a CWD/project_dir mismatch — as in tests passing
+            # (a CWD/project_dir mismatch — as in tests passing
             # ``project_dir=tmp_path`` — otherwise leaked the artefact into the
             # real repo's gitignored ``sessions/`` dir). An absolute expansion
-            # (``AI_HATS_DIR`` set out-of-tree, HATS-380/395) is left untouched.
+            # (``AI_HATS_DIR`` set out-of-tree) is left untouched.
             path = inputs["layout"].root / path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content if isinstance(content, str) else str(content))

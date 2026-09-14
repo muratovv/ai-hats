@@ -1,4 +1,4 @@
-"""Real YAML frontmatter parser for SKILL.md (HATS-813).
+"""Real YAML frontmatter parser for SKILL.md.
 
 Parses a Markdown document's leading ``---`` fenced block into a (possibly
 nested) mapping, replacing two line-scanners that read only a flat
@@ -6,7 +6,7 @@ nested) mapping, replacing two line-scanners that read only a flat
 
 Loudness contract: a present-but-invalid block (bad YAML or non-mapping) raises
 :class:`FrontmatterError` rather than returning ``{}`` — the Claude Code harness
-drops a malformed block silently (HATS-812 PoC #4); we surface it.
+drops a malformed block silently; we surface it.
 """
 
 from __future__ import annotations

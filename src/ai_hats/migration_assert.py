@@ -1,4 +1,4 @@
-"""End-of-bump smoke-assert: every hook command path resolves (HATS-549 Phase 3).
+"""End-of-bump smoke-assert: every hook command path resolves.
 
 Final safety net for the proxmox stuck-state class — ``.claude/settings.json``
 referencing hook scripts that don't exist on disk, which Claude Code surfaces as
@@ -11,7 +11,7 @@ Catches the whole "settings points at nowhere" class regardless of cause
 (content-deleting bug, failed migration, manual typo, bad healer rewrite). Scope:
 ``.claude/settings.json`` + ``settings.local.json``, all hook event types; only
 path-like string ``command`` values are checked (bare shell like ``echo foo`` is
-skipped). See ``tracker/backlog/tasks/HATS-549/plan.md`` for full design.
+skipped).
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ _HOOK_EVENT_KEYS: frozenset[str] = frozenset(
 
 # Variable prefix Claude Code expands at hook-execution time. Stripped
 # during the on-disk existence check. Canonical definition lives in
-# ``paths`` (HATS-549 Q.1); local alias kept for self-documentation.
+# ``paths``; local alias kept for self-documentation.
 _CLAUDE_PROJECT_DIR_VAR = CLAUDE_PROJECT_DIR_VAR
 
 
@@ -132,7 +132,7 @@ def _resolve(command: str, project_dir: Path) -> Path:
     user's home dir (the shell expands tilde when it runs the hook);
     absolute paths as-is; a bare relative path joined onto ``project_dir``.
 
-    HATS-594: a home-relative command (``~/.tmux/.../hook.sh``) is NOT
+    A home-relative command (``~/.tmux/.../hook.sh``) is NOT
     absolute, so without :meth:`~pathlib.Path.expanduser` it was joined
     onto ``project_dir`` (``<project>/~/...``), which never exists — a
     false "not found" that refused otherwise-valid bumps. Expanding ``~``
@@ -162,10 +162,10 @@ def _walk_hook_commands(
 ) -> list[tuple[str, str, bool]]:
     """Walk a parsed ``hooks`` dict and yield (event, command, managed).
 
-    Claude nests the command under ``hooks``; agy's pre-HATS-1166 remnant hangs
+    Claude nests the command under ``hooks``; agy's older remnant hangs
     it off the matcher itself, which ``allow_matcher_command`` opts into — never
     for Claude, where such an entry is malformed, unexecuted, and must not
-    become a bump-refusing "broken ref" (HATS-1509).
+    become a bump-refusing "broken ref".
     Unknown event keys are skipped — see :data:`_HOOK_EVENT_KEYS`.
     """
     out: list[tuple[str, str, bool]] = []
@@ -207,7 +207,7 @@ def find_broken_hook_refs(
     Returns an empty list when all hooks resolve OR when no settings
     file is present. Malformed settings.json (JSON parse error,
     permission failure) is treated as "no findings" — those are not
-    HATS-549's problem to surface.
+    this asserter's problem to surface.
 
     The default keeps the install-time assert on the Claude pair; pass
     :data:`SESSION_SCAN_TARGETS` for the report-only session-start scan.

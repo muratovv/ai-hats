@@ -1,4 +1,4 @@
-"""Sub-agent execution via the Claude Agent SDK — Phase 2 of HATS-474.
+"""Sub-agent execution via the Claude Agent SDK — Phase 2 of the SDK migration.
 
 Replaces the legacy ``subprocess.run(["claude", "-p", ...])`` engine
 inside :class:`SubAgentRunner` with :class:`ClaudeSDKClient`. The SDK

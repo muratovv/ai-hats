@@ -1,6 +1,6 @@
 """The ``ai-hats:startup`` point — a declared gate that runs before the session.
 
-HATS-1581 (ADR-0019 D11, epic HATS-1138). ai-hats fires this one itself, so the
+This point is defined by ADR-0019 D11. ai-hats fires this one itself, so the
 row's cargo is validated at composition (``check_points._OWNED_POINTS``) and the
 bytes are resolved the way every other bound check resolves them.
 
@@ -53,8 +53,8 @@ def run_startup_checks(
 
     ``compose`` is the same argument in composition form, and the caller here is
     in-process: it hands over the composition the session was built from rather
-    than letting the channel compose a second one. It went unpassed through
-    HATS-1594, which is how a launch died on a gate belonging to another role.
+    than letting the channel compose a second one. It used to go unpassed,
+    which is how a launch died on a gate belonging to another role.
     """  # comment-length: allow — both arguments exist to stop the same split
     from .check_resolve import CheckResolutionError, resolve_checks_at
 

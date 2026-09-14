@@ -1,4 +1,4 @@
-"""AgySurface skills + prompt-channel tests (HATS-993, HATS-1166)."""
+"""AgySurface skills + prompt-channel tests."""
 
 from __future__ import annotations
 
@@ -272,7 +272,7 @@ def test_agy_provider_detected_home_dirs() -> None:
 def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """HATS-1223: AUTOMATE mode writes hooks.json and global dispatcher fires session hook."""
+    """AUTOMATE mode writes hooks.json and global dispatcher fires session hook."""
     from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.agy.hook_dispatcher import dispatch_hook
 
@@ -365,7 +365,7 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     assert marker.read_text().strip() == "FIRED"
 
 
-# --- a declared hook whose script is not where it should be (HATS-1862) ---
+# --- a declared hook whose script is not where it should be ---
 
 
 def _hooked_skill(root: Path, name: str = "guard") -> Path:

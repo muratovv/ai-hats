@@ -1,4 +1,4 @@
-"""Open registry of skill sources — the ``ai_hats.skills`` IoC seam (HATS-871).
+"""Open registry of skill sources — the ``ai_hats.skills`` IoC seam.
 
 Mirrors the T10 provider registry: a package advertises an anchor package (whose
 dir holds a ``skills/`` subdir) under the entry-point group; ai-hats discovers it
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # name -> resolved source root (the dir that CONTAINS a ``skills/`` subdir).
 _SKILL_SOURCE_REGISTRY: dict[str, Path] = {}
 
-# HATS-871 / T11: the IoC seam. A package advertises a skills root under this
+# The IoC seam. A package advertises a skills root under this
 # group; ai-hats discovers + registers it without importing the package directly.
 SKILL_SOURCE_ENTRY_POINT_GROUP = "ai_hats.skills"
 

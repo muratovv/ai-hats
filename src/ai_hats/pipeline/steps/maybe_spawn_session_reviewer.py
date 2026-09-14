@@ -1,17 +1,17 @@
 """``maybe_spawn_session_reviewer`` step — auto-retro decision + spawn.
 
 Single source of truth for the auto-retro spawn block, shared by `finalize-hitl`
-(WrapRunner) and `finalize-subagent` (SubAgentRunner) sub-pipelines (HATS-530,
-which closed the prior HITL-only asymmetry).
+(WrapRunner) and `finalize-subagent` (SubAgentRunner) sub-pipelines, closing
+the prior HITL-only asymmetry.
 
 Three sub-phases, each wrapped in ``try/except (Exception, KeyboardInterrupt)``
-per the HATS-086 invariant (a second Ctrl+C during cleanup must not propagate):
+per the interrupt-safety invariant (a second Ctrl+C during cleanup must not propagate):
 
 1. **Retro decision** — ``make_decision`` + ``write_retro_log`` so the decision
    survives even if the spawn crashes.
 2. **Spawn** — when ``retro.action == "run"`` and not ``HATS_SKIP_RETRO=1``: fire
    ``_spawn_session_reviewer_background`` (default), or run synchronously
-   in-process (HATS-1402) when ``retro.background is False``.
+   in-process when ``retro.background is False``.
 3. **Return delta** — emit ``retro_decision`` for a downstream banner step.
 
 ``failure_policy = "continue"`` — finalization is best-effort. The retro banner
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def _write_outcome(layout: ProjectLayout, session_id: str, detail: str) -> None:
-    """HATS-1487: the decision line records intent; this records what happened."""
+    """The decision line records intent; this records what happened."""
     from ...retro.auto_retro import write_retro_log
 
     write_retro_log(layout, session_id, "runtime", "outcome", detail)

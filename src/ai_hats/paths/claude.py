@@ -1,4 +1,4 @@
-"""Claude Code path conventions — single home for ``.claude/*`` coupling (HATS-907/908).
+"""Claude Code path conventions — single home for ``.claude/*`` coupling.
 
 Each literal appears once; Path / rel-string forms derive from it. Frozen
 historical strings (legacy heal targets) stay at call sites — they must NOT
@@ -35,7 +35,7 @@ def claude_skills_dir(base: Path) -> Path:
     """Claude Code's skill auto-discovery dir under ``base``: ``.claude/skills/``.
 
     ``base`` is a project root or the user home — Claude Code scans both
-    scopes (HATS-901/907).
+    scopes.
     """
     return claude_dir(base) / _CLAUDE_SKILLS_DIRNAME
 
@@ -51,7 +51,7 @@ def claude_settings_local_json(base: Path) -> Path:
 
 
 def claude_user_settings_json() -> Path:
-    """Claude Code's user-global settings file (HATS-1006)."""
+    """Claude Code's user-global settings file."""
     from ._discovery import tool_home
 
     return tool_home("claude", "CLAUDE_CONFIG_DIR") / "settings.json"
@@ -95,7 +95,7 @@ def claude_plugin_skills_dir(plugin_root: Path) -> Path:
 
 
 # Expanded by Claude Code at hook-exec time to the project root; migration
-# callers strip it for static path resolution (HATS-549 Q.1: single source).
+# callers strip it for static path resolution (single source).
 CLAUDE_PROJECT_DIR_VAR: str = "$CLAUDE_PROJECT_DIR/"
 
 

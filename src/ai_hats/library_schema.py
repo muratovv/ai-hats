@@ -1,4 +1,4 @@
-"""Library format-schema compatibility guard (HATS-876 / T18, ADR-0014 §5).
+"""Library format-schema compatibility guard (ADR-0014 §5).
 
 The versioned seam between ai-hats and the library is the FORMAT SCHEMA, not a
 Python API: each library release declares a ``schema_version`` (data marker at

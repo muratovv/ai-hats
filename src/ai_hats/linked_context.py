@@ -1,8 +1,8 @@
 """Assembly of a ticket's linked-task context for the ``LINKED_CONTEXT`` block.
 
 Module-level functions rather than ``SubAgentRunner`` methods: one "what context
-does a task see" path (HATS-689; the seam HATS-558 extends). Cards are read with
-the rack model — same on-disk ``task.yaml``, no tracker dependency (HATS-1258).
+does a task see" path. Cards are read with
+the rack model — same on-disk ``task.yaml``, no tracker dependency.
 
 Direct links only; one level; no recursion / transitive walk. Every reader is
 graceful on missing targets (skip, never raise).
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def load_ticket(*, tasks_root: Path, ticket_id: str) -> str:
     """Return the raw ``task.yaml`` text for a ticket (``""`` if absent).
 
-    ``tasks_root`` is injected integrator policy (``TrackerLayout.tasks_dir``, HATS-864);
+    ``tasks_root`` is injected integrator policy (``TrackerLayout.tasks_dir``);
     keyword-only so a ``project_dir`` can never silently slot in (both are Path
     and this module degrades gracefully instead of raising).
     """
@@ -35,7 +35,7 @@ def ticket_sections(*, tasks_root: Path, ticket_id: str) -> tuple[str, str]:
     """``(ticket_context, linked_context)`` for a ticket — ``("", "")`` when absent.
 
     The pair travels together into every prompt that carries either, so one call
-    site keeps a caller from taking the card and forgetting its links (HATS-1552).
+    site keeps a caller from taking the card and forgetting its links.
     """
     if not ticket_id:
         return "", ""
@@ -52,7 +52,7 @@ def load_linked_context(*, tasks_root: Path, ticket_id: str) -> str:
     see_also`` (deduped; self and missing targets skipped). Per linked card: a
     trimmed view (id, title, state, description) plus only the *latest*
     ``work_log`` entry (token hygiene — the argument that dropped
-    ``PROJECT_STATE`` in HATS-681). The parent epic additionally carries its
+    ``PROJECT_STATE``). The parent epic additionally carries its
     ``plan.md`` body; other links are card-only.
 
     Returns ``""`` when there are no resolvable links (the caller skips the
@@ -69,8 +69,8 @@ def load_linked_context(*, tasks_root: Path, ticket_id: str) -> str:
     except Exception as exc:
         # The subject's OWN card, unlike the neighbours skipped below: folding a
         # corrupt one into "" hands the agent a prompt with no epic, no
-        # depends_on and no plan, indistinguishable from a card with no links
-        # (HATS-1373). The module contract forbids raising, so it must be loud.
+        # depends_on and no plan, indistinguishable from a card with no links.
+        # The module contract forbids raising, so it must be loud.
         logger.error("linked context: subject card %s did not load: %r", card_path, exc)
         return ""
 

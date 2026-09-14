@@ -1,4 +1,4 @@
-"""Loader for user-authored pipeline steps (HATS-275).
+"""Loader for user-authored pipeline steps.
 
 Drop a Python file into ``<ai_hats_dir>/pipeline_steps/`` (default:
 ``<project>/.agent/ai-hats/pipeline_steps/``) that subclasses

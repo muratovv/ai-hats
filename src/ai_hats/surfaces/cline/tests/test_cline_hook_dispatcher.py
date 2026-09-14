@@ -296,7 +296,7 @@ def _refused(capsys) -> dict:
     """The reply, asserted to be a refusal that names a way past it.
 
     Every case below used to answer ``{"cancel": false}`` with a line on stderr.
-    HATS-1339 chose that on purpose; HATS-1439 is what it cost — seven gates
+    That was a deliberate choice; the cost showed up later — seven gates
     vanished mid-session and the session ran on with them off.
     """
     captured = capsys.readouterr()

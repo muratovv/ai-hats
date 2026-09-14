@@ -1,4 +1,4 @@
-"""Self-heal a stale editable that breaks an installed workspace member (HATS-966).
+"""Self-heal a stale editable that breaks an installed workspace member.
 
 Detects ``packages/*`` members whose editable ``.pth`` target was deleted (e.g. a
 torn-down worktree) and re-points them to their canonical repo dir. Signal = the
@@ -6,7 +6,7 @@ module fails ``find_spec`` (not the ``direct_url`` project path — that disagre
 with the real ``.pth`` target ``<proj>/src`` when only ``src`` moves).
 
 Re-pointing an editable is all this module does — it never installs a
-distribution on the user's behalf (HATS-1826).
+distribution on the user's behalf.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def workspace_editable_map(repo_root: Path) -> dict[str, Path]:
 
     Keyed by module (globbed ``<member>/src/*/__init__.py``, mirroring the
     launcher's member probe) rather than dist name, so it never depends on
-    ``EntryPoint.dist`` being populated (HATS-966, HATS-1367).
+    ``EntryPoint.dist`` being populated.
     """
     out: dict[str, Path] = {}
     packages = repo_root / WORKSPACE_SUBDIR
@@ -183,7 +183,7 @@ def heal_surface_editables(
     Pure control flow with ``installer`` / ``verifier`` injected for tests. A
     broken module that maps to a ``packages/*`` member is re-pointed then
     verified; an unmapped one (arbitrary out-of-tree ``-e``) is warned, never
-    touched (HATS-966 R3). Idempotent: no broken providers -> empty result.
+    touched. Idempotent: no broken providers -> empty result.
     """
     broken = find_broken_surface_providers() if broken is None else broken
     mapping = workspace_editable_map(repo_root) if mapping is None else mapping

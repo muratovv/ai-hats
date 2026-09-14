@@ -138,7 +138,7 @@ class SurfaceProfile:
     #: acts on the document alone; codex reads 2 as its refusal, agy 1.
     imposed_status: int = 0
     #: Whether a refusal a HOOK uttered carries the child's own exit code out.
-    #: True on the one surface whose protocol IS the status (agy, HATS-1598).
+    #: True on the one surface whose protocol IS the status (agy).
     forwards_hook_status: bool = False
 
     def matcher_names(self, native_tool: str) -> tuple[str, ...]:
@@ -478,7 +478,7 @@ def _skipped_by_hatch(run: HookRun, row: HookRow, environ: Mapping[str, str]) ->
 
     The hatch is read HERE, beside the refusal it opens, for the reason the git
     channel states at ``githooks_run._skip_reason``: the deny-names-its-hatch
-    invariant is worth nothing if the flag it names is inert (HATS-1253 P4).
+    invariant is worth nothing if the flag it names is inert.
 
     Only a gate ai-hats could not MATERIALIZE qualifies. A timeout keeps its own
     bound to raise, and opening it here would turn a hang into a pass.

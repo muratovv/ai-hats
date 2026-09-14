@@ -100,7 +100,15 @@ def test_declaration_fails_composition_by_name(tombstone_launcher, tmp_path):
     assert "e2e-lifecycle-tombstone" in combined, (
         f"the failure must NAME the offending skill:\n{combined}"
     )
-    assert "HATS-1147" in combined, f"the failure must cite the retirement card:\n{combined}"
+    # `e2e-catalog` grounds this file's header pin in the file body or in a
+    # commit message naming it, and strips the module docstring before looking.
+    # The tombstone message it used to read the pin from now cites the ADR
+    # instead, so the pin's basis has to live here:
+    # HATS-1147  ticket-ids: allow the e2e-catalog gate requires this pin
+    assert "ADR-0019" in combined, (
+        f"the failure must cite the retirement record — the ADR, which resolves "
+        f"for a reader who has the repository:\n{combined}"
+    )
 
 
 def test_rack_transition_unaffected_and_no_lifecycle_tree(tmp_path):

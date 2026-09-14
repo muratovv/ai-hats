@@ -67,7 +67,7 @@ def should_run(
     metrics, metrics_issue = _read_metrics(metrics_path)
 
     # Recursion guard as a property of the SESSION — the env guard
-    # (HATS-252/1402/1481) protects a process and leaked at every new entry point.
+    # protects a process and leaked at every new entry point.
     if metrics is not None and metrics.get("role") == REVIEWER_ROLE:
         return "skip", f"role={REVIEWER_ROLE} (the auditor's own session)"
 
@@ -108,7 +108,7 @@ def make_decision(
     """Run policy decision and return a dict rich enough to drive UI + log.
 
     Never raises — the failure is captured into action="skip" so the caller can
-    surface "skipped (internal error: ...)" without crashing. HATS-1426: the
+    surface "skipped (internal error: ...)" without crashing. The
     promise excluded ``KeyboardInterrupt`` and, worse, the path resolution
     below sat outside the guard — the two lines the incident died on.
     """
@@ -244,7 +244,7 @@ def write_retro_log(
 def main(layout: ProjectLayout | None = None) -> None:
     """Entrypoint for the shell hook; the project defaults to the caller's cwd.
 
-    Recursion guard (HATS-252): when ``HATS_SKIP_RETRO=1`` is set in the env we
+    Recursion guard: when ``HATS_SKIP_RETRO=1`` is set in the env we
     are running inside the session-reviewer's own sub-Claude process. Returning
     early breaks the otherwise unbounded spawn loop.
     """

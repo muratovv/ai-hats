@@ -1,4 +1,4 @@
-"""Parser and dataclass for runtime role spec expressions (HATS-1456)."""
+"""Parser and dataclass for runtime role spec expressions."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def format_role_spec(role: str, adds: tuple[str, ...] = (), removes: tuple[str, 
     """The canonical expression for a composed role, readable back by the parser.
 
     Every operator is spaced because only ``+`` is padded before the split, so
-    ``judge -foo`` would parse as a dangling operand (HATS-1594).
+    ``judge -foo`` would parse as a dangling operand.
     """
     parts = [role]
     parts.extend(f"+ {name}" for name in adds)

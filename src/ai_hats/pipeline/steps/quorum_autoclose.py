@@ -1,6 +1,6 @@
 """``quorum_autoclose`` step — safe auto-close of refuted-quorum hypotheses.
 
-HATS-769. Runs at the tail of ``finalize-hitl`` (the post-user-session
+Runs at the tail of ``finalize-hitl`` (the post-user-session
 pipeline): after every HITL session, sweep active HYPs and close-as-gone any
 that have reached a quorum of K independent ``refuted`` verdicts. The new
 ``refuted`` verdict that tips a HYP over the threshold is itself appended during

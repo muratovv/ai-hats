@@ -1,4 +1,4 @@
-"""Unit tests for pipeline.harness_policy (HATS-378 Phase 0)."""
+"""Unit tests for pipeline.harness_policy."""
 
 from __future__ import annotations
 

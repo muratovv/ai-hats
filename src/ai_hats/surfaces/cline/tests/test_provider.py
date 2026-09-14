@@ -1,8 +1,8 @@
-"""Contract tests for ``ClineSurface`` (HATS-956, HATS-963, HATS-1171).
+"""Contract tests for ``ClineSurface``.
 
 Pure-method assertions (no real cline, no auth): the CLI-shape, env, inline
 `-s` role delivery, and the per-session-cache skill materialization the ai-hats
-runners depend on. HATS-1171: cline runs through the unified artifact-builder
+runners depend on. cline runs through the unified artifact-builder
 (ADR-0018) on the clean-root invariant — skills land in
 ``<cache_root>/sessions/<sid>/skills`` (delivered via ``--config``),
 never in the project root; the dead TS hook plugin is gone.
@@ -151,7 +151,7 @@ def test_claim_launch_env_distinct_sessions_distinct_ports(tmp_path) -> None:
 
 
 def test_get_env_names_the_port_without_taking_one(tmp_path, monkeypatch) -> None:
-    """HATS-1554: get_env is on the report path too, where binding is a side effect."""
+    """get_env is on the report path too, where binding is a side effect."""
     import socket
 
     monkeypatch.setattr(socket, "socket", lambda *a, **k: pytest.fail("get_env opened a socket"))
@@ -175,7 +175,7 @@ def test_build_system_prompt_composes_sections() -> None:
 
 def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
     # Skills delivered via the native <cache>/skills registry, so the
-    # composed sections carry no text index (HATS-1826 removed the toggle).
+    # composed sections carry no text index (the skill-index toggle was removed).
     skill_path = _make_skill(tmp_path, "my-skill")
     out = ClineSurface().build_system_prompt(_fake_result(skills=[skill_path]))
     assert "## AVAILABLE SKILLS" not in out
@@ -189,10 +189,10 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     args, env, meta_prompt = provider.build_session_prompt(
         ProjectLayout.at(tmp_path), _fake_result(), "sid-1"
     )
-    # HITL: role inline via -s. HATS-1207 moved -i out of the CONTEXT handler —
+    # HITL: role inline via -s. The refactor moved -i out of the CONTEXT handler —
     # it is launch mode, not context, so suppressing CONTEXT must not drop the TUI.
     assert args[0] == "-s"
-    # the -s value IS the persisted meta-prompt bytes (HATS-523 symmetry)
+    # the -s value IS the persisted meta-prompt bytes (symmetry)
     assert args[1] == meta_prompt
     # -i now rides the launch-args seam, and still reaches the real command
     assert "-i" in provider.get_cli_launch_args(["cline", *args], "sid-1", False)
@@ -202,7 +202,7 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     assert "--config" in args
     cache_arg = args[args.index("--config") + 1]
     assert cache_arg == str(ProjectLayout.at(tmp_path).cache.session("sid-1"))
-    # A hookless role keeps the pre-HATS-1775 launch shape.
+    # A hookless role keeps the launch shape from before --hooks-dir support.
     assert "--hooks-dir" not in args
 
 
@@ -305,7 +305,7 @@ def test_build_session_prompt_materializes_skills_to_cache(tmp_path) -> None:
 
 
 def test_build_session_prompt_leaves_project_root_clean(tmp_path) -> None:
-    # HATS-1171 clean-root: no .cline/ and no .gitignore mutation in the root.
+    # Clean-root: no .cline/ and no .gitignore mutation in the root.
     skill = _make_skill(tmp_path, "my-skill")
     ClineSurface().build_session_prompt(
         ProjectLayout.at(tmp_path), _fake_result(skills=[skill]), "sid-1"
@@ -391,7 +391,7 @@ def test_materialize_sessions_are_isolated(tmp_path) -> None:
 
 
 def test_materialize_expands_the_fsm_edges_token(tmp_path) -> None:
-    """HATS-1271: cline's private copier had drifted and lost this expansion.
+    """cline's private copier had drifted and lost this expansion.
 
     The token is carried by a CORE library skill (hatrack), so a surface that
     skips it ships a SKILL.md whose own prose calls the missing table

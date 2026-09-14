@@ -1,6 +1,6 @@
-"""Diagnostic helpers for harness-layer failures (HATS-378).
+"""Diagnostic helpers for harness-layer failures.
 
-Lifted from :mod:`ai_hats.retro.session_review_runner` (HATS-271) so the
+Lifted from :mod:`ai_hats.retro.session_review_runner` so the
 universal harness guard reuses the same diagnostic format the per-role
 empty-transcript check has been using since v0.5.
 """
@@ -31,7 +31,7 @@ def is_zero_output(metrics: dict[str, Any]) -> bool:
     Returns ``False`` when either field is absent from metrics — the
     guard cannot evaluate sub-agent runs whose metrics have not been
     trace-enriched (basic ``_finalize_sub_agent`` only writes exit_code/
-    role/model). For those, the per-role transcript check (HATS-271)
+    role/model). For those, the per-role transcript check
     remains the safety net until sub-agent enrichment lands as a
     follow-up.
     """
@@ -67,8 +67,8 @@ def diagnose_silent_session(session: "Session") -> str:
     — so the failure message in retro.log explains *why* the agent
     produced nothing instead of just "Empty frontmatter".
 
-    Used by both the per-role empty-transcript check (HATS-271, kept as
-    defense-in-depth) and the universal zero-output guard (HATS-378).
+    Used by both the per-role empty-transcript check (kept as
+    defense-in-depth) and the universal zero-output guard.
     """
     bits: list[str] = [f"sub-session={session.session_id}"]
     try:

@@ -1,8 +1,8 @@
 """Refuse an ai-hats word or flag that would otherwise reach the provider.
 
-Bare `ai-hats` forwards positionals to the provider (`_PassthroughGroup`,
-HATS-1202) — right for prose, wrong for anything ai-hats owns: HATS-1932 recorded
-five sessions where `ai-hats githooks --help` reached `claude` as a prompt,
+Bare `ai-hats` forwards positionals to the provider (`_PassthroughGroup`)
+— right for prose, wrong for anything ai-hats owns: five sessions were
+recorded where `ai-hats githooks --help` reached `claude` as a prompt,
 printed claude's usage and was SIGTERM'd 6 s later.
 Ownership is read off the live group, never listed here: a word is real when it
 is mounted, a flag is ai-hats' own when the group declares it. Pure by

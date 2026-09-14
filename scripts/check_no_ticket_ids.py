@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""A tracker id must not ship inside library prose, nor sit in a living doc.
+"""A tracker id must not ship in library prose, a living doc, or `src/`.
 
 The library installs into other people's projects, where `PROJ-1430` is a dead
-link. `.agent/` is gitignored, so the same holds for a fresh clone of this one.
+link. `.agent/` is gitignored, so the same holds for a fresh clone of this one,
+and for a reader of `src/` who has the code but not the tracker.
 
-Three things make this checkable rather than a matter of taste: the pattern
-needs DIGITS, so CLI-grammar placeholders are not matches; a fenced block is a
-sample, not a claim; and an id a machine PRINTS opts out by line marker. The
-gate carries its own positive control — see `control_hits`.
+Four things make this checkable rather than a matter of taste: the pattern needs
+DIGITS, so CLI-grammar placeholders are not matches; a fenced block is a sample,
+not a claim; a `TODO(<id>)` points FORWARD at work no commit holds yet, which is
+the one id the comment rule blesses; and an id a machine PRINTS opts out by line
+marker. The gate carries its own positive control — see `control_hits`.
 """
 
 from __future__ import annotations
@@ -38,10 +40,25 @@ ID_RE = re.compile(rf"\b{PREFIX}-[0-9]+\b")
 OPT_OUT = f"{CHECK}: allow"
 OPT_OUT_RE = re.compile(rf"{re.escape(OPT_OUT)}\b[ \t]*(?P<reason>[^\n>*#-]*)")
 
-#: Prose only. Library code carries ids too, but removing one there is a
-#: rewrite rather than a deletion — a bare `# PROJ-1242` with no words loses
-#: all its content when the number goes. That is a separate card.
+#: Prose, in the library. Its `.py` and `.sh` stay out: they install into other
+#: people's trees, so a sweep there is a shipped-behaviour change rather than a
+#: reference repair, and it has its own card.
 SUFFIXES = (".md", ".yaml", ".yml")
+
+#: This repository's own application code, swept and held at zero. `src/` is not
+#: shipped as library content, so its comments and docstrings are read only by
+#: someone standing in this repository — for whom `git log -S` resolves what an
+#: id cannot. No suffix list: `src/` holds `.py` beside `.sh`, `.mjs` and two
+#: extensionless hook scripts, and a corpus that named suffixes would have
+#: missed the three of them that carried ids. Every file is read as text with
+#: errors ignored, so a binary that appears there simply never matches.
+CODE_RELPATH = "src"
+
+#: The one id the comment rule blesses: it points FORWARD at work no commit
+#: holds yet, and names the card that retires it. Masked out of a line before
+#: the line is judged, so a `TODO(<id>)` sitting beside real provenance does not
+#: shield it.
+TODO_RE = re.compile(rf"TODO\({PREFIX}-[0-9]+[a-z]?\)")
 
 #: `hooks` and `git_hooks` are distinct path segments: a single `hooks` glob
 #: does not match the second.
@@ -61,16 +78,25 @@ DATED_RECORD_RE = re.compile(r"^docs/(?:adr/|migration-v)")
 ROOT_DOCS = ("README.md", "CONTRIBUTING.md")
 
 UNCOVERED = (
-    "library code — `.py`, `.sh`, `.go`, `.json` in the library: a bare id with "
-    "no words has to be REWRITTEN, not deleted, so it is a separate card",
+    "`tests/`, `packages/` and `scripts/`: the same sweep, one tree at a time — "
+    "judging a tree this gate has not swept would only report a backlog",
+    "everything under `src/` IS judged, whatever its suffix — a corpus of `.py` "
+    "alone would have missed the `.sh`, `.mjs` and extensionless hooks there",
+    "library code — `.py`, `.sh`, `.go`, `.json` in the library: it installs into "
+    "other people's trees, so a sweep there changes shipped behaviour",
     "`hooks/` and `git_hooks/`: same reason, and they are the highest-blast-"
     "radius surface in the repo",
+    "`TODO(<id>)` anywhere: it names the card that retires it, which is the one "
+    "thing `git log -S` cannot find, because the work is not in a commit yet",
     "`docs/adr/`, `docs/migration-v*.md` and `CHANGELOG.md`: the id there IS the "
     "record, and the first and last are this gate's positive control instead",
     "fenced code blocks: a sample teaches the shape of a command, so the ids in "
     "`rack transition HATS-042 --link depends_on:HATS-041` are templates rather "
     "than citations. An unclosed fence is reported instead of swallowed",
-    "other trackers' ids: only this repository's prefix is judged",
+    "other trackers' ids: only this repository's TASK prefix is judged. Its "
+    "hypothesis and proposal prefixes are the same dead link by the same "
+    "argument, and `src/` still holds 16 of them — but two are code literals "
+    "naming a catalog, so that sweep is a card and not a wider pattern here",
 )
 
 
@@ -85,7 +111,7 @@ class Finding:
 
 
 def corpus(root: Path) -> list[Path]:
-    """Library prose, plus the living docs a reader of this repository opens."""
+    """Library prose, the living docs a reader opens, and this repo's `src/`."""
     seen: set[Path] = set()
     lib = root / LIBRARY_RELPATH
     if lib.is_dir():
@@ -97,7 +123,16 @@ def corpus(root: Path) -> list[Path]:
             and not EXCLUDED_SEGMENTS & set(path.relative_to(lib).parts)
         }
     seen |= living_docs(root)
+    seen |= code(root)
     return sorted(seen)
+
+
+def code(root: Path) -> set[Path]:
+    """All of `src/` — comments and docstrings, judged as the prose they are."""
+    src = root / CODE_RELPATH
+    if not src.is_dir():
+        return set()
+    return {path for path in src.rglob("*") if path.is_file() and "__pycache__" not in path.parts}
 
 
 def living_docs(root: Path) -> set[Path]:
@@ -121,10 +156,19 @@ def allowed(line: str) -> str | None:
     return match.group("reason").strip() or "(no reason given)"
 
 
-def scan_file(path: Path, root: Path) -> tuple[list[Finding], list[str], int | None]:
-    """Findings, allowances, and the line of an unclosed fence if there is one."""
+@dataclass(frozen=True)
+class FileScan:
+    findings: list[Finding]
+    allowances: list[str]
+    unclosed: int | None
+    todos: int
+
+
+def scan_file(path: Path, root: Path) -> FileScan:
+    """Findings, allowances, an unclosed fence's line, and the TODOs spared."""
     findings: list[Finding] = []
     allowances: list[str] = []
+    todos = 0
     rel = path.relative_to(root).as_posix()
     text = path.read_text(encoding="utf-8", errors="ignore")
     if path.suffix == ".md":
@@ -132,7 +176,9 @@ def scan_file(path: Path, root: Path) -> tuple[list[Finding], list[str], int | N
     else:
         lines, unclosed = list(enumerate(text.splitlines(), start=1)), None
     for lineno, line in lines:
-        tokens = ID_RE.findall(line)
+        todos += sum(len(ID_RE.findall(m.group(0))) for m in TODO_RE.finditer(line))
+        masked = TODO_RE.sub("TODO(...)", line)
+        tokens = ID_RE.findall(masked)
         if not tokens:
             continue
         reason = allowed(line)
@@ -140,7 +186,7 @@ def scan_file(path: Path, root: Path) -> tuple[list[Finding], list[str], int | N
             allowances.append(f"{rel}:{lineno}: {', '.join(tokens)} — {reason}")
             continue
         findings.extend(Finding(rel, lineno, token) for token in tokens)
-    return findings, allowances, unclosed
+    return FileScan(findings, allowances, unclosed, todos)
 
 
 def control_hits(root: Path) -> tuple[int, bool]:
@@ -168,12 +214,14 @@ def main(argv: list[str] | None = None) -> int:
     findings: list[Finding] = []
     allowances: list[str] = []
     unclosed: list[str] = []
+    todos = 0
     for path in files:
-        file_findings, file_allowances, opened_at = scan_file(path, root)
-        findings.extend(file_findings)
-        allowances.extend(file_allowances)
-        if opened_at is not None:
-            unclosed.append(f"{path.relative_to(root).as_posix()}:{opened_at}")
+        scan = scan_file(path, root)
+        findings.extend(scan.findings)
+        allowances.extend(scan.allowances)
+        todos += scan.todos
+        if scan.unclosed is not None:
+            unclosed.append(f"{path.relative_to(root).as_posix()}:{scan.unclosed}")
     findings.sort(key=lambda f: (f.path, f.line))
 
     for finding in findings:
@@ -188,7 +236,15 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     control, control_present = control_hits(root)
-    scope = f"{len(files)} prose files (library + living docs)"
+    scope = f"{len(files)} files (library prose + living docs + src/)"
+
+    if todos:
+        plural = "site" if todos == 1 else "sites"
+        print(
+            f"[{CHECK}] spared: {todos} `TODO({PREFIX}-<id>)` {plural} — the one "
+            f"form that points FORWARD, at work no commit holds yet",
+            file=sys.stderr,
+        )
 
     if control_present and control == 0:
         print(

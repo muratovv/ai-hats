@@ -1,4 +1,4 @@
-"""Value validation for ``paths`` (HATS-831 split).
+"""Value validation for ``paths`` (split out of the resolver).
 
 Holds the validators kept deliberately separate from the path/resolver logic so
 callers (``ProjectConfig`` field validators, the builtin-library resolver) can
@@ -28,7 +28,7 @@ _MANIFEST_HUMAN = " · ".join("/".join(parts) + "/" for parts in _LIBRARY_ROOT_M
 
 
 def is_library_root(root: Path) -> bool:
-    """Whether ``root`` holds the full builtin-library manifest (HATS-1157).
+    """Whether ``root`` holds the full builtin-library manifest.
 
     THE single answer to "is this a library root?" — the resolver's three entry
     points (env override, source autodetect, and the post-detect gate) all defer
@@ -85,7 +85,7 @@ def normalize_ai_hats_dir(value: str) -> str:
 
 
 def normalize_venv_path(value: str) -> str:
-    """Validate + normalize a ``venv_path`` config value (HATS-334).
+    """Validate + normalize a ``venv_path`` config value.
 
     Differs from :func:`normalize_ai_hats_dir` by ALLOWING absolute paths —
     venv may legitimately live outside the project (CI shared cache,

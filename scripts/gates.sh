@@ -76,7 +76,7 @@ dependency-floor | every pin on a workspace package tracks that package's versio
 silent-fallback  | no broad except swallows a failure without reporting it
 test-isolation   | the suite patches its own units no more than the recorded baseline
 prose-refs       | paths, library prefixes, sections and symbols named in library prose resolve
-ticket-ids       | no tracker id in library prose or in a doc a reader opens
+ticket-ids       | no tracker id in library prose, a doc a reader opens, or src/
 consumer-refs    | no library component names a component that composes it
 env-reference    | docs/reference-env.md matches the env declarations the code reads
 gate-table       | ADR-0023's stage and gate tables match this file and the gates
@@ -240,7 +240,7 @@ ci_prose_refs() {
 # both sides. It reports the ids it still finds in docs/adr and CHANGELOG, so a
 # clean run proves the pattern is alive.
 ci_ticket_ids() {
-    echo "[gates] ticket-ids (no tracker id in library prose or a living doc)" >&2
+    echo "[gates] ticket-ids (no tracker id in library prose, a living doc or src/)" >&2
     run_py scripts/check_no_ticket_ids.py
 }
 

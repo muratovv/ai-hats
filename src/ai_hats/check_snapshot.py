@@ -1,9 +1,9 @@
-"""What a launch says about the gates it arms (HATS-1207, HATS-1241, HATS-1548).
+"""What a launch says about the gates it arms.
 
 Two jobs, one subject. :func:`describe_checks` resolves every binding the way
 the session will and reports whether the launch writes the bytes it will run —
-the only observable there is, since HATS-1540 retired ``snapshot_checks`` and
-the ``<sid>/checks/`` root: the skill mirror is written per SKILL, so no part of
+the only observable there is, since ``snapshot_checks`` and
+the ``<sid>/checks/`` root were retired: the skill mirror is written per SKILL, so no part of
 the materialization plan depends on a binding existing. The notices below cover
 the surfaces that cannot root one at all, said at launch rather than discovered
 when a gate does not fire.
@@ -28,7 +28,7 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
 
 @dataclass(frozen=True)
 class ReportedCheck:
-    """One binding as the launch report sees it (HATS-1548).
+    """One binding as the launch report sees it.
 
     ``runs_from`` is ``None`` when the binding cannot be resolved at all; the
     reason then rides ``SessionReport.notes`` rather than raising, because a
@@ -109,12 +109,12 @@ def _plan_covers(plan: MaterializationPlan, runs_from: Path) -> bool:
 
 
 def surface_skew_notice(provider_name: str, provider, layout: ProjectLayout, result) -> str | None:
-    """Said at LAUNCH when this surface cannot root a bound check (HATS-1540).
+    """Said at LAUNCH when this surface cannot root a bound check.
 
     ``Surface.session_skills_root`` is concrete and defaults to ``None``, so a
     surface package older than the accessor keeps importing — and then every
     bound transition in its sessions is refused, with a message about a missing
-    file. That is the HATS-1538 brick shape from a new cause, and the operator
+    file. That is the same failure shape from a new cause, and the operator
     should learn it when the session starts rather than at the first gate.
 
     ``legacy_launch_notices`` below does NOT cover this: it fires only for a
@@ -130,7 +130,7 @@ def surface_skew_notice(provider_name: str, provider, layout: ProjectLayout, res
         f"provider {provider_name!r} does not say where it mirrors a session's skills, so the "
         f"bound check(s) from {skills} have no bytes to run: EVERY transition and every "
         f"`ai-hats wt merge` in this session will be refused. Upgrade the surface package "
-        f"(it needs `session_skills_root`, added in HATS-1540) or unbind the check."
+        f"(it needs `session_skills_root`) or unbind the check."
     )
 
 

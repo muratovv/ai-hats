@@ -1,4 +1,4 @@
-"""No launch step reads the ``provider`` funnel key (HATS-1218).
+"""No launch step reads the ``provider`` funnel key.
 
 The CLI used to seed ``provider`` into the ``human`` / ``execute`` funnels next
 to the ``CompositionPayload``, which already carries the resolved provider. No

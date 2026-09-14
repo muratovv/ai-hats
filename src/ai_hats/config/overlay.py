@@ -15,7 +15,7 @@ class OverlayConfig(_YamlModel):
     Wire format nests add/remove sections (``add: {traits: [...], ...}``) while
     the in-memory shape is flat. ``from_dict`` / ``to_dict`` bridge the two.
 
-    **Move-to-end reorder semantic (HATS-421).** Within a single overlay,
+    **Move-to-end reorder semantic.** Within a single overlay,
     putting the same name in BOTH ``add: [X]`` and ``remove: [X]`` is a
     first-class operation meaning "remove X from its current position and
     re-append it to the layer's tail". The composer applies ``remove`` then

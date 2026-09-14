@@ -1,4 +1,4 @@
-"""Session-owner liveness for the session-cache sweeps (HATS-1339 / S1).
+"""Session-owner liveness for the session-cache sweeps.
 
 Reap a session dir on **proof of death**, never on age alone — the TTL sweep
 deleted 12 live maintainer sessions' skills and ``hooks.json`` mid-flight. The
@@ -257,7 +257,7 @@ def _pid_alive(pid: int) -> bool:
     ``os.kill(pid, 0)`` alone answers "the pid exists", which a zombie also
     does — so it is paired with :func:`_pid_is_zombie`, else an unreaped wrapper
     pins its cache dir for as long as its parent declines to reap it (where the
-    pre-HATS-1339 TTL took it at 24h). No reuse detection either way: a reused
+    previous TTL took it at 24h). No reuse detection either way: a reused
     pid reads as alive here and only the recorded baseline can part them.
     """
     try:
@@ -373,7 +373,7 @@ def _pid_from_dirname(name: str) -> int | None:
     innermost ``_`` component is the owning id, and it must fill all four
     positions. ``None`` for a name that carries no pid — ``dry-run``, and the
     reason this reads the grammar rather than the last dash token: the
-    pre-HATS-1248 id ``<YYYYMMDD>-<HHMMSS>-<counter>`` ends at the counter,
+    older id shape ``<YYYYMMDD>-<HHMMSS>-<counter>`` ends at the counter,
     which read as pid 1 (launchd, never exits — the dir and its whole project
     key were then retained forever) or as some unrelated pid the session never
     owned.

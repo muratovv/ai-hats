@@ -4,11 +4,11 @@ Used by ``ai-hats self update`` (see :mod:`ai_hats.cli.maintenance`)
 to run the bump pipeline in a **fresh interpreter** so the freshly
 installed code (migrations, healer, assembler) is loaded — running
 ``bump`` in-process after ``uv pip install --reinstall`` would
-silently keep the pre-update code in memory (HATS-400).
+silently keep the pre-update code in memory.
 
 **NOT a user-facing CLI.** Deliberately not exposed in
 ``ai-hats --help`` / ``ai-hats --tree`` / ``[project.scripts]`` —
-HATS-470 removed ``ai-hats self bump`` from the click surface; this
+``ai-hats self bump`` was removed from the click surface; this
 module is the stable-but-private subprocess hook that ``self update``
 shells into. End-users should run ``ai-hats self update`` instead.
 

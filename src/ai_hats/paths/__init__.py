@@ -1,6 +1,6 @@
-"""Path conventions for ai-hats runtime + user config (HATS-316).
+"""Path conventions for ai-hats runtime + user config.
 
-Package facade (HATS-831 split). The single ``paths.py`` module was split into
+Package facade. The single ``paths.py`` module was split into
 cohesive submodules — all re-exported here so ``from ai_hats.paths import X``
 keeps working unchanged for every consumer:
 
@@ -9,8 +9,8 @@ keeps working unchanged for every consumer:
     :class:`ai_hats_core.layout.ProjectLayout` (ADR-0026).
   - :mod:`.library`    — builtin ``library/`` SOURCE resolution (worktree-aware),
     the single home for ``files(LIBRARY_PKG)``.
-  - :mod:`.claude`     — Claude Code ``.claude/*`` layout conventions (HATS-907/908).
-  - :mod:`.agy`     — Agy CLI layout/channel conventions (HATS-908).
+  - :mod:`.claude`     — Claude Code ``.claude/*`` layout conventions.
+  - :mod:`.agy`     — Agy CLI layout/channel conventions.
   - :mod:`.validation` — config-value + library-root validators.
   - :mod:`.constants`  — referenceable named constants for the above.
 

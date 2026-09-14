@@ -3,7 +3,7 @@
 Both commands already ran the same ``execute`` pipeline through the same
 Automate runner, but each hand-built the funnel and repeated the post-run
 report verbatim — and the copies drifted: ``execute`` grew ``--provider``,
-``agent`` never did (HATS-1218). One wiring, so the next flag is added once.
+``agent`` never did. One wiring, so the next flag is added once.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def run_batch(
 
     No ``extra_args`` parameter by design: the ``provider`` step forwards it on
     the HITL branch only (``steps/launch.py``), so accepting one here would ship
-    exactly the ignored knob HATS-1218 exists to remove.
+    exactly the ignored knob this consolidation removes.
     """
     project_dir = layout.root
     from ai_hats_observe import SidecarTracer

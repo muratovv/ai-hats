@@ -13,7 +13,7 @@ from .pipeline import PipelineConfig
 
 # TODO(HATS-1784): triage this list — finalize-* run inside a session rather than as
 # pipelines, preview ships as YAML nothing loads, and the five reflect-* differ by a
-# role and a prompt. Out of the HATS-1586 epic by supervisor's call.
+# role and a prompt. Out of scope by supervisor's call.
 EXECUTE = PipelineConfig(name="execute")
 HUMAN = PipelineConfig(name="human")
 INIT = PipelineConfig(name="init")

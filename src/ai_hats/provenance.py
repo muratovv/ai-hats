@@ -1,4 +1,4 @@
-"""Component provenance classification and layer enum (HATS-525)."""
+"""Component provenance classification and layer enum."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def classify_component_layer(
     project_config_paths: list[str] | None = None,
     global_roots: Sequence[Path] | None = None,
 ) -> ComponentLayer:
-    """Classify a component directory path into a ComponentLayer enum (HATS-525 / HATS-1506)."""
+    """Classify a component directory path into a ComponentLayer enum."""
     if path is None:
         return ComponentLayer.BUILT_IN
 

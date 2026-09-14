@@ -1,11 +1,11 @@
-"""Pre-launch startup notices and the read-hold (HATS-825 / HATS-833).
+"""Pre-launch startup notices and the read-hold.
 
 The wrapped CLI's full-screen TUI tears the terminal into the alternate screen
 buffer the instant it spawns, clobbering anything ``run()`` printed before it —
 including a fail-open startup warning. A brief hold when a startup step warned
 gives the human a beat to read it before a session's work runs against a degraded
-setup; a clean start holds for nothing. Extracted from ``runtime_common``
-(HATS-970); that module keeps a back-compat re-export.
+setup; a clean start holds for nothing. Extracted from ``runtime_common``;
+that module keeps a back-compat re-export.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def _startup_hold_seconds(
 
 
 def _countdown_hold(seconds, *, render, poll_skip) -> bool:
-    """Run a 1 Hz countdown that the user can cut short (HATS-847).
+    """Run a 1 Hz countdown that the user can cut short.
 
     Pure loop, no I/O of its own — the caller injects both effects so the
     skip/complete behaviour is unit-testable without a real terminal or
@@ -91,7 +91,7 @@ def _countdown_hold(seconds, *, render, poll_skip) -> bool:
 
 @dataclass(frozen=True)
 class StartupNotice:
-    """One pre-launch line surfaced during the startup hold (HATS-833).
+    """One pre-launch line surfaced during the startup hold.
 
     ``level``:
         ``"note"`` — informational success (e.g. a managed-hook heal). Rendered
@@ -102,7 +102,7 @@ class StartupNotice:
         ``"fatal"`` (``"error"``) — the launch does not proceed. Rendered red on
             stderr by ``_print_startup_notices`` and normally reached through
             :func:`show_fatal_notice_and_exit`, which also records it. Listed
-            here since HATS-1581: it was already handled and already used at
+            here because it was already handled and already used at
             three call sites while this docstring still named only two levels,
             so a reader concluded the channel could not refuse.
     ``note`` and ``warn`` trigger the hold so the human can read them; a clean
@@ -115,7 +115,7 @@ class StartupNotice:
 
 def _print_startup_notices(notices: list[StartupNotice]) -> None:
     """Render startup notices before the hold: ✓ notes (green), ⚠ warns (yellow), ✕ fatals (red).
-    Generalizes the warnings-only channel (HATS-825 → HATS-833).
+    Generalizes the warnings-only channel.
     """
     notes = [n for n in notices if n.level == "note"]
     fatals = [n for n in notices if n.level in ("fatal", "error")]
@@ -135,21 +135,21 @@ def _print_startup_notices(notices: list[StartupNotice]) -> None:
 
 
 def _print_startup_warnings(warnings: list[str]) -> None:
-    """Back-compat shim (HATS-833): render plain warning strings via the
+    """Back-compat shim: render plain warning strings via the
     structured notice channel."""
     _print_startup_notices([StartupNotice("warn", w) for w in warnings])
 
 
 def show_and_hold_startup_notices(notices, *, is_tty, sleep, env=None) -> None:
     """User-facing startup notices: notices present → render them and hold before
-    launch so they're read; nothing to show → no render, no hold (HATS-833).
+    launch so they're read; nothing to show → no render, no hold.
 
     Single owner of the "notices exist ⇒ show and wait" decision (the hold
     *policy* stays in :func:`_startup_hold_seconds`). ``sleep(delay)`` performs
     the actual wait — the caller injects a Ctrl-C-aware countdown so this stays
     free of PTY/TUI concerns and unit-testable.
 
-    Rendering does not depend on the hold (HATS-1753). It used to: a zero delay
+    Rendering does not depend on the hold. It used to: a zero delay
     returned before the print, so a headless, CI or ``AI_HATS_NON_INTERACTIVE``
     launch wrote every notice to ``diagnostics.json`` and showed none of them.
     "Never delayed" was the invariant; "never shown" was the accident.
@@ -190,10 +190,10 @@ def save_session_diagnostics(
 ) -> None:
     """Atomic read-modify-write persistence for service-channel diagnostics into `<session_dir>/diagnostics.json`.
 
-    HATS-1221: Captures both pre-session notices and post-session banners into
+    Captures both pre-session notices and post-session banners into
     top-level keys (`startup`, `completion`, `retro_reminder`, `update_banner`).
 
-    Fail-soft (HATS-086): catches (Exception, KeyboardInterrupt) so a diagnostic write failure
+    Fail-soft: catches (Exception, KeyboardInterrupt) so a diagnostic write failure
     or SIGINT never crashes session setup or teardown. Uses in-dir atomic temporary files to
     avoid cross-device link errors (`EXDEV`).
     """

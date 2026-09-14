@@ -1,21 +1,21 @@
-"""Convergent environment recovery at the ``create_session`` chokepoint (HATS-649 / R2).
+"""Convergent environment recovery at the ``create_session`` chokepoint.
 
 Every run — HITL (``WrapRunner``) and Automate (``SubAgentRunner``) alike —
-traverses ``SessionManager.create_session``. R2 makes that the universal seam for
+traverses ``SessionManager.create_session``, now the universal seam for
 the off-exit-path recovery passes, closing the gap where they ran only on the
 WrapRunner path:
 
   1. write this run's liveness ref (so a concurrent reclaim never deletes the
      version *we* are pinned to);
   2. reap session-cache dirs whose owner is gone, and expire aged bulk run
-     artifacts (HATS-294 / HATS-1339);
-  3. sweep incomplete versioned-install residue (HATS-648 / R1);
-  4. reclaim orphaned complete versions with no live ref (HATS-649 / R2);
+     artifacts;
+  3. sweep incomplete versioned-install residue;
+  4. reclaim orphaned complete versions with no live ref;
   5. reclaim the legacy pre-versioning ``.venv`` once we run from a complete
-     versioned venv (HATS-653 / Phase B).
+     versioned venv.
 
-Steps 3–4 (the version GC) run under the crash-safe ``versions/.gc.lock``
-(HATS-650 / R3), serialized against a concurrent ``self update`` and peer GC
+Steps 3–4 (the version GC) run under the crash-safe ``versions/.gc.lock``,
+serialized against a concurrent ``self update`` and peer GC
 passes; the lock acquire is opportunistic here (skipped on contention) so it
 never blocks or breaks ``create_session``. Steps 1, 2 and 5 stay outside it.
 
@@ -63,11 +63,11 @@ def _sweep_orphan_session_caches(
     *,
     liveness: _LazyLiveness | None = None,
 ) -> None:
-    """Reap session cache dirs whose owner is gone (HATS-294 / HATS-1339).
+    """Reap session cache dirs whose owner is gone.
 
     Idempotent. Called once per run at the ``create_session`` chokepoint. Cheap
     when the cache root is empty or every owner is alive. (Moved here from
-    ``runtime`` in HATS-649 so it sits beside the other recovery passes;
+    ``runtime`` so it sits beside the other recovery passes;
     ``runtime`` re-exports it for backward compatibility.)
     """
     cutoff = time.time() - ttl_hours * 3600
@@ -107,7 +107,7 @@ def _reap_reason(entry: Path, cutoff: float, liveness: _LazyLiveness) -> str | N
     Every process the anchor names must be gone, not just the wrapper: the
     wrapper owns the dir but the surface CLI is what READS it, and on the
     sub-agent path (pipes, no tty) the surface outlives a SIGKILLed wrapper
-    indefinitely — measured at 45s and reparented to init (HATS-1339 D3).
+    indefinitely — measured at 45s and reparented to init.
     """
     owners = session_owners(entry)
     if owners is None:
@@ -126,7 +126,7 @@ def _reap_reason(entry: Path, cutoff: float, liveness: _LazyLiveness) -> str | N
 
 
 def _drain_workspace_cache(legacy: Path, cutoff: float, liveness: _LazyLiveness) -> None:
-    """Delete the pre-HATS-1398 in-tree cache; nothing writes there any more.
+    """Delete the legacy in-tree cache; nothing writes there any more.
 
     The cache is regenerable, so it is dropped rather than migrated. Only session
     dirs are gated — one may belong to a session that started before the move and
@@ -139,7 +139,7 @@ def _drain_workspace_cache(legacy: Path, cutoff: float, liveness: _LazyLiveness)
             _expire_session_dirs(entry, cutoff, liveness)
             _rmdir_quiet(entry)
             continue
-        logger.warning("dropping stale in-tree cache %s (HATS-1398)", entry)
+        logger.warning("dropping stale in-tree cache %s", entry)
         try:
             if entry.is_dir():
                 shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok regenerable cache
@@ -169,14 +169,14 @@ def _sweep_orphan_project_keys(
     *,
     liveness: _LazyLiveness | None = None,
 ) -> None:
-    """Remove sibling project-key dirs untouched for ``ttl_days`` (HATS-1473).
+    """Remove sibling project-key dirs untouched for ``ttl_days``.
 
     ``_sweep_orphan_session_caches`` only walks the CURRENT project's key, so a
     key left by a renamed or one-off project was unreachable for every mechanism
     and accumulated forever — 3939 keys / 16.9 GB measured. The key is a one-way
     hash, so age is all the key itself carries — but the sessions inside name
     their owners, and a key holding a live one is off limits whatever its age
-    says (HATS-1339): a long session never touches its key's direct children
+    says: a long session never touches its key's direct children
     again, so the ttl read it as abandoned and took the running session with it.
     """
     own_key = layout.cache.root.name
@@ -210,7 +210,7 @@ def _sweep_orphan_project_keys(
 
 
 def _holds_worktrees(key_dir: Path) -> bool:
-    """Whether ``key_dir`` still holds worktree checkouts (HATS-1632).
+    """Whether ``key_dir`` still holds worktree checkouts.
 
     Age is no evidence here: a worktree can sit untouched for weeks and still
     carry uncommitted work, and reclaiming it would also strand the git admin
@@ -278,8 +278,8 @@ class EnvironmentRecovery:
         sweep_runs(self.layout, liveness=liveness)
 
         # The version GC mutates versions/ — serialize it against a concurrent
-        # `self update` (acquire) or a peer GC pass under the crash-safe lock
-        # (HATS-650 / R3). Skip when versions/ does not exist (legacy .venv /
+        # `self update` (acquire) or a peer GC pass under the crash-safe lock.
+        # Skip when versions/ does not exist (legacy .venv /
         # fresh project): nothing to reclaim, and we must not create versions/
         # just to lock it. Opportunistic: on contention the lock is already held
         # by an installer or a peer GC, so we skip and let this session start —
@@ -303,7 +303,7 @@ class EnvironmentRecovery:
             except OSError as exc:
                 logger.warning("version GC skipped on I/O error: %s", exc)
 
-        # HATS-653 (Phase B): once we run from a complete versioned venv, the
+        # Once we run from a complete versioned venv, the
         # orphaned pre-versioning legacy .venv is dead weight — reclaim it.
         # OUTSIDE the version lock: .venv lives outside versions/, the reclaim is
         # idempotent, and its current_run_sha guard makes it a no-op on a

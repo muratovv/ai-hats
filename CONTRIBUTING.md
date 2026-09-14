@@ -455,11 +455,14 @@ reference that is merely stale is a finding, and the fix is the reference.
 
 ### Tracker ids
 
-`bash scripts/gates.sh ticket-ids` reads the same corpus for a different fault:
-a `HATS-<digits>` in prose. The library installs into projects that have no such
-tracker, and `.agent/` is gitignored here, so the id is a dead link on a fresh
-clone of this repository too. State the fact instead — and where the *when*
-carries weight, write the date the card closed rather than its number.
+`bash scripts/gates.sh ticket-ids` looks for a different fault: a
+`HATS-<digits>` in prose. Its corpus is the one above plus `src/**/*.py`, whose
+comments and docstrings are prose by any other name. The library installs into
+projects that have no such tracker, `.agent/` is gitignored here, so the id is a
+dead link on a fresh clone of this repository too — and to a reader of the code,
+who has the repository and therefore has `git log -S`, which finds the commit an
+id cannot. State the fact instead — and where the *when* carries weight, write
+the date the card closed rather than its number.
 
 - **Digits are the whole discrimination.** A placeholder teaches the shape of an
   id and survives; a concrete one cites history and does not. Samples in prose
@@ -491,8 +494,17 @@ rack transition HATS-042 --link depends_on:HATS-041   <- sample: not judged
 a wall of HATS-1242 errors <!-- ticket-ids: allow the guard prints it -->
 ````
 
-Library code, `hooks/` and `git_hooks/` are not judged: a bare id with no words
-has to be rewritten rather than deleted.
+One id is blessed rather than tolerated: **`TODO(<id>)` keeps its number.** It
+points FORWARD, at work that sits in no commit yet, so the card is the only
+pointer there is and `git log -S` has nothing to find. The gate masks the form
+out of the line before judging it, so a citation sitting beside a `TODO` on the
+same line is still refused.
+
+The library's own `.py` and `.sh`, `hooks/` and `git_hooks/` stay out: they
+install into other people's trees, where a sweep is a change of shipped
+behaviour rather than a reference repair. `tests/`, `packages/` and `scripts/`
+are out for now — the same sweep, one tree at a time, because judging a tree
+nobody has swept only reports a backlog.
 
 ## Diagrams
 

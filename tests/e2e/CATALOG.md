@@ -1366,7 +1366,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-1853*
 
-- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a tracker id has crept back into prose the library ships to other projects or into a doc a reader of this repository opens
+- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a tracker id has crept back into prose the library ships to other projects, into a doc a reader of this repository opens, or into `src/`
 - **cmds**
 
   ```console

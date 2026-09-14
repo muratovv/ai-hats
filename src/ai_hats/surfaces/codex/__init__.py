@@ -1,4 +1,4 @@
-"""OpenAI Codex CLI surface plugin for ai-hats (HATS-1531)."""
+"""OpenAI Codex CLI surface plugin for ai-hats."""
 
 from __future__ import annotations
 

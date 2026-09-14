@@ -12,7 +12,7 @@ four hand-rolled fallbacks inside the hook scripts themselves, and the two
 shell guards not at all — so on agy they read an empty command and allowed it.
 
 One direction more than Codex needs: a verdict may REWRITE the tool's input
-(the consent ticket, HATS-1642), and the rewrite has to leave in the key the
+(the consent ticket), and the rewrite has to leave in the key the
 surface spoke in.
 """  # comment-length: allow — which side owns the bridge is the contract
 

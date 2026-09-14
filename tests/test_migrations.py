@@ -34,12 +34,12 @@ def test_registry_completeness_covers_all_historical_migrations():
     """
     expected_labels = {
         "yaml normalize (strip deprecated fields)",
-        "gitignore HATS-317 cleanup",
+        "gitignore cleanup",
         "obsolete files cleanup",
-        "heal external refs HATS-397",
+        "heal external refs",
         "claude.md → v3 scaffold (retired, no-op)",
         "layout v4 (sessions+tracker+library)",
-        "drop orphaned claude.md scaffold HATS-1201",
+        "drop orphaned claude.md scaffold",
     }
     actual_labels = {m.label for m in MIGRATIONS}
     assert expected_labels.issubset(actual_labels), (

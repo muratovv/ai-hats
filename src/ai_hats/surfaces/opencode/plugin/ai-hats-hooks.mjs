@@ -1,4 +1,4 @@
-// ai-hats session dispatcher plugin for OpenCode (HATS-1788, HATS-1792).
+// ai-hats session dispatcher plugin for OpenCode.
 //
 // Materialized into the ai-hats session cache and registered through the
 // session-scoped OPENCODE_CONFIG `plugin` array as a file:// URL. The composed
@@ -18,7 +18,7 @@
 //                                          manifest, which it refuses while
 //                                          naming AI_HATS_GATE_BROKEN_ACK
 //
-// Permission semantics (HATS-1792):
+// Permission semantics:
 //   - native asks surface on the bus as permission.asked events; the typed
 //     `permission.ask` plugin hook is not wired in opencode 1.18.x
 //   - first manifest `permissions` rule matching the request decides;

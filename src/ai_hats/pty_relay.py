@@ -1,4 +1,4 @@
-"""FD-gated PTY tap implementation for ai-hats (HATS-1197).
+"""FD-gated PTY tap implementation for ai-hats.
 
 Permits an outer process (e.g. a relay server or daemon) to drive an interactive
 HITL session PTY over file descriptors passed via environment variables

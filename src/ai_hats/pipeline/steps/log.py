@@ -5,10 +5,10 @@ Both share the same body — only the step name and YAML-position differ.
 in the IO contract so missing keys are silently skipped.
 
 Long values get truncated by ``pipeline.trace.safe_repr`` (shared with
-the trace-mode emitter; HATS-274) — generalized safety net against
+the trace-mode emitter) — generalized safety net against
 accidentally dumping multi-KB state (system_prompt, prompt_text,
-transcripts) into stderr. Originally fixed twice (HATS-267 system_prompt,
-HATS-269 prompt_text) before being made systemic.
+transcripts) into stderr. Originally fixed twice — once for system_prompt,
+once for prompt_text — before being made systemic.
 
 failure_policy=continue — logging must never abort the surrounding flow.
 """

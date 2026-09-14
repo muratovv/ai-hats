@@ -1,11 +1,11 @@
-"""The entry point every installed git hook delegates to (HATS-1337).
+"""The entry point every installed git hook delegates to.
 
 **This module path is a frozen contract**: `.githooks/<event>` stubs in the field
 name it literally and are never re-installed, so renaming it silently disables
 every git gate in every project composed before the rename (pinned by
 `test_githooks_stub.py`). A module and never a subcommand — an unregistered
 subcommand reads as a bare prompt and launches a provider session
-(`_PassthroughGroup`, HATS-1202); a module path either imports or raises, and
+(`_PassthroughGroup`); a module path either imports or raises, and
 raising is the fail-open path.
 """
 
@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Resolved FIRST, before anything that can refuse: every branch
     # below either records a skip or refuses, and one resolved after them could
-    # not record its own. HATS-1597 already wanted it before composition.
+    # not record its own. Resolving it early was already wanted before composition.
     journal: Path | None = None
     hooks_root = builtin_library_hooks(project_dir)
     candidate = None if hooks_root is None else hooks_root / GITHOOKS_BYPASS_JOURNAL
@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
 
         The hatch is read HERE so the message can only ever name a flag that
         works — a deny leaving the human nowhere to go just produces
-        `--no-verify`, which disarms the whole chain (ADR-0020 D3, HATS-1828).
+        `--no-verify`, which disarms the whole chain (ADR-0020 D3).
         """
         if os.environ.get(GATE_BROKEN_ACK_ENV):
             record_fail_open(

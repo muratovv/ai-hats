@@ -1,7 +1,7 @@
 """Shared session-window helpers used by builder and reminder.
 
-HATS-212 introduced the [start_ts, end_ts] window for retro artifacts.
-HATS-214 reuses the same logic for the wrap-up nudge — keep both consumers
+The [start_ts, end_ts] window was introduced for retro artifacts, and
+the wrap-up nudge reuses the same logic — keep both consumers
 in lockstep by living in one place.
 """
 
@@ -24,7 +24,7 @@ def parse_session_start(session_id: str) -> datetime:
 
     Kept independent of ``ai_hats_observe.artifacts.session_start_dt`` — see
     ``paths._discovery.session_start_ts`` for why the integrator cannot import
-    a symbol newer than observe's published version (HATS-1248).
+    a symbol newer than observe's published version.
     """
     sid = strip_session_prefix(session_id)
     try:
@@ -37,7 +37,7 @@ def compute_session_end(session_start: datetime, session_dir: Path, session_id: 
     """Read metrics.json:duration_s; fall back to now(UTC) with a log line.
 
     The window upper bound matters: without it artifacts and tasks_closed
-    leak into repo-wide history (HATS-212).
+    leak into repo-wide history.
     """
     metrics_path = session_dir / METRICS_JSON
     if metrics_path.exists():
@@ -58,7 +58,7 @@ def compute_session_end(session_start: datetime, session_dir: Path, session_id: 
 def tasks_closed_in_window(layout: ProjectLayout, since: datetime, until: datetime) -> list[str]:
     """Return IDs of tasks whose `completed_at` falls in [since, until], state=done.
 
-    Loud by design (HATS-1259): a read that cannot be performed raises rather than
+    Loud by design: a read that cannot be performed raises rather than
     reporting "nothing closed". The wrap-up nudge tolerates that at the UX boundary
     (``auto_retro.make_decision``); ``session retro`` should not.
     """
@@ -99,7 +99,7 @@ def session_cut(layout: ProjectLayout, session_id: str) -> datetime:
     """Upper bound of what existed for a session: start + duration_s, or end of start day when duration_s is absent.
 
     Distinct from ``compute_session_end``: its fallback is ``now()``, which (a) fails to truncate on historic runs
-    and (b) gives runner and inbox-validator different candidate sets (HATS-1445).
+    and (b) gives runner and inbox-validator different candidate sets.
     Unparseable session IDs return datetime.max (fail-open: retain all cards).
     """
 

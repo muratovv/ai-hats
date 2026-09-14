@@ -58,7 +58,7 @@ def main() -> int:
 def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout) -> int:
     """Run the session-reviewer pipeline in-process; return an exit code.
 
-    Extracted from ``main()`` (HATS-1402) so a caller like
+    Extracted from ``main()`` so a caller like
     ``MaybeSpawnSessionReviewer``'s ``background: false`` branch can run it
     synchronously in-process instead of only via the CLI subprocess.
     """
@@ -129,7 +129,7 @@ def run_session_review(session_id: str, max_retries: int, layout: ProjectLayout)
     return 0
 
 
-# ---- shared doc parse (HATS-1369: one parse, shared by harness_check + harvest) ----
+# ---- shared doc parse (one parse, shared by harness_check + harvest) ----
 
 _MISSING_ISSUE = "output file missing or empty"
 

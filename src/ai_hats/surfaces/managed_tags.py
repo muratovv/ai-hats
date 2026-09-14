@@ -1,12 +1,12 @@
-"""Removing ai-hats' own entries from a harness settings file (HATS-833).
+"""Removing ai-hats' own entries from a harness settings file.
 
 A surface tags every settings entry it writes as ai-hats-owned; this is the other
 half — drop the tags no longer wanted, leave what a person wrote alone.
 
 Two readers is why it sits at the area's boundary and not inside one
 implementation: a surface sweeping its own session, and ``ai_hats.sweeper``
-doing the same for agy's pre-HATS-1166 remnant under a different tag key —
-which until HATS-1826 it did by calling a private method past the contract.
+doing the same for agy's pre-native remnant under a different tag key —
+which it used to do by calling a private method past the contract.
 """
 
 from __future__ import annotations

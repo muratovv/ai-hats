@@ -1,4 +1,4 @@
-"""Contract tests for the OpenCode surface (HATS-1788)."""
+"""Contract tests for the OpenCode surface."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def test_context_hitl_materializes_session_agent(tmp_path: Path) -> None:
 
 
 def test_context_config_carries_no_permission_keys(tmp_path: Path) -> None:
-    """HATS-1792: work policy lives in the role's manifest, not the config."""
+    """Work policy lives in the role's manifest, not the config."""
     provider = OpenCodeSurface()
     project = _project(tmp_path)
 
@@ -180,7 +180,7 @@ def test_skills_mirror_lands_in_session_cache_with_path_env(tmp_path: Path) -> N
 
 
 def test_skills_mirror_is_natively_discoverable_via_xdg(tmp_path: Path) -> None:
-    """HATS-1791: the mirror lives under the redirected config dir."""
+    """The mirror lives under the redirected config dir."""
     provider = OpenCodeSurface()
     project = _project(tmp_path)
     result = _fake_result(skills=[_make_skill(tmp_path, "hatrack")])
@@ -200,7 +200,7 @@ def test_skills_mirror_is_natively_discoverable_via_xdg(tmp_path: Path) -> None:
 def test_base_config_home_is_projected_not_mutated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """HATS-1791: user-owned entries stay reachable via symlinks, never written."""
+    """User-owned entries stay reachable via symlinks, never written."""
     base = tmp_path / "base-config"
     base_opencode = base / "opencode"
     (base_opencode / "skills" / "user-own-skill").mkdir(parents=True)

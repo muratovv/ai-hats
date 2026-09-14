@@ -1,7 +1,7 @@
-"""The agy→claude bridge, in the shape codex already proved (HATS-1776).
+"""The agy→claude bridge, in the shape codex already proved.
 
 Three translations, and the third is where agy goes past codex's precedent: a
-verdict may REWRITE the tool's input (the consent ticket, HATS-1642), so the
+verdict may REWRITE the tool's input (the consent ticket), so the
 answer has to leave in the key the surface spoke in.
 """
 
@@ -97,7 +97,7 @@ class TestRequestDirection:
 
 class TestDecisionDirection:
     def test_a_rewritten_input_leaves_in_the_key_the_surface_spoke(self):
-        """HATS-1642, now owned by the bridge instead of by the gate: agy spells
+        """The consent ticket, now owned by the bridge instead of by the gate: agy spells
         the argument `CommandLine`, and a ticket written back as `command` is a
         consent gate that silently stops arming."""
         decision = {

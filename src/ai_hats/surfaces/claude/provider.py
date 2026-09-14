@@ -59,7 +59,7 @@ def _entry_matcher(rows: list[dict[str, str]]) -> str:
 
     `*` would be one character and costs ~45 ms on every call no gate wants —
     a dispatcher spawned to find that nothing matched, where the harness spawns
-    nothing at all (measured on `Read`, HATS-1874).
+    nothing at all (measured on `Read`).
     """
     alternatives = [name for row in rows for name in row["matcher"].split("|")]
     if any(name in ("", "*") for name in alternatives):
@@ -77,7 +77,7 @@ class SettingsFinding:
     replacement: str
 
 
-# ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----
+# ----- Claude settings lint (docs/session-start-notices.md) -----
 
 # Claude Code >=2.1.210: file-permission checks match only Edit()/Read() rules.
 DEPRECATED_RULE_TOOLS: tuple[tuple[str, str], ...] = (
@@ -177,12 +177,12 @@ class ClaudeSurface(Surface):
         )
 
     def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
-        """HATS-1170/1238: Claude uses per-session prompt cache; no root CLAUDE.md managed."""
+        """Claude uses per-session prompt cache; no root CLAUDE.md managed."""
         del layout
         return None
 
     def update_system_prompt(self, layout: ProjectLayout, content: str) -> Path | None:
-        """HATS-1170: Claude uses session-cache prompt, root CLAUDE.md is untouched."""
+        """Claude uses session-cache prompt, root CLAUDE.md is untouched."""
         del layout, content
         return None
 
@@ -244,14 +244,14 @@ class ClaudeSurface(Surface):
         return layout.cache.session(session_id) / "plugin"
 
     def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
-        """HATS-1540: writer and reader share this, so the two cannot drift."""
+        """Writer and reader share this, so the two cannot drift."""
         return claude_plugin_skills_dir(self._plugin_dir(layout, session_id))
 
     def _materialize_plugin(
         self, layout: ProjectLayout, session_id: str, result, artifacts
     ) -> Path:
         # Not via materialize_runtime_skills: that is a published extension point
-        # and cannot take the port (HATS-1211 / HATS-1207 R4).
+        # and cannot take the port.
         from .plugin_dir import materialize_plugin_dir
 
         self._cache_dir(layout, session_id, artifacts)
@@ -281,7 +281,7 @@ class ClaudeSurface(Surface):
         cache_dir = self._cache_dir(layout, session_id, artifacts)
         cache_settings = cache_dir / "settings.json"
         # SKILLS precedes HOOKS in ArtifactCategory, so the mirror this points
-        # into is already written (scripts before wiring, HATS-1123).
+        # into is already written (scripts before wiring).
         skills_dir = claude_plugin_skills_dir(cache_dir / "plugin")
         rows = materialize_hook_manifest(
             result,
@@ -342,7 +342,7 @@ class ClaudeSurface(Surface):
 
         Built by the same call the engine makes, so the record cannot name a
         smaller set than the sub-agent receives. ``work_dir`` is the one input
-        a report cannot have (HATS-1552).
+        a report cannot have.
         """
         return AutomateLaunch(
             launch=describe_options(
@@ -368,7 +368,7 @@ class ClaudeSurface(Surface):
         return ClaudeSubagentEngine(self)
 
     def _build_full_content(self, layout: ProjectLayout, prompt_content: str) -> str:
-        """Build prompt content without splicing root CLAUDE.md (HATS-704 / HATS-1170)."""
+        """Build prompt content without splicing root CLAUDE.md."""
         return f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
 
     def materialize_runtime_skills(
@@ -390,7 +390,7 @@ class ClaudeSurface(Surface):
         from .plugin_dir import materialize_plugin_dir
 
         # A published extension point cannot carry the port, so this path always
-        # writes — it is one of the builder bypasses HATS-1207 removes.
+        # writes — it is one of the builder bypasses the refactor removes.
         plugin_dir = self._plugin_dir(layout, session_id)
         materialize_plugin_dir(result.name, result.skills, layout, plugin_dir, ApplyMaterializer())
         return ["--plugin-dir", str(plugin_dir)]
@@ -422,7 +422,7 @@ class ClaudeSurface(Surface):
         """One warm dispatcher for the session instead of one per tool call.
 
         Measured on a composed maintainer session: 125 ms per gated call spawned,
-        94 ms asked — against 72 ms for the gates alone (HATS-1874).
+        94 ms asked — against 72 ms for the gates alone.
         """
         from .hook_server import HookServer
 
@@ -452,7 +452,7 @@ class ClaudeSurface(Surface):
     def ensure_runtime_hooks(
         self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
     ) -> None:
-        """HATS-1170: Managed runtime hooks are written to session cache settings via
+        """Managed runtime hooks are written to session cache settings via
         build_session_artifacts, NOT to project-root .claude/settings.json.
         """
         pass
@@ -460,7 +460,7 @@ class ClaudeSurface(Surface):
     def runtime_wiring_changes(
         self, layout: ProjectLayout, result: CompositionResult | None = None
     ) -> list[tuple[str, str]]:
-        """HATS-1170: Project-root .claude/settings.json is no longer written or tracked."""
+        """Project-root .claude/settings.json is no longer written or tracked."""
         return []
 
     @staticmethod
@@ -483,7 +483,7 @@ class ClaudeSurface(Surface):
 
         One entry per event: WHICH gates a call matched is the dispatcher's to
         answer from the manifest, and the harness only has to deliver the call.
-        An event the composition binds nothing to gets no entry (HATS-1874).
+        An event the composition binds nothing to gets no entry.
         """
         return {
             event: [
@@ -525,7 +525,7 @@ class ClaudeSurface(Surface):
                 # Exact basename match — NOT endswith. A user file whose name
                 # merely ends with ours (e.g. ``my_pre_bash_shared_state_guard.sh``)
                 # is a DIFFERENT script and must not suppress our managed entry
-                # (that would silently drop the HATS-437 guard). rsplit drops any
+                # (that would silently drop the guard). rsplit drops any
                 # ``$CLAUDE_PROJECT_DIR/`` / directory prefix.
                 if str(hook.get("command", "")).rsplit("/", 1)[-1] == want_basename:
                     return False  # user already wired this exact script — respect it
@@ -541,7 +541,7 @@ class ClaudeSurface(Surface):
         """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.
 
         Any ai-hats hook in user-global settings is a leak (double-fires + 404s
-        off project-root, HATS-961). Matched by command substring — not the
+        off project-root). Matched by command substring — not the
         ``_ai_hats_managed`` tag — so a half-migrated mix of tagged/untagged
         entries is caught. Pure: returns the commands (empty when absent /
         unreadable / clean), never prints or mutates.
@@ -574,7 +574,7 @@ class ClaudeSurface(Surface):
     def settings_lint_warnings(self, layout: ProjectLayout) -> list[str]:
         """One warning per deprecated permission rule in the Claude settings
         chain (user-global + project + local). Warn-only — the settings files
-        are user-owned and never mutated (HATS-1006)."""
+        are user-owned and never mutated."""
         project_dir = layout.root
         findings = lint_settings_files(
             [

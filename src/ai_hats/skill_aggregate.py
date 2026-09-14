@@ -1,4 +1,4 @@
-"""HATS-871 / T11 — advisory aggregate skill-consistency reporter (ADR-0014).
+"""Advisory aggregate skill-consistency reporter (ADR-0014).
 
 Composes ALL skill/rule sources (builtin library + engine ``ai_hats.skills``
 sources + overlays) and REPORTS — never blocks — cross-cutting issues no single

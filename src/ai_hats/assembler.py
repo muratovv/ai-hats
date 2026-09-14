@@ -1,7 +1,7 @@
 """Assembly engine — yaml-only role mutations + per-session compose.
 
-HATS-407 trimmed the legacy backup / clean / copy_components / verify
-side-effects: with HATS-294's per-session compose, framework content
+The legacy backup / clean / copy_components / verify side-effects were
+trimmed: with per-session compose, framework content
 never lands in the canonical tree, so the heavy assembly cycle became
 dead-work. ``set_role`` is now a session-bootstrap helper for runtime;
 the CLI surface uses :meth:`Assembler.set_default_role` which mutates
@@ -81,7 +81,7 @@ def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozense
     """Return basenames of hooks the framework owns in ``library/hooks/``.
 
     Union of the project's ``library/hooks/.manifest`` (the only source that
-    knows skill-declared hooks — HATS-597) and the shipped package-data
+    knows skill-declared hooks) and the shipped package-data
     guards, so neither a stale manifest nor a broken install can evict what
     the other still vouches for. ``project_dir=None`` / no manifest yields
     package data alone — the pre-v4 project the v4 partition exists for.
@@ -89,7 +89,7 @@ def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozense
     Consumers treat everything NOT in this set as user-owned: the v4
     partition moves it to ``user-hooks/``, the healer drops its
     settings.json entry. Sourcing it from package data alone evicted every
-    skill-declared hook while its wiring stayed — HATS-1123.
+    skill-declared hook while its wiring stayed.
     """
     names: set[str] = set()
     try:
@@ -138,7 +138,7 @@ class Assembler:
             project_dir, os.environ, ai_hats_dir=self.project_config.ai_hats_dir
         )
         # Read-path net for a hand-edited ai-hats.yaml: the schema no longer
-        # validates ``provider`` (HATS-863 severed schema→providers).
+        # validates ``provider`` (the schema→providers link was severed).
         if self.project_config.provider:
             self._validate_provider(self.project_config.provider)
 
@@ -196,7 +196,7 @@ class Assembler:
         return worktree_local_libraries(self.project_dir)
 
     def _cleanup_legacy_claude_publish(self) -> None:
-        """Thin seam over the shared legacy sweeps (HATS-905, HATS-1172): the generic
+        """Thin seam over the shared legacy sweeps: the generic
         unclaimed-marker sweeper runs the same procedures at bump; this path
         keeps them firing on every refresh as before."""
         drop_legacy_skills_mirror(self.project_dir)
@@ -205,12 +205,12 @@ class Assembler:
 
     @staticmethod
     def _cleanup_obsolete_files(layout: ProjectLayout) -> list[str]:
-        """Delete files retired by previous releases (HATS-285 — moved from CLI).
+        """Delete files retired by previous releases (moved from CLI).
 
         Each entry: (relative path, human reason). Idempotent — missing
         files are skipped silently.
 
-        HATS-407: sweeps stale ``.last_backup`` pointer files (and the
+        Sweeps stale ``.last_backup`` pointer files (and the
         ``/tmp/ai-hats-backup-*`` dirs they reference) left behind by the
         retired ``Assembler._backup()`` chain. Both the v3 legacy
         location (``.agent/.last_backup``) and the v4 location
@@ -252,8 +252,8 @@ class Assembler:
             # ``tempfile.mkdtemp(prefix="ai-hats-backup-")``. Defensively
             # restrict cleanup to absolute paths whose basename carries
             # that prefix — a corrupt or hand-edited pointer cannot
-            # redirect cleanup at the user's project tree. HATS-470:
-            # the /tmp target lands in safe_delete's well-known-prefix
+            # redirect cleanup at the user's project tree. The /tmp
+            # target lands in safe_delete's well-known-prefix
             # shortcut (_is_under_tmp), so it's hard-deleted directly
             # rather than copied into trash session.
             if backup_ref.is_file():
@@ -310,7 +310,7 @@ class Assembler:
         Re-running init with a `task_prefix` that conflicts with the
         value already in `ai-hats.yaml` is rejected.
 
-        Bootstrap-time-only knobs (HATS-347 wizard):
+        Bootstrap-time-only knobs (wizard):
         - ``ai_hats_dir`` — relocate the framework directory before any
           dirs are created. Default is ``.agent/ai-hats``.
         - ``venv_path`` — point ai-hats at a user-owned venv instead of
@@ -369,7 +369,7 @@ class Assembler:
         if early_delta:
             # Surface must be set before the first save (yaml rejects none).
             # Requested value, else claude — the sole builtin (agy/cline are
-            # out-of-tree, maybe uninstalled; HATS-1093).
+            # out-of-tree, maybe uninstalled).
             if not self.config_path.exists() and not self.project_config.provider:
                 early_delta["provider"] = provider or PROVIDER_CLAUDE
             self.save_config(**early_delta)
@@ -381,7 +381,7 @@ class Assembler:
         for subdir in (self.layout.library.rules, self.layout.library.skills):
             subdir.mkdir(parents=True, exist_ok=True)
 
-        # HATS-469 R2: capture greenfield state BEFORE the ai-hats.yaml
+        # Capture greenfield state BEFORE the ai-hats.yaml
         # save block below consumes ``config_path.exists()`` as a signal.
         # Used downstream for:
         #   - migration_step=latest seeding (greenfield only)
@@ -389,7 +389,7 @@ class Assembler:
         #   - skipping _run_v07_migration on greenfield (nothing to heal)
         greenfield = not self.config_path.exists()
 
-        # Create/update ai-hats.yaml (delta-write, HATS-526)
+        # Create/update ai-hats.yaml (delta-write)
         delta: dict[str, Any] = {}
         if greenfield:
             delta["provider"] = provider or PROVIDER_CLAUDE
@@ -420,11 +420,11 @@ class Assembler:
         if not state_md.exists():
             state_md.write_text("# Task State\n\nNo active tasks.\n")
 
-        # HATS-1201: the CLAUDE.md heal is gone with the scaffold (HATS-1170);
+        # The CLAUDE.md heal is gone with the scaffold;
         # the legacy `.claude/` sweeps stay on the per-refresh path.
         self._cleanup_legacy_claude_publish()
 
-        # HATS-469 R2: greenfield invariant — migration_step MUST be
+        # Greenfield invariant — migration_step MUST be
         # seeded to latest BEFORE _refresh. Otherwise run_pending would
         # replay every migration on empty files
         # (``_strip_legacy_managed_block`` on a non-existent ``.gitignore``,
@@ -438,18 +438,18 @@ class Assembler:
 
             if self.project_config.migration_step != latest_step():
                 raise RuntimeError(
-                    "HATS-469 R2: greenfield init must seed migration_step "
+                    "Greenfield init must seed migration_step "
                     "to latest BEFORE _refresh; otherwise registry replays "
                     "on empty files. Current value: "
                     f"{self.project_config.migration_step!r}, "
                     f"expected: {latest_step()!r}."
                 )
 
-        # HATS-469 R6: re-init on a v0.6 layout must heal BEFORE _refresh
+        # Re-init on a v0.6 layout must heal BEFORE _refresh
         # fires the registry (run_pending step 6 = ``_migrate_layout_v4``
         # would otherwise run against a still-v0.6 tree). Defaults
         # (force=False, check_branches=False) match the previous auto-bump
-        # behaviour from cli/assembly.py:245-259 (now removed by R6).
+        # behaviour from cli/assembly.py:245-259 (since removed).
         # User-edits trip ``AssemblyError`` with per-file guidance; user
         # re-runs with ``ai-hats self bump --migrate-force`` to override.
         # Greenfield: skip — nothing to migrate.
@@ -464,9 +464,9 @@ class Assembler:
         # (and the post-init session reads the right value). Compose result
         # is passed through to _refresh which installs role git hooks.
         #
-        # HATS-469 R8 (audit): on re-init WITHOUT CLI ``-r`` we still
+        # Audit: on re-init WITHOUT CLI ``-r`` we still
         # compose for the effective role (``active_role`` falls back to
-        # ``default_role``). The pre-HATS-469 auto-bump path did this
+        # ``default_role``). The previous auto-bump path did this
         # implicitly via ``asm.bump()`` (which read
         # ``active_role or default_role``); without it, re-init on an
         # existing project with a saved role would silently SKIP
@@ -482,7 +482,7 @@ class Assembler:
 
         # Single entry-point for all heal/install work.
         # install_time=True → registry fires (gated by migration_step;
-        # greenfield no-ops via the R2 seed above).
+        # greenfield no-ops via the migration_step seed above).
         self._refresh(install_time=True, result=result)
 
     def _resolve_init_harness(
@@ -553,7 +553,7 @@ class Assembler:
         """Role's base traits with global-then-project-then-runtime overlay edits applied.
 
         One home for a walk `config status` and the audit snapshot both need —
-        two copies would have to agree forever (HATS-1435).
+        two copies would have to agree forever.
         """
         base_cfg = self.resolver.resolve_role_config(role_name)
         traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
@@ -574,7 +574,7 @@ class Assembler:
         return traits
 
     def _get_overlays(self, role_name: str) -> list[OverlayConfig]:
-        """Return the ordered list of overlay layers for a role (HATS-421).
+        """Return the ordered list of overlay layers for a role.
 
         Order: ``[global, project]`` — global applied first, project
         applied last. ``compose`` runs ``_apply_overlay`` per layer in this
@@ -594,7 +594,7 @@ class Assembler:
         return layers
 
     def _classify_component_layer(self, path: Path | None) -> ComponentLayer:
-        """Classify a resolved component directory path into a ComponentLayer enum (HATS-525)."""
+        """Classify a resolved component directory path into a ComponentLayer enum."""
         return classify_component_layer(
             path,
             project_dir=self.project_dir,
@@ -619,7 +619,7 @@ class Assembler:
         so that a name added by global and re-added by project surfaces as
         ``project`` (last-wins), matching the composer's final state.
 
-        ``result`` must be the composition OF ``role_name`` — HATS-1435.
+        ``result`` must be the composition OF ``role_name``.
         """
         provenance: dict[str, dict[str, str]] = {"traits": {}, "rules": {}, "skills": {}}
 
@@ -675,7 +675,7 @@ class Assembler:
     ) -> CompositionResult:
         """CLI-surface: set the project's ``default_role`` in ``ai-hats.yaml``.
 
-        HATS-407: ``ai-hats config set -r X`` reduces to a yaml field write.
+        ``ai-hats config set -r X`` reduces to a yaml field write.
         Validation is a dry-run compose (so unknown roles / missing components
         surface before the yaml is touched) but NO canonical materialization,
         backup, copy, or hook-install side-effects happen here.
@@ -716,17 +716,17 @@ class Assembler:
 
         Called by :class:`Runtime` on the first session of a fresh project (or
         on provider switch) to bring on-disk state into a usable shape: the
-        canonical user-rules aggregator and skill-contributed git hooks
-        (HATS-088). NOT invoked by the CLI surface — use
+        canonical user-rules aggregator and skill-contributed git hooks.
+        NOT invoked by the CLI surface — use
         :meth:`set_default_role` for that.
 
-        HATS-469: delegated to :meth:`_refresh` (install_time=False — runtime
+        Delegated to :meth:`_refresh` (install_time=False — runtime
         bootstrap does not re-run migrations; init/bump already did). The
         Agy inline-prompt path and ``active_role``/``provider`` persist
         stay here as set_role-only concerns.
 
-        HATS-407: backup/clean/copy_components/verify side-effects were
-        removed; per-session compose (HATS-294) means framework content is
+        Backup/clean/copy_components/verify side-effects were
+        removed; per-session compose means framework content is
         never materialized into the canonical tree. The Agy inline-prompt
         path is retained as a known asymmetry (no scaffold-template
         equivalent for bare-agy in project_dir).
@@ -754,7 +754,7 @@ class Assembler:
         # (migrations replay only via init/do_bump). _refresh handles
         # write_canonical, ensure_runtime_hooks, and the HooksManager
         # materializers (runtime / worktree / git). Diagnostics are NOT
-        # called from here — runtime auto-trigger stays silent (HATS-469 R3).
+        # called from here — runtime auto-trigger stays silent.
         self._refresh(install_time=False, result=result, warnings_sink=warnings_sink)
 
         # Surface inline system prompt. Agy writes ./GEMINI.md; Claude and
@@ -771,7 +771,7 @@ class Assembler:
     def status(self) -> dict:
         """Get current status: role, dependency tree, health.
 
-        HATS-407: surfaces both ``default_role`` (user-intent persisted by
+        Surfaces both ``default_role`` (user-intent persisted by
         the CLI) and ``active_role`` (runtime cache written on session
         start). The composite ``role`` field resolves the effective role
         the next session would use, mirroring runtime resolution order.
@@ -804,7 +804,7 @@ class Assembler:
         result: CompositionResult | None,
         warnings_sink: list[str] | None = None,
     ) -> None:
-        """Single idempotent entry-point for on-disk state pull-up (HATS-469).
+        """Single idempotent entry-point for on-disk state pull-up.
 
         One method, called from every public entry-point that brings the project
         tree to a consistent shape.
@@ -816,7 +816,7 @@ class Assembler:
                 via init or a prior bump.
             result: composition for the active role, or ``None`` (legacy
                 bare-bump / init without ``-r``). When provided AND ``.git/``
-                exists, role-specific git hooks (HATS-088) are installed.
+                exists, role-specific git hooks are installed.
 
         Concurrency: per the migrations.py migration contract, under N parallel
         ``init`` / ``set_role`` / ``bump`` processes every method invoked here
@@ -825,7 +825,7 @@ class Assembler:
 
         Diagnostics (``_warn_orphan_*`` / ``_note_empty_*``) are NOT part of
         refresh — they live in :meth:`_run_diagnostics`, firing only on
-        user-initiated paths (HATS-469 R3: per-session orphan spam = bad UX).
+        user-initiated paths (per-session orphan spam = bad UX).
         """
         # 1. Migration registry — install_time only.
         if install_time:
@@ -848,7 +848,7 @@ class Assembler:
         self.hooks.materialize(result, warnings_sink=warnings_sink)
 
     def _sweep_unclaimed_markers(self) -> None:
-        """Thin seam onto :func:`sweeper.run_unclaimed_sweep` (HATS-905)."""
+        """Thin seam onto :func:`sweeper.run_unclaimed_sweep`."""
         from . import sweeper
 
         sweeper.run_unclaimed_sweep(
@@ -870,7 +870,7 @@ class Assembler:
         NOT called from:
 
         - :meth:`set_role` — runtime auto-trigger; must be silent
-          (HATS-469 R3: orphan-warning every session = bad UX).
+          (orphan-warning every session = bad UX).
         - Greenfield ``init`` — nothing to diagnose on a fresh project.
         """
         self._warn_orphan_user_level_managed_skills()
@@ -882,7 +882,7 @@ class Assembler:
         self._check_venv_consistency()
 
     def _note_empty_legacy_agent_dir(self) -> None:
-        """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
+        """Print a NOTE if `.agent/` only holds the managed `ai-hats/`.
 
         After the v4 layout migration, every legacy artefact has moved under
         `<ai_hats_dir>/`. The wrapper directory `.agent/` (which holds the
@@ -913,19 +913,19 @@ class Assembler:
         )
 
     def _migrate_layout_v4(self) -> None:
-        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        """v4-layout migration step (logic in migrations.py)."""
         from . import migrations
 
         migrations.migrate_layout_v4(self)
 
     def _migrate_layout_v4_library(self) -> None:
-        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        """v4-layout migration step (logic in migrations.py)."""
         from . import migrations
 
         migrations.migrate_layout_v4_library(self)
 
     def _migrate_layout_v4_hooks_partition(self) -> None:
-        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        """v4-layout migration step (logic in migrations.py)."""
         from . import migrations
 
         migrations.migrate_layout_v4_hooks_partition(self)
@@ -933,7 +933,7 @@ class Assembler:
     def _safe_discard_with_warn(self, path: Path, *, reason: str) -> None:
         """Wrap :func:`_safe_discard` with a stderr WARN on failure.
 
-        HATS-549 review S.4: on a read-only filesystem (some CI gates)
+        On a read-only filesystem (some CI gates)
         ``_safe_discard`` fails silently, leaving the caller's flow
         in partial-state limbo. The WARN ensures the user sees the
         problem instead of triaging mysterious downstream errors.
@@ -957,19 +957,19 @@ class Assembler:
     def _ai_hats_owned_hook_basenames(self) -> frozenset[str]:
         """Hook basenames the framework owns in THIS project's ``library/hooks/``.
 
-        Project-scoped since HATS-1123 (was a static reading package data
+        Project-scoped (was a static reading package data
         only, which classified every skill-declared hook as user-owned).
         """
         return _ai_hats_owned_hook_basenames(self.project_dir)
 
     def _migrate_layout_v4_tracker(self) -> None:
-        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        """v4-layout migration step (logic in migrations.py)."""
         from . import migrations
 
         migrations.migrate_layout_v4_tracker(self)
 
     def _migrate_layout_v4_sessions(self) -> None:
-        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        """v4-layout migration step (logic in migrations.py)."""
         from . import migrations
 
         migrations.migrate_layout_v4_sessions(self)
@@ -981,7 +981,7 @@ class Assembler:
         - new_abs is a dir → copy items missing on the new side, then drop old.
         - new_abs is a file → assume already migrated; remove the stale source.
 
-        HATS-470: collision-side drops (old beats new) route through
+        Collision-side drops (old beats new) route through
         safe_delete so the loser side is recoverable from trash.
         Converted from ``@staticmethod`` because trash recording wants
         ``self.project_dir`` for relpath preservation.
@@ -1035,7 +1035,7 @@ class Assembler:
         """Raise ValueError if `provider_name` is not a registered or known provider.
 
         Lookup only: ai-hats used to try to install an uninstalled surface here
-        before refusing — that bypass is closed (HATS-1826).
+        before refusing — that bypass is closed.
         """
         from .surface_registry import PROVIDER_ALIASES, is_surface_installed, surface_names
 
@@ -1049,7 +1049,7 @@ class Assembler:
     def _build_tree(self, result: CompositionResult) -> dict:
         """Build a dependency tree representation.
 
-        HATS-421: includes a ``provenance`` map ``{traits|rules|skills:
+        Includes a ``provenance`` map ``{traits|rules|skills:
         {name: "built-in"|"global"|"project"}}`` so ``config status`` can
         annotate each node with which layer contributed it. The traits
         list is also surfaced here (it doesn't otherwise appear in the
@@ -1071,9 +1071,9 @@ class Assembler:
 
     def _check_health(self, result: CompositionResult) -> dict[str, str]:
         """Check artefacts on disk — namely the provider system prompt if the
-        configured provider manages one (HATS-1238).
+        configured provider manages one.
 
-        Rules/skills/hooks are composed in memory per session (HATS-294/407),
+        Rules/skills/hooks are composed in memory per session,
         so there is nothing else to probe.
         """
         del result  # composition is checked in-memory via composer.compose
@@ -1098,7 +1098,7 @@ class Assembler:
         return health
 
     def user_rules(self) -> tuple[Path, ...]:
-        """Project-authored rule files for this project (HATS-1203).
+        """Project-authored rule files for this project.
 
         Owned here, not in the compose facade, so ``compose_for_role`` stays
         free of filesystem work and a mocked Assembler cannot drag path
@@ -1118,8 +1118,8 @@ class Assembler:
 
         Project-authored rules reach the agent through the composed prompt's
         ``## USER RULES`` section; the ``imports.md`` aggregator written here
-        until HATS-1203 had no reader once HATS-1170 dropped the root
-        ``CLAUDE.md`` scaffold that imported it. Anything a prior layout left
+        previously had no reader once the root ``CLAUDE.md`` scaffold that
+        imported it was dropped. Anything a prior layout left
         behind is swept below, ``user-rules/`` excepted.
         """
         canonical = self._canonical_dir
@@ -1127,7 +1127,7 @@ class Assembler:
         (canonical / USER_RULES_SUBDIR).mkdir(exist_ok=True)
 
         # Sweeps the v0.6 framework files (priorities/role/traits/rules/
-        # skills_index) and, since HATS-1203, imports.md.
+        # skills_index) and imports.md.
         new_paths: set[str] = set()
         previous = self._read_canonical_manifest(canonical / CANONICAL_MANIFEST)
         for stale in previous - new_paths:
@@ -1166,9 +1166,9 @@ class Assembler:
         return True
 
     def _run_v07_migration(self, *, force: bool, check_branches: bool) -> None:
-        """HATS-415 inline v0.6 → v0.7 migration. Called from ``bump()``.
+        """Inline v0.6 → v0.7 migration. Called from ``bump()``.
 
-        Replaces the naive HATS-408 ``_refuse_on_v06_layout`` gate with a
+        Replaces the naive ``_refuse_on_v06_layout`` gate with a
         real diff-against-baseline classifier from
         :mod:`ai_hats.migration_v07`.
 
@@ -1219,7 +1219,7 @@ class Assembler:
             tier2_hook_source_dirs=hook_source_dirs,
         )
 
-        # HATS-415 trigger contract: only run the inline migration when
+        # Trigger contract: only run the inline migration when
         # Tier-1 canonical files are present on disk (priorities/role/
         # traits/rules/skills_index). Those are framework-owned files that
         # CANNOT legitimately exist on a v0.7 project — their presence is
@@ -1269,7 +1269,7 @@ class Assembler:
     def _collect_v07_hook_source_dirs(self) -> list[Path]:
         """Return library hook root dirs from every layer of ``self.library_paths``.
 
-        HATS-408 C1: a v0.6 ``library/hooks/<basename>`` flat-file finding is
+        A v0.6 ``library/hooks/<basename>`` flat-file finding is
         classified as safe-to-delete when its bytes match a source library hook
         of the same basename. Scanning all library layers in order avoids the
         user having to point at a particular one.
@@ -1288,7 +1288,7 @@ class Assembler:
         whose source we can locate get a diff baseline (safe-to-delete when
         content matches).
 
-        HATS-755: consumes the composition already computed by the sole
+        Consumes the composition already computed by the sole
         caller (:meth:`_run_v07_migration`) instead of recomposing the same
         role — the two composes ran back-to-back on identical state, so they
         were guaranteed equal. The caller's ``try/except`` maps a compose
@@ -1314,14 +1314,14 @@ class Assembler:
         return out
 
     def _normalize_yaml(self) -> None:
-        """Persist HATS-408 in-memory yaml healing to disk.
+        """Persist in-memory yaml healing to disk.
 
         ``ProjectConfig.from_yaml`` strips deprecated fields
         (``imports_order``) and heals ``default_role := active_role``
         in memory only — by design, so read-only commands like ``task
         show`` or ``status`` never surprise the user with a yaml
         rewrite. The cost is that the WARN fires on EVERY load until
-        something explicitly persists. HATS-413: ``bump()`` (also the
+        something explicitly persists. ``bump()`` (also the
         target of the ``self update`` auto-bump chain) now persists
         the heal once, so the WARN doesn't re-fire forever.
 
@@ -1354,7 +1354,7 @@ class Assembler:
             self.save_config(**heal)
 
     def save_config(self, **fields: Any) -> None:
-        """Locked delta-write of ai-hats.yaml; refreshes the in-memory config (HATS-526).
+        """Locked delta-write of ai-hats.yaml; refreshes the in-memory config.
 
         Pass ONLY the fields this operation changes — the on-disk state is
         re-read under the lock, so concurrent writers' fields survive.
@@ -1373,7 +1373,7 @@ class Assembler:
         self.project_config._extra = merged._extra
 
     def _persist_migration_step(self, step: int) -> None:
-        """HATS-471: persist ``ProjectConfig.migration_step`` to disk after
+        """Persist ``ProjectConfig.migration_step`` to disk after
         each successful registry entry.
 
         Called by ``migrations.run_pending`` between entries so a partial
@@ -1418,25 +1418,25 @@ class Assembler:
     # -----.gitignore management -----
 
     def _ensure_gitignore_entry(self) -> None:
-        """Ensure <ai_hats_dir>/ is gitignored (logic in relocation.py, HATS-715)."""
+        """Ensure <ai_hats_dir>/ is gitignored (logic in relocation.py)."""
         from . import relocation
 
         relocation.ensure_gitignore_entry(self.project_dir, self.project_config.ai_hats_dir)
 
     def _strip_legacy_managed_block(self) -> bool:
-        """One-shot: remove the pre-HATS-317 `# AI-HATS:START..END` block from `.gitignore`.
+        """One-shot: remove the legacy `# AI-HATS:START..END` block from `.gitignore`.
 
         Returns ``True`` when the file was modified.
 
-        HATS-317 replaced the dynamic managed-block generator with a single
-        static line (``<ai_hats_dir>/``) written once at ``init`` time, but
+        The switch to a single static line (``<ai_hats_dir>/``) written once
+        at ``init`` time replaced the dynamic managed-block generator, but
         did NOT include a one-shot cleanup for projects that already had the
         block written by the old generator. Result: every project that ran
-        ``ai-hats self init`` before HATS-317 still carries 50-90 stale
+        ``ai-hats self init`` before that switch still carries 50-90 stale
         per-component lines like ``.agent/ai-hats/library/skills/X/``,
         ``.agent/ai-hats/rules/Y.md``, ``.agent/ai-hats/traits/Z.md``.
 
-        After HATS-294 (v0.7 per-session compose) most of those files no
+        After the v0.7 per-session compose, most of those files no
         longer exist on disk, so the block is doubly stale: the bare
         ``.agent/`` line already covers the subtree, AND the per-file
         entries point at vanished paths.
@@ -1448,7 +1448,7 @@ class Assembler:
 
         Called from ``bump()`` so existing users pick up the sweep on the
         next ``ai-hats self bump`` / ``self update`` (same delivery pattern
-        as HATS-413 ``_normalize_yaml`` and HATS-415 v0.7 layout sweep).
+        as ``_normalize_yaml`` and the v0.7 layout sweep).
         Skipped when ``manage_gitignore = False`` — opted-out projects own
         the whole file.
         """
@@ -1505,12 +1505,12 @@ class Assembler:
         return True
 
     def _warn_orphan_user_level_managed_skills(self) -> bool:
-        """HATS-465: WARN when `~/.claude/skills/.ai-hats-managed` exists.
+        """WARN when `~/.claude/skills/.ai-hats-managed` exists.
 
-        ai-hats has never written to ``~/.claude/skills/``. Pre-HATS-294
-        ``Surface.skills_export_dir`` for Claude pointed at the
-        project-level ``<project>/.claude/skills`` mirror; HATS-294
-        removed permanent export entirely in favor of the per-session
+        ai-hats has never written to ``~/.claude/skills/``.
+        ``Surface.skills_export_dir`` for Claude used to point at the
+        project-level ``<project>/.claude/skills`` mirror; permanent export
+        was later removed entirely in favor of the per-session
         plugin-dir under ``<cache_root>/sessions/<sid>/plugin/``.
         Yet some user environments carry
         ``~/.claude/skills/.ai-hats-managed`` from a manual
@@ -1546,7 +1546,7 @@ class Assembler:
         return True
 
     def _warn_leaked_user_global_project_hooks(self, provider: Surface) -> bool:
-        """HATS-961: WARN when the active surface leaked ai-hats project hooks into
+        """WARN when the active surface leaked ai-hats project hooks into
         user-global config (double-fires + 404s off project-root). Detection is the
         provider's (Claude surface); this only reports. WARN only — never mutate.
         Returns ``True`` when a WARN was emitted (test seam)."""
@@ -1567,9 +1567,9 @@ class Assembler:
         return True
 
     def _warn_leftover_hook_sidecars(self) -> bool:
-        """HATS-815: WARN per skill still shipping a hook-bearing metadata.yaml.
+        """WARN per skill still shipping a hook-bearing metadata.yaml.
 
-        Proactive companion to the 814 compose-guard
+        Proactive companion to the compose-guard
         (:class:`~ai_hats.models.LeftoverSidecarHooksError`): scans every
         resolved library layer (``self.library_paths``) and names each skill
         whose ``metadata.yaml`` still carries ``git_hooks`` / ``runtime_hooks``,
@@ -1599,7 +1599,7 @@ class Assembler:
         return bool(findings)
 
     def _check_venv_consistency(self) -> list[str]:
-        """HATS-1234: Thin seam delegating venv consistency check to :func:`health.check_venv_consistency`."""
+        """Thin seam delegating venv consistency check to :func:`health.check_venv_consistency`."""
         from .health import check_venv_consistency
 
         warnings = check_venv_consistency(self.project_dir)
@@ -1608,7 +1608,7 @@ class Assembler:
         return warnings
 
     def relocate(self, new_dir: str) -> "RelocationResult":
-        """Move the framework dir to ``new_dir`` (logic in relocation.py, HATS-715)."""
+        """Move the framework dir to ``new_dir`` (logic in relocation.py)."""
         from . import relocation
 
         return relocation.relocate(self, new_dir)

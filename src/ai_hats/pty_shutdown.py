@@ -1,9 +1,9 @@
-"""Bounded shutdown for PTY-spawned children — HATS-411.
+"""Bounded shutdown for PTY-spawned children.
 
 ``PtyProcess.wait()`` calls blocking ``os.waitpid(pid, 0)``; on macOS, Claude
 Code (libuv-backed) children sometimes get stuck "trying to exit" (``ps`` STAT
 ``?Es``) with handles still open, so ``waitpid`` blocks **forever** (field
-evidence: 7 stuck panes 2026-05-20 — see HATS-411). ``bounded_proc_shutdown``
+evidence: 7 stuck panes 2026-05-20). ``bounded_proc_shutdown``
 replaces the unbounded ``proc.wait()`` in ``runtime._pty_spawn`` with an
 escalation chain:
 
@@ -190,7 +190,7 @@ def emit_terminal_reset(fd: int = 1, *, force: bool = False) -> None:
     Note: writing to the dead child's SLAVE pty (as a user-side
     recovery via ``printf > /dev/ttysNNN``) is **the wrong path** —
     delivery lands in the slave's input queue on macOS and zsh then
-    interprets the bytes as commands (lesson from HATS-411 work_log
+    interprets the bytes as commands (a lesson learned the hard way,
     2026-05-21T04:17). Always emit DECRST on the parent's own stdout.
     """
     if not force:

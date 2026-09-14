@@ -1,10 +1,10 @@
-"""Worktree hook *carry collection* (HATS-823 D3; lifted from worktree_hooks
-by ADR-0013 P1 / HATS-849).
+"""Worktree hook *carry collection* (lifted from worktree_hooks
+by ADR-0013 P1).
 
 The create-time chokepoint that serializes a composed role's worktree hooks
 into a JSON-safe carry record, to be threaded into
 ``WorktreeManager.create(wt_hooks=...)`` and persisted to state for teardown.
-HATS-865: composition happens at the integrator callers
+Composition happens at the integrator callers
 (``wt_effects.collect_carry_for_project`` / ``wt create`` CLI) — this brick
 receives the READY result and never imports the composition layer. The hook
 *execution* policy lives in :mod:`ai_hats.wt_lifecycle`; the bounded hook *run*
@@ -30,12 +30,12 @@ def collect_carry_for_role(
     ``None`` degrades to an empty carry, as does a serialize failure (with a
     WARN) — collection trouble must not block worktree creation.
 
-    HATS-1269 retired the HATS-833 materialize backstop: scripts spawn in place
+    The materialize backstop is retired: scripts spawn in place
     from the declaring skill, so what a recorded row now promises is **"its
     script resolved at create time"**. A typo in ``SKILL.md`` is dropped here
     with a WARN instead of surfacing days later as a blocked merge.
 
-    HATS-1592: a composition carrying ``result.errors`` still yields its carry,
+    A composition carrying ``result.errors`` still yields its carry,
     with a WARN — zero skills and one dropped skill both read as "declares no
     hooks" from here. Never a refusal or a degrade-to-empty: an overlay typo
     composes fully today, so dropping the carry on *any* error would cause the
@@ -93,7 +93,7 @@ def serialize_collected_hooks(
 
     ``{kind: [(skill, WorktreeHook)]}`` → ``{kind: [{skill, script, on?}]}`` —
     the shape persisted in worktree state and consumed by the lifecycle bundle's
-    run methods at create / teardown (HATS-823). ``on`` is omitted for ``wt_in``
+    run methods at create / teardown. ``on`` is omitted for ``wt_in``
     (always empty) and for any leaf with an empty ``on``.
     """
     out: dict[str, list[dict[str, object]]] = {}

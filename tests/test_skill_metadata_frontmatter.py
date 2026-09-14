@@ -142,13 +142,17 @@ def test_plan_sections_declaration_is_a_loud_tombstone(tmp_path: Path) -> None:
         SkillMetadata.from_skill_dir(d)
     msg = str(exc.value)
     assert "demo" in msg
-    assert "HATS-1149" in msg
+    # the retired channel by name, not the card that retired it: a consumer has
+    # the message and no tracker, and `git log -S` finds the commit for anyone
+    # who has the repository
+    assert "plan_sections" in msg
 
 
 def test_lifecycle_hooks_declaration_is_a_loud_tombstone(tmp_path: Path) -> None:
-    # HATS-1147: consumer lifecycle_hooks channel deleted — a later declaration
-    # must fail LOUDLY (skill + card named). The zero-declaration survey covers
-    # only observable layers; a third-party one must not ship a gate that never installs.
+    # Consumer lifecycle_hooks channel deleted — a later declaration must fail
+    # LOUDLY, naming the skill and the record that retired the channel. The
+    # zero-declaration survey covers only observable layers; a third-party one
+    # must not ship a gate that never installs.
     d = _skill(
         tmp_path,
         "---\n"
@@ -165,4 +169,6 @@ def test_lifecycle_hooks_declaration_is_a_loud_tombstone(tmp_path: Path) -> None
         SkillMetadata.from_skill_dir(d)
     msg = str(exc.value)
     assert "demo" in msg
-    assert "HATS-1147" in msg
+    # the ADR, which ships inside the repository and which `adr-integrity`
+    # refuses once it stops resolving
+    assert "ADR-0019" in msg

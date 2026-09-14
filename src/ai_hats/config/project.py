@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 _DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset(
     {
-        "imports_order",  # HATS-290 planned but reverted; ghost in some v0.6 yamls.
+        "imports_order",  # Planned but reverted; ghost in some v0.6 yamls.
     }
 )
 
@@ -47,7 +47,7 @@ class ProjectConfig(_YamlModel):
       - Project: provider, library_paths, ai_hats_dir
       - Role: active_role, default_role, customizations
       - Feedback: session_retro
-      - Harness: harness (channel local|edge|stable, repo, path — HATS-764)
+      - Harness: harness (channel local|edge|stable, repo, path)
       - Meta: schema_version (4 = current)
     """
 
@@ -137,7 +137,7 @@ class ProjectConfig(_YamlModel):
             )
         # Drop known-deprecated ghosts BEFORE strict pydantic
         # validation so v0.6 projects do not crash every ai-hats command
-        # before the inline v0.6 → v0.7 migration (HATS-415, runs in
+        # before the inline v0.6 → v0.7 migration (runs in
         # ``Assembler.bump``) gets a chance. Mutates ``data`` in-place
         # (the healed shape is what we'd want to persist on a save anyway).
         cls._strip_deprecated_fields(data, path)
@@ -171,7 +171,7 @@ class ProjectConfig(_YamlModel):
         Channel: plain stderr (not `logging`) — fires at yaml-load, before
         any logging config is in place, and must be user-visible regardless
         of log level. Format mirrors `print(..., file=sys.stderr)` used by
-        HATS-407 cleanup paths.
+        the yaml-only config-set cleanup paths.
         """
         for field in sorted(_DEPRECATED_PROJECT_FIELDS):
             if field in data:
@@ -187,16 +187,16 @@ class ProjectConfig(_YamlModel):
         """Pop keys not in the model schema; one stderr WARN per key. Returns
         the popped ``{key: value}`` map so the caller can PRESERVE them.
 
-        HATS-581 forward-compat seam. A NEWER ai-hats may add a field to
+        Forward-compat seam. A NEWER ai-hats may add a field to
         ai-hats.yaml without bumping ``schema_version`` (``migration_step``
         did exactly this — orthogonal to schema_version by design). An OLDER
         binary that doesn't know the field must not hard-crash on it: strip
         it (so ``extra="forbid"`` validation succeeds) with a visible WARN.
 
-        HATS-792: the stripped values are no longer thrown away — they are
+        The stripped values are no longer thrown away — they are
         returned and stashed on ``_extra`` so ``to_dict`` round-trips them.
         Read→write therefore preserves the unknown field's key+value instead of
-        dropping it on the next ``save()``. The WARN is RETAINED (HATS-581): the
+        dropping it on the next ``save()``. The WARN is RETAINED: the
         vanish-from-the-typed-model is still observable; what changes is that the
         bytes survive a save. (A genuinely newer SCHEMA fails loud earlier in
         ``from_yaml`` and never reaches this same-version preserve seam.)
@@ -245,7 +245,7 @@ class ProjectConfig(_YamlModel):
             # migration_step is unconditionally serialized once
             # any save fires — same as schema_version. Greenfield init
             # seeds it to ``migrations.latest_step()``; the registry
-            # runner persists subsequent advances. Existing pre-HATS-471
+            # runner persists subsequent advances. Existing older
             # projects load with the pydantic default 0 (no field in
             # yaml) and pick up the field on the next save.
             "migration_step": self.migration_step,
@@ -291,7 +291,7 @@ class ProjectConfig(_YamlModel):
         return d
 
     def save(self, path: Path) -> None:
-        # HATS-792 downgrade-clobber guard: refuse to overwrite an on-disk
+        # Downgrade-clobber guard: refuse to overwrite an on-disk
         # ai-hats.yaml whose schema_version is newer than this binary knows.
         # from_yaml already fails loud on such a file, so the normal
         # load→mutate→save flow never reaches here with a future config; this
@@ -380,7 +380,7 @@ class ProjectConfig(_YamlModel):
 
 
 def locked_update(path: Path, apply: Callable[[ProjectConfig], None]) -> ProjectConfig:
-    """Serialized read-modify-write of an ai-hats.yaml (HATS-526).
+    """Serialized read-modify-write of an ai-hats.yaml.
 
     Re-reads the on-disk state under a cross-process ``file_lock``, applies the
     caller's delta, saves. Put ONLY your own field changes in ``apply`` —

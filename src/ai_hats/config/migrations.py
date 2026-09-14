@@ -41,24 +41,25 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _migrate_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
-    """Auto-migrate schema v2 → v3 (HATS-285).
+    """Auto-migrate schema v2 → v3.
 
     v3 introduced the layered canonical layout (.agent/ai-hats/) and a
-    `./CLAUDE.md` scaffold, retired since HATS-1170. The yaml only needs a
-    version bump; root `CLAUDE.md` cleanup is migration step 7 (HATS-1201).
+    `./CLAUDE.md` scaffold, retired. The yaml only needs a
+    version bump; root `CLAUDE.md` cleanup is migration step 7.
     """
     data["schema_version"] = 3
     return data
 
 
 def _migrate_v3_to_v4(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
-    """Auto-migrate schema v3 → v4 (HATS-316).
+    """Auto-migrate schema v3 → v4.
 
     v4 introduces the unified `<ai_hats_dir>` layout: all framework-managed
     artefacts (sessions/, tracker/, library/, STATE.md, ...) live under a
     single configurable root. This migration writes the canonical default
     `.agent/ai-hats` to disk explicitly so users see the configurable path
-    in their `ai-hats.yaml`. Actual file moves happen in HATS-312/313/314.
+    in their `ai-hats.yaml`. Actual file moves happen in later per-domain
+    migrations (sessions, tracker, library).
     """
     if "ai_hats_dir" not in data:
         data["ai_hats_dir"] = ".agent/ai-hats"

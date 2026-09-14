@@ -1,4 +1,4 @@
-"""Which bytes a bound check runs, and from which root (HATS-1141, ADR-0019 D9).
+"""Which bytes a bound check runs, and from which root (ADR-0019 D9).
 
 Two modes, one composition. In a session the root is the surface's own mirror of
 the composed skills (``Surface.session_skills_root``); outside one it is the
@@ -6,7 +6,7 @@ live composed skill. The mirror freezes bytes, not the binding list, so both
 modes compose — what differs is only the root each ``ResolvedCheck.script`` is
 re-based against.
 
-HATS-1540 retired the channel's private ``<sid>/checks/`` copy: the mirror has
+This module retired the channel's private ``<sid>/checks/`` copy: the mirror has
 the same lifetime, one writer and the same TTL, and it holds EVERY composed
 skill rather than only the bound ones — so a session that predates a binding
 resolves instead of returning CORRUPT until restart.
@@ -28,7 +28,7 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
 
 #: ``apps`` in every spelling the YAML parser accepts, plus the retired
 #: ``checks`` so a config left on it still composes far enough to hear why it is
-#: refused (HATS-1545 R11). Line-anchored so ``prechecks:`` is not one; a scan, not a parse —
+#: refused. Line-anchored so ``prechecks:`` is not one; a scan, not a parse —
 #: a false positive costs one compose, a false negative disarms a gate.
 _CHECKS_KEY = re.compile(rb"""^[ \t]*['"]?(?:apps|checks)['"]?[ \t]*:""", re.MULTILINE)
 
@@ -45,7 +45,7 @@ class CheckResolutionError(Exception):
 
 
 def session_identity() -> SessionIdentity | None:
-    """What the launching session IS, or ``None`` outside one (HATS-1594).
+    """What the launching session IS, or ``None`` outside one.
 
     ``None`` is the live-resolution mode and nothing else; an envelope that is
     present and untrustworthy raises, because reading it as absence would send
@@ -65,7 +65,7 @@ def session_identity_for(project_dir: Path) -> SessionIdentity | None:
     The scoped sibling of :func:`session_identity`, for the consumers that hold
     the project they are gating. Unscoped, a session of ANOTHER project chose
     which bindings fired here, and a role declaring none disarmed the gate in
-    silence (HATS-1631). Raising stays this module's contract so a torn envelope
+    silence. Raising stays this module's contract so a torn envelope
     is still a refusal at the consumer, never a skip.
     """
     from .session_identity import SessionIdentityError, identity_for_project
@@ -89,7 +89,7 @@ def resolve_carried_checks(
     the caller's decision, made against the topology it runs. The integration
     that owns ``app`` names it here, so a row written for another application is
     never handed to this one — and a broken row of one app cannot abort
-    another's event (HATS-1545).
+    another's event.
     """
     result, identity = _composed(project_dir, identity, compose)
     if result is None:
@@ -111,11 +111,11 @@ def resolve_checks_at(
     """Every row of ``app`` bound to one point, re-based onto its root.
 
     The sibling of :func:`resolve_carried_checks` for the apps ai-hats fires
-    itself (HATS-1540): one point, named by the call site that fires it, and
+    itself: one point, named by the call site that fires it, and
     drawn from the cargo ai-hats validates itself (``_OWNED_POINTS``).
 
-    ``app`` is a parameter rather than the hardcoded ``wt`` it was through
-    HATS-1581, because ai-hats now fires two apps and nothing stops them from
+    ``app`` is a parameter rather than the hardcoded ``wt`` it once was,
+    because ai-hats now fires two apps and nothing stops them from
     spelling a point alike — filtering on ``at`` alone would cross the wires.
     """
     result, identity = _composed(project_dir, identity, compose)
@@ -148,7 +148,7 @@ def _rooted(
 class _Mirror:
     """The session's skill mirror: its root, and how it names each leaf.
 
-    Two conventions met here before HATS-1540 — every surface writes the leaf as
+    Two conventions used to collide here — every surface writes the leaf as
     the composed skill's raw ``name`` while this module re-derived it with
     ``resolve_namespace``, so a namespaced skill (``dev::python`` against
     ``dev/python``) resolved to a directory no surface had written. ``leaf`` maps
@@ -163,7 +163,7 @@ def mirror_for(root: Path, result: CompositionResult) -> _Mirror:
     """The mirror at ``root``, with the leaf spelling this composition dictates.
 
     Public because the launch report resolves the same way off a root it already
-    holds (HATS-1548) — it must not take a second surface lookup.
+    holds — it must not take a second surface lookup.
     """
     from .libraries.models import resolve_namespace
 
@@ -174,7 +174,7 @@ def mirror_for(root: Path, result: CompositionResult) -> _Mirror:
 
 
 def _mirror_root(identity: SessionIdentity) -> Path:
-    """The mirror the session actually wrote — read, not re-resolved (HATS-1594).
+    """The mirror the session actually wrote — read, not re-resolved.
 
     The surface decided this once at launch, holding its own provider object.
     Asking the registry again here is what made a gate resolve against claude's
@@ -194,7 +194,7 @@ def absent_bytes_notice(identity: SessionIdentity | None) -> str:
     """Why a bound script's bytes were not there — the D9 answer, in the
     operator's terms.
 
-    Read off the identity the session carries (HATS-1594), never re-derived: the
+    Read off the identity the session carries, never re-derived: the
     surface and the mirror were decided once at launch, and asking the registry
     again here is what made a gate resolve against another surface's mirror.
     """
@@ -290,7 +290,7 @@ def _is_worktree_marker(marker: Path, check: ResolvedCheck) -> bool:
     )
 
 
-# HATS-1541 retired `_guard_topology`. It existed to NAME the divergence between
+# `_guard_topology` was retired. It existed to NAME the divergence between
 # the packaged catalog ai-hats validated against and the topology the kernel ran
 # — and could do nothing else, because it could not tell a typo from a point
 # addressed to a sibling backlog. Both halves are gone with the catalog: the
@@ -376,12 +376,12 @@ def _reraise(exc: OSError) -> None:
 def _compose_role(project_dir: Path, identity: SessionIdentity | None) -> CompositionResult | None:
     """The session's live composition — the binding list in BOTH modes.
 
-    Through the seam: the composition layer is integrator-only (HATS-865), and
+    Through the seam: the composition layer is integrator-only, and
     this module is a consumer of it, not a member. The role comes from the
     session when there is one, and only outside a session from the config —
     where ``active_role`` genuinely is the answer. ``None`` when no role is set.
 
-    Live, never frozen: HATS-1540 retired the snapshotted binding list so a
+    Live, never frozen: the snapshotted binding list was retired so a
     session that predates a binding still resolves it. Only the identity is
     fixed at launch.
     """  # comment-length: allow — which half is frozen is the contract
@@ -407,7 +407,7 @@ def _compose_fail_closed(
     one", and once a builtin trait or role ships a binding it answers ``True``
     everywhere. So the no-role composition is the second ``None``, and it has to
     be: otherwise a builtin binding would refuse every transition of every
-    role-less project on that build (HATS-1137).
+    role-less project on that build.
     """  # comment-length: allow — the asymmetry with the rest of rack is a decision
     try:
         declared = declares_checks(project_dir)
@@ -440,7 +440,7 @@ def _composed(
     The ``result.errors`` refusal lives HERE rather than inside
     ``_compose_fail_closed`` because it is a property of the channel, not of one
     way of obtaining a composition. An in-process caller passing ``compose``
-    (HATS-1594) would otherwise skip it, and a role whose composition reported
+    would otherwise skip it, and a role whose composition reported
     errors would arm nothing while looking armed — which is the whole defect
     class this channel exists to remove.
     """  # comment-length: allow — why the check is not in the composer

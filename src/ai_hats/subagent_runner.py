@@ -1,6 +1,6 @@
 """Automate runner: headless sub-agent launch (SubAgentRunner).
 
-Extracted from runtime.py (HATS-715); shared helpers live in runtime_common."""
+Extracted from runtime.py; shared helpers live in runtime_common."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def _run_surface(
     what the session-cache sweep needs: this child is what READS the cache, and
     with pipes and no controlling tty nothing hangs it up when its parent is
     SIGKILLed — a real ``agy`` was measured still running 45s later, reparented
-    to init (HATS-1339 D3). The timeout path mirrors ``run``'s exactly — kill,
+    to init. The timeout path mirrors ``run``'s exactly — kill,
     drain, re-raise carrying the output captured so far — because the caller
     reports ``exc.stdout`` / ``exc.stderr`` on a timeout.
     """  # comment-length: allow — a stdlib call re-spelled needs its reason
@@ -103,9 +103,9 @@ def _run_surface(
 class SubAgentRunner:
     """SDK-based sub-agent executor.
 
-    HATS-865: a brick — receives the ready :class:`CompositionPayload` from
+    A brick — receives the ready :class:`CompositionPayload` from
     the integrator compose seam and never touches the composition layer.
-    HATS-867: the observe writer handle (``session_mgr``) is injected too —
+    The observe writer handle (``session_mgr``) is injected too —
     the runner never imports observe at runtime.
     """
 
@@ -134,20 +134,20 @@ class SubAgentRunner:
     ) -> Session:
         """Execute a sub-agent in isolation (role = ``payload.effective_role``).
 
-        ``system_prompt_override`` (HATS-267): when supplied, replaces the
+        ``system_prompt_override``: when supplied, replaces the
         merged injection in the meta-prompt build while keeping structural
         composition data intact for provider-specific overrides.
 
-        ``harness_policy`` (HATS-378): optional post-run reliability
+        ``harness_policy``: optional post-run reliability
         policy. When ``on_timeout`` is set, a subprocess timeout triggers
         retry-with-increased-budget up to ``retry`` extra attempts; on
         final timeout raises :class:`HarnessTimeoutError`. When
         ``reporting`` is set, the zero-output guard fires after a clean
-        run. ``None`` preserves pre-HATS-378 behaviour (timeout returns
+        run. ``None`` preserves the legacy behaviour (timeout returns
         a session with ``timed_out=True``; no zero-output check).
 
-        HATS-865 recorded delta: retry attempts share the ONE payload
-        composition (pre-865 each ``_run_attempt`` re-composed) — an
+        Recorded delta: retry attempts share the ONE payload
+        composition (each ``_run_attempt`` used to re-compose) — an
         improvement for attempt comparability.
         """
         on_timeout = harness_policy.on_timeout if harness_policy is not None else None
@@ -211,7 +211,7 @@ class SubAgentRunner:
 
         Two execution engines live behind this entry point:
 
-        * **Claude** path (HATS-474): :class:`claude_agent_sdk.ClaudeSDKClient`
+        * **Claude** path: :class:`claude_agent_sdk.ClaudeSDKClient`
           via :mod:`ai_hats.sdk_runner`. Wall-clock cap implemented as
           ``asyncio.wait_for(timeout_s)``; the helper never raises and
           always returns an :class:`SdkRunResult` we finalize from.
@@ -267,11 +267,11 @@ class SubAgentRunner:
         # The ONE composition arrived in the payload (compose seam).
         role_name = self.payload.effective_role
         result = self.payload.result
-        # HATS-505 / HATS-452 trap: ``with_injection_override`` REPLACES
+        # Trap: ``with_injection_override`` REPLACES
         # ``result.injections`` WHOLESALE — every overlay contribution (global +
         # project ``injection_append``, ``add_traits`` bodies) is dropped from
-        # the SDK system_prompt. The pipeline no longer feeds an override here
-        # (HATS-505 a); the only legitimate caller is a HATS-267 explicit-prompt
+        # the SDK system_prompt. The pipeline no longer feeds an override here;
+        # the only legitimate caller is an explicit-prompt
         # API consumer. A new caller's override text MUST already contain
         # everything the role would compose — or compose first and pass an
         # *augmented* (not replacement) string. Layered ``result`` is above.
@@ -361,7 +361,7 @@ class SubAgentRunner:
 
         session.log_sub(f"Sub-agent started: role={role_name}")
 
-        # HATS-474 review fix: a *subprocess* (Agy path) gets the full inherited
+        # A *subprocess* (Agy path) gets the full inherited
         # environment — subprocess.run replaces the child env wholesale when
         # given one. The SDK path takes `launch_env` as an *overlay* it merges
         # on top of os.environ itself, so handing it only ai-hats keys keeps the
@@ -536,7 +536,7 @@ class SubAgentRunner:
         return session, work_dir
 
     def _release_ownership_on_finish(self, session: "Session") -> None:
-        """Drop this finished session's ownership holds (HATS-1045).
+        """Drop this finished session's ownership holds.
 
         Sequential sub-agents share this runner's ``os.getpid()`` via
         ``ENV_ROOT_PID``, so a finished session's hold reads live to

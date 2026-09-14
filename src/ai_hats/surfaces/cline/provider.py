@@ -1,9 +1,9 @@
 """Cline surface adapter — maps the `cline` CLI to the ai-hats `Surface`.
 
-HATS-1171: cline runs through the unified artifact-builder (ADR-0018) on the
+cline runs through the unified artifact-builder (ADR-0018) on the
 clean-root invariant — skills materialize into the per-session cache and reach
-cline via ``--config`` (spike HATS-1191); nothing lands in the project root.
-HATS-1775: native ``--hooks-dir`` entrypoints deliver the composed per-tool
+cline via ``--config`` (a spike); nothing lands in the project root.
+Native ``--hooks-dir`` entrypoints deliver the composed per-tool
 runtime-hook chain from the same session cache.
 """
 
@@ -97,7 +97,7 @@ class ClineSurface(Surface):
         # Skills reach cline natively via <cache>/skills/ — a text index duplicates them.
         return self._compose_sections(result)
 
-    # ----- HATS-1171: unified artifact-builder (ADR-0018) -----
+    # ----- unified artifact-builder (ADR-0018) -----
 
     # SETTINGS has no Cline-native artifact. HOOKS use --hooks-dir below.
 
@@ -119,7 +119,7 @@ class ClineSurface(Surface):
 
     def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
         """Role inline via -s. The TUI flag is launch mode, not context — see
-        ``get_cli_launch_args`` (HATS-1207: gating CONTEXT must not drop -i)."""
+        ``get_cli_launch_args`` (gating CONTEXT must not drop -i)."""
         project_dir = layout.root
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
@@ -146,7 +146,7 @@ class ClineSurface(Surface):
     # -- skills ----------------------------------------------------------------
 
     def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
-        """HATS-1540: what a bound check resolves its script from in-session."""
+        """What a bound check resolves its script from in-session."""
 
         return layout.cache.session(session_id) / "skills"
 
@@ -156,9 +156,9 @@ class ClineSurface(Surface):
         cache_dir = self._cache_dir(layout, session_id, artifacts)
         skills_dir = self.session_skills_root(layout, session_id)
         # Shared with agy: a private copy drifted and lost the
-        # {{backlog_fsm_edges}} expansion the shared one has done since HATS-1051.
+        # {{backlog_fsm_edges}} expansion the shared one has done.
         materialize_skills_dir(skills_dir, result.skills, layout, artifacts.port)
-        # cline scans <T()>/skills; --config sets T()=cache_dir (spike HATS-1191).
+        # cline scans <T()>/skills; --config sets T()=cache_dir (a spike).
         # CLINE_DATA_DIR (get_env) keeps auth/state off this ephemeral base.
         artifacts.cli_args.extend(["--config", str(cache_dir)])
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
@@ -200,7 +200,7 @@ class ClineSurface(Surface):
         """HITL entry (WrapRunner): thin delegate over the artifact-builder.
 
         Returns ``(cli_args, extra_env, meta_prompt)``; the third element is the
-        exact bytes WrapRunner persists to ``meta_prompt.txt`` (HATS-523).
+        exact bytes WrapRunner persists to ``meta_prompt.txt``.
         """
         artifacts = self.build_session_artifacts(
             layout,
@@ -248,7 +248,7 @@ class ClineSurface(Surface):
         return [*kept, "--yolo", "--json", meta_prompt]
 
     def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
-        """Pure: the hub port reads as the launch's to pick (HATS-1554)."""
+        """Pure: the hub port reads as the launch's to pick."""
         from ai_hats.session_artifacts import AT_LAUNCH
 
         return self._env(layout, hub_port=AT_LAUNCH)

@@ -1,8 +1,7 @@
 """Resolve the git-gate set for one event, live, from the composition.
 
 Contract in ADR-0020 D3; containment (M11) and gate order (R10) are owned here
-because the retired flatten-copy was providing both as side effects — see
-HATS-1337.
+because the retired flatten-copy was providing both as side effects.
 """
 
 from __future__ import annotations

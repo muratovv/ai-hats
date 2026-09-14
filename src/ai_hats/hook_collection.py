@@ -1,6 +1,6 @@
 """Skill-declared hook collection — pure derivations over a CompositionResult.
 
-Moved out of ``composer`` (HATS-865): consumed on BOTH sides of the composition
+Moved out of ``composer``: consumed on BOTH sides of the composition
 boundary (providers wiring AND runtime bricks), so the home must be a neutral
 leaf that never imports the composition layer (``test_import_hygiene`` gates).
 """
@@ -45,8 +45,8 @@ def collect_worktree_hooks(
     """Walk composed skills and group their worktree lifecycle hooks by kind.
 
     Returns ``{"wt_in": [(skill_name, WorktreeHook), ...], "wt_out": [...]}`` —
-    only non-empty kinds appear (HATS-823). This is the compose-time typed
-    chokepoint (HATS-863): ``SkillMetadata`` carries the ``worktree:`` block
+    only non-empty kinds appear. This is the compose-time typed
+    chokepoint: ``SkillMetadata`` carries the ``worktree:`` block
     opaque; :func:`ai_hats_wt.parse_worktree_carry` validates HERE and fails
     loud on a malformed row. Mirrors :func:`collect_runtime_hooks`.
     """

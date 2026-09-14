@@ -1,6 +1,6 @@
 """One value, one spelling: what ``PipelineResult`` types is not also in ``produced``.
 
-HATS-1783. ``exit_code`` and ``session`` used to be typed fields *and* raw entries in
+``exit_code`` and ``session`` used to be typed fields *and* raw entries in
 ``produced``, so a caller could read either — and the next migration standardises on
 whichever one it happens to meet. ``from_state`` now lifts the keys the contract
 answers for out of the funnel instead of copying them beside it, and these tests hold

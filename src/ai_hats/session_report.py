@@ -1,4 +1,4 @@
-"""The dry-run report — a rendering of the materialization record (HATS-1211).
+"""The dry-run report — a rendering of the materialization record.
 
 Both views come from one dict, so the human table and ``--json`` cannot disagree.
 Env is reported by key name only: values carry secrets and ``--json`` output ends
@@ -29,7 +29,7 @@ def _human_size(n: int) -> str:
 
 
 def consent_entry(consent) -> dict:
-    """One consent declaration as the guard reads it (HATS-1719).
+    """One consent declaration as the guard reads it.
 
     Public because it is the ONE writer of this shape: the guard on the other
     side reads fields, and a second place building them by hand is how the two
@@ -38,7 +38,7 @@ def consent_entry(consent) -> dict:
     The ends travel ALREADY PARSED. The guard is stdlib-only and cannot import
     the rack's parser, so it used to cut the name itself — and on an arrow that
     cut returned nothing, which disarmed the question on BOTH roads into master
-    without a word (the HATS-1682 A5 class). Fields, not grammar.
+    without a word. Fields, not grammar.
     """
     from .check_points import selector_ends
 
@@ -70,7 +70,7 @@ def _consent_key(consent: dict) -> str:
 
     Three grammars ride one list and each is found by a different field: rack
     rows match on the parsed ``to`` ALONE, so printing the selector for all
-    three would read as a promise the rack half does not keep (HATS-1726).
+    three would read as a promise the rack half does not keep.
     """
     from .check_points import CONSENT_GATE_APP, WT_APP, point_owner
 
@@ -79,7 +79,7 @@ def _consent_key(consent: dict) -> str:
     # holding a second copy of the app name.
     if consent.get("to"):
         return f"entering {consent['to']!r}"
-    # The owner, not the key the row stands under: since HATS-1755 every row
+    # The owner, not the key the row stands under: every row
     # stands under the gate, so asking `app` alone answered "operation type" for
     # the wt point too.
     if point_owner(consent["app"], consent["path"]) == WT_APP:
@@ -112,7 +112,7 @@ class SessionReport:
     # The gates this launch arms. Not derivable from the plan — the
     # skill mirror a check runs from is written per SKILL, not per binding.
     checks: tuple[ReportedCheck, ...] = ()
-    #: HATS-1682: where this role wants the supervisor asked. The guard on the
+    #: Where this role wants the supervisor asked. The guard on the
     #: tool call reads it from here — a role property reaching the surface the
     #: way every other one does, through the session's own envelope.
     consent: tuple[ConsentPoint, ...] = ()
@@ -240,7 +240,7 @@ class SessionReport:
             lines += [
                 "",
                 "BYPASS — these were written for real during a dry-run, i.e. by a",
-                "path that does not go through the materialization port (HATS-1207):",
+                "path that does not go through the materialization port:",
             ]
             lines += [f"  ! {p}" for p in d["escapes"]]
             lines.append("  (removed again; the dry-run left nothing behind)")

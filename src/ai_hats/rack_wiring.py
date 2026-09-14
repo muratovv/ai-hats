@@ -1,10 +1,10 @@
 """Integrator-side rack adapters: ownership + worktree extensions and the
-kernel factory (HATS-1022, epic HATS-1014 K3).
+kernel factory.
 
 The rack never imports the integrator (import-hygiene pin); THIS module is
 the one-directional binding of the rack dispatcher to the production
 ownership registry and the wt engine. ``build_rack_kernel`` preserves the
-tracker's side-effect order (HATS-1260: its legacy-CLI mirror is gone):
+tracker's side-effect order (its legacy-CLI mirror is gone):
 single-slot guard → plan-gate → claim → worktree; teardown → release.
 """
 
@@ -55,14 +55,14 @@ from .wt_effects import WtWorktreeEffects
 
 TERMINAL_STATES = ("done", "failed", "cancelled")
 
-# HATS-1015 worktree liveness budget (ADR-0017 §4): a generous per-git ceiling so
+# Worktree liveness budget (ADR-0017 §4): a generous per-git ceiling so
 # a hung worktree shell-out can't hold the task lock forever — kill → in-lock error
 # → abort + journal (existing path). Config-overridable via WorktreeExtension(budget=).
 WORKTREE_BUDGET = 60.0
 
 
 def _rack_lock_deadline(ctx: DispatchContext) -> Deadline | None:
-    """The kernel's task-lock instant as a budget (HATS-1603).
+    """The kernel's task-lock instant as a budget.
 
     The rack publishes a bare float — it is built without ai-hats-core, so it
     cannot mint the type. Binding the two is this module's job, and doing it
@@ -92,7 +92,7 @@ def _out_of(state: str) -> Selector:
 
 
 def _session_id() -> str:
-    """The launching session's id, or ``""`` outside one (HATS-1613).
+    """The launching session's id, or ``""`` outside one.
 
     Through the identity, not the scalar beside it: a torn envelope read as
     absence would disarm the single-slot guard silently, and two live agents
@@ -114,7 +114,7 @@ def _root_pid() -> int:
 
 
 class OwnershipSingleSlot:
-    """Single-slot guard on EVERY transition (HATS-955): refuse while the
+    """Single-slot guard on EVERY transition: refuse while the
     session still holds a different task. Runs before the plan-gate; read-only
     (an abort here or later leaves zero ownership side effects)."""
 
@@ -137,7 +137,7 @@ class OwnershipSingleSlot:
         if dangling:
             raise AbortOperation(
                 f"session '{session_id}' still holds {dangling} — finish it or leave "
-                "execute on it first (single-slot ownership, HATS-955; force does not bypass)"
+                "execute on it first (single-slot ownership; force does not bypass)"
             )
         return None
 
@@ -145,7 +145,7 @@ class OwnershipSingleSlot:
 class OwnershipClaim:
     """Claim on entering execute (incl. the reclaim self-loop), AFTER the
     plan-gate and BEFORE the worktree — a refusal aborts with zero side
-    effects (HATS-955). A live other owner is a typed, actionable abort."""
+    effects. A live other owner is a typed, actionable abort."""
 
     name = "ownership"
 
@@ -174,7 +174,7 @@ class OwnershipClaim:
 
 class OwnershipRelease:
     """Unconditional idempotent release on leaving execute / any terminal
-    (HATS-977 — epics included) and on epicification (post-lock reaction).
+    (epics included) and on epicification (post-lock reaction).
     Runs AFTER the worktree teardown, so a failed merge keeps the hold."""
 
     name = "ownership-release"
@@ -209,7 +209,7 @@ class OwnershipRelease:
         ):
             # `execute->` is every road OUT, and the reclaim self-loop is not one:
             # the claim at 20 takes the hold and this at 40 would drop it again,
-            # leaving the card owned by nobody (HATS-1720, design.md §6.4). A
+            # leaving the card owned by nobody (design.md §6.4). A
             # selector has no subtraction operator, so the accepted answer is to
             # bind wide and filter here — for exactly the pair the old product
             # subtracted, and no other. A DECLARED terminal self-loop still
@@ -224,12 +224,12 @@ class OwnershipRelease:
 
 class WorktreeExtension:
     """Worktree lifecycle adapter over the wt engine: setup on execute
-    (except epics/reopen/force — HATS-794/328/697); teardown-merge on done,
-    discard on failed/cancelled; git is the truth (HATS-596/697/PROX-287);
-    force never bypasses the canonical-base guard (HATS-518); aborts a
-    teardown from inside the tree (HATS-788); pre-destroy event before
+    (except epics/reopen/force); teardown-merge on done,
+    discard on failed/cancelled; git is the truth (PROX-287);
+    force never bypasses the canonical-base guard; aborts a
+    teardown from inside the tree; pre-destroy event before
     destruction (PROP-047); cancelled preserves uncommitted work (PROP-084);
-    epicify reclaims an empty tree (HATS-979); repo-aware done-guard via the
+    epicify reclaims an empty tree; repo-aware done-guard via the
     card's ``repo`` extra (PROP-056/057)."""  # comment-length: allow
 
     name = "worktree"
@@ -302,7 +302,7 @@ class WorktreeExtension:
             outer_deadline=_rack_lock_deadline(ctx),
         )
         if wt_path is not None:
-            return Delta(work_log=(f"Worktree: {wt_path}",))  # HATS-866/AC5
+            return Delta(work_log=(f"Worktree: {wt_path}",))
         return None
 
     # ----- teardown ---------------------------------------------------------
@@ -365,7 +365,7 @@ class WorktreeExtension:
         )
 
     def _guard_not_inside(self, ctx: DispatchContext, wt_path: Path) -> None:
-        """HATS-788: never destroy the tree the caller is standing in."""
+        """Never destroy the tree the caller is standing in."""
         try:
             cwd = ctx.caller_cwd.resolve()
             target = wt_path.resolve()
@@ -425,7 +425,7 @@ def build_rack_kernel(
 
     ``sections=None`` (the default) resolves to the stock ``DEFAULT_PLAN_SECTIONS``
     catalog via ``stock_factories`` — scaffold and gate read one catalog, so
-    contract and enforcement cannot drift (HATS-635)."""
+    contract and enforcement cannot drift."""
     if tasks_dir is None or state_md_path is None:
         from .tracker_wiring import tracker_paths
 
@@ -433,7 +433,7 @@ def build_rack_kernel(
         tasks_dir = tasks_dir if tasks_dir is not None else paths.tasks_dir
         state_md_path = state_md_path if state_md_path is not None else paths.state_md_path
 
-    # One definition feeds the kernel AND every subscriber (HATS-1042, ADR-0017
+    # One definition feeds the kernel AND every subscriber (ADR-0017
     # §1). The legacy links.yaml is the OWNER's; with no owner the
     # anchor is still probed, so R6 never gets weaker than it was.
     defn = resolve_definition(
@@ -468,7 +468,7 @@ def build_rack_kernel(
         *extra_subscribers,  # consumer add-ons (pre-destroy guards, K4 hook-runner)
     ]
     # Fail-closed at composition: a subscriber's declared state vocabulary must
-    # fit the topology (the HATS-692 stranding class, HATS-1043 R8).
+    # fit the topology (the stranding class).
     validate_requires_states(subscribers, topology, source=str(tasks_dir))
     kwargs: dict = {}
     if lock_timeout is not None:

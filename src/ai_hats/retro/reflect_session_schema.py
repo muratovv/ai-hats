@@ -1,4 +1,4 @@
-"""ReflectSessionV1: per-session reflect-session output (HATS-210).
+"""ReflectSessionV1: per-session reflect-session output.
 
 Single-session judge run produces:
   - hypothesis_verdicts: vote per active HYP (count must match active set)

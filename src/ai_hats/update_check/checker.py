@@ -48,7 +48,7 @@ GIT_QUERY_TIMEOUT = 5
 
 
 def sha_matches(a: str | None, b: str | None) -> bool:
-    """Prefix-tolerant SHA equality (HATS-781).
+    """Prefix-tolerant SHA equality.
 
     The update-check cache may hold a 9-char baked short SHA (from
     ``_version.py``, e.g. ``86a6bb1a0``) while :func:`detect_installed_sha`
@@ -69,7 +69,7 @@ def _package_dir() -> Path:
 def _pkg_tracked_by_local_git(pkg_dir: Path) -> bool:
     """True iff ``pkg_dir/__init__.py`` is tracked by the enclosing git repo.
 
-    HATS-441: ``git -C <pkg_dir> ...`` walks up looking for ``.git``. When
+    ``git -C <pkg_dir> ...`` walks up looking for ``.git``. When
     ai_hats is non-editable-installed into
     ``<project>/.venv/.../site-packages/ai_hats/`` and the user's project
     itself is a git repo, the walk finds the *project's* ``.git`` — a
@@ -103,7 +103,7 @@ def _pkg_tracked_by_local_git(pkg_dir: Path) -> bool:
 def detect_installed_sha() -> str | None:
     """SHA of the installed copy of ai-hats; ``None`` when unknown.
 
-    HATS-441: gates ``git rev-parse HEAD`` behind
+    Gates ``git rev-parse HEAD`` behind
     :func:`_pkg_tracked_by_local_git` so a foreign ``.git`` in an ancestor
     of pkg_dir can't masquerade as ai-hats's repo. Falls back to the
     ``__commit__`` baked into ``_version.py`` by setuptools-scm at install
@@ -130,7 +130,7 @@ def detect_installed_sha() -> str | None:
 
 
 def _read_baked_commit_sha() -> str | None:
-    """Read the installed SHA from ``ai_hats._version`` (HATS-458 fix).
+    """Read the installed SHA from ``ai_hats._version``.
 
     setuptools-scm 8+ writes ``__commit_id__`` (and ``commit_id``) into the
     generated ``_version.py`` — a short SHA prefixed with ``g`` (the git-
@@ -187,7 +187,7 @@ def fetch_latest_sha(remote_url: str, ref: str = "master") -> str | None:
     """``git ls-remote <url> <ref>`` → SHA. ``None`` on network/timeout/error.
 
     ``ref`` defaults to ``master`` (banner); the edge guard passes ``HEAD`` to
-    probe a custom repo's own default branch (HATS-766). ``git+`` prefix stripped.
+    probe a custom repo's own default branch. ``git+`` prefix stripped.
     """
     try:
         result = subprocess.run(
@@ -217,7 +217,7 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
     Silent failure (no remote, network down, not a git checkout) → False;
     the caller treats that as "ahead/behind unknown".
 
-    HATS-441: gated by :func:`_pkg_tracked_by_local_git` to prevent
+    Gated by :func:`_pkg_tracked_by_local_git` to prevent
     polluting a foreign user-project ``.git`` with our remote refs.
     """
     pkg_dir = _package_dir()
@@ -239,14 +239,14 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
 
 def _probe_mirror_dir(cache: CacheLayout) -> Path:
     """Path to the bare probe-mirror used as the local object graph for
-    non-editable / wheel installs (HATS-458)."""
+    non-editable / wheel installs."""
     return cache.root / "probe-mirror"
 
 
 def _ensure_probe_mirror(cache: CacheLayout) -> Path | None:
     """Init or reuse a bare probe-mirror at ``<cache_root>/probe-mirror/``.
 
-    HATS-458: when ``_fetch_into_pkg`` refuses (no usable ``.git`` next to
+    When ``_fetch_into_pkg`` refuses (no usable ``.git`` next to
     the installed package — the common non-editable layout), the mirror is
     the local object graph in which we fetch upstream master + installed
     SHA, then run ``rev-list`` / ``describe`` against it. Idempotent —
@@ -277,7 +277,7 @@ def _ensure_probe_mirror(cache: CacheLayout) -> Path | None:
 
 
 def _fetch_into_mirror(mirror: Path, remote_url: str, ref: str) -> bool:
-    """``git fetch <remote_url> <ref>`` into the probe-mirror (HATS-458).
+    """``git fetch <remote_url> <ref>`` into the probe-mirror.
 
     Full fetch (no shallow). It buys a correct ``rev-list
     installed...<latest>``: the typical non-editable user's installed_sha is some
@@ -318,7 +318,7 @@ def _count_ahead_behind(
     Returns ``None`` on any failure (missing object, not a git checkout,
     parse error).
 
-    HATS-458: ``git_dir`` selects which repository hosts the rev-list.
+    ``git_dir`` selects which repository hosts the rev-list.
     Default is the package directory (editable / git-checkout path);
     pass the probe-mirror returned by :func:`_ensure_probe_mirror` for
     non-editable installs.
@@ -360,7 +360,7 @@ def _describe(sha: str, *, git_dir: Path | None = None) -> str | None:
     Best-effort cosmetic label for the banner. Fails (returns ``None``)
     when the repo has no tags, is shallow, or the SHA isn't reachable.
 
-    HATS-458: ``git_dir`` selects which repository hosts the describe.
+    ``git_dir`` selects which repository hosts the describe.
     Mirror fetches use ``--depth=50`` so older tags may be unreachable —
     that's acceptable; the banner falls back to short SHAs.
     """
@@ -396,7 +396,7 @@ def run_check(
     the entry and :meth:`CacheEntry.has_update` returns False — the banner
     stays silent rather than firing with stale or unverified state.
 
-    HATS-766: ``remote_url`` / ``ref`` override the probed target (banner uses the
+    ``remote_url`` / ``ref`` override the probed target (banner uses the
     defaults; the edge guard passes a bare edge URL + ``HEAD``). ``remote_url``
     must be bare — the git helpers strip ``git+`` defensively.
     """
@@ -415,7 +415,7 @@ def run_check(
     latest_label: str | None = None
 
     # Fast path: pkg-checkout (editable installs reachable through
-    # ``_fetch_into_pkg``'s tracked-check gate, HATS-441).
+    # ``_fetch_into_pkg``'s tracked-check gate).
     if _fetch_into_pkg(remote_url, ref):
         counts = _count_ahead_behind(installed, latest)
         if counts is not None:
@@ -423,11 +423,11 @@ def run_check(
         installed_label = _describe(installed)
         latest_label = _describe(latest)
     else:
-        # HATS-458 fallback: probe-mirror for non-editable / wheel
+        # Fallback: probe-mirror for non-editable / wheel
         # installs. We own a bare repo and fetch both refs explicitly so
         # ``rev-list`` / ``describe`` resolve locally — no pollution of
-        # any foreign ``.git`` in an ancestor (HATS-441 closed that
-        # surface), no dependency on a pkg-checkout-shaped install.
+        # any foreign ``.git`` in an ancestor (the tracked-check guard closed
+        # that surface), no dependency on a pkg-checkout-shaped install.
         mirror = _ensure_probe_mirror(cache)
         if mirror is not None and _fetch_into_mirror(mirror, remote_url, ref):
             counts = _count_ahead_behind(installed, latest, git_dir=mirror)

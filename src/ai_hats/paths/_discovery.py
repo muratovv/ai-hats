@@ -1,4 +1,4 @@
-"""Shared transcript-discovery + tool-home resolution (HATS-1087)."""
+"""Shared transcript-discovery + tool-home resolution."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def session_start_ts(session_id: str) -> float | None:
 
     Deliberately NOT delegating to ``ai_hats_observe.artifacts.session_start_dt``:
     observe resolves from PyPI on a self-update install, so the integrator must
-    not import a symbol newer than observe's published version (HATS-1248).
+    not import a symbol newer than observe's published version.
     """
     try:
         return (
@@ -36,7 +36,7 @@ def discover_recent_by_mtime(
     glob_pattern: str,
     session_id: str,
 ) -> Path | None:
-    """Freshest file matching ``glob_pattern`` with mtime >= session start (HATS-272)."""
+    """Freshest file matching ``glob_pattern`` with mtime >= session start."""
     all_found = discover_all_by_mtime(transcripts_dir, glob_pattern, session_id)
     return all_found[-1] if all_found else None
 
@@ -48,7 +48,7 @@ def discover_all_by_mtime(
     *,
     end_ts: float | None = None,
 ) -> list[Path]:
-    """All files matching ``glob_pattern`` with session_start <= mtime [<= end_ts], sorted by mtime (HATS-1400)."""
+    """All files matching ``glob_pattern`` with session_start <= mtime [<= end_ts], sorted by mtime."""
     if not transcripts_dir.is_dir():
         return []
     start_ts = session_start_ts(session_id)
@@ -75,9 +75,9 @@ def resolve_transcript(
     exact_path: Path | None = None,
     end_ts: float | None = None,
 ) -> list[Path]:
-    """The transcripts that are provably ours; mtime matches when we have no id (HATS-1400).
+    """The transcripts that are provably ours; mtime matches when we have no id.
 
-    HATS-1400: Extended to return list[Path] to support provider surfaces that rotate
+    Extended to return list[Path] to support provider surfaces that rotate
     session logs (e.g. agy brain segments). Returns empty list when none found.
     """
     if exact_path is not None:
