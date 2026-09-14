@@ -140,7 +140,6 @@ run_session_review = "ai_hats.pipeline.steps.session_review:RunSessionReview"
 save_artifact = "ai_hats.pipeline.steps.save:SaveArtifact"
 select_provider = "ai_hats.pipeline.steps.init_steps:SelectProviderStep"
 spawn_session_review = "ai_hats.pipeline.steps.spawn_review:SpawnSessionReview"
-write_event_log = "ai_hats.pipeline.steps.write_event_log:WriteEventLog"
 
 # HATS-861: integrator built with hatchling + hatch-vcs (workspace-uniform with
 # the packages/* members). hatch-vcs wraps setuptools-scm → identical version

@@ -57,6 +57,7 @@ from .runtime_common import (
     _run_finalize_hitl,
     FinalizeAborted,
     sigint_shield,
+    start_event_log,
 )
 from .startup_notices import (
     StartupNotice,
@@ -793,6 +794,14 @@ class WrapRunner:
         # Each layer's exceptions are isolated so a downstream crash
         # never prevents the session-id print (invariant).
         tracer = self.tracer_factory(session)
+        # Started before the surface, so its first record is followed from its
+        # first line; closed in _finalize_session_basic once the surface exited.
+        event_log = start_event_log(
+            provider,
+            session,
+            project_dir=self.project_dir,
+            provider_session_id=claude_session_id,
+        )
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         t0 = time.monotonic()
         try:
@@ -850,7 +859,7 @@ class WrapRunner:
                             exit_code=exit_code,
                             active_role=active_role,
                             provider_name=provider_name,
-                            tracer=tracer,
+                            event_log=event_log,
                             tags=tags,
                             claude_session_id=claude_session_id,
                             duration_s=duration_s,

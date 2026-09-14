@@ -184,7 +184,6 @@ def test_step_registry_names_frozen():
         "save_artifact",
         "select_provider",
         "spawn_session_review",
-        "write_event_log",
     ]
     assert sorted(_declared_steps()) == expected
 

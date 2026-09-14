@@ -265,9 +265,11 @@ class Surface(abc.ABC):
         return TraceParser()
 
     def event_reader(self) -> Callable[[Path], EventReader] | None:
-        """Builds the reader that turns ONE of this surface's transcripts into
-        canonical events — same rule as ``transcript_parser``: it rides the
-        surface, there is no registry.
+        """Builds the reader that follows ONE of this surface's transcripts as
+        canonical events while the session runs — same rule as
+        ``transcript_parser``: it rides the surface, there is no registry. The
+        reader must hold its tail open until ``close()``; the session's writer
+        is what declares the run over.
 
         Default ``None``, not a reader that yields nothing: ``None`` means this
         surface has no canonical reading yet, so the session writes no

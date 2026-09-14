@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
@@ -159,9 +160,9 @@ class ClaudeSurface(Surface):
         return ClaudeParser()
 
     def event_reader(self) -> Callable[[Path], EventReader]:
-        # The class IS the factory: one reader per transcript path, holding its
-        # own position so a grown file yields only what is new.
-        return ClaudeTranscriptReader
+        # One reader per transcript path, holding its own position; live, so the
+        # tail is held open until the session's writer says the run is over.
+        return partial(ClaudeTranscriptReader, live=True)
 
     def resolve_transcript(
         self,

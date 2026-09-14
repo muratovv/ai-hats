@@ -9,12 +9,12 @@ with it.
 
 from __future__ import annotations
 
-import os
+import stat
+import threading
 from pathlib import Path
 
 import pytest
 
-from ai_hats_observe import event_log
 from ai_hats_observe.canonical import (
     ANSWER_ONLY,
     WITH_REASONING,
@@ -100,34 +100,43 @@ def test_a_live_writer_appends(tmp_path: Path, session_events: list) -> None:
     assert list(read_events(path)) == session_events
 
 
-def test_each_event_reaches_the_file_as_one_write(
-    tmp_path: Path, session_events: list, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_two_writers_appending_at_once_never_tear_a_line(tmp_path: Path) -> None:
     """Two producers append to this file — the session's writer and a hook
-    process judging a call — and neither can see the other. One ``write(2)``
-    per line is what keeps their lines from interleaving under ``O_APPEND``;
-    a buffered handle splits a large event across several.
+    process judging a call — and neither can see the other. Each line is one
+    ``write(2)`` under ``O_APPEND``, which is what keeps them from interleaving;
+    a buffered handle splits a large event across several and merges lines.
 
-    The 40 KB tool result is the positive control: it is larger than any stdio
-    buffer, so a writer that went through one would show up as several calls.
+    The 40 KB results are the positive control: larger than any stdio buffer,
+    so a buffered writer racing another tears lines here every time.
     """
-    big = ToolResultReceived(call_id="c-big", ok=True, content="x" * 40_000)
-    events = [*session_events, big]
     path = tmp_path / EVENT_LOG_JSONL
-    sizes: list[int] = []
-    real_write = os.write
+    per_writer, size = 100, 40_000
 
-    def counting_write(fd: int, data: bytes) -> int:
-        sizes.append(len(data))
-        return real_write(fd, data)
+    def produce(tag: str) -> None:
+        for index in range(per_writer):
+            event = ToolResultReceived(call_id=f"{tag}-{index}", ok=True, content=tag * size)
+            write_events([event], path, append=True)
 
-    monkeypatch.setattr(event_log.os, "write", counting_write)
+    writers = [threading.Thread(target=produce, args=(tag,)) for tag in ("a", "b")]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join()
 
-    write_events(events, path)
+    lines = path.read_bytes().split(b"\n")
+    assert lines[-1] == b"" and len(lines) - 1 == 2 * per_writer, "a line was torn or merged"
+    events = list(read_events(path))
+    assert len(events) == 2 * per_writer
+    assert {e.call_id for e in events} == {f"{t}-{i}" for t in "ab" for i in range(per_writer)}
+    assert all(e.content == e.call_id[0] * size for e in events), "a payload was interleaved"
 
-    assert len(sizes) == len(events), f"one write per event expected, saw {len(sizes)}"
-    assert max(sizes) > 40_000, "the large event must be a single write"
-    assert list(read_events(path)) == events
+
+def test_the_artifact_is_private_from_creation(tmp_path: Path, session_events: list) -> None:
+    path = tmp_path / EVENT_LOG_JSONL
+
+    write_events(session_events, path)
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_an_absent_artifact_reads_as_no_events(tmp_path: Path) -> None:

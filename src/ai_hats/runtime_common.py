@@ -47,7 +47,8 @@ from .startup_notices import (  # noqa: F401
 )
 
 if TYPE_CHECKING:
-    from ai_hats_observe import Session, SidecarTracer
+    from ai_hats_observe import Session
+    from ai_hats_observe.event_log_writer import EventLogWriter
 
 logger = logging.getLogger(__name__)
 
@@ -567,13 +568,60 @@ def _print_session_end(
     print("━" * 52 + "\n")
 
 
+def start_event_log(
+    provider,
+    session: "Session",
+    *,
+    project_dir: Path,
+    provider_session_id: str | None,
+) -> "EventLogWriter | None":
+    """The session-time writer of ``events.jsonl``, started; ``None`` when this
+    session writes none.
+
+    Two reasons for ``None``, both said in the trace where they are not the
+    contract: a surface with no canonical reading of its own record writes no
+    file rather than an empty one (``event_reader()`` is ``None``); and a
+    session the surface gave no id — claude on ``--resume`` — cannot be told
+    apart from a neighbour's by time alone, so its record is not followed
+    rather than risk following someone else's. A writer that cannot start is
+    logged too; the session runs on without it.
+    """  # comment-length: allow — when a session has no live log IS the contract
+    reader_factory = provider.event_reader()
+    if reader_factory is None:
+        return None
+    if not provider_session_id:
+        session.log_sys("events.jsonl not written: the surface took no session id")
+        return None
+    from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+    from ai_hats_observe.event_log_writer import EventLogWriter
+
+    # The surface keys its record by the cwd's real path (S0: /private/var, not /var).
+    root = Path(project_dir).resolve()
+
+    def locate() -> list[Path]:
+        return provider.resolve_transcript(
+            root, session.session_id, provider_session_id=provider_session_id
+        )
+
+    try:
+        return EventLogWriter(
+            locate=locate,
+            reader_factory=reader_factory,
+            path=session.session_dir / EVENT_LOG_JSONL,
+            report=session.log_sys,
+        ).start()
+    except Exception as exc:
+        session.log_sys(f"events.jsonl writer did not start: {exc!r}")
+        return None
+
+
 def _finalize_session_basic(
     session: "Session",
     *,
     exit_code: int,
     active_role: str | None,
     provider_name: str,
-    tracer: "SidecarTracer",
+    event_log: "EventLogWriter | None" = None,
     tags: dict[str, str] | None = None,
     claude_session_id: str | None = None,
     duration_s: float | None = None,
@@ -595,16 +643,14 @@ def _finalize_session_basic(
     """
     trace_stats: dict = {}
     try:
-        # Path A (live PTY ⏺-marker audit) removed. The
-        # surrounding try/except is reserved as a scaffold for future
-        # finalize-time tracer cleanup hooks — the SIGINT-safety
-        # pattern (catch both Exception and KeyboardInterrupt so a second
-        # Ctrl+C does not kill cleanup partway) is uniform across every
-        # phase in this function, and re-introducing it later by hand is
-        # error-prone. Leave the frame in place.
-        _ = tracer  # silence unused-arg lint until a real cleanup lands
+        # The surface has exited, so its record is complete: the writer drains
+        # what a live reader held back and the file is closed out here, once.
+        if event_log is not None:
+            outcome = event_log.close()
+            stopped = f", writer stopped early: {outcome.error}" if outcome.error else ""
+            session.log_sys(f"events.jsonl: {outcome.events_written} events{stopped}")
     except (Exception, KeyboardInterrupt):
-        logger.warning("tracer cleanup failed", exc_info=True)
+        logger.warning("event log close failed", exc_info=True)
 
     try:
         session.log_sys(f"Session ended: exit_code={exit_code}")
