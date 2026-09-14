@@ -4,6 +4,33 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `EventLogWriter` (`ai_hats_observe.event_log_writer`): the session-time writer
+  of `events.jsonl`. Follows a surface's record through its `EventReader` on a
+  thread and appends each event as it appears; `close()` adopts a source that
+  appeared late, tells every reader the run is over and drains what a live
+  reader held back. The `EventReader` protocol gains `close()` for that.
+- `GateVerdict` in the canonical events, with `GatePoint` and `GateDecision`:
+  what a gate said about a call or a stop, named after the moment rather than
+  any surface's hook vocabulary. Additive to `events/v1` — an older decoder
+  skips the line.
+- `event_log.append_event`: one event onto the end of a file, the call a
+  producer outside the session's own writer makes.
+- `ClaudeTranscriptReader` reads `system/stop_hook_summary` as a `GateVerdict`
+  at the stop, plus a `SURFACE_WARNING` per hook that failed; it was silenced
+  as bookkeeping.
+
+### Changed
+
+- `write_events` writes each line with one `write(2)` on an `O_APPEND`
+  descriptor and creates the file private (`0o600`), so two producers appending
+  at once never interleave and the artifact is never world-readable, even
+  briefly. `SESSION_FILE_MODE` and the private opener moved to
+  `ai_hats_observe.artifacts` (still importable from `session`).
+
 ## [0.9.0]
 
 A session is read as a stream of canonical events, and the usage report is built
