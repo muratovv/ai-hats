@@ -14,10 +14,11 @@ path — nothing here knows about sessions or directories.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-from .artifacts import EVENT_LOG_JSONL
+from .artifacts import EVENT_LOG_JSONL, private_opener
 from .canonical.events import (
     Event,
     ItemDelta,
@@ -279,20 +280,36 @@ def decode(record: dict[str, Any]) -> Event | None:
 def write_events(events: Iterable[Event], path: Path | str, *, append: bool = False) -> int:
     """Write ``events`` to ``path``, one JSON object per line; return the count.
 
-    ``append`` continues an existing file — the mode a live writer uses, and the
-    reason each line is flushed as it is written rather than at close: a reader
-    following the file sees an event as soon as it happened.
+    ``append`` continues an existing file — the mode the session's own writer
+    uses. Every line is one ``write(2)`` on an ``O_APPEND`` descriptor, never a
+    buffered handle: a hook process appends its verdict to the same file while
+    the session's writer is appending, and neither can see the other, so a line
+    delivered in one call is what keeps the two from interleaving. A reader
+    following the file sees an event the moment that call returns. The file is
+    private from the moment it exists.
     """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | (0 if append else os.O_TRUNC)
+    fd = private_opener(str(target), flags)
     written = 0
-    with target.open("a" if append else "w", encoding="utf-8") as handle:
+    try:
         for event in events:
-            handle.write(json.dumps(encode(event), ensure_ascii=False, default=str))
-            handle.write("\n")
-            handle.flush()
+            data = (json.dumps(encode(event), ensure_ascii=False, default=str) + "\n").encode(
+                "utf-8"
+            )
+            if os.write(fd, data) != len(data):
+                raise OSError(f"short write to {target}: event {written} is torn")
             written += 1
+    finally:
+        os.close(fd)
     return written
+
+
+def append_event(event: Event, path: Path | str) -> None:
+    """One event onto the end of ``path`` — what a producer outside the session's
+    own writer calls, a hook process recording the verdict it just gave."""
+    write_events((event,), path, append=True)
 
 
 def read_events(path: Path | str) -> Iterator[Event]:
@@ -364,6 +381,7 @@ def _usage_from(record: Any) -> Usage:
 __all__ = [
     "EVENT_LOG_JSONL",
     "EVENT_SCHEMA_VERSION",
+    "append_event",
     "decode",
     "encode",
     "read_events",

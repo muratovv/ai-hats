@@ -9,10 +9,12 @@ with it.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
+from ai_hats_observe import event_log
 from ai_hats_observe.canonical import (
     ANSWER_ONLY,
     WITH_REASONING,
@@ -93,6 +95,36 @@ def test_a_live_writer_appends(tmp_path: Path, session_events: list) -> None:
 
     write_events(tail, path, append=True)
     assert list(read_events(path)) == session_events
+
+
+def test_each_event_reaches_the_file_as_one_write(
+    tmp_path: Path, session_events: list, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two producers append to this file — the session's writer and a hook
+    process judging a call — and neither can see the other. One ``write(2)``
+    per line is what keeps their lines from interleaving under ``O_APPEND``;
+    a buffered handle splits a large event across several.
+
+    The 40 KB tool result is the positive control: it is larger than any stdio
+    buffer, so a writer that went through one would show up as several calls.
+    """
+    big = ToolResultReceived(call_id="c-big", ok=True, content="x" * 40_000)
+    events = [*session_events, big]
+    path = tmp_path / EVENT_LOG_JSONL
+    sizes: list[int] = []
+    real_write = os.write
+
+    def counting_write(fd: int, data: bytes) -> int:
+        sizes.append(len(data))
+        return real_write(fd, data)
+
+    monkeypatch.setattr(event_log.os, "write", counting_write)
+
+    write_events(events, path)
+
+    assert len(sizes) == len(events), f"one write per event expected, saw {len(sizes)}"
+    assert max(sizes) > 40_000, "the large event must be a single write"
+    assert list(read_events(path)) == events
 
 
 def test_an_absent_artifact_reads_as_no_events(tmp_path: Path) -> None:

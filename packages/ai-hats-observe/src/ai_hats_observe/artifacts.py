@@ -8,6 +8,7 @@ schema (ADR-0014); it does NOT belong in core.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
 # Session directory prefix for session IDs
@@ -31,6 +32,22 @@ RETRO_LOG = "retro.log"
 # usage.json are both projections of this, and the provider transcript it was
 # read from expires — so this is the record, and it is retained as a fact.
 EVENT_LOG_JSONL = "events.jsonl"
+
+# Session artifacts are private to the user who ran the session.
+SESSION_DIR_MODE = 0o700
+SESSION_FILE_MODE = 0o600
+
+
+def private_opener(path: str, flags: int) -> int:
+    """An ``open()`` opener — and the descriptor for a raw write — that leaves the
+    artifact private however it was created, an existing wider file included."""
+    fd = os.open(path, flags, SESSION_FILE_MODE)
+    try:
+        os.fchmod(fd, SESSION_FILE_MODE)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 # The audit/v1 ``flags`` vocabulary — why a record carries no measurement
@@ -122,6 +139,10 @@ __all__ = [
     "REASONING_LOG",
     "PTY_RAW_LOG",
     "RETRO_LOG",
+    "EVENT_LOG_JSONL",
+    "SESSION_DIR_MODE",
+    "SESSION_FILE_MODE",
+    "private_opener",
     "FLAG_NO_STRUCTURED_TRANSCRIPT",
     "FLAG_SENSOR_ERROR",
     "FLAG_NOT_FINALIZED",
