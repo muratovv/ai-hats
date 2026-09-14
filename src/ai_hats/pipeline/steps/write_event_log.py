@@ -1,6 +1,6 @@
 """``write_event_log`` step — the session's canonical events as ``events.jsonl``.
 
-HATS-1966. Sibling of ``compute_usage`` (``pipeline/steps/compute_usage.py``):
+Sibling of ``compute_usage`` (``pipeline/steps/compute_usage.py``):
 same post-session transcript, same fail-soft contract, wired next to it in
 ``finalize-hitl`` / ``finalize-subagent`` — and a THIRD artifact beside the two
 they already write. ``audit.md`` stays the human rendering and ``usage.json``

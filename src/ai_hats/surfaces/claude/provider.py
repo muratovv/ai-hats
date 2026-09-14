@@ -160,7 +160,7 @@ class ClaudeSurface(Surface):
 
     def event_reader(self) -> Callable[[Path], EventReader]:
         # The class IS the factory: one reader per transcript path, holding its
-        # own position so a grown file yields only what is new (HATS-1966).
+        # own position so a grown file yields only what is new.
         return ClaudeTranscriptReader
 
     def resolve_transcript(

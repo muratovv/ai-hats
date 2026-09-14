@@ -273,7 +273,7 @@ class Surface(abc.ABC):
         surface has no canonical reading yet, so the session writes no
         ``events.jsonl`` at all — while an empty artifact would claim a session
         that emitted nothing. Claude is the only surface that overrides today;
-        agy, cline, codex and opencode keep the default (HATS-1966).
+        agy, cline, codex and opencode keep the default.
         """  # comment-length: allow — the None branch IS the contract
         return None
 
