@@ -58,8 +58,8 @@ def test_dry_run_never_copies_credentials_or_records_their_digest(tmp_path: Path
     assert not (base / ".ai-hats").exists()
     apply = ApplyMaterializer()
     stage_auth(base, session, apply)
-    assert preview.plan.entries == apply.plan.entries
-    assert all(entry.digest is None for entry in apply.plan.entries)
+    assert preview.record.entries == apply.record.entries
+    assert all(entry.digest is None for entry in apply.record.entries)
     assert (session / "auth.json").stat().st_mode & 0o777 == 0o600
 
 

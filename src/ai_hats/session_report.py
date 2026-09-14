@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .materialization import MaterializationPlan
+from .materialization import MaterializationRecord
 from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
@@ -98,7 +98,7 @@ class SessionReport:
     launch: list[str]
     env: dict[str, str]
     prompt: Path | None
-    plan: MaterializationPlan
+    record: MaterializationRecord
     cwd: str = ""
     # Render-only, and deliberately outside to_dict(): the body was never in the
     # payload, and a plan-mode build has no file for --dry-run-full to read.
@@ -137,13 +137,11 @@ class SessionReport:
                     "target": str(e.target),
                     "source": str(e.source) if e.source else None,
                     "size": e.size,
-                    "file_count": e.file_count,
-                    "detail": e.detail,
                     "digest": e.digest,
                 }
-                for e in self.plan.entries
+                for e in self.record.entries
             ],
-            "duplicates": [str(p) for p in self.plan.duplicates()],
+            "duplicates": [str(p) for p in self.record.duplicates()],
             "checks": [
                 {
                     "skill": c.binding.skill,
@@ -196,10 +194,8 @@ class SessionReport:
         if not d["materialized"]:
             lines.append("  (nothing)")
         for e in d["materialized"]:
-            extra = f"  ({e['file_count']} files)" if e["kind"] == "copy_tree" else ""
-            detail = f"  {e['detail']}" if e["detail"] else ""
             lines.append(
-                f"  {e['kind']:<11} {e['target']}{extra}{detail}"
+                f"  {e['kind']:<11} {e['target']}"
                 + (f"  {_human_size(e['size'])}" if e["size"] else "")
             )
 

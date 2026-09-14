@@ -25,7 +25,7 @@ def _report(tmp_path: Path) -> SessionReport:
         launch=["agy", "--add-dir", str(tmp_path / "cache" / "rules")],
         env={"AI_HATS_DIR": "/secret/path", "AI_HATS_PYTHON": "/venv/bin/python"},
         prompt=tmp_path / "cache" / "prompt.md",
-        plan=port.plan,
+        record=port.record,
     )
 
 
@@ -76,7 +76,7 @@ def test_duplicate_materialization_is_surfaced(tmp_path: Path):
         launch=["claude"],
         env={},
         prompt=None,
-        plan=port.plan,
+        record=port.record,
     )
 
     assert report.to_dict()["duplicates"] == [str(tmp_path / "p")]
@@ -96,7 +96,7 @@ def test_materialized_entries_carry_sha256_digests(tmp_path: Path):
         launch=["claude"],
         env={},
         prompt=None,
-        plan=port.plan,
+        record=port.record,
     )
     mat = report.to_dict()["materialized"]
     assert len(mat) == 1
@@ -123,7 +123,7 @@ def test_full_render_dumps_the_body_a_plan_mode_build_never_wrote(tmp_path: Path
         launch=["agy"],
         env={},
         prompt=tmp_path / "cache" / "prompt.md",
-        plan=port.plan,
+        record=port.record,
         prompt_text="# ROLE: MAINTAINER\nbody bytes",
     )
 
@@ -145,7 +145,7 @@ def test_full_render_still_falls_back_to_the_file_on_a_real_record(tmp_path: Pat
         launch=["agy"],
         env={},
         prompt=written,
-        plan=PlanMaterializer().plan,
+        record=PlanMaterializer().record,
     )
 
     assert "bytes on disk" in report.render(full=True)

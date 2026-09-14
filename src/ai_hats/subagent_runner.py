@@ -302,7 +302,7 @@ class SubAgentRunner:
         # said `checks: []`, so the reflect loop could not see whether a
         # sub-agent had its gates at all.
         reported_checks, notes = describe_checks(
-            provider, self.layout, result, session.session_id, artifacts.port.plan
+            provider, self.layout, result, session.session_id, artifacts.port.record
         )
         # Everything ai-hats adds to the child's environment, expressed once
         # — the sub-agent path merged its own subset and reported a
@@ -353,7 +353,7 @@ class SubAgentRunner:
             launch=described.launch,
             env=launch_env,
             prompt=prompt_file,
-            plan=artifacts.port.plan,
+            record=artifacts.port.record,
             cwd="<worktree, assigned at launch>",
             checks=reported_checks,
             consent=result.consent,

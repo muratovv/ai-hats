@@ -688,7 +688,7 @@ class WrapRunner:
         # The same section --dry-run shows, on the launch record — one
         # call site would be a report about a session nobody can compare against.
         reported_checks, check_notes = describe_checks(
-            provider, self.layout, result, session.session_id, artifacts.port.plan
+            provider, self.layout, result, session.session_id, artifacts.port.record
         )
         builder_notices.extend(StartupNotice("warn", text) for text in check_notes)
         # The record carries the same notes the dry-run does. They are already on
@@ -703,7 +703,7 @@ class WrapRunner:
             launch=cmd,
             env=env_map,
             prompt=prompt_file,
-            plan=artifacts.port.plan,
+            record=artifacts.port.record,
             cwd=str(self.layout.cwd),  # where the pty child runs, not the root
             checks=reported_checks,
             consent=result.consent,

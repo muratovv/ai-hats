@@ -79,7 +79,7 @@ def test_hitl_dry_run_leaves_the_filesystem_byte_identical(project: Path, surfac
 
     assert _fingerprint(project) == before
     assert report.escapes == ()
-    assert report.plan.entries, "a dry-run that plans nothing is not a dry-run"
+    assert report.record.entries, "a dry-run that plans nothing is not a dry-run"
 
 
 @pytest.mark.parametrize("surface", SURFACES)

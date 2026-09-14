@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
@@ -34,15 +35,74 @@ class WriteKind(str, Enum):
     MKDIR = "mkdir"
 
 
+#: What each kind writes from — the one field it must carry, and the only one.
+_PAYLOAD_OF = {
+    WriteKind.WRITE_TEXT: "content",
+    WriteKind.WRITE_EXECUTABLE: "content",
+    WriteKind.COPY_TREE: "source",
+    WriteKind.SYMLINK: "source",
+    WriteKind.MERGE_JSON: "data",
+    WriteKind.REMOVE_TREE: None,
+    WriteKind.MKDIR: None,
+}
+
+
 @dataclass(frozen=True)
 class MaterializationEntry:
+    """One write, carrying what it writes — so applying it needs nothing else.
+
+    ``digest`` and ``size`` are derived from the payload, never stored: an entry
+    cannot claim bytes it does not hold. A tree's bytes stay on disk, so its
+    digest arrives as ``tree_digest`` — an input, streamed by whoever read the
+    tree — and its size is a fact of application, ``None`` here.
+    """
+
     kind: WriteKind
     target: Path
-    size: int = 0
+    #: Out of ``repr``: a prompt is tens of KB, a private file is a credential.
+    content: str | None = field(default=None, repr=False)
+    data: Mapping[str, object] | None = None
     source: Path | None = None
-    file_count: int = 1
-    detail: str = ""
-    digest: str | None = None
+    #: Owner-only mode, and no digest in any record of this entry.
+    private: bool = False
+    #: The target lies outside the plan's root, and the planner meant it.
+    escape: bool = False
+    tree_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        payload = _PAYLOAD_OF[self.kind]
+        carried = {
+            name for name in ("content", "data", "source") if getattr(self, name) is not None
+        }
+        if carried != ({payload} if payload else set()):
+            raise ValueError(f"{self.kind.value} entry carries {sorted(carried)}, needs {payload}")
+        if self.tree_digest is not None and self.kind is not WriteKind.COPY_TREE:
+            raise ValueError(f"{self.kind.value} entry cannot carry a tree digest")
+        if self.private and self.kind is not WriteKind.WRITE_TEXT:
+            raise ValueError(f"{self.kind.value} entry cannot be private")
+
+    @property
+    def bytes(self) -> bytes | None:
+        """The bytes a text or json entry writes; ``None`` for every other kind."""
+        if self.content is not None:
+            return self.content.encode()
+        if self.data is not None:
+            return render_json(self.data).encode()
+        return None
+
+    @property
+    def size(self) -> int | None:
+        payload = self.bytes
+        return None if payload is None else len(payload)
+
+    @property
+    def digest(self) -> str | None:
+        if self.private:
+            return None
+        if self.kind is WriteKind.COPY_TREE:
+            return self.tree_digest
+        payload = self.bytes
+        return None if payload is None else hashlib.sha256(payload).hexdigest()
 
 
 _CREATING = (
@@ -55,7 +115,7 @@ _CREATING = (
 
 
 @dataclass
-class MaterializationPlan:
+class MaterializationRecord:
     entries: list[MaterializationEntry] = field(default_factory=list)
 
     def duplicates(self) -> list[Path]:
@@ -75,12 +135,12 @@ class MaterializationPlan:
 
 
 def describe_write_text(path: Path, content: str) -> MaterializationEntry:
-    content_bytes = content.encode()
+    return MaterializationEntry(kind=WriteKind.WRITE_TEXT, target=path, content=content)
+
+
+def describe_private_text(path: Path, content: str) -> MaterializationEntry:
     return MaterializationEntry(
-        kind=WriteKind.WRITE_TEXT,
-        target=path,
-        size=len(content_bytes),
-        digest=hashlib.sha256(content_bytes).hexdigest(),
+        kind=WriteKind.WRITE_TEXT, target=path, content=content, private=True
     )
 
 
@@ -89,29 +149,20 @@ def describe_write_executable(path: Path, content: str) -> MaterializationEntry:
 
 
 def describe_copy_tree(src: Path, dest: Path) -> MaterializationEntry:
-    files = [p for p in src.rglob("*") if p.is_file()] if src.is_dir() else []
     return MaterializationEntry(
         kind=WriteKind.COPY_TREE,
         target=dest,
         source=src,
-        size=sum(p.stat().st_size for p in files),
-        file_count=len(files),
-        digest=dir_digest(src) if src.is_dir() else None,
+        tree_digest=dir_digest(src) if src.is_dir() else None,
     )
 
 
 def describe_symlink(src: Path, dest: Path) -> MaterializationEntry:
-    return MaterializationEntry(
-        kind=WriteKind.SYMLINK,
-        target=dest,
-        source=src,
-        size=0,
-        file_count=0,
-    )
+    return MaterializationEntry(kind=WriteKind.SYMLINK, target=dest, source=src)
 
 
 def describe_mkdir(path: Path) -> MaterializationEntry:
-    return MaterializationEntry(kind=WriteKind.MKDIR, target=path, file_count=0)
+    return MaterializationEntry(kind=WriteKind.MKDIR, target=path)
 
 
 def describe_remove_tree(path: Path) -> MaterializationEntry:
@@ -123,36 +174,12 @@ def render_json(data: dict) -> str:
 
 
 def describe_merge_json(path: Path, data: dict) -> MaterializationEntry:
-    content = render_json(data)
-    content_bytes = content.encode()
-    current = path.read_text() if path.is_file() else None
-    return MaterializationEntry(
-        kind=WriteKind.MERGE_JSON,
-        target=path,
-        size=len(content_bytes),
-        detail=_key_diff(current, data),
-        digest=hashlib.sha256(content_bytes).hexdigest(),
-    )
+    return MaterializationEntry(kind=WriteKind.MERGE_JSON, target=path, data=data)
 
 
 def json_differs(path: Path, data: dict) -> bool:
     current = path.read_text() if path.is_file() else None
     return current != render_json(data)
-
-
-def _key_diff(current_text: str | None, desired: dict) -> str:
-    """Top-level key delta, rendered for the report (``+hooks``, ``~theme``)."""
-    try:
-        current = json.loads(current_text) if current_text else {}
-    except ValueError:
-        current = {}
-    if not isinstance(current, dict):
-        current = {}
-
-    added = [f"+{k}" for k in desired if k not in current]
-    changed = [f"~{k}" for k in desired if k in current and current[k] != desired[k]]
-    removed = [f"-{k}" for k in current if k not in desired]
-    return " ".join(added + changed + removed)
 
 
 # --- the port ---
@@ -162,11 +189,11 @@ class Materializer(abc.ABC):
     """Every session write goes through here. Read ``plan`` after the build."""
 
     def __init__(self, *, lock_timeout: float = LOCK_TIMEOUT) -> None:
-        self.plan = MaterializationPlan()
+        self.record = MaterializationRecord()
         self._lock_timeout = lock_timeout
 
     def _record(self, entry: MaterializationEntry) -> None:
-        self.plan.entries.append(entry)
+        self.record.entries.append(entry)
 
     @abc.abstractmethod
     def write_text(self, path: Path, content: str) -> None: ...
@@ -229,7 +256,7 @@ class ApplyMaterializer(Materializer):
         from ai_hats_core.atomic_io import atomic_write_text
 
         atomic_write_text(path, content, mode=0o600)
-        self._record(MaterializationEntry(kind=WriteKind.WRITE_TEXT, target=path))
+        self._record(describe_private_text(path, content))
 
     def write_executable(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -324,7 +351,7 @@ class PlanMaterializer(Materializer):
 
     def write_private_text(self, path: Path, content: str) -> None:
         self._mark_created(path)
-        self._record(MaterializationEntry(kind=WriteKind.WRITE_TEXT, target=path))
+        self._record(describe_private_text(path, content))
 
     def write_executable(self, path: Path, content: str) -> None:
         self._mark_created(path.parent)
@@ -361,7 +388,7 @@ class PlanMaterializer(Materializer):
         self._record(describe_remove_tree(path))
 
     def executable_at(self, path: Path) -> bool:
-        for entry in reversed(self.plan.entries):
+        for entry in reversed(self.record.entries):
             covers = path == entry.target or entry.target in path.parents
             if not covers:
                 continue

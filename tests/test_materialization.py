@@ -62,17 +62,17 @@ def test_both_implementations_record_the_same_build(tmp_path: Path):
 
     def shape(plan):
         return [
-            (e.kind, e.target.relative_to(tmp_path).parts[1:], e.size, e.file_count, e.detail)
+            (e.kind, e.target.relative_to(tmp_path).parts[1:], e.size, e.digest)
             for e in plan.entries
         ]
 
-    assert shape(planned.plan) == shape(applied.plan)
+    assert shape(planned.record) == shape(applied.record)
 
 
 def test_write_text_is_recorded_with_its_byte_size(port: Materializer, tmp_path: Path):
     port.write_text(tmp_path / "session" / "prompt.md", "hello")
 
-    [entry] = port.plan.entries
+    [entry] = port.record.entries
     assert entry.kind is WriteKind.WRITE_TEXT
     assert entry.size == 5
 
@@ -86,11 +86,11 @@ def test_private_write_hides_content_and_creates_parents(
     port.write_private_text(target, content)
     port.mkdir(target.parent)
 
-    [entry] = port.plan.entries
+    [entry] = port.record.entries
     assert entry.kind is WriteKind.WRITE_TEXT
     assert entry.target == target
     assert entry.digest is None
-    assert entry.size == 0
+    assert entry.size == len(content)
     assert content not in repr(entry)
     if isinstance(port, ApplyMaterializer):
         assert target.read_text() == content
@@ -106,7 +106,7 @@ def test_write_executable_records_bytes_and_only_apply_sets_mode(
 
     port.write_executable(target, "#!/bin/sh\nexit 0\n")
 
-    [entry] = port.plan.entries
+    [entry] = port.record.entries
     assert entry.kind is WriteKind.WRITE_EXECUTABLE
     assert entry.size == 17
     assert target.exists() is isinstance(port, ApplyMaterializer)
@@ -114,14 +114,17 @@ def test_write_executable_records_bytes_and_only_apply_sets_mode(
         assert target.stat().st_mode & 0o111
 
 
-def test_copy_tree_is_recorded_with_file_count_and_bytes(port: Materializer, tmp_path: Path):
+def test_copy_tree_is_recorded_with_its_source_and_tree_digest(port: Materializer, tmp_path: Path):
+    from ai_hats.fs_digest import dir_digest
+
     src = _skill_src(tmp_path)
     port.copy_tree(src, tmp_path / "cache" / "skills" / "s")
 
-    [entry] = port.plan.entries
+    [entry] = port.record.entries
     assert entry.kind is WriteKind.COPY_TREE
     assert entry.source == src
-    assert (entry.file_count, entry.size) == (2, 8)
+    assert entry.digest == dir_digest(src)
+    assert entry.size is None, "a tree's size is a fact of application, not of the record"
 
 
 def test_symlink_is_recorded_without_dry_run_writes(port: Materializer, tmp_path: Path):
@@ -132,7 +135,7 @@ def test_symlink_is_recorded_without_dry_run_writes(port: Materializer, tmp_path
 
     port.symlink(source, target)
 
-    [entry] = port.plan.entries
+    [entry] = port.record.entries
     assert entry.kind is WriteKind.SYMLINK
     assert entry.source == source
     assert entry.target == target
@@ -144,13 +147,13 @@ def test_repeated_mkdir_of_one_dir_is_recorded_once(port: Materializer, tmp_path
     port.mkdir(target)
     port.mkdir(target)
 
-    assert [e.kind for e in port.plan.entries] == [WriteKind.MKDIR]
+    assert [e.kind for e in port.record.entries] == [WriteKind.MKDIR]
 
 
 def test_mkdir_of_an_existing_dir_is_not_recorded(port: Materializer, tmp_path: Path):
     port.mkdir(tmp_path)
 
-    assert port.plan.entries == []
+    assert port.record.entries == []
 
 
 def test_mkdir_after_remove_is_recorded_again(port: Materializer, tmp_path: Path):
@@ -161,7 +164,7 @@ def test_mkdir_after_remove_is_recorded_again(port: Materializer, tmp_path: Path
     port.remove_tree(target)
     port.mkdir(target)
 
-    assert [e.kind for e in port.plan.entries] == [WriteKind.REMOVE_TREE, WriteKind.MKDIR]
+    assert [e.kind for e in port.record.entries] == [WriteKind.REMOVE_TREE, WriteKind.MKDIR]
 
 
 def test_write_text_does_not_make_its_parent_a_separate_mkdir(port: Materializer, tmp_path: Path):
@@ -170,25 +173,25 @@ def test_write_text_does_not_make_its_parent_a_separate_mkdir(port: Materializer
     port.write_text(nested / "GEMINI.md", "x")
     port.mkdir(nested)
 
-    assert [e.kind for e in port.plan.entries] == [WriteKind.WRITE_TEXT]
+    assert [e.kind for e in port.record.entries] == [WriteKind.WRITE_TEXT]
 
 
 def test_remove_tree_of_a_missing_target_is_not_recorded(port: Materializer, tmp_path: Path):
     port.remove_tree(tmp_path / "never-existed")
 
-    assert port.plan.entries == []
+    assert port.record.entries == []
 
 
-def test_merge_json_records_the_key_diff(port: Materializer, tmp_path: Path):
+def test_merge_json_records_the_whole_desired_document(port: Materializer, tmp_path: Path):
     settings = tmp_path / "settings.json"
     settings.write_text(json.dumps({"theme": "dark"}))
 
     changed = port.merge_json(settings, {"theme": "dark", "hooks": {"PreToolUse": []}})
 
     assert changed is True
-    [entry] = port.plan.entries
+    [entry] = port.record.entries
     assert entry.kind is WriteKind.MERGE_JSON
-    assert entry.detail == "+hooks"
+    assert entry.data == {"theme": "dark", "hooks": {"PreToolUse": []}}
 
 
 def test_merge_json_with_identical_content_is_not_a_write(port: Materializer, tmp_path: Path):
@@ -196,7 +199,7 @@ def test_merge_json_with_identical_content_is_not_a_write(port: Materializer, tm
     settings.write_text(json.dumps({"theme": "dark"}, indent=2) + "\n")
 
     assert port.merge_json(settings, {"theme": "dark"}) is False
-    assert port.plan.entries == []
+    assert port.record.entries == []
 
 
 def test_duplicates_names_a_target_materialized_twice(port: Materializer, tmp_path: Path):
@@ -206,7 +209,7 @@ def test_duplicates_names_a_target_materialized_twice(port: Materializer, tmp_pa
     port.write_text(target, "role text")
     port.write_text(target, "role text")
 
-    assert port.plan.duplicates() == [target]
+    assert port.record.duplicates() == [target]
 
 
 def test_duplicates_ignores_the_remove_then_create_rebuild(port: Materializer, tmp_path: Path):
@@ -216,7 +219,7 @@ def test_duplicates_ignores_the_remove_then_create_rebuild(port: Materializer, t
     port.remove_tree(target)
     port.mkdir(target)
 
-    assert port.plan.duplicates() == []
+    assert port.record.duplicates() == []
 
 
 # --- disk effects: the only place the implementations may differ ---
