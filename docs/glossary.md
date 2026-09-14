@@ -24,7 +24,7 @@ A target LLM CLI that ai-hats wraps. **`provider` is the published word and `Sur
 
 Detail — see [1].
 
-**Three names, one thing — and a fourth that is not it (HATS-1950).** The pitch in `README.md` says **harness**, because that is what the market calls an agent CLI. `provider` is what you type — the flag, the `ai-hats.yaml` key, the entry-point group. `Surface` is what the code calls it. All three name the same thing at different altitudes. The `harness:` **block** in `ai-hats.yaml` is unrelated: it pins the install-source channel (`local` / `edge` / `stable`) — see **Harness source / channel**. A reader who meets "multi-harness" in the README and goes looking for a harness to choose in the config will find an update channel instead, so the two are spelled out here rather than left to collide.
+**Three names, one thing — and a fourth that is not it.** The pitch in `README.md` says **harness**, because that is what the market calls an agent CLI. `provider` is what you type — the flag, the `ai-hats.yaml` key, the entry-point group. `Surface` is what the code calls it. All three name the same thing at different altitudes. The `harness:` **block** in `ai-hats.yaml` is unrelated: it pins the install-source channel (`local` / `edge` / `stable`) — see **Harness source / channel**. A reader who meets "multi-harness" in the README and goes looking for a harness to choose in the config will find an update channel instead, so the two are spelled out here rather than left to collide.
 
 ## Surface plugin
 

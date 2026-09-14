@@ -667,7 +667,7 @@ Reference docs (`docs/*.md`, `CONTRIBUTING.md`) use one of three link styles dep
 
 **Rationale.** Cross-doc links earn a citation slot at the bottom because they survive doc reshuffles, declutter the body, and form a quick "what does this doc depend on" index. Anchors and CLI strings stay inline because they're navigation / identifiers, not citations.
 
-### `README.md` is exempt (HATS-1950)
+### `README.md` is exempt
 
 **The README links inline, and carries no `## References` section.** Numbered references answer a research-register question — *what does this claim rest on* — and a reader who audits sources accepts a jump to the bottom as the price. The README answers a different one: *what is this, and where do I click next*. Same words, different job; the citation apparatus is dead weight on a pitch.
 
