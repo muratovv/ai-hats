@@ -83,9 +83,7 @@ Harnesses are discovered through the `ai_hats.providers` entry point — an open
 | `codex`    | Codex                |
 | `opencode` | opencode             |
 
-`gemini` is an accepted alias for `agy`. Support is not uniform: runtime hooks, transcript-backed observability, sub-agents and the consent gate each land differently per harness.
-
-<!-- TODO(HATS-1950 S3): ссылка на матрицу статуса поддержки docs/surfaces.md — «per-capability support matrix» -->
+`gemini` is an accepted alias for `agy`. Support is not uniform — what a hook gate may do, whether the audit is parsed from a real session log, how sub-agents run, whether consent wrappers work. The per-capability matrix is [surfaces](docs/surfaces.md); read it before committing to a harness.
 
 Ask your own host what it has: `ai-hats list providers`.
 
