@@ -292,3 +292,52 @@ def test_every_reasoning_block_of_a_turn_is_kept(tmp_path: Path) -> None:
     )
 
     assert parsed.turns[0].thinking == ["first consideration", "second consideration"]
+
+
+def test_an_audit_built_from_the_event_log_is_the_audit_built_from_the_transcript(
+    tmp_path: Path,
+) -> None:
+    """The event log is a record of the session, not a lossy copy of one.
+
+    An audit rendered from the log must equal the audit rendered from the
+    transcript that produced it — otherwise the log is a summary, and every
+    consumer built on it later inherits whatever it silently dropped.
+
+    Positive control: the fixture is asserted to carry turns, reasoning, a tool
+    outcome and a signal, so equality cannot be reached by both sides being
+    empty.
+    """
+    from ai_hats_observe.event_log import read_events, write_events
+    from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
+
+    records = [
+        prompt("do the thing"),
+        fragment("req-1", [{"type": "thinking", "thinking": "weighing it"}]),
+        fragment("req-1", [{"type": "text", "text": "starting"}]),
+        fragment(
+            "req-1",
+            [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "ls"}}],
+        ),
+        result("c1", "no such file", error=True),
+        fragment("req-1", [{"type": "text", "text": "it failed"}], stop_reason="end_turn"),
+    ]
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+
+    from_transcript = ClaudeParser().parse(transcript, tmp_path / "absent.log")
+
+    log = tmp_path / "events.jsonl"
+    write_events(ClaudeTranscriptReader(transcript).read(), log)
+    from_log = ClaudeParser.from_events(read_events(log))
+
+    # POSITIVE CONTROL: the fixture is rich enough for equality to mean something
+    assert from_transcript.turns, "fixture produced no turns"
+    assert from_transcript.turns[0].thinking == ["weighing it"]
+    assert any("✗" in tool for tool in from_transcript.turns[0].tools)
+    assert from_transcript.agg_usage["output_tokens"] > 0
+
+    assert from_log.turns == from_transcript.turns
+    assert from_log.agg_usage == from_transcript.agg_usage
+    assert from_log.model_stats == from_transcript.model_stats
+    assert from_log.signals == from_transcript.signals
+    assert from_log.responses == from_transcript.responses

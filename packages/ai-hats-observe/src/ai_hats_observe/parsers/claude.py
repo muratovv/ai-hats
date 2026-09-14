@@ -79,6 +79,25 @@ class ClaudeParser:
             return _usage.parse_session_usage(paths[0])
         return self._trace.parse_usage(None, trace_path)
 
+    @classmethod
+    def from_events(cls, events: Iterable[Event]) -> ParsedTranscript:
+        """Build the parsed shape from any stream of canonical events.
+
+        The source is deliberately not named here. A live transcript and a
+        replayed event log produce the same stream, so an audit rendered from
+        the session's own event log is the same audit — which is what makes
+        that log a record of the session rather than a copy of one.
+        """
+        events = list(events)
+        collected = collect(events)
+        return ParsedTranscript(
+            turns=cls._turns(events),
+            model_stats=_model_stats(collected.responses),
+            agg_usage=_agg_usage(collected.responses),
+            responses=collected.responses,
+            signals=collected.signals,
+        )
+
     def _parse_jsonl(self, jsonl_paths: Path | Iterable[Path]) -> ParsedTranscript:
         """Read the transcript(s) as canonical events; derive the rest from them.
 
@@ -91,15 +110,8 @@ class ClaudeParser:
             if isinstance(jsonl_paths, (Path, str))
             else [Path(p) for p in jsonl_paths]
         )
-        events = [event for path in paths for event in ClaudeTranscriptReader(path).read()]
-        collected = collect(events)
-        responses = _once_per_call(collected.responses)
-        return ParsedTranscript(
-            turns=self._turns(events),
-            model_stats=_model_stats(responses),
-            agg_usage=_agg_usage(responses),
-            responses=responses,
-            signals=collected.signals,
+        return self.from_events(
+            event for path in paths for event in ClaudeTranscriptReader(path).read()
         )
 
     # -- the legacy turn shape, derived ------------------------------------
@@ -210,22 +222,6 @@ class ClaudeParser:
 
 
 # --- projections over the collected run ------------------------------------
-
-
-def _once_per_call(responses: list[Response]) -> list[Response]:
-    """One entry per inference call.
-
-    Several records of one session (a resumed or rotated transcript) repeat a
-    call verbatim, and billing it twice is the defect this parser exists to fix.
-    """
-    seen: set[str] = set()
-    unique: list[Response] = []
-    for response in responses:
-        if response.response_id in seen:
-            continue
-        seen.add(response.response_id)
-        unique.append(response)
-    return unique
 
 
 def _model_stats(responses: list[Response]) -> dict[str, dict]:
