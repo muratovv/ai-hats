@@ -10,6 +10,8 @@ Umbrella for advanced ai-hats workflows beyond first-time setup. Each section is
 | 4 | **CLI integrations** — wire external services (Google, GitHub, BQ) as a regular skill                          | TODO — see [5] |
 | 5 | **Escape a wedged session** — force-exit an unresponsive interactive session with triple Ctrl-C                | live           |
 | 6 | **Channel & install-source knobs** — pick local / edge / stable, point edge at a fork, override the repo       | live           |
+| 7 | **Update notification** — the end-of-session banner when your install lags upstream, and how to silence it     | live           |
+| 8 | **Recovery from accidental change** — the trash session every destructive op writes before touching disk       | live           |
 
 > Full CLI reference — `ai-hats --tree`. First-time setup → [1]. Day-to-day backlog CLI → [2]. Pipeline contract reference (`Step` / `StepIO`) → [3].
 
@@ -402,6 +404,38 @@ AI_HATS_REPO_URL=https://github.com/<you>/ai-hats.git ai-hats self update
 ```
 
 The env var wins over `harness.repo` for that run only; the persisted config is untouched.
+
+---
+
+---
+
+## 7. Update notification
+
+When the installed `ai-hats` SHA lags upstream `master`, a three-line **Update banner** appears under the **Session summary** at the end of each interactive session. It tells you the current and latest short SHAs, suggests `ai-hats self update`, and prints the opt-out env var on the dim third line.
+
+The probe is non-blocking: a detached background subprocess fires at session start and caches the result for 24h under `<cache_root>/update-check.json` — outside the project, default `~/.cache/ai-hats/<project-key>/`. The banner reads whatever's currently in the cache (stale-while-revalidate) — first probe results land in the next session, not the current one.
+
+Suppress both probe and banner with `AI_HATS_NO_UPDATE_CHECK=1` (useful for CI / scripted invocations). Term definitions — see [10].
+
+---
+
+## 8. Recovery from accidental change
+
+Every destructive op inside `ai-hats self update` / `self init` (migrations, scaffold rewrites, `.gitignore` edits, `.claude/settings.json` writes, `heal_*` rewrites) snapshots the original content to a per-process **trash session** before touching disk:
+
+```text
+$TMPDIR/ai-hats/trash-<utc-ts>-<pid>-XXXXXX/<project-relative-path>
+```
+
+The session also writes a `MANIFEST.md` next to the moved files listing every op (timestamp, kind, reason, original → trash path). Recover a single file:
+
+```bash
+ls $TMPDIR/ai-hats/                                # list all trash sessions
+cat $TMPDIR/ai-hats/trash-<id>/MANIFEST.md         # see what's in this one
+cp -r $TMPDIR/ai-hats/trash-<id>/<rel> ./<rel>     # restore
+```
+
+Sessions are NOT auto-cleaned — `/tmp` retention is enough in practice (macOS / Linux clean on reboot). To override the trash location, set `AI_HATS_TRASH_DIR=<path>`. To opt out entirely in CI / ephemeral environments, set `AI_HATS_TRASH_DIR=-` (hard-delete mode, no snapshots, WARN per op). On `ENOSPC` / read-only filesystem the destructive op aborts loudly (`TrashFullError`) rather than silently losing data. Term definitions — see [10].
 
 ---
 
