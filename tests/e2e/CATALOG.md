@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**321 of 321 files catalogued — 329 flows.**
+**322 of 322 files catalogued — 330 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1411,6 +1411,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] prose-refs`, states on every run what it does NOT cover, and is named in the merge-gate composition. Whether the live corpus is INTACT belongs to the stage, not here (HATS-1714/1716) — the refusal is proved instead against a planted tree, which no sibling session can change
 - **why** — the checker's own silence is the thing under test. HATS-1823 measured 21 references in this library that did not resolve, and every gate in the repo stayed green through all of them, because none reads prose. A checker that is wired but never refuses anything reproduces exactly that.
+
+## `test_gates_stage_leads_path_with_its_interpreter.py`
+
+*pins HATS-1659*
+
+- **flow** — a maintainer runs a gate from a shell with no venv on PATH, and a test the stage runs spawns `pytest` or `python3` by bare name
+- **cmds**
+
+  ```console
+  bash scripts/gates.sh python-pin
+  PYTHON=/elsewhere/bin/python bash scripts/gates.sh python-pin
+  ```
+
+- **expect** — the stage's children find the stage's own interpreter first on PATH, whether it came from the checkout's .venv or from PYTHON=
+- **why** — CI installs into the interpreter that IS on PATH, so PATH's python and the one running the suite agree there for free; locally the stages ran under <checkout>/.venv while PATH named the caller's shell, and three e2e tests went red on a python3 with no pytest in it
 
 ## `test_gates_ticket_ids.py`
 

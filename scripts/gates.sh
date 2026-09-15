@@ -59,6 +59,11 @@ elif [[ -z "${PYTHON:-}" && -x "$repo_root/.venv/bin/python3" ]]; then
 else
     PY="${PYTHON:-python}"
 fi
+# What a stage spawns by bare name (python3, pytest, rack) must be $PY too —
+# what CI has by construction, since it installs into the PATH interpreter.
+if [[ "$PY" == /* ]]; then
+    export PATH="${PY%/*}:$PATH"
+fi
 
 # ===========================================================================
 # THE STAGES
