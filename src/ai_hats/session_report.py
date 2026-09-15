@@ -90,6 +90,10 @@ def _consent_key(consent: dict) -> str:
     return "-"  # declared under an app no guard of this build reads
 
 
+def _under_any(path: Path, roots: list[Path]) -> bool:
+    return any(path.is_relative_to(root) for root in roots)
+
+
 def _render_composition(c: dict) -> list[str]:
     """The composition half by kind — the hooks and points the prompt never shows."""
     lines = [
@@ -232,11 +236,18 @@ class SessionReport:
         lines += ["", "materialized"]
         if not d["materialized"]:
             lines.append("  (nothing)")
+        composed = [Path(s["path"]) for s in d.get("composition", {}).get("skills", ())]
         for e in d["materialized"]:
-            lines.append(
-                f"  {e['kind']:<11} {e['target']}"
-                + (f"  {_human_size(e['size'])}" if e["size"] else "")
-            )
+            line = f"  {e['kind']:<11} {e['target']}"
+            if e["size"]:
+                line += f"  {_human_size(e['size'])}"
+            if e["source"]:
+                # A source under no composed skill is a planning input from the
+                # person's own environment — the reader must see it as such.
+                line += f"  <- {e['source']}"
+                if "composition" in d and not _under_any(Path(e["source"]), composed):
+                    line += "  (outside the composition)"
+            lines.append(line)
 
         for dup in d["duplicates"]:
             lines.append(f"  ! {dup} materialized twice")

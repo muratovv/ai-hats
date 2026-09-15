@@ -375,6 +375,35 @@ def test_composition_section_shows_hooks_by_kind_and_consent_ends(tmp_path: Path
     assert "1 PRIORITIES, 1 (prose), 1 RULES" in text
 
 
+def test_an_entry_shows_its_source_and_one_from_outside_the_composition_is_marked(tmp_path: Path):
+    """A link into the person's home is a planning input, not a skill mirror;
+    the reader must be able to tell the two apart without --json."""
+    from ai_hats.surfaces.plan import Skill
+
+    skill = tmp_path / "lib" / "skills" / "hatrack"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# h\n")
+    home_entry = tmp_path / "home" / ".config" / "opencode" / "themes"
+    port = PlanMaterializer()
+    port.copy_tree(skill, tmp_path / "cache" / "skills" / "hatrack")
+    port.symlink(home_entry, tmp_path / "cache" / "opencode" / "themes")
+    port.write_text(tmp_path / "cache" / "prompt.md", "role text")
+    report = replace(
+        _report(tmp_path),
+        record=port.record,
+        composition=replace(
+            _composition(), skills=(Skill("skills::hatrack", skill, "ef" * 32),)
+        ),
+    )
+
+    text = report.render()
+
+    mirror, link, prompt = (line for line in text.splitlines() if line.startswith("  copy_tree") or line.startswith("  symlink") or line.startswith("  write_text"))
+    assert f"<- {skill}" in mirror and "outside" not in mirror
+    assert f"<- {home_entry}" in link and "outside the composition" in link
+    assert "<-" not in prompt
+
+
 def test_a_report_without_a_composition_carries_no_section(tmp_path: Path):
     report = _report(tmp_path)
     assert "composition" not in report.to_dict()
