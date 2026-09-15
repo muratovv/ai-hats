@@ -102,10 +102,10 @@
     },
     {
       "detail": "",
-      "digest": "6a3ed1771f1591f966491cac86a3c4ec99d1efe2f43aec5fbf824210559727a5",
+      "digest": "f8474dac9b515c6a0d929fcc68c2f030f2bc9acc41f520b272c989e117d65799",
       "file_count": 1,
       "kind": "write_text",
-      "size": 17,
+      "size": 1148,
       "source": null,
       "target": "<cache>/sessions/dry-run/settings.json"
     }

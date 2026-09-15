@@ -64,10 +64,12 @@ def test_claude_build_session_artifacts_hitl(tmp_path: Path):
     settings_path = Path(artifacts.cli_args[settings_idx])
     assert settings_path.exists()
     settings_data = json.loads(settings_path.read_text())
-    # Empty for a skill-less composition since HATS-1268 — every entry is
-    # skill-declared. The wiring contract lives in
-    # tests/test_provider_pretool_hook.py; this test owns the ADR-0018 seam.
-    assert settings_data == {"hooks": {}}
+    # A skill-less composition wires no gate (every gate is skill-declared,
+    # HATS-1268) — only the observer that lets the session's own record say
+    # when claude is showing the person a permission prompt. The wiring
+    # contract lives in tests/test_provider_pretool_hook.py; this test owns
+    # the ADR-0018 seam.
+    assert list(settings_data["hooks"]) == ["Notification"]
 
     # Check clean-root invariant
     assert not (project_dir / "CLAUDE.md").exists()
