@@ -7,7 +7,12 @@ the file afterwards — this is the only thing that writes it — so a consumer
 following it during the run and one reading it later see the same record. The
 surface hands in WHERE its record is (``locate``) and HOW to read it
 (``reader_factory``); nothing here names a provider.
-"""
+
+The run's own lifecycle is the writer's to say: ``RunStarted`` is the first line,
+written before the surface can produce anything, and ``RunEnded`` the last,
+written after the record is drained — a fault in the follow costs the events
+after it, never the ending.
+"""  # comment-length: allow — one writer, one file, its two lifecycle lines: the contract
 
 from __future__ import annotations
 
@@ -16,8 +21,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
+from .canonical.events import RunEnded, RunStarted
 from .canonical.reader import EventReader
-from .event_log import write_events
+from .canonical.types import now
+from .event_log import append_event, write_events
 
 Locate = Callable[[], Sequence[Path]]
 ReaderFactory = Callable[[Path], EventReader]
@@ -101,6 +108,9 @@ class EventLogWriter:
     # -- the thread ----------------------------------------------------------
 
     def start(self) -> EventLogWriter:
+        """Say the run began, then follow it on a thread."""
+        append_event(RunStarted(ts=now()), self._path)
+        self._written += 1
         self._thread = threading.Thread(target=self._run, name="event-log-writer", daemon=True)
         self._thread.start()
         return self
@@ -119,9 +129,14 @@ class EventLogWriter:
         if self._report is not None:
             self._report(f"events.jsonl writer stopped: {text}")
 
-    def close(self, timeout_s: float = 5.0) -> EventLogOutcome:
+    def close(self, *, exit_code: int | None = None, timeout_s: float = 5.0) -> EventLogOutcome:
         """Declare the run over: stop the thread, tell every reader its source
-        is finished, and drain what a live reader was holding back."""
+        is finished, drain what a live reader was holding back, and say so.
+
+        ``exit_code`` is how the surface ended as the harness saw it; ``None``
+        when the harness never learned one. The ending is written even after a
+        fault, and a fault in writing it is reported like any other.
+        """
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout_s)
@@ -138,6 +153,19 @@ class EventLogWriter:
                     self._tick()
             except Exception as exc:  # same contract as the thread: report, never raise
                 self._fault(f"{type(exc).__name__}: {exc}")
+        try:
+            append_event(
+                RunEnded(
+                    ok=exit_code == 0,
+                    raw_code=None if exit_code is None else str(exit_code),
+                    detail=self._error,
+                    ts=now(),
+                ),
+                self._path,
+            )
+            self._written += 1
+        except Exception as exc:  # the ending is the last thing that may fail; still reported
+            self._fault(f"{type(exc).__name__}: {exc}")
         return EventLogOutcome(
             events_written=self._written, error=self._error, sources=len(self._readers)
         )

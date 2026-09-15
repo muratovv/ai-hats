@@ -7,6 +7,7 @@ bare ``str`` means.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, ClassVar, NewType
 
@@ -14,6 +15,14 @@ from typing import Any, ClassVar, NewType
 
 # ISO-8601 instant at which a surface says something happened.
 Timestamp = NewType("Timestamp", str)
+
+
+def now() -> Timestamp:
+    """This instant, in the form every surface's own stamps take (UTC, ms, ``Z``)
+    — for the events we say ourselves rather than read."""
+    stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return Timestamp(stamp.replace("+00:00", "Z"))
+
 
 # Absolute wall-clock deadline, for waits that outlive this process.
 EpochSeconds = NewType("EpochSeconds", int)

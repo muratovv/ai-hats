@@ -56,6 +56,37 @@ from .types import (
 
 
 @dataclass(frozen=True)
+class RunStarted:
+    """This session began observing a run.
+
+    Ours to say, not the surface's: no surface we read persists a start a
+    follower can trust, and the one moment that is true for every surface is
+    the moment before it is launched. So the writer says it.
+    """
+
+    ts: Timestamp | None = None
+
+
+@dataclass(frozen=True)
+class RunEnded:
+    """The run is over — the one thing silence cannot tell a follower.
+
+    A file that stops growing is idle, inside a long tool, or waiting on a
+    person; only this line says it ended. Said by the writer after the surface
+    exits and its record is drained, even when the follow faulted earlier: a
+    fault costs the events after it, never the ending. ``raw_code`` is the
+    surface's own word for how, kept verbatim as a signal keeps it. Cost is not
+    here — per-response usage already sums to the run.
+    """
+
+    ok: bool
+    raw_code: str | None = None
+    # what stopped the follow early, when something did
+    detail: str | None = None
+    ts: Timestamp | None = None
+
+
+@dataclass(frozen=True)
 class PromptReceived:
     """Input addressed to the model, from a person or from the harness."""
 
@@ -162,7 +193,9 @@ class GateVerdict:
 
 
 Event = (
-    PromptReceived
+    RunStarted
+    | RunEnded
+    | PromptReceived
     | ResponseStarted
     | ItemDelta
     | ItemEmitted

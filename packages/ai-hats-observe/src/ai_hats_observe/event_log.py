@@ -27,6 +27,8 @@ from .canonical.events import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    RunEnded,
+    RunStarted,
     ToolResultReceived,
 )
 from .canonical.signals import (
@@ -175,6 +177,16 @@ def encode(event: Event) -> dict[str, Any]:
     silently missing is the one failure this artifact exists to prevent.
     """
     match event:
+        case RunStarted():
+            body = {"event": "run_started", "ts": event.ts}
+        case RunEnded():
+            body = {
+                "event": "run_ended",
+                "ok": event.ok,
+                "raw_code": event.raw_code,
+                "detail": event.detail,
+                "ts": event.ts,
+            }
         case PromptReceived():
             body = {"event": "prompt_received", "text": event.text, "ts": event.ts}
         case ResponseStarted():
@@ -268,6 +280,16 @@ def decode(record: dict[str, Any]) -> Event | None:
     response_id = ResponseId(str(record.get("response_id", "")))
     ts = _ts(record.get("ts"))
     match record.get("event"):
+        case "run_started":
+            return RunStarted(ts=ts)
+        case "run_ended":
+            raw_code, detail = record.get("raw_code"), record.get("detail")
+            return RunEnded(
+                ok=bool(record.get("ok")),
+                raw_code=raw_code if isinstance(raw_code, str) else None,
+                detail=detail if isinstance(detail, str) else None,
+                ts=ts,
+            )
         case "prompt_received":
             return PromptReceived(text=str(record.get("text", "")), ts=ts)
         case "response_started":

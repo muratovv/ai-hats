@@ -470,6 +470,7 @@ def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory
     with a canonical reading leaves the complete record with no finalize pass,
     and the trace says how many events it holds."""
     from ai_hats.surfaces.claude.provider import ClaudeSurface
+    from ai_hats_observe.canonical import RunEnded, RunStarted
     from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
     from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
@@ -486,8 +487,12 @@ def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory
     _exit_code, session = runner.run()
 
     events = list(read_events(session.session_dir / EVENT_LOG_JSONL))
-    assert events == list(ClaudeTranscriptReader(transcript).read())
-    assert len(events) > 3, "fixture too thin to prove the record"
+    # The writer's own two lines frame the surface's record; the exit code
+    # the harness saw is what the ending carries.
+    assert isinstance(events[0], RunStarted)
+    assert (type(events[-1]), events[-1].ok, events[-1].raw_code) == (RunEnded, True, "0")
+    assert events[1:-1] == list(ClaudeTranscriptReader(transcript).read())
+    assert len(events) > 5, "fixture too thin to prove the record"
     assert f"events.jsonl: {len(events)} events" in session.trace_path.read_text()
 
 
