@@ -22,7 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
     from pathlib import Path
     from ai_hats_core import CompositionResult, ResolvedCheck
 
-    from .materialization import MaterializationPlan
+    from .materialization import MaterializationRecord
     from .session_artifacts import SessionPolicy
 
 
@@ -46,7 +46,7 @@ def describe_checks(
     layout: ProjectLayout,
     result: CompositionResult,
     session_id: str,
-    plan: MaterializationPlan,
+    record: MaterializationRecord,
 ) -> tuple[tuple[ReportedCheck, ...], tuple[str, ...]]:
     """Resolve every binding the way the session will, and cross-check the plan.
 
@@ -85,11 +85,11 @@ def describe_checks(
             reported.append(ReportedCheck(binding, None, False))
             notes.append(str(exc))
             continue
-        reported.append(ReportedCheck(binding, runs_from, _plan_covers(plan, runs_from)))
+        reported.append(ReportedCheck(binding, runs_from, _plan_covers(record, runs_from)))
     return tuple(reported), tuple(notes)
 
 
-def _plan_covers(plan: MaterializationPlan, runs_from: Path) -> bool:
+def _plan_covers(record: MaterializationRecord, runs_from: Path) -> bool:
     """Whether this launch writes the tree the script will be read out of.
 
     Both sides are resolved before comparing: ``runs_from`` comes back from
@@ -104,7 +104,7 @@ def _plan_covers(plan: MaterializationPlan, runs_from: Path) -> bool:
     target = runs_from.resolve()
     return any(
         entry.kind is WriteKind.COPY_TREE and entry.target.resolve() in target.parents
-        for entry in plan.entries
+        for entry in record.entries
     )
 
 

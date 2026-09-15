@@ -1072,15 +1072,13 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
         EmitStdout({"key": emit_key, "format": emit_fmt}),
         name="preview",
     )
+    from ..diagnostics import emit_to_stderr
+
     try:
         # Compose at the seam, seed the payload into the pipeline.
-        pipeline.run(
-            composition=build_preview_payload(
-                project_dir,
-                role=role,
-                provider=provider,
-            ),
-        )
+        payload = build_preview_payload(project_dir, role=role, provider=provider)
+        emit_to_stderr(payload.diagnostics)
+        pipeline.run(composition=payload)
     except RuntimeError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(2)

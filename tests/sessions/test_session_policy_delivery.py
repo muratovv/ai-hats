@@ -97,7 +97,7 @@ def test_hitl_context_false_writes_no_gemini_md(project: Path):
         policy=SessionPolicy(context=False),
     )
 
-    assert not any(e.target.name == "GEMINI.md" for e in off.plan.entries)
+    assert not any(e.target.name == "GEMINI.md" for e in off.record.entries)
 
 
 @pytest.mark.parametrize("surface", ["agy", "cline"])

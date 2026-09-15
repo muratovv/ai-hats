@@ -79,7 +79,7 @@ def test_hitl_dry_run_leaves_the_filesystem_byte_identical(project: Path, surfac
 
     assert _fingerprint(project) == before
     assert report.escapes == ()
-    assert report.plan.entries, "a dry-run that plans nothing is not a dry-run"
+    assert report.record.entries, "a dry-run that plans nothing is not a dry-run"
 
 
 @pytest.mark.parametrize("surface", SURFACES)
@@ -163,3 +163,15 @@ def test_cline_hitl_has_no_prompt_file_to_dump(project: Path):
 
     assert report.prompt is None
     assert "Role body." in " ".join(report.launch), "it rides the argv instead"
+
+
+def test_the_dry_run_carries_the_composition_half_by_kind(project: Path):
+    """What the prompt never shows — hooks by kind and consent ends — is in the
+    report (ADR-0036 D5; the blindness that let an unarmed role close a card)."""
+    report = dry_run_hitl(ProjectLayout.at(project), provider="claude")
+
+    composition = report.to_dict()["composition"]
+    assert composition["identity"] == "test-role"
+    assert [s["name"] for s in composition["skills"]] == ["skills::s"]
+    assert composition["hooks"] == {"runtime": [], "external": []}
+    assert "\ncomposition  test-role  digest=" in report.render()

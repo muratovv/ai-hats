@@ -1,11 +1,10 @@
-"""``materialize_system_prompt`` step — render the seeded composition.
+"""``materialize_system_prompt`` step — project the seeded composition's plan.
 
-The single source of truth for "what would the agent actually see for role X
-under provider Y" (ADR-0005 D1). The step no longer
-composes — the integrator builds a preview payload at the compose seam
-(``composition_seam.build_preview_payload``, which owns the no-role /
-no-provider / compose-errors validation) and seeds it as ``composition``;
-this step renders it through the payload's provider and emits the stats.
+"What would the agent actually see for role X" (ADR-0005 D1) is the plan's
+``prompt.text`` — a record, not a second render (ADR-0036 D5). The step neither
+composes nor renders: the integrator adapts the composition at the compose
+seam (``composition_seam.build_preview_payload``, which owns the no-role /
+no-provider / compose-errors validation) and seeds it as ``composition``.
 """
 
 from __future__ import annotations
@@ -31,7 +30,12 @@ class MaterializeSystemPrompt(Step):
 
     def run(self, *, composition: Any, **_: Any) -> dict[str, Any]:
         result = composition.result
-        prompt_text = composition.provider.build_system_prompt(result)
+        if composition.plan is None:
+            raise RuntimeError(
+                "materialize_system_prompt: the payload carries no adapted plan; "
+                "compose it at the seam (build_preview_payload)"
+            )
+        prompt_text = composition.plan.prompt.text
         return {
             "system_prompt_text": prompt_text,
             "composition_stats": {

@@ -100,6 +100,7 @@
   "tests/test_pipeline_human_yaml.py": 4,
   "tests/test_pipeline_steps.py": 3,
   "tests/test_pipeline_yaml_loader.py": 1,
+  "tests/test_plan_apply.py": 1,
   "tests/test_plugin_dir.py": 1,
   "tests/test_project_resolution.py": 1,
   "tests/test_provider_hints.py": 2,

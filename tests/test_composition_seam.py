@@ -95,7 +95,9 @@ def test_seam_lenient_mode_skips_the_existence_raise(tmp_path: Path):
     It has narrowed: it no longer buys tolerance of a LOSSY composition.
     A reviewer running on a half-composed prompt used to surface as HATS-271's
     empty transcript — a proxy for the cause, two steps downstream."""
-    fake_result = MagicMock(errors=["broken"], lost=(), merged_injection="")
+    fake_result = MagicMock(
+        errors=[CompositionError("broken", lossy=False)], lost=(), merged_injection=""
+    )
     asm = _fake_assembler([], tmp_path)
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),

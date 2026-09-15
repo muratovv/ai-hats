@@ -1,5 +1,50 @@
 {
   "checks": [],
+  "composition": {
+    "digest": "<path-derived>",
+    "hooks": {
+      "external": [],
+      "runtime": []
+    },
+    "identity": "test-role",
+    "prompt": {
+      "blocks": [
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::priorities"
+            }
+          ],
+          "name": "PRIORITIES"
+        },
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::prompt"
+            }
+          ],
+          "name": null
+        }
+      ]
+    },
+    "skills": [
+      {
+        "content_digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+        "digest": "<path-derived>",
+        "name": "skills::s",
+        "path": "<tmp>/lib/skills/s"
+      }
+    ],
+    "trace": [
+      {
+        "brought_by": "test-role",
+        "removed_by": null,
+        "term": "skills::s"
+      }
+    ]
+  },
   "consent": [],
   "cwd": "<project>",
   "duplicates": [],
@@ -29,81 +74,63 @@
   ],
   "materialized": [
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run"
     },
     {
-      "detail": "",
       "digest": "2f3755a72609cd3b279158a6d3e7934296f38a5affe39f683eff180504f80ef3",
-      "file_count": 1,
       "kind": "write_text",
       "size": 81,
       "source": null,
       "target": "<cache>/sessions/dry-run/prompt.md"
     },
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run/plugin"
     },
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run/plugin/.claude-plugin"
     },
     {
-      "detail": "",
       "digest": "01e6b0dc200a024bf1a3eb1b1a827d6d61e3b760485492255dc5e9ba1baaa540",
-      "file_count": 1,
       "kind": "write_text",
       "size": 49,
       "source": null,
       "target": "<cache>/sessions/dry-run/plugin/.claude-plugin/plugin.json"
     },
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run/plugin/skills"
     },
     {
-      "detail": "",
       "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
-      "file_count": 1,
       "kind": "copy_tree",
-      "size": 38,
+      "size": null,
       "source": "<tmp>/lib/skills/s",
       "target": "<cache>/sessions/dry-run/plugin/skills/s"
     },
     {
-      "detail": "",
       "digest": "039b1185a54fde1d6095cf1ee3a47f0039549b33cf73211efd986f1690bcaf1f",
-      "file_count": 1,
       "kind": "write_text",
       "size": 74,
       "source": null,
       "target": "<cache>/sessions/dry-run/hooks.json"
     },
     {
-      "detail": "",
       "digest": "6a3ed1771f1591f966491cac86a3c4ec99d1efe2f43aec5fbf824210559727a5",
-      "file_count": 1,
       "kind": "write_text",
       "size": 17,
       "source": null,

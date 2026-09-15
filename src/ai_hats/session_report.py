@@ -11,13 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .materialization import MaterializationPlan
+from .materialization import MaterializationRecord
 from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import ConsentPoint
 
     from .check_snapshot import ReportedCheck
+    from .surfaces import CompositionPlan
 
 
 def _human_size(n: int) -> str:
@@ -89,6 +90,40 @@ def _consent_key(consent: dict) -> str:
     return "-"  # declared under an app no guard of this build reads
 
 
+def _under_any(path: Path, roots: list[Path]) -> bool:
+    return any(path.is_relative_to(root) for root in roots)
+
+
+def _render_composition(c: dict) -> list[str]:
+    """The composition half by kind — the hooks and points the prompt never shows."""
+    lines = [
+        f"composition  {c['identity']}  digest={c['digest'][:12]}",
+        "  prompt    "
+        + ", ".join(f"{len(b['members'])} {b['name'] or '(prose)'}" for b in c["prompt"]["blocks"]),
+        f"  skills    {len(c['skills'])}: " + " ".join(s["name"] for s in c["skills"]),
+        "  hooks",
+    ]
+    hooks = c["hooks"]
+    if not hooks["runtime"] and not hooks["external"]:
+        lines.append("    (none)")
+    lines += [
+        f"    runtime   {h['at']}  {h['matcher']}  {h['run']['path']}" for h in hooks["runtime"]
+    ]
+    for h in hooks["external"]:
+        where = h["app"] if h["object"] is None else f"{h['app']}.{h['object']}"
+        run = "" if h["run"] is None else f"  {h['run']['path']}"
+        policy = "" if h["on_error"] is None else f"  on_error={h['on_error']}"
+        lines.append(f"    external  {where} {h['at']!r}{run}{policy}  by {h['declared_by']}")
+    removed = [t for t in c["trace"] if t["removed_by"] is not None]
+    if removed:
+        lines.append("  removed")
+        lines += [
+            f"    {t['term']}  brought by {t['brought_by']}, removed by {t['removed_by']}"
+            for t in removed
+        ]
+    return lines
+
+
 @dataclass(frozen=True)
 class SessionReport:
     role: str
@@ -98,7 +133,7 @@ class SessionReport:
     launch: list[str]
     env: dict[str, str]
     prompt: Path | None
-    plan: MaterializationPlan
+    record: MaterializationRecord
     cwd: str = ""
     # Render-only, and deliberately outside to_dict(): the body was never in the
     # payload, and a plan-mode build has no file for --dry-run-full to read.
@@ -116,9 +151,14 @@ class SessionReport:
     #: tool call reads it from here — a role property reaching the surface the
     #: way every other one does, through the session's own envelope.
     consent: tuple[ConsentPoint, ...] = ()
+    #: The composition half of the plan — what the session is made of, by kind.
+    #: ``None`` on a path that has not adapted its composition yet.
+    composition: CompositionPlan | None = None
 
     def to_dict(self) -> dict:
-        return {
+        from .surfaces import composition_record
+
+        payload = {
             "role": self.role,
             "provider": self.provider,
             "run_mode": self.run_mode,
@@ -137,13 +177,11 @@ class SessionReport:
                     "target": str(e.target),
                     "source": str(e.source) if e.source else None,
                     "size": e.size,
-                    "file_count": e.file_count,
-                    "detail": e.detail,
                     "digest": e.digest,
                 }
-                for e in self.plan.entries
+                for e in self.record.entries
             ],
-            "duplicates": [str(p) for p in self.plan.duplicates()],
+            "duplicates": [str(p) for p in self.record.duplicates()],
             "checks": [
                 {
                     "skill": c.binding.skill,
@@ -161,6 +199,9 @@ class SessionReport:
             "escapes": [str(p) for p in self.escapes],
             "notes": list(self.notes),
         }
+        if self.composition is not None:
+            payload["composition"] = composition_record(self.composition)
+        return payload
 
     def render(self, *, full: bool = False) -> str:
         d = self.to_dict()
@@ -195,13 +236,18 @@ class SessionReport:
         lines += ["", "materialized"]
         if not d["materialized"]:
             lines.append("  (nothing)")
+        composed = [Path(s["path"]) for s in d.get("composition", {}).get("skills", ())]
         for e in d["materialized"]:
-            extra = f"  ({e['file_count']} files)" if e["kind"] == "copy_tree" else ""
-            detail = f"  {e['detail']}" if e["detail"] else ""
-            lines.append(
-                f"  {e['kind']:<11} {e['target']}{extra}{detail}"
-                + (f"  {_human_size(e['size'])}" if e["size"] else "")
-            )
+            line = f"  {e['kind']:<11} {e['target']}"
+            if e["size"]:
+                line += f"  {_human_size(e['size'])}"
+            if e["source"]:
+                # A source under no composed skill is a planning input from the
+                # person's own environment — the reader must see it as such.
+                line += f"  <- {e['source']}"
+                if "composition" in d and not _under_any(Path(e["source"]), composed):
+                    line += "  (outside the composition)"
+            lines.append(line)
 
         for dup in d["duplicates"]:
             lines.append(f"  ! {dup} materialized twice")
@@ -231,6 +277,9 @@ class SessionReport:
                 f"  {_consent_where(c):<14} {c['selector']!r:<20}"
                 f" -> {_consent_key(c):<22} by {c['declared_by']}"
             )
+
+        if "composition" in d:
+            lines += ["", *_render_composition(d["composition"])]
 
         if d["notes"]:
             lines.append("")

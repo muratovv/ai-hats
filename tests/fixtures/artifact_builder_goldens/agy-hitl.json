@@ -1,5 +1,50 @@
 {
   "checks": [],
+  "composition": {
+    "digest": "<path-derived>",
+    "hooks": {
+      "external": [],
+      "runtime": []
+    },
+    "identity": "test-role",
+    "prompt": {
+      "blocks": [
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::priorities"
+            }
+          ],
+          "name": "PRIORITIES"
+        },
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::prompt"
+            }
+          ],
+          "name": null
+        }
+      ]
+    },
+    "skills": [
+      {
+        "content_digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+        "digest": "<path-derived>",
+        "name": "skills::s",
+        "path": "<tmp>/lib/skills/s"
+      }
+    ],
+    "trace": [
+      {
+        "brought_by": "test-role",
+        "removed_by": null,
+        "term": "skills::s"
+      }
+    ]
+  },
   "consent": [],
   "cwd": "<project>",
   "duplicates": [],
@@ -22,63 +67,49 @@
   ],
   "materialized": [
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run"
     },
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run/rules"
     },
     {
-      "detail": "",
       "digest": "c5981cfc631f2074faf408956766f48f34b027c68f9858c5a20f09c3be570d4d",
-      "file_count": 1,
       "kind": "write_text",
       "size": 36,
       "source": null,
       "target": "<cache>/sessions/dry-run/rules/GEMINI.md"
     },
     {
-      "detail": "",
       "digest": null,
-      "file_count": 0,
       "kind": "mkdir",
-      "size": 0,
+      "size": null,
       "source": null,
       "target": "<cache>/sessions/dry-run/rules/.agents/skills"
     },
     {
-      "detail": "",
       "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
-      "file_count": 1,
       "kind": "copy_tree",
-      "size": 38,
+      "size": null,
       "source": "<tmp>/lib/skills/s",
       "target": "<cache>/sessions/dry-run/rules/.agents/skills/s"
     },
     {
-      "detail": "+hooks",
       "digest": "5b9ec6d1572b5e2ec71e976d9c0665efe1de662c5fd8ff8b3534344364e29f23",
-      "file_count": 1,
       "kind": "merge_json",
       "size": 2381,
       "source": null,
       "target": "<home>/.gemini/antigravity-cli/settings.json"
     },
     {
-      "detail": "",
       "digest": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
-      "file_count": 1,
       "kind": "write_text",
       "size": 3,
       "source": null,

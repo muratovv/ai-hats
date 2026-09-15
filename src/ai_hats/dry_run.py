@@ -133,8 +133,12 @@ def dry_run_hitl(
         provider_session_id=AT_LAUNCH,
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
-    checks, check_notes = describe_checks(prov, layout, payload.result, sid, artifacts.port.plan)
-    notes = [*check_notes, *_launch_notices(prov, layout, payload.result, eff_policy)]
+    checks, check_notes = describe_checks(prov, layout, payload.result, sid, artifacts.port.record)
+    notes = [
+        *(d.render() for d in payload.diagnostics),
+        *check_notes,
+        *_launch_notices(prov, layout, payload.result, eff_policy),
+    ]
     if materialize:
         notes.append(f"materialized session tree written to disk at {cache_dir}")
         notes.append(
@@ -149,11 +153,12 @@ def dry_run_hitl(
         launch=launch,
         env=env,
         prompt=prompt,
-        plan=artifacts.port.plan,
+        record=artifacts.port.record,
         cwd=str(project_dir),
         escapes=escapes,
         checks=checks,
         consent=payload.result.consent,
+        composition=payload.plan,
         notes=tuple(notes),
         prompt_text=artifacts.full_content,
     )
@@ -220,7 +225,7 @@ def dry_run_automate(
                 artifacts=artifacts,
             )
 
-    checks, check_notes = describe_checks(prov, layout, payload.result, sid, artifacts.port.plan)
+    checks, check_notes = describe_checks(prov, layout, payload.result, sid, artifacts.port.record)
     env = assemble_launch_env(
         prov,
         layout,
@@ -244,7 +249,7 @@ def dry_run_automate(
         env=env,
     )
 
-    notes = list(check_notes)
+    notes = [*(d.render() for d in payload.diagnostics), *check_notes]
     if materialize:
         notes.append(f"materialized session tree written to disk at {cache_dir}")
         notes.append(
@@ -259,11 +264,12 @@ def dry_run_automate(
         launch=described.launch,
         env=env,
         prompt=next((p for p in artifacts.materialized if p.suffix == ".md"), None),
-        plan=artifacts.port.plan,
+        record=artifacts.port.record,
         cwd="<worktree, assigned at launch>",
         escapes=escapes,
         notes=tuple(notes),
         checks=checks,
         consent=payload.result.consent,
+        composition=payload.plan,
         prompt_text=described.prompt,
     )
