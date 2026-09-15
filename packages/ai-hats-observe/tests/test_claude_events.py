@@ -726,6 +726,77 @@ def test_a_prompt_arriving_mid_response_does_not_end_the_call(tmp_path: Path) ->
     assert [e.text for e in events if isinstance(e, PromptReceived)] == ["wait, also do this"]
 
 
+# --- a refusal by the surface's own gate --------------------------------------
+
+
+CLASSIFIER_DENY = (
+    "Permission for this action was denied by the Claude Code auto mode "
+    "classifier. Reason: Blocked by classifier. If you have other tasks that "
+    "don't depend on this action, continue working on those."
+)
+PERSON_DENY = (
+    "The user doesn't want to proceed with this tool use. The tool use was "
+    "rejected (eg. if it was a file edit, the new_string was NOT written to "
+    "the file). STOP what you are doing and wait for the user to tell you how "
+    "to proceed."
+)
+
+
+def _denied(call_id: str, prose: str) -> dict[str, Any]:
+    return user(
+        [{"type": "tool_result", "tool_use_id": call_id, "is_error": True, "content": prose}]
+    )
+
+
+@pytest.mark.parametrize(
+    "prose, hook, reason",
+    [
+        (CLASSIFIER_DENY, "auto-mode-classifier", "Blocked by classifier."),
+        (PERSON_DENY, "person", ""),
+    ],
+)
+def test_a_refusal_by_the_surfaces_own_gate_is_a_verdict_not_just_a_failed_call(
+    tmp_path: Path, prose: str, hook: str, reason: str
+) -> None:
+    """A tool the surface refused and a tool that failed are the same
+    ``is_error`` result; only the prose says which, and a controller cannot act
+    on prose. 51 in the measured corpus — 28 by the auto-mode classifier, 23 by
+    a person. The verdict names the decider; the result still says what the
+    model was told."""
+    records = [
+        assistant("req-a", [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {}}]),
+        _denied("c1", prose),
+    ]
+    events = events_of(tmp_path, records)
+
+    verdicts = [e for e in events if isinstance(e, GateVerdict)]
+    assert len(verdicts) == 1
+    verdict = verdicts[0]
+    assert (verdict.point, verdict.decision) == (GatePoint.BEFORE_TOOL, GateDecision.DENY)
+    assert (verdict.hook, verdict.call_id, verdict.tool) == (hook, "c1", "Bash")
+    assert verdict.reason.startswith(reason)
+    assert verdict.source == "claude/jsonl"
+    # the verdict lands before the result it explains
+    results = [e for e in events if isinstance(e, ToolResultReceived)]
+    assert events.index(verdict) < events.index(results[0])
+    # POSITIVE CONTROL: the result is still recorded, unchanged
+    assert (results[0].call_id, results[0].ok) == ("c1", False)
+
+
+def test_a_tool_that_merely_failed_is_not_a_refusal(tmp_path: Path) -> None:
+    """Positive control for the pattern above: an ordinary failure carries the
+    same ``is_error`` flag and must produce no verdict — otherwise every red
+    test run would read as a gate refusing the call."""
+    records = [
+        assistant("req-a", [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {}}]),
+        _denied("c1", "pytest: 3 failed, 1 passed"),
+    ]
+    events = events_of(tmp_path, records)
+
+    assert not [e for e in events if isinstance(e, GateVerdict)]
+    assert [(r.call_id, r.ok) for r in items(events, ItemKind.TOOL_RESULT)] == [("c1", False)]
+
+
 # --- a person interrupting ---------------------------------------------------
 
 

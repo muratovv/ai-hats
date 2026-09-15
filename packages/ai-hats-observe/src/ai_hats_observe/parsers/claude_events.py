@@ -136,6 +136,14 @@ INTERRUPT_MARKERS = frozenset(
 # only when the record omits the `fallbackModel` field.
 _SWITCHED_TO = re.compile(r"Switched to (.+?)\.(?:\s|$)")
 
+# A refusal by the surface's own gate arrives as an ``is_error`` tool_result
+# whose prose names the decider — the only place the transcript says who.
+# Verbatim openings, measured over the corpus; the classifier's carries its
+# reason after ``Reason:``.
+_CLASSIFIER_DENY = "Permission for this action was denied by the Claude Code auto mode classifier."
+_PERSON_DENY = "The user doesn't want to proceed with this tool use."
+_DENY_REASON = re.compile(r"Reason: (.+?\.)(?:\s|$)")
+
 
 # --- reader ----------------------------------------------------------------
 
@@ -177,9 +185,9 @@ class ClaudeTranscriptReader:
         # can never bill twice even if the surface reorders fragments
         self._counted: set[ResponseId] = set()
         self._ended: set[ResponseId] = set()
-        # membership only: a result whose call we never saw is a gap worth
-        # reporting, but the result is parented by call_id, not by response
-        self._seen_calls: set[ToolCallId] = set()
+        # every call announced, with its tool name: a result whose call we never
+        # saw is a gap worth reporting, and a refusal names the tool refused
+        self._seen_calls: dict[ToolCallId, str] = {}
 
     # -- EventReader -------------------------------------------------------
 
@@ -339,7 +347,7 @@ class ClaudeTranscriptReader:
                 if call_id in state.calls:
                     return
                 state.calls.add(call_id)
-                self._seen_calls.add(call_id)
+                self._seen_calls[call_id] = str(block.get("name", ""))
                 inputs = block.get("input")
                 yield ItemEmitted(
                     state.response_id,
@@ -405,10 +413,36 @@ class ClaudeTranscriptReader:
             # saying so beats inventing the link.
             yield self._notice("orphan-tool-result", ts=ts)
             return
-        yield ToolResultReceived(
+        ok = not bool(block.get("is_error"))
+        if not ok:
+            verdict = self._refusal(call_id, block.get("content"), ts)
+            if verdict is not None:
+                yield verdict
+        yield ToolResultReceived(call_id=call_id, ok=ok, content=block.get("content"), ts=ts)
+
+    def _refusal(
+        self, call_id: ToolCallId, content: Any, ts: Timestamp | None
+    ) -> GateVerdict | None:
+        """The surface's own gate said no — a person, or the auto-mode
+        classifier. A verdict, so a controller can tell a refusal from a tool
+        that merely failed; ``None`` for any other error."""
+        text = _first_text(content) or ""
+        if text.startswith(_CLASSIFIER_DENY):
+            hook = "auto-mode-classifier"
+            found = _DENY_REASON.search(text)
+            reason = found.group(1) if found else ""
+        elif text.startswith(_PERSON_DENY):
+            hook, reason = "person", ""
+        else:
+            return None
+        return GateVerdict(
+            point=GatePoint.BEFORE_TOOL,
+            decision=GateDecision.DENY,
+            hook=hook,
+            reason=reason,
+            tool=self._seen_calls.get(call_id) or None,
             call_id=call_id,
-            ok=not bool(block.get("is_error")),
-            content=block.get("content"),
+            source=SOURCE,
             ts=ts,
         )
 
