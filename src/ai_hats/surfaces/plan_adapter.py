@@ -37,6 +37,8 @@ from .plan import (
 )
 
 if TYPE_CHECKING:
+    from ai_hats_core.layout import ProjectLayout
+
     from ..config.overlay import OverlayConfig
     from ..resolver import LibraryResolver
 
@@ -53,26 +55,26 @@ def adapt(
     result: CompositionResult,
     *,
     identity: str,
+    layout: ProjectLayout,
     resolver: LibraryResolver,
     overlays: Sequence[tuple[OverlayConfig, str]],
     diagnostics: list[Diagnostic],
 ) -> CompositionPlan:
     """Today's composition as the plan's composition half.
 
-    ``overlays`` are exactly the layers the composer applied, each with its
-    label (``global`` / ``project`` / ``runtime``): they name the text a layer
-    appended and the layer that brought or removed a term. A layer left out is
-    an injection the adapter cannot name — a refusal, not a guess.
-    ``diagnostics`` is the composer's own sink: what the adapter finds — a
-    declared script missing, a term nobody declares — lands beside what the
-    composer found, and the plan carries none of it.
+    ``layout``: what every member's text is expanded for, so the prompt is the
+    text the agent reads, not the text as authored. ``overlays``: exactly the
+    layers the composer applied, each with its label (``global`` / ``project``
+    / ``runtime``) — a layer left out is an injection the adapter cannot name,
+    a refusal, not a guess. ``diagnostics``: the composer's own sink; what the
+    adapter finds lands beside what the composer found, never in the plan.
     """
     for err in result.errors:
         if not err.lossy:
             diagnostics.append(Diagnostic(Level.WARN, err.message))
     return CompositionPlan(
         identity=identity,
-        prompt=Prompt(blocks=_prompt_blocks(result, overlays)),
+        prompt=Prompt(blocks=_prompt_blocks(result, overlays, layout)),
         skills=tuple(
             Skill(
                 name=_skill_name(s.name),
@@ -105,17 +107,26 @@ def _override_name(label: str, identity: str) -> str:
 
 
 def _prompt_blocks(
-    result: CompositionResult, overlays: Sequence[tuple[OverlayConfig, str]]
+    result: CompositionResult,
+    overlays: Sequence[tuple[OverlayConfig, str]],
+    layout: ProjectLayout,
 ) -> tuple[PromptBlock, ...]:
-    """The blocks ``compose_sections`` assembles, member by member — the plan's
-    rendering of them is byte-equal to its output, which the parity tests hold."""
+    """The blocks ``compose_sections`` assembles, member by member, each text
+    expanded for the layout — the plan's rendering of them is byte-equal to the
+    expanded output, which the parity tests hold."""
+    from ..placeholders import expand_path_placeholders
     from ..resolver import read_rule_body
+    from ..role_catalog import expand_role_catalog
+
+    def member(name: str, text: str, heading: str | None) -> PromptMember:
+        expanded = expand_role_catalog(expand_path_placeholders(text, layout), layout.root)
+        return PromptMember(name, expanded, heading)
 
     blocks: list[PromptBlock] = []
     if result.priorities:
         numbered = "\n".join(f"{i + 1}. {p}" for i, p in enumerate(result.priorities))
         blocks.append(
-            PromptBlock("PRIORITIES", (PromptMember(f"{result.name}::priorities", numbered, None),))
+            PromptBlock("PRIORITIES", (member(f"{result.name}::priorities", numbered, None),))
         )
 
     named: dict[str, str] = {}
@@ -137,12 +148,12 @@ def _prompt_blocks(
                 f"an injection reached the prompt that no role, trait or overlay declared "
                 f"(starts {head!r}); pass every layer the composer applied"
             )
-        body.append(PromptMember(named[text], text, None))
+        body.append(member(named[text], text, None))
     if body:
         blocks.append(PromptBlock(None, tuple(body)))
 
     rules = tuple(
-        PromptMember(_rule_name(rule.name), body_text, rule.name)
+        member(_rule_name(rule.name), body_text, rule.name)
         for rule in result.rules
         if rule.source_path and (body_text := read_rule_body(rule.source_path))
     )
@@ -156,7 +167,7 @@ def _prompt_blocks(
         except OSError:
             continue  # compose_sections skips it too, with its own warning
         if body_text.strip():
-            user_rules.append(PromptMember(_rule_name(path.stem), body_text, path.stem))
+            user_rules.append(member(_rule_name(path.stem), body_text, path.stem))
     if user_rules:
         blocks.append(PromptBlock("USER RULES", tuple(user_rules)))
     return tuple(blocks)

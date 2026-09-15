@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats_core.layout import ProjectLayout
+
 from ai_hats.assembler import Assembler
 from ai_hats.config.overlay import OverlayConfig
 from ai_hats.materialize import compose_to_run
@@ -38,16 +40,50 @@ def maintainer(tmp_path: Path):
     project.mkdir()
     asm = Assembler(project)
     result = compose_to_run(asm, "maintainer")
-    plan = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=(), diagnostics=[])
+    plan = adapt(
+        result,
+        identity="maintainer",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
+    )
     return asm, result, plan
 
 
-def test_the_rendered_blocks_are_what_show_prompt_prints_today(maintainer):
+def test_the_rendered_blocks_are_what_the_session_writes_today(maintainer):
     """One producer (ADR-0036 D5): the plan renders its blocks, and on the
-    current path that rendering is byte-equal to ``compose_sections``."""
-    _asm, result, plan = maintainer
-    assert plan.prompt.text == get_surface("claude").build_system_prompt(result)
+    current path that rendering is byte-equal to ``compose_sections`` after
+    the expansions every surface performs on its way to the file."""
+    asm, result, plan = maintainer
+    from ai_hats.placeholders import expand_path_placeholders
+
+    sections = get_surface("claude").build_system_prompt(result)
+    assert plan.prompt.text == expand_path_placeholders(sections, asm.layout)
+    assert plan.prompt.text != sections, "the composed text carries a placeholder to expand"
     assert len(plan.prompt.text) > 10_000
+
+
+def test_a_placeholder_in_a_member_is_expanded_for_the_layout(tmp_path: Path):
+    from ai_hats.resolver import LibraryResolver
+    from ai_hats_core import CompositionResult
+
+    text = "Read <project_dir>/README.md and <ai_hats_dir>/STATE.md"
+    result = CompositionResult(
+        name="r", priorities=[], rules=[], skills=[], injections=[text], role_injection=text
+    )
+    plan = adapt(
+        result,
+        identity="r",
+        layout=ProjectLayout.at(tmp_path),
+        resolver=LibraryResolver([tmp_path]),
+        overlays=(),
+        diagnostics=[],
+    )
+    [member] = plan.prompt.blocks[0].members
+    assert member.name == "r::prompt"
+    assert "<project_dir>" not in member.text and str(tmp_path) in member.text
+    assert "<ai_hats_dir>" not in member.text
 
 
 def test_prompt_blocks_carry_named_members_with_their_text(maintainer):
@@ -184,7 +220,12 @@ def test_a_wt_out_hook_without_on_fires_on_every_teardown_event(tmp_path: Path):
         injections=[],
     )
     plan = adapt(
-        result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=(), diagnostics=[]
+        result,
+        identity="r",
+        layout=ProjectLayout.at(tmp_path),
+        resolver=LibraryResolver([tmp_path]),
+        overlays=(),
+        diagnostics=[],
     )
     assert [(h.app, h.at) for h in plan.hooks.external] == [
         ("wt", "teardown[merge]"),
@@ -211,6 +252,7 @@ def test_trace_names_the_override_that_added_or_removed_a_term(maintainer):
     plan = adapt(
         result,
         identity="maintainer",
+        layout=asm.layout,
         resolver=asm.resolver,
         overlays=[(overlay, "project")],
         diagnostics=[],
@@ -254,11 +296,23 @@ def test_every_absence_is_none_never_an_empty_value(maintainer):
 
 def test_two_adapts_of_one_composition_are_equal_and_a_changed_input_is_not(maintainer):
     asm, result, plan = maintainer
-    again = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=(), diagnostics=[])
+    again = adapt(
+        result,
+        identity="maintainer",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
+    )
     assert again == plan and again.digest == plan.digest
     extra = dataclasses.replace(result, skills=[*result.skills, result.skills[0]])
     changed = adapt(
-        extra, identity="maintainer", resolver=asm.resolver, overlays=(), diagnostics=[]
+        extra,
+        identity="maintainer",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
     )
     assert changed != plan and changed.digest != plan.digest
 
@@ -306,7 +360,12 @@ def test_a_declared_script_that_is_missing_is_a_diagnostic_and_no_hook(tmp_path:
     )
     found = []
     plan = adapt(
-        result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=(), diagnostics=found
+        result,
+        identity="r",
+        layout=ProjectLayout.at(tmp_path),
+        resolver=LibraryResolver([tmp_path]),
+        overlays=(),
+        diagnostics=found,
     )
     assert plan.hooks.runtime == ()
     assert [d.level for d in found] == [Level.WARN]
@@ -324,6 +383,7 @@ def test_trace_reads_a_same_layer_remove_and_add_as_the_composer_does(maintainer
     plan = adapt(
         result,
         identity="maintainer",
+        layout=asm.layout,
         resolver=asm.resolver,
         overlays=[(overlay, "project")],
         diagnostics=found,
@@ -370,7 +430,12 @@ def test_a_namespaced_skill_names_its_executable_by_the_same_path_on_every_chann
         ),
     )
     plan = adapt(
-        result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=(), diagnostics=[]
+        result,
+        identity="r",
+        layout=ProjectLayout.at(tmp_path),
+        resolver=LibraryResolver([tmp_path]),
+        overlays=(),
+        diagnostics=[],
     )
     git, check = plan.hooks.external
     assert git.run == check.run

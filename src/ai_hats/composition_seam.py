@@ -288,6 +288,7 @@ def build_composition_payload(
     plan = adapt(
         result,
         identity=role_expression,
+        layout=asm.layout,
         resolver=asm.resolver,
         overlays=_labelled_overlays(asm, effective_role, runtime_overlay),
         diagnostics=diagnostics,
@@ -355,6 +356,7 @@ def build_preview_payload(
     plan = adapt(
         result,
         identity=role_expression,
+        layout=asm.layout,
         resolver=asm.resolver,
         overlays=_labelled_overlays(asm, eff_role, runtime_overlay),
         diagnostics=diagnostics,
