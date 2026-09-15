@@ -18,6 +18,7 @@ import time
 
 import pytest
 
+from ai_hats_core.layout import ProjectLayout
 from ai_hats_observe import Session
 from ai_hats import runtime_common
 from ai_hats.runtime import (
@@ -277,7 +278,7 @@ def _finalize_with_interrupt(session, tmp_path, monkeypatch, presses: int):
         exit_code=0,
         stdout="ok\n",
         stderr="",
-        work_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
         extra_metrics={"claude_session_id": "sid"},
     )
     return reached

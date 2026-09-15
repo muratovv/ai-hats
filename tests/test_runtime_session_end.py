@@ -362,6 +362,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         pty_exit_code: int = 0,
         finalize_hitl_exc: BaseException | None = None,
         finalize_hitl_hook=None,
+        layout: ProjectLayout | None = None,
     ):
         from ai_hats.composition_seam import build_composition_payload
         from ai_hats_observe import SessionManager, SidecarTracer
@@ -373,7 +374,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
             interactive=True,
         )
         runner = WrapRunner(
-            ProjectLayout.at(project),
+            layout or ProjectLayout.at(project),
             payload,
             session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
             tracer_factory=SidecarTracer,
@@ -476,9 +477,7 @@ def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory
     transcript.write_text(TRANSCRIPT_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
 
     class Recorded(ClaudeSurface):
-        def resolve_transcript(
-            self, project_dir, session_id, *, provider_session_id=None, end_ts=None
-        ):
+        def resolve_transcript(self, cwd, session_id, *, provider_session_id=None, end_ts=None):
             return [transcript]
 
     runner, _project = wrap_runner_factory(pty_exit_code=0)
@@ -490,6 +489,36 @@ def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory
     assert events == list(ClaudeTranscriptReader(transcript).read())
     assert len(events) > 3, "fixture too thin to prove the record"
     assert f"events.jsonl: {len(events)} events" in session.trace_path.read_text()
+
+
+def test_wrap_runner_keys_the_session_by_where_it_stands_not_by_the_root(
+    wrap_runner_factory, tmp_path
+):
+    """A session launched from a task worktree has the main checkout as its
+    root; the surface runs in — and keys its record by — the worktree. Both
+    the live writer and the launch record must say the worktree."""
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    located_under: list[Path] = []
+
+    class Recorded(ClaudeSurface):
+        def resolve_transcript(self, cwd, session_id, *, provider_session_id=None, end_ts=None):
+            located_under.append(cwd)
+            return []
+
+    # the factory's project lives at tmp_path/proj; stand in the worktree beside it
+    runner, _project = wrap_runner_factory(
+        layout=ProjectLayout.at(tmp_path / "proj").with_cwd(worktree)
+    )
+    runner.payload = replace(runner.payload, provider=Recorded())
+
+    _exit_code, session = runner.run()
+
+    record = json.loads((session.session_dir / "role_materialization.json").read_text())
+    assert record["cwd"] == str(worktree.resolve())
+    assert located_under and set(located_under) == {worktree.resolve()}
 
 
 def test_wrap_runner_writes_no_event_log_for_a_surface_without_a_reader(
@@ -520,7 +549,7 @@ def test_start_event_log_skips_a_session_the_surface_gave_no_id(tmp_path):
 
     session = make_session(tmp_path)
 
-    writer = start_event_log(ClaudeSurface(), session, project_dir=tmp_path, provider_session_id="")
+    writer = start_event_log(ClaudeSurface(), session, cwd=tmp_path, provider_session_id="")
 
     assert writer is None
     assert "events.jsonl not written" in session.trace_path.read_text()

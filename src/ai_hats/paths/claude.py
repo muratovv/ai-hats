@@ -62,21 +62,25 @@ def claude_md(project_dir: Path) -> Path:
     return project_dir / CLAUDE_MD_FILENAME
 
 
-def _project_key(project_dir: Path) -> str:
-    """Claude Code's transcript-dir key: absolute project path, non-alnum → ``-``."""
-    return _NON_ALNUM_RE.sub("-", str(project_dir))
+def _project_key(cwd: Path) -> str:
+    """Claude Code's transcript-dir key: the absolute cwd it ran in, non-alnum → ``-``."""
+    return _NON_ALNUM_RE.sub("-", str(cwd))
 
 
-def claude_transcripts_dir(project_dir: Path) -> Path:
-    """Dir of Claude Code's conversation JSONLs: ``~/.claude/projects/<key>/``."""
+def claude_transcripts_dir(cwd: Path) -> Path:
+    """Dir of Claude Code's conversation JSONLs: ``~/.claude/projects/<key>/``.
+
+    ``cwd`` is where Claude RAN, resolved — a worktree is keyed as itself, never
+    as the project it belongs to.
+    """
     from ._discovery import tool_home
 
-    return tool_home("claude", "CLAUDE_CONFIG_DIR") / "projects" / _project_key(project_dir)
+    return tool_home("claude", "CLAUDE_CONFIG_DIR") / "projects" / _project_key(cwd)
 
 
-def claude_transcript_path(project_dir: Path, claude_session_id: str) -> Path:
+def claude_transcript_path(cwd: Path, claude_session_id: str) -> Path:
     """One session's conversation JSONL under :func:`claude_transcripts_dir`."""
-    return claude_transcripts_dir(project_dir) / f"{claude_session_id}.jsonl"
+    return claude_transcripts_dir(cwd) / f"{claude_session_id}.jsonl"
 
 
 def claude_plugin_manifest_dir(plugin_root: Path) -> Path:

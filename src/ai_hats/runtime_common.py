@@ -315,7 +315,7 @@ def _finalize_sub_agent(
     tags: dict[str, str] | None = None,
     duration_s: float | None = None,
     extra_metrics: dict | None = None,
-    work_dir: Path | None = None,
+    layout: ProjectLayout | None = None,
     static_cost_analyzer=None,
     session_factory=None,
     audit_writer_factory=None,
@@ -337,16 +337,17 @@ def _finalize_sub_agent(
     (Agy) that have no such telemetry keep producing the same
     metrics.json shape they always did.
 
-    ``work_dir``: cwd the SDK ran under — encoded as
-    claude's project_key when locating ``~/.claude/projects/<key>/
-    <claude_session_id>.jsonl``. When provided alongside a
-    ``claude_session_id`` in ``extra_metrics``, the
+    ``layout``: the PROJECT's geometry, standing where the SDK ran
+    (``layout.cwd`` — the sub-agent's checkout, a worktree when isolated):
+    the transcript is keyed by that cwd, every other finalize step (the
+    retro decision, its log) writes into the project's own run tree. When
+    provided alongside a ``claude_session_id`` in ``extra_metrics``, the
     ``finalize-subagent`` sub-pipeline runs and produces a structured
     ``audit.md`` (👤/👾/🔧/💭) for the SubAgent path — closing the
-    HITL/Automate asymmetry. Callers without
-    ``work_dir`` (legacy / non-Claude subprocess paths)
-    keep producing the meta-only ``audit.md`` they always did — opt-in
-    enrichment, no behaviour change for the unfixed callsites.
+    HITL/Automate asymmetry. Callers without a ``layout`` (legacy /
+    non-Claude subprocess paths) keep producing the meta-only ``audit.md``
+    they always did — opt-in enrichment, no behaviour change for the
+    unfixed callsites.
     """
     # Same shield as the HITL arm — a stray Ctrl-C here costs
     # audit.md and metrics for the whole sub-agent run.
@@ -413,13 +414,12 @@ def _finalize_sub_agent(
             claude_session_id = None
             if extra_metrics:
                 claude_session_id = extra_metrics.get("claude_session_id")
-            if work_dir is not None and (claude_session_id or transcript_resolver):
+            if layout is not None and (claude_session_id or transcript_resolver):
                 try:
                     _run_finalize_subagent(
                         session,
                         claude_session_id=claude_session_id or "",
-                        # the sub-agent's session tree lives in ITS checkout
-                        layout=ProjectLayout.at(work_dir),
+                        layout=layout,
                         exit_code=exit_code,
                         static_cost_analyzer=static_cost_analyzer,
                         session_factory=session_factory,
@@ -580,7 +580,7 @@ def start_event_log(
     provider,
     session: "Session",
     *,
-    project_dir: Path,
+    cwd: Path,
     provider_session_id: str | None,
 ) -> "EventLogWriter | None":
     """The session-time writer of ``events.jsonl``, started; ``None`` when this
@@ -603,8 +603,9 @@ def start_event_log(
     from ai_hats_observe.artifacts import EVENT_LOG_JSONL
     from ai_hats_observe.event_log_writer import EventLogWriter
 
-    # The surface keys its record by the cwd's real path (S0: /private/var, not /var).
-    root = Path(project_dir).resolve()
+    # The surface keys its record by the cwd's real path (S0: /private/var, not
+    # /var); a stamped layout.cwd is already resolved, a raw path may not be.
+    root = Path(cwd).resolve()
 
     def locate() -> list[Path]:
         return provider.resolve_transcript(

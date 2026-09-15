@@ -167,7 +167,7 @@ class ClaudeSurface(Surface):
 
     def resolve_transcript(
         self,
-        project_dir: Path,
+        cwd: Path,
         session_id: str,
         *,
         provider_session_id: str | None = None,
@@ -176,10 +176,10 @@ class ClaudeSurface(Surface):
         from ai_hats.paths import claude_transcript_path, claude_transcripts_dir, resolve_transcript
 
         return resolve_transcript(
-            claude_transcripts_dir(project_dir),
+            claude_transcripts_dir(cwd),
             "*.jsonl",
             session_id,
-            exact_path=claude_transcript_path(project_dir, provider_session_id)
+            exact_path=claude_transcript_path(cwd, provider_session_id)
             if provider_session_id
             else None,
             end_ts=end_ts,

@@ -704,7 +704,7 @@ class WrapRunner:
             env=env_map,
             prompt=prompt_file,
             plan=artifacts.port.plan,
-            cwd=str(self.project_dir),
+            cwd=str(self.layout.cwd),  # where the pty child runs, not the root
             checks=reported_checks,
             consent=result.consent,
             notes=report_notes,
@@ -795,12 +795,12 @@ class WrapRunner:
         # never prevents the session-id print (invariant).
         tracer = self.tracer_factory(session)
         # Started before the surface; closed in _finalize_session_basic. Keyed by
-        # the cwd the pty child inherits, not the project root: a worktree
+        # where the pty child runs (layout.cwd), never the root: a worktree
         # session's root is the main checkout, where its record never appears.
         event_log = start_event_log(
             provider,
             session,
-            project_dir=Path.cwd(),
+            cwd=self.layout.cwd,
             provider_session_id=claude_session_id,
         )
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment

@@ -113,6 +113,46 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
     assert delta == {"audit_path": session.audit_path}
 
 
+def test_resolves_the_transcript_where_the_surface_ran_not_at_the_root(tmp_path, monkeypatch):
+    """A session launched from a task worktree has the main checkout as its
+    root, while the surface keys its record by the worktree it ran in. The
+    step must look where the surface ran — the root is where it never was."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "home" / ".claude"))
+    session = make_session(tmp_path)
+    session.init_audit(role="primary", provider="claude")
+
+    main = tmp_path / "main"
+    worktree = tmp_path / "worktree"
+    main.mkdir()
+    worktree.mkdir()
+    csid = "wt-session-uuid"
+    real_jsonl = _claude_dir_for(tmp_path / "home", worktree) / f"{csid}.jsonl"
+    real_jsonl.write_text("{}")
+
+    captured: list = []
+
+    class _CapturingAuditWriter:
+        def build(self, session, jsonl_path=None, keep_raw=False, transcript_verified=False):
+            captured.append(jsonl_path)
+
+    def run_with(layout: ProjectLayout) -> None:
+        MakeAudit().run(
+            session_id=session.session_id,
+            session_dir=session.session_dir,
+            claude_session_id=csid,
+            layout=layout,
+            transcript_resolver=_claude_resolver,
+            exit_code=0,
+            session_factory=Session,
+            audit_writer_factory=_CapturingAuditWriter,
+        )
+
+    run_with(ProjectLayout.at(main).with_cwd(worktree))
+    run_with(ProjectLayout.at(main))  # positive control: the root alone misses
+
+    assert captured == [[real_jsonl], []]
+
+
 def test_discovers_the_jsonl_when_no_session_id_was_taken(
     tmp_path,
     monkeypatch,

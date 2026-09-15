@@ -78,7 +78,7 @@ class AgySurface(Surface):
 
     def resolve_transcript(
         self,
-        project_dir: Path,
+        cwd: Path,
         session_id: str,
         *,
         provider_session_id: str | None = None,
@@ -86,6 +86,7 @@ class AgySurface(Surface):
     ) -> list[Path]:
         from ai_hats.paths import resolve_transcript, tool_home
 
+        del cwd  # agy keys its brain by session, not by where it ran
         brain_dir = tool_home("gemini", "GEMINI_CONFIG_DIR") / "antigravity-cli" / "brain"
         exact_path = (
             brain_dir / provider_session_id / ".system_generated" / "logs" / "transcript.jsonl"

@@ -75,16 +75,17 @@ class MakeAudit(Step):
         transcript_resolver: Any = None,
         **_: Any,
     ) -> dict[str, Any]:
-        project_dir = layout.root
         del exit_code  # contract-required key; AuditWriter reads metrics.json instead
 
         session = session_factory(session_id=session_id, session_dir=session_dir)
 
-        # Provider owns discovery; no resolver → trace.log fallback.
+        # Provider owns discovery; no resolver → trace.log fallback. The surface
+        # keyed its record by where it RAN (layout.cwd — a worktree, say), never
+        # by the project root.
         try:
             jsonl_path = (
                 transcript_resolver(
-                    project_dir,
+                    layout.cwd,
                     session_id,
                     provider_session_id=claude_session_id or None,
                 )

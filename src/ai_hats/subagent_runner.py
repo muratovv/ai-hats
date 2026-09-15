@@ -392,10 +392,13 @@ class SubAgentRunner:
             SurfaceGuard.pre_flight_check(self.project_dir, work_dir, mode, provider_name).unwrap()
             t0 = time.monotonic()
 
+            # The project's geometry, standing where the surface runs: its
+            # record is keyed by that cwd, its retro log by the project's tree.
+            run_layout = self.layout.with_cwd(work_dir)
             # One bundle for all four finalize paths — per-site spelling let the
             # timeout/error paths drift and lose enrichment entirely.
             observe_kwargs = {
-                "work_dir": work_dir,
+                "layout": run_layout,
                 "static_cost_analyzer": self.payload.static_cost_analyzer,
                 "session_factory": self.payload.session_factory,
                 "audit_writer_factory": self.payload.audit_writer_factory,
@@ -412,7 +415,7 @@ class SubAgentRunner:
                     observe_kwargs["event_log"] = start_event_log(
                         provider,
                         session,
-                        project_dir=work_dir,
+                        cwd=run_layout.cwd,
                         provider_session_id=provider_session_id,
                     )
                     metrics = CollectedMetrics()
