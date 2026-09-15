@@ -14,6 +14,7 @@ from _helpers.git import git as _git
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -179,8 +180,15 @@ def _commit_and_read_probe(sandbox: Sandbox, name: str, preamble: str = "") -> P
 
 
 def _pytest_and_read_probe(sandbox: Sandbox, preamble: str = "") -> Path:
-    """Run a bare ``pytest`` in the worktree; return the interpreter that served it."""
+    """Run a bare ``pytest`` in the worktree; return the interpreter that served it.
+
+    PATH leads with the interpreter running THIS test: foreign to the sandbox
+    by construction, and present whether or not the caller's shell has a venv
+    on PATH — a plain shell has none, and there a bare ``pytest`` is "command
+    not found", which measures nothing.
+    """
     env = clean_env(os.environ)
+    env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env.get("PATH", "")])
     env[PROBE_ENV] = str(sandbox.probe)
     sandbox.probe.unlink(missing_ok=True)
 

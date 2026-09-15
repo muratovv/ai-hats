@@ -12,7 +12,9 @@ why:    the loop ends in `git reset --hard`, and the third hand-run of it in one
 
 from __future__ import annotations
 
+import os
 import subprocess as sp
+import sys
 from pathlib import Path
 
 import pytest
@@ -26,12 +28,17 @@ SCRIPT = REPO_ROOT / "scripts" / "revert-proof.sh"
 
 
 def _run(cwd: Path, *args: str) -> sp.CompletedProcess:
+    # The sandbox has no .venv, so the script falls back to `python3 -m pytest`
+    # from PATH; lead it with the interpreter running this test, which has one.
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env.get("PATH", "")])
     return sp.run(  # noqa: S603 - our own script, path from the repo
         [str(SCRIPT), *args],
         cwd=str(cwd),
         capture_output=True,
         text=True,
         timeout=120,
+        env=env,
     )
 
 
