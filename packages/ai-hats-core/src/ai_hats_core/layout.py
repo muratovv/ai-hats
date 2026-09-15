@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Mapping
@@ -288,6 +288,19 @@ class ProjectLayout:
     root: Path  # the project checkout
     base: Path  # <root>/.agent/ai-hats, or its sanctioned override
     cache_root: Path | None = None  # <cache home>/<project key>; None only for a bare constructor
+    # Where the process stands (a linked worktree, a subdirectory) — the dir a
+    # surface it launches inherits and keys its record by, never the root.
+    # Unstated, the layout stands at its root, so a reader always sees a Path.
+    cwd: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.cwd is None:
+            object.__setattr__(self, "cwd", self.root)
+
+    def with_cwd(self, cwd: Path) -> ProjectLayout:
+        """The same geometry, standing at ``cwd`` — resolved, because the
+        surface keys its record by the real path (``/private/var``, not ``/var``)."""
+        return replace(self, cwd=Path(cwd).resolve())
 
     @classmethod
     def compute(
@@ -297,6 +310,7 @@ class ProjectLayout:
         *,
         ai_hats_dir: str
         | None = None,  # the config's say, passed as DATA — layout never reads yaml
+        cwd: Path | None = None,
     ) -> ProjectLayout:
         """``base``: trusted AI_HATS_DIR env > ``ai_hats_dir`` > default.
 
@@ -316,10 +330,10 @@ class ProjectLayout:
                     stacklevel=2,
                 )
             else:
-                return cls(root=root, base=Path(override).expanduser(), cache_root=cache)
+                return cls(root=root, base=Path(override).expanduser(), cache_root=cache, cwd=cwd)
         if ai_hats_dir:
-            return cls(root=root, base=root / ai_hats_dir, cache_root=cache)
-        return cls(root=root, base=root / ".agent" / "ai-hats", cache_root=cache)
+            return cls(root=root, base=root / ai_hats_dir, cache_root=cache, cwd=cwd)
+        return cls(root=root, base=root / ".agent" / "ai-hats", cache_root=cache, cwd=cwd)
 
     @classmethod
     def at(cls, root: Path | str, environ: Mapping[str, str] | None = None) -> ProjectLayout:
