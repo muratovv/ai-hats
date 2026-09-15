@@ -33,6 +33,11 @@ class EventReader(Protocol):
         """
         ...
 
+    def close(self) -> None:
+        """Declare the run over: the next ``read()`` drains whatever a live
+        source was holding back, and ``exhausted`` may then turn true."""
+        ...
+
 
 @runtime_checkable
 class AsyncEventReader(Protocol):

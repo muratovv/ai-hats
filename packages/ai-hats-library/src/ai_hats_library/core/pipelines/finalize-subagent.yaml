@@ -22,7 +22,6 @@ steps:
   - id: make_audit
   # Sibling of make_audit — emits usage.json (usage/v1).
   - id: compute_usage
-  # Sibling of compute_usage over the same transcript — emits events.jsonl
-  # (events/v1), the canonical record the other two artifacts project from.
-  - id: write_event_log
+  # events.jsonl, the record both of those project from, is not written here:
+  # the session's own EventLogWriter wrote it while the surface ran.
   - id: maybe_spawn_session_reviewer

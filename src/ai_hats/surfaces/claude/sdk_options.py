@@ -184,6 +184,11 @@ def build_options(
     return ClaudeAgentOptions(**kwargs)
 
 
+#: What a launch record shows for ``session_id``: the runner mints the real one
+#: per run, so a record written to be compared against a dry run cannot carry it.
+SESSION_ID_PLACEHOLDER = "<minted at launch>"
+
+
 def automate_options(
     composition_result: "CompositionResult",
     *,
@@ -194,6 +199,7 @@ def automate_options(
     work_dir: Path | None,
     model: str,
     env: dict[str, str],
+    claude_session_id: str | None = None,
 ) -> "ClaudeAgentOptions":
     """The options a sub-agent is launched with — engine and report share this.
 
@@ -207,6 +213,7 @@ def automate_options(
         layout=layout,
         session_id=session_id,
         work_dir=work_dir,
+        claude_session_id=claude_session_id,
         model=model or "",
         settings=artifacts.sdk_options.get("settings"),
         setting_sources=artifacts.sdk_options.get("setting_sources"),

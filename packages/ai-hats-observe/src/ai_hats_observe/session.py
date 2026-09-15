@@ -26,8 +26,11 @@ from .artifacts import (
     PTY_RAW_LOG,
     REASONING_LOG,
     ROLE_MATERIALIZATION_JSON,
+    SESSION_DIR_MODE,
+    SESSION_FILE_MODE,
     TRACE_LOG,
     USAGE_JSON,
+    private_opener,
     session_dirname,
 )
 from .trace import ENV_SESSION_ID, ENV_TRACE_LOG_PATH, TraceTag
@@ -35,18 +38,6 @@ from .trace import ENV_SESSION_ID, ENV_TRACE_LOG_PATH, TraceTag
 # HATS-948: the metrics.json (machine-readable audit) schema tag — observe's
 # first versioned surface (mirrors usage/v1). Bumped by the migration seam.
 AUDIT_SCHEMA_VERSION = "audit/v1"
-SESSION_DIR_MODE = 0o700
-SESSION_FILE_MODE = 0o600
-
-
-def _private_opener(path: str, flags: int) -> int:
-    fd = os.open(path, flags, SESSION_FILE_MODE)
-    try:
-        os.fchmod(fd, SESSION_FILE_MODE)
-    except BaseException:
-        os.close(fd)
-        raise
-    return fd
 
 
 class SessionManager:
@@ -216,7 +207,7 @@ class Session:
 
     def append_artifact_text(self, path: Path, text: str, *, encoding: str = "utf-8") -> None:
         """Append text after tightening a session artifact to private permissions."""
-        with open(path, "a", encoding=encoding, opener=_private_opener) as artifact:
+        with open(path, "a", encoding=encoding, opener=private_opener) as artifact:
             artifact.write(text)
 
     def copy_artifact(self, source: Path, destination: Path) -> None:
@@ -226,13 +217,13 @@ class Session:
             return
         with (
             source.open("rb") as source_stream,
-            open(destination, "wb", opener=_private_opener) as destination_stream,
+            open(destination, "wb", opener=private_opener) as destination_stream,
         ):
             shutil.copyfileobj(source_stream, destination_stream)
 
     def open_artifact_binary_append(self, path: Path, *, buffering: int = -1) -> BinaryIO:
         """Open a private session artifact for binary append."""
-        return open(path, "ab", buffering=buffering, opener=_private_opener)
+        return open(path, "ab", buffering=buffering, opener=private_opener)
 
     def record_provider_session_id(self, provider_session_id: str) -> None:
         """Persist the transcript link at launch, while the session is still alive.

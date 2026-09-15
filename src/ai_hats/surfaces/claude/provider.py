@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
@@ -28,6 +29,7 @@ from .. import (
 )
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
 from .sdk_options import (
+    SESSION_ID_PLACEHOLDER,
     assemble_first_user_message,
     automate_options,
     describe_options,
@@ -159,9 +161,9 @@ class ClaudeSurface(Surface):
         return ClaudeParser()
 
     def event_reader(self) -> Callable[[Path], EventReader]:
-        # The class IS the factory: one reader per transcript path, holding its
-        # own position so a grown file yields only what is new.
-        return ClaudeTranscriptReader
+        # One reader per transcript path, holding its own position; live, so the
+        # tail is held open until the session's writer says the run is over.
+        return partial(ClaudeTranscriptReader, live=True)
 
     def resolve_transcript(
         self,
@@ -348,8 +350,9 @@ class ClaudeSurface(Surface):
         """No argv here — the launch IS the option set handed to the SDK.
 
         Built by the same call the engine makes, so the record cannot name a
-        smaller set than the sub-agent receives. ``work_dir`` is the one input
-        a report cannot have.
+        smaller set than the sub-agent receives. ``work_dir`` and the session id
+        are the two inputs a report cannot have; the record names them as what
+        they are, and metrics.json carries the id the run got.
         """
         return AutomateLaunch(
             launch=describe_options(
@@ -362,6 +365,7 @@ class ClaudeSurface(Surface):
                     work_dir=None,
                     model=model,
                     env=env,
+                    claude_session_id=SESSION_ID_PLACEHOLDER,
                 )
             ),
             prompt=render_sdk_prompt_audit(artifacts, layout, task=task, ticket_id=ticket_id),
@@ -618,6 +622,7 @@ class ClaudeSubagentEngine(SubagentEngine):
         timeout_s: int,
         metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
+        provider_session_id: str | None = None,
     ) -> SurfaceRunResult:
         if artifacts is None:
             artifacts = self._provider.build_session_artifacts(
@@ -636,6 +641,7 @@ class ClaudeSubagentEngine(SubagentEngine):
             work_dir=work_dir,
             model=model or "",
             env=env,
+            claude_session_id=provider_session_id,
         )
         msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
         run_res = self._run_blocking(opts, msg, timeout_s=timeout_s)

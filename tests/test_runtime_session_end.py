@@ -118,16 +118,6 @@ def test_format_tokens_empty_tokens_dict(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-class _StubTracer:
-    """Minimal SidecarTracer stub.
-
-    HATS-529: ``flush_response`` was removed along with Path A. The stub
-    is now an inert placeholder — ``_finalize_session_basic`` no longer
-    calls any method on the tracer, but the parameter is still passed
-    (reserved scaffold for future finalize-time tracer cleanup hooks).
-    """
-
-
 @pytest.fixture
 def basic_kwargs(tmp_path):
     """Default keyword args for ``_finalize_session_basic(...)``."""
@@ -138,7 +128,6 @@ def basic_kwargs(tmp_path):
         "exit_code": 0,
         "active_role": "primary",
         "provider_name": "claude",
-        "tracer": _StubTracer(),
     }
 
 
@@ -470,6 +459,71 @@ def test_wrap_runner_closes_session_resources_before_session_cache(
 
     assert events == ["provider"]
     assert not ProjectLayout.at(runner.project_dir).cache.session(session.session_id).exists()
+
+
+TRANSCRIPT_FIXTURE = Path(__file__).parent / "fixtures" / "transcripts" / "normal.jsonl"
+
+
+def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory, tmp_path):
+    """The session-time writer is the only writer of events.jsonl: a surface
+    with a canonical reading leaves the complete record with no finalize pass,
+    and the trace says how many events it holds."""
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
+    from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
+    from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
+
+    transcript = tmp_path / "live.jsonl"
+    transcript.write_text(TRANSCRIPT_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+
+    class Recorded(ClaudeSurface):
+        def resolve_transcript(
+            self, project_dir, session_id, *, provider_session_id=None, end_ts=None
+        ):
+            return [transcript]
+
+    runner, _project = wrap_runner_factory(pty_exit_code=0)
+    runner.payload = replace(runner.payload, provider=Recorded())
+
+    _exit_code, session = runner.run()
+
+    events = list(read_events(session.session_dir / EVENT_LOG_JSONL))
+    assert events == list(ClaudeTranscriptReader(transcript).read())
+    assert len(events) > 3, "fixture too thin to prove the record"
+    assert f"events.jsonl: {len(events)} events" in session.trace_path.read_text()
+
+
+def test_wrap_runner_writes_no_event_log_for_a_surface_without_a_reader(
+    wrap_runner_factory,
+):
+    """Positive control for the test above, and the contract: no canonical
+    reading means no file, not an empty one."""
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
+    from ai_hats_observe.event_log import EVENT_LOG_JSONL
+
+    class Unread(ClaudeSurface):
+        def event_reader(self):
+            return None
+
+    runner, _project = wrap_runner_factory(pty_exit_code=0)
+    runner.payload = replace(runner.payload, provider=Unread())
+
+    _exit_code, session = runner.run()
+
+    assert not (session.session_dir / EVENT_LOG_JSONL).exists()
+
+
+def test_start_event_log_skips_a_session_the_surface_gave_no_id(tmp_path):
+    """claude on --resume takes no session id; following a record by time
+    alone could follow a neighbour's, so none is followed and the trace says so."""
+    from ai_hats.runtime_common import start_event_log
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
+
+    session = make_session(tmp_path)
+
+    writer = start_event_log(ClaudeSurface(), session, project_dir=tmp_path, provider_session_id="")
+
+    assert writer is None
+    assert "events.jsonl not written" in session.trace_path.read_text()
 
 
 def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(

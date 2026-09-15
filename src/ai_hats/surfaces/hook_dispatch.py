@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Protocol, Sequence
 
+from .gate_log import record_verdict
 from .hook_channel import (
     ChainDecision,
     ChainVerdict,
@@ -148,24 +149,30 @@ def dispatch(
     if arrival.event is None or arrival.native not in channel.profile.native_events:
         # Nothing composed can bind here, so no gate was missed.
         return _say(
-            channel, ChainVerdict(decision=ChainDecision.ALLOW, event=arrival.event), arrival
+            channel,
+            ChainVerdict(decision=ChainDecision.ALLOW, event=arrival.event),
+            arrival,
+            environ=env,
         )
     try:
         rows = channel.rows(env, arrival.event)
     except ManifestUnresolved as exc:
         return _refuse(channel, arrival, str(exc), env)
+    calls = channel.read(payload, arrival)
     return _say(
         channel,
         run_chain(
             channel.profile,
             event=arrival.event,
             rows=rows,
-            calls=channel.read(payload, arrival),
+            calls=calls,
             project_dir=project_dir_from(env),
             environ=env,
             hook_environ=hook_environ,
         ),
         arrival,
+        environ=env,
+        calls=calls,
     )
 
 
@@ -187,13 +194,23 @@ def _refuse(
             environ=environ,
         ),
         arrival,
+        environ=environ,
     )
 
 
-def _say(channel: SurfaceChannel, verdict: ChainVerdict, arrival: Arrival) -> int:
+def _say(
+    channel: SurfaceChannel,
+    verdict: ChainVerdict,
+    arrival: Arrival,
+    *,
+    environ: Mapping[str, str],
+    calls: Sequence[HookCall] = (),
+) -> int:
     profile = channel.profile
     reduced = reduce_to(profile.dialect(arrival.native), verdict)
     relay_stderr(reduced)
+    # The record gets the verdict that took effect, before the surface acts on it.
+    record_verdict(reduced, arrival.event, calls, environ)
     channel.emit(reduced, arrival)
     return status_for(profile, reduced)
 

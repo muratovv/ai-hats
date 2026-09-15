@@ -21,6 +21,9 @@ import pytest
 from ai_hats_observe.canonical import (
     Completion,
     EventReader,
+    GateDecision,
+    GatePoint,
+    GateVerdict,
     HarnessActionRequired,
     HarnessMustAct,
     ItemEmitted,
@@ -607,7 +610,6 @@ def test_known_bookkeeping_subtypes_produce_no_signal(tmp_path: Path) -> None:
     """They are classified so they stop polluting the drift signal, and read so
     they stop being news."""
     quiet = [
-        "stop_hook_summary",
         "turn_duration",
         "away_summary",
         "local_command",
@@ -626,6 +628,60 @@ def test_an_unmodelled_system_subtype_is_reported(tmp_path: Path) -> None:
     blanket ignore of ``system``."""
     events = events_of(tmp_path, [{"type": "system", "subtype": "brand-new", "uuid": "s"}])
     assert [s.raw_code for s in signals(events)] == ["system/brand-new"]
+
+
+# The record Claude writes after its Stop hooks ran, field for field as sampled
+# from a real transcript this session; only the command is a stand-in.
+STOP_HOOK_SUMMARY: dict[str, Any] = {
+    "type": "system",
+    "subtype": "stop_hook_summary",
+    "uuid": "s-stop",
+    "timestamp": "2026-09-14T12:19:25.936Z",
+    "hookCount": 1,
+    "hookInfos": [{"command": "~/.hooks/notify-stop.sh", "durationMs": 171}],
+    "hookErrors": [],
+    "hookAdditionalContext": [],
+    "preventedContinuation": False,
+    "stopReason": "",
+    "hasOutput": True,
+    "level": "suggestion",
+    "toolUseID": "ccce6922-9fcb-439d-9e49-5a71aa6be5ca",
+}
+
+
+def test_a_stop_hook_summary_is_a_gate_verdict_at_the_stop(tmp_path: Path) -> None:
+    """Stop hooks are a gate on the run, so the record naming them reads as a
+    verdict: ``allow`` when the run went on, ``deny`` when a hook prevented
+    continuation — and the one hook that ran is the one that blocked."""
+    blocked = {
+        **STOP_HOOK_SUMMARY,
+        "uuid": "s-blocked",
+        "preventedContinuation": True,
+        "stopReason": "tests are red",
+    }
+    events = events_of(tmp_path, [STOP_HOOK_SUMMARY, blocked])
+
+    verdicts = [e for e in events if isinstance(e, GateVerdict)]
+    assert [v.decision for v in verdicts] == [GateDecision.ALLOW, GateDecision.DENY]
+    assert all(v.point is GatePoint.AT_STOP and v.source == "claude/jsonl" for v in verdicts)
+    assert [v.hook for v in verdicts] == ["", "notify-stop.sh"], "nothing objected; then one did"
+    assert verdicts[1].reason == "tests are red"
+    assert verdicts[0].ts == "2026-09-14T12:19:25.936Z"
+    # POSITIVE CONTROL for the run-health axis: a verdict is content, not a signal
+    assert signals(events) == []
+
+
+def test_a_stop_hook_that_failed_is_a_surface_warning(tmp_path: Path) -> None:
+    """A hook that errored is run health worth knowing, beside the verdict.
+    ``hookErrors`` is empty in every one of 400 measured transcripts, so its
+    entry shape is unobserved and kept as text rather than modelled."""
+    failed = {**STOP_HOOK_SUMMARY, "hookErrors": ["notify-stop.sh: exit 1"]}
+    events = events_of(tmp_path, [failed])
+
+    warnings = [s for s in signals(events) if s.reason is WorthRecording.SURFACE_WARNING]
+    assert [w.detail for w in warnings] == ["notify-stop.sh: exit 1"]
+    assert warnings[0].raw_code == "system/stop_hook_summary"
+    assert len([e for e in events if isinstance(e, GateVerdict)]) == 1
 
 
 # --- prompts ---------------------------------------------------------------

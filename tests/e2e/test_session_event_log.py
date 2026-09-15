@@ -8,8 +8,9 @@ cmds:
 expect: the session dir holds events.jsonl beside the audit.md / usage.json it
         already wrote, every line stamped events/v1 and decoding to a canonical
         event, with the assistant's call reported once and carrying its usage
-why:    the artifact is written by a pipeline step inside the session process, so
-        an in-process test of the step says nothing about what a finished session
+why:    the artifact is written while the session runs, by a writer that follows
+        the surface's own record from inside the session process, so an
+        in-process test of the writer says nothing about what a finished session
         leaves on disk — and a session that quietly stops writing it looks exactly
         like a session that had nothing to record
 """  # comment-length: allow — the e2e catalog header format

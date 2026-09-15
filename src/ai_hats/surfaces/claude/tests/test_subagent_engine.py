@@ -66,6 +66,38 @@ def test_the_run_reports_its_cost_into_the_sink(tmp_path):
     }
 
 
+def test_the_minted_session_id_reaches_the_sdk_options(tmp_path):
+    """The runner mints the surface's session id so the record can be followed
+    while the run is on; the engine has to hand it to the SDK as ``session_id``,
+    or the SDK picks its own and the writer follows a file that never appears."""
+    handed: list = []
+
+    def run_blocking(options, message, *, timeout_s):
+        handed.append(options)
+        return _sdk_result()
+
+    engine = ClaudeSubagentEngine(ClaudeSurface(), run_blocking=run_blocking)
+    engine.run(
+        result=SimpleNamespace(
+            name="r", priorities=[], merged_injection="", rules=[], skills=[], checks=()
+        ),
+        layout=ProjectLayout.at(tmp_path),
+        work_dir=tmp_path,
+        session_id="20260826-102204-1-27148",
+        task="do the thing",
+        ticket_id="",
+        env={},
+        model=None,
+        timeout_s=60,
+        metrics=CollectedMetrics(),
+        artifacts=BuiltArtifacts(),
+        provider_session_id="minted-uuid",
+    )
+
+    (options,) = handed
+    assert options.session_id == "minted-uuid"
+
+
 def test_the_return_value_carries_the_process_outcome_only(tmp_path):
     """The four accounting fields left the contract — a surface reports them, it
     does not return them, so adding a metric never edits five implementations."""

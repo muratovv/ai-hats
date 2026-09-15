@@ -57,6 +57,7 @@ from .runtime_common import (
     _run_finalize_hitl,
     FinalizeAborted,
     sigint_shield,
+    start_event_log,
 )
 from .startup_notices import (
     StartupNotice,
@@ -793,6 +794,15 @@ class WrapRunner:
         # Each layer's exceptions are isolated so a downstream crash
         # never prevents the session-id print (invariant).
         tracer = self.tracer_factory(session)
+        # Started before the surface; closed in _finalize_session_basic. Keyed by
+        # the cwd the pty child inherits, not the project root: a worktree
+        # session's root is the main checkout, where its record never appears.
+        event_log = start_event_log(
+            provider,
+            session,
+            project_dir=Path.cwd(),
+            provider_session_id=claude_session_id,
+        )
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         t0 = time.monotonic()
         try:
@@ -850,7 +860,7 @@ class WrapRunner:
                             exit_code=exit_code,
                             active_role=active_role,
                             provider_name=provider_name,
-                            tracer=tracer,
+                            event_log=event_log,
                             tags=tags,
                             claude_session_id=claude_session_id,
                             duration_s=duration_s,

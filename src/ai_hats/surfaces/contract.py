@@ -130,6 +130,10 @@ class SubagentEngine(abc.ABC):
         timeout_s: int,
         metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
+        # The id the runner minted for the surface's own record, so the record
+        # can be followed while the run is on; an engine that cannot pass one
+        # on ignores it and reports the id the surface chose in ``metrics``.
+        provider_session_id: str | None = None,
     ) -> SurfaceRunResult:
         pass
 
@@ -265,9 +269,11 @@ class Surface(abc.ABC):
         return TraceParser()
 
     def event_reader(self) -> Callable[[Path], EventReader] | None:
-        """Builds the reader that turns ONE of this surface's transcripts into
-        canonical events — same rule as ``transcript_parser``: it rides the
-        surface, there is no registry.
+        """Builds the reader that follows ONE of this surface's transcripts as
+        canonical events while the session runs — same rule as
+        ``transcript_parser``: it rides the surface, there is no registry. The
+        reader must hold its tail open until ``close()``; the session's writer
+        is what declares the run over.
 
         Default ``None``, not a reader that yields nothing: ``None`` means this
         surface has no canonical reading yet, so the session writes no

@@ -19,6 +19,7 @@ from typing import Any, Iterator
 
 from ..canonical.events import (
     Event,
+    GateVerdict,
     ItemEmitted,
     PromptReceived,
     ResponseEnded,
@@ -37,6 +38,8 @@ from ..canonical.signals import (
 from ..canonical.types import (
     Completion,
     EpochSeconds,
+    GateDecision,
+    GatePoint,
     ModelName,
     ResponseId,
     TextItem,
@@ -112,7 +115,6 @@ _SILENT_SYSTEM_SUBTYPES = frozenset(
         "bridge_status",
         "local_command",
         "scheduled_task_fire",
-        "stop_hook_summary",
         "turn_duration",
     }
 )
@@ -424,10 +426,54 @@ class ClaudeTranscriptReader:
                         source=SOURCE,
                         reason=WorthRecording.SURFACE_WARNING,
                     )
+            case "stop_hook_summary":
+                yield from self._stop_hook_events(record, ts)
             case _ if subtype in _SILENT_SYSTEM_SUBTYPES:
                 return
             case _:
                 yield self._notice(f"system/{subtype}", ts=ts, detail=detail)
+
+    def _stop_hook_events(self, record: dict[str, Any], ts: Timestamp | None) -> Iterator[Event]:
+        """The record Claude writes after its Stop hooks ran: one verdict at the
+        stop, and a warning per hook that failed.
+
+        ``hookErrors`` and ``hookAdditionalContext`` are empty in every one of
+        400 measured transcripts, so an entry's shape is unobserved and carried
+        as text rather than modelled.
+        """
+        infos = record.get("hookInfos")
+        commands = [
+            str(info.get("command", ""))
+            for info in (infos if isinstance(infos, list) else [])
+            if isinstance(info, dict)
+        ]
+        count = record.get("hookCount")
+        if (count if isinstance(count, int) else len(commands)) <= 0:
+            return
+        blocked = record.get("preventedContinuation") is True
+        stop_reason = record.get("stopReason")
+        context = record.get("hookAdditionalContext")
+        yield GateVerdict(
+            point=GatePoint.AT_STOP,
+            decision=GateDecision.DENY if blocked else GateDecision.ALLOW,
+            # the one hook that ran is the one that blocked; several cannot be told apart
+            hook=commands[0].rsplit("/", 1)[-1] if blocked and len(commands) == 1 else "",
+            reason=stop_reason if isinstance(stop_reason, str) else "",
+            nudges=tuple(
+                ("", _entry_text(entry)) for entry in (context if isinstance(context, list) else [])
+            ),
+            source=SOURCE,
+            ts=ts,
+        )
+        errors = record.get("hookErrors")
+        for error in errors if isinstance(errors, list) else []:
+            yield Notice(
+                ts=ts,
+                detail=_entry_text(error),
+                raw_code="system/stop_hook_summary",
+                source=SOURCE,
+                reason=WorthRecording.SURFACE_WARNING,
+            )
 
     # -- helpers -----------------------------------------------------------
 
@@ -462,6 +508,10 @@ class ClaudeTranscriptReader:
 def _ts(record: dict[str, Any]) -> Timestamp | None:
     value = record.get("timestamp")
     return Timestamp(value) if isinstance(value, str) and value else None
+
+
+def _entry_text(entry: Any) -> str:
+    return entry if isinstance(entry, str) else json.dumps(entry, ensure_ascii=False, default=str)
 
 
 def _model(message: dict[str, Any]) -> ModelName | None:

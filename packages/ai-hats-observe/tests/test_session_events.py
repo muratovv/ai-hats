@@ -9,6 +9,8 @@ with it.
 
 from __future__ import annotations
 
+import stat
+import threading
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,9 @@ from ai_hats_observe.canonical import (
     ANSWER_ONLY,
     WITH_REASONING,
     Blocking,
+    GateDecision,
+    GatePoint,
+    GateVerdict,
     ItemEmitted,
     ItemKind,
     ResponseStarted,
@@ -95,8 +100,98 @@ def test_a_live_writer_appends(tmp_path: Path, session_events: list) -> None:
     assert list(read_events(path)) == session_events
 
 
+def test_two_writers_appending_at_once_never_tear_a_line(tmp_path: Path) -> None:
+    """Two producers append to this file — the session's writer and a hook
+    process judging a call — and neither can see the other. Each line is one
+    ``write(2)`` under ``O_APPEND``, which is what keeps them from interleaving;
+    a buffered handle splits a large event across several and merges lines.
+
+    The 40 KB results are the positive control: larger than any stdio buffer,
+    so a buffered writer racing another tears lines here every time.
+    """
+    path = tmp_path / EVENT_LOG_JSONL
+    per_writer, size = 100, 40_000
+
+    def produce(tag: str) -> None:
+        for index in range(per_writer):
+            event = ToolResultReceived(call_id=f"{tag}-{index}", ok=True, content=tag * size)
+            write_events([event], path, append=True)
+
+    writers = [threading.Thread(target=produce, args=(tag,)) for tag in ("a", "b")]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join()
+
+    lines = path.read_bytes().split(b"\n")
+    assert lines[-1] == b"" and len(lines) - 1 == 2 * per_writer, "a line was torn or merged"
+    events = list(read_events(path))
+    assert len(events) == 2 * per_writer
+    assert {e.call_id for e in events} == {f"{t}-{i}" for t in "ab" for i in range(per_writer)}
+    assert all(e.content == e.call_id[0] * size for e in events), "a payload was interleaved"
+
+
+def test_the_artifact_is_private_from_creation(tmp_path: Path, session_events: list) -> None:
+    path = tmp_path / EVENT_LOG_JSONL
+
+    write_events(session_events, path)
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
 def test_an_absent_artifact_reads_as_no_events(tmp_path: Path) -> None:
     assert list(read_events(tmp_path / "never-written.jsonl")) == []
+
+
+# --- gate verdicts -----------------------------------------------------------
+
+
+VERDICTS = [
+    GateVerdict(
+        point=GatePoint.BEFORE_TOOL,
+        decision=GateDecision.DENY,
+        hook="safety_gate.py",
+        reason="rm -rf outside the worktree",
+        nudges=(("budget_nudge.py", "prefer rack transition"),),
+        tool="Bash",
+        call_id="toolu_01",
+        source="chain",
+        ts="2026-09-14T12:00:00Z",
+    ),
+    GateVerdict(point=GatePoint.AFTER_TOOL, decision=GateDecision.ALLOW, source="chain"),
+    GateVerdict(
+        point=GatePoint.AT_STOP,
+        decision=GateDecision.ASK,
+        hook="claude-stop-hook.sh",
+        source="claude/transcript",
+        ts="2026-09-14T12:00:01Z",
+    ),
+]
+
+
+def test_a_gate_verdict_round_trips(tmp_path: Path, session_events: list) -> None:
+    """A verdict is an event like any other: written, read back equal, with
+    every field a consumer attributes it by — the deciding hook, the call it
+    judged, and who spoke."""
+    path = tmp_path / EVENT_LOG_JSONL
+    events = [*session_events[:2], *VERDICTS, *session_events[2:]]
+
+    write_events(events, path)
+
+    assert list(read_events(path)) == events
+
+
+def test_a_gate_verdict_is_carried_by_a_projection_and_folded_by_none(
+    tmp_path: Path, session_events: list
+) -> None:
+    """The log is the deliverable; the collected shape audit.md and usage.json
+    are built from does not change because gates spoke. A projection still
+    passes the verdict through — narrowing what a consumer reads must not hide
+    that a call was refused."""
+    events = [*session_events[:2], *VERDICTS, *session_events[2:]]
+
+    assert collect(events) == collect(session_events)
+    assert [e for e in select(events, ANSWER_ONLY) if isinstance(e, GateVerdict)] == VERDICTS
 
 
 # --- projections -----------------------------------------------------------
