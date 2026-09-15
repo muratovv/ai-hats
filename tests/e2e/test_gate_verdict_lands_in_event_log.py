@@ -108,7 +108,7 @@ def _spoken(done) -> dict:
 def test_each_verdict_lands_in_the_sessions_event_log(session) -> None:
     """Refused, allowed, asked: three hook processes, four lines, in order — the
     recording HATS-1967 put into every dispatcher, seen from outside it, and
-    the wait on the person an ``ask`` opens beside its verdict."""
+    the wait on the person HATS-1987 opens beside an ``ask`` verdict."""
     refused = run_claude_dispatch(
         session.project, session.env, tool="Bash", tool_input={"command": f"cat {OFF_LIMITS}"}
     )

@@ -71,6 +71,9 @@ def session(tmp_path: Path) -> SimpleNamespace:
 
 
 def test_claudes_own_permission_prompt_opens_a_wait_in_the_sessions_log(session) -> None:
+    """The observer entry HATS-1987 put into every claude session's settings,
+    driven as claude drives it: the prompt's notification lands as a wait, any
+    other notification lands as nothing."""
     shown = run_claude_dispatch(
         session.project, session.env, event="Notification", tool="", extra=PERMISSION_PROMPT
     )
