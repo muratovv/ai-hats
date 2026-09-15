@@ -4,8 +4,10 @@ flow:   an agent executing git push or file cleanup commands under hook permissi
         policies
 cmds:
     git push origin master
-expect: unapproved pushes block and display consent flags while approved pushes and
-        mandated resource cleanup commands execute cleanly
+    git -C <main-checkout> push --force origin master
+expect: unapproved pushes block and display consent flags — with a git global
+        option between `git` and `push` just the same — while approved pushes
+        and mandated resource cleanup commands execute cleanly
 why:    permission guards must provide actionable consent flags on denial without
         blocking non-destructive or rule-mandated cleanup operations
 """
@@ -73,8 +75,18 @@ def test_approved_push_completes_with_ack(hooked_project):
     )
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("git push origin master", id="bare"),
+        # The spelling worktree-isolation teaches for pushing another checkout;
+        # the classifier used to require `git` and `push` adjacent and let it
+        # through as `safe`.
+        pytest.param("git -C /work/main-checkout push origin master", id="through-C"),
+    ],
+)
 @pytest.mark.integration
-def test_unapproved_push_is_gated_and_names_its_hatch(hooked_project):
+def test_unapproved_push_is_gated_and_names_its_hatch(hooked_project, command):
     """An unapproved push is gated, and the refusal says how to proceed.
 
     The second half is the deny-names-its-hatch invariant (P4): ``check_git``
@@ -82,7 +94,7 @@ def test_unapproved_push_is_gated_and_names_its_hatch(hooked_project):
     agent nowhere to go but blunt instruments.
     """
     project, env, settings = hooked_project
-    verdict = run_chain(project, "git push origin master", settings=settings, env=env)
+    verdict = run_chain(project, command, settings=settings, env=env)
     assert verdict.gated, f"an unapproved push must be gated; got {verdict}"
     assert verdict.names_ack_flag, (
         f"refusal must name the consent flag that unblocks it; got {verdict}"
@@ -117,6 +129,12 @@ def test_non_mutating_git_commands_pass(hooked_project, command):
     [
         pytest.param("git push --force origin master", id="force-push"),
         pytest.param("gh pr merge 42 --merge --delete-branch", id="pr-merge"),
+        # A global option between binary and verb — the live shape that reached
+        # the remote unasked from a worktree session.
+        pytest.param(
+            "git -C /work/main-checkout push --force origin master", id="force-push-through-C"
+        ),
+        pytest.param("gh -R owner/repo pr merge 42 --merge", id="pr-merge-through-R"),
     ],
 )
 @pytest.mark.integration
