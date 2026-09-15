@@ -277,7 +277,7 @@ def build_composition_payload(
         result=result,
     )
 
-    from .plan_adapter import adapt
+    from .surfaces import adapt
     from .role_spec import format_role_spec
 
     role_expression = format_role_spec(
@@ -285,7 +285,7 @@ def build_composition_payload(
         spec.adds if spec else (),
         spec.removes if spec else (),
     )
-    plan, _sources = adapt(
+    plan = adapt(
         result,
         identity=role_expression,
         resolver=asm.resolver,
@@ -329,7 +329,7 @@ def build_preview_payload(
     renders as a friendly exit 2.
     """
     from .materialize import compose_to_run
-    from .plan_adapter import adapt
+    from .surfaces import adapt
     from .role_spec import format_role_spec
     from .surface_registry import get_surface
 
@@ -348,7 +348,7 @@ def build_preview_payload(
     role_expression = format_role_spec(
         eff_role, spec.adds if spec else (), spec.removes if spec else ()
     )
-    plan, _sources = adapt(
+    plan = adapt(
         result,
         identity=role_expression,
         resolver=asm.resolver,

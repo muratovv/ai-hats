@@ -1,9 +1,10 @@
 {
   "checks": [],
   "composition": {
-    "consent": [],
     "diagnostics": [],
+    "digest": "<path-derived>",
     "hooks": {
+      "consent": [],
       "git": [],
       "runtime": [],
       "workflow": [],
@@ -11,19 +12,28 @@
     },
     "identity": "test-role",
     "prompt": {
-      "members": [
+      "blocks": [
         {
-          "block": "PRIORITIES",
-          "name": "test-role::priorities"
+          "members": [
+            "test-role::priorities"
+          ],
+          "name": "PRIORITIES"
         },
         {
-          "block": "body",
-          "name": "test-role::prompt"
+          "members": [
+            "test-role::prompt"
+          ],
+          "name": "body"
         }
       ]
     },
     "skills": [
-      "skills::s"
+      {
+        "content_digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+        "digest": "<path-derived>",
+        "name": "skills::s",
+        "path": "<tmp>/lib/skills/s"
+      }
     ],
     "trace": [
       {

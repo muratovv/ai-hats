@@ -2,14 +2,18 @@
 
 Two halves, one frozen value compared with ``==``: the composition half says
 WHAT a session is made of and knows no surface; the effect half says what one
-surface does with it, for one session root. Absence is ``None``, never ``""``,
-``[]`` or ``0`` (ADR-0005 §3). ``apply`` performs the effect half, idempotently;
-today's composition reaches the composition half through ``plan_adapter``.
+surface does with it, for one session root. Every path is absolute; every
+record down the tree has a ``digest`` that folds its children's, so a plan's
+digest changes whenever any byte it stands for does. Absence is ``None``,
+never ``""``, ``[]`` or ``0`` (ADR-0005 §3). ``apply`` performs the effect
+half, idempotently; today's composition arrives through ``plan_adapter``.
 """
 
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import hashlib
 import os
 import shutil
 from collections.abc import Mapping, Sequence
@@ -18,47 +22,131 @@ from enum import Enum
 from pathlib import Path
 from typing import cast
 
-from .diagnostics import Level
-from .fs_digest import dir_digest
-from .materialization import (
+from ..diagnostics import Level
+from ..fs_digest import dir_digest
+from ..materialization import (
     LOCK_TIMEOUT,
     MaterializationEntry,
     WriteKind,
     json_differs,
     render_json,
 )
-from .session_artifacts import RunMode, SessionPolicy
+from ..session_artifacts import RunMode, SessionPolicy
+
+#: The one reserved block name: its text renders with no heading (ADR-0034 D8).
+BODY_BLOCK = "body"
+
+
+# ── digests fold down the tree ──────────────────────────────────────────────
+
+
+class Digested:
+    """A record whose ``digest`` folds its fields — a child's own ``digest`` where
+    it has one, the bytes of a scalar otherwise — so nothing added to a plan
+    can escape the hash by being forgotten."""
+
+    @property
+    def digest(self) -> str:
+        return digest_of(self)
+
+
+def digest_of(value: object) -> str:
+    """sha256 over a canonical walk of ``value``; a ``Digested`` child contributes its digest."""
+    h = hashlib.sha256()
+    _feed(h, value, top=True)
+    return h.hexdigest()
+
+
+def _feed(h, value: object, *, top: bool = False) -> None:
+    if isinstance(value, Digested) and not top:
+        h.update(b"d:" + value.digest.encode() + b"\0")
+    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
+        for f in dataclasses.fields(value):
+            h.update(f.name.encode() + b"=")
+            _feed(h, getattr(value, f.name))
+    elif isinstance(value, Mapping):
+        for key in sorted(value):
+            h.update(b"k:" + str(key).encode() + b"\0")
+            _feed(h, value[key])
+    elif isinstance(value, (tuple, list)):
+        h.update(b"[%d]" % len(value))
+        for item in value:
+            _feed(h, item)
+    elif isinstance(value, Enum):
+        _feed(h, value.value)
+    elif isinstance(value, Path):
+        h.update(b"p:" + str(value).encode() + b"\0")
+    elif value is None:
+        h.update(b"n\0")
+    elif isinstance(value, bool):
+        h.update(b"b:1\0" if value else b"b:0\0")
+    elif isinstance(value, int):
+        h.update(b"i:" + str(value).encode() + b"\0")
+    elif isinstance(value, str):
+        h.update(b"s:" + value.encode() + b"\0")
+    else:
+        raise TypeError(f"no canonical bytes for {type(value).__name__} in a plan")
+
+
+def _absolute(path: Path, what: str) -> None:
+    if not path.is_absolute():
+        raise ValueError(f"{what} must be absolute, got {path}")
+
+
+def _content_at(path: Path, content_digest: str) -> str:
+    """One identity for bytes AT a place: the same bytes elsewhere are another thing."""
+    return hashlib.sha256(
+        content_digest.encode() + b"@" + hashlib.sha256(str(path).encode()).hexdigest().encode()
+    ).hexdigest()
 
 
 # ── composition half ─────────────────────────────────────────── ADR-0036 D1
 
 
 @dataclass(frozen=True)
-class PromptMember:
-    #: The block the text landed in — declared by the prompt, an open set.
-    block: str
-    #: Full name (ADR-0034 D1): ``maintainer::prompt``, ``rules::rule_backlog_discipline``.
+class PromptBlock(Digested):
+    """One block of the rendered prompt: where it opens is where its first
+    member appeared, and its members follow in order (ADR-0035 D5)."""
+
+    #: ``BODY_BLOCK`` for the headingless prose; any other name renders ``## <NAME>``.
     name: str
+    #: Full names (ADR-0034 D1): ``maintainer::prompt``, ``rules::rule_backlog_discipline``.
+    members: tuple[str, ...]
 
 
 @dataclass(frozen=True)
-class Prompt:
+class Prompt(Digested):
     text: str
-    members: tuple[PromptMember, ...]
+    blocks: tuple[PromptBlock, ...]
 
 
 @dataclass(frozen=True)
-class GitHook:
+class Payload(Digested):
+    """The bytes a hook runs: a script in the library, named by where it is."""
+
+    path: Path
+    #: sha256 of the file's bytes, streamed by whoever read it — the plan holds no bytes.
+    content_digest: str
+
+    def __post_init__(self) -> None:
+        _absolute(self.path, "a payload path")
+
+    @property
+    def digest(self) -> str:
+        return _content_at(self.path, self.content_digest)
+
+
+@dataclass(frozen=True)
+class GitHook(Digested):
     at: str
-    #: The payload's path from its layer root — the same string under every DSL.
-    run: str
+    payload: Payload
 
 
 @dataclass(frozen=True)
-class RuntimeHook:
+class RuntimeHook(Digested):
     at: str
     matcher: str
-    run: str
+    payload: Payload
 
 
 class OnError(str, Enum):
@@ -67,35 +155,37 @@ class OnError(str, Enum):
 
 
 @dataclass(frozen=True)
-class WorkflowHook:
+class AppPoint(Digested):
+    """Where in an application's own tree a workflow hook sits: the app, the
+    object under it (``tasks`` for rack; ``None`` when the row sits directly
+    under the app), and ONE point — a row naming N points is N hooks."""
+
     app: str
-    #: Where under the app the row sat (``tasks`` for rack); ``None`` when the
-    #: row sits directly under the app key.
     object: str | None
-    #: ONE point — a row naming N points becomes N hooks.
     at: str
-    run: str
+
+
+@dataclass(frozen=True)
+class WorkflowHook(Digested):
+    point: AppPoint
+    payload: Payload
     on_error: OnError
 
 
 @dataclass(frozen=True)
-class WorktreeHook:
+class WorktreeHook(Digested):
     at: str
     #: Teardown events a ``wt_out`` hook fires on; ``None`` for ``wt_in``.
     on: tuple[str, ...] | None
-    run: str
+    payload: Payload
 
 
 @dataclass(frozen=True)
-class Hooks:
-    git: tuple[GitHook, ...]
-    runtime: tuple[RuntimeHook, ...]
-    workflow: tuple[WorkflowHook, ...]
-    worktree: tuple[WorktreeHook, ...]
+class ConsentHook(Digested):
+    """A point the supervisor is asked at — a hook like the others, whose
+    payload is the operation adapter and the wrapper a skill ships; no harness
+    reads it, the record's readers do (ADR-0035 D7, ADR-0036 D6)."""
 
-
-@dataclass(frozen=True)
-class Consent:
     operation: str
     #: The selector as declared; ``source`` / ``target`` are its parsed ends,
     #: spelled ``from`` / ``to`` in the record a stdlib-only guard reads.
@@ -109,53 +199,74 @@ class Consent:
 
 
 @dataclass(frozen=True)
-class TraceEntry:
+class Hooks(Digested):
+    git: tuple[GitHook, ...]
+    runtime: tuple[RuntimeHook, ...]
+    workflow: tuple[WorkflowHook, ...]
+    worktree: tuple[WorktreeHook, ...]
+    consent: tuple[ConsentHook, ...]
+
+
+@dataclass(frozen=True)
+class Skill(Digested):
+    """A skill as the session mirrors it: two skills with one tree at two
+    paths are two skills, so the digest folds the path in."""
+
+    #: Full name: ``skills::hatrack``.
+    name: str
+    path: Path
+    #: ``dir_digest`` of the tree, streamed by whoever read it.
+    content_digest: str
+
+    def __post_init__(self) -> None:
+        _absolute(self.path, "a skill path")
+
+    @property
+    def digest(self) -> str:
+        return _content_at(self.path, self.content_digest)
+
+
+@dataclass(frozen=True)
+class TraceEntry(Digested):
+    """How one term got into the composition — the audit's view of it.
+
+    ``brought_by`` is the composite or override whose expansion carried the
+    term: a role or trait (``maintainer``, ``trait-agent``), an override layer
+    (``overrides::global``, ``overrides::project``), or the launched expression
+    itself for a term the CLI added (``maintainer + sre``). ``removed_by`` is
+    the same kind of name, for a term that left.
+    """
+
     term: str
-    #: The composite or override that brought the term.
     brought_by: str
     removed_by: str | None
 
 
 @dataclass(frozen=True)
-class Diagnostic:
+class Diagnostic(Digested):
+    """A finding for the operator's record — dry-run, audit — never an
+    instruction to a harness; ``message`` is the text a person reads."""
+
     level: Level
     message: str
 
 
 @dataclass(frozen=True)
-class CompositionPlan:
+class CompositionPlan(Digested):
     #: The canonical expression the session composed.
     identity: str
     prompt: Prompt
-    skills: tuple[str, ...]
+    skills: tuple[Skill, ...]
     hooks: Hooks
-    consent: tuple[Consent, ...]
     trace: tuple[TraceEntry, ...]
     diagnostics: tuple[Diagnostic, ...]
-
-
-@dataclass(frozen=True)
-class SkillSource:
-    path: Path
-    digest: str
-
-
-@dataclass(frozen=True)
-class Sources:
-    """Where the bytes behind the plan's names live — beside the plan, outside ``==``.
-
-    Two DSLs name one skill from two roots, so a path cannot sit in the
-    comparable half; the digest can, and does, as the entry's ``tree_digest``.
-    """
-
-    skills: Mapping[str, SkillSource]
 
 
 # ── effect half ──────────────────────────────────────────────── ADR-0036 D1
 
 
 @dataclass(frozen=True)
-class Launch:
+class Launch(Digested):
     """An argv, or the option set handed to an SDK — exactly one of the two."""
 
     args: tuple[str, ...] | None
@@ -167,7 +278,7 @@ class Launch:
 
 
 @dataclass(frozen=True)
-class MaterializationPlan:
+class MaterializationPlan(Digested):
     composition: CompositionPlan
     surface: str
     run_mode: RunMode
@@ -178,6 +289,9 @@ class MaterializationPlan:
     #: What ai-hats adds to the child's environment.
     env: Mapping[str, str]
     launch: Launch
+
+    def __post_init__(self) -> None:
+        _absolute(self.root, "the session root")
 
 
 # ── planning refusals, as functions over the plan ────────────── ADR-0036 D2
@@ -200,7 +314,7 @@ class EscapeUndeclared(PlanRefused):
 
 
 class InvalidConsentSelector(PlanRefused):
-    def __init__(self, consent: Consent, reason: str) -> None:
+    def __init__(self, consent: ConsentHook, reason: str) -> None:
         self.consent = consent
         super().__init__(
             f"{consent.declared_by!r}: invalid {consent.operation} selector {consent.at!r} — {reason}"
@@ -243,7 +357,7 @@ def validate(plan: MaterializationPlan) -> None:
     for entry in plan.entries:
         if not entry.escape and not Path(os.path.normpath(entry.target)).is_relative_to(root):
             raise EscapeUndeclared(entry.target, plan.root)
-    for consent in plan.composition.consent:
+    for consent in plan.composition.hooks.consent:
         spec = operations.spec_for(consent.operation)
         if spec is None:
             raise InvalidConsentSelector(consent, "unsupported operation")
@@ -428,44 +542,66 @@ _PERFORM = {
 def composition_record(plan: CompositionPlan) -> dict:
     """The composition half as the session record and ``--dry-run-json`` carry it.
 
-    Bytes stay out — the prompt is its members here; a guard reads the consent
-    ends as ``from`` / ``to``, so that is how the record spells them.
+    Bytes stay out — the prompt is its blocks here, a payload its path and
+    digests; a guard reads the consent ends as ``from`` / ``to``, so that is
+    how the record spells them.
     """
+
+    def payload(p: Payload) -> dict:
+        return {"path": str(p.path), "content_digest": p.content_digest, "digest": p.digest}
+
+    hooks = plan.hooks
     return {
         "identity": plan.identity,
-        "prompt": {"members": [{"block": m.block, "name": m.name} for m in plan.prompt.members]},
-        "skills": list(plan.skills),
+        "digest": plan.digest,
+        "prompt": {
+            "blocks": [{"name": b.name, "members": list(b.members)} for b in plan.prompt.blocks]
+        },
+        "skills": [
+            {
+                "name": s.name,
+                "path": str(s.path),
+                "content_digest": s.content_digest,
+                "digest": s.digest,
+            }
+            for s in plan.skills
+        ],
         "hooks": {
-            "git": [{"at": h.at, "run": h.run} for h in plan.hooks.git],
+            "git": [{"at": h.at, "payload": payload(h.payload)} for h in hooks.git],
             "runtime": [
-                {"at": h.at, "matcher": h.matcher, "run": h.run} for h in plan.hooks.runtime
+                {"at": h.at, "matcher": h.matcher, "payload": payload(h.payload)}
+                for h in hooks.runtime
             ],
             "workflow": [
                 {
-                    "app": h.app,
-                    "object": h.object,
-                    "at": h.at,
-                    "run": h.run,
+                    "app": h.point.app,
+                    "object": h.point.object,
+                    "at": h.point.at,
+                    "payload": payload(h.payload),
                     "on_error": h.on_error.value,
                 }
-                for h in plan.hooks.workflow
+                for h in hooks.workflow
             ],
             "worktree": [
-                {"at": h.at, "on": list(h.on) if h.on is not None else None, "run": h.run}
-                for h in plan.hooks.worktree
+                {
+                    "at": h.at,
+                    "on": list(h.on) if h.on is not None else None,
+                    "payload": payload(h.payload),
+                }
+                for h in hooks.worktree
+            ],
+            "consent": [
+                {
+                    "operation": c.operation,
+                    "at": c.at,
+                    "from": c.source,
+                    "to": c.target,
+                    "declared_by": c.declared_by,
+                    "disarmed_by": c.disarmed_by,
+                }
+                for c in hooks.consent
             ],
         },
-        "consent": [
-            {
-                "operation": c.operation,
-                "at": c.at,
-                "from": c.source,
-                "to": c.target,
-                "declared_by": c.declared_by,
-                "disarmed_by": c.disarmed_by,
-            }
-            for c in plan.consent
-        ],
         "trace": [
             {"term": t.term, "brought_by": t.brought_by, "removed_by": t.removed_by}
             for t in plan.trace

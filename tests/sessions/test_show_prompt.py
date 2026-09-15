@@ -113,12 +113,10 @@ def test_show_prompt_prints_the_plan_and_the_plan_follows_compose_sections(
     """One producer of the prompt (ADR-0036 D5): show-prompt prints the adapted
     plan's ``prompt.text``, which ``compose_sections`` produced. The positive
     control is a monkeypatched producer — the output moves with it."""
-    import ai_hats.surfaces as facade
+    import ai_hats.surfaces.system_prompt as producer
 
     marker = "## MARKER-FROM-THE-ONE-PRODUCER\n"
-    # The adapter reaches the producer through the surfaces facade, which
-    # binds the name lazily — so the facade is where the control is applied.
-    monkeypatch.setattr(facade, "compose_sections", lambda result: marker, raising=False)
+    monkeypatch.setattr(producer, "compose_sections", lambda result: marker)
 
     res = CliRunner().invoke(main, ["config", "show-prompt", "--role", "maintainer"])
 

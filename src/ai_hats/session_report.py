@@ -18,7 +18,7 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import ConsentPoint
 
     from .check_snapshot import ReportedCheck
-    from .plan import CompositionPlan
+    from .surfaces import CompositionPlan
 
 
 def _human_size(n: int) -> str:
@@ -92,26 +92,34 @@ def _consent_key(consent: dict) -> str:
 
 def _render_composition(c: dict) -> list[str]:
     """The composition half by kind — the hooks and points the prompt never shows."""
-    blocks: dict[str, int] = {}
-    for member in c["prompt"]["members"]:
-        blocks[member["block"]] = blocks.get(member["block"], 0) + 1
     lines = [
-        f"composition  {c['identity']}",
-        "  prompt    " + ", ".join(f"{n} {block}" for block, n in blocks.items()),
-        f"  skills    {len(c['skills'])}: " + " ".join(c["skills"]),
+        f"composition  {c['identity']}  digest={c['digest'][:12]}",
+        "  prompt    "
+        + ", ".join(f"{len(b['members'])} {b['name']}" for b in c["prompt"]["blocks"]),
+        f"  skills    {len(c['skills'])}: " + " ".join(s["name"] for s in c["skills"]),
         "  hooks",
     ]
     hooks = c["hooks"]
     if not any(hooks.values()):
         lines.append("    (none)")
-    lines += [f"    git       {h['at']:<11} {h['run']}" for h in hooks["git"]]
-    lines += [f"    runtime   {h['at']}  {h['matcher']}  {h['run']}" for h in hooks["runtime"]]
+    lines += [f"    git       {h['at']:<11} {h['payload']['path']}" for h in hooks["git"]]
+    lines += [
+        f"    runtime   {h['at']}  {h['matcher']}  {h['payload']['path']}" for h in hooks["runtime"]
+    ]
     for h in hooks["workflow"]:
         where = h["app"] if h["object"] is None else f"{h['app']}.{h['object']}"
-        lines.append(f"    workflow  {where} {h['at']!r}  {h['run']}  on_error={h['on_error']}")
+        lines.append(
+            f"    workflow  {where} {h['at']!r}  {h['payload']['path']}  on_error={h['on_error']}"
+        )
     for h in hooks["worktree"]:
         on = "" if h["on"] is None else "[" + ",".join(h["on"]) + "]"
-        lines.append(f"    worktree  {h['at']}{on}  {h['run']}")
+        lines.append(f"    worktree  {h['at']}{on}  {h['payload']['path']}")
+    for h in hooks["consent"]:
+        ends = f"{h['from'] or '*'} -> {h['to']}" if h["to"] else "point"
+        armed = "" if h["disarmed_by"] is None else f"  DISARMED by {h['disarmed_by']}"
+        lines.append(
+            f"    consent   {h['operation']} {h['at']!r}  {ends}  by {h['declared_by']}{armed}"
+        )
     removed = [t for t in c["trace"] if t["removed_by"] is not None]
     if removed:
         lines.append("  removed")
@@ -157,7 +165,7 @@ class SessionReport:
     composition: CompositionPlan | None = None
 
     def to_dict(self) -> dict:
-        from .plan import composition_record
+        from .surfaces import composition_record
 
         payload = {
             "role": self.role,

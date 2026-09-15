@@ -19,7 +19,7 @@ from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:
     from .hooks_manager import HooksManager
-    from .plan import CompositionPlan
+    from .surfaces import CompositionPlan
     from .surfaces import Surface, TranscriptResolver
 
 

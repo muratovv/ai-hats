@@ -34,8 +34,18 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     )
     from .managed_tags import sweep_stale_managed_tags  # noqa: F401
     from .mcp import StdioMCPServer  # noqa: F401
+    from .plan import (
+        CompositionPlan,  # noqa: F401
+        MaterializationPlan,  # noqa: F401
+        PlanRefused,  # noqa: F401
+        apply,  # noqa: F401
+        composition_record,  # noqa: F401
+        validate,  # noqa: F401
+    )
+
+    # ``adapt`` is bound lazily alone: the adapter reaches the composition layer,
+    # which reaches this facade — a static import here would close that cycle.
     from .profiles import hook_profile  # noqa: F401
-    from .system_prompt import compose_sections  # noqa: F401
 
 # comment-length: allow — an alias has to say what it does NOT cover
 # Deprecated aliases, so an out-of-tree surface written against
@@ -68,8 +78,14 @@ _HOMES = {
     "SurfaceHint": ".contract",
     "SurfaceRunResult": ".contract",
     "TranscriptResolver": ".contract",
-    "compose_sections": ".system_prompt",
+    "CompositionPlan": ".plan",
+    "MaterializationPlan": ".plan",
+    "PlanRefused": ".plan",
+    "adapt": ".plan_adapter",
+    "apply": ".plan",
+    "composition_record": ".plan",
     "sweep_stale_managed_tags": ".managed_tags",
+    "validate": ".plan",
 }
 
 

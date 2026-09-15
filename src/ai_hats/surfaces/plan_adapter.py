@@ -3,38 +3,46 @@
 The tail of today's path: the composer is untouched, and this is the one stage
 that reads the library — payloads, rule bodies, trait configs, tree digests.
 Everything downstream of the value it returns is shared with the new DSL.
+
+Lifetime: exactly as long as ``-r`` — the new processing emits the composition
+half itself (ADR-0036 D8), so this module retires with the composer at the
+cutover (ADR-0033 D5, stage 3). Nothing may grow a second consumer of it.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult
 
-from .diagnostics import Level
-from .fs_digest import dir_digest
+from ..diagnostics import Level
+from ..fs_digest import dir_digest
 from .plan import (
+    BODY_BLOCK,
+    AppPoint,
     CompositionPlan,
-    Consent,
+    ConsentHook,
     Diagnostic,
     GitHook,
     Hooks,
     OnError,
+    Payload,
     Prompt,
-    PromptMember,
+    PromptBlock,
     RuntimeHook,
-    SkillSource,
-    Sources,
+    Skill,
     TraceEntry,
     WorkflowHook,
     WorktreeHook,
 )
 
 if TYPE_CHECKING:
-    from .config.overlay import OverlayConfig
-    from .resolver import LibraryResolver
+    from ..config.overlay import OverlayConfig
+    from ..resolver import LibraryResolver
 
 
 _OVERRIDE_NS = "overrides"
@@ -51,40 +59,33 @@ def adapt(
     identity: str,
     resolver: LibraryResolver,
     overlays: Sequence[tuple[OverlayConfig, str]],
-) -> tuple[CompositionPlan, Sources]:
-    """Today's composition as the plan's composition half, plus where its bytes live.
+) -> CompositionPlan:
+    """Today's composition as the plan's composition half.
 
     ``overlays`` are exactly the layers the composer applied, each with its
     label (``global`` / ``project`` / ``runtime``): they name the text a layer
     appended and the layer that brought or removed a term. A layer left out is
     an injection the adapter cannot name — a refusal, not a guess.
     """
-    from .surfaces import compose_sections
+    from .system_prompt import compose_sections
 
     diagnostics: list[Diagnostic] = [
         Diagnostic(Level.WARN, err.message) for err in result.errors if not err.lossy
     ]
-    return (
-        CompositionPlan(
-            identity=identity,
-            prompt=Prompt(
-                text=compose_sections(result),
-                members=_prompt_members(result, overlays),
-            ),
-            skills=tuple(_skill_name(s.name) for s in result.skills),
-            hooks=_hooks(result, diagnostics),
-            consent=_consent(result),
-            trace=_trace(result, identity, resolver, overlays, diagnostics),
-            diagnostics=tuple(diagnostics),
+    return CompositionPlan(
+        identity=identity,
+        prompt=Prompt(text=compose_sections(result), blocks=_prompt_blocks(result, overlays)),
+        skills=tuple(
+            Skill(
+                name=_skill_name(s.name),
+                path=s.source_path.resolve(),
+                content_digest=dir_digest(s.source_path),
+            )
+            for s in result.skills
         ),
-        Sources(
-            skills={
-                _skill_name(s.name): SkillSource(
-                    path=s.source_path, digest=dir_digest(s.source_path)
-                )
-                for s in result.skills
-            }
-        ),
+        hooks=_hooks(result, diagnostics),
+        trace=_trace(result, identity, resolver, overlays, diagnostics),
+        diagnostics=tuple(diagnostics),
     )
 
 
@@ -96,25 +97,25 @@ def _rule_name(name: str) -> str:
     return f"rules::{name}"
 
 
-def _payload(skill_name: str, script: str) -> str:
-    from .libraries.models import resolve_namespace
-
-    return f"skills/{resolve_namespace(skill_name)}/{script}"
+def _payload(path: Path) -> Payload:
+    return Payload(
+        path=path.resolve(), content_digest=hashlib.sha256(path.read_bytes()).hexdigest()
+    )
 
 
 def _override_name(label: str, identity: str) -> str:
     return identity if label == _RUNTIME_LAYER else f"{_OVERRIDE_NS}::{label}"
 
 
-def _prompt_members(
+def _prompt_blocks(
     result: CompositionResult, overlays: Sequence[tuple[OverlayConfig, str]]
-) -> tuple[PromptMember, ...]:
-    """The ``(block, name)`` pairs ``compose_sections`` assembled, in its order."""
-    from .resolver import read_rule_body
+) -> tuple[PromptBlock, ...]:
+    """The blocks ``compose_sections`` assembled, each with its members in order."""
+    from ..resolver import read_rule_body
 
-    members: list[PromptMember] = []
+    blocks: list[PromptBlock] = []
     if result.priorities:
-        members.append(PromptMember("PRIORITIES", f"{result.name}::priorities"))
+        blocks.append(PromptBlock("PRIORITIES", (f"{result.name}::priorities",)))
 
     named: dict[str, str] = {}
     for trait, text in result.trait_injections.items():
@@ -125,6 +126,7 @@ def _prompt_members(
         text = layer.injection_append.strip()
         if text:
             named.setdefault(text, f"{_OVERRIDE_NS}::{label}::prompt")
+    body: list[str] = []
     for text in result.injections:
         if not text.strip():
             continue
@@ -134,44 +136,55 @@ def _prompt_members(
                 f"an injection reached the prompt that no role, trait or overlay declared "
                 f"(starts {head!r}); pass every layer the composer applied"
             )
-        members.append(PromptMember("body", named[text]))
+        body.append(named[text])
+    if body:
+        blocks.append(PromptBlock(BODY_BLOCK, tuple(body)))
 
-    for rule in result.rules:
-        if rule.source_path and read_rule_body(rule.source_path):
-            members.append(PromptMember("RULES", _rule_name(rule.name)))
+    rules = tuple(
+        _rule_name(rule.name)
+        for rule in result.rules
+        if rule.source_path and read_rule_body(rule.source_path)
+    )
+    if rules:
+        blocks.append(PromptBlock("RULES", rules))
 
+    user_rules: list[str] = []
     for path in result.user_rules:
         try:
-            body = path.read_text()
+            body_text = path.read_text()
         except OSError:
             continue  # compose_sections skips it too, with its own warning
-        if body.strip():
-            members.append(PromptMember("USER RULES", _rule_name(path.stem)))
-    return tuple(members)
+        if body_text.strip():
+            user_rules.append(_rule_name(path.stem))
+    if user_rules:
+        blocks.append(PromptBlock("USER RULES", tuple(user_rules)))
+    return tuple(blocks)
 
 
 def _hooks(result: CompositionResult, diagnostics: list[Diagnostic]) -> Hooks:
-    """The three frontmatter channels and the check bindings, one hook per point.
+    """The three frontmatter channels, the check bindings (one hook per point)
+    and the consent points.
 
     A declared payload that is missing or not executable is the author's to fix:
     it becomes a diagnostic and no hook, on every channel alike.
     """
     from ai_hats_wt import parse_worktree_carry
 
-    from .libraries.models import SkillMetadata
+    from ..libraries.models import SkillMetadata
 
     git: list[GitHook] = []
     runtime: list[RuntimeHook] = []
     worktree: list[WorktreeHook] = []
+    sources = {s.name: s.source_path for s in result.skills}
 
-    def wired(skill_name: str, script: str, channel: str, at: str) -> bool:
-        declared = result_skill_dirs[skill_name] / script
+    def wired(skill_name: str, script: str, channel: str, at: str) -> Path | None:
+        declared = sources[skill_name] / script
         if not declared.is_file():
             what = f"missing at {declared}"
         elif not os.access(declared, os.X_OK):
             what = f"not executable: {declared}"
         else:
-            return True
+            return declared
         diagnostics.append(
             Diagnostic(
                 Level.WARN,
@@ -179,61 +192,56 @@ def _hooks(result: CompositionResult, diagnostics: list[Diagnostic]) -> Hooks:
                 "this hook will not run in this session",
             )
         )
-        return False
+        return None
 
-    result_skill_dirs = {s.name: s.source_path for s in result.skills}
     for skill in result.skills:
         metadata = SkillMetadata.from_skill_dir(skill.source_path)
         for event, scripts in metadata.git_hooks.items():
             for script in scripts:
-                if wired(skill.name, script, "git", event):
-                    git.append(GitHook(at=event, run=_payload(skill.name, script)))
+                if declared := wired(skill.name, script, "git", event):
+                    git.append(GitHook(at=event, payload=_payload(declared)))
         for event, hooks in metadata.runtime_hooks.items():
             for hook in hooks:
-                if wired(skill.name, hook.script, "runtime", f"{event}/{hook.matcher}"):
+                if declared := wired(skill.name, hook.script, "runtime", f"{event}/{hook.matcher}"):
                     runtime.append(
-                        RuntimeHook(
-                            at=event, matcher=hook.matcher, run=_payload(skill.name, hook.script)
-                        )
+                        RuntimeHook(at=event, matcher=hook.matcher, payload=_payload(declared))
                     )
         carry = parse_worktree_carry(metadata.worktree, skill.name)
         for hook in carry.wt_in:
-            if wired(skill.name, hook.script, "worktree", "wt_in"):
-                worktree.append(
-                    WorktreeHook(at="wt_in", on=None, run=_payload(skill.name, hook.script))
-                )
+            if declared := wired(skill.name, hook.script, "worktree", "wt_in"):
+                worktree.append(WorktreeHook(at="wt_in", on=None, payload=_payload(declared)))
         for hook in carry.wt_out:
-            if wired(skill.name, hook.script, "worktree", "wt_out"):
+            if declared := wired(skill.name, hook.script, "worktree", "wt_out"):
                 worktree.append(
-                    WorktreeHook(
-                        at="wt_out", on=tuple(hook.on), run=_payload(skill.name, hook.script)
-                    )
+                    WorktreeHook(at="wt_out", on=tuple(hook.on), payload=_payload(declared))
                 )
 
     workflow = tuple(
         WorkflowHook(
-            app=check.app,
-            object=".".join(check.path) if check.path else None,
-            at=at,
-            run=_payload(check.skill, check.script),
+            point=AppPoint(app=check.app, object=".".join(check.path) or None, at=at),
+            payload=_payload(check.script_path),
             on_error=OnError(check.on_error),
         )
         for check in result.checks
         for at in check.at
     )
     return Hooks(
-        git=tuple(git), runtime=tuple(runtime), workflow=workflow, worktree=tuple(worktree)
+        git=tuple(git),
+        runtime=tuple(runtime),
+        workflow=workflow,
+        worktree=tuple(worktree),
+        consent=_consent(result),
     )
 
 
-def _consent(result: CompositionResult) -> tuple[Consent, ...]:
-    from .check_points import selector_ends
+def _consent(result: CompositionResult) -> tuple[ConsentHook, ...]:
+    from ..check_points import selector_ends
 
     rows = []
     for point in result.consent:
         source, target = selector_ends(point.app, point.selector, point.path)
         rows.append(
-            Consent(
+            ConsentHook(
                 operation=".".join(point.path),
                 at=point.selector,
                 source=source,

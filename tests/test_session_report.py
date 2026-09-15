@@ -238,53 +238,65 @@ def test_a_role_declaring_no_consent_says_so_instead_of_dropping_the_section(tmp
 
 def _composition():
     from ai_hats.diagnostics import Level
-    from ai_hats.plan import (
+    from ai_hats.surfaces.plan import (
+        BODY_BLOCK,
+        AppPoint,
         CompositionPlan,
-        Consent,
+        ConsentHook,
         Diagnostic,
         GitHook,
         Hooks,
         OnError,
+        Payload,
         Prompt,
-        PromptMember,
+        PromptBlock,
         RuntimeHook,
+        Skill,
         TraceEntry,
         WorkflowHook,
         WorktreeHook,
     )
 
+    def payload(name: str) -> Payload:
+        return Payload(path=Path("/lib/skills") / name, content_digest="ab" * 32)
+
     return CompositionPlan(
         identity="maintainer + sre",
         prompt=Prompt(
             text="# t\n",
-            members=(
-                PromptMember("PRIORITIES", "maintainer::priorities"),
-                PromptMember("body", "maintainer::prompt"),
-                PromptMember("RULES", "rules::rule_backlog_discipline"),
+            blocks=(
+                PromptBlock("PRIORITIES", ("maintainer::priorities",)),
+                PromptBlock(BODY_BLOCK, ("maintainer::prompt",)),
+                PromptBlock("RULES", ("rules::rule_backlog_discipline",)),
             ),
         ),
-        skills=("skills::safety-guard", "skills::hatrack"),
+        skills=(
+            Skill("skills::safety-guard", Path("/lib/skills/safety-guard"), "cd" * 32),
+            Skill("skills::hatrack", Path("/lib/skills/hatrack"), "ef" * 32),
+        ),
         hooks=Hooks(
-            git=(GitHook("pre-push", "skills/quality-gate/git_hooks/pre-push-e2e-master.sh"),),
+            git=(GitHook("pre-push", payload("quality-gate/git_hooks/pre-push-e2e-master.sh")),),
             runtime=(
-                RuntimeHook("PreToolUse", "Bash", "skills/safety-guard/hooks/safety_gate.py"),
+                RuntimeHook("PreToolUse", "Bash", payload("safety-guard/hooks/safety_gate.py")),
             ),
             workflow=(
                 WorkflowHook(
-                    "rack",
-                    "tasks",
-                    "->done",
-                    "skills/quality-gate/hooks/done-gate.sh",
+                    AppPoint("rack", "tasks", "->done"),
+                    payload("quality-gate/hooks/done-gate.sh"),
                     OnError.REFUSE,
                 ),
                 WorkflowHook(
-                    "wt", None, "pre-merge", "skills/quality-gate/hooks/merge-gate.sh", OnError.WARN
+                    AppPoint("wt", None, "pre-merge"),
+                    payload("quality-gate/hooks/merge-gate.sh"),
+                    OnError.WARN,
                 ),
             ),
-            worktree=(WorktreeHook("wt_out", ("merge",), "skills/x/hooks/drain.sh"),),
-        ),
-        consent=(
-            Consent("rack.transition", "plan->execute", "plan", "execute", "trait-agent", None),
+            worktree=(WorktreeHook("wt_out", ("merge",), payload("x/hooks/drain.sh")),),
+            consent=(
+                ConsentHook(
+                    "rack.transition", "plan->execute", "plan", "execute", "trait-agent", None
+                ),
+            ),
         ),
         trace=(
             TraceEntry("trait-agent", "maintainer", None),
@@ -302,19 +314,26 @@ def test_composition_section_shows_hooks_by_kind_and_consent_ends(tmp_path: Path
 
     composition = payload["composition"]
     assert composition["identity"] == "maintainer + sre"
-    assert composition["prompt"]["members"][2] == {
-        "block": "RULES",
-        "name": "rules::rule_backlog_discipline",
+    assert len(composition["digest"]) == 64
+    assert composition["prompt"]["blocks"][2] == {
+        "name": "RULES",
+        "members": ["rules::rule_backlog_discipline"],
     }
     assert "text" not in composition["prompt"], "bytes stay out of the record"
+    assert composition["skills"][1]["name"] == "skills::hatrack"
+    assert composition["skills"][1]["content_digest"] == "ef" * 32
     assert composition["hooks"]["workflow"][0] == {
         "app": "rack",
         "object": "tasks",
         "at": "->done",
-        "run": "skills/quality-gate/hooks/done-gate.sh",
+        "payload": {
+            "path": "/lib/skills/quality-gate/hooks/done-gate.sh",
+            "content_digest": "ab" * 32,
+            "digest": composition["hooks"]["workflow"][0]["payload"]["digest"],
+        },
         "on_error": "refuse",
     }
-    assert composition["consent"][0] == {
+    assert composition["hooks"]["consent"][0] == {
         "operation": "rack.transition",
         "at": "plan->execute",
         "from": "plan",
@@ -327,15 +346,16 @@ def test_composition_section_shows_hooks_by_kind_and_consent_ends(tmp_path: Path
         {"level": "warn", "message": "git hook pre-commit of skills::x: y is missing"}
     ]
 
-    assert "\ncomposition  maintainer + sre\n" in text
+    assert "\ncomposition  maintainer + sre" in text
     assert "git       pre-push" in text
-    assert "runtime   PreToolUse  Bash  skills/safety-guard/hooks/safety_gate.py" in text
+    assert "runtime   PreToolUse  Bash  /lib/skills/safety-guard/hooks/safety_gate.py" in text
     assert (
-        "workflow  rack.tasks '->done'  skills/quality-gate/hooks/done-gate.sh  on_error=refuse"
+        "workflow  rack.tasks '->done'  /lib/skills/quality-gate/hooks/done-gate.sh  on_error=refuse"
         in text
     )
     assert "workflow  wt 'pre-merge'" in text
-    assert "worktree  wt_out[merge]  skills/x/hooks/drain.sh" in text
+    assert "worktree  wt_out[merge]  /lib/skills/x/hooks/drain.sh" in text
+    assert "consent   rack.transition 'plan->execute'  plan -> execute  by trait-agent" in text
     assert "skills::hatrack" in text and "removed by overrides::project" in text
     assert "WARN" in text and "y is missing" in text
 

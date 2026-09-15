@@ -16,9 +16,11 @@ import pytest
 
 from ai_hats.fs_digest import dir_digest
 from ai_hats.materialization import MaterializationEntry, WriteKind
-from ai_hats.plan import (
+from ai_hats.surfaces import apply, validate
+from ai_hats.surfaces.plan import (
+    BODY_BLOCK,
     CompositionPlan,
-    Consent,
+    ConsentHook,
     DuplicateTargets,
     EscapeUndeclared,
     Hooks,
@@ -26,10 +28,8 @@ from ai_hats.plan import (
     Launch,
     MaterializationPlan,
     Prompt,
-    PromptMember,
+    PromptBlock,
     StalePlan,
-    apply,
-    validate,
 )
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 
@@ -66,13 +66,12 @@ def writes(monkeypatch) -> list[str]:
     return reached
 
 
-def _composition(consent: tuple[Consent, ...] = ()) -> CompositionPlan:
+def _composition(consent: tuple[ConsentHook, ...] = ()) -> CompositionPlan:
     return CompositionPlan(
         identity="t",
-        prompt=Prompt(text="# t\n", members=(PromptMember("body", "t::prompt"),)),
+        prompt=Prompt(text="# t\n", blocks=(PromptBlock(BODY_BLOCK, ("t::prompt",)),)),
         skills=(),
-        hooks=Hooks((), (), (), ()),
-        consent=consent,
+        hooks=Hooks((), (), (), (), consent),
         trace=(),
         diagnostics=(),
     )
@@ -242,12 +241,14 @@ def test_a_target_outside_the_root_needs_a_declared_escape(tmp_path: Path, write
 
 def test_a_consent_selector_the_adapter_cannot_read_is_refused(tmp_path: Path, writes):
     root = tmp_path / "s"
-    bad = Consent("rack.transition", "plan->", "plan", None, "t", None)
+    bad = ConsentHook("rack.transition", "plan->", "plan", None, "t", None)
     with pytest.raises(InvalidConsentSelector) as refused:
         apply(_plan(root, consent=(bad,)))
     assert "plan->" in str(refused.value)
     assert writes == []
-    validate(_plan(root, consent=(Consent("rack.transition", "->done", None, "done", "t", None),)))
+    validate(
+        _plan(root, consent=(ConsentHook("rack.transition", "->done", None, "done", "t", None),))
+    )
 
 
 def test_a_stray_file_in_a_synced_tree_is_removed(tmp_path: Path, writes: list[str]):
