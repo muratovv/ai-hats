@@ -34,6 +34,11 @@ call site has to choose between.
 What the model asked and what a person asked are separate events. Pairing them
 into a dialogue is one possible reading, and belongs to the consumer that wants
 it rather than to the shape everyone else must carry.
+
+Every event says whose work it is: ``agent`` names the sub-agent that produced
+it and is absent for the main agent. A child's record is read beside its
+parent's into the same stream, so without the field a child's calls would count
+as the parent's — measured in one fan-out session, they outnumbered them.
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 from .signals import Signal
 from .types import (
+    AgentId,
     AskKind,
     Completion,
     GateDecision,
@@ -67,6 +73,7 @@ class RunStarted:
     """
 
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,7 @@ class RunEnded:
     # what stopped the follow early, when something did
     detail: str | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +106,7 @@ class PromptReceived:
 
     text: str
     ts: Timestamp | None = None
+    agent: AgentId | None = None
     origin: PromptOrigin | None = None
 
 
@@ -110,6 +119,7 @@ class ResponseStarted:
     response_id: ResponseId
     model: ModelName | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +129,7 @@ class ItemEmitted:
     response_id: ResponseId
     item: Item
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +147,7 @@ class ItemDelta:
     index: int
     text: str
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +166,7 @@ class ToolResultReceived:
     ok: bool
     content: Any = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -173,6 +186,7 @@ class ResponseEnded:
     usage: Usage = Usage()
     stop_reason: str | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -197,6 +211,7 @@ class GateVerdict:
     # which producer spoke: the chain itself, or a surface's transcript
     source: str | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -218,6 +233,7 @@ class PersonAsked:
     # which producer spoke: a surface's reader, the chain, a surface's hook
     source: str | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 Event = (

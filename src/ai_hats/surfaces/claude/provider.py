@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from .. import SurfaceHint
     from ai_hats_observe.canonical.reader import EventReader
+    from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
 from ai_hats_core import CompositionResult
@@ -184,6 +185,28 @@ class ClaudeSurface(Surface):
             else None,
             end_ts=end_ts,
         )
+
+    def event_sources(
+        self,
+        cwd: Path,
+        session_id: str,
+        *,
+        provider_session_id: str | None = None,
+    ) -> "list[EventSource]":
+        # A sub-agent's record sits under <sid>/subagents/, named by its id; it
+        # is followed only beside a main record, never as a run of its own.
+        from ai_hats.paths import claude_subagent_transcripts
+        from ai_hats_observe.canonical import AgentId
+        from ai_hats_observe.event_log_writer import EventSource
+
+        sources = super().event_sources(cwd, session_id, provider_session_id=provider_session_id)
+        if not sources or not provider_session_id:
+            return sources
+        sources.extend(
+            EventSource(path, agent=AgentId(agent_id))
+            for agent_id, path in claude_subagent_transcripts(cwd, provider_session_id)
+        )
+        return sources
 
     def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         """Claude uses per-session prompt cache; no root CLAUDE.md managed."""

@@ -64,3 +64,30 @@ def test_an_allow_or_deny_opens_no_wait(tmp_path: Path) -> None:
     events = list(read_events(path))
     assert [type(e) for e in events] == [GateVerdict, GateVerdict]
     assert [e.decision for e in events] == [GateDecision.ALLOW, GateDecision.DENY]
+
+
+def test_a_sub_agents_call_is_recorded_as_its_own(tmp_path: Path) -> None:
+    """Claude's hook payload names the sub-agent a call belongs to
+    (``agent_id``); the verdict and the wait it opens carry that id, so a
+    child's calls — which outnumbered the parent's in one measured fan-out —
+    are never counted as the main agent's."""
+    verdict = ChainVerdict(decision=ChainDecision.ASK, event=HookEvent.PRE_TOOL_USE)
+    call = HookCall(
+        payload={
+            "tool_name": "Bash",
+            "tool_use_id": "c3",
+            "tool_input": {},
+            "agent_id": "a25b9c51717cdb6ba",
+            "agent_type": "Explore",
+        }
+    )
+
+    path = record_verdict(verdict, HookEvent.PRE_TOOL_USE, [call], _env(tmp_path))
+
+    assert path is not None
+    events = list(read_events(path))
+    assert [type(e) for e in events] == [GateVerdict, PersonAsked]
+    assert {e.agent for e in events} == {"a25b9c51717cdb6ba"}
+    # POSITIVE CONTROL: the main agent's call carries none
+    record_verdict(verdict, HookEvent.PRE_TOOL_USE, [_call("Bash", "c4")], _env(tmp_path))
+    assert [e.agent for e in read_events(path)][2:] == [None, None]

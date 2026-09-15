@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .types import EpochSeconds, ModelName, Timestamp
+from .types import AgentId, EpochSeconds, ModelName, Timestamp
 
 
 class PersonMustAct(StrEnum):
@@ -74,6 +74,8 @@ class _Signal:
     # which reader spoke: the two Claude sources see different things — only the
     # live stream carries quota pre-warnings, only the transcript carries status
     source: str | None = None
+    # the sub-agent this happened to; absent for the main agent
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)

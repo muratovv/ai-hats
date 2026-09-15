@@ -607,8 +607,8 @@ def start_event_log(
     # /var); a stamped layout.cwd is already resolved, a raw path may not be.
     root = Path(cwd).resolve()
 
-    def locate() -> list[Path]:
-        return provider.resolve_transcript(
+    def locate():
+        return provider.event_sources(
             root, session.session_id, provider_session_id=provider_session_id
         )
 

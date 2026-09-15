@@ -21,6 +21,7 @@ from pathlib import Path
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
 from ai_hats_observe.canonical import (
+    AgentId,
     AskKind,
     GateDecision,
     GatePoint,
@@ -58,6 +59,8 @@ def gate_verdict(
         return None
     call = calls[0] if calls else None
     call_id = call.payload.get("tool_use_id") if call is not None else None
+    # claude names the sub-agent a call was made from; the main agent's carry none
+    agent = call.payload.get("agent_id") if call is not None else None
     return GateVerdict(
         point=point,
         decision=GateDecision(verdict.decision.value),
@@ -68,6 +71,7 @@ def gate_verdict(
         call_id=ToolCallId(call_id) if isinstance(call_id, str) and call_id else None,
         source=SOURCE,
         ts=now(),
+        agent=AgentId(agent) if isinstance(agent, str) and agent else None,
     )
 
 
@@ -82,6 +86,7 @@ def person_asked(verdict: GateVerdict) -> PersonAsked | None:
         detail=verdict.reason or None,
         source=SOURCE,
         ts=verdict.ts,
+        agent=verdict.agent,
     )
 
 

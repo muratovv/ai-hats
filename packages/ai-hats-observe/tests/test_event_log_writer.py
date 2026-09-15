@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import random
 import time
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
@@ -20,7 +21,7 @@ import pytest
 
 from ai_hats_observe.canonical import PromptReceived, ResponseStarted, RunEnded, RunStarted
 from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
-from ai_hats_observe.event_log_writer import EventLogWriter
+from ai_hats_observe.event_log_writer import EventLogWriter, EventSource
 from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
 TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
@@ -248,6 +249,31 @@ def test_the_chunk_feed_is_hostile_enough_to_break_a_reader_that_closes_at_eof(
 
 
 # --- several sources, faults, the thread --------------------------------------
+
+
+def test_a_sub_agents_record_is_followed_and_its_events_carry_its_id(tmp_path: Path) -> None:
+    """A surface names the record a sub-agent writes beside the main one and
+    whose it is; every event read from it is stamped with that id, and the
+    main record's events with none — so the one file says whose work is whose
+    and a controller sees the child while the parent's call is still open."""
+    main, child = tmp_path / "main.jsonl", tmp_path / "agent-a25b.jsonl"
+    main.write_text("".join(RECORDS[:3]), encoding="utf-8")
+    child.write_text("".join(RECORDS[3:]), encoding="utf-8")
+    writer = EventLogWriter(
+        locate=lambda: [main, EventSource(child, agent="a25b")],
+        reader_factory=partial(ClaudeTranscriptReader, live=True),
+        path=tmp_path / EVENT_LOG_JSONL,
+    )
+
+    writer.tick()
+    writer.close(exit_code=0)
+
+    events = _run_events(tmp_path / EVENT_LOG_JSONL)
+    expected_main = list(ClaudeTranscriptReader(main).read())
+    expected_child = list(ClaudeTranscriptReader(child).read())
+    assert [e for e in events if e.agent is None] == expected_main
+    assert [replace(e, agent=None) for e in events if e.agent == "a25b"] == expected_child
+    assert len(expected_child) > 1, "child fixture too thin to prove the stamp"
 
 
 def test_every_located_source_reaches_the_file(tmp_path: Path) -> None:

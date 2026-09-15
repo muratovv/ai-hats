@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -42,6 +43,7 @@ from .canonical.signals import (
     WorthRecording,
 )
 from .canonical.types import (
+    AgentId,
     AskKind,
     Completion,
     EpochSeconds,
@@ -263,6 +265,8 @@ def encode(event: Event) -> dict[str, Any]:
             body = {"event": "signal", **signal_fields(event)}
         case _:
             raise TypeError(f"no encoding for {type(event).__name__}")
+    if event.agent is not None:
+        body["agent"] = event.agent
     return {"v": EVENT_SCHEMA_VERSION, **body}
 
 
@@ -295,6 +299,14 @@ def decode(record: dict[str, Any]) -> Event | None:
     writing, and a shape we do not recognise is a line to skip, not a read to
     abandon.
     """
+    event = _decode(record)
+    agent = record.get("agent")
+    if event is None or not isinstance(agent, str) or not agent:
+        return event
+    return replace(event, agent=AgentId(agent))
+
+
+def _decode(record: dict[str, Any]) -> Event | None:
     response_id = ResponseId(str(record.get("response_id", "")))
     ts = _ts(record.get("ts"))
     match record.get("event"):

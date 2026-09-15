@@ -34,6 +34,7 @@ from .signals import (
     WorthRecording,
 )
 from .types import (
+    AgentId,
     AskKind,
     Completion,
     EpochSeconds,
@@ -66,6 +67,7 @@ from .views import (
 
 __all__ = [
     "ANSWER_ONLY",
+    "AgentId",
     "AskKind",
     "Blocking",
     "Collected",

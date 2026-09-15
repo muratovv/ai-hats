@@ -15,16 +15,25 @@ from pathlib import Path
 
 import pytest
 
+from dataclasses import replace
+
 from ai_hats_observe.canonical import (
     ANSWER_ONLY,
     WITH_REASONING,
+    AskKind,
     Blocking,
     GateDecision,
     GatePoint,
     GateVerdict,
+    ItemDelta,
     ItemEmitted,
     ItemKind,
+    Notice,
+    PersonAsked,
+    ResponseId,
     ResponseStarted,
+    RunEnded,
+    RunStarted,
     ToolResultReceived,
     collect,
     select,
@@ -61,6 +70,37 @@ def test_the_artifact_round_trips(tmp_path: Path, fixture: str) -> None:
     assert written == len(events)
     assert list(read_events(path)) == events
     assert len(events) > 3, "fixture is too thin to prove a round trip"
+
+
+def test_whose_work_an_event_is_survives_the_round_trip(
+    tmp_path: Path, session_events: list
+) -> None:
+    """A sub-agent's events carry its id on every kind — the transcript's and
+    the writer's and the chain's alike — so a reader never counts a child's
+    call as the main agent's. Absent for the main agent, present for a child,
+    and the file says which."""
+    every_kind = [
+        RunStarted(ts="2026-09-12T10:00:00.000Z"),
+        *session_events,
+        ItemDelta(response_id=ResponseId("r"), index=0, text="t"),
+        PersonAsked(kind=AskKind.QUESTION, call_id="c9", tool="AskUserQuestion"),
+        *VERDICTS,
+        Notice(raw_code="x", source="test"),
+        RunEnded(ok=True, raw_code="0"),
+    ]
+    tagged = [replace(e, agent="a25b9c51717cdb6ba") for e in every_kind]
+    path = tmp_path / EVENT_LOG_JSONL
+
+    write_events([*every_kind, *tagged], path)
+
+    read = list(read_events(path))
+    assert read == [*every_kind, *tagged]
+    assert {e.agent for e in read[: len(every_kind)]} == {None}
+    assert {e.agent for e in read[len(every_kind) :]} == {"a25b9c51717cdb6ba"}
+    # the wire form spells the field only when there is one to spell
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert not any('"agent"' in line for line in lines[: len(every_kind)])
+    assert all('"agent": "a25b9c51717cdb6ba"' in line for line in lines[len(every_kind) :])
 
 
 def test_a_torn_final_line_still_reads_every_event_before_it(

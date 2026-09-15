@@ -37,6 +37,10 @@ ToolCallId = NewType("ToolCallId", str)
 # Which model produced a response, so a switch mid-run is attributable.
 ModelName = NewType("ModelName", str)
 
+# A sub-agent the surface spawned, as the surface names it — so a child's work
+# is never counted as the parent's.
+AgentId = NewType("AgentId", str)
+
 
 # --- items -----------------------------------------------------------------
 

@@ -17,16 +17,27 @@ after it, never the ending.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
 from .canonical.events import RunEnded, RunStarted
 from .canonical.reader import EventReader
-from .canonical.types import now
+from .canonical.types import AgentId, now
 from .event_log import append_event, write_events
 
-Locate = Callable[[], Sequence[Path]]
+
+@dataclass(frozen=True)
+class EventSource:
+    """One record to follow, and whose work it holds: a sub-agent's id, or
+    ``None`` for the main agent. A bare ``Path`` from ``locate`` means the main
+    agent's record."""
+
+    path: Path
+    agent: AgentId | None = None
+
+
+Locate = Callable[[], Sequence[Path | EventSource]]
 ReaderFactory = Callable[[Path], EventReader]
 Report = Callable[[str], None]
 
@@ -62,7 +73,7 @@ class EventLogWriter:
         self._path = Path(path)
         self._interval_s = interval_s
         self._report = report
-        self._readers: dict[Path, EventReader] = {}
+        self._readers: dict[Path, tuple[EventReader, AgentId | None]] = {}
         self._written = 0
         self._error: str | None = None
         self._stop = threading.Event()
@@ -91,15 +102,18 @@ class EventLogWriter:
             return self._tick()
 
     def _tick(self) -> int:
-        for source in self._locate():
-            source = Path(source)
-            if source not in self._readers:
-                self._readers[source] = self._reader_factory(source)
+        for located in self._locate():
+            source = located if isinstance(located, EventSource) else EventSource(Path(located))
+            if source.path not in self._readers:
+                self._readers[source.path] = (self._reader_factory(source.path), source.agent)
         written = 0
-        for reader in self._readers.values():
+        for reader, agent in self._readers.values():
             # Materialized first: an empty pass must not open the file, and a
             # reader's offset has moved by the time its events are written.
             events = list(reader.read())
+            if agent is not None:
+                # The reader knows its record, not whose it is; the source does.
+                events = [replace(event, agent=agent) for event in events]
             if events:
                 written += write_events(events, self._path, append=True)
         self._written += written
@@ -148,7 +162,7 @@ class EventLogWriter:
                     # ending the readers: one adopted during the drain would
                     # never be told the run is over.
                     self._tick()
-                    for reader in self._readers.values():
+                    for reader, _agent in self._readers.values():
                         reader.close()
                     self._tick()
             except Exception as exc:  # same contract as the thread: report, never raise
@@ -171,4 +185,4 @@ class EventLogWriter:
         )
 
 
-__all__ = ["EventLogOutcome", "EventLogWriter"]
+__all__ = ["EventLogOutcome", "EventLogWriter", "EventSource"]

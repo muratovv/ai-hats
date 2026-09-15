@@ -83,6 +83,21 @@ def claude_transcript_path(cwd: Path, claude_session_id: str) -> Path:
     return claude_transcripts_dir(cwd) / f"{claude_session_id}.jsonl"
 
 
+#: How Claude Code names a sub-agent's record beside its parent's.
+_SUBAGENT_PREFIX = "agent-"
+
+
+def claude_subagent_transcripts(cwd: Path, claude_session_id: str) -> list[tuple[str, Path]]:
+    """``(agent_id, path)`` for every sub-agent record of one session —
+    ``<sid>/subagents/agent-<id>.jsonl`` beside the session's own JSONL —
+    in name order; empty when the session spawned none."""
+    children = claude_transcripts_dir(cwd) / claude_session_id / "subagents"
+    return [
+        (path.stem[len(_SUBAGENT_PREFIX) :], path)
+        for path in sorted(children.glob(f"{_SUBAGENT_PREFIX}*.jsonl"))
+    ]
+
+
 def claude_plugin_manifest_dir(plugin_root: Path) -> Path:
     """Claude Code plugin-manifest dir: ``<plugin>/.claude-plugin/``."""
     return plugin_root / ".claude-plugin"
@@ -130,6 +145,7 @@ __all__ = [
     "claude_settings_local_json",
     "claude_skills_dir",
     "claude_user_settings_json",
+    "claude_subagent_transcripts",
     "claude_transcript_path",
     "claude_transcripts_dir",
     "strip_claude_project_dir",
