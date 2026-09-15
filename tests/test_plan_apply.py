@@ -319,7 +319,9 @@ def test_merge_json_adds_to_a_user_owned_document_and_leaves_the_rest_alone(
         json.dumps({"theme": "dark", "hooks": {"PreToolUse": [theirs], "Stop": [theirs]}})
     )
     patch = {"hooks": {"PreToolUse": [_managed("v1")], "PostToolUse": [_managed("v1")]}}
-    plan = _plan(root, MaterializationEntry(WriteKind.MERGE_JSON, settings, data=patch, escape=True))
+    plan = _plan(
+        root, MaterializationEntry(WriteKind.MERGE_JSON, settings, data=patch, escape=True)
+    )
 
     apply(plan)
     merged = json.loads(settings.read_text())
@@ -333,7 +335,9 @@ def test_merge_json_adds_to_a_user_owned_document_and_leaves_the_rest_alone(
     assert writes == []
 
     newer = {"hooks": {"PreToolUse": [_managed("v2")]}}
-    apply(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, settings, data=newer, escape=True)))
+    apply(
+        _plan(root, MaterializationEntry(WriteKind.MERGE_JSON, settings, data=newer, escape=True))
+    )
     merged = json.loads(settings.read_text())
     assert merged["hooks"]["PreToolUse"] == [theirs, _managed("v2")], "replaced by its tag"
     assert merged["hooks"]["PostToolUse"] == [_managed("v1")], "a key the patch omits is kept"
@@ -346,9 +350,7 @@ def test_merge_json_replaces_a_managed_entry_the_patch_dropped_but_never_a_forei
     settings = root / "settings.json"
     root.mkdir()
     theirs = {"matcher": "Edit", "command": "their-own-hook"}
-    settings.write_text(
-        json.dumps({"hooks": {"PreToolUse": [_managed("a", "ai-hats:a"), theirs]}})
-    )
+    settings.write_text(json.dumps({"hooks": {"PreToolUse": [_managed("a", "ai-hats:a"), theirs]}}))
 
     apply(
         _plan(

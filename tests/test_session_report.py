@@ -391,14 +391,18 @@ def test_an_entry_shows_its_source_and_one_from_outside_the_composition_is_marke
     report = replace(
         _report(tmp_path),
         record=port.record,
-        composition=replace(
-            _composition(), skills=(Skill("skills::hatrack", skill, "ef" * 32),)
-        ),
+        composition=replace(_composition(), skills=(Skill("skills::hatrack", skill, "ef" * 32),)),
     )
 
     text = report.render()
 
-    mirror, link, prompt = (line for line in text.splitlines() if line.startswith("  copy_tree") or line.startswith("  symlink") or line.startswith("  write_text"))
+    mirror, link, prompt = (
+        line
+        for line in text.splitlines()
+        if line.startswith("  copy_tree")
+        or line.startswith("  symlink")
+        or line.startswith("  write_text")
+    )
     assert f"<- {skill}" in mirror and "outside" not in mirror
     assert f"<- {home_entry}" in link and "outside the composition" in link
     assert "<-" not in prompt
