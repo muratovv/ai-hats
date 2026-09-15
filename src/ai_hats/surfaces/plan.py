@@ -19,10 +19,9 @@ import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import cast
 
-from ..diagnostics import Level
 from ..fs_digest import dir_digest
 from ..materialization import (
     LOCK_TIMEOUT,
@@ -32,10 +31,6 @@ from ..materialization import (
     render_json,
 )
 from ..session_artifacts import RunMode, SessionPolicy
-
-#: The one reserved block name: its text renders with no heading (ADR-0034 D8).
-BODY_BLOCK = "body"
-
 
 # ── digests fold down the tree ──────────────────────────────────────────────
 
@@ -104,32 +99,65 @@ def _content_at(path: Path, content_digest: str) -> str:
 
 
 @dataclass(frozen=True)
-class PromptBlock(Digested):
-    """One block of the rendered prompt: where it opens is where its first
-    member appeared, and its members follow in order (ADR-0035 D5)."""
+class PromptMember(Digested):
+    """One prompt's text, as declared: a heading renders ``### <heading>`` above it."""
 
-    #: ``BODY_BLOCK`` for the headingless prose; any other name renders ``## <NAME>``.
+    #: Full name (ADR-0034 D1): ``maintainer::prompt``, ``rules::rule_backlog_discipline``.
     name: str
-    #: Full names (ADR-0034 D1): ``maintainer::prompt``, ``rules::rule_backlog_discipline``.
-    members: tuple[str, ...]
+    text: str
+    heading: str | None
+
+
+@dataclass(frozen=True)
+class PromptBlock(Digested):
+    """One block of the rendered prompt: it opens where its first member
+    appeared and its members follow in order (ADR-0035 D5)."""
+
+    #: ``None`` renders no heading; any name renders ``## <NAME>`` above the members.
+    name: str | None
+    members: tuple[PromptMember, ...]
+
+    def __post_init__(self) -> None:
+        if not self.members:
+            raise ValueError(f"block {self.name!r} has no members")
+
+    @property
+    def text(self) -> str:
+        if self.name is None:
+            return "\n\n".join(m.text for m in self.members)
+        return f"## {self.name}\n" + "".join(
+            f"\n### {m.heading}\n{m.text}\n" if m.heading else m.text for m in self.members
+        )
 
 
 @dataclass(frozen=True)
 class Prompt(Digested):
-    text: str
+    """The prompt is its blocks; the bytes are a rendering of them, one for
+    every producer (ADR-0036 D5). A named block appears once; nameless prose
+    may sit anywhere, as many times as the composition put it."""
+
     blocks: tuple[PromptBlock, ...]
+
+    def __post_init__(self) -> None:
+        names = [b.name for b in self.blocks if b.name is not None]
+        if len(names) != len(set(names)):
+            raise ValueError(f"a named block appears twice: {sorted(set(names))}")
+
+    @property
+    def text(self) -> str:
+        return "\n\n".join(b.text for b in self.blocks)
 
 
 @dataclass(frozen=True)
-class Payload(Digested):
-    """The bytes a hook runs: a script in the library, named by where it is."""
+class Executable(Digested):
+    """The script a hook runs, in the library, named by where it is."""
 
     path: Path
     #: sha256 of the file's bytes, streamed by whoever read it — the plan holds no bytes.
     content_digest: str
 
     def __post_init__(self) -> None:
-        _absolute(self.path, "a payload path")
+        _absolute(self.path, "an executable's path")
 
     @property
     def digest(self) -> str:
@@ -137,16 +165,12 @@ class Payload(Digested):
 
 
 @dataclass(frozen=True)
-class GitHook(Digested):
-    at: str
-    payload: Payload
-
-
-@dataclass(frozen=True)
 class RuntimeHook(Digested):
+    """Fired by the agent's own runtime — the one row a surface wires."""
+
     at: str
     matcher: str
-    payload: Payload
+    run: Executable
 
 
 class OnError(str, Enum):
@@ -155,56 +179,33 @@ class OnError(str, Enum):
 
 
 @dataclass(frozen=True)
-class AppPoint(Digested):
-    """Where in an application's own tree a workflow hook sits: the app, the
-    object under it (``tasks`` for rack; ``None`` when the row sits directly
-    under the app), and ONE point — a row naming N points is N hooks."""
+class ExternalHook(Digested):
+    """Attached to a dependency outside the agent's runtime — git, the rack,
+    the worktree lifecycle, the consent gate. No surface reads it; the
+    dependency's own integration does, from the record (ADR-0036 D6)."""
 
+    #: Who fires the point: ``git`` | ``rack`` | ``wt`` | ``consent_gate``.
     app: str
+    #: Where under the app: the backlog for rack, the operation for consent;
+    #: ``None`` where the app has no such level (git, wt).
     object: str | None
+    #: The point itself: a git event, an FSM selector, a worktree point
+    #: (``create``, ``teardown[merge]``, ``pre-merge``), a consent selector.
     at: str
-
-
-@dataclass(frozen=True)
-class WorkflowHook(Digested):
-    point: AppPoint
-    payload: Payload
-    on_error: OnError
-
-
-@dataclass(frozen=True)
-class WorktreeHook(Digested):
-    at: str
-    #: Teardown events a ``wt_out`` hook fires on; ``None`` for ``wt_in``.
-    on: tuple[str, ...] | None
-    payload: Payload
-
-
-@dataclass(frozen=True)
-class ConsentHook(Digested):
-    """A point the supervisor is asked at — a hook like the others, whose
-    payload is the operation adapter and the wrapper a skill ships; no harness
-    reads it, the record's readers do (ADR-0035 D7, ADR-0036 D6)."""
-
-    operation: str
-    #: The selector as declared; ``source`` / ``target`` are its parsed ends,
-    #: spelled ``from`` / ``to`` in the record a stdlib-only guard reads.
-    at: str
-    source: str | None
-    target: str | None
+    #: ``None`` ⇔ nothing to spawn: a consent point is enforced by the gate and
+    #: the wrapper, which are effect-half entries, not a script of the role.
+    run: Executable | None
+    #: Set only where the author may choose (a check row); ``None`` where the
+    #: owner fixes the policy — the git dispatcher, the wt lifecycle, consent.
+    on_error: OnError | None
+    #: Attribution for a refusal's message; outside the hook's identity.
     declared_by: str
-    #: Absent ⇔ the point is armed. Never filled on the ``-r`` path: the
-    #: composer drops a disarmed point before the adapter sees it.
-    disarmed_by: str | None
 
 
 @dataclass(frozen=True)
 class Hooks(Digested):
-    git: tuple[GitHook, ...]
     runtime: tuple[RuntimeHook, ...]
-    workflow: tuple[WorkflowHook, ...]
-    worktree: tuple[WorktreeHook, ...]
-    consent: tuple[ConsentHook, ...]
+    external: tuple[ExternalHook, ...]
 
 
 @dataclass(frozen=True)
@@ -226,6 +227,16 @@ class Skill(Digested):
         return _content_at(self.path, self.content_digest)
 
 
+def home_of(run: Executable, skills: Sequence[Skill]) -> tuple[Skill, PurePath] | None:
+    """The mirrored skill an executable lives in, and its path inside it —
+    what a surface's manifest command, a gate's mirror rebase and a git sort
+    key all derive; ``None`` for a script outside every composed skill."""
+    for skill in skills:
+        if run.path.is_relative_to(skill.path):
+            return skill, PurePath(run.path.relative_to(skill.path))
+    return None
+
+
 @dataclass(frozen=True)
 class TraceEntry(Digested):
     """How one term got into the composition — the audit's view of it.
@@ -243,15 +254,6 @@ class TraceEntry(Digested):
 
 
 @dataclass(frozen=True)
-class Diagnostic(Digested):
-    """A finding for the operator's record — dry-run, audit — never an
-    instruction to a harness; ``message`` is the text a person reads."""
-
-    level: Level
-    message: str
-
-
-@dataclass(frozen=True)
 class CompositionPlan(Digested):
     #: The canonical expression the session composed.
     identity: str
@@ -259,7 +261,6 @@ class CompositionPlan(Digested):
     skills: tuple[Skill, ...]
     hooks: Hooks
     trace: tuple[TraceEntry, ...]
-    diagnostics: tuple[Diagnostic, ...]
 
 
 # ── effect half ──────────────────────────────────────────────── ADR-0036 D1
@@ -313,14 +314,6 @@ class EscapeUndeclared(PlanRefused):
         super().__init__(f"{target} lies outside {root} and the entry does not declare escape")
 
 
-class InvalidConsentSelector(PlanRefused):
-    def __init__(self, consent: ConsentHook, reason: str) -> None:
-        self.consent = consent
-        super().__init__(
-            f"{consent.declared_by!r}: invalid {consent.operation} selector {consent.at!r} — {reason}"
-        )
-
-
 class StalePlan(PlanRefused):
     """A source tree no longer holds the bytes the plan was made against."""
 
@@ -339,14 +332,12 @@ _CREATING = (
 
 
 def validate(plan: MaterializationPlan) -> None:
-    """Refuse a plan two entries create one target in, that writes outside its
-    root without saying so, or whose consent an operation adapter cannot read.
+    """Refuse a plan two entries create one target in, or that writes outside
+    its root without saying so.
 
     A target counts once per creating entry whatever stands between them: a
     remove in the middle does not make the second creation a rebuild.
     """
-    from ai_hats_library.hooks.consent_gate import operations
-
     seen: dict[Path, int] = {}
     for entry in plan.entries:
         if entry.kind in _CREATING:
@@ -357,12 +348,6 @@ def validate(plan: MaterializationPlan) -> None:
     for entry in plan.entries:
         if not entry.escape and not Path(os.path.normpath(entry.target)).is_relative_to(root):
             raise EscapeUndeclared(entry.target, plan.root)
-    for consent in plan.composition.hooks.consent:
-        spec = operations.spec_for(consent.operation)
-        if spec is None:
-            raise InvalidConsentSelector(consent, "unsupported operation")
-        if (reason := spec.selector_reason(consent.at)) is not None:
-            raise InvalidConsentSelector(consent, reason)
 
 
 # ── application: mechanical and idempotent ───────────────────── ADR-0036 D3
@@ -542,20 +527,25 @@ _PERFORM = {
 def composition_record(plan: CompositionPlan) -> dict:
     """The composition half as the session record and ``--dry-run-json`` carry it.
 
-    Bytes stay out — the prompt is its blocks here, a payload its path and
-    digests; a guard reads the consent ends as ``from`` / ``to``, so that is
-    how the record spells them.
+    Bytes stay out — the prompt is its blocks and members here, an executable
+    its path and digests.
     """
 
-    def payload(p: Payload) -> dict:
-        return {"path": str(p.path), "content_digest": p.content_digest, "digest": p.digest}
+    def executable(e: Executable) -> dict:
+        return {"path": str(e.path), "content_digest": e.content_digest, "digest": e.digest}
 
     hooks = plan.hooks
     return {
         "identity": plan.identity,
         "digest": plan.digest,
         "prompt": {
-            "blocks": [{"name": b.name, "members": list(b.members)} for b in plan.prompt.blocks]
+            "blocks": [
+                {
+                    "name": b.name,
+                    "members": [{"name": m.name, "heading": m.heading} for m in b.members],
+                }
+                for b in plan.prompt.blocks
+            ]
         },
         "skills": [
             {
@@ -567,44 +557,23 @@ def composition_record(plan: CompositionPlan) -> dict:
             for s in plan.skills
         ],
         "hooks": {
-            "git": [{"at": h.at, "payload": payload(h.payload)} for h in hooks.git],
             "runtime": [
-                {"at": h.at, "matcher": h.matcher, "payload": payload(h.payload)}
-                for h in hooks.runtime
+                {"at": h.at, "matcher": h.matcher, "run": executable(h.run)} for h in hooks.runtime
             ],
-            "workflow": [
+            "external": [
                 {
-                    "app": h.point.app,
-                    "object": h.point.object,
-                    "at": h.point.at,
-                    "payload": payload(h.payload),
-                    "on_error": h.on_error.value,
-                }
-                for h in hooks.workflow
-            ],
-            "worktree": [
-                {
+                    "app": h.app,
+                    "object": h.object,
                     "at": h.at,
-                    "on": list(h.on) if h.on is not None else None,
-                    "payload": payload(h.payload),
+                    "run": None if h.run is None else executable(h.run),
+                    "on_error": None if h.on_error is None else h.on_error.value,
+                    "declared_by": h.declared_by,
                 }
-                for h in hooks.worktree
-            ],
-            "consent": [
-                {
-                    "operation": c.operation,
-                    "at": c.at,
-                    "from": c.source,
-                    "to": c.target,
-                    "declared_by": c.declared_by,
-                    "disarmed_by": c.disarmed_by,
-                }
-                for c in hooks.consent
+                for h in hooks.external
             ],
         },
         "trace": [
             {"term": t.term, "brought_by": t.brought_by, "removed_by": t.removed_by}
             for t in plan.trace
         ],
-        "diagnostics": [{"level": d.level.value, "message": d.message} for d in plan.diagnostics],
     }

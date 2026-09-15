@@ -173,6 +173,5 @@ def test_the_dry_run_carries_the_composition_half_by_kind(project: Path):
     composition = report.to_dict()["composition"]
     assert composition["identity"] == "test-role"
     assert [s["name"] for s in composition["skills"]] == ["skills::s"]
-    assert set(composition["hooks"]) == {"git", "runtime", "workflow", "worktree", "consent"}
-    assert composition["hooks"]["consent"] == []
+    assert composition["hooks"] == {"runtime": [], "external": []}
     assert "\ncomposition  test-role  digest=" in report.render()

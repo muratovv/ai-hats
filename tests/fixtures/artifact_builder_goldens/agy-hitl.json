@@ -1,29 +1,31 @@
 {
   "checks": [],
   "composition": {
-    "diagnostics": [],
     "digest": "<path-derived>",
     "hooks": {
-      "consent": [],
-      "git": [],
-      "runtime": [],
-      "workflow": [],
-      "worktree": []
+      "external": [],
+      "runtime": []
     },
     "identity": "test-role",
     "prompt": {
       "blocks": [
         {
           "members": [
-            "test-role::priorities"
+            {
+              "heading": null,
+              "name": "test-role::priorities"
+            }
           ],
           "name": "PRIORITIES"
         },
         {
           "members": [
-            "test-role::prompt"
+            {
+              "heading": null,
+              "name": "test-role::prompt"
+            }
           ],
-          "name": "body"
+          "name": null
         }
       ]
     },

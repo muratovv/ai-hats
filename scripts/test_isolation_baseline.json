@@ -42,7 +42,7 @@
   "tests/sessions/test_reflect_session_main.py": 18,
   "tests/sessions/test_sdk_runner.py": 2,
   "tests/sessions/test_session_prompt_contains_role_injection.py": 3,
-  "tests/sessions/test_show_prompt.py": 3,
+  "tests/sessions/test_show_prompt.py": 2,
   "tests/sessions/test_show_prompt_matches_session_prompt.py": 4,
   "tests/sessions/test_startup_point_ordering.py": 4,
   "tests/sessions/test_update_banner_step.py": 6,

@@ -18,17 +18,15 @@ from ai_hats.fs_digest import dir_digest
 from ai_hats.materialization import MaterializationEntry, WriteKind
 from ai_hats.surfaces import apply, validate
 from ai_hats.surfaces.plan import (
-    BODY_BLOCK,
     CompositionPlan,
-    ConsentHook,
     DuplicateTargets,
     EscapeUndeclared,
     Hooks,
-    InvalidConsentSelector,
     Launch,
     MaterializationPlan,
     Prompt,
     PromptBlock,
+    PromptMember,
     StalePlan,
 )
 from ai_hats.session_artifacts import RunMode, SessionPolicy
@@ -66,20 +64,19 @@ def writes(monkeypatch) -> list[str]:
     return reached
 
 
-def _composition(consent: tuple[ConsentHook, ...] = ()) -> CompositionPlan:
+def _composition() -> CompositionPlan:
     return CompositionPlan(
         identity="t",
-        prompt=Prompt(text="# t\n", blocks=(PromptBlock(BODY_BLOCK, ("t::prompt",)),)),
+        prompt=Prompt(blocks=(PromptBlock(None, (PromptMember("t::prompt", "# t\n", None),)),)),
         skills=(),
-        hooks=Hooks((), (), (), (), consent),
+        hooks=Hooks((), ()),
         trace=(),
-        diagnostics=(),
     )
 
 
-def _plan(root: Path, *entries: MaterializationEntry, consent=()) -> MaterializationPlan:
+def _plan(root: Path, *entries: MaterializationEntry) -> MaterializationPlan:
     return MaterializationPlan(
-        composition=_composition(consent),
+        composition=_composition(),
         surface="claude",
         run_mode=RunMode.HITL,
         policy=SessionPolicy(),
@@ -237,18 +234,6 @@ def test_a_target_outside_the_root_needs_a_declared_escape(tmp_path: Path, write
         validate(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, outside, data={})))
     validate(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, outside, data={}, escape=True)))
     assert writes == []
-
-
-def test_a_consent_selector_the_adapter_cannot_read_is_refused(tmp_path: Path, writes):
-    root = tmp_path / "s"
-    bad = ConsentHook("rack.transition", "plan->", "plan", None, "t", None)
-    with pytest.raises(InvalidConsentSelector) as refused:
-        apply(_plan(root, consent=(bad,)))
-    assert "plan->" in str(refused.value)
-    assert writes == []
-    validate(
-        _plan(root, consent=(ConsentHook("rack.transition", "->done", None, "done", "t", None),))
-    )
 
 
 def test_a_stray_file_in_a_synced_tree_is_removed(tmp_path: Path, writes: list[str]):

@@ -290,6 +290,7 @@ def build_composition_payload(
         identity=role_expression,
         resolver=asm.resolver,
         overlays=_labelled_overlays(asm, effective_role, runtime_overlay),
+        diagnostics=diagnostics,
     )
     return CompositionPayload(
         result=result,
@@ -341,10 +342,13 @@ def build_preview_payload(
             "ai-hats.yaml). Set one or pass `role=...` to the step."
         )
     eff_provider = _effective_provider(cfg, provider)
+    diagnostics: list[Diagnostic] = []
     if runtime_overlay is not None:
-        result = compose_to_run(asm, eff_role, runtime_overlay=runtime_overlay)
+        result = compose_to_run(
+            asm, eff_role, runtime_overlay=runtime_overlay, diagnostics=diagnostics
+        )
     else:
-        result = compose_to_run(asm, eff_role)
+        result = compose_to_run(asm, eff_role, diagnostics=diagnostics)
     role_expression = format_role_spec(
         eff_role, spec.adds if spec else (), spec.removes if spec else ()
     )
@@ -353,6 +357,7 @@ def build_preview_payload(
         identity=role_expression,
         resolver=asm.resolver,
         overlays=_labelled_overlays(asm, eff_role, runtime_overlay),
+        diagnostics=diagnostics,
     )
     return CompositionPayload(
         result=result,
@@ -360,6 +365,7 @@ def build_preview_payload(
         effective_role=eff_role,
         role_expression=role_expression,
         plan=plan,
+        diagnostics=tuple(diagnostics),
     )
 
 

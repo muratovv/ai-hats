@@ -18,11 +18,13 @@ from ai_hats.materialize import compose_to_run
 from ai_hats.surface_registry import get_surface
 from ai_hats.surfaces import adapt
 from ai_hats.surfaces.plan import (
-    BODY_BLOCK,
-    AppPoint,
-    ConsentHook,
+    ExternalHook,
     OnError,
+    Prompt,
+    PromptBlock,
+    PromptMember,
     TraceEntry,
+    home_of,
 )
 
 
@@ -34,25 +36,67 @@ def maintainer(tmp_path: Path):
     project.mkdir()
     asm = Assembler(project)
     result = compose_to_run(asm, "maintainer")
-    plan = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=())
+    plan = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=(), diagnostics=[])
     return asm, result, plan
 
 
-def test_prompt_text_is_what_show_prompt_prints(maintainer):
+def test_the_rendered_blocks_are_what_show_prompt_prints_today(maintainer):
+    """One producer (ADR-0036 D5): the plan renders its blocks, and on the
+    current path that rendering is byte-equal to ``compose_sections``."""
     _asm, result, plan = maintainer
     assert plan.prompt.text == get_surface("claude").build_system_prompt(result)
+    assert len(plan.prompt.text) > 10_000
 
 
-def test_prompt_blocks_name_the_sections_in_text_order(maintainer):
+def test_prompt_blocks_carry_named_members_with_their_text(maintainer):
     _asm, _result, plan = maintainer
-    blocks = {b.name: b.members for b in plan.prompt.blocks}
-    assert [b.name for b in plan.prompt.blocks] == ["PRIORITIES", BODY_BLOCK, "RULES"]
-    assert blocks["PRIORITIES"] == ("maintainer::priorities",)
-    assert "trait-agent::prompt" in blocks[BODY_BLOCK]
-    assert blocks[BODY_BLOCK][-1] == "maintainer::prompt", "the role's own text comes last"
-    assert "rules::rule_backlog_discipline" in blocks["RULES"]
-    for name in blocks["RULES"]:
-        assert f"### {name.removeprefix('rules::')}\n" in plan.prompt.text
+    assert [b.name for b in plan.prompt.blocks] == ["PRIORITIES", None, "RULES"]
+    blocks = {b.name: b for b in plan.prompt.blocks}
+    [priorities] = blocks["PRIORITIES"].members
+    assert priorities == PromptMember(
+        "maintainer::priorities", "1. Reliability\n2. Cleanliness\n3. Velocity", None
+    )
+    prose = blocks[None].members
+    assert "trait-agent::prompt" in [m.name for m in prose]
+    assert prose[-1].name == "maintainer::prompt", "the role's own text comes last"
+    backlog = next(m for m in blocks["RULES"].members if m.name == "rules::rule_backlog_discipline")
+    assert backlog.heading == "rule_backlog_discipline"
+    assert backlog.text.startswith("# Rule: Backlog Discipline")
+
+
+def test_a_named_block_may_appear_once_and_nameless_prose_anywhere():
+    prose = PromptMember("x::prompt", "x", None)
+    rule = PromptMember("rules::r", "R", "r")
+    Prompt(
+        (PromptBlock(None, (prose,)), PromptBlock("RULES", (rule,)), PromptBlock(None, (prose,)))
+    )
+    with pytest.raises(ValueError, match="twice"):
+        Prompt(
+            (
+                PromptBlock("RULES", (rule,)),
+                PromptBlock(None, (prose,)),
+                PromptBlock("RULES", (rule,)),
+            )
+        )
+    with pytest.raises(ValueError, match="no members"):
+        PromptBlock("RULES", ())
+
+
+def test_the_rendering_rule_matches_todays_sections():
+    prompt = Prompt(
+        (
+            PromptBlock("PRIORITIES", (PromptMember("r::priorities", "1. a\n2. b", None),)),
+            PromptBlock(
+                None, (PromptMember("t::prompt", "T", None), PromptMember("r::prompt", "R", None))
+            ),
+            PromptBlock(
+                "RULES", (PromptMember("rules::x", "X\n", "x"), PromptMember("rules::y", "Y", "y"))
+            ),
+        )
+    )
+    assert (
+        prompt.text == "## PRIORITIES\n1. a\n2. b\n\nT\n\nR\n\n## RULES\n\n### x\nX\n\n\n### y\nY\n"
+    )
 
 
 def test_skills_carry_full_names_paths_and_tree_digests(maintainer):
@@ -68,35 +112,73 @@ def test_skills_carry_full_names_paths_and_tree_digests(maintainer):
     assert elsewhere.digest != hatrack.digest, "one tree at two paths is two skills"
 
 
-def test_hooks_by_kind_each_with_its_payload(maintainer):
+def test_runtime_hooks_are_the_rows_a_surface_wires(maintainer):
+    _asm, _result, plan = maintainer
+    guard = [h for h in plan.hooks.runtime if h.run.path.name == "safety_gate.py"]
+    assert [(h.at, h.matcher) for h in guard] == [("PreToolUse", "Bash|run_command|execute")]
+    assert guard[0].run.path.is_absolute() and len(guard[0].run.content_digest) == 64
+    skill, inside = home_of(guard[0].run, plan.skills)
+    assert skill.name == "skills::safety-guard" and str(inside) == "hooks/safety_gate.py"
+
+
+def test_external_hooks_carry_git_worktree_checks_and_consent_one_row_per_point(maintainer):
     _asm, result, plan = maintainer
     gate = next(s.source_path for s in result.skills if s.name == "quality-gate")
-    points = [(h.point, h.payload.path, h.on_error) for h in plan.hooks.workflow]
-    assert points == [
-        (AppPoint("rack", "tasks", "->review"), gate / "hooks" / "review-gate.sh", OnError.REFUSE),
-        (AppPoint("rack", "tasks", "->done"), gate / "hooks" / "done-gate.sh", OnError.REFUSE),
-        (AppPoint("wt", None, "pre-merge"), gate / "hooks" / "merge-gate.sh", OnError.REFUSE),
-    ]
-    assert ("pre-push", gate / "git_hooks" / "pre-push-e2e-master.sh") in [
-        (h.at, h.payload.path) for h in plan.hooks.git
-    ]
-    guard = [h for h in plan.hooks.runtime if h.payload.path.name == "safety_gate.py"]
-    assert [h.at for h in guard] == ["PreToolUse"]
-    assert all(h.payload.path.is_absolute() for h in plan.hooks.git + plan.hooks.runtime)
-    venv = [h for h in plan.hooks.worktree if h.payload.path.name == "provision-venv.sh"]
-    assert [(h.at, h.on) for h in venv] == [("wt_in", None)]
-    assert len(guard[0].payload.content_digest) == 64
-
-
-def test_consent_is_a_hook_kind_carrying_the_parsed_ends(maintainer):
-    _asm, _result, plan = maintainer
-    consent = plan.hooks.consent
+    rows = {(h.app, h.object, h.at): h for h in plan.hooks.external}
+    done = rows[("rack", "tasks", "->done")]
+    assert done.run.path == gate / "hooks" / "done-gate.sh"
+    assert (done.on_error, done.declared_by) == (OnError.REFUSE, "ai-hats-gates")
+    merge = rows[("wt", None, "pre-merge")]
+    assert merge.run.path == gate / "hooks" / "merge-gate.sh" and merge.on_error is OnError.REFUSE
+    push = rows[("git", None, "pre-push")]
+    assert push.run.path.name == "pre-push-e2e-master.sh"
+    assert (push.on_error, push.declared_by) == (None, "skills::quality-gate")
+    create = rows[("wt", None, "create")]
     assert (
-        ConsentHook("rack.transition", "plan->execute", "plan", "execute", "trait-agent", None)
-        in consent
+        create.run.path.name == "provision-venv.sh"
+        and create.declared_by == "skills::worktree-venv"
     )
-    assert ConsentHook("rack.transition", "->done", None, "done", "trait-agent", None) in consent
-    assert ConsentHook("wt.merge", "pre-merge", None, None, "trait-agent", None) in consent
+    consent = rows[("consent_gate", "rack.transition", "->done")]
+    assert consent == ExternalHook(
+        "consent_gate", "rack.transition", "->done", None, None, "trait-agent"
+    )
+    assert ("consent_gate", "wt.merge", "pre-merge") in rows
+    assert not any(h.app == "wt" and h.at.startswith("teardown") for h in plan.hooks.external), (
+        "the shipped library declares no wt_out hook"
+    )
+
+
+def test_a_wt_out_hook_without_on_fires_on_every_teardown_event(tmp_path: Path):
+    from ai_hats.resolver import LibraryResolver
+    from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+
+    skill = tmp_path / "skills" / "drain"
+    (skill / "hooks").mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: drain\nai_hats:\n  worktree:\n    wt_out:\n      - script: hooks/d.sh\n---\n# d\n"
+    )
+    (skill / "hooks" / "d.sh").write_text("#!/bin/sh\n")
+    (skill / "hooks" / "d.sh").chmod(0o755)
+    (tmp_path / "roles" / "r").mkdir(parents=True)
+    (tmp_path / "roles" / "r" / "config.yaml").write_text(
+        "name: r\ncomposition:\n  skills: [drain]\n"
+    )
+    result = CompositionResult(
+        name="r",
+        priorities=[],
+        rules=[],
+        skills=[ResolvedComponent("drain", ComponentKind.SKILL, skill)],
+        injections=[],
+    )
+    plan = adapt(
+        result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=(), diagnostics=[]
+    )
+    assert [(h.app, h.at) for h in plan.hooks.external] == [
+        ("wt", "teardown[merge]"),
+        ("wt", "teardown[discard]"),
+        ("wt", "teardown[cleanup]"),
+    ]
+    assert len({h.run for h in plan.hooks.external}) == 1
 
 
 def test_trace_attributes_each_term_to_its_bringer(maintainer):
@@ -114,7 +196,11 @@ def test_trace_names_the_override_that_added_or_removed_a_term(maintainer):
     )
     result = compose_to_run(asm, "maintainer", runtime_overlay=overlay)
     plan = adapt(
-        result, identity="maintainer", resolver=asm.resolver, overlays=[(overlay, "project")]
+        result,
+        identity="maintainer",
+        resolver=asm.resolver,
+        overlays=[(overlay, "project")],
+        diagnostics=[],
     )
     assert TraceEntry("worker", "overrides::project", None) in plan.trace
     assert TraceEntry("ai-hats-gates", "maintainer", "overrides::project") in plan.trace
@@ -155,36 +241,35 @@ def test_every_absence_is_none_never_an_empty_value(maintainer):
 
 def test_two_adapts_of_one_composition_are_equal_and_a_changed_input_is_not(maintainer):
     asm, result, plan = maintainer
-    again = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=())
+    again = adapt(result, identity="maintainer", resolver=asm.resolver, overlays=(), diagnostics=[])
     assert again == plan and again.digest == plan.digest
     extra = dataclasses.replace(result, skills=[*result.skills, result.skills[0]])
-    changed = adapt(extra, identity="maintainer", resolver=asm.resolver, overlays=())
+    changed = adapt(
+        extra, identity="maintainer", resolver=asm.resolver, overlays=(), diagnostics=[]
+    )
     assert changed != plan and changed.digest != plan.digest
 
 
 def test_the_plan_digest_folds_every_record_down_the_tree(maintainer):
     _asm, _result, plan = maintainer
-    payload = plan.hooks.runtime[0].payload
-    other = dataclasses.replace(payload, content_digest="0" * 64)
+    executable = plan.hooks.runtime[0].run
+    other = dataclasses.replace(executable, content_digest="0" * 64)
     hooks = dataclasses.replace(
         plan.hooks,
-        runtime=(
-            dataclasses.replace(plan.hooks.runtime[0], payload=other),
-            *plan.hooks.runtime[1:],
-        ),
+        runtime=(dataclasses.replace(plan.hooks.runtime[0], run=other), *plan.hooks.runtime[1:]),
     )
-    assert other.digest != payload.digest
+    assert other.digest != executable.digest
     assert hooks.digest != plan.hooks.digest
     assert dataclasses.replace(plan, hooks=hooks).digest != plan.digest
 
 
 def test_the_funnel_walk_finds_an_empty_string_posing_as_absence():
     findings: list[str] = []
-    _walk(ConsentHook("rack.transition", "->done", "", "done", "trait-agent", None), "c", findings)
-    assert findings == ["c.source = '' where absence must be None"]
+    _walk(ExternalHook("consent_gate", "", "->done", None, None, "trait-agent"), "c", findings)
+    assert findings == ["c.object = '' where absence must be None"]
 
 
-def test_a_declared_payload_that_is_missing_is_a_diagnostic_and_no_hook(tmp_path: Path):
+def test_a_declared_script_that_is_missing_is_a_diagnostic_and_no_hook(tmp_path: Path):
     from ai_hats.diagnostics import Level
     from ai_hats.resolver import LibraryResolver
     from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
@@ -206,11 +291,13 @@ def test_a_declared_payload_that_is_missing_is_a_diagnostic_and_no_hook(tmp_path
         skills=[ResolvedComponent("guard", ComponentKind.SKILL, skill)],
         injections=[],
     )
-    plan = adapt(result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=())
+    found = []
+    plan = adapt(
+        result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=(), diagnostics=found
+    )
     assert plan.hooks.runtime == ()
-    assert [d.level for d in plan.diagnostics] == [Level.WARN]
-    assert "skills::guard" in plan.diagnostics[0].message
-    assert "hooks/gone.sh" in plan.diagnostics[0].message
+    assert [d.level for d in found] == [Level.WARN]
+    assert "skills::guard" in found[0].text and "hooks/gone.sh" in found[0].text
 
 
 def test_trace_reads_a_same_layer_remove_and_add_as_the_composer_does(maintainer):
@@ -220,17 +307,22 @@ def test_trace_reads_a_same_layer_remove_and_add_as_the_composer_does(maintainer
     rule = "rule_backlog_discipline"
     overlay = OverlayConfig(add_rules=[rule], remove_rules=[rule])
     result = compose_to_run(asm, "maintainer", runtime_overlay=overlay)
+    found: list = []
     plan = adapt(
-        result, identity="maintainer", resolver=asm.resolver, overlays=[(overlay, "project")]
+        result,
+        identity="maintainer",
+        resolver=asm.resolver,
+        overlays=[(overlay, "project")],
+        diagnostics=found,
     )
     rows = [t for t in plan.trace if t.term == f"rules::{rule}"]
     assert rows == [TraceEntry(f"rules::{rule}", "trait-agent", None)], (
         "the composer keeps the trait's copy (first wins) and drops the role-level remove"
     )
-    assert plan.diagnostics == ()
+    assert found == []
 
 
-def test_a_namespaced_skill_names_its_payload_by_the_same_path_on_every_channel(tmp_path: Path):
+def test_a_namespaced_skill_names_its_executable_by_the_same_path_on_every_channel(tmp_path: Path):
     from ai_hats.resolver import LibraryResolver
     from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
 
@@ -264,9 +356,12 @@ def test_a_namespaced_skill_names_its_payload_by_the_same_path_on_every_channel(
             ),
         ),
     )
-    plan = adapt(result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=())
-    assert plan.hooks.git[0].payload == plan.hooks.workflow[0].payload
-    assert plan.hooks.git[0].payload.path == (skill / "hooks" / "g.sh").resolve()
+    plan = adapt(
+        result, identity="r", resolver=LibraryResolver([tmp_path]), overlays=(), diagnostics=[]
+    )
+    git, check = plan.hooks.external
+    assert git.run == check.run
+    assert git.run.path == (skill / "hooks" / "g.sh").resolve()
     assert [s.name for s in plan.skills] == ["skills::dev::py"]
 
 

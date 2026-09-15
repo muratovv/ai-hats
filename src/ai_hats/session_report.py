@@ -95,31 +95,21 @@ def _render_composition(c: dict) -> list[str]:
     lines = [
         f"composition  {c['identity']}  digest={c['digest'][:12]}",
         "  prompt    "
-        + ", ".join(f"{len(b['members'])} {b['name']}" for b in c["prompt"]["blocks"]),
+        + ", ".join(f"{len(b['members'])} {b['name'] or '(prose)'}" for b in c["prompt"]["blocks"]),
         f"  skills    {len(c['skills'])}: " + " ".join(s["name"] for s in c["skills"]),
         "  hooks",
     ]
     hooks = c["hooks"]
-    if not any(hooks.values()):
+    if not hooks["runtime"] and not hooks["external"]:
         lines.append("    (none)")
-    lines += [f"    git       {h['at']:<11} {h['payload']['path']}" for h in hooks["git"]]
     lines += [
-        f"    runtime   {h['at']}  {h['matcher']}  {h['payload']['path']}" for h in hooks["runtime"]
+        f"    runtime   {h['at']}  {h['matcher']}  {h['run']['path']}" for h in hooks["runtime"]
     ]
-    for h in hooks["workflow"]:
+    for h in hooks["external"]:
         where = h["app"] if h["object"] is None else f"{h['app']}.{h['object']}"
-        lines.append(
-            f"    workflow  {where} {h['at']!r}  {h['payload']['path']}  on_error={h['on_error']}"
-        )
-    for h in hooks["worktree"]:
-        on = "" if h["on"] is None else "[" + ",".join(h["on"]) + "]"
-        lines.append(f"    worktree  {h['at']}{on}  {h['payload']['path']}")
-    for h in hooks["consent"]:
-        ends = f"{h['from'] or '*'} -> {h['to']}" if h["to"] else "point"
-        armed = "" if h["disarmed_by"] is None else f"  DISARMED by {h['disarmed_by']}"
-        lines.append(
-            f"    consent   {h['operation']} {h['at']!r}  {ends}  by {h['declared_by']}{armed}"
-        )
+        run = "" if h["run"] is None else f"  {h['run']['path']}"
+        policy = "" if h["on_error"] is None else f"  on_error={h['on_error']}"
+        lines.append(f"    external  {where} {h['at']!r}{run}{policy}  by {h['declared_by']}")
     removed = [t for t in c["trace"] if t["removed_by"] is not None]
     if removed:
         lines.append("  removed")
@@ -127,9 +117,6 @@ def _render_composition(c: dict) -> list[str]:
             f"    {t['term']}  brought by {t['brought_by']}, removed by {t['removed_by']}"
             for t in removed
         ]
-    if c["diagnostics"]:
-        lines.append("  diagnostics")
-        lines += [f"    {d['level'].upper()}  {d['message']}" for d in c["diagnostics"]]
     return lines
 
 

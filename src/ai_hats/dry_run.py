@@ -134,7 +134,11 @@ def dry_run_hitl(
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
     checks, check_notes = describe_checks(prov, layout, payload.result, sid, artifacts.port.record)
-    notes = [*check_notes, *_launch_notices(prov, layout, payload.result, eff_policy)]
+    notes = [
+        *(d.render() for d in payload.diagnostics),
+        *check_notes,
+        *_launch_notices(prov, layout, payload.result, eff_policy),
+    ]
     if materialize:
         notes.append(f"materialized session tree written to disk at {cache_dir}")
         notes.append(
@@ -245,7 +249,7 @@ def dry_run_automate(
         env=env,
     )
 
-    notes = list(check_notes)
+    notes = [*(d.render() for d in payload.diagnostics), *check_notes]
     if materialize:
         notes.append(f"materialized session tree written to disk at {cache_dir}")
         notes.append(
