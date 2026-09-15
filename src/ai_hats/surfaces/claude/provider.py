@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -56,6 +57,8 @@ from ai_hats.constants import (
     INJECTION_END,
     PROVIDER_CLAUDE,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _entry_matcher(rows: list[dict[str, str]]) -> str:
@@ -624,6 +627,30 @@ class ClaudeSurface(Surface):
         ]
 
 
+def _stream_signals_to(event_log: Path | None) -> "Callable[[object], None] | None":
+    """The seam's listener: what only the stream carries — a rate-limit
+    message — appended to the session's log, stamped as it arrives. The
+    transcript owns everything else, so nothing else is written twice.
+    Fail-open: a line that cannot land is logged, the run goes on."""
+    if event_log is None:
+        return None
+    from ai_hats_observe.canonical import now
+    from ai_hats_observe.event_log import write_events
+
+    from .stream_events import rate_limit_events
+
+    def listen(message: object) -> None:
+        info = getattr(message, "rate_limit_info", None)
+        if info is None or type(message).__name__ != "RateLimitEvent":
+            return
+        try:
+            write_events(rate_limit_events(info, ts=now()), event_log, append=True)
+        except Exception:
+            logger.warning("rate-limit signal not recorded in %s", event_log, exc_info=True)
+
+    return listen
+
+
 class ClaudeSubagentEngine(SubagentEngine):
     def __init__(self, provider: ClaudeSurface, *, run_blocking: Callable | None = None) -> None:
         self._provider = provider
@@ -646,6 +673,7 @@ class ClaudeSubagentEngine(SubagentEngine):
         metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
         provider_session_id: str | None = None,
+        event_log: Path | None = None,
     ) -> SurfaceRunResult:
         if artifacts is None:
             artifacts = self._provider.build_session_artifacts(
@@ -667,7 +695,9 @@ class ClaudeSubagentEngine(SubagentEngine):
             claude_session_id=provider_session_id,
         )
         msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
-        run_res = self._run_blocking(opts, msg, timeout_s=timeout_s)
+        run_res = self._run_blocking(
+            opts, msg, timeout_s=timeout_s, on_message=_stream_signals_to(event_log)
+        )
 
         metrics.record(
             {

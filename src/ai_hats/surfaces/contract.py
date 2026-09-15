@@ -137,6 +137,9 @@ class SubagentEngine(abc.ABC):
         # can be followed while the run is on; an engine that cannot pass one
         # on ignores it and reports the id the surface chose in ``metrics``.
         provider_session_id: str | None = None,
+        # The session's live log, for what only the surface's own stream
+        # carries (a quota pre-warning); ``None`` when the session writes none.
+        event_log: Path | None = None,
     ) -> SurfaceRunResult:
         pass
 

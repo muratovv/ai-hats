@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from claude_agent_sdk import ClaudeAgentOptions
@@ -204,9 +204,14 @@ def _json_safe(payload) -> str:
 # ---------------------------------------------------------------------------
 
 
+OnMessage = Callable[[object], None]
+
+
 async def drain_one_turn(
     client,
     message: str,
+    *,
+    on_message: OnMessage | None = None,
 ) -> tuple[SdkRunResult, list]:
     """Send one user message to an open SDK client; drain until terminal.
 
@@ -219,6 +224,9 @@ async def drain_one_turn(
     plus the raw SDK message list so callers that want structured
     introspection (tool-call inspection, custom assertions) keep access
     to it without re-parsing the formatted transcript.
+
+    ``on_message`` sees every message as it arrives — the seam through which
+    what only the live stream carries reaches the session's record.
 
     Never re-raises — converts any per-turn exception (query failure,
     stream error) to an error :class:`SdkRunResult`. The caller decides
@@ -233,6 +241,8 @@ async def drain_one_turn(
         await client.query(message)
         async for msg in client.receive_response():
             messages.append(msg)
+            if on_message is not None:
+                on_message(msg)
             if isinstance(msg, ResultMessage):
                 result_msg = msg
                 break
@@ -292,6 +302,7 @@ async def drain_one_turn(
 async def _run_sdk(
     options: "ClaudeAgentOptions",
     initial_message: str,
+    on_message: OnMessage | None = None,
 ) -> SdkRunResult:
     """Async core for the one-shot path: spawn ``ClaudeSDKClient``, send
     the initial message, drain until ``ResultMessage``, format, return.
@@ -307,7 +318,7 @@ async def _run_sdk(
 
     try:
         async with ClaudeSDKClient(options=options) as client:
-            result, _msgs = await drain_one_turn(client, initial_message)
+            result, _msgs = await drain_one_turn(client, initial_message, on_message=on_message)
             return result
     except Exception as exc:  # context-entry / shutdown errors (auth, etc.)
         return SdkRunResult(
@@ -328,6 +339,7 @@ def run_claude_sdk_blocking(
     initial_message: str,
     *,
     timeout_s: int,
+    on_message: OnMessage | None = None,
 ) -> SdkRunResult:
     """Sync wrapper: run a single SDK attempt under a wall-clock cap.
 
@@ -337,7 +349,7 @@ def run_claude_sdk_blocking(
 
     async def _gated() -> SdkRunResult:
         return await asyncio.wait_for(
-            _run_sdk(options, initial_message),
+            _run_sdk(options, initial_message, on_message),
             timeout=timeout_s,
         )
 

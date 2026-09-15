@@ -106,8 +106,8 @@ class PromptReceived:
 
     text: str
     ts: Timestamp | None = None
-    agent: AgentId | None = None
     origin: PromptOrigin | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)

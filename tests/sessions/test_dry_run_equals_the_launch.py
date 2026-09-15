@@ -215,7 +215,7 @@ def _automate_for_real(monkeypatch, project: Path) -> dict:
 
     seen: dict[str, Any] = {}
 
-    def _capture(options, initial_message, *, timeout_s):  # noqa: ARG001
+    def _capture(options, initial_message, *, timeout_s, on_message=None):  # noqa: ARG001
         seen["options"] = options
         seen["initial_message"] = initial_message
         return SdkRunResult(
