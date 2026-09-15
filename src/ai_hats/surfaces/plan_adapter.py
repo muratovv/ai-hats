@@ -21,6 +21,7 @@ from ai_hats_core import CompositionResult
 
 from ..diagnostics import Diagnostic, Level
 from ..fs_digest import dir_digest
+from .hook_channel import HookEvent
 from .plan import (
     CompositionPlan,
     Executable,
@@ -207,7 +208,7 @@ def _hooks(result: CompositionResult, diagnostics: list[Diagnostic]) -> Hooks:
         for event, hooks in metadata.runtime_hooks.items():
             for hook in hooks:
                 if run := wired(skill.name, hook.script, "runtime", f"{event}/{hook.matcher}"):
-                    runtime.append(RuntimeHook(at=event, matcher=hook.matcher, run=run))
+                    runtime.append(RuntimeHook(at=HookEvent(event), matcher=hook.matcher, run=run))
         carry = parse_worktree_carry(metadata.worktree, skill.name)
         for hook in carry.wt_in:
             if run := wired(skill.name, hook.script, "worktree", "create"):

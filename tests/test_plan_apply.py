@@ -7,6 +7,7 @@ what that entry needs. Planning refusals fire before any primitive.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
@@ -76,8 +77,10 @@ def _composition() -> CompositionPlan:
 
 
 def _plan(root: Path, *entries: MaterializationEntry) -> MaterializationPlan:
+    composition = _composition()
     return MaterializationPlan(
-        composition=_composition(),
+        composition=composition,
+        prompt=composition.prompt,
         surface="claude",
         run_mode=RunMode.HITL,
         policy=SessionPolicy(),
@@ -86,6 +89,18 @@ def _plan(root: Path, *entries: MaterializationEntry) -> MaterializationPlan:
         env={},
         launch=Launch(args=("claude",), sdk_options=None),
     )
+
+
+def test_the_surface_prompt_opens_with_the_composition_s_blocks_and_may_add_its_own(tmp_path):
+    plan = _plan(tmp_path / "s")
+    index = PromptBlock("AVAILABLE SKILLS", (PromptMember("claude::skill_index", "- x", None),))
+    extended = dataclasses.replace(plan, prompt=Prompt((*plan.composition.prompt.blocks, index)))
+    assert extended.prompt.text.startswith(plan.composition.prompt.text)
+    assert extended.digest != plan.digest
+
+    foreign = Prompt((index,))
+    with pytest.raises(ValueError, match="composition"):
+        dataclasses.replace(plan, prompt=foreign)
 
 
 def _skill(tmp_path: Path) -> Path:

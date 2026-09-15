@@ -237,6 +237,7 @@ def test_a_role_declaring_no_consent_says_so_instead_of_dropping_the_section(tmp
 
 
 def _composition():
+    from ai_hats.surfaces import HookEvent
     from ai_hats.surfaces.plan import (
         CompositionPlan,
         Executable,
@@ -276,7 +277,9 @@ def _composition():
         ),
         hooks=Hooks(
             runtime=(
-                RuntimeHook("PreToolUse", "Bash", payload("safety-guard/hooks/safety_gate.py")),
+                RuntimeHook(
+                    HookEvent.PRE_TOOL_USE, "Bash", payload("safety-guard/hooks/safety_gate.py")
+                ),
             ),
             external=(
                 ExternalHook(

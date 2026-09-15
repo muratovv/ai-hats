@@ -31,6 +31,7 @@ from ..materialization import (
     render_json,
 )
 from ..session_artifacts import RunMode, SessionPolicy
+from .hook_channel import HookEvent
 from .managed_tags import CLAUDE_TAG_KEY as MANAGED_TAG_KEY
 
 # ── digests fold down the tree ──────────────────────────────────────────────
@@ -179,9 +180,15 @@ class Executable(Digested):
 class RuntimeHook(Digested):
     """Fired by the agent's own runtime — the one row a surface wires."""
 
-    at: str
+    at: HookEvent
+    #: Written in the channel's matcher vocabulary (ADR-0020), which every
+    #: surface maps its native tool names onto.
     matcher: str
     run: Executable
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.at, HookEvent):
+            raise ValueError(f"a runtime hook binds to a HookEvent, got {self.at!r}")
 
 
 class OnError(str, Enum):
@@ -292,6 +299,9 @@ class Launch(Digested):
 @dataclass(frozen=True)
 class MaterializationPlan(Digested):
     composition: CompositionPlan
+    #: What the surface hands the agent: the composition's blocks, then its own
+    #: (a skill index, a harness section); the context entry carries ``prompt.text``.
+    prompt: Prompt
     surface: str
     run_mode: RunMode
     policy: SessionPolicy
@@ -304,6 +314,9 @@ class MaterializationPlan(Digested):
 
     def __post_init__(self) -> None:
         _absolute(self.root, "the session root")
+        own = self.composition.prompt.blocks
+        if self.prompt.blocks[: len(own)] != own:
+            raise ValueError("the surface prompt must open with the composition's blocks")
 
 
 # ── planning refusals, as functions over the plan ────────────── ADR-0036 D2
@@ -632,7 +645,8 @@ def composition_record(plan: CompositionPlan) -> dict:
         ],
         "hooks": {
             "runtime": [
-                {"at": h.at, "matcher": h.matcher, "run": executable(h.run)} for h in hooks.runtime
+                {"at": h.at.value, "matcher": h.matcher, "run": executable(h.run)}
+                for h in hooks.runtime
             ],
             "external": [
                 {

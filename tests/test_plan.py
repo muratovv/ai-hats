@@ -16,13 +16,15 @@ from ai_hats.assembler import Assembler
 from ai_hats.config.overlay import OverlayConfig
 from ai_hats.materialize import compose_to_run
 from ai_hats.surface_registry import get_surface
-from ai_hats.surfaces import adapt
+from ai_hats.surfaces import HookEvent, adapt
 from ai_hats.surfaces.plan import (
+    Executable,
     ExternalHook,
     OnError,
     Prompt,
     PromptBlock,
     PromptMember,
+    RuntimeHook,
     TraceEntry,
     home_of,
 )
@@ -115,10 +117,21 @@ def test_skills_carry_full_names_paths_and_tree_digests(maintainer):
 def test_runtime_hooks_are_the_rows_a_surface_wires(maintainer):
     _asm, _result, plan = maintainer
     guard = [h for h in plan.hooks.runtime if h.run.path.name == "safety_gate.py"]
-    assert [(h.at, h.matcher) for h in guard] == [("PreToolUse", "Bash|run_command|execute")]
+    assert [(h.at, h.matcher) for h in guard] == [
+        (HookEvent.PRE_TOOL_USE, "Bash|run_command|execute")
+    ]
     assert guard[0].run.path.is_absolute() and len(guard[0].run.content_digest) == 64
     skill, inside = home_of(guard[0].run, plan.skills)
     assert skill.name == "skills::safety-guard" and str(inside) == "hooks/safety_gate.py"
+
+
+def test_a_runtime_hook_binds_to_an_event_of_the_channel_not_to_a_spelling():
+    """The channel's event set is closed (ADR-0020); a row written in a
+    surface's own spelling would go quiet on every other surface."""
+    run = Executable(Path("/lib/skills/g/hooks/g.py"), "ab" * 32)
+    RuntimeHook(HookEvent.POST_TOOL_USE, "Edit", run)
+    with pytest.raises(ValueError, match="HookEvent"):
+        RuntimeHook("PreToolUse", "Edit", run)  # type: ignore[arg-type]
 
 
 def test_external_hooks_carry_git_worktree_checks_and_consent_one_row_per_point(maintainer):
