@@ -394,7 +394,36 @@ def _normal(path: Path) -> Path:
 # ── application: mechanical and idempotent ───────────────────── ADR-0036 D3
 
 
-def apply(plan: MaterializationPlan) -> None:
+class Outcome(str, Enum):
+    """What one application did to one entry."""
+
+    WRITTEN = "written"
+    UNCHANGED = "unchanged"
+    REMOVED = "removed"
+    ABSENT = "absent"
+
+
+@dataclass(frozen=True)
+class AppliedEntry:
+    entry: MaterializationEntry
+    outcome: Outcome
+    #: Files the tree holds after the sync — a fact of application; ``None`` elsewhere.
+    files: int | None
+
+
+@dataclass(frozen=True)
+class Applied:
+    """The outcome of one application, one row per entry in the plan's order —
+    what the session record and a ``--materialize`` note say happened."""
+
+    entries: tuple[AppliedEntry, ...]
+
+    @property
+    def changed(self) -> bool:
+        return any(a.outcome in (Outcome.WRITTEN, Outcome.REMOVED) for a in self.entries)
+
+
+def apply(plan: MaterializationPlan) -> Applied:
     """Perform the entries in order, writing only where the disk differs.
 
     A tree is synced file by file; a file inside it that a later entry writes
@@ -408,9 +437,15 @@ def apply(plan: MaterializationPlan) -> None:
                 raise StalePlan(entry)
             if entry.kind is WriteKind.MERGE_JSON:
                 _current_document(entry)
+        done: list[AppliedEntry] = []
         for i, entry in enumerate(plan.entries):
             later = {e.target for e in plan.entries[i + 1 :] if e.kind in _SHADOWING}
-            _PERFORM[entry.kind](entry, later)
+            done.append(_PERFORM[entry.kind](entry, later))
+    return Applied(tuple(done))
+
+
+def _did(entry: MaterializationEntry, written: bool, files: int | None = None) -> AppliedEntry:
+    return AppliedEntry(entry, Outcome.WRITTEN if written else Outcome.UNCHANGED, files)
 
 
 def _stale(entry: MaterializationEntry) -> bool:
@@ -513,51 +548,59 @@ def _write_bytes(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _put_bytes(path: Path, payload: bytes, *, private: bool) -> None:
+def _put_bytes(path: Path, payload: bytes, *, private: bool) -> bool:
     """Write ``payload`` at ``path`` unless it is already there with the right mode."""
     if private:
         from ai_hats_core.atomic_io import atomic_write_bytes
 
         if _same_bytes(path, payload) and path.stat().st_mode & 0o777 == 0o600:
-            return
+            return False
         _make_way_for_a_file(path)
         atomic_write_bytes(path, payload, mode=0o600)
-        return
+        return True
     if _same_bytes(path, payload):
-        return
+        return False
     _make_way_for_a_file(path)
     path.write_bytes(payload)
+    return True
 
 
-def _write_text(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
-    _put_bytes(entry.target, cast(bytes, entry.bytes), private=entry.private)
+def _write_text(entry: MaterializationEntry, _shadowed: set[Path]) -> AppliedEntry:
+    return _did(entry, _put_bytes(entry.target, cast(bytes, entry.bytes), private=entry.private))
 
 
-def _copy_file(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
-    _put_bytes(entry.target, cast(Path, entry.source).read_bytes(), private=entry.private)
+def _copy_file(entry: MaterializationEntry, _shadowed: set[Path]) -> AppliedEntry:
+    payload = cast(Path, entry.source).read_bytes()
+    return _did(entry, _put_bytes(entry.target, payload, private=entry.private))
 
 
-def _write_executable(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
+def _write_executable(entry: MaterializationEntry, _shadowed: set[Path]) -> AppliedEntry:
     content, payload = cast(str, entry.content), cast(bytes, entry.bytes)
+    written = False
     if not _same_bytes(entry.target, payload):
         _write_bytes(entry.target, content)
+        written = True
     if entry.target.stat().st_mode & 0o777 != 0o700:
         entry.target.chmod(0o700)
+        written = True
+    return _did(entry, written)
 
 
-def _copy_tree(entry: MaterializationEntry, shadowed: set[Path]) -> None:
+def _copy_tree(entry: MaterializationEntry, shadowed: set[Path]) -> AppliedEntry:
     """Sync ``source`` onto ``target`` the way ``copytree`` would have written
     it: every directory, links followed, and nothing else left behind."""
     source, target = cast(Path, entry.source), entry.target
+    written = False
     if target.is_symlink():
         target.unlink()  # safe-delete: ok a link standing where the plan puts a tree
+        written = True
     wanted_files: set[Path] = set()
     wanted_dirs: set[Path] = set()
     for dirpath, _dirnames, filenames in os.walk(source, followlinks=True):
         here = Path(dirpath)
         dest_dir = target / here.relative_to(source)
         wanted_dirs.add(dest_dir)
-        _make_way_for_a_dir(dest_dir)
+        written |= _make_way_for_a_dir(dest_dir)
         for name in sorted(filenames):
             file, dest = here / name, dest_dir / name
             wanted_files.add(dest)
@@ -565,12 +608,16 @@ def _copy_tree(entry: MaterializationEntry, shadowed: set[Path]) -> None:
                 continue
             _make_way_for_a_file(dest)
             shutil.copy2(file, dest)
+            written = True
     for stray in sorted(p for p in target.rglob("*") if p.is_file() or p.is_symlink()):
         if stray not in wanted_files and stray not in shadowed:
             stray.unlink()  # safe-delete: ok stray file in a session mirror the plan owns
+            written = True
     for stray_dir in sorted((p for p in target.rglob("*") if p.is_dir()), reverse=True):
         if stray_dir not in wanted_dirs and not any(stray_dir.iterdir()):
             stray_dir.rmdir()  # safe-delete: ok empty-dir in a session mirror the plan owns
+            written = True
+    return _did(entry, written, files=len(wanted_files))
 
 
 def _same_file(dest: Path, file: Path) -> bool:
@@ -582,43 +629,53 @@ def _same_file(dest: Path, file: Path) -> bool:
     )
 
 
-def _make_way_for_a_dir(path: Path) -> None:
+def _make_way_for_a_dir(path: Path) -> bool:
+    """Whether anything had to change for a directory to stand at ``path``."""
     if path.is_symlink() or path.is_file():
         path.unlink()  # safe-delete: ok a link or a file standing where the plan puts a directory
-    if not path.is_dir():
-        path.mkdir(parents=True)
+    if path.is_dir():
+        return False
+    path.mkdir(parents=True)
+    return True
 
 
-def _symlink(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
+def _symlink(entry: MaterializationEntry, _shadowed: set[Path]) -> AppliedEntry:
     source, target = cast(Path, entry.source), entry.target
     if target.is_symlink():
         if target.readlink() == source:
-            return
+            return _did(entry, False)
         target.unlink()  # safe-delete: ok a session symlink being repointed
     elif target.exists():
         raise FileExistsError(f"session materialization path collision at {target}")
     _ensure_parent(target)
     target.symlink_to(source, target_is_directory=source.is_dir())
+    return _did(entry, True)
 
 
-def _merge_json(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
+def _merge_json(entry: MaterializationEntry, _shadowed: set[Path]) -> AppliedEntry:
     merged = cast(dict, _merge_document(_current_document(entry), dict(cast(Mapping, entry.data))))
     if not entry.target.is_symlink() and not json_differs(entry.target, merged):
-        return
+        return _did(entry, False)
     _write_bytes(entry.target, render_json(merged))
+    return _did(entry, True)
 
 
-def _remove_tree(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
+def _remove_tree(entry: MaterializationEntry, _shadowed: set[Path]) -> AppliedEntry:
     """Ensure absent — a link or a file at the target is removed as itself, not followed."""
     if entry.target.is_symlink() or entry.target.is_file():
         entry.target.unlink()  # safe-delete: ok caller-owned session artifact
     elif entry.target.is_dir():
         shutil.rmtree(entry.target)  # safe-delete: ok caller-owned session artifact
+    else:
+        return AppliedEntry(entry, Outcome.ABSENT, None)
+    return AppliedEntry(entry, Outcome.REMOVED, None)
 
 
-def _mkdir(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
-    if not entry.target.is_dir():
-        entry.target.mkdir(parents=True)
+def _mkdir(entry: MaterializationEntry, _shadowed: set[Path]) -> AppliedEntry:
+    if entry.target.is_dir():
+        return _did(entry, False)
+    entry.target.mkdir(parents=True)
+    return _did(entry, True)
 
 
 _PERFORM = {

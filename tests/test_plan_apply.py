@@ -25,6 +25,7 @@ from ai_hats.surfaces.plan import (
     Hooks,
     Launch,
     MaterializationPlan,
+    Outcome,
     Prompt,
     PromptBlock,
     PromptMember,
@@ -168,6 +169,41 @@ def test_a_second_application_reaches_no_primitive(tmp_path: Path, writes: list[
     apply(plan)
 
     assert writes == []
+
+
+def test_the_application_says_what_it_did_to_each_entry(tmp_path: Path):
+    """The outcome is a value beside the plan: the record and a dry-run
+    ``--materialize`` note read what happened from it, not from the disk."""
+    plan = _seven_kinds(tmp_path)
+
+    first = apply(plan)
+
+    assert [a.entry for a in first.entries] == list(plan.entries)
+    assert [a.outcome for a in first.entries] == [
+        Outcome.UNCHANGED,  # mkdir — the root stood already, planted with the stale dir
+        Outcome.REMOVED,  # remove_tree
+        Outcome.WRITTEN,  # write_text
+        Outcome.WRITTEN,  # write_executable
+        Outcome.WRITTEN,  # copy_tree
+        Outcome.WRITTEN,  # write_text over the tree
+        Outcome.WRITTEN,  # symlink
+        Outcome.WRITTEN,  # merge_json
+        Outcome.WRITTEN,  # private write_text
+    ]
+    tree = next(a for a in first.entries if a.entry.kind is WriteKind.COPY_TREE)
+    assert tree.files == 2, "SKILL.md and hooks/gate.sh — a fact of application, not of planning"
+    assert [a.files for a in first.entries if a.entry.kind is not WriteKind.COPY_TREE] == [None] * 8
+    assert first.changed
+
+    second = apply(plan)
+
+    assert [a.outcome for a in second.entries] == [
+        Outcome.UNCHANGED,
+        Outcome.ABSENT,
+        *[Outcome.UNCHANGED] * 7,
+    ]
+    assert not second.changed
+    assert next(a for a in second.entries if a.entry.kind is WriteKind.COPY_TREE).files == 2
 
 
 def test_one_changed_entry_reaches_exactly_its_own_primitive(tmp_path: Path, writes: list[str]):
