@@ -38,7 +38,7 @@ from .sdk_options import (
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
-from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG
+from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG, HOOK_NOTIFICATION, OBSERVED_NOTIFICATION
 from .runtime_hooks import materialize_hook_manifest
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
@@ -516,21 +516,30 @@ class ClaudeSurface(Surface):
     def _desired_runtime_entries(
         self, rows: dict[str, list[dict[str, str]]]
     ) -> dict[str, list[dict]]:
-        """``{event: [the dispatcher entry]}`` for the rows the manifest holds.
+        """``{event: [the dispatcher entry]}`` for the rows the manifest holds,
+        plus the one observer that rides no skill.
 
         One entry per event: WHICH gates a call matched is the dispatcher's to
         answer from the manifest, and the harness only has to deliver the call.
-        An event the composition binds nothing to gets no entry.
+        An event the composition binds nothing to gets no entry — except the
+        notification that claude is showing the person its permission prompt,
+        which no gate judges and only a hook can see: the dispatcher records
+        it into the session's own log, and runs only then.
         """
-        return {
-            event: [
-                {
-                    "matcher": _entry_matcher(event_rows),
-                    "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
-                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
-                }
-            ]
+        entries = {
+            event: [self._dispatcher_entry(event, _entry_matcher(event_rows))]
             for event, event_rows in rows.items()
+        }
+        entries[HOOK_NOTIFICATION] = [
+            self._dispatcher_entry(HOOK_NOTIFICATION, OBSERVED_NOTIFICATION)
+        ]
+        return entries
+
+    def _dispatcher_entry(self, event: str, matcher: str) -> dict:
+        return {
+            "matcher": matcher,
+            "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
+            self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
         }
 
     @staticmethod

@@ -23,6 +23,7 @@ from ai_hats_observe.artifacts import EVENT_LOG_JSONL
 from ai_hats_observe.canonical import (
     AgentId,
     AskKind,
+    Event,
     GateDecision,
     GatePoint,
     GateVerdict,
@@ -102,22 +103,33 @@ def record_verdict(
 
     Never raises: the answer to the surface must not depend on the record.
     """
+    recorded = gate_verdict(verdict, event, calls)
+    if recorded is None:
+        return None
+    asked = person_asked(recorded)
+    return _record((recorded,) if asked is None else (recorded, asked), environ, "gate verdict")
+
+
+def record_event(event: Event | None, environ: Mapping[str, str]) -> Path | None:
+    """Append one event a hook process observed — the surface's own prompt to
+    the person, say — to the session's event log; ``None`` when there is
+    nothing, no session, or the line could not land. Never raises."""
+    if event is None:
+        return None
+    return _record((event,), environ, "observation")
+
+
+def _record(events: Sequence[Event], environ: Mapping[str, str], what: str) -> Path | None:
     try:
         identity = SessionIdentity.from_env(dict(environ))
         if identity is None:
             return None
-        recorded = gate_verdict(verdict, event, calls)
-        if recorded is None:
-            return None
         path = identity.session_dir / EVENT_LOG_JSONL
-        asked = person_asked(recorded)
-        write_events((recorded,) if asked is None else (recorded, asked), path, append=True)
+        write_events(events, path, append=True)
         return path
     except Exception as exc:
-        print(
-            f"ai-hats-hook: gate verdict not recorded: {type(exc).__name__}: {exc}", file=sys.stderr
-        )
+        print(f"ai-hats-hook: {what} not recorded: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
 
 
-__all__ = ["SOURCE", "gate_verdict", "person_asked", "record_verdict"]
+__all__ = ["SOURCE", "gate_verdict", "person_asked", "record_event", "record_verdict"]

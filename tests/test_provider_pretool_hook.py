@@ -17,7 +17,12 @@ import pytest
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import claude_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
-from ai_hats.surfaces.claude.channel import DISPATCHER_COMMAND, DISPATCHER_TAG
+from ai_hats.surfaces.claude.channel import (
+    DISPATCHER_COMMAND,
+    DISPATCHER_TAG,
+    HOOK_NOTIFICATION,
+    OBSERVED_NOTIFICATION,
+)
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
@@ -96,12 +101,20 @@ def _managed_command(project: Path, skill: str, script: str) -> str:
     )
 
 
-def test_a_composition_without_skills_wires_nothing(tmp_path: Path) -> None:
-    """HATS-1268: every entry is skill-declared, the shared-state guard included.
+OBSERVER_ENTRY = {
+    "matcher": OBSERVED_NOTIFICATION,
+    "_ai_hats_managed": f"{DISPATCHER_TAG}:{HOOK_NOTIFICATION}",
+    "hooks": [{"type": "command", "command": DISPATCHER_COMMAND}],
+}
 
-    Before, an unconditional guard entry meant settings.json was never empty.
-    """
-    assert _settings(tmp_path)["hooks"] == {}
+
+def test_a_composition_without_skills_wires_only_the_observer(tmp_path: Path) -> None:
+    """HATS-1268: every GATE is skill-declared, the shared-state guard included
+    — an unconditional guard entry once meant settings.json was never empty.
+    The one entry that rides no skill judges nothing: it lets the session's own
+    record say when claude is showing the person a permission prompt, and it
+    runs only then."""
+    assert _settings(tmp_path)["hooks"] == {HOOK_NOTIFICATION: [OBSERVER_ENTRY]}
 
 
 def test_command_is_absolute_into_the_session_skill_mirror(tmp_path: Path) -> None:
@@ -186,7 +199,7 @@ def test_each_bound_event_gets_one_dispatcher_entry(tmp_path: Path) -> None:
     )
     hooks = _settings(proj, _result([skill]))["hooks"]
 
-    assert set(hooks) == {HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE}
+    assert set(hooks) == {HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE, HOOK_NOTIFICATION}
     for event, matcher in ((HOOK_PRE_TOOL_USE, "Bash"), (HOOK_POST_TOOL_USE, "Edit|Write")):
         assert hooks[event] == [
             {
@@ -198,14 +211,18 @@ def test_each_bound_event_gets_one_dispatcher_entry(tmp_path: Path) -> None:
 
 
 def test_an_event_no_gate_binds_to_gets_no_entry(tmp_path: Path) -> None:
-    """A dispatcher spawned to find nothing is ~40 ms of nothing, per call."""
+    """A dispatcher spawned to find nothing is ~40 ms of nothing, per call.
+    The observer is not that: it binds one notification type, so it runs only
+    when the person is being asked — and is waiting anyway."""
     proj = tmp_path / "proj"
     proj.mkdir()
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
 
-    assert set(_settings(proj, _result([skill]))["hooks"]) == {HOOK_PRE_TOOL_USE}
+    hooks = _settings(proj, _result([skill]))["hooks"]
+    assert set(hooks) == {HOOK_PRE_TOOL_USE, HOOK_NOTIFICATION}
+    assert hooks[HOOK_NOTIFICATION] == [OBSERVER_ENTRY]
 
 
 def test_claude_skill_hooks_idempotent(tmp_path: Path) -> None:
@@ -452,7 +469,9 @@ def test_a_gate_whose_script_is_gone_is_missing_from_both_and_said_so(tmp_path: 
     (skill.source_path / "hooks" / "pre.sh").unlink()
     artifacts = BuiltArtifacts()
 
-    assert _settings(proj, _result([skill]), artifacts)["hooks"] == {}
+    assert _settings(proj, _result([skill]), artifacts)["hooks"] == {
+        HOOK_NOTIFICATION: [OBSERVER_ENTRY]
+    }
     assert _manifest(proj)["hooks"] == {}
     [notice] = artifacts.notices
     assert "skill-x" in notice and "hooks/pre.sh" in notice and "will not run" in notice

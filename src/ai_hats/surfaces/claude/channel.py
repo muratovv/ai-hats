@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence
 
 from ai_hats.env import ENV_SESSION_CACHE_DIR
 from ai_hats_observe.trace import ENV_SESSION_ID
@@ -34,9 +34,21 @@ from ..hook_channel import (
 from ..hook_dispatch import Arrival, ManifestUnresolved, dispatch, manifest_rows
 from .profile import PROFILE
 
+if TYPE_CHECKING:
+    from ai_hats_observe.canonical import Event
+
 
 #: The tag that marks a settings entry as ours, per event.
 DISPATCHER_TAG = "ai-hats:claude-dispatcher"
+
+#: claude's own name for the arrival that shows the person a prompt.
+HOOK_NOTIFICATION = "Notification"
+
+#: The notification the dispatcher observes; the matcher a settings entry binds.
+OBSERVED_NOTIFICATION = "permission_prompt"
+
+#: What ``PersonAsked.source`` says when claude's own hook spoke.
+OBSERVED_SOURCE = "claude/hooks"
 
 #: What an entry runs when there is no resident dispatcher to ask. Starting one
 #: is not optional: an entry that cannot must REFUSE (exit 2) and name the hatch
@@ -104,6 +116,33 @@ class ClaudeChannel:
         """One call, untranslated: the payload is already in the vocabulary the
         hooks are written against."""
         return [HookCall(payload, str(payload.get("tool_name", "")))]
+
+    def observe(self, payload: dict, arrival: Arrival) -> "Event | None":
+        """Claude showing the person its own permission prompt — the one wait
+        no transcript records before it resolves.
+
+        ``Notification`` with ``notification_type: permission_prompt``, measured
+        on 2.1.272: it names neither the tool nor the call (the documented
+        ``notification_details`` is absent), so the wait carries only the
+        surface's message; the open call right before it in the record is the
+        one being asked about.
+        """  # comment-length: allow — what the measured payload does and does not carry
+        if (
+            arrival.native != HOOK_NOTIFICATION
+            or payload.get("notification_type") != OBSERVED_NOTIFICATION
+        ):
+            return None
+        from ai_hats_observe.canonical import AgentId, AskKind, PersonAsked, now
+
+        message = payload.get("message")
+        agent = payload.get("agent_id")
+        return PersonAsked(
+            kind=AskKind.PERMISSION,
+            detail=message if isinstance(message, str) and message else None,
+            source=OBSERVED_SOURCE,
+            ts=now(),
+            agent=AgentId(agent) if isinstance(agent, str) and agent else None,
+        )
 
     def emit(self, verdict: ChainVerdict, arrival: Arrival) -> None:
         """Write the dialect `parse_reply` already reads.
