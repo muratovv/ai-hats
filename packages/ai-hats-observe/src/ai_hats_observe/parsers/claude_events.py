@@ -21,6 +21,7 @@ from ..canonical.events import (
     Event,
     GateVerdict,
     ItemEmitted,
+    PersonAsked,
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
@@ -36,11 +37,13 @@ from ..canonical.signals import (
     WorthRecording,
 )
 from ..canonical.types import (
+    AskKind,
     Completion,
     EpochSeconds,
     GateDecision,
     GatePoint,
     ModelName,
+    PromptOrigin,
     ResponseId,
     TextItem,
     ThinkingItem,
@@ -135,6 +138,20 @@ INTERRUPT_MARKERS = frozenset(
 # "…Switched to Opus 4.8. Send feedback…" — the fallback model as prose, read
 # only when the record omits the `fallbackModel` field.
 _SWITCHED_TO = re.compile(r"Switched to (.+?)\.(?:\s|$)")
+
+# The tools through which the model asks a person and stops to hear the
+# answer — Claude's spelling. A call to one opens a wait a controller must see.
+_QUESTION_TOOLS = frozenset({"AskUserQuestion"})
+
+# Who wrote a prompt, by the record's own fields. ``sdk`` is the harness: on
+# that path ai-hats plays the person. Unlisted or absent stays unknown.
+_PROMPT_ORIGINS: dict[str, PromptOrigin] = {
+    "typed": PromptOrigin.PERSON,
+    "suggestion_accepted": PromptOrigin.PERSON,
+    "queued": PromptOrigin.PERSON,
+    "system": PromptOrigin.HARNESS,
+    "sdk": PromptOrigin.HARNESS,
+}
 
 # A refusal by the surface's own gate arrives as an ``is_error`` tool_result
 # whose prose names the decider — the only place the transcript says who.
@@ -349,15 +366,20 @@ class ClaudeTranscriptReader:
                 state.calls.add(call_id)
                 self._seen_calls[call_id] = str(block.get("name", ""))
                 inputs = block.get("input")
+                inputs = inputs if isinstance(inputs, dict) else {}
+                name = str(block.get("name", ""))
                 yield ItemEmitted(
-                    state.response_id,
-                    ToolCallItem(
-                        call_id=call_id,
-                        name=str(block.get("name", "")),
-                        input=inputs if isinstance(inputs, dict) else {},
-                    ),
-                    ts,
+                    state.response_id, ToolCallItem(call_id=call_id, name=name, input=inputs), ts
                 )
+                if name in _QUESTION_TOOLS:
+                    yield PersonAsked(
+                        kind=AskKind.QUESTION,
+                        call_id=call_id,
+                        tool=name,
+                        detail=_questions(inputs),
+                        source=SOURCE,
+                        ts=ts,
+                    )
             case _ if btype in _IGNORED_BLOCKS:
                 return
             case _:
@@ -369,8 +391,9 @@ class ClaudeTranscriptReader:
         content = message.get("content")
         ts = _ts(record)
 
+        origin = _prompt_origin(record)
         if isinstance(content, str):
-            yield from self._prompt(content, ts)
+            yield from self._prompt(content, ts, origin)
             return
         if not isinstance(content, list):
             return
@@ -390,7 +413,7 @@ class ClaudeTranscriptReader:
         if text.strip() in INTERRUPT_MARKERS:
             yield from self._interrupted(text.strip(), ts)
             return
-        yield from self._prompt(text, ts)
+        yield from self._prompt(text, ts, origin)
 
     def _interrupted(self, marker: str, ts: Timestamp | None) -> Iterator[Event]:
         """A person stopped the turn. The model's own stop reason wins; only a
@@ -446,12 +469,14 @@ class ClaudeTranscriptReader:
             ts=ts,
         )
 
-    def _prompt(self, text: str, ts: Timestamp | None) -> Iterator[Event]:
+    def _prompt(
+        self, text: str, ts: Timestamp | None, origin: PromptOrigin | None
+    ) -> Iterator[Event]:
         # A prompt does not end the call in flight: queued input lands between
         # fragments 103 times in the measured corpus, and closing there would
         # re-open the call and bill it twice.
         if text.strip():
-            yield PromptReceived(text=text, ts=ts)
+            yield PromptReceived(text=text, ts=ts, origin=origin)
 
     def _system_events(self, record: dict[str, Any]) -> Iterator[Event]:
         subtype = record.get("subtype")
@@ -570,6 +595,31 @@ class ClaudeTranscriptReader:
 def _ts(record: dict[str, Any]) -> Timestamp | None:
     value = record.get("timestamp")
     return Timestamp(value) if isinstance(value, str) and value else None
+
+
+def _prompt_origin(record: dict[str, Any]) -> PromptOrigin | None:
+    """Who wrote it, from the record's own fields; ``isMeta`` marks what the
+    harness injected without a source of its own (a skill body)."""
+    if record.get("isMeta") is True:
+        return PromptOrigin.HARNESS
+    origin = record.get("origin")
+    if isinstance(origin, dict) and origin.get("kind") == "human":
+        return PromptOrigin.PERSON
+    source = record.get("promptSource")
+    return _PROMPT_ORIGINS.get(source) if isinstance(source, str) else None
+
+
+def _questions(inputs: dict[str, Any]) -> str | None:
+    """The questions asked, one per line — what a controller shows a person."""
+    questions = inputs.get("questions")
+    if not isinstance(questions, list):
+        return None
+    texts = [
+        str(q.get("question"))
+        for q in questions
+        if isinstance(q, dict) and isinstance(q.get("question"), str) and q.get("question")
+    ]
+    return "\n".join(texts) or None
 
 
 def _entry_text(entry: Any) -> str:

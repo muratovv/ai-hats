@@ -137,6 +137,23 @@ class GateDecision(StrEnum):
     ASK = "ask"
 
 
+class AskKind(StrEnum):
+    """What a person is being waited on for."""
+
+    # The model asked something and stopped to hear the answer.
+    QUESTION = "question"
+    # A gate wants a person's say on a tool call before it runs.
+    PERMISSION = "permission"
+
+
+class PromptOrigin(StrEnum):
+    """Who wrote a prompt: a person, or the harness on the person's behalf (a
+    skill body, a sub-agent's hand-back, a task notification)."""
+
+    PERSON = "person"
+    HARNESS = "harness"
+
+
 @dataclass(frozen=True)
 class Usage:
     """Billable cost of one inference call."""

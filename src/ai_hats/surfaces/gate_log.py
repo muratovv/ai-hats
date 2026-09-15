@@ -6,18 +6,31 @@ process when the resident server answers, in a hook process of its own otherwise
 environment. The line is appended the way the session's own writer appends, so
 the two producers never interleave. Fail-open: a verdict that cannot be recorded
 is said on stderr and changes nothing about the answer the surface gets.
+
+An ``ask`` is also the one neutral producer of "the run is waiting on a person"
+for a tool call: no surface persists its own approval prompt before it resolves,
+and every surface's dispatcher passes through here. So the ``PersonAsked`` that
+opens that wait is appended beside the verdict, under the same call id.
 """
 
 from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
-from ai_hats_observe.canonical import GateDecision, GatePoint, GateVerdict, Timestamp, ToolCallId
-from ai_hats_observe.event_log import append_event
+from ai_hats_observe.canonical import (
+    AskKind,
+    GateDecision,
+    GatePoint,
+    GateVerdict,
+    PersonAsked,
+    Timestamp,
+    ToolCallId,
+    now,
+)
+from ai_hats_observe.event_log import write_events
 
 from ..session_identity import SessionIdentity
 from .hook_channel import ChainVerdict, HookCall, HookEvent
@@ -31,17 +44,12 @@ _POINTS = {
 }
 
 
-def _now() -> Timestamp:
-    stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-    return Timestamp(stamp.replace("+00:00", "Z"))
-
-
 def gate_verdict(
     verdict: ChainVerdict,
     event: HookEvent | None,
     calls: Sequence[HookCall],
     *,
-    now: Callable[[], Timestamp] = _now,
+    now: Callable[[], Timestamp] = now,
 ) -> GateVerdict | None:
     """The canonical event for what the chain said; ``None`` for an arrival no
     gate point binds to, where nothing was judged."""
@@ -63,14 +71,29 @@ def gate_verdict(
     )
 
 
+def person_asked(verdict: GateVerdict) -> PersonAsked | None:
+    """The wait an ``ask`` opens on a person; ``None`` for any other decision."""
+    if verdict.decision is not GateDecision.ASK:
+        return None
+    return PersonAsked(
+        kind=AskKind.PERMISSION,
+        call_id=verdict.call_id,
+        tool=verdict.tool,
+        detail=verdict.reason or None,
+        source=SOURCE,
+        ts=verdict.ts,
+    )
+
+
 def record_verdict(
     verdict: ChainVerdict,
     event: HookEvent | None,
     calls: Sequence[HookCall],
     environ: Mapping[str, str],
 ) -> Path | None:
-    """Append the verdict to the session's event log; the path written, or
-    ``None`` when this process runs in no session or the line could not land.
+    """Append the verdict — and, for an ``ask``, the wait it opens — to the
+    session's event log; the path written, or ``None`` when this process runs
+    in no session or the lines could not land.
 
     Never raises: the answer to the surface must not depend on the record.
     """
@@ -82,7 +105,8 @@ def record_verdict(
         if recorded is None:
             return None
         path = identity.session_dir / EVENT_LOG_JSONL
-        append_event(recorded, path)
+        asked = person_asked(recorded)
+        write_events((recorded,) if asked is None else (recorded, asked), path, append=True)
         return path
     except Exception as exc:
         print(
@@ -91,4 +115,4 @@ def record_verdict(
         return None
 
 
-__all__ = ["SOURCE", "gate_verdict", "record_verdict"]
+__all__ = ["SOURCE", "gate_verdict", "person_asked", "record_verdict"]

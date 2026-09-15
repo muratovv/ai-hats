@@ -42,12 +42,14 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 from .signals import Signal
 from .types import (
+    AskKind,
     Completion,
     GateDecision,
     GatePoint,
     Item,
     ItemKind,
     ModelName,
+    PromptOrigin,
     ResponseId,
     Timestamp,
     ToolCallId,
@@ -88,10 +90,15 @@ class RunEnded:
 
 @dataclass(frozen=True)
 class PromptReceived:
-    """Input addressed to the model, from a person or from the harness."""
+    """Input addressed to the model, from a person or from the harness.
+
+    ``origin`` says which, when the surface says; a controller waiting for the
+    person to come back reads it rather than counting prompts.
+    """
 
     text: str
     ts: Timestamp | None = None
+    origin: PromptOrigin | None = None
 
 
 @dataclass(frozen=True)
@@ -192,10 +199,32 @@ class GateVerdict:
     ts: Timestamp | None = None
 
 
+@dataclass(frozen=True)
+class PersonAsked:
+    """A person is being waited on — for an answer, or for leave to run a tool.
+
+    The one state a controller cannot infer from the stream: an unanswered
+    call looks the same whether a tool is slow or a person is away. It has no
+    closing twin: the wait is open while the call it names has no
+    ``ToolResultReceived`` — the reading a response in flight already has —
+    and that result, with any verdict beside it, says how it closed.
+    """
+
+    kind: AskKind
+    call_id: ToolCallId | None = None
+    tool: str | None = None
+    # what a controller can show: the question, or the gate's reason
+    detail: str | None = None
+    # which producer spoke: a surface's reader, the chain, a surface's hook
+    source: str | None = None
+    ts: Timestamp | None = None
+
+
 Event = (
     RunStarted
     | RunEnded
     | PromptReceived
+    | PersonAsked
     | ResponseStarted
     | ItemDelta
     | ItemEmitted

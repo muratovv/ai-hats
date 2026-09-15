@@ -14,6 +14,7 @@ from .events import (
     GateVerdict,
     ItemDelta,
     ItemEmitted,
+    PersonAsked,
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
@@ -33,6 +34,7 @@ from .signals import (
     WorthRecording,
 )
 from .types import (
+    AskKind,
     Completion,
     EpochSeconds,
     GateDecision,
@@ -40,6 +42,7 @@ from .types import (
     Item,
     ItemKind,
     ModelName,
+    PromptOrigin,
     ResponseId,
     TextItem,
     ThinkingItem,
@@ -63,6 +66,7 @@ from .views import (
 
 __all__ = [
     "ANSWER_ONLY",
+    "AskKind",
     "Blocking",
     "Collected",
     "Response",
@@ -83,7 +87,9 @@ __all__ = [
     "ModelName",
     "Notice",
     "PersonActionRequired",
+    "PersonAsked",
     "PersonMustAct",
+    "PromptOrigin",
     "PromptReceived",
     "ResponseEnded",
     "ResponseId",

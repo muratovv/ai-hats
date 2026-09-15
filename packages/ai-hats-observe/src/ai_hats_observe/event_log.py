@@ -24,6 +24,7 @@ from .canonical.events import (
     GateVerdict,
     ItemDelta,
     ItemEmitted,
+    PersonAsked,
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
@@ -41,6 +42,7 @@ from .canonical.signals import (
     WorthRecording,
 )
 from .canonical.types import (
+    AskKind,
     Completion,
     EpochSeconds,
     GateDecision,
@@ -48,6 +50,7 @@ from .canonical.types import (
     Item,
     ItemKind,
     ModelName,
+    PromptOrigin,
     ResponseId,
     TextItem,
     ThinkingItem,
@@ -188,7 +191,22 @@ def encode(event: Event) -> dict[str, Any]:
                 "ts": event.ts,
             }
         case PromptReceived():
-            body = {"event": "prompt_received", "text": event.text, "ts": event.ts}
+            body = {
+                "event": "prompt_received",
+                "text": event.text,
+                "origin": None if event.origin is None else str(event.origin),
+                "ts": event.ts,
+            }
+        case PersonAsked():
+            body = {
+                "event": "person_asked",
+                "kind": str(event.kind),
+                "call_id": event.call_id,
+                "tool": event.tool,
+                "detail": event.detail,
+                "source": event.source,
+                "ts": event.ts,
+            }
         case ResponseStarted():
             body = {
                 "event": "response_started",
@@ -291,7 +309,26 @@ def decode(record: dict[str, Any]) -> Event | None:
                 ts=ts,
             )
         case "prompt_received":
-            return PromptReceived(text=str(record.get("text", "")), ts=ts)
+            origin = record.get("origin")
+            return PromptReceived(
+                text=str(record.get("text", "")),
+                ts=ts,
+                origin=PromptOrigin(origin) if origin in set(PromptOrigin) else None,
+            )
+        case "person_asked":
+            kind = record.get("kind")
+            if kind not in set(AskKind):
+                return None
+            call_id, tool = record.get("call_id"), record.get("tool")
+            detail, source = record.get("detail"), record.get("source")
+            return PersonAsked(
+                kind=AskKind(kind),
+                call_id=ToolCallId(call_id) if isinstance(call_id, str) else None,
+                tool=tool if isinstance(tool, str) else None,
+                detail=detail if isinstance(detail, str) else None,
+                source=source if isinstance(source, str) else None,
+                ts=ts,
+            )
         case "response_started":
             model = record.get("model")
             return ResponseStarted(

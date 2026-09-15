@@ -29,8 +29,11 @@ from ai_hats_observe.canonical import (
     ItemEmitted,
     ItemKind,
     Notice,
+    AskKind,
     PersonActionRequired,
+    PersonAsked,
     PersonMustAct,
+    PromptOrigin,
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
@@ -724,6 +727,91 @@ def test_a_prompt_arriving_mid_response_does_not_end_the_call(tmp_path: Path) ->
     assert len([e for e in events if isinstance(e, ResponseEnded)]) == 1
     # POSITIVE CONTROL: the interleaved prompt was read
     assert [e.text for e in events if isinstance(e, PromptReceived)] == ["wait, also do this"]
+
+
+# --- waiting on a person ------------------------------------------------------
+
+
+QUESTION = {
+    "questions": [
+        {"question": "Push master as is?", "header": "Push", "options": [{"label": "yes"}]},
+        {"question": "Tag it too?", "header": "Tag", "options": [{"label": "no"}]},
+    ]
+}
+
+
+def test_a_question_to_the_person_opens_a_wait_the_answer_closes(tmp_path: Path) -> None:
+    """426 ``AskUserQuestion`` calls in the measured corpus, p90 62 minutes to an
+    answer: a controller has to know the run is waiting on a person, not on a
+    tool. The opener names the call; the wait is open while that call has no
+    result — no closing event, the same reading a response in flight has."""
+    records = [
+        assistant(
+            "req-a",
+            [{"type": "tool_use", "id": "c1", "name": "AskUserQuestion", "input": QUESTION}],
+        ),
+    ]
+    events = events_of(tmp_path, records)
+
+    asked = [e for e in events if isinstance(e, PersonAsked)]
+    assert asked == [
+        PersonAsked(
+            kind=AskKind.QUESTION,
+            call_id="c1",
+            tool="AskUserQuestion",
+            detail="Push master as is?\nTag it too?",
+            source="claude/jsonl",
+            ts="2026-09-12T10:00:00.000Z",
+        )
+    ]
+    # the opener follows the call it names
+    calls = [e for e in events if isinstance(e, ItemEmitted) and e.item.kind is ItemKind.TOOL_CALL]
+    assert events.index(calls[0]) < events.index(asked[0])
+    # still open: nothing has answered
+    assert not [e for e in events if isinstance(e, ToolResultReceived)]
+
+    append(
+        tmp_path / "t.jsonl",
+        [user([{"type": "tool_result", "tool_use_id": "c1", "content": "answered: yes"}])],
+    )
+    later = list(ClaudeTranscriptReader(tmp_path / "t.jsonl").read())
+    assert [(r.call_id, r.ok) for r in later if isinstance(r, ToolResultReceived)] == [("c1", True)]
+    # POSITIVE CONTROL: an ordinary tool call opens no wait
+    plain = events_of(
+        tmp_path,
+        [assistant("req-b", [{"type": "tool_use", "id": "c2", "name": "Read", "input": {}}])],
+        name="plain.jsonl",
+    )
+    assert not [e for e in plain if isinstance(e, PersonAsked)]
+
+
+@pytest.mark.parametrize(
+    "extra, origin",
+    [
+        ({"promptSource": "typed", "origin": {"kind": "human"}}, PromptOrigin.PERSON),
+        ({"promptSource": "suggestion_accepted"}, PromptOrigin.PERSON),
+        ({"promptSource": "queued"}, PromptOrigin.PERSON),
+        ({"promptSource": "system", "origin": {"kind": "task-notification"}}, PromptOrigin.HARNESS),
+        (
+            {"promptSource": "system", "origin": {"kind": "peer"}, "isMeta": True},
+            PromptOrigin.HARNESS,
+        ),
+        ({"isMeta": True}, PromptOrigin.HARNESS),
+        ({"promptSource": "sdk"}, PromptOrigin.HARNESS),
+        ({}, None),
+    ],
+)
+def test_a_prompt_says_whether_a_person_or_the_harness_wrote_it(
+    tmp_path: Path, extra: dict[str, Any], origin: PromptOrigin | None
+) -> None:
+    """Skill bodies, sub-agent hand-backs and task notifications arrive as user
+    records too — 10 of 14 prompts in one measured session. A controller waiting
+    for the person to come back needs the record's own word on who wrote it,
+    and silence when the record has none."""
+    record = user("some input")
+    record.update(extra)
+    prompts = [e for e in events_of(tmp_path, [record]) if isinstance(e, PromptReceived)]
+    assert [(e.text, e.origin) for e in prompts] == [("some input", origin)]
 
 
 # --- a refusal by the surface's own gate --------------------------------------
