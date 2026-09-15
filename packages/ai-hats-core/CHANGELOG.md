@@ -7,6 +7,12 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `ProjectLayout.cwd` — where the process stands, as distinct from the
+  project root it resolved: a linked worktree or a subdirectory. A surface the
+  process launches inherits it and keys its own record by it, so a consumer
+  that locates that record reads `cwd`, never `root`. `compute(..., cwd=)`
+  stamps it; `with_cwd(path)` copies the geometry standing elsewhere, resolved;
+  a layout built without one stands at its root (0.13.0).
 - `ai_hats_core.lazy.lazy_facade` — the `__getattr__`/`__dir__` pair for a package
   that binds its exports on first use. Written by hand in six `__init__` first
   (HATS-1869), which grew two conventions for the same table and a `__dir__`

@@ -59,7 +59,7 @@ class QuorumAutoclose(Step):
         closed = [
             c.hyp_id
             for c in autoclose_hypotheses(
-                ws, caller_cwd=layout.root, k=self.k, actor=AUTOCLOSE_ACTOR
+                ws, caller_cwd=layout.cwd, k=self.k, actor=AUTOCLOSE_ACTOR
             )
         ]
         if closed:

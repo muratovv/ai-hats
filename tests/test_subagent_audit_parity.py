@@ -6,11 +6,11 @@ called ``AuditWriter`` even though the SDK persisted the same JSONL
 under ``~/.claude/projects/<key>/<claude_session_id>.jsonl`` that HITL
 used. HATS-535 fixes the asymmetry: ``_finalize_sub_agent`` now
 invokes the ``finalize-subagent`` sub-pipeline (which runs
-``MakeAudit``) when ``work_dir`` + ``claude_session_id`` are both
-known.
+``MakeAudit``) when a ``layout`` standing where the SDK ran and a
+``claude_session_id`` are both known.
 
 This test fakes a minimal JSONL with one user/assistant turn at the
-expected ``~/.claude/projects/<work_dir_key>/<csid>.jsonl`` path, calls
+expected ``~/.claude/projects/<cwd_key>/<csid>.jsonl`` path, calls
 ``_finalize_sub_agent`` with the SDK-path kwargs, and asserts that
 ``audit.md`` ends up containing the ``👤`` + ``👾`` turn markers that
 only the JSONL→AuditWriter path produces.
@@ -21,15 +21,25 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from ai_hats_core.layout import ProjectLayout
+from ai_hats_observe.artifacts import RETRO_LOG, session_dirname
+
 from ai_hats.paths import claude_transcripts_dir
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats_observe import AuditWriter, Session
 from ai_hats.runtime import _finalize_sub_agent
 
 
-def _claude_dir_for(home: Path, work_dir: Path) -> Path:
-    del home  # Path.home() is already monkeypatched by the caller (HATS-1412).
-    d = claude_transcripts_dir(work_dir)
+@pytest.fixture(autouse=True)
+def _claude_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude's record tree under tmp — through the env the resolver reads, not a patch."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "home" / ".claude"))
+
+
+def _claude_dir_for(cwd: Path) -> Path:
+    d = claude_transcripts_dir(cwd)
     d.mkdir(parents=True)
     return d
 
@@ -65,36 +75,16 @@ def _write_minimal_jsonl(jsonl_path: Path, user_text: str, asst_text: str) -> No
     jsonl_path.write_text(json.dumps(user_entry) + "\n" + json.dumps(asst_entry) + "\n")
 
 
-def test_subagent_audit_md_contains_user_and_assistant_markers(
-    tmp_path,
-    monkeypatch,
-):
-    """End-to-end SubAgent parity: ``_finalize_sub_agent`` with
-    ``work_dir`` + ``claude_session_id`` → ``audit.md`` carries
-    ``👤`` + ``👾`` markers (the JSONL-derived structured audit).
-    Pre-HATS-535 these were absent on the SubAgent path."""
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-
-    work_dir = tmp_path / "work"
-    work_dir.mkdir()
-
-    # Fake claude jsonl at the path MakeAudit will look up via
-    # _claude_jsonl_path(work_dir, csid) →
-    # ~/.claude/projects/<work_dir_key>/<csid>.jsonl
-    claude_dir = _claude_dir_for(tmp_path / "home", work_dir)
-    csid = "abc-test-uuid"
-    _write_minimal_jsonl(
-        claude_dir / f"{csid}.jsonl",
-        user_text="say alpha please",
-        asst_text="alpha",
-    )
-
-    # Build a SubAgent-style Session (session_dir under work_dir/.agent).
-    session_dir = work_dir / "session_test"
-    session_dir.mkdir()
-    session = Session(session_id="test", session_dir=session_dir)
+def _project_session(main: Path, session_id: str = "test") -> Session:
+    """A sub-agent's session lives in the PROJECT's run tree, never in its checkout."""
+    session_dir = ProjectLayout.at(main).sessions.runs / session_dirname(session_id)
+    session_dir.mkdir(parents=True)
+    session = Session(session_id=session_id, session_dir=session_dir)
     session.init_audit(role="primary", provider="claude", model="claude-opus-4-7")
+    return session
 
+
+def _finalize(session: Session, layout: ProjectLayout, csid: str) -> None:
     _finalize_sub_agent(
         session,
         role="primary",
@@ -104,13 +94,32 @@ def test_subagent_audit_md_contains_user_and_assistant_markers(
         stdout="alpha",
         stderr="",
         extra_metrics={"claude_session_id": csid},
-        work_dir=work_dir,
+        layout=layout,
         # HATS-867: factories arrive injected (production: CompositionPayload).
         # HATS-1087: transcript_resolver too — production threads it via payload.
         session_factory=Session,
         audit_writer_factory=AuditWriter,
         transcript_resolver=ClaudeSurface().resolve_transcript,
     )
+
+
+def test_subagent_audit_md_contains_user_and_assistant_markers(tmp_path):
+    """End-to-end SubAgent parity: ``_finalize_sub_agent`` with a layout
+    standing where the SDK ran + ``claude_session_id`` → ``audit.md`` carries
+    ``👤`` + ``👾`` markers (the JSONL-derived structured audit).
+    Pre-HATS-535 these were absent on the SubAgent path."""
+    main = tmp_path / "main"
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    csid = "abc-test-uuid"
+    _write_minimal_jsonl(
+        _claude_dir_for(work_dir) / f"{csid}.jsonl",
+        user_text="say alpha please",
+        asst_text="alpha",
+    )
+    session = _project_session(main)
+
+    _finalize(session, ProjectLayout.at(main).with_cwd(work_dir), csid)
 
     audit_text = session.audit_path.read_text()
     assert "👤 say alpha please" in audit_text, (
@@ -122,8 +131,47 @@ def test_subagent_audit_md_contains_user_and_assistant_markers(
     )
 
 
-def test_subagent_audit_md_unchanged_without_work_dir(tmp_path):
-    """Backwards-compat: callers that don't pass ``work_dir`` (legacy
+def test_the_transcript_is_found_under_the_checkouts_real_path(tmp_path):
+    """The SDK keys its record by the REAL path of the dir it ran in — on macOS
+    a ``/var/folders`` worktree is recorded under ``/private/var/folders``. A
+    layout standing on the unresolved path used to miss it."""
+    main = tmp_path / "main"
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    csid = "symlinked-uuid"
+    _write_minimal_jsonl(
+        _claude_dir_for(real.resolve()) / f"{csid}.jsonl",
+        user_text="say beta please",
+        asst_text="beta",
+    )
+    session = _project_session(main)
+
+    _finalize(session, ProjectLayout.at(main).with_cwd(link), csid)
+
+    assert "👾 beta" in session.audit_path.read_text()
+
+
+def test_the_retro_log_lands_in_the_project_not_in_the_checkout(tmp_path):
+    """``finalize-subagent`` also decides on the auto-retro. That decision was
+    logged through a layout re-rooted on the sub-agent's checkout — a discard
+    worktree — so ``retro.log`` was written into a tree about to be deleted."""
+    main = tmp_path / "main"
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    csid = "retro-uuid"
+    _write_minimal_jsonl(_claude_dir_for(work_dir) / f"{csid}.jsonl", "u", "a")
+    session = _project_session(main)
+
+    _finalize(session, ProjectLayout.at(main).with_cwd(work_dir), csid)
+
+    assert (session.session_dir / RETRO_LOG).exists()
+    assert not (work_dir / ".agent").exists()
+
+
+def test_subagent_audit_md_unchanged_without_layout(tmp_path):
+    """Backwards-compat: callers that pass no ``layout`` (legacy
     subprocess providers) keep producing the pre-HATS-535 meta-only
     audit.md — no behaviour change."""
     session_dir = tmp_path / "session_test"
@@ -139,7 +187,7 @@ def test_subagent_audit_md_unchanged_without_work_dir(tmp_path):
         exit_code=0,
         stdout="ok",
         extra_metrics={"claude_session_id": "csid-no-effect"},
-        # work_dir intentionally omitted
+        # layout intentionally omitted
     )
 
     audit_text = session.audit_path.read_text()
@@ -164,7 +212,7 @@ def test_subagent_audit_md_unchanged_without_claude_session_id(tmp_path):
         isolation_mode="discard",
         exit_code=0,
         stdout="ok",
-        work_dir=tmp_path,
+        layout=ProjectLayout.at(tmp_path),
         # extra_metrics omitted → no claude_session_id
     )
 

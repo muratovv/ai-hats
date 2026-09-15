@@ -97,7 +97,9 @@ class TranscriptResolver(Protocol):
 
     def __call__(
         self,
-        project_dir: Path,
+        # Where the surface RAN — `layout.cwd`: a worktree, a subdirectory. The
+        # surface keys its record by it; the project root is where it never was.
+        cwd: Path,
         # ai-hats' own session id, `YYYYMMDD-HHMMSS-<n>-<pid>`. Its first 15 chars
         # ARE the session's start time and the resolver parses them, so this is a
         # timestamped identity, never an opaque uuid (`paths.session_start_ts`).
@@ -285,7 +287,7 @@ class Surface(abc.ABC):
 
     def resolve_transcript(
         self,
-        project_dir: Path,
+        cwd: Path,
         session_id: SessionId,
         *,
         provider_session_id: str | None = None,
@@ -294,12 +296,13 @@ class Surface(abc.ABC):
         """Resolve the path(s) to this surface's structured session transcript(s).
 
         ``transcript_parser`` knows HOW to parse; this knows
-        WHERE to find the file(s). Default [] — no structured transcript → the
-        trace-log fallback (TraceParser on ``session.trace_path``). A surface
-        with a structured session log (Claude JSONL, agy brain segments, cline ``.messages.json``)
-        overrides to discover them.
+        WHERE to find the file(s). ``cwd`` is where the surface ran — the key a
+        surface such as Claude files its record under. Default [] — no
+        structured transcript → the trace-log fallback (TraceParser on
+        ``session.trace_path``). A surface with a structured session log (Claude
+        JSONL, agy brain segments, cline ``.messages.json``) overrides to discover them.
         """
-        del project_dir, session_id, provider_session_id, end_ts
+        del cwd, session_id, provider_session_id, end_ts
         return []
 
     def leaked_user_global_project_hooks(self, home: Path) -> list[str]:

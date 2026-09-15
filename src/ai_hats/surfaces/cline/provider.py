@@ -58,7 +58,7 @@ class ClineSurface(Surface):
 
     def resolve_transcript(
         self,
-        project_dir: Path,
+        cwd: Path,
         session_id: str,
         *,
         provider_session_id: str | None = None,
@@ -66,6 +66,7 @@ class ClineSurface(Surface):
     ) -> list[Path]:
         from ai_hats.paths import resolve_transcript, tool_home
 
+        del cwd  # cline keys its sessions by id, not by where it ran
         sessions_dir = tool_home("cline", "CLINE_DATA_DIR") / "data" / "sessions"
         exact = (
             sessions_dir / provider_session_id / f"{provider_session_id}.messages.json"
