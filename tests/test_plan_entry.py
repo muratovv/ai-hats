@@ -45,12 +45,23 @@ def test_a_tree_entry_carries_its_source_digest_and_no_size():
     assert entry.size is None
 
 
+def test_a_file_copy_holds_no_bytes_and_may_be_private():
+    entry = MaterializationEntry(
+        WriteKind.COPY_FILE, Path("/r/auth.json"), source=Path("/home/u/.codex/auth.json")
+    )
+    assert (entry.digest, entry.size) == (None, None), "the bytes are read at application"
+    private = dataclasses.replace(entry, private=True)
+    assert private.private and private.digest is None
+
+
 @pytest.mark.parametrize(
     "kind, payload",
     [
         (WriteKind.WRITE_TEXT, {}),
         (WriteKind.WRITE_EXECUTABLE, {"source": Path("/x")}),
         (WriteKind.COPY_TREE, {"content": "x"}),
+        (WriteKind.COPY_FILE, {"content": "x"}),
+        (WriteKind.COPY_FILE, {"source": Path("/x"), "tree_digest": "ab" * 32}),
         (WriteKind.SYMLINK, {}),
         (WriteKind.MERGE_JSON, {"content": "{}"}),
         (WriteKind.MKDIR, {"content": "x"}),

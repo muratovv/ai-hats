@@ -30,7 +30,12 @@ class WriteKind(str, Enum):
     WRITE_TEXT = "write_text"
     WRITE_EXECUTABLE = "write_executable"
     COPY_TREE = "copy_tree"
+    #: One file whose bytes live outside the plan — a credential in the user's
+    #: home — read at application, like a tree's.
+    COPY_FILE = "copy_file"
     SYMLINK = "symlink"
+    #: ``data`` is what ai-hats adds to the document; application merges it
+    #: into whatever the file holds and leaves the rest alone.
     MERGE_JSON = "merge_json"
     REMOVE_TREE = "remove_tree"
     MKDIR = "mkdir"
@@ -41,11 +46,14 @@ _PAYLOAD_OF = {
     WriteKind.WRITE_TEXT: "content",
     WriteKind.WRITE_EXECUTABLE: "content",
     WriteKind.COPY_TREE: "source",
+    WriteKind.COPY_FILE: "source",
     WriteKind.SYMLINK: "source",
     WriteKind.MERGE_JSON: "data",
     WriteKind.REMOVE_TREE: None,
     WriteKind.MKDIR: None,
 }
+
+_PRIVATE_KINDS = (WriteKind.WRITE_TEXT, WriteKind.COPY_FILE)
 
 
 @dataclass(frozen=True)
@@ -79,7 +87,7 @@ class MaterializationEntry:
             raise ValueError(f"{self.kind.value} entry carries {sorted(carried)}, needs {payload}")
         if self.tree_digest is not None and self.kind is not WriteKind.COPY_TREE:
             raise ValueError(f"{self.kind.value} entry cannot carry a tree digest")
-        if self.private and self.kind is not WriteKind.WRITE_TEXT:
+        if self.private and self.kind not in _PRIVATE_KINDS:
             raise ValueError(f"{self.kind.value} entry cannot be private")
         if self.data is not None:  # the caller's dict stays the caller's
             object.__setattr__(self, "data", MappingProxyType(dict(self.data)))
@@ -112,6 +120,7 @@ _CREATING = (
     WriteKind.WRITE_TEXT,
     WriteKind.WRITE_EXECUTABLE,
     WriteKind.COPY_TREE,
+    WriteKind.COPY_FILE,
     WriteKind.SYMLINK,
     WriteKind.MERGE_JSON,
 )
@@ -158,6 +167,10 @@ def describe_copy_tree(src: Path, dest: Path) -> MaterializationEntry:
         source=src,
         tree_digest=dir_digest(src) if src.is_dir() else None,
     )
+
+
+def describe_copy_file(src: Path, dest: Path, *, private: bool = False) -> MaterializationEntry:
+    return MaterializationEntry(kind=WriteKind.COPY_FILE, target=dest, source=src, private=private)
 
 
 def describe_symlink(src: Path, dest: Path) -> MaterializationEntry:

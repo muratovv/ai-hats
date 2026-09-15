@@ -28,6 +28,7 @@ from ai_hats.surfaces.plan import (
     PromptBlock,
     PromptMember,
     StalePlan,
+    UnmergeableTarget,
 )
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 
@@ -167,7 +168,7 @@ def test_one_changed_entry_reaches_exactly_its_own_primitive(tmp_path: Path, wri
 
     apply(MaterializationPlan(**{**vars(plan), "entries": tuple(changed)}))
 
-    assert writes == ["write_text"]
+    assert writes == ["write_bytes"]
     assert (plan.root / "prompt.md").read_text() == "# other\n"
 
 
@@ -248,6 +249,147 @@ def test_a_stray_file_in_a_synced_tree_is_removed(tmp_path: Path, writes: list[s
     assert writes == ["unlink"]
     assert not junk.exists()
     assert (plan.root / "skills" / "s" / "SKILL.md").read_text() == "# s (rendered)\n"
+
+
+def test_a_file_copy_reads_its_source_at_application(tmp_path: Path, writes: list[str]):
+    root = tmp_path / "s"
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "auth.json").write_text('{"token": "t1"}')
+    plan = _plan(
+        root,
+        MaterializationEntry(
+            WriteKind.COPY_FILE, root / "auth.json", source=home / "auth.json", private=True
+        ),
+    )
+
+    apply(plan)
+    assert (root / "auth.json").read_text() == '{"token": "t1"}'
+    assert (root / "auth.json").stat().st_mode & 0o777 == 0o600
+    writes.clear()
+
+    apply(plan)
+    assert writes == []
+
+    (home / "auth.json").write_text('{"token": "t2"}')
+    apply(plan)
+    assert (root / "auth.json").read_text() == '{"token": "t2"}'
+
+
+def test_a_file_copy_whose_source_is_gone_is_refused_before_any_write(tmp_path: Path, writes):
+    root = tmp_path / "s"
+    plan = _plan(
+        root,
+        MaterializationEntry(WriteKind.WRITE_TEXT, root / "prompt.md", content="# hi\n"),
+        MaterializationEntry(WriteKind.COPY_FILE, root / "auth.json", source=tmp_path / "gone"),
+    )
+    with pytest.raises(StalePlan):
+        apply(plan)
+    assert writes == []
+    assert not (root / "prompt.md").exists()
+
+
+def _managed(command: str, tag: str = "ai-hats:dispatcher") -> dict:
+    return {"matcher": "*", "command": command, "_ai_hats_managed": tag}
+
+
+def test_merge_json_adds_to_a_user_owned_document_and_leaves_the_rest_alone(
+    tmp_path: Path, writes: list[str]
+):
+    root = tmp_path / "s"
+    settings = tmp_path / "home" / "settings.json"
+    settings.parent.mkdir()
+    theirs = {"matcher": "Edit", "command": "their-own-hook"}
+    settings.write_text(
+        json.dumps({"theme": "dark", "hooks": {"PreToolUse": [theirs], "Stop": [theirs]}})
+    )
+    patch = {"hooks": {"PreToolUse": [_managed("v1")], "PostToolUse": [_managed("v1")]}}
+    plan = _plan(root, MaterializationEntry(WriteKind.MERGE_JSON, settings, data=patch, escape=True))
+
+    apply(plan)
+    merged = json.loads(settings.read_text())
+    assert merged["theme"] == "dark"
+    assert merged["hooks"]["PreToolUse"] == [theirs, _managed("v1")]
+    assert merged["hooks"]["PostToolUse"] == [_managed("v1")]
+    assert merged["hooks"]["Stop"] == [theirs]
+    writes.clear()
+
+    apply(plan)
+    assert writes == []
+
+    newer = {"hooks": {"PreToolUse": [_managed("v2")]}}
+    apply(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, settings, data=newer, escape=True)))
+    merged = json.loads(settings.read_text())
+    assert merged["hooks"]["PreToolUse"] == [theirs, _managed("v2")], "replaced by its tag"
+    assert merged["hooks"]["PostToolUse"] == [_managed("v1")], "a key the patch omits is kept"
+
+
+def test_merge_json_replaces_a_managed_entry_the_patch_dropped_but_never_a_foreign_one(
+    tmp_path: Path,
+):
+    root = tmp_path / "s"
+    settings = root / "settings.json"
+    root.mkdir()
+    theirs = {"matcher": "Edit", "command": "their-own-hook"}
+    settings.write_text(
+        json.dumps({"hooks": {"PreToolUse": [_managed("a", "ai-hats:a"), theirs]}})
+    )
+
+    apply(
+        _plan(
+            root,
+            MaterializationEntry(
+                WriteKind.MERGE_JSON,
+                settings,
+                data={"hooks": {"PreToolUse": [_managed("b", "ai-hats:b")]}},
+            ),
+        )
+    )
+
+    merged = json.loads(settings.read_text())
+    assert merged["hooks"]["PreToolUse"] == [theirs, _managed("b", "ai-hats:b")]
+
+
+def test_merge_json_replaces_a_plain_list_and_a_scalar_wholesale(tmp_path: Path):
+    root = tmp_path / "s"
+    config = root / "opencode.json"
+    root.mkdir()
+    config.write_text(json.dumps({"agent": {"x": {"tools": ["a", "b"], "mode": "primary"}}}))
+
+    apply(
+        _plan(
+            root,
+            MaterializationEntry(
+                WriteKind.MERGE_JSON, config, data={"agent": {"x": {"tools": ["c"], "mode": "sub"}}}
+            ),
+        )
+    )
+
+    assert json.loads(config.read_text()) == {"agent": {"x": {"tools": ["c"], "mode": "sub"}}}
+
+
+def test_merge_json_creates_the_document_when_there_is_none(tmp_path: Path):
+    root = tmp_path / "s"
+    apply(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, root / "c.json", data={"a": 1})))
+    assert json.loads((root / "c.json").read_text()) == {"a": 1}
+
+
+def test_merge_json_refuses_a_target_that_is_not_a_json_object_before_any_write(
+    tmp_path: Path, writes
+):
+    root = tmp_path / "s"
+    root.mkdir()
+    (root / "broken.json").write_text("{not json")
+    plan = _plan(
+        root,
+        MaterializationEntry(WriteKind.WRITE_TEXT, root / "prompt.md", content="# hi\n"),
+        MaterializationEntry(WriteKind.MERGE_JSON, root / "broken.json", data={"a": 1}),
+    )
+    writes.clear()
+    with pytest.raises(UnmergeableTarget):
+        apply(plan)
+    assert writes == []
+    assert (root / "broken.json").read_text() == "{not json", "a broken user file is not clobbered"
 
 
 def test_a_symlink_pointing_elsewhere_is_repointed(tmp_path: Path):

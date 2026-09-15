@@ -31,6 +31,7 @@ from ..materialization import (
     render_json,
 )
 from ..session_artifacts import RunMode, SessionPolicy
+from .managed_tags import CLAUDE_TAG_KEY as MANAGED_TAG_KEY
 
 # ── digests fold down the tree ──────────────────────────────────────────────
 
@@ -325,17 +326,28 @@ class EscapeUndeclared(PlanRefused):
 
 
 class StalePlan(PlanRefused):
-    """A source tree no longer holds the bytes the plan was made against."""
+    """A source no longer holds what the plan was made against — a tree whose
+    digest moved, a file that is gone."""
 
     def __init__(self, entry: MaterializationEntry) -> None:
         self.entry = entry
-        super().__init__(f"{entry.source} changed since the plan digested it; plan again")
+        super().__init__(f"{entry.source} is not what the plan was made against; plan again")
+
+
+class UnmergeableTarget(PlanRefused):
+    """A JSON merge target that holds something other than a JSON object —
+    a person's file, refused rather than overwritten."""
+
+    def __init__(self, entry: MaterializationEntry, why: str) -> None:
+        self.entry = entry
+        super().__init__(f"{entry.target} cannot be merged into: {why}")
 
 
 _CREATING = (
     WriteKind.WRITE_TEXT,
     WriteKind.WRITE_EXECUTABLE,
     WriteKind.COPY_TREE,
+    WriteKind.COPY_FILE,
     WriteKind.SYMLINK,
     WriteKind.MERGE_JSON,
 )
@@ -374,21 +386,63 @@ def apply(plan: MaterializationPlan) -> None:
     shadowed = {e.target for e in plan.entries if e.kind in _SHADOWING}
     with _lock(plan.root):
         for entry in plan.entries:
-            if entry.kind is WriteKind.COPY_TREE and _stale(entry):
+            if _stale(entry):
                 raise StalePlan(entry)
+            if entry.kind is WriteKind.MERGE_JSON:
+                _current_document(entry)
         for entry in plan.entries:
             _PERFORM[entry.kind](entry, shadowed)
 
 
 def _stale(entry: MaterializationEntry) -> bool:
+    if entry.kind is WriteKind.COPY_FILE:
+        return not cast(Path, entry.source).is_file()
     return (
         entry.tree_digest is not None and dir_digest(cast(Path, entry.source)) != entry.tree_digest
     )
 
 
+def _current_document(entry: MaterializationEntry) -> dict:
+    """What a merge target holds now: an empty document where there is no file."""
+    import json
+
+    if entry.target.is_symlink() or not entry.target.exists():
+        return {}
+    if not entry.target.is_file():
+        raise UnmergeableTarget(entry, "not a file")
+    try:
+        document = json.loads(entry.target.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise UnmergeableTarget(entry, f"not JSON ({exc})") from exc
+    if not isinstance(document, dict):
+        raise UnmergeableTarget(entry, "a JSON value that is not an object")
+    return document
+
+
+def _merge_document(current: object, patch: object) -> object:
+    """``patch`` over ``current``: objects merge key by key; a list merges by
+    managed tag — the entries ai-hats tagged are replaced as a set, a person's
+    are kept — and a list without tags, like a scalar, is replaced whole."""
+    if isinstance(current, Mapping) and isinstance(patch, Mapping):
+        merged = dict(current)
+        for key, value in patch.items():
+            merged[key] = _merge_document(current.get(key), value) if key in current else value
+        return merged
+    if isinstance(current, list) and isinstance(patch, list) and any(map(_tag_of, patch)):
+        theirs = [item for item in current if _tag_of(item) is None]
+        return [*theirs, *patch]
+    return patch
+
+
+def _tag_of(item: object) -> str | None:
+    tag = item.get(MANAGED_TAG_KEY) if isinstance(item, Mapping) else None
+    return tag if isinstance(tag, str) else None
+
+
 _SHADOWING = (
     WriteKind.WRITE_TEXT,
     WriteKind.WRITE_EXECUTABLE,
+    WriteKind.COPY_FILE,
     WriteKind.MERGE_JSON,
     WriteKind.SYMLINK,
 )
@@ -440,19 +494,28 @@ def _write_bytes(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _write_text(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
-    content, payload = cast(str, entry.content), cast(bytes, entry.bytes)
-    if entry.private:
-        from ai_hats_core.atomic_io import atomic_write_text
+def _put_bytes(path: Path, payload: bytes, *, private: bool) -> None:
+    """Write ``payload`` at ``path`` unless it is already there with the right mode."""
+    if private:
+        from ai_hats_core.atomic_io import atomic_write_bytes
 
-        if _same_bytes(entry.target, payload) and entry.target.stat().st_mode & 0o777 == 0o600:
+        if _same_bytes(path, payload) and path.stat().st_mode & 0o777 == 0o600:
             return
-        _make_way_for_a_file(entry.target)
-        atomic_write_text(entry.target, content, mode=0o600)
+        _make_way_for_a_file(path)
+        atomic_write_bytes(path, payload, mode=0o600)
         return
-    if _same_bytes(entry.target, payload):
+    if _same_bytes(path, payload):
         return
-    _write_bytes(entry.target, content)
+    _make_way_for_a_file(path)
+    path.write_bytes(payload)
+
+
+def _write_text(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
+    _put_bytes(entry.target, cast(bytes, entry.bytes), private=entry.private)
+
+
+def _copy_file(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
+    _put_bytes(entry.target, cast(Path, entry.source).read_bytes(), private=entry.private)
 
 
 def _write_executable(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
@@ -501,10 +564,10 @@ def _symlink(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
 
 
 def _merge_json(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
-    data = dict(cast(Mapping[str, object], entry.data))
-    if not entry.target.is_symlink() and not json_differs(entry.target, data):
+    merged = cast(dict, _merge_document(_current_document(entry), dict(cast(Mapping, entry.data))))
+    if not entry.target.is_symlink() and not json_differs(entry.target, merged):
         return
-    _write_bytes(entry.target, render_json(data))
+    _write_bytes(entry.target, render_json(merged))
 
 
 def _remove_tree(entry: MaterializationEntry, _shadowed: set[Path]) -> None:
@@ -524,6 +587,7 @@ _PERFORM = {
     WriteKind.WRITE_TEXT: _write_text,
     WriteKind.WRITE_EXECUTABLE: _write_executable,
     WriteKind.COPY_TREE: _copy_tree,
+    WriteKind.COPY_FILE: _copy_file,
     WriteKind.SYMLINK: _symlink,
     WriteKind.MERGE_JSON: _merge_json,
     WriteKind.REMOVE_TREE: _remove_tree,
