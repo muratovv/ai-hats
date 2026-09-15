@@ -85,11 +85,11 @@ DRIVER_SOURCE = textwrap.dedent(
     transcript = Path({transcript!r})
 
     class StandIn(ClaudeSurface):
-        def resolve_transcript(self, project_dir, session_id, *, provider_session_id=None, end_ts=None):
+        def resolve_transcript(self, cwd, session_id, *, provider_session_id=None, end_ts=None):
             return [transcript] if transcript.exists() else []
 
     writer = start_event_log(
-        StandIn(), session, project_dir=session_dir.parent, provider_session_id="stand-in"
+        StandIn(), session, cwd=session_dir.parent, provider_session_id="stand-in"
     )
     runner = WrapRunner.__new__(WrapRunner)
     rc = WrapRunner._pty_spawn(

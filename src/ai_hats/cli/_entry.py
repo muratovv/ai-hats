@@ -10,6 +10,7 @@ this split prevents.
 
 from __future__ import annotations
 
+import logging
 import os
 import warnings
 from pathlib import Path
@@ -31,6 +32,8 @@ from ..project import Project
 from ..session_identity import SessionIdentity
 from ..version_refs import read_current_sha
 
+logger = logging.getLogger(__name__)
+
 
 def resolve_project(
     start: Path | None = None,
@@ -46,7 +49,7 @@ def resolve_project(
     """
     env = dict(os.environ if environ is None else environ)
     root = _resolve_root(start, env)
-    return _assemble(root, _load_config(root), env)
+    return _assemble(root, _load_config(root), env, cwd=_resolve_cwd(start, root))
 
 
 def resolve_project_lenient(
@@ -78,7 +81,23 @@ def resolve_project_lenient(
         root = _resolve_root(start, env)  # it resolved; the config is what failed
         click.echo(f"Warning: {root / PROJECT_CONFIG} will not load — using defaults.", err=True)
         click.echo(f"  {exc}", err=True)
-        return _assemble(root, ProjectConfig(), env)
+        return _assemble(root, ProjectConfig(), env, cwd=_resolve_cwd(start, root))
+
+
+def _resolve_cwd(start: Path | None, root: Path) -> Path:
+    """Where the process stands, resolved once here with the root (ADR-0026 D2).
+
+    Reachable with a dead cwd only through the envelope: the walk raised
+    ``DeadCwdError`` before this. A hook whose worktree was torn down under it
+    then stands at the root, and the log says so.
+    """
+    if start is not None:
+        return start.expanduser().resolve()
+    try:
+        return Path.cwd().resolve()
+    except OSError as exc:
+        logger.warning("cwd is gone (%s) — standing at the project root %s", exc, root)
+        return root
 
 
 def _resolve_root(start: Path | None, env: Mapping[str, str]) -> Path:
@@ -106,8 +125,10 @@ def project_at(root: Path, environ: Mapping[str, str] | None = None) -> Project:
     return _assemble(root, _load_config(root), env)
 
 
-def _assemble(root: Path, config: ProjectConfig, env: Mapping[str, str]) -> Project:
-    layout = ProjectLayout.compute(root, env, ai_hats_dir=config.ai_hats_dir)
+def _assemble(
+    root: Path, config: ProjectConfig, env: Mapping[str, str], *, cwd: Path | None = None
+) -> Project:
+    layout = ProjectLayout.compute(root, env, ai_hats_dir=config.ai_hats_dir, cwd=cwd)
     return Project(
         layout=layout,
         config=config,
@@ -175,4 +196,5 @@ def _library_layers(layout: ProjectLayout, config: ProjectConfig) -> tuple[Path,
     for raw in config.library_paths:
         candidate = Path(raw).expanduser()
         extra.append(candidate if candidate.is_absolute() else layout.root / candidate)
-    return (*builtin_library_layers(layout.root), *extra)
+    # cwd handed down, not re-read: the layout resolved it once, dead or alive
+    return (*builtin_library_layers(layout.root, cwd=layout.cwd), *extra)

@@ -153,6 +153,37 @@ def test_at_anchors_without_resolution(tmp_path: Path) -> None:
     assert layout.base == tmp_path / "bare" / ".agent" / "ai-hats"
 
 
+# -- cwd: where the process stands, which is not always the root -------------
+
+
+def test_a_layout_built_without_a_cwd_stands_at_its_root(tmp_path: Path) -> None:
+    assert ProjectLayout.at(tmp_path / "bare").cwd == tmp_path / "bare"
+    assert ProjectLayout(root=tmp_path, base=tmp_path / ".agent").cwd == tmp_path
+    assert ProjectLayout.compute(tmp_path / "proj", {}).cwd == tmp_path / "proj"
+
+
+def test_compute_keeps_the_cwd_it_is_given(tmp_path: Path) -> None:
+    """A process standing in a linked worktree resolves the MAIN checkout as its
+    root — and the worktree is where a surface it launches keys its record."""
+    layout = ProjectLayout.compute(tmp_path / "main", {}, cwd=tmp_path / "wt")
+    assert (layout.root, layout.cwd) == (tmp_path / "main", tmp_path / "wt")
+
+
+def test_with_cwd_moves_only_the_standing_point(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    base = ProjectLayout.compute(tmp_path / "main", {"AI_HATS_CACHE_HOME": str(tmp_path / "c")})
+
+    moved = base.with_cwd(link)
+
+    # the surface keys its record by the real path, so the copy holds it resolved
+    assert moved.cwd == real.resolve()
+    assert (moved.root, moved.base, moved.cache_root) == (base.root, base.base, base.cache_root)
+    assert base.cwd == tmp_path / "main"  # the original is untouched
+
+
 # -- per-consumer views -----------------------------------------------------
 
 

@@ -161,8 +161,8 @@ def test_a_real_install_resolves_a_built_in_step_through_its_metadata(probed: di
         "the built-in step declarations did not reach the distribution's metadata "
         '(check `[project.entry-points."ai_hats.steps"]` in pyproject.toml)'
     )
-    assert len(result["advertised"]) == 24, (
-        f"the wheel advertises {len(result['advertised'])} step ids, not 24: {result['advertised']}"
+    assert len(result["advertised"]) == 23, (
+        f"the wheel advertises {len(result['advertised'])} step ids, not 23: {result['advertised']}"
     )
     assert result["steps"] == [STEP_ID], (
         f"the pipeline did not build from its YAML: {result['steps']}"

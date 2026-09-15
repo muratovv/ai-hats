@@ -107,6 +107,69 @@ def _no_venv_env(monkeypatch):
     monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
 
 
+# -- cwd: the entry point resolves it once, with the root -------------------
+
+
+def _linked_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """An onboarded main checkout and a linked worktree standing beside it."""
+    main = tmp_path / "main"
+    wt_git = main / ".git" / "worktrees" / "x"
+    wt_git.mkdir(parents=True)
+    (wt_git / "commondir").write_text("../..\n")
+    (main / ".agent" / "ai-hats").mkdir(parents=True)
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / ".git").write_text(f"gitdir: {wt_git}\n")
+    return main.resolve(), wt.resolve()
+
+
+def test_the_entry_keeps_the_worktree_it_stood_in(tmp_path: Path) -> None:
+    """The defect: a session launched from a task worktree resolved the main
+    checkout as its root, and the root was all that survived — so finalize
+    looked for the surface's record where the surface never ran."""
+    from ai_hats.cli._entry import resolve_project
+
+    main, wt = _linked_worktree(tmp_path)
+
+    layout = resolve_project(wt, {}).layout
+
+    assert (layout.root, layout.cwd) == (main, wt)
+
+
+def test_the_entry_reads_the_process_cwd_and_survives_losing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With no ``start`` the entry point reads the process cwd — its job, so the
+    one ``chdir`` here is the test's input, not a seam the code should have.
+    Then the same process loses that directory under it (a hook whose worktree
+    was torn down): inside a session the root comes from the envelope, and the
+    layout stands at the root and says so, rather than raising."""
+    from ai_hats.cli._entry import resolve_project
+    from ai_hats.session_identity import SessionIdentity
+
+    main, wt = _linked_worktree(tmp_path)
+    monkeypatch.chdir(wt)
+
+    live = resolve_project(None, {}).layout
+    assert (live.root, live.cwd) == (main, wt)
+
+    env = SessionIdentity(
+        id="s1", role="r", provider="claude", project_dir=main, session_dir=main / "s"
+    ).to_env()
+    wt.joinpath(".git").unlink()
+    wt.rmdir()
+    with caplog.at_level("WARNING"):
+        dead = resolve_project(None, env).layout
+
+    assert (dead.root, dead.cwd) == (main, main)
+    assert any("cwd" in rec.getMessage() for rec in caplog.records)
+
+
+def test_project_at_stands_at_the_root_it_is_handed(tmp_path: Path) -> None:
+    (tmp_path / ".agent" / "ai-hats").mkdir(parents=True)
+    assert project_at(tmp_path, {}).layout.cwd == tmp_path
+
+
 def test_project_venv_default(tmp_path):
     """No env, no yaml, no version → <base>/.venv."""
     assert project_at(tmp_path, os.environ).venv == tmp_path / ".agent" / "ai-hats" / ".venv"

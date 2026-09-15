@@ -83,7 +83,6 @@ class ComputeUsage(Step):
         transcript_resolver=None,
         **_: Any,
     ) -> dict[str, Any]:
-        project_dir = layout.root
         from ai_hats_observe.parsers.claude import ClaudeParser
 
         # usage/v1 rides the surface's transcript parser; the seam
@@ -94,10 +93,11 @@ class ComputeUsage(Step):
 
         usage_path = session_dir / USAGE_JSON
         try:
-            # Provider owns discovery; no resolver → empty.
+            # Provider owns discovery; no resolver → empty. Keyed by where the
+            # surface ran (layout.cwd), as in make_audit.
             jsonl_path = (
                 transcript_resolver(
-                    project_dir,
+                    layout.cwd,
                     session_id,
                     provider_session_id=claude_session_id or None,
                 )

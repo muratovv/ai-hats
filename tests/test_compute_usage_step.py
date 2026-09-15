@@ -112,6 +112,35 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
     assert report["aggregates"]["tool_success_rate"] == 0.75
 
 
+def test_resolves_the_transcript_where_the_surface_ran_not_at_the_root(tmp_path, monkeypatch):
+    """Same split as make_audit: the surface keyed its record by the worktree
+    it ran in, the layout's root is the main checkout."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "home" / ".claude"))
+    session = make_session(tmp_path)
+    main = tmp_path / "main"
+    worktree = tmp_path / "worktree"
+    main.mkdir()
+    worktree.mkdir()
+    csid = "wt-session-uuid"
+    (_claude_dir_for(tmp_path / "home", worktree) / f"{csid}.jsonl").write_text(
+        (TRANSCRIPTS / "normal.jsonl").read_text()
+    )
+
+    def run_with(layout: ProjectLayout) -> dict:
+        return ComputeUsage().run(
+            session_id=session.session_id,
+            session_dir=session.session_dir,
+            claude_session_id=csid,
+            layout=layout,
+            transcript_resolver=_claude_resolver,
+        )
+
+    assert run_with(ProjectLayout.at(main)) == {}  # positive control: the root alone misses
+    assert run_with(ProjectLayout.at(main).with_cwd(worktree)) == {
+        "usage_path": session.session_dir / USAGE_JSON
+    }
+
+
 def test_discovers_the_jsonl_when_no_session_id_was_taken(
     tmp_path,
     monkeypatch,
