@@ -33,10 +33,26 @@
 classify_command() {
     local cmd="$1"
 
+    # A command may begin at the start of the string or after a chain operator.
+    local lead='(^|[;&|(`${[:space:]])'
+    # Options a binary accepts BEFORE its verb — git's globals (`-C <path>`,
+    # `-c k=v`, `--git-dir=…`, `-P`), gh's `-R <repo>` — each optionally taking
+    # one value token. Generic on purpose: git and gh refuse an unknown option
+    # themselves, and an over-match here costs an `ask`, never a deny.
+    local opts='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
+    # The verb is a whole token: `push` but not `push.default` or `pushd`.
+    local end='([[:space:]]|$)'
+    local sp='[[:space:]]+'
+    local git_push="${lead}git${opts}${sp}push${end}"
+    local gh_pr_merge="${lead}gh${opts}${sp}pr${opts}${sp}merge${end}"
+    local gh_pr_open_close="${lead}gh${opts}${sp}pr${opts}${sp}(create|close)${end}"
+    local gh_issue_comment="${lead}gh${opts}${sp}issue${opts}${sp}comment${end}"
+    local gh_release_create="${lead}gh${opts}${sp}release${opts}${sp}create${end}"
+
     # --- irreversible ---
     # gh pr merge (any variant of "gh<sp>pr<sp>merge" with at least one space
     # separator; tolerates leading subshells / chained operators).
-    if [[ "$cmd" =~ (^|[\;\&\|\(\`\$\{[:space:]])gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$) ]]; then
+    if [[ "$cmd" =~ $gh_pr_merge ]]; then
         echo irreversible
         return 0
     fi
@@ -44,7 +60,7 @@ classify_command() {
     # git push --force / -f / --force-with-lease
     # We match "git<sp>push" followed (anywhere later, same logical command)
     # by --force / --force-with-lease / -f as a standalone token.
-    if [[ "$cmd" =~ (^|[\;\&\|\(\`\$\{[:space:]])git[[:space:]]+push([[:space:]]|$) ]]; then
+    if [[ "$cmd" =~ $git_push ]]; then
         # Filter on the force flags as standalone tokens.
         if [[ "$cmd" =~ (^|[[:space:]])(--force|--force-with-lease|-f)([[:space:]=]|$) ]]; then
             echo irreversible
@@ -73,20 +89,20 @@ classify_command() {
     fi
 
     # --- shared ---
-    if [[ "$cmd" =~ (^|[\;\&\|\(\`\$\{[:space:]])gh[[:space:]]+pr[[:space:]]+(create|close)([[:space:]]|$) ]]; then
+    if [[ "$cmd" =~ $gh_pr_open_close ]]; then
         echo shared
         return 0
     fi
-    if [[ "$cmd" =~ (^|[\;\&\|\(\`\$\{[:space:]])gh[[:space:]]+issue[[:space:]]+comment([[:space:]]|$) ]]; then
+    if [[ "$cmd" =~ $gh_issue_comment ]]; then
         echo shared
         return 0
     fi
-    if [[ "$cmd" =~ (^|[\;\&\|\(\`\$\{[:space:]])gh[[:space:]]+release[[:space:]]+create([[:space:]]|$) ]]; then
+    if [[ "$cmd" =~ $gh_release_create ]]; then
         echo shared
         return 0
     fi
     # --- gated ---
-    if [[ "$cmd" =~ (^|[\;\&\|\(\`\$\{[:space:]])git[[:space:]]+push([[:space:]]|$) ]]; then
+    if [[ "$cmd" =~ $git_push ]]; then
         # --dry-run contacts the remote but writes nothing. Checked HERE, not
         # globally: the irreversible patterns above have already returned, so
         # a chained `git push --dry-run && gh pr merge` cannot mask itself.
