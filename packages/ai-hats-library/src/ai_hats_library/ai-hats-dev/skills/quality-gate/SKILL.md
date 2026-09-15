@@ -215,6 +215,10 @@ own. Measured 2026-09-03 with a warm uv cache: +2.5 s on `lint`, +5 s on a
 35 s `unit`. A dirty desk therefore never taints a marker and never blocks
 one, and `REV=` is not a cost worth working around.
 
+Either way the stages run under that checkout's `.venv`, and the gate leads
+`PATH` with it: a bare `python3` or `pytest` a test spawns is the same
+interpreter. Nothing to activate or prefix in your shell first.
+
 ## Pushing master
 
     scripts/run-e2e-gate.sh    # out of band, BEFORE the push
