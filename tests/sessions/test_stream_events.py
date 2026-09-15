@@ -156,6 +156,51 @@ def _signals(events) -> list:
 
 
 # ---------------------------------------------------------------------------
+# 0. A person interrupting — the same reading the transcript gives
+# ---------------------------------------------------------------------------
+
+
+class TestInterrupt:
+    def test_the_marker_is_not_a_prompt_and_cancels_what_was_open(self):
+        events = drain(
+            [
+                _assistant(ThinkingBlock(thinking="half", signature="sig"), stop_reason=None),
+                UserMessage(content=[TextBlock(text="[Request interrupted by user]")]),
+                UserMessage(content="do the other thing instead"),
+            ]
+        )
+
+        assert [e.text for e in events if isinstance(e, PromptReceived)] == [
+            "do the other thing instead"
+        ]
+        ended = [e for e in events if isinstance(e, ResponseEnded)]
+        assert [e.completion for e in ended] == [Completion.CANCELLED]
+        assert [(n.reason, n.raw_code) for n in _signals(events)] == [
+            (WorthRecording.INTERRUPTED, "[Request interrupted by user]")
+        ]
+
+    def test_the_model_s_own_stop_reason_outranks_the_marker(self):
+        events = drain(
+            [
+                _assistant(
+                    ToolUseBlock(id="call_1", name="Bash", input={}), stop_reason="tool_use"
+                ),
+                UserMessage(
+                    content=[
+                        ToolResultBlock(
+                            tool_use_id="call_1", content="The user doesn't want", is_error=True
+                        )
+                    ]
+                ),
+                UserMessage(content=[TextBlock(text="[Request interrupted by user for tool use]")]),
+            ]
+        )
+        ended = [e for e in events if isinstance(e, ResponseEnded)]
+        assert [e.completion for e in ended] == [Completion.COMPLETE]
+        assert [n.reason for n in _signals(events)] == [WorthRecording.INTERRUPTED]
+
+
+# ---------------------------------------------------------------------------
 # 1. A normal turn
 # ---------------------------------------------------------------------------
 

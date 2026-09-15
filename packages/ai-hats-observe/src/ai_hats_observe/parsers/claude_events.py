@@ -122,6 +122,16 @@ _SILENT_SYSTEM_SUBTYPES = frozenset(
 # Content blocks that are known but carry nothing the canonical items model.
 _IGNORED_BLOCKS = frozenset({"image"})
 
+#: What the harness writes as user text when a person stops the turn — a
+#: marker, not input. Verbatim, no variants in the measured corpus. Shared with
+#: the SDK reader: one marker set, one reading, whichever source carried it.
+INTERRUPT_MARKERS = frozenset(
+    {
+        "[Request interrupted by user]",
+        "[Request interrupted by user for tool use]",
+    }
+)
+
 # "…Switched to Opus 4.8. Send feedback…" — the fallback model as prose, read
 # only when the record omits the `fallbackModel` field.
 _SWITCHED_TO = re.compile(r"Switched to (.+?)\.(?:\s|$)")
@@ -368,7 +378,25 @@ class ClaudeTranscriptReader:
             for b in content
             if isinstance(b, dict) and b.get("type") == "text"
         ]
-        yield from self._prompt("\n".join(t for t in texts if t), ts)
+        text = "\n".join(t for t in texts if t)
+        if text.strip() in INTERRUPT_MARKERS:
+            yield from self._interrupted(text.strip(), ts)
+            return
+        yield from self._prompt(text, ts)
+
+    def _interrupted(self, marker: str, ts: Timestamp | None) -> Iterator[Event]:
+        """A person stopped the turn. The model's own stop reason wins; only a
+        response it never got to close reads as cancelled."""
+        state = self._open
+        if state is not None and not state.stop_reason:
+            state.completion = Completion.CANCELLED
+        yield from self._end_open()
+        yield Notice(
+            ts=ts,
+            raw_code=marker,
+            source=SOURCE,
+            reason=WorthRecording.INTERRUPTED,
+        )
 
     def _tool_result(self, block: dict[str, Any], ts: Timestamp | None) -> Iterator[Event]:
         call_id = ToolCallId(str(block.get("tool_use_id", "")))

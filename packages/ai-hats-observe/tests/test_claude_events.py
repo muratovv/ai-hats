@@ -726,6 +726,65 @@ def test_a_prompt_arriving_mid_response_does_not_end_the_call(tmp_path: Path) ->
     assert [e.text for e in events if isinstance(e, PromptReceived)] == ["wait, also do this"]
 
 
+# --- a person interrupting ---------------------------------------------------
+
+
+def test_an_interrupt_mid_answer_cancels_the_response_and_is_not_a_prompt(tmp_path: Path) -> None:
+    """``[Request interrupted by user]`` is a marker the harness writes as user
+    text (29 in the measured corpus); it is not input. The response it cut is
+    over, and the only word for how is ``CANCELLED`` — the model never reported
+    a stop. Positive control: the real prompt after it is still a prompt."""
+    records = [
+        assistant("req-a", [{"type": "thinking", "thinking": "half"}], stop_reason=None),
+        user([{"type": "text", "text": "[Request interrupted by user]"}]),
+        user("do the other thing instead"),
+    ]
+    events = events_of(tmp_path, records)
+
+    assert [e.text for e in events if isinstance(e, PromptReceived)] == [
+        "do the other thing instead"
+    ]
+    ended = [e for e in events if isinstance(e, ResponseEnded)]
+    assert [(e.response_id, e.completion) for e in ended] == [("req-a", Completion.CANCELLED)]
+    notices = [n for n in signals(events) if isinstance(n, Notice)]
+    assert [(n.reason, n.raw_code) for n in notices] == [
+        (WorthRecording.INTERRUPTED, "[Request interrupted by user]")
+    ]
+    assert notices[0].ts == "2026-09-12T10:00:01.000Z"
+    # the response is ended AT the marker, not held open for the next call
+    assert events.index(ended[0]) < events.index(notices[0])
+
+
+def test_an_interrupt_of_a_tool_keeps_the_model_s_own_stop_reason(tmp_path: Path) -> None:
+    """``… for tool use]`` (22 in the corpus) follows a tool_result the harness
+    refused; the model had already stopped to ask for the tool, so its
+    outcome stands — the person cancelled the tool, not the answer."""
+    records = [
+        assistant("req-a", [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {}}]),
+        user(
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "c1",
+                    "is_error": True,
+                    "content": "The user doesn't want to proceed with this tool use.",
+                }
+            ]
+        ),
+        user([{"type": "text", "text": "[Request interrupted by user for tool use]"}]),
+    ]
+    events = events_of(tmp_path, records)
+
+    assert not [e for e in events if isinstance(e, PromptReceived)]
+    ended = [e for e in events if isinstance(e, ResponseEnded)]
+    assert [(e.completion, e.stop_reason) for e in ended] == [(Completion.COMPLETE, "tool_use")]
+    assert [n.reason for n in signals(events) if isinstance(n, Notice)] == [
+        WorthRecording.INTERRUPTED
+    ]
+    # POSITIVE CONTROL: the refused result was still read
+    assert [r.ok for r in items(events, ItemKind.TOOL_RESULT)] == [False]
+
+
 # --- fail-soft -------------------------------------------------------------
 
 

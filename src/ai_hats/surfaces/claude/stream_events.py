@@ -41,6 +41,7 @@ from ai_hats_observe.canonical import (
     Usage,
     WorthRecording,
 )
+from ai_hats_observe.parsers.claude_events import INTERRUPT_MARKERS
 
 __all__ = ["SOURCE", "ClaudeStreamReader"]
 
@@ -123,6 +124,8 @@ class _OpenResponse:
     model: ModelName | None = None
     usage: Usage = Usage()
     stop_reason: str | None = None
+    # set from outside the model's own report: an interrupt, so far
+    completion: Completion | None = None
 
 
 class ClaudeStreamReader:
@@ -249,7 +252,8 @@ class ClaudeStreamReader:
         return [
             ResponseEnded(
                 response_id=open_response.response_id,
-                completion=_completion(open_response.stop_reason, terminal_reason),
+                completion=open_response.completion
+                or _completion(open_response.stop_reason, terminal_reason),
                 usage=open_response.usage,
                 stop_reason=open_response.stop_reason,
             )
@@ -348,7 +352,7 @@ class ClaudeStreamReader:
         sdk = _sdk()
         content = message.content
         if isinstance(content, str):
-            return [PromptReceived(text=content)] if content.strip() else []
+            return self._prompt(content)
 
         events: list[Event] = []
         prose: list[str] = []
@@ -372,9 +376,27 @@ class ClaudeStreamReader:
                     )
                 case _:
                     events.append(self._unsupported(type(block).__name__))
-        text = "\n".join(part for part in prose if part.strip())
-        if text.strip():
-            events.append(PromptReceived(text=text))
+        events.extend(self._prompt("\n".join(part for part in prose if part.strip())))
+        return events
+
+    def _prompt(self, text: str) -> list[Event]:
+        """A person's (or the harness's) input — unless it is the marker the
+        harness writes when a person stops the turn, which is not input."""
+        text = text.strip()
+        if not text:
+            return []
+        if text in INTERRUPT_MARKERS:
+            return self._interrupted(text)
+        return [PromptReceived(text=text)]
+
+    def _interrupted(self, marker: str) -> list[Event]:
+        """The model's own stop reason wins; only a response it never got to
+        close reads as cancelled. Same rule as the transcript reader."""
+        open_response = self._open
+        if open_response is not None and not open_response.stop_reason:
+            open_response.completion = Completion.CANCELLED
+        events = self._close_open(None)
+        events.append(Notice(reason=WorthRecording.INTERRUPTED, raw_code=marker, source=SOURCE))
         return events
 
     # --- system ------------------------------------------------------------

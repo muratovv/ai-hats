@@ -55,6 +55,10 @@ class WorthRecording(StrEnum):
     # signal that arrives in time to change what a caller does.
     APPROACHING_LIMIT = "approaching_limit"
 
+    # A person stopped the turn. The response it cut, if one was open, ends
+    # CANCELLED; this says the run went on afterwards because someone chose to.
+    INTERRUPTED = "interrupted"
+
     # A record shape we do not model. Reported rather than dropped so schema drift is
     # visible the first time it appears, instead of silently changing what our numbers
     # mean.
