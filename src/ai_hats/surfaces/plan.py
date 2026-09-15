@@ -376,13 +376,19 @@ def validate(plan: MaterializationPlan) -> None:
     seen: dict[Path, int] = {}
     for entry in plan.entries:
         if entry.kind in _CREATING:
-            seen[entry.target] = seen.get(entry.target, 0) + 1
+            target = _normal(entry.target)
+            seen[target] = seen.get(target, 0) + 1
     if duplicates := [target for target, n in seen.items() if n > 1]:
         raise DuplicateTargets(duplicates)
-    root = Path(os.path.normpath(plan.root))
+    root = _normal(plan.root)
     for entry in plan.entries:
-        if not entry.escape and not Path(os.path.normpath(entry.target)).is_relative_to(root):
+        if not entry.escape and not _normal(entry.target).is_relative_to(root):
             raise EscapeUndeclared(entry.target, plan.root)
+
+
+def _normal(path: Path) -> Path:
+    """Lexically normalised — ``a/../b`` is ``b`` — without touching the disk."""
+    return Path(os.path.normpath(path))
 
 
 # ── application: mechanical and idempotent ───────────────────── ADR-0036 D3
@@ -396,15 +402,15 @@ def apply(plan: MaterializationPlan) -> None:
     no longer matches the plan is refused rather than copied.
     """
     validate(plan)
-    shadowed = {e.target for e in plan.entries if e.kind in _SHADOWING}
     with _lock(plan.root):
         for entry in plan.entries:
             if _stale(entry):
                 raise StalePlan(entry)
             if entry.kind is WriteKind.MERGE_JSON:
                 _current_document(entry)
-        for entry in plan.entries:
-            _PERFORM[entry.kind](entry, shadowed)
+        for i, entry in enumerate(plan.entries):
+            later = {e.target for e in plan.entries[i + 1 :] if e.kind in _SHADOWING}
+            _PERFORM[entry.kind](entry, later)
 
 
 def _stale(entry: MaterializationEntry) -> bool:
@@ -540,28 +546,47 @@ def _write_executable(entry: MaterializationEntry, _shadowed: set[Path]) -> None
 
 
 def _copy_tree(entry: MaterializationEntry, shadowed: set[Path]) -> None:
+    """Sync ``source`` onto ``target`` the way ``copytree`` would have written
+    it: every directory, links followed, and nothing else left behind."""
     source, target = cast(Path, entry.source), entry.target
     if target.is_symlink():
         target.unlink()  # safe-delete: ok a link standing where the plan puts a tree
-    wanted: set[Path] = set()
-    for file in sorted(p for p in source.rglob("*") if p.is_file()):
-        dest = target / file.relative_to(source)
-        wanted.add(dest)
-        if dest in shadowed:
-            continue
-        if (
-            dest.is_file()
-            and not dest.is_symlink()
-            and dest.read_bytes() == file.read_bytes()
-            and dest.stat().st_mode & 0o777 == file.stat().st_mode & 0o777
-        ):
-            continue
-        _make_way_for_a_file(dest)
-        shutil.copy2(file, dest)
-    if target.is_dir():
-        for stray in sorted(p for p in target.rglob("*") if p.is_file() or p.is_symlink()):
-            if stray not in wanted and stray not in shadowed:
-                stray.unlink()  # safe-delete: ok stray file in a session mirror the plan owns
+    wanted_files: set[Path] = set()
+    wanted_dirs: set[Path] = set()
+    for dirpath, _dirnames, filenames in os.walk(source, followlinks=True):
+        here = Path(dirpath)
+        dest_dir = target / here.relative_to(source)
+        wanted_dirs.add(dest_dir)
+        _make_way_for_a_dir(dest_dir)
+        for name in sorted(filenames):
+            file, dest = here / name, dest_dir / name
+            wanted_files.add(dest)
+            if dest in shadowed or _same_file(dest, file):
+                continue
+            _make_way_for_a_file(dest)
+            shutil.copy2(file, dest)
+    for stray in sorted(p for p in target.rglob("*") if p.is_file() or p.is_symlink()):
+        if stray not in wanted_files and stray not in shadowed:
+            stray.unlink()  # safe-delete: ok stray file in a session mirror the plan owns
+    for stray_dir in sorted((p for p in target.rglob("*") if p.is_dir()), reverse=True):
+        if stray_dir not in wanted_dirs and not any(stray_dir.iterdir()):
+            stray_dir.rmdir()  # safe-delete: ok empty-dir in a session mirror the plan owns
+
+
+def _same_file(dest: Path, file: Path) -> bool:
+    return (
+        dest.is_file()
+        and not dest.is_symlink()
+        and dest.read_bytes() == file.read_bytes()
+        and dest.stat().st_mode & 0o777 == file.stat().st_mode & 0o777
+    )
+
+
+def _make_way_for_a_dir(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()  # safe-delete: ok a link or a file standing where the plan puts a directory
+    if not path.is_dir():
+        path.mkdir(parents=True)
 
 
 def _symlink(entry: MaterializationEntry, _shadowed: set[Path]) -> None:

@@ -515,6 +515,61 @@ def test_a_dot_dot_target_cannot_pass_as_inside_the_root(tmp_path: Path):
         validate(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, sneaky, data={})))
 
 
+def test_a_later_entry_shadows_a_tree_file_but_an_earlier_one_is_overwritten_by_the_sync(
+    tmp_path: Path,
+):
+    root = tmp_path / "s"
+    src = _skill(tmp_path)
+    tree = MaterializationEntry(
+        WriteKind.COPY_TREE, root / "skills" / "s", source=src, tree_digest=dir_digest(src)
+    )
+    rendered = MaterializationEntry(
+        WriteKind.WRITE_TEXT, root / "skills" / "s" / "SKILL.md", content="# rendered\n"
+    )
+
+    apply(_plan(root, rendered, tree))
+    assert (root / "skills" / "s" / "SKILL.md").read_text() == "# s\n", "the later entry wins"
+
+    apply(_plan(root, tree, rendered))
+    assert (root / "skills" / "s" / "SKILL.md").read_text() == "# rendered\n"
+
+
+def test_two_spellings_of_one_target_are_one_duplicate(tmp_path: Path):
+    root = tmp_path / "s"
+    with pytest.raises(DuplicateTargets):
+        validate(
+            _plan(
+                root,
+                MaterializationEntry(WriteKind.WRITE_TEXT, root / "a", content="1"),
+                MaterializationEntry(WriteKind.WRITE_TEXT, root / "x" / ".." / "a", content="2"),
+            )
+        )
+
+
+def test_a_tree_sync_keeps_empty_dirs_follows_dir_links_and_drops_stray_dirs(tmp_path: Path):
+    src = _skill(tmp_path)
+    (src / "empty").mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "shared.txt").write_text("via link")
+    (src / "linked").symlink_to(elsewhere, target_is_directory=True)
+    root = tmp_path / "s"
+    dest = root / "skills" / "s"
+    (dest / "stale-dir").mkdir(parents=True)
+    (dest / "stale-dir" / "old.txt").write_text("gone")
+    plan = _plan(
+        root,
+        MaterializationEntry(WriteKind.COPY_TREE, dest, source=src, tree_digest=dir_digest(src)),
+    )
+
+    apply(plan)
+
+    assert (dest / "empty").is_dir(), "copytree created empty directories; the sync must too"
+    assert (dest / "linked" / "shared.txt").read_text() == "via link"
+    assert not (dest / "linked").is_symlink(), "copied as a directory, as copytree does"
+    assert not (dest / "stale-dir").exists()
+
+
 # ── the value's digest ──────────────────────────────────────────────────────
 
 
