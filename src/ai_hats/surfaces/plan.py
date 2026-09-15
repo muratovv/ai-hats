@@ -55,6 +55,14 @@ def digest_of(value: object) -> str:
 def _feed(h, value: object, *, top: bool = False) -> None:
     if isinstance(value, Digested) and not top:
         h.update(b"d:" + value.digest.encode() + b"\0")
+    elif isinstance(value, MaterializationEntry):
+        # By its own digest, like any child: the bytes of a private entry stay
+        # out of every hash, as they stay out of every record.
+        for name in ("kind", "target", "source", "private", "escape"):
+            h.update(name.encode() + b"=")
+            _feed(h, getattr(value, name))
+        h.update(b"digest=")
+        _feed(h, value.digest)
     elif dataclasses.is_dataclass(value) and not isinstance(value, type):
         for f in dataclasses.fields(value):
             h.update(f.name.encode() + b"=")
@@ -77,6 +85,8 @@ def _feed(h, value: object, *, top: bool = False) -> None:
         h.update(b"b:1\0" if value else b"b:0\0")
     elif isinstance(value, int):
         h.update(b"i:" + str(value).encode() + b"\0")
+    elif isinstance(value, float):
+        h.update(b"f:" + repr(value).encode() + b"\0")  # repr is the shortest round-trip
     elif isinstance(value, str):
         h.update(b"s:" + value.encode() + b"\0")
     else:

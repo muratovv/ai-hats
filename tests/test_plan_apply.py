@@ -356,3 +356,28 @@ def test_a_dot_dot_target_cannot_pass_as_inside_the_root(tmp_path: Path):
     sneaky = root / ".." / "outside.json"
     with pytest.raises(EscapeUndeclared):
         validate(_plan(root, MaterializationEntry(WriteKind.MERGE_JSON, sneaky, data={})))
+
+
+# ── the value's digest ──────────────────────────────────────────────────────
+
+
+def test_the_plan_digest_folds_an_entry_by_the_entry_s_own_digest(tmp_path: Path):
+    root = tmp_path / "s"
+    one = _plan(root, MaterializationEntry(WriteKind.WRITE_TEXT, root / "p", content="1"))
+    two = _plan(root, MaterializationEntry(WriteKind.WRITE_TEXT, root / "p", content="2"))
+    assert one.digest != two.digest
+
+    secret = _plan(
+        root, MaterializationEntry(WriteKind.WRITE_TEXT, root / "k", content="s1", private=True)
+    )
+    other = _plan(
+        root, MaterializationEntry(WriteKind.WRITE_TEXT, root / "k", content="s2", private=True)
+    )
+    assert secret != other, "== still compares the bytes"
+    assert secret.digest == other.digest, "a private entry puts no digest of its bytes anywhere"
+
+
+def test_a_float_among_the_sdk_options_digests():
+    assert (
+        Launch(None, {"max_budget_usd": 1.5}).digest != Launch(None, {"max_budget_usd": 2.5}).digest
+    )
