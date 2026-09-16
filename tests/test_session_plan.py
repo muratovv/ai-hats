@@ -43,7 +43,7 @@ def test_the_host_is_probed_once_for_every_command_the_gate_can_wrap(tmp_path: P
     assert host == Host(
         python=Path("/opt/py/bin/python3"),
         path=str(bins),
-        commands={"ai-hats": bins / "ai-hats", "rack": bins / "rack"},
+        commands={"ai-hats": (bins / "ai-hats").resolve(), "rack": (bins / "rack").resolve()},
     )
     assert host.digest == probe_host(environ, python="/opt/py/bin/python3").digest
 
@@ -134,7 +134,9 @@ def test_applying_the_plan_twice_reaches_no_primitive(
     assert apply(plan).changed is False
     assert writes == []
 
-    hook = next(e for e in plan.entries if e.kind is WriteKind.COPY_TREE and e.target.name == "safety-guard")
+    hook = next(
+        e for e in plan.entries if e.kind is WriteKind.COPY_TREE and e.target.name == "safety-guard"
+    )
     gate = hook.target / "hooks" / "safety_gate.py"
     gate.unlink()  # safe-delete: ok a session mirror the test owns
     writes.clear()

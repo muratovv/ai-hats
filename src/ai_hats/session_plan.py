@@ -34,7 +34,7 @@ def probe_host(
     env = os.environ if environ is None else environ
     path = original_lookup_path(env.get("PATH", ""))
     commands = {
-        name: Path(found)
+        name: Path(found).resolve()  # a link to an inherited wrapper is caught by what it points at
         for name in operations.wrapped_surfaces(operations.REGISTRY)
         if (found := which(name, path=path))
     }

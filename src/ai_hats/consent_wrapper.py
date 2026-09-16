@@ -13,9 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
+from typing import TYPE_CHECKING
 
 from ai_hats_library.hooks.consent_gate import Operation, Outcome, Verdict, operations
 from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
+
+if TYPE_CHECKING:
+    from .surfaces import ExternalHook, Host, MaterializationPlan, Surface
 
 
 REFUSED = 2
@@ -46,17 +50,48 @@ class ConsentPolicyError(ValueError):
     """A role declared consent middleware the session cannot enforce."""
 
 
+CONSENT_APP = "consent_gate"
+
+
 def policy_from(points: Sequence[object], *, registry=None) -> dict[str, tuple[str, ...]]:
-    grouped: dict[str, list[str]] = {}
+    """The policy of the composer's own consent points (the old path)."""
+    rows = []
     for point in points:
-        if getattr(point, "app", "") != "consent_gate":
+        if getattr(point, "app", "") != CONSENT_APP:
             raise ConsentPolicyError(
                 f"{getattr(point, 'declared_by', '<unknown>')!r}: consent may only be "
                 "declared under apps.consent_gate"
             )
-        path = tuple(getattr(point, "path", ()))
-        selector = str(getattr(point, "selector", ""))
-        declared_by = str(getattr(point, "declared_by", "<unknown>"))
+        rows.append(
+            (
+                tuple(getattr(point, "path", ())),
+                str(getattr(point, "selector", "")),
+                str(getattr(point, "declared_by", "<unknown>")),
+            )
+        )
+    return _compile(rows, registry=registry)
+
+
+def policy_of(hooks: Sequence[ExternalHook], *, registry=None) -> dict[str, tuple[str, ...]]:
+    """The policy of the plan's consent rows: ``{operation: selectors}``.
+
+    Rows of every other app pass by untouched — a git or rack hook is not
+    consent. A selector the operation cannot read is refused here, at
+    planning, where today's wrapper refused it at materialization.
+    """
+    rows = [
+        ((h.object,) if h.object is not None else (), h.at, h.declared_by)
+        for h in hooks
+        if h.app == CONSENT_APP
+    ]
+    return _compile(rows, registry=registry)
+
+
+def _compile(
+    rows: Sequence[tuple[tuple[str, ...], str, str]], *, registry=None
+) -> dict[str, tuple[str, ...]]:
+    grouped: dict[str, list[str]] = {}
+    for path, selector, declared_by in rows:
         if len(path) != 1:
             raise ConsentPolicyError(
                 f"{declared_by!r}: apps.consent_gate requires exactly one operation key"
@@ -169,8 +204,11 @@ _WRAPPER_BIN_NAME = "bin"
 
 
 def _is_consent_wrapper_path(path: str | Path) -> bool:
-    resolved = Path(path).resolve()
-    # the bin dir itself, or an executable sitting in it
+    return _in_wrapper_home(Path(path).resolve())
+
+
+def _in_wrapper_home(resolved: Path) -> bool:
+    """The bin dir itself, or an executable sitting in it — by name, no disk."""
     return any(
         candidate.name == _WRAPPER_BIN_NAME and candidate.parent.name == _WRAPPER_DIR_NAME
         for candidate in (resolved, resolved.parent)
@@ -290,20 +328,87 @@ def run_wrapped(
     return spawn([original, *argv], child_env)
 
 
-def _wrapper_script(surface: str) -> str:
+def _wrapper_script(surface: str, python: str = sys.executable) -> str:
     return (
-        f"#!{sys.executable}\n"
+        f"#!{python}\n"
         "from ai_hats.consent_wrapper import main\n"
         f"raise SystemExit(main({surface!r}))\n"
     )
 
 
-def _consent_script() -> str:
+def _consent_script(python: str = sys.executable) -> str:
     return (
-        f"#!{sys.executable}\n"
+        f"#!{python}\n"
         "from ai_hats_library.hooks.consent_gate.cli import main\n"
         "raise SystemExit(main())\n"
     )
+
+
+def _config_document(project_dir: Path, originals: Mapping[str, str], policy) -> str:
+    return (
+        json.dumps(
+            {
+                "project_dir": str(project_dir.resolve()),
+                "originals": dict(originals),
+                "policy": {key: list(value) for key, value in policy.items()},
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
+def plan_consent(
+    plan: MaterializationPlan, surface: Surface, layout: ProjectLayout, host: Host
+) -> MaterializationPlan:
+    """The plan with this role's command middleware in it: the wrapper's
+    entries, its config, ``PATH`` led by its bin, the form server on the launch
+    line where the surface takes one. Unchanged when the role declares no consent."""
+    import dataclasses
+
+    from .consent_mcp.registration import form_server_args
+    from .materialization import describe_write_executable, describe_write_text
+    from .surfaces import Launch
+
+    policy = policy_of(plan.composition.hooks.external)
+    if not policy:
+        return plan
+    if not surface.supports_session_command_wrappers():
+        raise RuntimeError(
+            f"provider {surface.name!r} cannot enforce role-declared command consent"
+        )
+    originals: dict[str, str] = {}
+    for name in operations.wrapped_surfaces(policy):
+        found = host.commands.get(name)
+        if found is None:
+            raise RuntimeError(f"cannot wrap {name!r}: executable not found on PATH")
+        if _in_wrapper_home(found):
+            raise RuntimeError(
+                f"cannot wrap {name!r}: resolved executable is a consent wrapper: {found}"
+            )
+        originals[name] = str(found)
+
+    home = plan.root / _WRAPPER_DIR_NAME
+    bin_dir = home / _WRAPPER_BIN_NAME
+    config_path = home / "config.json"
+    python = str(host.python)
+    entries = [
+        describe_write_text(config_path, _config_document(layout.root, originals, policy)),
+        describe_write_executable(bin_dir / "consent", _consent_script(python)),
+        *(
+            describe_write_executable(bin_dir / name, _wrapper_script(name, python))
+            for name in originals
+        ),
+    ]
+    env = dict(plan.env)
+    env["PATH"] = os.pathsep.join(filter(None, (str(bin_dir), env.get("PATH", host.path))))
+    env[CONFIG_ENV] = str(config_path)
+    launch = plan.launch
+    if plan.launch.args is not None and (
+        server := form_server_args(layout.root, policy, surface, env)
+    ):
+        launch = Launch(args=(*plan.launch.args, *server), sdk_options=None)
+    return dataclasses.replace(plan, entries=(*plan.entries, *entries), env=env, launch=launch)
 
 
 def materialize_consent_wrappers(
@@ -444,6 +549,8 @@ __all__ = [
     "main",
     "match_operation",
     "materialize_consent_wrappers",
+    "plan_consent",
     "policy_from",
+    "policy_of",
     "run_wrapped",
 ]
