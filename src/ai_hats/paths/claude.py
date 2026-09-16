@@ -7,8 +7,12 @@ move when the live layout does.
 
 from __future__ import annotations
 
+import json
 import re
+import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 
 AI_HATS_MANAGED_MARKER = ".ai-hats-managed"
@@ -55,6 +59,47 @@ def claude_user_settings_json() -> Path:
     from ._discovery import tool_home
 
     return tool_home("claude", "CLAUDE_CONFIG_DIR") / "settings.json"
+
+
+#: The settings key claude reads its status line from — one slot, so a
+#: session's `--settings` replaces the person's.
+CLAUDE_STATUS_LINE_KEY = "statusLine"
+
+
+def claude_settings_chain(environ: Mapping[str, str], base: Path) -> list[Path]:
+    """Claude's settings chain as claude layers it — user, project, local — with
+    the user's file by the rule ``tool_home`` applies, read from ``environ``
+    rather than the process's own, so a probe of a bare env names none."""
+    from ..env import ENV_CLAUDE_CONFIG_DIR, ENV_HOME
+
+    files: list[Path] = []
+    config_dir = environ.get(ENV_CLAUDE_CONFIG_DIR) or ""
+    home = environ.get(ENV_HOME) or ""
+    if config_dir:
+        files.append(Path(config_dir) / "settings.json")
+    elif home:
+        files.append(Path(home) / _CLAUDE_DIRNAME / "settings.json")
+    files += [claude_settings_json(base), claude_settings_local_json(base)]
+    return files
+
+
+def claude_status_line(settings_files: Sequence[Path]) -> dict[str, Any] | None:
+    """The status line the person configured: each file's ``statusLine``
+    replaces the one before it. ``None`` when no file names a command; a file
+    that will not parse is skipped aloud, as claude's own loud failure."""
+    found: dict[str, Any] | None = None
+    for path in settings_files:
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as exc:
+            print(f"ai-hats: {path}: skipped, {exc}", file=sys.stderr)
+            continue
+        entry = document.get(CLAUDE_STATUS_LINE_KEY) if isinstance(document, dict) else None
+        if isinstance(entry, dict) and isinstance(entry.get("command"), str) and entry["command"]:
+            found = dict(entry)
+    return found
 
 
 def claude_md(project_dir: Path) -> Path:
@@ -136,7 +181,10 @@ __all__ = [
     "CLAUDE_PROJECT_DIR_VAR",
     "CLAUDE_SETTINGS_JSON_REL",
     "CLAUDE_SETTINGS_LOCAL_JSON_REL",
+    "CLAUDE_STATUS_LINE_KEY",
     "claude_dir",
+    "claude_settings_chain",
+    "claude_status_line",
     "claude_md",
     "claude_plugin_manifest",
     "claude_plugin_manifest_dir",

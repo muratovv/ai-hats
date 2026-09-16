@@ -49,6 +49,11 @@ ENV_HOOK_SOCKET = "AI_HATS_HOOK_SOCK"
 #: session's `--settings` replaces the `statusLine` slot, so theirs rides here.
 ENV_STATUSLINE_INNER = "AI_HATS_STATUSLINE_INNER"
 
+#: Claude Code's own home override, and the platform's home it falls back to —
+#: named here so a reader of a probed env spells neither.
+ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
+ENV_HOME = "HOME"
+
 # Hook-point vocabulary, owned by ADR-0020 D2; named here so it has one home.
 ENV_HOOK_POINT = "AI_HATS_HOOK_POINT"
 ENV_IN_HOOK = "AI_HATS_IN_HOOK"
@@ -293,7 +298,7 @@ OVERRIDES: tuple[dict, ...] = (
         "foreign": True,
     },
     {
-        "name": "CLAUDE_CONFIG_DIR",
+        "name": ENV_CLAUDE_CONFIG_DIR,
         "default": "",
         "doc": (
             "Claude Code's own home, where its settings and transcripts are read from. Unset, "
@@ -415,6 +420,8 @@ __all__ = [
     "ENV_AI_HATS_PYTHON",
     "ENV_HOOK_SOCKET",
     "ENV_STATUSLINE_INNER",
+    "ENV_CLAUDE_CONFIG_DIR",
+    "ENV_HOME",
     "ENV_HOOK_POINT",
     "ENV_IN_HOOK",
     "ENV_FORCE",

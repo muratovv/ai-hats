@@ -18,12 +18,11 @@ import pytest
 from ai_hats.env import ENV_APPROACHING_LIMIT_PERCENT
 from ai_hats.session_identity import SessionIdentity
 from ai_hats.surfaces.claude.channel import ClaudeChannel
+from ai_hats.paths import claude_settings_chain, claude_status_line
 from ai_hats.surfaces.claude.statusline import (
     MEMO_NAME,
     SOURCE,
     is_render,
-    person_settings_files,
-    person_status_line,
     quota_notices,
     record_quota,
 )
@@ -258,9 +257,9 @@ def test_the_settings_chain_is_the_users_home_then_the_project(tmp_path: Path) -
     """The user's file by the rule ``tool_home`` applies — ``CLAUDE_CONFIG_DIR``
     over ``HOME/.claude`` — read from the env handed in, not the process's."""
     project = tmp_path / "proj"
-    by_home = person_settings_files({"HOME": "/h"}, project)
-    by_config = person_settings_files({"HOME": "/h", "CLAUDE_CONFIG_DIR": "/c"}, project)
-    by_nothing = person_settings_files({}, project)
+    by_home = claude_settings_chain({"HOME": "/h"}, project)
+    by_config = claude_settings_chain({"HOME": "/h", "CLAUDE_CONFIG_DIR": "/c"}, project)
+    by_nothing = claude_settings_chain({}, project)
 
     assert by_home == [
         Path("/h/.claude/settings.json"),
@@ -285,18 +284,18 @@ def test_the_persons_status_line_is_read_the_way_claude_layers_settings(tmp_path
     )
     missing = tmp_path / "nowhere.json"
 
-    assert person_status_line([user]) == {
+    assert claude_status_line([user]) == {
         "type": "command",
         "command": "bash ~/bar.sh",
         "padding": 0,
     }
-    assert person_status_line([user, project]) == person_status_line([user])
-    assert person_status_line([user, project, local]) == {
+    assert claude_status_line([user, project]) == claude_status_line([user])
+    assert claude_status_line([user, project, local]) == {
         "type": "command",
         "command": "~/other.sh",
     }
-    assert person_status_line([missing, project]) is None
-    assert person_status_line([]) is None
+    assert claude_status_line([missing, project]) is None
+    assert claude_status_line([]) is None
 
 
 def test_a_settings_file_that_will_not_parse_is_skipped_aloud(tmp_path: Path, capsys) -> None:
@@ -305,5 +304,5 @@ def test_a_settings_file_that_will_not_parse_is_skipped_aloud(tmp_path: Path, ca
     # a statusLine without a command string is not a bar
     empty = _settings(tmp_path / "empty.json", {"statusLine": {"type": "command", "command": ""}})
 
-    assert person_status_line([broken, user, empty]) == {"command": "echo hi"}
+    assert claude_status_line([broken, user, empty]) == {"command": "echo hi"}
     assert str(broken) in capsys.readouterr().err

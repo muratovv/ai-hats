@@ -51,16 +51,17 @@ from .channel import (
 )
 from ai_hats.env import ENV_STATUSLINE_INNER
 
-from .statusline import SETTINGS_KEY as STATUS_LINE_KEY
-from .statusline import person_settings_files, person_status_line
 from .runtime_hooks import materialize_hook_manifest, plan_hooks
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
     AI_HATS_PROJECT_DIR_ENV,
+    CLAUDE_STATUS_LINE_KEY,
     ENV_AI_HATS_DIR,
     claude_plugin_skills_dir,
+    claude_settings_chain,
     claude_settings_json,
+    claude_status_line,
 )
 from ai_hats.placeholders import expand_path_placeholders
 from ai_hats.role_catalog import expand_role_catalog
@@ -444,7 +445,7 @@ class ClaudeSurface(Surface):
             skills_dir=skills_dir,
         )
         # The builder is the apply half and may read the machine; the plan half gets it on Host.
-        person = person_status_line(person_settings_files(os.environ, layout.cwd))
+        person = claude_status_line(claude_settings_chain(os.environ, layout.cwd))
         document, settings_env = self._session_settings(rows, hitl=hitl, person=person)
         artifacts.port.write_text(cache_settings, json.dumps(document, indent=2))
         artifacts.extra_env.update(settings_env)
@@ -466,7 +467,7 @@ class ClaudeSurface(Surface):
         document: dict = {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}
         env: dict[str, str] = {}
         if hitl:
-            document[STATUS_LINE_KEY] = self._status_line_entry(person)
+            document[CLAUDE_STATUS_LINE_KEY] = self._status_line_entry(person)
             env[ENV_STATUSLINE_INNER] = str(person["command"]) if person else ""
         return document, env
 
@@ -772,7 +773,7 @@ class ClaudeSurface(Surface):
         chain (user-global + project + local). Warn-only — the settings files
         are user-owned and never mutated."""
         # the root, not the run cwd: this lints what the person edits, not what a worktree run reads
-        findings = lint_settings_files(person_settings_files(os.environ, layout.root))
+        findings = lint_settings_files(claude_settings_chain(os.environ, layout.root))
         return [
             f"{f.source}: {f.array} rule {f.rule} is ignored by Claude Code "
             f"≥2.1.210 — replace with {f.replacement}"

@@ -15,7 +15,7 @@ import math
 import os
 import sys
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,6 @@ from typing import Any
 from ai_hats_observe.canonical import Notice, Timestamp, WorthRecording, now
 
 from ...env import APPROACHING_LIMIT_PERCENT, read_budget
-from ...paths import claude_settings_json, claude_settings_local_json
 from ...session_identity import SessionIdentity, SessionIdentityError
 from ..gate_log import record_event
 
@@ -32,10 +31,6 @@ SOURCE = "claude/statusline"
 
 #: Beside the session's events: which windows were already said, by their reset.
 MEMO_NAME = "quota_warnings.json"
-
-#: The settings key claude reads the status line from — one slot, so a session's
-#: `--settings` replaces the person's.
-SETTINGS_KEY = "statusLine"
 
 #: The payload field only a status-line render carries.
 RENDER_FIELD = "rate_limits"
@@ -111,39 +106,6 @@ def quota_notices(
         )
         said.append((window, reset, notice))
     return said
-
-
-def person_settings_files(environ: Mapping[str, str], base: Path) -> list[Path]:
-    """Claude's settings chain — user, project, local — as claude layers it.
-    The user's home by the rule ``tool_home`` applies, read from ``environ``."""
-    config_dir = environ.get("CLAUDE_CONFIG_DIR") or ""
-    home = environ.get("HOME") or ""
-    files: list[Path] = []
-    if config_dir:
-        files.append(Path(config_dir) / "settings.json")
-    elif home:
-        files.append(Path(home) / ".claude" / "settings.json")
-    files += [claude_settings_json(base), claude_settings_local_json(base)]
-    return files
-
-
-def person_status_line(settings_files: Sequence[Path]) -> dict[str, Any] | None:
-    """The status line the person configured, read the way claude layers its
-    settings: each file's ``statusLine`` replaces the one before it. ``None``
-    when no file names a command; a file that will not parse is skipped aloud."""
-    found: dict[str, Any] | None = None
-    for path in settings_files:
-        try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            continue
-        except (OSError, ValueError) as exc:
-            _said(f"{path}: skipped, {exc}")
-            continue
-        entry = document.get(SETTINGS_KEY) if isinstance(document, dict) else None
-        if isinstance(entry, dict) and isinstance(entry.get("command"), str) and entry["command"]:
-            found = dict(entry)
-    return found
 
 
 def _is_finite(value: Any) -> bool:

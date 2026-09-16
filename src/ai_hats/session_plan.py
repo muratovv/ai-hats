@@ -55,7 +55,7 @@ def probe_host(
     from ai_hats_library.hooks.consent_gate import operations
 
     from .consent_wrapper import original_lookup_path
-    from .surfaces.claude.statusline import person_settings_files, person_status_line
+    from .paths import claude_settings_chain, claude_status_line
 
     env = os.environ if environ is None else environ
     path = original_lookup_path(env.get("PATH", ""))
@@ -64,7 +64,7 @@ def probe_host(
         for name in operations.wrapped_surfaces(operations.REGISTRY)
         if (found := which(name, path=path))
     }
-    status_line = person_status_line(person_settings_files(env, Path.cwd() if cwd is None else cwd))
+    status_line = claude_status_line(claude_settings_chain(env, Path.cwd() if cwd is None else cwd))
     return Host(python=Path(python), path=path, commands=commands, status_line=status_line)
 
 
