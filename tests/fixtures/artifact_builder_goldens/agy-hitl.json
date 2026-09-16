@@ -47,7 +47,6 @@
   },
   "consent": [],
   "cwd": "<project>",
-  "duplicates": [],
   "env_keys": [
     "AI_HATS_DIR",
     "AI_HATS_PROJECT_DIR",
@@ -59,7 +58,6 @@
     "AI_HATS_SESSION_IDENTITY",
     "TRACE_LOG_PATH"
   ],
-  "escapes": [],
   "launch": [
     "agy",
     "--add-dir",
@@ -100,6 +98,13 @@
       "size": null,
       "source": "<tmp>/lib/skills/s",
       "target": "<cache>/sessions/dry-run/rules/.agents/skills/s"
+    },
+    {
+      "digest": "f22b8706a74e9bf1ad6a09952aacf7733ed23b52dc3a7c5e6111fd7c404f9f9a",
+      "kind": "write_text",
+      "size": 38,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/rules/.agents/skills/s/SKILL.md"
     },
     {
       "digest": "5b9ec6d1572b5e2ec71e976d9c0665efe1de662c5fd8ff8b3534344364e29f23",

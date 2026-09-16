@@ -463,7 +463,7 @@ def venv_surfaces(shared_launcher) -> dict[str, bool]:
     keeps importing and simply cannot root a bound check). A surface failing
     either half cannot exercise these cases and is skipped with that named as
     the reason — a coordinated release of core + surface is what clears it, and
-    `check_snapshot.surface_skew_notice` is what tells a real operator.
+    the launch record's `checks` rows are what tell a real operator.
     """
     _launcher, _env, venv = shared_launcher
     probe = subprocess.run(  # noqa: S603 - interpreter from the shared fixture

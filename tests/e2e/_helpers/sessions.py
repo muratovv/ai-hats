@@ -286,6 +286,19 @@ def stand_in_wrapped_session(
     return env
 
 
+def consent_rows(project: Path, role: str, provider: str | None = None) -> list[dict]:
+    """The consent rows a real launch writes: the plan's ``consent_gate`` hooks
+    through the ONE writer of that shape (``session_record`` uses the same) —
+    a hand-rolled copy would let a fixture and the guard drift into a GREEN
+    e2e over a question nobody asks (HATS-1719)."""
+    from ai_hats.composition_seam import build_composition_payload
+    from ai_hats.consent_wrapper import CONSENT_APP
+    from ai_hats.session_report import consent_row
+
+    plan = build_composition_payload(project, role_override=role, provider_name=provider).plan
+    return [consent_row(h) for h in plan.hooks.external if h.app == CONSENT_APP]
+
+
 def _write_role_materialization(session_dir: Path, project: Path, role: str) -> None:
     """The envelope's on-disk half, as a real launch writes it (HATS-1682).
 
@@ -293,22 +306,8 @@ def _write_role_materialization(session_dir: Path, project: Path, role: str) -> 
     through this file, so a stand-in session that omits it stands in for one no
     launch produces — and the guard asks nothing, for the wrong reason.
     """
-    from ai_hats.assembler import Assembler
-    from ai_hats.session_report import consent_entry
-
-    result = Assembler(project).composer.compose(role)
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / "role_materialization.json").write_text(
-        json.dumps(
-            {
-                "role": role,
-                "checks": [],
-                # The ONE writer of this shape, shared with the real launch
-                # (``SessionReport.to_dict``): a hand-rolled copy here would let
-                # the fixture and the guard drift, and the drift would show up as
-                # a GREEN e2e over a question nobody asks (HATS-1719).
-                "consent": [consent_entry(point) for point in result.consent],
-            }
-        ),
+        json.dumps({"role": role, "checks": [], "consent": consent_rows(project, role)}),
         encoding="utf-8",
     )

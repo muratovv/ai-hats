@@ -414,8 +414,11 @@ def context_entry(plan: MaterializationPlan) -> MaterializationEntry | None:
 
 
 def context_text(plan: MaterializationPlan) -> str:
-    """The bytes the agent reads: the context entry's, or the surface prompt
-    where the plan writes no context file."""
+    """The bytes the agent reads as its context: the context entry's, or the
+    surface prompt where the plan hands it inline; nothing under a policy that
+    withholds the context, whatever the prompt holds."""
+    if not plan.policy.context:
+        return ""
     entry = context_entry(plan)
     return cast(str, entry.content) if entry is not None else plan.prompt.text
 

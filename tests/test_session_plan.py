@@ -271,18 +271,23 @@ def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Pat
     assert other.args != launched.args, "a different brief is a different launch"
 
 
-def test_a_consent_row_of_the_plan_is_the_row_the_guard_reads_today():
-    from ai_hats_core import ConsentPoint
-
-    from ai_hats.session_report import consent_entry, consent_row
+def test_a_consent_row_of_the_plan_carries_the_ends_the_guard_keys_on():
+    """The guard is stdlib-only and reads fields, never grammar: the row names
+    the operation as its path and the selector's two ends already parsed."""
+    from ai_hats.session_report import consent_row
     from ai_hats.surfaces.plan import ExternalHook
 
-    point = ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "plan->execute")
     hook = ExternalHook(
         "consent_gate", "rack.transition", "plan->execute", None, None, "trait-agent"
     )
-    assert consent_row(hook) == consent_entry(point)
-    assert consent_row(hook)["to"] == "execute" and consent_row(hook)["from"] == "plan"
+    assert consent_row(hook) == {
+        "app": "consent_gate",
+        "path": ["rack.transition"],
+        "selector": "plan->execute",
+        "from": "plan",
+        "to": "execute",
+        "declared_by": "trait-agent",
+    }
 
 
 def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_path: Path):
@@ -372,6 +377,21 @@ def test_the_launch_reports_the_context_entry_the_plan_names_else_the_prompt(tmp
     launched = launch(inline, _flags(root, claim=False), layout=layout)
     assert launched.prompt == "# r\n", "the surface prompt, never the skill document"
     assert session_record(inline, launched, role="r")["prompt"] is None
+
+
+def test_a_policy_that_withholds_the_context_hands_the_agent_none_of_it(tmp_path: Path):
+    """The prompt half is always planned; whether the agent reads it is the
+    policy's — so an inline surface's sub-agent token carries no role text
+    under ``context=False``, as the builder's ``full_content`` was ``None``."""
+    import dataclasses
+
+    from ai_hats.surfaces import context_text
+
+    root = tmp_path / "sessions" / "s"
+    withheld = dataclasses.replace(_bare_plan(root, ()), policy=SessionPolicy(context=False))
+
+    assert withheld.prompt.text == "# r\n", "the plan still holds the prompt"
+    assert context_text(withheld) == ""
 
 
 def test_a_context_no_entry_writes_is_refused_before_anything_is_touched(tmp_path: Path):

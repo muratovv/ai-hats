@@ -185,9 +185,9 @@ class Surface(abc.ABC):
 
         The root a bound check resolves its script from in-session, one level
         above the per-skill directory. ``None`` means this surface mirrors no
-        skills, so a binding has nothing to resolve against and refuses —
-        ``legacy_launch_notices`` announces that at launch rather than leaving it
-        to be discovered when a gate does not fire. Concrete, not abstract: an
+        skills, so a binding has nothing to resolve against and refuses — the
+        record's ``checks`` rows say so at launch rather than leaving it to be
+        discovered when a gate does not fire. Concrete, not abstract: an
         out-of-tree surface behind ``ai_hats.surface_registry`` predates this accessor
         and must keep importing (ADR-0019 D9).
         """  # comment-length: allow — the None branch IS the contract

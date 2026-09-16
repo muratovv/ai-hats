@@ -1,18 +1,14 @@
-"""Tests for dry-run --materialize functionality (HATS-1551)."""
+"""``--dry-run --materialize`` applies the plan to the fixed dry-run root (HATS-1551)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from ai_hats_core.layout import ProjectLayout
 
-from pathlib import Path
-import pytest
-
-from ai_hats.dry_run import (
-    DRY_RUN_MATERIALIZE_SESSION_ID,
-    DRY_RUN_SESSION_ID,
-    dry_run_automate,
-    dry_run_hitl,
-)
+from ai_hats.session_artifacts import RunMode, assemble_brief
+from ai_hats.session_plan import DRY_RUN_MATERIALIZE_SESSION_ID, DRY_RUN_SESSION_ID, preview
 
 
 @pytest.fixture
@@ -44,103 +40,95 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     return proj
 
 
+def _hitl(project: Path, *, materialize: bool):
+    return preview(
+        ProjectLayout.at(project),
+        role=None,
+        provider="claude",
+        run_mode=RunMode.HITL,
+        materialize=materialize,
+    )
+
+
+def _rows(record: dict) -> list[tuple]:
+    return [(e["kind"], e["target"], e["size"], e["digest"]) for e in record["materialized"]]
+
+
 def test_dry_run_materialize_leaves_tree_on_disk(project: Path):
     cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     assert not cache_mat.exists()
 
-    report = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
+    shown = _hitl(project, materialize=True)
 
-    assert report.escapes == ()
     assert cache_mat.is_dir()
     files = [p for p in cache_mat.rglob("*") if p.is_file()]
     assert len(files) > 0
-    assert report.record.entries
-
-    # S3 / R6 & R7: Report includes notes stating tree location and synthetic sid
-    assert any("materialized session tree written to disk at" in n for n in report.notes)
+    assert shown.record["materialized"]
+    # What application did rides the record (ADR-0036 D3), row by row.
+    assert {e["outcome"] for e in shown.record["materialized"]} == {"written"}
+    # S3 / R6 & R7: the notes state the tree's location and the synthetic sid.
+    assert any("materialized session tree written to disk at" in n for n in shown.record["notes"])
     assert any(
-        f"synthetic session_id '{DRY_RUN_MATERIALIZE_SESSION_ID}'" in n for n in report.notes
+        f"synthetic session_id '{DRY_RUN_MATERIALIZE_SESSION_ID}'" in n
+        for n in shown.record["notes"]
     )
 
 
 def test_dry_run_automate_materialize_leaves_tree_on_disk(project: Path):
     cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     assert not cache_mat.exists()
+    layout = ProjectLayout.at(project)
 
-    report = dry_run_automate(
-        ProjectLayout.at(project), provider="claude", task="test task", materialize=True
+    shown = preview(
+        layout,
+        role=None,
+        provider="claude",
+        run_mode=RunMode.AUTOMATE,
+        brief=assemble_brief(layout, task="test task", ticket_id=""),
+        materialize=True,
     )
 
-    assert report.escapes == ()
     assert cache_mat.is_dir()
     files = [p for p in cache_mat.rglob("*") if p.is_file()]
     assert len(files) > 0
-    assert report.record.entries
-    assert any("materialized session tree written to disk at" in n for n in report.notes)
+    assert shown.record["materialized"]
+    assert any("materialized session tree written to disk at" in n for n in shown.record["notes"])
 
 
 def test_dry_run_default_leaves_nothing_on_disk(project: Path):
     cache_std = ProjectLayout.at(project).cache.session(DRY_RUN_SESSION_ID)
     cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
 
-    report = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
+    shown = _hitl(project, materialize=False)
 
-    assert report.escapes == ()
     assert not cache_std.exists()
     assert not cache_mat.exists()
+    assert "outcome" not in shown.record["materialized"][0], "nothing was applied"
 
 
 def test_dry_run_materialize_determinism_on_repeated_runs(project: Path):
-    """S5 / R4: Two --materialize runs in a row yield identical plan entries and files."""
+    """S5 / R4: two --materialize runs in a row yield identical plan entries and files."""
     cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
 
-    report1 = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
-    entries1 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report1.record.entries]
+    first = _hitl(project, materialize=True)
     files1 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
 
-    report2 = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
-    entries2 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report2.record.entries]
+    second = _hitl(project, materialize=True)
     files2 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
 
-    assert entries1 == entries2
+    assert _rows(first.record) == _rows(second.record)
     assert files1 == files2
 
 
-def test_a_second_materialize_waits_instead_of_wiping_the_first(project: Path, monkeypatch):
-    """A fixed sid means one directory for every run, so the rebuild is locked.
+def test_a_held_lock_stalls_the_materializing_entry_point(project: Path):
+    """A fixed sid means one directory for every run, so application is locked.
 
     HATS-1248 dropped the skills-mirror lock because a sid-keyed directory has
     exactly one writer. ``--materialize`` pins the sid, which brings the second
-    writer back — and its first act is ``rmtree`` on the tree we are building.
-    Asserted by holding the lock and watching the build refuse to proceed.
-    Driven at the unit that owns the serialising, with the wait injected: the
-    entry point resolves the real default, so reaching in to shorten it would
-    patch the code under test (scripts/check_test_isolation.py).
-    """  # comment-length: allow — the argument this re-opens is worth naming
-    import filelock
-
-    from ai_hats.dry_run import _exclusive_rebuild
-    from ai_hats.materialization import ApplyMaterializer
-
-    cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
-    lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-    port = ApplyMaterializer(lock_timeout=0.1)
-    with filelock.FileLock(str(lock_path)):
-        with pytest.raises(RuntimeError, match="materialization blocked"):
-            with _exclusive_rebuild(cache_mat, port, materialize=True):
-                pass
-
-
-def test_a_held_lock_stalls_the_materializing_entry_point(project: Path):
-    """Wires the unit above to the entry point, by holding the lock against it.
-
-    Whether the lock file outlives its release is filelock's cleanup policy, not
-    evidence of exclusion — it flipped between two versions our pin allows, so
-    asserting on it read the environment instead of the code. Waiting is the
-    property itself. The window is cut from an unlocked run on this machine, so
-    a slow host widens it rather than passing vacuously.
+    writer back; ``apply`` serialises on the lock beside the root, and waiting is
+    the property itself. Whether the lock file outlives its release is filelock's
+    cleanup policy, not evidence of exclusion. The window is cut from an unlocked
+    run on this machine, so a slow host widens it rather than passing vacuously.
     """  # comment-length: allow — why the file's presence proves nothing
     import threading
     from time import perf_counter
@@ -152,7 +140,7 @@ def test_a_held_lock_stalls_the_materializing_entry_point(project: Path):
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     started = perf_counter()
-    dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
+    _hitl(project, materialize=True)
     window = max(0.25, 5 * (perf_counter() - started))
 
     done = threading.Event()
@@ -160,7 +148,7 @@ def test_a_held_lock_stalls_the_materializing_entry_point(project: Path):
 
     def rebuild() -> None:
         try:
-            dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
+            _hitl(project, materialize=True)
         except Exception as exc:
             failure.append(exc)  # re-raised in the main thread, below
         finally:
@@ -184,25 +172,15 @@ def test_a_held_lock_does_not_stall_a_plain_dry_run(project: Path):
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     with filelock.FileLock(str(lock_path)):
-        report = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
+        shown = _hitl(project, materialize=False)
 
-    assert report.record.entries
+    assert shown.record["materialized"]
 
 
 def test_dry_run_materialize_does_not_affect_subsequent_default_dry_run(project: Path):
-    """S6 / R3: --materialize followed by default --dry-run leaves default report unchanged."""
-    report_clean = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
-    entries_clean = [
-        (e.kind.value, str(e.target), e.size, e.digest) for e in report_clean.record.entries
-    ]
+    """S6 / R3: --materialize followed by a default --dry-run leaves the plan unchanged."""
+    clean = _rows(_hitl(project, materialize=False).record)
 
-    # Run --materialize
-    dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
+    _hitl(project, materialize=True)
 
-    # Run default dry-run again
-    report_after = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
-    entries_after = [
-        (e.kind.value, str(e.target), e.size, e.digest) for e in report_after.record.entries
-    ]
-
-    assert entries_clean == entries_after
+    assert _rows(_hitl(project, materialize=False).record) == clean

@@ -229,7 +229,7 @@ def describe_options(options: "ClaudeAgentOptions") -> list[str]:
     ``env`` is rendered as key names — the report hides env values everywhere
     else, and naming them here would be the same leak by another route. ``cwd``
     is omitted: it is the worktree, which does not exist when the record is
-    written, and ``SessionReport.cwd`` carries that sentinel already.
+    written, and the record's ``cwd`` carries that sentinel already.
     """  # comment-length: allow — both omissions are deliberate and easy to "fix" wrongly
     import dataclasses
 

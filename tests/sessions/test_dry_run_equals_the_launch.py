@@ -34,11 +34,10 @@ from click.testing import CliRunner
 
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
-from ai_hats.dry_run import AT_LAUNCH, DRY_RUN_SESSION_ID
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.session_artifacts import RunMode, assemble_brief
-from ai_hats.session_plan import preview
+from ai_hats.session_artifacts import AT_LAUNCH, RunMode, assemble_brief
+from ai_hats.session_plan import DRY_RUN_SESSION_ID, preview
 from ai_hats_observe.artifacts import ROLE_MATERIALIZATION_JSON
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

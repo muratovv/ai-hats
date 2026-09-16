@@ -212,8 +212,8 @@ def render_record(record: dict, *, full: bool = False, prompt_text: str | None =
 
 @dataclass(frozen=True)
 class Preview:
-    """What ``--dry-run-experimental`` shows: the record, and the prompt bytes
-    the agent would be handed (outside the record, as ``meta_prompt.txt`` is)."""
+    """What ``--dry-run`` shows: the record, and the prompt bytes the agent
+    would be handed (outside the record, as ``meta_prompt.txt`` is)."""
 
     record: dict
     prompt: str

@@ -228,7 +228,9 @@ from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.consent_wrapper import materialize_consent_wrappers
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from ai_hats.surfaces.codex.provider import CodexSurface
-from ai_hats.session_report import consent_entry
+from ai_hats.composition_seam import build_composition_payload
+from ai_hats.consent_wrapper import CONSENT_APP
+from ai_hats.session_report import consent_row
 from ai_hats_core.layout import ProjectLayout
 project = Path(sys.argv[1])
 ProjectConfig(provider="codex", active_role="assistant", default_role="assistant").save(project / PROJECT_CONFIG)
@@ -242,7 +244,11 @@ materialize_consent_wrappers(layout, result, "installed", surface, artifacts)
 session_dir = project / ".agent/ai-hats/sessions/runs/installed"
 session_dir.mkdir(parents=True, exist_ok=True)
 (session_dir / "role_materialization.json").write_text(json.dumps({
-    "role": "assistant", "checks": [], "consent": [consent_entry(p) for p in result.consent],
+    "role": "assistant", "checks": [], "consent": [
+        consent_row(h)
+        for h in build_composition_payload(project, role_override="assistant").plan.hooks.external
+        if h.app == CONSENT_APP
+    ],
 }))
 env = assemble_launch_env(surface, layout, project / ".agent/ai-hats/sessions/runs/installed",
     session_id="installed", trace_path="", role="assistant", root_pid=str(os.getpid()),

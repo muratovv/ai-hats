@@ -47,7 +47,6 @@
   },
   "consent": [],
   "cwd": "<project>",
-  "duplicates": [],
   "env_keys": [
     "AI_HATS_DIR",
     "AI_HATS_HOOK_SOCK",
@@ -60,7 +59,6 @@
     "AI_HATS_SESSION_IDENTITY",
     "TRACE_LOG_PATH"
   ],
-  "escapes": [],
   "launch": [
     "claude",
     "--system-prompt-file",
@@ -121,6 +119,13 @@
       "size": null,
       "source": "<tmp>/lib/skills/s",
       "target": "<cache>/sessions/dry-run/plugin/skills/s"
+    },
+    {
+      "digest": "f22b8706a74e9bf1ad6a09952aacf7733ed23b52dc3a7c5e6111fd7c404f9f9a",
+      "kind": "write_text",
+      "size": 38,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/plugin/skills/s/SKILL.md"
     },
     {
       "digest": "039b1185a54fde1d6095cf1ee3a47f0039549b33cf73211efd986f1690bcaf1f",
