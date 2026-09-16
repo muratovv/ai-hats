@@ -81,6 +81,7 @@ ENV_PTY_GRACE_S = "AI_HATS_PTY_GRACE_S"
 ENV_PTY_TERM_S = "AI_HATS_PTY_TERM_S"
 ENV_PIPELINE_KEEP_N = "AI_HATS_PIPELINE_KEEP_N"
 ENV_STARTUP_HOLD = "AI_HATS_STARTUP_HOLD"
+ENV_APPROACHING_LIMIT_PERCENT = "AI_HATS_APPROACHING_LIMIT_PERCENT"
 
 
 def _read(name: str) -> str | None:
@@ -165,6 +166,12 @@ BUDGETS: tuple[Budget, ...] = (
         10.0,
         "Seconds a startup warning is held on screen; 0 disables the hold.",
     ),
+    Budget(
+        ENV_APPROACHING_LIMIT_PERCENT,
+        80,
+        "Percent of a quota window used at which a Claude HITL session's log says "
+        "the limit is near, once per window per reset; above 100 it never says so.",
+    ),
 )
 
 (
@@ -175,6 +182,7 @@ BUDGETS: tuple[Budget, ...] = (
     PTY_TERM,
     PIPELINE_KEEP_N,
     STARTUP_HOLD,
+    APPROACHING_LIMIT_PERCENT,
 ) = BUDGETS
 
 
@@ -417,6 +425,7 @@ __all__ = [
     "ENV_HOOK_EVENT",
     "ENV_HOOK_SURFACE_TIMEOUT_MS",
     "ENV_RETIRED_AGY_HOOK_TIMEOUT_S",
+    "ENV_APPROACHING_LIMIT_PERCENT",
     "Budget",
     "read_budget",
     "OVERRIDES",

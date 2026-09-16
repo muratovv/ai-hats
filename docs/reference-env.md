@@ -21,9 +21,9 @@ the sentence as a claim. It is equally silent about a knob the code reads that
 nobody declared: keeping the list COMPLETE is a separate guard's job, not this
 page's.
 
-**30 names: 11 budgets, 12 paths of ours, 7 honoured from other tools.**
+**31 names: 12 budgets, 12 paths of ours, 7 honoured from other tools.**
 
-## Budgets (11)
+## Budgets (12)
 
 Numeric knobs. Unset, empty, unparsable, zero or negative all mean the default:
 a typo in a budget must never disarm the bound nor fail a session.
@@ -37,6 +37,7 @@ a typo in a budget must never disarm the bound nor fail a session.
 | `AI_HATS_PTY_TERM_S` | float | 2.0 | Seconds between SIGTERM and SIGKILL during PTY teardown. |
 | `AI_HATS_PIPELINE_KEEP_N` | int | 10 | Sibling pipeline-run directories kept before the oldest are pruned. |
 | `AI_HATS_STARTUP_HOLD` | float | 10.0 | Seconds a startup warning is held on screen; 0 disables the hold. |
+| `AI_HATS_APPROACHING_LIMIT_PERCENT` | int | 80 | Percent of a quota window used at which a Claude HITL session's log says the limit is near, once per window per reset; above 100 it never says so. |
 | `AI_HATS_COMMENT_MAX_LINES` | int | 3 | Consecutive standalone `#` comment lines allowed before the edit-time lint speaks up. |
 | `AI_HATS_DOCSTRING_MAX_LINES` | int | 10 | Lines a docstring may run to before that same lint flags it. |
 | `AI_HATS_DOCSTRING_MAX_CHARS` | int | 700 | Characters a docstring may run to before that same lint flags it. |
@@ -88,7 +89,7 @@ owns them; ai-hats reads whatever it finds.
 ## What is deliberately not on this page
 
 Three families of names are read by this code and still absent here, so this
-page's 30 is not the whole vocabulary. **Bypass hatches** are recognised
+page's 31 is not the whole vocabulary. **Bypass hatches** are recognised
 by the SHAPE of the name rather than by a table — see `withheld_from_subagent`
 in `src/ai_hats/constants.py` — because a table of them would fail open the way
 the roster beside it already did; the gate that refuses names the hatch that
