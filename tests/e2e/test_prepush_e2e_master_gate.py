@@ -576,7 +576,7 @@ def test_run_mode_without_pytest_the_tier_is_red_and_unmarked(tmp_path: Path):
 # ===========================================================================
 
 
-def test_run_mode_adds_xdist_flags_capped_at_eight_when_xdist_is_present(tmp_path: Path):
+def test_run_mode_adds_xdist_flags_capped_at_three_when_xdist_is_present(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=0, xdist=True)
@@ -586,7 +586,7 @@ def test_run_mode_adds_xdist_flags_capped_at_eight_when_xdist_is_present(tmp_pat
 
     assert res.returncode == 0, res.stderr
     argv = (bindir / "last_argv").read_text()
-    assert _xdist_n(argv) == 8
+    assert _xdist_n(argv) == 3
     assert "--dist=loadgroup" in argv
 
 
@@ -594,12 +594,12 @@ def test_run_mode_uses_every_core_below_the_cap(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=0, xdist=True)
-    _make_getconf_stub(bindir, count=4)
+    _make_getconf_stub(bindir, count=2)
 
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert _xdist_n((bindir / "last_argv").read_text()) == 4
+    assert _xdist_n((bindir / "last_argv").read_text()) == 2
 
 
 def test_run_mode_runs_serial_without_xdist(tmp_path: Path):

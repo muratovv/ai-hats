@@ -13,6 +13,7 @@ why:    HATS-1812 found that gate stage names were shared while execution flags 
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -105,4 +106,23 @@ def test_card_gate_uses_adaptive_xdist_after_the_composed_chain(maintainer_proje
     assert "--dist=loadgroup" in addopts
     worker_flag = next((arg for arg in addopts if arg.startswith("-n") and arg[2:].isdigit()), "")
     assert worker_flag, addopts
-    assert 1 <= int(worker_flag[2:]) <= 8
+    assert int(worker_flag[2:]) == min(os.cpu_count() or 1, 3), addopts
+
+
+def test_the_callers_worker_count_wins(maintainer_project):
+    """The cap is a default, not a ceiling: a `-n` the caller already put in
+    PYTEST_ADDOPTS is the one pytest sees, and the gate still pins loadgroup."""
+    project, env, _settings = maintainer_project
+    capture = project.parent / "override.addopts"
+
+    ran = run_unasked(
+        project,
+        "make merge-gate",
+        env={**env, "AI_HATS_TEST_CAPTURE": str(capture), "PYTEST_ADDOPTS": "-n1"},
+    )
+    assert ran.returncode == 0, ran.output
+
+    addopts = shlex.split(capture.read_text(encoding="utf-8"))
+    workers = [arg for arg in addopts if arg.startswith("-n") and arg[2:].isdigit()]
+    assert workers == ["-n1"], addopts
+    assert "--dist=loadgroup" in addopts
