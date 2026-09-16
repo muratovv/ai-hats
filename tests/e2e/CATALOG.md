@@ -2018,7 +2018,7 @@ as a claim to check, not as evidence.
   hooks/done-gate.sh --stages
   ```
 
-- **expect** — the stage passes a green master and refuses a red one with exit 1, naming the conclusion and the run url; the notice reports the same verdict and exits 0 whatever it is; every reason the check cannot answer (no gh, gh refusing, a run still going) is ANNOUNCED, never silent; and no card gate asks for the stage
+- **expect** — the stage passes a completed green run and refuses everything else with exit 1 — a red run names the conclusion and the run url, a run still going names the run to wait on, and every reason the check cannot answer (no gh, gh refusing, unreadable output, no run) names itself as unknown, which is not green; the notice reports the same verdict and exits 0 whatever it is; and no card gate asks for the stage
 - **why** — CI had been red since before 2026-07-28 for an unrelated reason, so the one arm that could see seven of v0.15.0's nine defects went unread for a month. A finished card then sat in review behind a red run it had no part in: the base's verdict is the push road's question, not a card's
 
 ## `test_migration_no_replay_without_config.py`

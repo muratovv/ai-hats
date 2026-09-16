@@ -250,6 +250,7 @@ an accidental skip.
 Master's own CI verdict is not a card's to pass or to wave through, so no card
 gate asks for it. The push road prints it before a push to master
 (`scripts/check_master_ci.py --notice`, never blocking: the push is how master
-gets fixed), and `bash scripts/gates.sh master-ci` asks by hand. If a red is not
-yours, the move is a classification, not a request for a flag:
-skill **red-attribution**.
+gets fixed), and `bash scripts/gates.sh master-ci` asks by hand — green only on
+a completed green run; a run still going or a verdict it cannot read is unknown,
+and unknown is not green. If a red is not yours, the move is a classification,
+not a request for a flag: skill **red-attribution**.

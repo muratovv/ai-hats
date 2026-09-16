@@ -359,7 +359,8 @@ def test_without_gh_the_notice_says_not_checked_and_the_push_still_allowed(tmp_p
     )
 
     assert res.returncode == 0, res.stderr
-    assert "was not checked" in res.stderr, res.stderr
+    assert "not on PATH" in res.stderr, res.stderr
+    assert "not refusing" in res.stderr, res.stderr
     assert "push allowed" in res.stderr, res.stderr
 
 

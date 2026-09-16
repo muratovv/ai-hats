@@ -6,11 +6,12 @@ cmds:
     bash scripts/gates.sh master-ci
     python scripts/check_master_ci.py --notice
     hooks/done-gate.sh --stages
-expect: the stage passes a green master and refuses a red one with exit 1,
-        naming the conclusion and the run url; the notice reports the same
-        verdict and exits 0 whatever it is; every reason the check cannot
-        answer (no gh, gh refusing, a run still going) is ANNOUNCED, never
-        silent; and no card gate asks for the stage
+expect: the stage passes a completed green run and refuses everything else
+        with exit 1 — a red run names the conclusion and the run url, a run
+        still going names the run to wait on, and every reason the check cannot
+        answer (no gh, gh refusing, unreadable output, no run) names itself as
+        unknown, which is not green; the notice reports the same verdict and
+        exits 0 whatever it is; and no card gate asks for the stage
 why:    CI had been red since before 2026-07-28 for an unrelated reason, so the
         one arm that could see seven of v0.15.0's nine defects went unread for
         a month. A finished card then sat in review behind a red run it had no
@@ -96,36 +97,49 @@ def test_a_red_master_refuses_and_names_the_run(tmp_path: Path):
     assert "_ACK" not in combined, "there is no flag: a red base is nobody's to wave through"
 
 
-def test_a_run_still_going_is_not_a_verdict(tmp_path: Path):
+def test_a_run_still_going_refuses_and_names_the_run_to_wait_on(tmp_path: Path):
+    """A card once closed through this window: the run it raced went red
+    twenty minutes later. 'No verdict yet' is not green."""
     run = _run(_fake_gh(tmp_path, stdout=_runs("", status="in_progress")))
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
+    assert run.returncode == 1, combined
     assert "in_progress" in combined, combined
+    assert "actions/runs/1" in combined, combined
+    assert "wait" in combined.lower(), combined
+    assert "Unknown is not green" in combined, combined
 
 
-def test_no_gh_is_announced_not_silent():
+def test_no_gh_refuses_as_unknown():
     run = _run(None)
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
-    assert "SKIPPED" in combined, combined
+    assert run.returncode == 1, combined
     assert "not on PATH" in combined, combined
-    assert "was not checked" in combined, combined
+    assert "Unknown is not green" in combined, combined
+    assert "SKIPPED" not in combined, combined
 
 
-def test_gh_refusing_is_announced_not_silent(tmp_path: Path):
+def test_gh_refusing_refuses_as_unknown(tmp_path: Path):
     run = _run(_fake_gh(tmp_path, stdout="gh: not authenticated", exit_code=4))
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
-    assert "SKIPPED" in combined, combined
+    assert run.returncode == 1, combined
     assert "exited 4" in combined, combined
+    assert "Unknown is not green" in combined, combined
 
 
-def test_unreadable_output_is_announced_not_silent(tmp_path: Path):
+def test_unreadable_output_refuses_as_unknown(tmp_path: Path):
     run = _run(_fake_gh(tmp_path, stdout="not json at all"))
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
-    assert "SKIPPED" in combined, combined
+    assert run.returncode == 1, combined
     assert "cannot read" in combined, combined
+    assert "Unknown is not green" in combined, combined
+
+
+def test_no_run_recorded_refuses_as_unknown(tmp_path: Path):
+    run = _run(_fake_gh(tmp_path, stdout="[]"))
+    combined = run.stdout + run.stderr
+    assert run.returncode == 1, combined
+    assert "no ci.yml run recorded for master" in combined, combined
+    assert "Unknown is not green" in combined, combined
 
 
 @pytest.mark.parametrize(
@@ -136,6 +150,7 @@ def test_unreadable_output_is_announced_not_silent(tmp_path: Path):
         ("a run still going", {"stdout": _runs("", status="in_progress")}, "in_progress"),
         ("gh refusing", {"stdout": "gh: not authenticated", "exit_code": 4}, "exited 4"),
         ("unreadable output", {"stdout": "not json at all"}, "cannot read"),
+        ("no run recorded", {"stdout": "[]"}, "no ci.yml run recorded"),
     ],
 )
 def test_the_notice_announces_every_outcome_and_never_refuses(
@@ -154,14 +169,15 @@ def test_the_notice_without_gh_is_announced_not_silent():
     run = _run(None, notice=True)
     combined = run.stdout + run.stderr
     assert run.returncode == 0, combined
-    assert "was not checked" in combined, combined
+    assert "not on PATH" in combined, combined
+    assert "not refusing" in combined, combined
 
 
 def test_the_notice_on_a_red_master_says_why_it_does_not_refuse(tmp_path: Path):
     run = _run(_fake_gh(tmp_path, stdout=_runs("failure")), notice=True)
     combined = run.stdout + run.stderr
     assert "failure" in combined, combined
-    assert "re-runs it" in combined, combined
+    assert "not refusing" in combined, combined
 
 
 _GATE_HOOKS = "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks"

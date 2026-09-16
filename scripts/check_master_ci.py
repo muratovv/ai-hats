@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Read master's last CI verdict: a stage that refuses on red, or a notice that never does.
+"""Read master's last CI verdict: a stage green only on a completed green run, or a notice that never refuses.
 
 Nine defects shipped while the CI `e2e` job had been red for a month for an
 unrelated reason — the one arm that could see them was never read. Bare, this is
-the `master-ci` stage: run by hand, red on a non-success. With `--notice` it is
-what the push road prints: the same verdict, exit 0 whatever it is, because a
-push is how master gets fixed and a refusal there would block the fix.
-
-A skip is always announced: a check that quietly does nothing is the same defect.
+the `master-ci` stage, run by hand: it passes only on a completed green run and
+refuses everything else — a red run, a run still going, a verdict it could not
+read. Unknown is not green. With `--notice` it is what the push road prints: the
+same verdict, exit 0 whatever it is, because a push is how master gets fixed and
+a refusal there would block the fix.
 """
 
 from __future__ import annotations
@@ -25,13 +25,24 @@ QUERY_TIMEOUT_S = 30
 #: after ~30s idle, so the notice must answer well inside it.
 NOTICE_TIMEOUT_S = 10
 
+UNKNOWN = "Unknown is not green."
 
-def _skip(reason: str) -> int:
-    print(f"{TAG} SKIPPED: {reason}", file=sys.stderr)
-    print(
-        f"{TAG} master's CI verdict is unknown to this run — it was not checked.", file=sys.stderr
-    )
-    return 0
+
+def _refuse(seen: str, *remedy: str, url: str = "", notice: bool) -> int:
+    """Every outcome short of a completed green run ends here; a notice says it and lets go."""
+    print(f"{TAG} FAIL: {seen}", file=sys.stderr)
+    if url:
+        print(f"{TAG}   {url}", file=sys.stderr)
+    if notice:
+        print(
+            f"{TAG} not refusing: a notice tells, and the push is how master gets fixed. "
+            "Read the run above before you rely on master being green.",
+            file=sys.stderr,
+        )
+        return 0
+    for line in remedy:
+        print(f"{TAG} {line}", file=sys.stderr)
+    return 1
 
 
 def _query(branch: str, workflow: str, timeout_s: int) -> list[dict] | str:
@@ -76,12 +87,22 @@ def main(argv: list[str] | None = None) -> int:
         help="report the verdict and exit 0 whatever it is (the push road)",
     )
     args = parser.parse_args(argv)
+    notice = args.notice
 
-    runs = _query(args.branch, args.workflow, NOTICE_TIMEOUT_S if args.notice else QUERY_TIMEOUT_S)
+    runs = _query(args.branch, args.workflow, NOTICE_TIMEOUT_S if notice else QUERY_TIMEOUT_S)
     if isinstance(runs, str):
-        return _skip(runs)
+        return _refuse(
+            f"{args.branch}'s CI verdict could not be read — {runs}",
+            f"{UNKNOWN} Restore the read (gh on PATH, authenticated, online), "
+            "then run this stage again.",
+            notice=notice,
+        )
     if not runs:
-        return _skip(f"no {args.workflow} run recorded for {args.branch}")
+        return _refuse(
+            f"no {args.workflow} run recorded for {args.branch}",
+            f"{UNKNOWN} Nothing has judged this branch yet.",
+            notice=notice,
+        )
 
     run = runs[0]
     status = run.get("status") or "unknown"
@@ -90,32 +111,24 @@ def main(argv: list[str] | None = None) -> int:
     url = run.get("url") or ""
 
     if status != "completed":
-        print(f"{TAG} {args.branch}: last run is {status} — {title}", file=sys.stderr)
-        print(f"{TAG} no verdict yet; not refusing on an unfinished run. {url}", file=sys.stderr)
-        return 0
+        return _refuse(
+            f"{args.branch}'s last run is {status}, not a verdict — {title}",
+            f"{UNKNOWN} Wait for that run to conclude, then run this stage again.",
+            url=url,
+            notice=notice,
+        )
 
     if conclusion == "success":
         print(f"{TAG} ok: {args.branch} is green — {title}", file=sys.stderr)
         return 0
 
-    print(f"{TAG} FAIL: {args.branch} last concluded '{conclusion}' — {title}", file=sys.stderr)
-    print(f"{TAG}   {url}", file=sys.stderr)
-    if args.notice:
-        print(
-            f"{TAG} not refusing: this push is what re-runs it. Read that run before "
-            f"you rely on {args.branch} being green.",
-            file=sys.stderr,
-        )
-        return 0
-    print(
-        f"{TAG} Fix master first — this stage waits on master, not on your branch.",
-        file=sys.stderr,
+    return _refuse(
+        f"{args.branch} last concluded '{conclusion}' — {title}",
+        "Fix master first — this stage waits on master, not on your branch.",
+        "If master's redness is not yours, say so with evidence: skill `red-attribution`.",
+        url=url,
+        notice=notice,
     )
-    print(
-        f"{TAG} If master's redness is not yours, say so with evidence: skill `red-attribution`.",
-        file=sys.stderr,
-    )
-    return 1
 
 
 if __name__ == "__main__":
