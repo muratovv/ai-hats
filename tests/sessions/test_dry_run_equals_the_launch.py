@@ -2,19 +2,18 @@
 
 ``tests/sessions/test_dry_run_matches_session.py`` promises this in its filename
 and proves something narrower: that a dry-run writes nothing. Nothing anywhere
-compared a dry-run payload against a real session's, even though both sides
-build the same :class:`SessionReport` and the launch already persists its own to
+compared a dry-run payload against a real session's, even though both are one
+``session_record`` of the plan and the launch persists its own to
 ``role_materialization.json`` (HATS-1216).
 
-What this is worth: the artifact build IS shared code (one
-``build_session_artifacts`` with a swapped port), so agreement there is cheap.
-The load-bearing part is everything NOT shared — a different composition entry
+What this is worth: the plan IS shared code, so agreement there is cheap. The
+load-bearing part is everything NOT shared — a different composition entry
 point (``build_preview_payload`` against ``build_composition_payload``), a
 different policy source, a fixed session id, and a launch that skips the runner's
-post-build phase entirely. That surface had no coverage at all.
+post-plan phase entirely. That surface had no coverage at all.
 
 What it does NOT catch, stated so nobody reads a green run as more than it is:
-dropping a field from ``SessionReport`` keeps this green, because both sides lose
+dropping a key from ``session_record`` keeps this green, because both sides lose
 it together. The bindings section has its own inversion in
 ``tests/e2e/test_check_mirror_dry_run.py``.
 """  # comment-length: allow — a test that proves less than its name must say so
