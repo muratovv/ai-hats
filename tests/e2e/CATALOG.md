@@ -22,12 +22,12 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  AI_HATS_RED_MASTER_ACK=1 make done-gate
-  grep -rn AI_HATS_RED_MASTER_ACK scripts/
+  AI_HATS_PRIVACY_ACK=1 git commit -m x
+  grep -rn AI_HATS_PRIVACY_ACK .githooks/
   ```
 
 - **expect** — the composed PreToolUse chain refuses the grant and leaves the grep alone
-- **why** — gate flags read by a script inside `make` or a git hook are reached by an inline prefix (unlike hook-read flags), so `master-ci`'s hatch was self-servable and the smoke gate's was skipped on four commits that way
+- **why** — gate flags read by a script inside `make` or a git hook are reached by an inline prefix (unlike hook-read flags), so the hatch `master-ci` once carried was self-servable and the smoke gate's was skipped on four commits that way
 
 ## `test_adr_integrity_gate.py`
 
@@ -2007,18 +2007,19 @@ as a claim to check, not as evidence.
 
 ## `test_master_ci_gate.py`
 
-*pins HATS-1877*
+*pins HATS-1877, HATS-1991*
 
-- **flow** — a maintainer closes a card while master's own CI has been failing
+- **flow** — a maintainer reads master's own CI verdict: by hand as a stage, and as the notice the push road prints before a push to master
 - **cmds**
 
   ```console
   bash scripts/gates.sh master-ci
+  python scripts/check_master_ci.py --notice
   hooks/done-gate.sh --stages
   ```
 
-- **expect** — a green master passes; everything else refuses with exit 1 — a red run names the conclusion and the run url, a run still going names the run to wait on, and every reason the check cannot answer (no gh, gh refusing, unreadable output, no run) names itself as unknown, which is not green; the one override lets any of them through on the supervisor's word
-- **why** — CI had been red since before 2026-07-28 for an unrelated reason, so the one arm that could see seven of v0.15.0's nine defects went unread for a month. A skip nobody is told about is that same defect wearing the gate's own colours
+- **expect** — the stage passes a completed green run and refuses everything else with exit 1 — a red run names the conclusion and the run url, a run still going names the run to wait on, and every reason the check cannot answer (no gh, gh refusing, unreadable output, no run) names itself as unknown, which is not green; the notice reports the same verdict and exits 0 whatever it is; and no card gate asks for the stage
+- **why** — CI had been red since before 2026-07-28 for an unrelated reason, so the one arm that could see seven of v0.15.0's nine defects went unread for a month. A finished card then sat in review behind a red run it had no part in: the base's verdict is the push road's question, not a card's
 
 ## `test_migration_no_replay_without_config.py`
 
@@ -2252,7 +2253,7 @@ as a claim to check, not as evidence.
 
 ## `test_prepush_e2e_master_gate.py`
 
-*pins HATS-550, HATS-686, HATS-1878*
+*pins HATS-550, HATS-686, HATS-1878, HATS-1991*
 
 - **flow** — a maintainer pushing to master, gated by git's pre-push hook
 - **cmds**
@@ -2262,8 +2263,8 @@ as a claim to check, not as evidence.
   scripts/run-e2e-gate.sh          # earns the markers out of band, one per stage
   ```
 
-- **expect** — check mode reads the pre-push protocol, ignores non-master lines, and asks the project's own `gates.sh check` about each pushed commit's TREE; run mode runs only the unmarked stages, stops at the first red, and stamps each green one for the commit it judged
-- **why** — GitHub closes the push connection ~30s in, so the tier runs out of band and the per-stage markers are the only evidence it ran
+- **expect** — check mode reads the pre-push protocol, ignores non-master lines, tells the pusher master's own CI verdict without ever blocking on it, and asks the project's own `gates.sh check` about each pushed commit's TREE; run mode runs only the unmarked stages, stops at the first red, and stamps each green one for the commit it judged
+- **why** — GitHub closes the push connection ~30s in, so the tier runs out of band and the per-stage markers are the only evidence it ran; a red base is the pusher's to read, since the push is how it gets fixed
 
 ## `test_pretooluse_hook_cwd_resolution.py`
 

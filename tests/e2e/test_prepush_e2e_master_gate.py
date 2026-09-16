@@ -1,23 +1,27 @@
-"""e2e (HATS-550, HATS-686, HATS-1878)
+"""e2e (HATS-550, HATS-686, HATS-1878, HATS-1991)
 
 flow:   a maintainer pushing to master, gated by git's pre-push hook
 cmds:
     git push origin master           # allowed only with every stage the hook declares marked
     scripts/run-e2e-gate.sh          # earns the markers out of band, one per stage
-expect: check mode reads the pre-push protocol, ignores non-master lines, and
+expect: check mode reads the pre-push protocol, ignores non-master lines, tells
+        the pusher master's own CI verdict without ever blocking on it, and
         asks the project's own `gates.sh check` about each pushed commit's TREE;
         run mode runs only the unmarked stages, stops at the first red, and
         stamps each green one for the commit it judged
 why:    GitHub closes the push connection ~30s in, so the tier runs out of band
-        and the per-stage markers are the only evidence it ran
-"""
+        and the per-stage markers are the only evidence it ran; a red base is
+        the pusher's to read, since the push is how it gets fixed
+"""  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -98,9 +102,10 @@ def _write_runner(where: Path, rcs: dict[str, int] | None = None) -> Path:
     return runner
 
 
-def _git_repo(tmp_path: Path, rcs: dict[str, int] | None = None) -> Path:
-    """One commit holding the real `scripts/gates.sh`; the fake stage runner sits
-    beside the repo and reaches it through GATES_STAGE_RUNNER."""
+def _git_repo(tmp_path: Path, rcs: dict[str, int] | None = None, *, checker: bool = False) -> Path:
+    """One commit holding the real `scripts/gates.sh` (and, on request, the real
+    master-ci checker); the fake stage runner sits beside the repo and reaches
+    it through GATES_STAGE_RUNNER."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -109,6 +114,8 @@ def _git_repo(tmp_path: Path, rcs: dict[str, int] | None = None) -> Path:
     (repo / "f").write_text("x")
     (repo / "scripts").mkdir()
     shutil.copy(REPO_ROOT / "scripts" / "gates.sh", repo / "scripts" / "gates.sh")
+    if checker:
+        shutil.copy(REPO_ROOT / "scripts" / "check_master_ci.py", repo / "scripts")
     _write_runner(tmp_path, rcs)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "init")
@@ -163,7 +170,9 @@ def _env(repo: Path, bindir: Path | None) -> dict[str, str]:
     return env
 
 
-def _check(stdin: str, *, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _check(
+    stdin: str, *, cwd: Path, bindir: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     """The hook in CHECK mode: git's pre-push protocol on stdin."""
     return subprocess.run(
         ["bash", str(HOOK)],
@@ -172,7 +181,34 @@ def _check(stdin: str, *, cwd: Path) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         timeout=30,
-        env=_env(cwd, None),
+        env=_env(cwd, bindir),
+    )
+
+
+def _notice_bindir(tmp_path: Path, runs_json: str | None) -> Path:
+    """A PATH for the notice: a `python3` (the checker is stdlib-only) and, when
+    asked, a `gh` that answers with exactly these runs."""
+    bindir = tmp_path / "notice-bin"
+    bindir.mkdir()
+    (bindir / "python3").symlink_to(sys.executable)
+    if runs_json is not None:
+        gh = bindir / "gh"
+        gh.write_text(f"#!/usr/bin/env bash\ncat <<'JSON'\n{runs_json}\nJSON\n")
+        gh.chmod(0o755)
+    return bindir
+
+
+def _runs(conclusion: str) -> str:
+    return json.dumps(
+        [
+            {
+                "conclusion": conclusion,
+                "status": "completed",
+                "displayTitle": "some commit subject",
+                "url": "https://github.com/muratovv/ai-hats/actions/runs/1",
+                "headSha": "0" * 40,
+            }
+        ]
     )
 
 
@@ -274,6 +310,101 @@ def test_master_push_allowed_with_every_stage_marked(tmp_path: Path):
     assert res.returncode == 0, res.stderr
     assert "push allowed" in res.stderr
     assert _stages_run(repo) == [], "a check runs no stage"
+
+
+# ===========================================================================
+# CHECK MODE — the master-ci notice
+# ===========================================================================
+
+
+def test_a_red_master_is_announced_and_the_push_still_allowed(tmp_path: Path):
+    """The push is how master gets fixed: the pusher is told, never blocked."""
+    repo = _git_repo(tmp_path, checker=True)
+    _write_markers(repo, _tree(repo))
+
+    res = _check(
+        f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n",
+        cwd=repo,
+        bindir=_notice_bindir(tmp_path, _runs("failure")),
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "[master-ci] FAIL" in res.stderr, res.stderr
+    assert "actions/runs/1" in res.stderr, res.stderr
+    assert "push allowed" in res.stderr, res.stderr
+
+
+def test_a_green_master_is_announced_before_the_verdict(tmp_path: Path):
+    repo = _git_repo(tmp_path, checker=True)
+    _write_markers(repo, _tree(repo))
+
+    res = _check(
+        f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n",
+        cwd=repo,
+        bindir=_notice_bindir(tmp_path, _runs("success")),
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert res.stderr.index("[master-ci] ok:") < res.stderr.index("push allowed"), res.stderr
+
+
+def test_without_gh_the_notice_says_not_checked_and_the_push_still_allowed(tmp_path: Path):
+    repo = _git_repo(tmp_path, checker=True)
+    _write_markers(repo, _tree(repo))
+
+    res = _check(
+        f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n",
+        cwd=repo,
+        bindir=_notice_bindir(tmp_path, None),
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "not on PATH" in res.stderr, res.stderr
+    assert "not refusing" in res.stderr, res.stderr
+    assert "push allowed" in res.stderr, res.stderr
+
+
+def test_a_red_master_does_not_rescue_a_push_without_markers(tmp_path: Path):
+    """The notice changes nothing about the verdict in either direction."""
+    repo = _git_repo(tmp_path, checker=True)
+
+    res = _check(
+        f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n",
+        cwd=repo,
+        bindir=_notice_bindir(tmp_path, _runs("failure")),
+    )
+
+    assert res.returncode == 1, res.stderr
+    assert "[master-ci] FAIL" in res.stderr, res.stderr
+    assert "BLOCKED" in res.stderr, res.stderr
+
+
+def test_the_notice_does_not_run_for_a_feature_branch(tmp_path: Path):
+    repo = _git_repo(tmp_path, checker=True)
+
+    res = _check(
+        f"refs/heads/feature/x {_head(repo)} refs/heads/feature/x {OLD_SHA}\n",
+        cwd=repo,
+        bindir=_notice_bindir(tmp_path, _runs("failure")),
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "[master-ci]" not in res.stderr, res.stderr
+
+
+def test_a_project_without_the_checker_gets_no_notice(tmp_path: Path):
+    repo = _git_repo(tmp_path)
+    _write_markers(repo, _tree(repo))
+
+    res = _check(
+        f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n",
+        cwd=repo,
+        bindir=_notice_bindir(tmp_path, _runs("failure")),
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "[master-ci]" not in res.stderr, res.stderr
+    assert "push allowed" in res.stderr, res.stderr
 
 
 def test_master_push_blocked_without_markers_and_names_what_is_missing(tmp_path: Path):

@@ -82,7 +82,7 @@ hook-подложкой и контрактом кодов возврата. **A
 | `adr-integrity`    | push-gate                                                                                | every ADR citation resolves and a number names exactly one file                                                         |
 | `bidi`             | push-gate                                                                                | no bidirectional control characters, which are invisible in review                                                      |
 | `wheel-contents`   | review-gate done-gate merge-gate                                                         | every tracked src file reaches the wheel built through the sdist                                                        |
-| `master-ci`        | done-gate                                                                                | master's last CI verdict is green (network)                                                                             |
+| `master-ci`        | -                                                                                        | master's last CI verdict is green (network)                                                                             |
 | `unit`             | review-gate done-gate merge-gate push-gate                                               | every test not marked integration                                                                                       |
 | `integration`      | done-gate                                                                                | the real-subprocess tests outside tests/e2e                                                                             |
 | `merge-smoke`      | done-gate                                                                                | the curated smoke subset of tests/e2e                                                                                   |
@@ -109,7 +109,9 @@ hook-подложкой и контрактом кодов возврата. **A
 `-` — стадия, которую не требует ни один гейт: `coverage`, `security`,
 `version-skew` живут в CI, `python-pin` — в бандле `all` и CI, `tmp-sweep` —
 уборка, которая не может быть красной, `prepare` — предусловие, которое ничего
-не утверждает. С HATS-1921 к ним прибавился **`e2e`** — весь тир под одним
+не утверждает, `master-ci` — сеть и вопрос о **базе**, а не о карточке: ручная
+стадия и notice на дороге пуша, никогда не отказ карточного гейта (D4). С
+HATS-1921 к ним прибавился **`e2e`** — весь тир под одним
 именем, то, что гоняет job `e2e` в CI и что значит `make e2e`; гейты требуют его
 **частей** (D11), чтобы дерево не гоняло те же тесты второй раз под другим
 именем. Строка с `-` стоит в таблице нарочно: «не названа ни одним гейтом»
@@ -125,7 +127,8 @@ hook-подложкой и контрактом кодов возврата. **A
 Последовательный прогон на одном ядре без xdist, 2026-08-14 (HATS-1655): тир
 линтинга (все офлайновые стадии до `unit`) — около девяти секунд вместе;
 `merge-smoke` ~20 с; `integration` ~98 с; `unit` ~95 с; `coverage` ~195 с.
-`wheel-contents` ~3 с на пять пакетов, `master-ci` — сеть (HATS-1877).
+`wheel-contents` ~3 с на пять пакетов, `master-ci` — сеть (HATS-1877; с
+HATS-1991 её не требует ни один гейт).
 
 Полный `e2e` при `-n 8`: 245–251 с (2026-08-17, HATS-1708; два прогона одного
 дерева, 911 passed), **295 с на 2026-09-09** (HATS-1921, master 1670d0c7, 1162
@@ -237,12 +240,12 @@ flowchart TD
 
 <!-- gate-table:gates -->
 
-| гейт          | где применяется          | стадии                                                                                                                                                                                                     |
-| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                               |
-| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default master-ci |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                               |
-| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe      |
+| гейт          | где применяется          | стадии                                                                                                                                                                                                |
+| ------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                          |
+| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default      |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                          |
+| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe |
 
 <!-- /gate-table:gates -->
 
@@ -259,8 +262,11 @@ flowchart TD
   `unit` плюс `wheel-contents` (HATS-1877) — минимум, ловящий явно сломанное до
   общего ствола и чинимый агентом в одиночку.
 - **`done-gate` спрашивает: зелен ли master после этой карточки.** Сверх
-  `merge-gate` — `integration`, `merge-smoke` и `master-ci` (последняя задаёт тот
-  же вопрос о базе, на которую карточка ложится). Предмет — вклад карточки в
+  `merge-gate` — `integration`, `merge-smoke` и `e2e-default` (D11). Вердикт CI
+  о **базе**, на которую карточка ложится, здесь не спрашивается: карточка не
+  может его ни заработать, ни исправить — готовая карточка стояла в review за
+  чужим красным прогоном без честного выхода (HATS-1991). Его читают на дороге
+  пуша, где стоит тот, кто может действовать. Предмет — вклад карточки в
   master, и у него **два имени в окружении чека**: `AI_HATS_WORKTREE_PATH`
   (слияние ещё не произошло, судится дерево ветки) и `AI_HATS_MERGED_SHA`
   (воркtree уже нет, судится дерево мёрдж-коммита). Ни того, ни другого — карточка
@@ -268,7 +274,9 @@ flowchart TD
   послабление, а сохранение F-11.
 - **`push-gate` спрашивает: зелёно ли дерево, которое уходит в origin/master.**
   Полный `e2e`-тир плюс `adr-integrity` и `bidi`, которых нет на карточных
-  гейтах.
+  гейтах. Перед вердиктом хук **говорит** последний вердикт CI master
+  (`check_master_ci.py --notice`) и никогда на нём не отказывает: пуш и есть
+  починка красного (HATS-1991).
 
 Три дороги, которые гейтами в коде **не являются** и потому в таблице не стоят:
 **commit** (`git commit`; privacy, docs-index, no-raw-destructive, skill-lint,
@@ -280,7 +288,7 @@ rule-delivery, ticket-ids; агент или человек; доли секун
 
 **Типовая карточка платит за разницу.** Маркер постадийный (D5): прогон
 `review-gate` штампует tier, `wheel-contents` и `unit`; `make done-gate` после
-него гоняет только `master-ci`, `integration` и `merge-smoke`. Дерево слияния
+него гоняет только `integration`, `merge-smoke` и `e2e-default`. Дерево слияния
 совпадает с деревом ветки в 26 случаях из 30 (замер 2026-08-14 по первым
 родителям master), так что те же штампы засчитываются и после слияния. Отказ
 называет **только недостающие стадии** и команду `make <gate>` — и она стоит

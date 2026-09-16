@@ -1,6 +1,6 @@
 ---
 name: red-attribution
-description: Decide whose failure a red stage is before acting on it. Use when a gate stage, test tier or CI run goes red and the change may not be its cause, when master-ci refuses a close, and before reporting a suite green.
+description: Decide whose failure a red stage is before acting on it. Use when a gate stage, test tier or CI run goes red and the change may not be its cause, when the push road reports a red master, and before reporting a suite green.
 license: MIT
 ---
 
@@ -14,7 +14,8 @@ what it ran.
 ## When to Use
 
 - A gate stage is red and the change did not touch what it exercises.
-- `master-ci` refuses a close, or a whole tier is red on a long-lived branch.
+- The push road's `master-ci` notice reports a red master, or a whole tier is
+  red on a long-lived branch.
 - Before writing "green" anywhere: the claim needs the runner's own number over
   the run the gate would have done, not a subset.
 

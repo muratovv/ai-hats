@@ -3,12 +3,13 @@
 flow:   an agent handing itself a GATE flag inline, the way the gate's own red
         verdict used to invite, and the reading of that same flag it must keep
 cmds:
-    AI_HATS_RED_MASTER_ACK=1 make done-gate
-    grep -rn AI_HATS_RED_MASTER_ACK scripts/
+    AI_HATS_PRIVACY_ACK=1 git commit -m x
+    grep -rn AI_HATS_PRIVACY_ACK .githooks/
 expect: the composed PreToolUse chain refuses the grant and leaves the grep alone
 why:    gate flags read by a script inside `make` or a git hook are reached by an
-        inline prefix (unlike hook-read flags), so `master-ci`'s hatch was
-        self-servable and the smoke gate's was skipped on four commits that way
+        inline prefix (unlike hook-read flags), so the hatch `master-ci` once
+        carried was self-servable and the smoke gate's was skipped on four
+        commits that way
 """  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ pytestmark = pytest.mark.integration
 #: unlike the hook-read acks of HATS-1639, where it cannot (HATS-1944). One per
 #: suffix the shape rule covers; the off-convention names ride in the unit tests.
 PROCESS_READ_GATE_FLAGS = [
-    "AI_HATS_RED_MASTER_ACK",
+    "AI_HATS_PRIVACY_ACK",
     "AI_HATS_SMOKE_SKIP",
     "AI_HATS_WT_GATE_OFF",
 ]
@@ -69,7 +70,7 @@ def test_the_refusal_routes_to_the_road_that_does_exist(hooked_project):
     """A deny with nowhere to go leaves the agent only blunt instruments."""
     project, env, settings = hooked_project
     verdict = run_chain(
-        project, "AI_HATS_RED_MASTER_ACK=1 make done-gate", settings=settings, env=env
+        project, "AI_HATS_PRIVACY_ACK=1 git commit -m x", settings=settings, env=env
     )
     assert "LAUNCHES" in verdict.reason, f"no road named: {verdict}"
     assert "red-attribution" in verdict.reason, f"no procedure named: {verdict}"
@@ -78,8 +79,8 @@ def test_the_refusal_routes_to_the_road_that_does_exist(hooked_project):
 @pytest.mark.parametrize(
     "command",
     [
-        "grep -rn AI_HATS_RED_MASTER_ACK scripts/",
-        'echo "AI_HATS_RED_MASTER_ACK=1 make done-gate"',
+        "grep -rn AI_HATS_PRIVACY_ACK .githooks/",
+        'echo "AI_HATS_PRIVACY_ACK=1 git commit -m x"',
         "make done-gate",
     ],
 )
