@@ -564,7 +564,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ClaudeSurface().build_session_artifacts(...)   # what `ai-hats session` runs
+  apply(ClaudeSurface().plan(...))   # what `ai-hats session` runs
   ```
 
 - **expect** — the developer's file is byte-identical afterwards, and the session file handed over with `--settings` carries only ai-hats entries
