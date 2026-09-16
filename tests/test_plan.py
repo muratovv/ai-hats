@@ -503,6 +503,70 @@ def test_a_namespaced_skill_names_its_executable_by_the_same_path_on_every_chann
     assert [s.name for s in plan.skills] == ["skills::dev::py"]
 
 
+def test_a_check_bound_outside_every_composed_skill_is_a_diagnostic_and_stays_a_row(
+    tmp_path: Path,
+):
+    """No session mirror will hold the script's bytes: the adapter says so where
+    it reads the library, and the record's ``checks`` row shows no ``runs_from``."""
+    from ai_hats.diagnostics import Level
+    from ai_hats.resolver import LibraryResolver
+    from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
+
+    skill = tmp_path / "skills" / "s"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: s\n---\n# s\n")
+    elsewhere = tmp_path / "elsewhere" / "gate.sh"
+    elsewhere.parent.mkdir()
+    elsewhere.write_text("#!/bin/sh\n")
+    (tmp_path / "roles" / "r").mkdir(parents=True)
+    (tmp_path / "roles" / "r" / "config.yaml").write_text("name: r\ncomposition:\n  skills: [s]\n")
+
+    def bound(script_path: Path) -> CompositionResult:
+        return CompositionResult(
+            name="r",
+            priorities=[],
+            rules=[],
+            skills=[ResolvedComponent("s", ComponentKind.SKILL, skill)],
+            injections=[],
+            checks=(
+                ResolvedCheck(
+                    app="rack",
+                    path=("tasks",),
+                    run="s/hooks/gate.sh",
+                    at=("plan->execute",),
+                    cargo={},
+                    on_error="refuse",
+                    script_path=script_path,
+                    declared_by="r",
+                ),
+            ),
+        )
+
+    def adapted(result: CompositionResult):
+        found: list = []
+        plan = adapt(
+            result,
+            identity="r",
+            layout=ProjectLayout.at(tmp_path),
+            resolver=LibraryResolver([tmp_path]),
+            overlays=(),
+            diagnostics=found,
+        )
+        return plan, found
+
+    plan, found = adapted(bound(elsewhere))
+    assert [
+        (d.level, str(elsewhere) in d.text, "outside every composed skill" in d.text) for d in found
+    ] == [(Level.WARN, True, True)]
+    assert [h.at for h in plan.hooks.external] == ["plan->execute"], "the row stays"
+
+    inside = skill / "hooks" / "gate.sh"
+    inside.parent.mkdir()
+    inside.write_text("#!/bin/sh\n")
+    _plan, found = adapted(bound(inside))
+    assert found == [], "positive control: a script inside its skill is no diagnostic"
+
+
 def test_every_path_in_the_plan_is_absolute(maintainer):
     _asm, _result, plan = maintainer
     found: list[str] = []
