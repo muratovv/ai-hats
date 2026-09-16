@@ -26,10 +26,7 @@ from .session_artifacts import (
 )
 from .session_report import SessionReport
 
-# A real sid is minted by the session manager, which a dry-run must not touch.
-# Fixed so reported paths are stable and diffable.
-DRY_RUN_SESSION_ID = "dry-run"
-DRY_RUN_MATERIALIZE_SESSION_ID = "dry-run-materialize"
+from .session_plan import DRY_RUN_MATERIALIZE_SESSION_ID, DRY_RUN_SESSION_ID
 
 __all__ = [
     "AT_LAUNCH",

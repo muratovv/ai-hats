@@ -324,25 +324,37 @@ def _listed_in_audit(project: Path, sid: str) -> dict[str, set[str]]:
     }
 
 
-def _assert_audit_lists_the_snapshot(project: Path, sid: str, role: str) -> None:
+def _assert_audit_lists_the_composition(project: Path, sid: str, role: str) -> None:
+    """What the seam composed, by kind: rules are the prompt members named
+    ``rules::``, skills the skills, traits the trace's remaining terms."""
     from ai_hats.composition_seam import build_composition_payload
 
     listed = _listed_in_audit(project, sid)
-    snapshot = build_composition_payload(project, role_override=role).snapshot
+    plan = build_composition_payload(project, role_override=role).plan
+    bare = lambda name: name.split("::", 1)[1]  # noqa: E731 — one strip, read inline
+    rules = {
+        bare(m.name) for b in plan.prompt.blocks for m in b.members if m.name.startswith("rules::")
+    }
+    skills = {bare(s.name) for s in plan.skills}
+    traits = {
+        t.term
+        for t in plan.trace
+        if t.removed_by is None and not t.term.startswith(("rules::", "skills::"))
+    }
 
-    assert listed["Rules"] == set(snapshot["rules"])
-    assert listed["Skills"] == set(snapshot["skills"])
-    assert listed["Traits"] == set(snapshot["traits"])
-    assert snapshot["rules"] and snapshot["skills"], "the sample must compose both"
+    assert listed["Rules"] == rules
+    assert listed["Skills"] == skills
+    assert listed["Traits"] == traits
+    assert rules and skills, "the sample must compose both"
 
 
-def test_the_audit_lists_the_rules_and_skills_the_snapshot_listed(project: Path, monkeypatch):
+def test_the_audit_lists_the_rules_and_skills_the_composition_holds(project: Path, monkeypatch):
     """The reflexive loop's input is not narrowed (ADR-0036 D6): ``audit.md``
-    rendered off the plan's record names the same rules and skills the
-    composition snapshot named."""
+    rendered off the plan's record names every rule, skill and trait the
+    composition holds."""
     launched = _launch_for_real(monkeypatch, project)
 
-    _assert_audit_lists_the_snapshot(project, _sid_of(launched), "maintainer")
+    _assert_audit_lists_the_composition(project, _sid_of(launched), "maintainer")
 
 
 @pytest.fixture
@@ -367,13 +379,13 @@ def agy_project(tmp_path: Path, monkeypatch) -> Path:
     return proj
 
 
-def test_the_audit_lists_the_rules_and_skills_the_snapshot_listed_on_a_cli_surface(
+def test_the_audit_lists_the_rules_and_skills_the_composition_holds_on_a_cli_surface(
     agy_project: Path, monkeypatch
 ):
     """The same claim on a surface that plans a CLI launch (ADR-0036 D6, R9)."""
     launched = _launch_for_real(monkeypatch, agy_project)
 
-    _assert_audit_lists_the_snapshot(agy_project, _sid_of(launched), "role-judge")
+    _assert_audit_lists_the_composition(agy_project, _sid_of(launched), "role-judge")
     assert launched["provider"] == "agy" and launched["launch"][:2] == ["agy", "--add-dir"]
 
 

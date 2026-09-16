@@ -37,7 +37,6 @@ class CompositionPayload:
     # stays the base name reports carry; a gate needs the whole expression, or a
     # check from a runtime-added trait silently never fires.
     role_expression: str = ""
-    snapshot: dict = field(default_factory=dict)
     hooks: "HooksManager | None" = None
     static_cost_analyzer: "Callable[[str], dict | None] | None" = None
     channel: str = ""

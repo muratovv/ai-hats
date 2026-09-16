@@ -31,17 +31,8 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
-from .check_snapshot import describe_checks
-from .session_artifacts import (
-    AT_LAUNCH,
-    BuiltArtifacts,
-    CollectedMetrics,
-    RunMode,
-    assemble_brief,
-    assemble_launch_env,
-)
-from .session_plan import launch, plan_session, plans, probe_host, session_record
-from .session_report import SessionReport
+from .session_artifacts import AT_LAUNCH, CollectedMetrics, RunMode, assemble_brief
+from .session_plan import launch, plan_session, probe_host, session_record
 from .session_run import SessionRun
 from .surfaces import LaunchFlags, Prompt, PromptBlock, PromptMember, apply
 from .runtime_common import (
@@ -298,125 +289,55 @@ class SubAgentRunner:
         _ctx = provider.execution_context(self.layout)
         _ctx.__enter__()
 
-        plan = flags = artifacts = None
-        if plans(provider):
-            # plan → apply → launch → record (ADR-0036 D2–D6); the composition
-            # half is what the seam adapted, an override replaces its prompt.
-            composition = self.payload.plan
-            if composition is None:
-                raise RuntimeError("the seam adapted no composition")
-            if system_prompt_override is not None:
-                composition = _with_prompt(composition, system_prompt_override)
-            root = self.layout.cache.session(session.session_id)
-            plan = plan_session(
-                composition,
-                provider,
-                run_mode=RunMode.AUTOMATE,
-                policy=self.payload.policy,
-                root=root,
-                layout=self.layout,
-                host=probe_host(surface=provider),
-            )
-            applied = apply(plan)
-            _claim_session_cache(root)
-            flags = LaunchFlags(
-                session_id=session.session_id,
-                session_dir=session.session_dir,
-                trace_path=str(session.trace_path),
-                root_pid=str(os.getpid()),  # Ownership liveness anchor
-                # Minted only once the worktree stands; the record names the slot.
-                provider_session_id=AT_LAUNCH,
-                model=model or None,
-                brief=assemble_brief(self.layout, task=task, ticket_id=ticket_id),
-            )
-            provider.claim_resources(plan, flags, layout=self.layout, run=run)
-            launched = launch(plan, flags, layout=self.layout)
-            launch_env = dict(launched.env)
-            meta_prompt = launched.prompt
-            record = session_record(
-                plan,
-                launched,
-                applied,
-                role=role_name,
-                cwd="<worktree, assigned at launch>",
-                notes=[d.render() for d in self.payload.diagnostics],
-            )
-            described_launch = list(launched.args or ())
-            composition_section = record["composition"]
-        else:
-            artifacts = provider.build_session_artifacts(
-                self.layout,
-                result,
-                session.session_id,
-                run_mode=RunMode.AUTOMATE,
-                policy=self.payload.policy,
-                artifacts=BuiltArtifacts(resources=run),
-            )
-            for warning in artifacts.notices:
-                session.log_sys(warning)
-            _claim_session_cache(self.layout.cache.session(session.session_id))
-
-            # The gates this sub-agent runs under. Every AUTOMATE record ever written
-            # said `checks: []`, so the reflect loop could not see whether a
-            # sub-agent had its gates at all.
-            reported_checks, notes = describe_checks(
-                provider, self.layout, result, session.session_id, artifacts.port.record
-            )
-            # Everything ai-hats adds to the child's environment, expressed once
-            # — the sub-agent path merged its own subset and reported a
-            # different one: `extra_env` was reported and never delivered, while the
-            # six keys it did deliver appeared in no record.
-            launch_env = assemble_launch_env(
-                provider,
-                self.layout,
-                session.session_dir,
-                session_id=session.session_id,
-                trace_path=str(session.trace_path),
-                # The expression, not the base name `role_name` reports.
-                role=self.payload.role_expression,
-                root_pid=str(os.getpid()),  # Ownership liveness anchor
-                extra_env=artifacts.extra_env,
-                run_mode=RunMode.AUTOMATE,
-            )
-            described = provider.describe_automate_launch(
-                self.layout,
-                result,
-                session.session_id,
-                artifacts,
-                task=task,
-                ticket_id=ticket_id,
-                model=model,
-                env=launch_env,
-            )
-            meta_prompt = described.prompt
-            described_launch = described.launch
-            prompt_file = next(
-                (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
-                session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
-            )
-            record = SessionReport(
-                role=role_name,
-                provider=provider.name,
-                run_mode=RunMode.AUTOMATE.value,
-                policy=self.payload.policy,
-                launch=described.launch,
-                env=launch_env,
-                prompt=prompt_file,
-                record=artifacts.port.record,
-                cwd="<worktree, assigned at launch>",
-                checks=reported_checks,
-                consent=result.consent,
-                composition=self.payload.plan,
-                notes=tuple(notes),
-            ).to_dict()
-            composition_section = self.payload.snapshot
+        # plan → apply → launch → record (ADR-0036 D2–D6); the composition
+        # half is what the seam adapted, an override replaces its prompt.
+        composition = self.payload.plan
+        if composition is None:
+            raise RuntimeError("the seam adapted no composition")
+        if system_prompt_override is not None:
+            composition = _with_prompt(composition, system_prompt_override)
+        root = self.layout.cache.session(session.session_id)
+        plan = plan_session(
+            composition,
+            provider,
+            run_mode=RunMode.AUTOMATE,
+            policy=self.payload.policy,
+            root=root,
+            layout=self.layout,
+            host=probe_host(surface=provider),
+        )
+        applied = apply(plan)
+        _claim_session_cache(root)
+        flags = LaunchFlags(
+            session_id=session.session_id,
+            session_dir=session.session_dir,
+            trace_path=str(session.trace_path),
+            root_pid=str(os.getpid()),  # Ownership liveness anchor
+            # Minted only once the worktree stands; the record names the slot.
+            provider_session_id=AT_LAUNCH,
+            model=model or None,
+            brief=assemble_brief(self.layout, task=task, ticket_id=ticket_id),
+        )
+        provider.claim_resources(plan, flags, layout=self.layout, run=run)
+        launched = launch(plan, flags, layout=self.layout)
+        launch_env = dict(launched.env)
+        meta_prompt = launched.prompt
+        record = session_record(
+            plan,
+            launched,
+            applied,
+            role=role_name,
+            cwd="<worktree, assigned at launch>",
+            notes=[d.render() for d in self.payload.diagnostics],
+        )
+        described_launch = list(launched.args or ())
 
         session.save_meta_prompt(meta_prompt)
         session.init_audit(
             role=role_name,
             provider=provider.name,
             model=model,
-            composition=composition_section,
+            composition=record["composition"],
         )
         # Persist launch record as role_materialization.json
         session.save_role_materialization(record)
@@ -482,16 +403,12 @@ class SubAgentRunner:
                     metrics = CollectedMetrics()
                     # The plan launched once more with what only now is known:
                     # the worktree and the id the surface's record runs under.
-                    launched_here = (
-                        launch(
-                            plan,
-                            dataclasses.replace(
-                                flags, work_dir=work_dir, provider_session_id=provider_session_id
-                            ),
-                            layout=self.layout,
-                        )
-                        if plan is not None and flags is not None
-                        else None
+                    launched_here = launch(
+                        plan,
+                        dataclasses.replace(
+                            flags, work_dir=work_dir, provider_session_id=provider_session_id
+                        ),
+                        layout=self.layout,
                     )
                     run_result = engine.run(
                         result=result,
@@ -504,11 +421,11 @@ class SubAgentRunner:
                         model=model,
                         timeout_s=timeout_s,
                         metrics=metrics,
-                        artifacts=artifacts,
+                        artifacts=None,
                         provider_session_id=provider_session_id,
                         event_log=None if event_log is None else event_log.path,
                         launched=launched_here,
-                        brief=flags.brief if flags is not None else None,
+                        brief=flags.brief,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     surface_session_id = metrics.values.get("claude_session_id")

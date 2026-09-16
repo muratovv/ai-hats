@@ -300,9 +300,6 @@ def build_composition_payload(
         role_expression=role_expression,
         plan=plan,
         layout=asm.layout,
-        snapshot=_composition_snapshot(
-            asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec
-        ),
         hooks=asm.hooks,
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
@@ -446,49 +443,6 @@ def compose_for_carry(project_dir: Path, role: str | None = None):
             exc,
         )
         return None
-
-
-def _composition_snapshot(
-    assembler,
-    role_name: str,
-    result: CompositionResult,
-    *,
-    runtime_overlay: OverlayConfig | None = None,
-    spec: RoleSpec | None = None,
-) -> dict:
-    """Build the composition snapshot dict for ``Session.init_audit``.
-
-    Moved from ``runtime_common``: it walks private Assembler API
-    (overlays + provenance), so it computes at the compose seam and the DICT
-    travels down in the payload — bricks never drive assembler machinery.
-    """
-    try:
-        effective_traits = assembler._effective_traits(role_name, runtime_overlay=runtime_overlay)
-        provenance = assembler._get_overlay_provenance(
-            role_name, result=result, runtime_overlay=runtime_overlay
-        )
-    except Exception as exc:
-        # Defensive: a broken overlay shouldn't kill session start.
-        logger.warning(
-            "composition snapshot failed for role %r: %s — audit.md will "
-            "lack the composition section",
-            role_name,
-            exc,
-        )
-        return {}
-    snap = {
-        "traits": effective_traits,
-        "rules": [r.name for r in result.rules],
-        "skills": [s.name for s in result.skills],
-        "provenance": provenance,
-    }
-    if spec and (spec.adds or spec.removes):
-        snap["runtime"] = {
-            "spec": spec.raw,
-            "add": list(spec.adds),
-            "remove": list(spec.removes),
-        }
-    return snap
 
 
 def _static_cost_analyzer(project_dir: Path):

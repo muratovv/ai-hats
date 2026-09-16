@@ -30,11 +30,15 @@ from .surfaces import (
     context_text,
 )
 
+# A real sid is minted by the session manager, which a dry-run must not touch.
+# Fixed so reported paths are stable and diffable.
+DRY_RUN_SESSION_ID = "dry-run"
+DRY_RUN_MATERIALIZE_SESSION_ID = "dry-run-materialize"
+
 
 def plans(surface: Surface) -> bool:
-    """Whether the surface has a planner — the one predicate the runners,
-    ``--dry-run-experimental`` and ``show-prompt`` branch on while the old
-    path still carries the surfaces that have none."""
+    """Whether the surface has a planner: every road into a session passes
+    ``plan_session``, which refuses one that has none."""
     return type(surface).plan is not Surface.plan
 
 
@@ -78,9 +82,17 @@ def plan_session(
     layout: ProjectLayout,
     host: Host,
 ) -> MaterializationPlan:
-    """The surface's plan, with the role's command middleware on a HITL launch."""
+    """The surface's plan, with the role's command middleware on a HITL launch.
+
+    A surface without a planner is refused here, before anything is written:
+    the runners, the dry-run and ``show-prompt`` all pass through.
+    """
     from .consent_wrapper import plan_consent
 
+    if not plans(surface):
+        raise RuntimeError(
+            f"surface {surface.name!r} does not plan a session; implement Surface.plan"
+        )
     mode = RunMode(run_mode)
     plan = surface.plan(
         composition, run_mode=mode, policy=policy, root=root, layout=layout, host=host
@@ -222,12 +234,9 @@ def preview(
     """Plan for a stub root and launch with placeholder flags; write nothing
     unless ``materialize``, which applies the plan to the fixed dry-run root."""
     from .composition_seam import build_preview_payload
-    from .dry_run import DRY_RUN_MATERIALIZE_SESSION_ID, DRY_RUN_SESSION_ID
 
     payload = build_preview_payload(layout.root, role=role, provider=provider)
     surface = payload.provider
-    if not plans(surface):
-        raise RuntimeError(f"surface {surface.name!r} does not plan a session yet; use --dry-run")
     if payload.plan is None:
         raise RuntimeError("the seam adapted no composition")
     mode = RunMode(run_mode)
@@ -274,6 +283,8 @@ def preview(
 
 
 __all__ = [
+    "DRY_RUN_MATERIALIZE_SESSION_ID",
+    "DRY_RUN_SESSION_ID",
     "Preview",
     "launch",
     "launch_env",
