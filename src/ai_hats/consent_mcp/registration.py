@@ -18,17 +18,7 @@ from ..env import (
 )
 from ..consent_wrapper import CONFIG_ENV
 from ..session_identity import IDENTITY_ENV_KEYS
-from ..session_artifacts import BuiltArtifacts
 from ..surfaces import Surface, StdioMCPServer
-
-
-def register_server(
-    project_dir: Path,
-    policy: Mapping[str, Sequence[str]],
-    provider: Surface,
-    artifacts: BuiltArtifacts,
-) -> None:
-    artifacts.cli_args.extend(form_server_args(project_dir, policy, provider, artifacts.extra_env))
 
 
 def form_server_args(

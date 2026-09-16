@@ -457,8 +457,8 @@ def venv_surfaces(shared_launcher) -> dict[str, bool]:
     ones it has — and which of them predate a given accessor — is a property of
     the install, not of this branch.
 
-    HATS-1540 made the ANSWER here two-part: a surface must both reach the
-    artifact builder AND say where it mirrors skills (`session_skills_root`,
+    HATS-1540 made the ANSWER here two-part: a surface must both plan a
+    session (`session_plan.plans`) AND say where it mirrors skills (`session_skills_root`,
     concrete on `Provider` with a `None` default, so an older surface package
     keeps importing and simply cannot root a bound check). A surface failing
     either half cannot exercise these cases and is skipped with that named as
@@ -473,8 +473,9 @@ def venv_surfaces(shared_launcher) -> dict[str, bool]:
             "import json, pathlib; "
             "from ai_hats_core.layout import ProjectLayout; "
             "from ai_hats.surface_registry import surface_names, get_surface; "
+            "from ai_hats.session_plan import plans; "
             "p = pathlib.Path('/tmp'); "
-            "print(json.dumps({n: bool(get_surface(n).handles_artifact_categories() "
+            "print(json.dumps({n: bool(plans(get_surface(n)) "
             "and get_surface(n).session_skills_root(ProjectLayout.at(p), 'probe') is not None) "
             "for n in surface_names()}))",
         ],

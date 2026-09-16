@@ -11,7 +11,6 @@ why:    without verifying hook body execution, dangling settings.json pointers f
 
 from __future__ import annotations
 
-from ai_hats_core.layout import ProjectLayout
 
 import json
 import shutil
@@ -66,21 +65,14 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     project = tmp_path / "proj_rthook_fires"
     _init_with_fixture_role(launcher, env, project)
 
-    from ai_hats.assembler import Assembler
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from _helpers.sessions import build_session, composition_for
+
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    provider = ClaudeSurface()
-    asm = Assembler(project)
-    result = asm.composer.compose("e2e-rthook-role")
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
-        "sid-rthook-fires",
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
+    plan = build_session(
+        project, composition_for(project, "e2e-rthook-role"), ClaudeSurface(), "sid-rthook-fires"
     )
-    cache_settings = ProjectLayout.at(project).cache.session("sid-rthook-fires") / "settings.json"
+    cache_settings = plan.root / "settings.json"
     pre_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PreToolUse:Bash:probe")["command"]
     post_cmd = composed_row(cache_settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe")[
         "command"

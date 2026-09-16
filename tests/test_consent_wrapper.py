@@ -4,10 +4,8 @@ from ai_hats_core.layout import ProjectLayout
 
 import os
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from ai_hats_core import ConsentPoint
 from ai_hats_library.hooks.consent_gate import Outcome, Verdict
 from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
 
@@ -16,11 +14,41 @@ from ai_hats.consent_wrapper import (
     _is_consent_wrapper_path,
     WrapperConfig,
     match_operation,
-    materialize_consent_wrappers,
-    policy_from,
+    plan_consent,
+    policy_of,
     run_wrapped,
 )
-from ai_hats.session_artifacts import BuiltArtifacts
+from ai_hats.materialization import WriteKind, describe_mkdir
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.session_plan import probe_host
+from ai_hats.surfaces.codex.provider import CodexSurface
+from ai_hats.surfaces.plan import ExternalHook, Launch, MaterializationPlan
+from tests._plan_helpers import composition_with
+
+
+def _consent(operation: str | None, at: str, declared_by: str = "trait-agent") -> ExternalHook:
+    return ExternalHook("consent_gate", operation, at, None, None, declared_by)
+
+
+def _plan(tmp_path: Path, *hooks: ExternalHook) -> MaterializationPlan:
+    import dataclasses
+
+    composition = composition_with("r")
+    composition = dataclasses.replace(
+        composition, hooks=dataclasses.replace(composition.hooks, external=hooks)
+    )
+    root = tmp_path / "sessions" / "s1"
+    return MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface="codex",
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        entries=(describe_mkdir(root),),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
+    )
 
 
 def test_exact_transition_selector_uses_source_state():
@@ -314,13 +342,13 @@ def test_declared_direct_wt_merge_refuses_before_spawn(tmp_path: Path):
 
 
 def test_policy_compiles_nested_consent_gate_rows():
-    points = (
-        ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "plan->execute"),
-        ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),
-        ConsentPoint("trait-agent", "consent_gate", ("wt.merge",), "pre-merge"),
+    rows = (
+        _consent("rack.transition", "plan->execute"),
+        _consent("rack.transition", "review->done"),
+        _consent("wt.merge", "pre-merge"),
     )
 
-    assert policy_from(points) == {
+    assert policy_of(rows) == {
         "rack.transition": ("plan->execute", "review->done"),
         "wt.merge": ("pre-merge",),
     }
@@ -344,10 +372,8 @@ def test_policy_compiles_nested_consent_gate_rows():
     ],
 )
 def test_malformed_rack_transition_policy_fails_session_launch(selector, reason):
-    point = ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), selector)
-
     with pytest.raises(ConsentPolicyError) as exc:
-        policy_from((point,))
+        policy_of((_consent("rack.transition", selector),))
 
     said = str(exc.value)
     assert selector in said
@@ -355,202 +381,37 @@ def test_malformed_rack_transition_policy_fails_session_launch(selector, reason)
 
 
 def test_unknown_consent_operation_fails_policy_compilation():
-    point = ConsentPoint("trait-agent", "consent_gate", ("rack.close",), "review->done")
-
     with pytest.raises(ConsentPolicyError, match="unsupported consent operation 'rack.close'"):
-        policy_from((point,))
+        policy_of((_consent("rack.close", "review->done"),))
 
 
 def test_nested_operation_path_fails_policy_compilation():
-    point = ConsentPoint(
-        "trait-agent", "consent_gate", ("rack.transition", "tasks"), "review->done"
-    )
-
     with pytest.raises(ConsentPolicyError, match="exactly one operation key"):
-        policy_from((point,))
+        policy_of((_consent(None, "review->done"),))
 
 
 def test_unknown_wt_merge_selector_fails_policy_compilation():
-    point = ConsentPoint("trait-agent", "consent_gate", ("wt.merge",), "pre-merg")
-
     with pytest.raises(ConsentPolicyError, match="only 'pre-merge'"):
-        policy_from((point,))
+        policy_of((_consent("wt.merge", "pre-merg"),))
 
 
-def test_consent_outside_consent_gate_is_refused():
-    point = ConsentPoint("legacy-role", "rack", ("tasks",), "review->done")
-
-    with pytest.raises(ConsentPolicyError, match="apps.consent_gate"):
-        policy_from((point,))
-
-
-def test_materialization_wraps_declared_surfaces_in_session_path(tmp_path: Path):
-    original_bin = tmp_path / "original-bin"
-    original_bin.mkdir()
-    originals = {name: original_bin / name for name in ("rack", "ai-hats")}
-    for path in originals.values():
-        path.write_text("original")
-    result = SimpleNamespace(
-        consent=(
-            ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),
-            ConsentPoint("trait-agent", "consent_gate", ("wt.merge",), "pre-merge"),
-        )
-    )
-    artifacts = BuiltArtifacts()
-
-    materialize_consent_wrappers(
-        ProjectLayout.at(tmp_path),
-        result,
-        "sid-a",
-        SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
-        artifacts,
-        environ={"PATH": str(original_bin)},
-        which=lambda name, path=None: str(originals[name]),
-    )
-
-    wrapper_bin = Path(artifacts.extra_env["PATH"].split(":", 1)[0])
-    consent = wrapper_bin / "consent"
-    assert consent.stat().st_mode & 0o111
-    assert consent in artifacts.materialized
-    assert (wrapper_bin / "rack").stat().st_mode & 0o111
-    assert (wrapper_bin / "ai-hats").stat().st_mode & 0o111
-    assert artifacts.extra_env["AI_HATS_CONSENT_WRAPPER_CONFIG"].endswith("config.json")
-
-
-def test_materialization_skips_every_inherited_wrapper_bin(tmp_path: Path):
-    inherited = [
-        tmp_path / "outer" / "consent-wrapper" / "bin",
-        tmp_path / "middle" / "consent-wrapper" / "bin",
-    ]
-    canonical_bin = tmp_path / "canonical-bin"
-    for directory in (*inherited, canonical_bin):
-        directory.mkdir(parents=True)
-    canonical = canonical_bin / "rack"
-    canonical.write_text("original")
-    seen_paths: list[str] = []
-
-    def resolve(name: str, path: str | None = None) -> str:
-        assert name == "rack"
-        seen_paths.append(path or "")
-        return str(canonical)
-
-    materialize_consent_wrappers(
-        ProjectLayout.at(tmp_path),
-        SimpleNamespace(
-            consent=(
-                ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),
-            )
-        ),
-        "sid-nested",
-        SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
-        BuiltArtifacts(),
-        environ={
-            "PATH": os.pathsep.join((str(inherited[0]), str(canonical_bin), str(inherited[1])))
-        },
-        which=resolve,
-    )
-
-    assert seen_paths == [str(canonical_bin)]
-
-
-def test_materialization_rejects_wrapper_returned_by_custom_resolver(tmp_path: Path):
-    wrapper = tmp_path / "outer" / "consent-wrapper" / "bin" / "rack"
-    wrapper.parent.mkdir(parents=True)
-    wrapper.write_text("wrapper")
-
-    with pytest.raises(RuntimeError, match="resolved executable is a consent wrapper"):
-        materialize_consent_wrappers(
-            ProjectLayout.at(tmp_path),
-            SimpleNamespace(
-                consent=(
-                    ConsentPoint(
-                        "trait-agent", "consent_gate", ("rack.transition",), "review->done"
-                    ),
-                )
-            ),
-            "sid-nested",
-            SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
-            BuiltArtifacts(),
-            environ={"PATH": os.defpath},
-            which=lambda name, path=None: str(wrapper),
-        )
-
-
-def test_materialization_rejects_symlink_to_inherited_wrapper(tmp_path: Path):
+def test_a_symlink_onto_an_inherited_wrapper_is_refused_at_planning(tmp_path: Path):
+    """The host probe resolves links, so an alias in a clean-looking bin still
+    names the wrapper it points at — and the consent planner refuses it."""
     wrapper = tmp_path / "outer" / "consent-wrapper" / "bin" / "rack"
     wrapper.parent.mkdir(parents=True)
     wrapper.write_text("wrapper")
     alias = tmp_path / "canonical-bin" / "rack"
     alias.parent.mkdir()
     alias.symlink_to(wrapper)
+    host = probe_host({"PATH": str(alias.parent)}, which=lambda name, path=None: str(alias))
 
     with pytest.raises(RuntimeError, match="resolved executable is a consent wrapper"):
-        materialize_consent_wrappers(
+        plan_consent(
+            _plan(tmp_path, _consent("rack.transition", "review->done")),
+            CodexSurface(),
             ProjectLayout.at(tmp_path),
-            SimpleNamespace(
-                consent=(
-                    ConsentPoint(
-                        "trait-agent", "consent_gate", ("rack.transition",), "review->done"
-                    ),
-                )
-            ),
-            "sid-nested",
-            SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
-            BuiltArtifacts(),
-            environ={"PATH": str(alias.parent)},
-            which=lambda name, path=None: str(alias),
-        )
-
-
-def test_materialization_fails_when_only_inherited_wrapper_exists(tmp_path: Path):
-    wrapper_bin = tmp_path / "outer" / "consent-wrapper" / "bin"
-    wrapper_bin.mkdir(parents=True)
-    (wrapper_bin / "rack").write_text("wrapper")
-
-    with pytest.raises(RuntimeError, match="executable not found on PATH"):
-        materialize_consent_wrappers(
-            ProjectLayout.at(tmp_path),
-            SimpleNamespace(
-                consent=(
-                    ConsentPoint(
-                        "trait-agent", "consent_gate", ("rack.transition",), "review->done"
-                    ),
-                )
-            ),
-            "sid-nested",
-            SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
-            BuiltArtifacts(),
-            environ={"PATH": str(wrapper_bin)},
-        )
-
-
-def test_role_without_consent_keeps_the_original_command_surface(tmp_path: Path):
-    artifacts = BuiltArtifacts()
-
-    materialize_consent_wrappers(
-        ProjectLayout.at(tmp_path),
-        SimpleNamespace(consent=()),
-        "sid-a",
-        SimpleNamespace(name="agy", supports_session_command_wrappers=lambda: False),
-        artifacts,
-    )
-
-    assert artifacts.extra_env == {}
-    assert artifacts.materialized == []
-
-
-def test_provider_without_command_interception_refuses_protected_role(tmp_path: Path):
-    result = SimpleNamespace(
-        consent=(ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),)
-    )
-
-    with pytest.raises(RuntimeError, match="cannot enforce role-declared command consent"):
-        materialize_consent_wrappers(
-            ProjectLayout.at(tmp_path),
-            result,
-            "sid-a",
-            SimpleNamespace(name="agy", supports_session_command_wrappers=lambda: False),
-            BuiltArtifacts(),
+            host,
         )
 
 
@@ -654,41 +515,34 @@ def test_a_declaration_that_names_no_done_leaves_the_road_open():
     assert exit_code == 0 and spawned, "an undeclared target must pass through"
 
 
-def test_the_guard_recognises_the_wrapper_the_materializer_wrote(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_the_guard_recognises_the_wrapper_the_planner_writes(tmp_path: Path):
     """HATS-1809: `_is_consent_wrapper_path` is the sole predicate under both
     recursion barriers, and it identifies a wrapper by the path shape that
-    `materialize_consent_wrappers` spells independently. Both ends are derived
-    from one real materialization here — a test that built the path itself would
-    only restate the literal it is supposed to guard, which is why the five
-    HATS-1806 tests stay green when the producer is renamed."""
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    `plan_consent` spells independently. Both ends are derived from one real
+    plan here — a test that built the path itself would only restate the
+    literal it is supposed to guard."""
     canonical_bin = tmp_path / "canonical-bin"
     canonical_bin.mkdir()
     canonical = canonical_bin / "rack"
     canonical.write_text("original")
-    artifacts = BuiltArtifacts()
+    host = probe_host({"PATH": str(canonical_bin)}, which=lambda name, path=None: str(canonical))
 
-    materialize_consent_wrappers(
+    armed = plan_consent(
+        _plan(tmp_path, _consent("rack.transition", "review->done")),
+        CodexSurface(),
         ProjectLayout.at(tmp_path),
-        SimpleNamespace(
-            consent=(
-                ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "review->done"),
-            )
-        ),
-        "sid-1809",
-        SimpleNamespace(name="codex", supports_session_command_wrappers=lambda: True),
-        artifacts,
-        environ={"PATH": str(canonical_bin)},
-        which=lambda name, path=None: str(canonical),
+        host,
     )
 
-    wrapper = next(path for path in artifacts.materialized if path.name == "rack")
-    bin_dir = Path(artifacts.extra_env["PATH"].split(os.pathsep)[0])
+    wrapper = next(
+        e.target
+        for e in armed.entries
+        if e.kind is WriteKind.WRITE_EXECUTABLE and e.target.name == "rack"
+    )
+    bin_dir = Path(armed.env["PATH"].split(os.pathsep)[0])
 
     assert _is_consent_wrapper_path(wrapper), (
-        f"the guard does not recognise the wrapper the materializer wrote: {wrapper}"
+        f"the guard does not recognise the wrapper the planner writes: {wrapper}"
     )
     assert _is_consent_wrapper_path(bin_dir), (
         f"the guard does not recognise the bin dir it put on PATH: {bin_dir}"

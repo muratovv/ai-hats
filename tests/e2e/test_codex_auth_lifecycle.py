@@ -35,7 +35,7 @@ from ai_hats.surfaces.plan import (
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
-def stage_auth(base_home: Path, session_home: Path) -> None:
+def apply_auth(base_home: Path, session_home: Path) -> None:
     """The credential staged the way a session plans it: a private copy and
     its baseline digest, applied under the session home as the root."""
     composition = CompositionPlan(
@@ -91,7 +91,7 @@ def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> No
     assert login.returncode == 0, login.stderr
     assert (base_home / "auth.json").is_file()
     session_home = tmp_path / "logout"
-    stage_auth(base_home, session_home)
+    apply_auth(base_home, session_home)
 
     logout = run(session_home, "logout")
     assert logout.returncode == 0, logout.stderr
@@ -100,7 +100,7 @@ def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> No
     assert not (base_home / "auth.json").exists()
 
     next_home = tmp_path / "login"
-    stage_auth(base_home, next_home)
+    apply_auth(base_home, next_home)
     status = run(next_home, "login", "status")
     assert status.returncode == 1, status.stderr
     login = run(next_home, "login", "--with-api-key", key="synthetic-renewed-key\n")
@@ -108,7 +108,7 @@ def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> No
     assert reconcile_auth(base_home, next_home) is None
 
     final_home = tmp_path / "verify"
-    stage_auth(base_home, final_home)
+    apply_auth(base_home, final_home)
     status = run(final_home, "login", "status")
     assert status.returncode == 0, status.stderr
     assert (final_home / "auth.json").read_bytes() == (next_home / "auth.json").read_bytes()

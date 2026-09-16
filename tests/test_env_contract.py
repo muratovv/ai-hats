@@ -299,7 +299,7 @@ def test_tasks_dir_near_name_is_not_the_racks_own_variable() -> None:
 
 
 class _Surface:
-    """Only what ``assemble_launch_env`` touches, but spelling the pin like a real
+    """Only what ``launch_env`` touches, but spelling the pin like a real
     provider does (`surfaces/claude/provider.py:get_env`)."""
 
     name = "stub"
@@ -322,25 +322,43 @@ class _Surface:
 def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
     """The envelope (HATS-1594) restates three values the scalars also carry.
 
-    They agree today because ``assemble_launch_env`` is one composition root and
+    They agree today because ``launch_env`` is one composition root and
     builds both from the same arguments — but nothing said so, and a second
     writer is how every divergence in ADR-0025's context table began.
     """
     import json
 
-    from ai_hats.session_artifacts import RunMode, assemble_launch_env
+    from ai_hats.session_artifacts import RunMode, SessionPolicy
     from ai_hats.session_identity import ENV_SESSION_IDENTITY
+    from ai_hats.session_plan import launch_env
+    from ai_hats.surfaces.plan import Launch, LaunchFlags, MaterializationPlan
+    from tests._plan_helpers import composition_with
 
-    env = assemble_launch_env(
-        _Surface(),
-        ProjectLayout.at(tmp_path),
-        tmp_path / "session",
-        session_id="20260812-101500-3-4242",
-        trace_path=str(tmp_path / "trace.log"),
-        role="maintainer",
-        root_pid="4242",
-        extra_env={},
+    composition = composition_with("maintainer")
+    surface = _Surface()
+    layout = ProjectLayout.at(tmp_path)
+    plan = MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface="stub",
         run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=layout.cache.session("20260812-101500-3-4242"),
+        entries=(),
+        env=surface.get_env(tmp_path / "session", layout),
+        launch=Launch(args=(), sdk_options=None),
+    )
+    env = launch_env(
+        plan,
+        surface,
+        LaunchFlags(
+            session_id="20260812-101500-3-4242",
+            session_dir=tmp_path / "session",
+            trace_path=str(tmp_path / "trace.log"),
+            root_pid="4242",
+            provider_session_id=None,
+        ),
+        layout=layout,
     )
     envelope = json.loads(env[ENV_SESSION_IDENTITY])
 
@@ -444,7 +462,7 @@ def test_a_sandbox_standing_in_for_a_session_plants_the_whole_envelope() -> None
     """Invariant E, read the other way round: written exactly as it is read.
 
     HATS-1594 made the envelope the only thing that counts as a session, because
-    in production ``assemble_launch_env`` is its sole writer and always emits
+    in production ``launch_env`` is its sole writer and always emits
     both keys — so a bare id can only come from an older build, and every reader
     now refuses it. Five e2e sandboxes kept planting the id alone and were
     refused for exactly the right reason, asserting nothing for 89 commits while

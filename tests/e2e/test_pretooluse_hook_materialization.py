@@ -168,19 +168,13 @@ def test_e2e_materialized_hook_blocks_irreversible_no_tty(installed_launcher, tm
     # HATS-1268: run the copy that has its siblings. The flattened copy under
     # library/hooks/ no longer carries shared_state_classifier.sh, so executing
     # THAT one would test a corpse — the session mirror is where the guard lives.
-    from ai_hats.assembler import Assembler
+    from _helpers.sessions import build_session, composition_for
+
     from ai_hats.paths import claude_plugin_skills_dir
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     sid = "sid-guard-live"
-    ClaudeSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        Assembler(project).composer.compose("assistant"),
-        sid,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
+    build_session(project, composition_for(project, "assistant"), ClaudeSurface(), sid)
     skills = claude_plugin_skills_dir(ProjectLayout.at(project).cache.session(sid) / "plugin")
     guard = skills / "safety-guard" / "hooks" / "pre_bash_shared_state_guard.sh"
     assert guard.is_file(), "precondition: the session mirror must have been built"

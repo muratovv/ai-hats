@@ -74,7 +74,7 @@ def test_dry_run_materialize_leaves_tree_on_disk(project: Path):
     )
 
 
-def test_dry_run_automate_materialize_leaves_tree_on_disk(project: Path):
+def test_an_automate_dry_run_with_materialize_leaves_the_tree_on_disk(project: Path):
     cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
     assert not cache_mat.exists()
     layout = ProjectLayout.at(project)

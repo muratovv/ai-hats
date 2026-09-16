@@ -16,7 +16,7 @@ Three contracts locked here, all under epic HATS-506:
 
 3. **HITL lock-in** — the same overlay content must reach
    ``--system-prompt-file`` in the HITL ``WrapRunner`` /
-   ``ClaudeSurface.build_session_prompt`` path. Direct invocation,
+   ``ClaudeSurface.plan`` path. Direct invocation,
    no pipeline involvement.
 
 Sister to ``test_funnel_value_contract.py`` — same HATS-452 contract

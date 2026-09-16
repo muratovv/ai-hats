@@ -53,7 +53,7 @@ def test_a_sub_agent_does_not_inherit_the_supervisors_exported_approvals(child_e
     }
     assert not carried, (
         f"the child inherited approvals the supervisor gave THEIR session: {carried}. "
-        "The launch must blank them — see assemble_launch_env (HATS-1743)."
+        "The launch must blank them — see launch_env (HATS-1743)."
     )
 
 

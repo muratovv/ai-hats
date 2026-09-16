@@ -175,8 +175,14 @@ def _flags(root: Path, **overrides) -> LaunchFlags:
     return LaunchFlags(**given)
 
 
-def test_a_hitl_launch_is_todays_argv_and_environment(maintainer, tmp_path: Path):
-    from ai_hats.session_artifacts import assemble_launch_command, assemble_launch_env
+def test_a_hitl_launch_is_the_plans_argv_with_the_flags_and_its_environment(
+    maintainer, tmp_path: Path
+):
+    """The operator's arguments lead, the plan's follow, the surface's own
+    session-id linkage closes; the environment is the plan's plus the session's
+    identity, and the flags' root pid last."""
+    from ai_hats.constants import ENV_ROOT_PID
+    from ai_hats.session_identity import SessionIdentity
     from ai_hats.session_plan import launch, launch_env
 
     asm, composition = maintainer
@@ -195,25 +201,21 @@ def test_a_hitl_launch_is_todays_argv_and_environment(maintainer, tmp_path: Path
 
     launched = launch(plan, flags, layout=asm.layout)
 
-    assert list(launched.args) == assemble_launch_command(
-        surface,
-        extra_args=["--model", "opus"],
-        session_args=list(plan.launch.args),
-        provider_session_id="u",
-    )
-    assert launch_env(plan, surface, flags, layout=asm.layout) == assemble_launch_env(
-        surface,
-        asm.layout,
-        root,
-        session_id="s",
-        trace_path="t",
-        role="maintainer",
-        root_pid="1",
-        extra_env=dict(plan.env),
-        run_mode=RunMode.HITL,
-    )
+    assert list(launched.args) == [
+        "claude",
+        "--model",
+        "opus",
+        *plan.launch.args,
+        "--session-id",
+        "u",
+    ]
+    env = launch_env(plan, surface, flags, layout=asm.layout)
+    assert env.items() >= plan.env.items()
+    identity = SessionIdentity.from_env(env)
+    assert (identity.id, identity.role, identity.provider) == ("s", "maintainer", "claude")
+    assert identity.session_cache_dir == str(root)
+    assert env[ENV_ROOT_PID] == "1"
     assert launched.prompt.startswith("<!-- AI-HATS:START -->\n"), "the context file's bytes"
-    assert "--session-id" in launched.args and "u" in launched.args
 
 
 def test_a_cli_sub_agent_launch_is_one_meta_prompt_token(tmp_path: Path):

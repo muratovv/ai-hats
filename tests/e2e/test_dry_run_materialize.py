@@ -58,7 +58,7 @@ def test_e2e_dry_run_materialize_writes_tree_to_disk(tmp_project):
     assert any("materialized session tree written to disk at" in n for n in payload_mat["notes"])
 
 
-def test_e2e_dry_run_automate_materialize_writes_tree_to_disk(tmp_project):
+def test_e2e_an_automate_dry_run_with_materialize_writes_the_tree_to_disk(tmp_project):
     _seed_role(tmp_project.path)
 
     cache_mat = ProjectLayout.at(tmp_project.path).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)

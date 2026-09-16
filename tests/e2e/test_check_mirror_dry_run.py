@@ -156,7 +156,7 @@ def test_the_report_names_the_binding_the_plan_cannot_show(project_with_library)
     ] == [("gate-skill", "check.sh", "wt", "pre-merge", "refuse", "checked")]
 
 
-def test_the_report_says_where_the_gate_runs_from_and_that_the_plan_covers_it(
+def test_the_report_says_where_the_gate_runs_from_and_that_the_plan_carries_it(
     project_with_library,
 ):
     """A list of bindings is the weak half — the binding is already in the role.

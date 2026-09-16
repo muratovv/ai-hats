@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from ai_hats_core.layout import ProjectLayout
 from _helpers.git import git as _git
+from _helpers.sessions import build_session
+from tests._plan_helpers import composition_of
 
 import json
 import os
@@ -45,9 +47,14 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
 
     # Compose maintainer role (includes worktree-isolation skill) and materialize for agy
     asm = Assembler(REPO_ROOT)
-    result = asm.composer.compose("maintainer")
-    provider = AgySurface()
-    provider.build_session_prompt(ProjectLayout.at(main), result, "sid-agy-gate")
+    composition = composition_of(
+        asm.composer.compose("maintainer"), layout=ProjectLayout.at(main), resolver=asm.resolver
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    build_session(
+        main, composition, AgySurface(), "sid-agy-gate", environ={**os.environ, "HOME": str(home)}
+    )
 
     hooks_file = ProjectLayout.at(main).cache.session("sid-agy-gate") / "hooks.json"
     assert hooks_file.is_file(), "hooks.json must be created in session cache"
@@ -119,10 +126,18 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
     _git(main, "commit", "-m", "init")
 
     asm = Assembler(REPO_ROOT)
-    result = asm.composer.compose("maintainer")
-    provider = AgySurface()
-    provider.materialize_runtime_skills(ProjectLayout.at(main), result, "sid-agy-gate-create")
-    provider.ensure_runtime_hooks(ProjectLayout.at(main), result, session_id="sid-agy-gate-create")
+    composition = composition_of(
+        asm.composer.compose("maintainer"), layout=ProjectLayout.at(main), resolver=asm.resolver
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    build_session(
+        main,
+        composition,
+        AgySurface(),
+        "sid-agy-gate-create",
+        environ={**os.environ, "HOME": str(home)},
+    )
 
     hook_script = (
         ProjectLayout.at(main).cache.session("sid-agy-gate-create")

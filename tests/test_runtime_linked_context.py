@@ -4,7 +4,7 @@
 a ticket's *direct* links (parent epic first, then depends_on / related /
 see_also), trimmed per-card with only the latest work_log entry; the parent epic
 additionally carries its ``plan.md``. The body is wired into both live sub-agent
-prompt channels (``build_first_user_message`` for Claude, ``assemble_meta_prompt``
+prompt channels (``build_first_user_message`` for Claude, ``assemble_brief``
 for Agy).
 """
 
@@ -15,7 +15,7 @@ from ai_hats_core.layout import ProjectLayout
 from pathlib import Path
 
 from ai_hats.linked_context import load_linked_context
-from ai_hats.session_artifacts import assemble_meta_prompt
+from ai_hats.session_artifacts import assemble_brief
 from ai_hats_rack.models import TaskCard
 
 
@@ -181,8 +181,8 @@ def test_build_first_user_message_wires_linked_context_after_ticket() -> None:
     assert "# LINKED_CONTEXT" not in msg_empty
 
 
-def test_assemble_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
-    """Agy live channel: assemble_meta_prompt emits LINKED_CONTEXT after TICKET_CONTEXT."""
+def test_assemble_brief_wires_linked_context_section(tmp_path: Path) -> None:
+    """The CLI surfaces' brief emits LINKED_CONTEXT after TICKET_CONTEXT."""
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_card(
@@ -203,12 +203,7 @@ def test_assemble_meta_prompt_wires_linked_context_section(tmp_path: Path) -> No
             parent_task="HATS-900",
         ),
     )
-    out = assemble_meta_prompt(
-        ProjectLayout.at(project_dir),
-        role_context="# SYSTEM_ROLE\nstub",
-        task="go",
-        ticket_id="HATS-902",
-    )
+    out = assemble_brief(ProjectLayout.at(project_dir), task="go", ticket_id="HATS-902")
     assert "# TICKET_CONTEXT" in out
     assert "# LINKED_CONTEXT" in out
     assert "EPIC BODY FOR AGY" in out
@@ -219,10 +214,5 @@ def test_assemble_meta_prompt_wires_linked_context_section(tmp_path: Path) -> No
         project_dir,
         TaskCard(id="HATS-903", title="lonely", state="execute"),
     )
-    out_nolinks = assemble_meta_prompt(
-        ProjectLayout.at(project_dir),
-        role_context="# SYSTEM_ROLE\nstub",
-        task="go",
-        ticket_id="HATS-903",
-    )
+    out_nolinks = assemble_brief(ProjectLayout.at(project_dir), task="go", ticket_id="HATS-903")
     assert "# LINKED_CONTEXT" not in out_nolinks

@@ -23,10 +23,10 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.sessions import stand_in_session
+from _helpers.sessions import build_session, stand_in_session
+from tests._plan_helpers import composition_of
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 
 pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
@@ -88,15 +88,14 @@ def session(tmp_path: Path, request):
         ],
         injections=[],
     )
-    artifacts = ClaudeSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
+    plan = build_session(
+        project,
+        composition_of(result, layout=ProjectLayout.at(project)),
+        ClaudeSurface(),
         SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
     )
     env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="claude")
-    env |= artifacts.extra_env | {"AI_HATS_PYTHON": sys.executable}
+    env |= dict(plan.env) | {"AI_HATS_PYTHON": sys.executable}
     env.pop("AI_HATS_GATE_BROKEN_ACK", None)
     return project, env
 

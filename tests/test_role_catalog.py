@@ -6,7 +6,7 @@ Two layers of guarantee:
   emits EXACTLY the intended user-facing roles, decoupled from the real
   catalog's growth.
 - **Real-library property** (``test_wizard_session_prompt_*``): the actual
-  ``initial-wizard`` composed + run through ``build_session_prompt`` lists
+  ``initial-wizard`` composed + planned for the claude surface lists
   real user-facing roles (``dev-web``) and excludes engine-internal ones
   (``judge``) — catches real-catalog regressions.
 """

@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from ai_hats_core.layout import ProjectLayout
 
-from _helpers.sessions import stand_in_session
+from _helpers.sessions import build_session, stand_in_session
+from tests._plan_helpers import composition_of
 
 import json
 import os
@@ -27,7 +28,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.session_artifacts import RunMode
 from ai_hats.surfaces.agy.global_hook import DISPATCHER_COMMAND
 from ai_hats.surfaces.agy.provider import AgySurface
 
@@ -64,24 +65,22 @@ def agy_session(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
     ProjectConfig(provider="agy", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    result = asm.composer.compose("hook-role")
-
-    artifacts = BuiltArtifacts()
-    provider = AgySurface()
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
+    composition = composition_of(
+        asm.composer.compose("hook-role"), layout=ProjectLayout.at(project), resolver=asm.resolver
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    # The global dispatcher is planned into the probed home, not whoever runs this.
+    plan = build_session(
+        project,
+        composition,
+        AgySurface(),
         SESSION_ID,
         run_mode=RunMode.AUTOMATE,
-        artifacts=artifacts,
+        environ={**os.environ, "HOME": str(home)},
     )
 
-    env = {
-        **os.environ,
-        **provider.get_env(project, ProjectLayout.at(project)),
-        **artifacts.extra_env,
-        "AI_HATS_PYTHON": sys.executable,
-    }
+    env = {**os.environ, **plan.env, "AI_HATS_PYTHON": sys.executable}
     # HATS-1594: a session is its envelope; the bare id reads as an older build.
     # After the spreads, so the out-of-tree cache pin this test is about survives.
     stand_in_session(env, project, SESSION_ID)

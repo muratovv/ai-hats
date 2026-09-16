@@ -8,11 +8,30 @@ import pytest
 
 from ai_hats.check_points import resolve_checks
 from ai_hats.composer import _resolved_consent
-from ai_hats.consent_wrapper import policy_from
+from ai_hats.consent_wrapper import policy_of
 from ai_hats.models import parse_app_bindings
+from ai_hats.surfaces.plan import ExternalHook
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _LIBRARY = _REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+
+
+def policy_from(points) -> dict[str, tuple[str, ...]]:
+    """The composer's consent points as the plan's rows — the adapter's own
+    shape — compiled by the one policy compiler."""
+    return policy_of(
+        [
+            ExternalHook(
+                app=p.app,
+                object=".".join(p.path) or None,
+                at=p.selector,
+                run=None,
+                on_error=None,
+                declared_by=p.declared_by,
+            )
+            for p in points
+        ]
+    )
 
 
 def _rows(block, declared_by="trait-agent"):

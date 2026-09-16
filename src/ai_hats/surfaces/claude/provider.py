@@ -220,8 +220,8 @@ class ClaudeSurface(Surface):
 
     def build_system_prompt(self, result: CompositionResult) -> str:
         # Skills reach the agent via the native --plugin-dir (HITL) / SDK
-        # plugin (sub-agent) registry materialized in build_session_prompt /
-        # sdk_options, so the sections carry no skill index — it would be a 2-3x
+        # plugin (sub-agent) registry the plan writes, so the sections carry
+        # no skill index — it would be a 2-3x
         # duplicate listing (~1.5k tok/session).
         return self._compose_sections(result)
 

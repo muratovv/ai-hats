@@ -14,12 +14,15 @@ import json
 from pathlib import Path
 
 from ai_hats.constants import ENV_ROLE, BYPASS_FLAGS_NOT_INHERITED
-from ai_hats.session_artifacts import RunMode, assemble_launch_env
+from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ai_hats.session_identity import ENV_SESSION_IDENTITY, SessionIdentity
+from ai_hats.session_plan import launch_env
+from ai_hats.surfaces.plan import Launch, LaunchFlags, MaterializationPlan
+from tests._plan_helpers import composition_with
 
 
 class _Surface:
-    """Only what ``assemble_launch_env`` touches — no registry, no real provider."""
+    """Only what ``launch_env`` touches — no registry, no real provider."""
 
     name = "stub"
 
@@ -45,16 +48,29 @@ def _env(
     role: str = "judge",
     run_mode: RunMode = RunMode.HITL,
 ) -> dict[str, str]:
-    return assemble_launch_env(
-        _Surface(skills_root),
-        ProjectLayout.at(tmp_path),
-        tmp_path / "session",
-        session_id="sess-a",
-        trace_path=str(tmp_path / "trace.log"),
-        role=role,
-        root_pid="4242",
-        extra_env={},
+    composition = composition_with(role)
+    plan = MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface="stub",
         run_mode=run_mode,
+        policy=SessionPolicy(),
+        root=ProjectLayout.at(tmp_path).cache.session("sess-a"),
+        entries=(),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
+    )
+    return launch_env(
+        plan,
+        _Surface(skills_root),
+        LaunchFlags(
+            session_id="sess-a",
+            session_dir=tmp_path / "session",
+            trace_path=str(tmp_path / "trace.log"),
+            root_pid="4242",
+            provider_session_id=None,
+        ),
+        layout=ProjectLayout.at(tmp_path),
     )
 
 

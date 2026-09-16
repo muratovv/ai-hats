@@ -35,7 +35,14 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 from ai_hats_observe.artifacts import METRICS_JSON
+from ai_hats.session_artifacts import RunMode
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from ai_hats.surfaces import CompositionPlan, MaterializationPlan, Surface
 
 
 def _runs_dir(project_root: Path) -> Path:
@@ -224,7 +231,7 @@ def stand_in_session(
 
     A bare ``AI_HATS_SESSION_ID`` is no longer a session: the gate channel reads
     the envelope beside it and refuses when it is missing, because in production
-    only ``assemble_launch_env`` writes that variable and it always writes both.
+    only ``launch_env`` writes that variable and it always writes both.
     A test that sets the id alone is therefore standing in for a session no
     launch produces, and gets refused for exactly the right reason.
 
@@ -257,6 +264,54 @@ def stand_in_session(
     return env
 
 
+def composition_for(project: Path, role: str) -> CompositionPlan:
+    """``role`` composed in ``project``, as the plan's composition half."""
+    from ai_hats.assembler import Assembler
+    from tests._plan_helpers import composition_of
+
+    asm = Assembler(project)
+    return composition_of(
+        asm.composer.compose(role), layout=ProjectLayout.at(project), resolver=asm.resolver
+    )
+
+
+def build_session(
+    project: Path,
+    composition: CompositionPlan,
+    surface: Surface,
+    session_id: str,
+    *,
+    run_mode: RunMode = RunMode.HITL,
+    environ: Mapping[str, str] | None = None,
+    middleware: bool = False,
+) -> MaterializationPlan:
+    """Plan and apply one session under ``project``'s cache, the way the runners
+    do (ADR-0036 D2–D3); the plan comes back for its root, env and launch args.
+
+    ``middleware`` adds the role's command consent layer, which resolves the
+    wrapped commands on ``environ``'s PATH — the caller's environment, so a
+    test's shims and home redirects are what the host probe sees.
+    """
+    from ai_hats.session_artifacts import SessionPolicy
+    from ai_hats.session_plan import plan_session, probe_host
+    from ai_hats.surfaces import apply
+
+    layout = ProjectLayout.at(project)
+    host = probe_host(environ, surface=surface)
+    given = dict(
+        run_mode=run_mode,
+        policy=SessionPolicy(),
+        root=layout.cache.session(session_id),
+        layout=layout,
+    )
+    if middleware:
+        plan = plan_session(composition, surface, host=host, **given)
+    else:
+        plan = surface.plan(composition, host=host, **given)
+    apply(plan)
+    return plan
+
+
 def stand_in_wrapped_session(
     env: dict[str, str],
     project: Path,
@@ -266,23 +321,28 @@ def stand_in_wrapped_session(
     provider: str = "claude",
 ) -> dict[str, str]:
     """Build a stand-in HITL session with the production command middleware."""
-    from ai_hats.assembler import Assembler
-    from ai_hats.consent_wrapper import materialize_consent_wrappers
+    from ai_hats.consent_wrapper import plan_consent
+    from ai_hats.session_artifacts import SessionPolicy
+    from ai_hats.session_plan import probe_host
     from ai_hats.surface_registry import get_surface
-    from ai_hats.session_artifacts import BuiltArtifacts
+    from ai_hats.surfaces import apply
 
     stand_in_session(env, project, session_id, role=role, provider=provider)
-    artifacts = BuiltArtifacts()
-    result = Assembler(project).composer.compose(role)
-    materialize_consent_wrappers(
-        ProjectLayout.at(project),
-        result,
-        session_id,
-        get_surface(provider),
-        artifacts,
-        environ=env,
+    layout = ProjectLayout.at(project)
+    surface = get_surface(provider)
+    host = probe_host(env, surface=surface)
+    bare = surface.plan(
+        composition_for(project, role),
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=layout.cache.session(session_id),
+        layout=layout,
+        host=host,
     )
-    env.update(artifacts.extra_env)
+    armed = plan_consent(bare, surface, layout, host)
+    apply(armed)
+    # Only the middleware's own additions: a stand-in carries no surface env.
+    env.update({k: v for k, v in armed.env.items() if bare.env.get(k) != v})
     return env
 
 

@@ -24,8 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.codex_consent import session
-from ai_hats.session_artifacts import BuiltArtifacts
+from _helpers.codex_consent import planned_session, session
 
 pytestmark = [pytest.mark.integration, pytest.mark.consent, pytest.mark.surfaces]
 
@@ -67,15 +66,15 @@ def test_real_codex_initializes_required_consent_server(tmp_path, monkeypatch, s
     codex = shutil.which("codex")
     if codex is None:
         pytest.skip("Codex binary is not installed")
-    artifacts = BuiltArtifacts()
-    project, env = session(tmp_path, monkeypatch, artifacts)
+    project, env, plan = planned_session(tmp_path, monkeypatch)
     env["CODEX_HOME"] = str(tmp_path / "real-codex")
     Path(env["CODEX_HOME"]).mkdir()
     launch_dir = tmp_path / "different-launch-directory"
     launch_dir.mkdir()
+    launch_args = list(plan.launch.args)
     cli_args = [
         arg
-        for flag, value in zip(artifacts.cli_args, artifacts.cli_args[1:])
+        for flag, value in zip(launch_args, launch_args[1:])
         if flag == "-c" and value.startswith("mcp_servers.ai_hats_consent.")
         for arg in (flag, value)
     ]
@@ -139,10 +138,10 @@ def test_real_codex_initializes_required_consent_server(tmp_path, monkeypatch, s
 
 def test_hitl_materialization_registers_server(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_TEST_SECRET", "do-not-forward")
-    artifacts = BuiltArtifacts()
-    project, env = session(tmp_path, monkeypatch, artifacts)
+    project, env, plan = planned_session(tmp_path, monkeypatch)
     settings = {}
-    for flag, value in zip(artifacts.cli_args, artifacts.cli_args[1:]):
+    launch_args = list(plan.launch.args)
+    for flag, value in zip(launch_args, launch_args[1:]):
         if flag == "-c" and value.startswith("mcp_servers.ai_hats_consent."):
             settings.update(tomllib.loads(value)["mcp_servers"]["ai_hats_consent"])
     assert settings["command"] == sys.executable
@@ -225,35 +224,31 @@ from pathlib import Path
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.consent_wrapper import materialize_consent_wrappers
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
-from ai_hats.surfaces.codex.provider import CodexSurface
 from ai_hats.composition_seam import build_composition_payload
 from ai_hats.consent_wrapper import CONSENT_APP
+from ai_hats.session_artifacts import RunMode
+from ai_hats.session_plan import launch_env, plan_session, probe_host
 from ai_hats.session_report import consent_row
+from ai_hats.surfaces import LaunchFlags, apply
 from ai_hats_core.layout import ProjectLayout
 project = Path(sys.argv[1])
 ProjectConfig(provider="codex", active_role="assistant", default_role="assistant").save(project / PROJECT_CONFIG)
-assembler = Assembler(project)
-assembler.init()
-result = assembler.composer.compose("assistant")
-surface, artifacts = CodexSurface(), BuiltArtifacts()
-layout = ProjectLayout.at(project)
-surface.build_session_artifacts(layout, result, "installed", run_mode=RunMode.HITL, artifacts=artifacts)
-materialize_consent_wrappers(layout, result, "installed", surface, artifacts)
+Assembler(project).init()
+payload = build_composition_payload(project, role_override="assistant")
+surface, layout = payload.provider, ProjectLayout.at(project)
+plan = plan_session(payload.plan, surface, run_mode=RunMode.HITL, policy=payload.policy,
+    root=layout.cache.session("installed"), layout=layout, host=probe_host(surface=surface))
+apply(plan)
 session_dir = project / ".agent/ai-hats/sessions/runs/installed"
 session_dir.mkdir(parents=True, exist_ok=True)
 (session_dir / "role_materialization.json").write_text(json.dumps({
     "role": "assistant", "checks": [], "consent": [
-        consent_row(h)
-        for h in build_composition_payload(project, role_override="assistant").plan.hooks.external
-        if h.app == CONSENT_APP
+        consent_row(h) for h in plan.composition.hooks.external if h.app == CONSENT_APP
     ],
 }))
-env = assemble_launch_env(surface, layout, project / ".agent/ai-hats/sessions/runs/installed",
-    session_id="installed", trace_path="", role="assistant", root_pid=str(os.getpid()),
-    extra_env=artifacts.extra_env, run_mode=RunMode.HITL, claim=False)
-print(json.dumps({"env": env, "args": artifacts.cli_args}))
+env = launch_env(plan, surface, LaunchFlags(session_id="installed", session_dir=session_dir,
+    trace_path="", root_pid=str(os.getpid()), provider_session_id=None, claim=False), layout=layout)
+print(json.dumps({"env": env, "args": list(plan.launch.args)}))
 """
     launch = json.loads(run([str(python), "-c", probe, str(project)]))
     config = {}

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import string
 import subprocess
 import sys
@@ -51,25 +50,6 @@ class ConsentPolicyError(ValueError):
 
 
 CONSENT_APP = "consent_gate"
-
-
-def policy_from(points: Sequence[object], *, registry=None) -> dict[str, tuple[str, ...]]:
-    """The policy of the composer's own consent points (the old path)."""
-    rows = []
-    for point in points:
-        if getattr(point, "app", "") != CONSENT_APP:
-            raise ConsentPolicyError(
-                f"{getattr(point, 'declared_by', '<unknown>')!r}: consent may only be "
-                "declared under apps.consent_gate"
-            )
-        rows.append(
-            (
-                tuple(getattr(point, "path", ())),
-                str(getattr(point, "selector", "")),
-                str(getattr(point, "declared_by", "<unknown>")),
-            )
-        )
-    return _compile(rows, registry=registry)
 
 
 def policy_of(hooks: Sequence[ExternalHook], *, registry=None) -> dict[str, tuple[str, ...]]:
@@ -197,8 +177,8 @@ def _spawn(command: list[str], environ: Mapping[str, str]) -> int:
 
 
 # One spelling of the wrapper's layout. The predicate below recognises what
-# `materialize_consent_wrappers` writes, so the two must never drift: a rename
-# on one side alone silently disarms BOTH recursion barriers.
+# `plan_consent` writes, so the two must never drift: a rename on one side
+# alone silently disarms BOTH recursion barriers.
 _WRAPPER_DIR_NAME = "consent-wrapper"
 _WRAPPER_BIN_NAME = "bin"
 
@@ -411,75 +391,6 @@ def plan_consent(
     return dataclasses.replace(plan, entries=(*plan.entries, *entries), env=env, launch=launch)
 
 
-def materialize_consent_wrappers(
-    layout: ProjectLayout,
-    result,
-    session_id: str,
-    provider,
-    artifacts,
-    *,
-    environ: Mapping[str, str] | None = None,
-    which: Callable[..., str | None] = shutil.which,
-) -> None:
-    """Put role-declared command middleware first on this HITL session's PATH."""
-    project_dir = layout.root
-    policy = policy_from(result.consent)
-    if not policy:
-        return
-    unknown = sorted(op for op in policy if operations.spec_for(op) is None)
-    if unknown:
-        raise RuntimeError(f"unsupported consent operations: {', '.join(unknown)}")
-    if not provider.supports_session_command_wrappers():
-        raise RuntimeError(
-            f"provider {provider.name!r} cannot enforce role-declared command consent"
-        )
-
-    env = os.environ if environ is None else environ
-    effective_path = artifacts.extra_env.get("PATH", env.get("PATH", ""))
-    lookup_path = original_lookup_path(effective_path)
-    surfaces = operations.wrapped_surfaces(policy)
-    originals: dict[str, str] = {}
-    for surface in surfaces:
-        original = which(surface, path=lookup_path)
-        if not original:
-            raise RuntimeError(f"cannot wrap {surface!r}: executable not found on PATH")
-        if _is_consent_wrapper_path(original):
-            raise RuntimeError(
-                f"cannot wrap {surface!r}: resolved executable is a consent wrapper: {original}"
-            )
-        originals[surface] = original
-
-    root = layout.cache.session(session_id) / _WRAPPER_DIR_NAME
-    config_path = root / "config.json"
-    artifacts.port.write_text(
-        config_path,
-        json.dumps(
-            {
-                "project_dir": str(project_dir.resolve()),
-                "originals": originals,
-                "policy": {key: list(value) for key, value in policy.items()},
-            },
-            indent=2,
-        )
-        + "\n",
-    )
-    bin_dir = root / _WRAPPER_BIN_NAME
-    consent = bin_dir / "consent"
-    artifacts.port.write_executable(consent, _consent_script())
-    artifacts.materialized.append(consent)
-    for surface in surfaces:
-        wrapper = bin_dir / surface
-        artifacts.port.write_executable(wrapper, _wrapper_script(surface))
-        artifacts.materialized.append(wrapper)
-    artifacts.materialized.append(config_path)
-    artifacts.extra_env["PATH"] = os.pathsep.join(filter(None, (str(bin_dir), effective_path)))
-    artifacts.extra_env[CONFIG_ENV] = str(config_path)
-
-    from .consent_mcp.registration import register_server
-
-    register_server(project_dir, policy, provider, artifacts)
-
-
 def load_config(path: Path) -> WrapperConfig:
     """Load the strict, session-frozen wrapper configuration."""
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -548,9 +459,7 @@ __all__ = [
     "load_config",
     "main",
     "match_operation",
-    "materialize_consent_wrappers",
     "plan_consent",
-    "policy_from",
     "policy_of",
     "run_wrapped",
 ]
