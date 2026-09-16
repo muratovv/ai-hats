@@ -336,7 +336,7 @@ autonomous invocations in two layers:
 
 2. **Deterministic hooks** on the irreversible subset:
    - `pre_bash_shared_state_guard.sh` — Claude Code PreToolUse hook (in session tree plugin skills).
-     Wired into session settings.json by `ClaudeSurface.build_session_artifacts()`.
+     Wired into the session's `settings.json` by `ClaudeSurface.plan` — a runtime-hook row of the plan (ADR-0036 D2).
      Blocks `gh pr merge` and `git push --force` when run without a controlling TTY
      (i.e. agent context).
    - `packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
