@@ -254,7 +254,9 @@ class ClaudeTranscriptReader:
                 return
             data = data[: cut + 1]
         self._offset += len(data)
-        for raw in data.decode("utf-8", errors="replace").splitlines():
+        # Only a newline ends a record: the surface writes U+2028 raw inside
+        # strings, and `splitlines` would cut the record there.
+        for raw in data.decode("utf-8", errors="replace").split("\n"):
             if raw.strip():
                 yield raw
 

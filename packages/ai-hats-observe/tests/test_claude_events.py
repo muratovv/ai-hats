@@ -1000,18 +1000,36 @@ def test_a_malformed_line_is_reported_and_the_parse_continues(tmp_path: Path) ->
     assert sorted(s.raw_code for s in signals(events)) == ["malformed-json", "non-object-line"]
 
 
+def test_a_record_holding_a_line_separator_is_one_record(tmp_path: Path) -> None:
+    """Only a newline ends a record. Six records in the measured corpus carry a
+    raw U+2028 inside a text block; ``str.splitlines`` cut them into 94 pieces
+    and reported every piece as malformed — for zero malformed records.
+
+    Positive control: the test above still sees a genuinely malformed line.
+    """
+    text = "first line second line third\x0cfourth"
+    record = assistant("req-a", [{"type": "text", "text": text}], stop_reason="end_turn")
+    path = tmp_path / "sep.jsonl"
+    # Claude writes the separator raw, not as   — so must the fixture
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    events = list(ClaudeTranscriptReader(path).read())
+
+    assert [i.text for i in items(events, ItemKind.TEXT)] == [text]
+    assert signals(events) == []
+
+
 def test_an_unknown_content_block_is_reported_not_dropped(tmp_path: Path) -> None:
-    """``fallback`` blocks occur 5 times in the corpus and nothing models them."""
+    """A block type outside the measured set is drift, and drift is said."""
     events = events_of(
         tmp_path,
         [
             assistant(
                 "req-a",
-                [{"type": "fallback", "from": "a", "to": "b"}, {"type": "text", "text": "kept"}],
+                [{"type": "hologram", "data": "?"}, {"type": "text", "text": "kept"}],
             )
         ],
     )
-    assert [s.raw_code for s in signals(events)] == ["block:fallback"]
+    assert [s.raw_code for s in signals(events)] == ["block:hologram"]
     assert [i.text for i in items(events, ItemKind.TEXT)] == ["kept"]
 
 
