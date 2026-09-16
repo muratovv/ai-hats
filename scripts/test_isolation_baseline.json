@@ -36,6 +36,7 @@
   "tests/sessions/test_dry_run_matches_session.py": 2,
   "tests/sessions/test_hitl_meta_prompt_persisted.py": 5,
   "tests/sessions/test_launch_record_persisted.py": 4,
+  "tests/sessions/test_legacy_provider_compat.py": 2,
   "tests/sessions/test_reflect_hypothesis.py": 1,
   "tests/sessions/test_reflect_issue.py": 2,
   "tests/sessions/test_reflect_session.py": 1,
