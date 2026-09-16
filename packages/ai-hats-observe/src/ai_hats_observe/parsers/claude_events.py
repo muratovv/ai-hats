@@ -57,36 +57,43 @@ from ..canonical.types import (
 #: SDK reader sees different fields off the same run, so the two are told apart.
 SOURCE = "claude/jsonl"
 
-#: Every top-level ``type`` the corpus produces; anything else is reported as
-#: ``UNSUPPORTED_RECORD`` (R5). ``summary`` is deliberately absent — the legacy
-#: ``usage._KNOWN_TYPES`` lists it and it occurs zero times.
-KNOWN_RECORD_TYPES = frozenset(
+# The top-level ``type`` values read for what happened in the run.
+_READ_RECORD_TYPES = frozenset({"assistant", "attachment", "system", "user"})
+
+# Measured top-level types that say nothing about the run, by group.
+_SILENT_RECORD_TYPES = frozenset(
     {
+        # the session's own identity, title and UI state
         "agent-name",
         "agent-setting",
         "ai-title",
         "artifact-autoreact-ledger",
         "artifact-comment-monitor",
-        "assistant",
         "atis-latch",
-        "attachment",
         "bridge-session",
-        "cost-state",
-        "file-history-delta",
-        "file-history-snapshot",
         "fork-context-ref",
         "frame-link",
         "last-prompt",
+        "pr-link",
+        "relocated",
+        "worktree-state",
+        # file backups behind /rewind
+        "file-history-delta",
+        "file-history-snapshot",
+        # the permission mode, repeated per prompt and never seen to change mid-session
         "mode",
         "permission-mode",
-        "pr-link",
+        # a prompt announced before it lands as a `user` record
         "queue-operation",
-        "relocated",
-        "system",
-        "user",
-        "worktree-state",
+        # the one USD figure; per-response usage already sums the run
+        "cost-state",
     }
 )
+
+#: Every top-level ``type`` the corpus produces; anything else is reported as
+#: ``UNSUPPORTED_RECORD`` (R5). ``summary`` is deliberately absent — the legacy
+#: ``usage._KNOWN_TYPES`` lists it and it occurs zero times.
+KNOWN_RECORD_TYPES = _READ_RECORD_TYPES | _SILENT_RECORD_TYPES
 
 # --- mappings --------------------------------------------------------------
 
@@ -315,6 +322,8 @@ class ClaudeTranscriptReader:
         rtype = record.get("type")
         if rtype not in KNOWN_RECORD_TYPES:
             yield self._notice(str(rtype), ts=_ts(record))
+            return
+        if rtype in _SILENT_RECORD_TYPES:
             return
 
         match rtype:

@@ -384,6 +384,41 @@ def test_an_unmodelled_record_type_is_reported_once_with_its_raw_type(tmp_path: 
     assert drift[0].source == "claude/jsonl"
 
 
+# The measured top-level types that are not `assistant`, `user`, `system` or
+# `attachment`: harness bookkeeping, silent by decision.
+QUIET_RECORD_TYPES = [
+    "agent-name",
+    "agent-setting",
+    "ai-title",
+    "artifact-autoreact-ledger",
+    "artifact-comment-monitor",
+    "atis-latch",
+    "bridge-session",
+    "cost-state",
+    "file-history-delta",
+    "file-history-snapshot",
+    "fork-context-ref",
+    "frame-link",
+    "last-prompt",
+    "mode",
+    "permission-mode",
+    "pr-link",
+    "queue-operation",
+    "relocated",
+    "worktree-state",
+]
+
+
+@pytest.mark.parametrize("rtype", QUIET_RECORD_TYPES)
+def test_a_measured_bookkeeping_record_type_yields_nothing_at_all(
+    tmp_path: Path, rtype: str
+) -> None:
+    """Not merely no signal: no event of any kind. The drift test above is the
+    positive control — one type outside this list is reported."""
+    record = {"type": rtype, "uuid": f"q-{rtype}", "sessionId": "s", "content": "# TASK"}
+    assert events_of(tmp_path, [record]) == []
+
+
 def test_summary_is_not_carried_over_from_the_legacy_known_set(tmp_path: Path) -> None:
     """``usage._KNOWN_TYPES`` lists ``summary``; it occurs zero times."""
     assert "summary" not in KNOWN_RECORD_TYPES
