@@ -103,7 +103,7 @@ suite stubbed the very contracts the change broke.
        Missing:
            integration
            merge-smoke
-           master-ci
+           e2e-default
 
        Run the gate on that exact content, then retry:
 
@@ -127,7 +127,7 @@ suite stubbed the very contracts the change broke.
    the transition after this one will additionally demand, so you can earn it
    now instead of being refused for it later:
 
-       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, e2e-default, master-ci
+       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, e2e-default
 
    `next: nothing` means no gate on the road is short of anything. Transition.
 4. **Red** — the run's block, verdict first:
@@ -146,7 +146,7 @@ suite stubbed the very contracts the change broke.
        [gates] transcript: /tmp/gates-run.Xy12ab
 
    In order of importance: the verdict, what to do, what the red stage said
-   (a failing test per line, a finding per line, or `master-ci`'s run URL),
+   (a failing test per line, or a finding per line),
    one line per green stage, the cached ones, the subject, and the dir holding
    every stage's full output.
 
@@ -172,9 +172,6 @@ suite stubbed the very contracts the change broke.
    happens in a scratch checkout of the commit, so it judges what is COMMITTED
    — a red one against a fix that was never there, a green one vouching for a
    fix that never ran. Commit, then run again.
-
-   `master-ci` is the one red the tree cannot fix: master itself is red. Its
-   knob (see "No bypass") is the supervisor's to set, never yours.
 5. **Touched what the gate does not name?** No card gate runs the whole tier
    under one name: `->merge` asks for the zones your diff touches, `->done` for
    `e2e-default` — the half no zone claims — plus `merge-smoke`, and never for
@@ -246,13 +243,13 @@ fix it, and the 2022 community keepalive workaround no longer works (paid for tw
 
 ## No bypass
 
-There is no `AI_HATS_E2E_SKIP` and no `--ack`. `git push --no-verify` and forging
-a marker are deliberate local acts by the trusted maintainer, never an accidental
-skip. The one knob is `AI_HATS_RED_MASTER_ACK=1`: it lets `master-ci` pass on a
-red master, for the card that fixes it, and says so in the run.
+There is no `AI_HATS_E2E_SKIP`, no `--ack` and no knob. `git push --no-verify`
+and forging a marker are deliberate local acts by the trusted maintainer, never
+an accidental skip.
 
-That knob is the supervisor's, and it reaches the check only from the environment
-that LAUNCHED the agent. Writing it on your own command line is refused
-(`safety-guard`) — an approval you grant yourself is not one. If the red is not
-yours, the move is a classification, not a request for the flag:
+Master's own CI verdict is not a card's to pass or to wave through, so no card
+gate asks for it. The push road prints it before a push to master
+(`scripts/check_master_ci.py --notice`, never blocking: the push is how master
+gets fixed), and `bash scripts/gates.sh master-ci` asks by hand. If a red is not
+yours, the move is a classification, not a request for a flag:
 skill **red-attribution**.

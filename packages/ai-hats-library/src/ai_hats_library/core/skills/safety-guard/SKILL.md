@@ -52,19 +52,20 @@ coarser one silently wins.
 ## An approval you write yourself is not one
 
 `ack_prefix_guard.py` refuses a Bash line that SETS an `AI_HATS_*` approval —
-`AI_HATS_RED_MASTER_ACK=1 make done-gate`, the bare assignment, `export`, `env`,
+`AI_HATS_GATE_BROKEN_ACK=1 make done-gate`, the bare assignment, `export`, `env`,
 and the same after a separator.
 
 The gap it closes was never a policy, only a process boundary. A flag read by a
 PreToolUse guard comes from the environment that LAUNCHED the agent, so a prefix
 cannot reach it. A flag read by a script inside `make` or a git hook is reached by
-plain shell semantics — so `master-ci`'s hatch was self-servable while the others
-were not, and the smoke gate's was skipped on four commits that way.
+plain shell semantics — so the hatch the `master-ci` stage once carried was
+self-servable while the others were not, and the smoke gate's was skipped on four
+commits that way.
 
 It recognises the flag by SHAPE — the `_ACK` / `_OFF` / `_SKIP` spelling that
 `constants.withheld_from_subagent` uses — never by a roster, so a flag added next
 month is covered without anyone remembering. What it does **not** touch: the flag
-in argument position. `grep -rn AI_HATS_RED_MASTER_ACK scripts/` and an `echo` of
+in argument position. `grep -rn AI_HATS_GATE_BROKEN_ACK scripts/` and an `echo` of
 the same text bind nothing and pass, which is the whole precision of the thing.
 
 **There is no flag that opens this guard**, by construction: one would be the same

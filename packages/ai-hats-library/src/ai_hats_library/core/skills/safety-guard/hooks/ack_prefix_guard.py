@@ -3,8 +3,8 @@
 
 Flags held by a PreToolUse guard are read from the LAUNCHING environment, so a
 prefix never reaches them. Flags read by a script inside ``make`` or a git hook do
-get reached — ``check_master_ci.py``'s hatch was self-servable by plain shell
-semantics, and the smoke gate's was skipped on four commits that way. That asymmetry
+get reached — the hatch the ``master-ci`` stage once carried was self-servable by
+plain shell semantics, and the smoke gate's was skipped on four commits that way. That asymmetry
 was never a policy, only which side of a process boundary the flag was read on, and it
 is closed here where every flag crosses. Shape not roster (mirrors
 ``constants.withheld_from_subagent``); no hatch, since one would self-grant a level up.

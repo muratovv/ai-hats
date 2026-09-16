@@ -102,9 +102,7 @@ def _write_runner(where: Path, rcs: dict[str, int] | None = None) -> Path:
     return runner
 
 
-def _git_repo(
-    tmp_path: Path, rcs: dict[str, int] | None = None, *, checker: bool = False
-) -> Path:
+def _git_repo(tmp_path: Path, rcs: dict[str, int] | None = None, *, checker: bool = False) -> Path:
     """One commit holding the real `scripts/gates.sh` (and, on request, the real
     master-ci checker); the fake stage runner sits beside the repo and reaches
     it through GATES_STAGE_RUNNER."""
