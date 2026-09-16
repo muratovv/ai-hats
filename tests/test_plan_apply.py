@@ -32,6 +32,7 @@ from ai_hats.surfaces.plan import (
 )
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 
+
 def _composition() -> CompositionPlan:
     return CompositionPlan(
         identity="t",
