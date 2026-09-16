@@ -1,18 +1,20 @@
-"""e2e (HATS-1877)
+"""e2e (HATS-1877, HATS-1991)
 
-flow:   a maintainer closes a card while master's own CI has been failing
+flow:   a maintainer reads master's own CI verdict: by hand as a stage, and as
+        the notice the push road prints before a push to master
 cmds:
     bash scripts/gates.sh master-ci
+    python scripts/check_master_ci.py --notice
     hooks/done-gate.sh --stages
-expect: a green master passes; a red one refuses with exit 1, names the
-        conclusion and the run url, and points at the one override; the
-        override lets the card that fixes master through; and every reason the
-        check cannot answer (no gh, gh refusing, a run still going) is
-        ANNOUNCED, never silent
+expect: the stage passes a green master and refuses a red one with exit 1,
+        naming the conclusion and the run url; the notice reports the same
+        verdict and exits 0 whatever it is; every reason the check cannot
+        answer (no gh, gh refusing, a run still going) is ANNOUNCED, never
+        silent; and no card gate asks for the stage
 why:    CI had been red since before 2026-07-28 for an unrelated reason, so the
         one arm that could see seven of v0.15.0's nine defects went unread for
-        a month. A skip nobody is told about is that same defect wearing the
-        gate's own colours
+        a month. A finished card then sat in review behind a red run it had no
+        part in: the base's verdict is the push road's question, not a card's
 """  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
@@ -30,8 +32,6 @@ pytestmark = [pytest.mark.integration, pytest.mark.gates]
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPO_ROOT / "scripts" / "check_master_ci.py"
 
-ENV_ALLOW_RED = "AI_HATS_RED_MASTER_ACK"
-
 
 def _fake_gh(tmp_path: Path, *, stdout: str = "", exit_code: int = 0) -> Path:
     """A `gh` on PATH that answers with exactly what the test wants."""
@@ -46,16 +46,14 @@ def _fake_gh(tmp_path: Path, *, stdout: str = "", exit_code: int = 0) -> Path:
     return shim_dir
 
 
-def _run(shim_dir: Path | None, **env_extra: str) -> subprocess.CompletedProcess[str]:
+def _run(shim_dir: Path | None, *, notice: bool = False) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
-    env.pop(ENV_ALLOW_RED, None)
-    env.update(env_extra)
     if shim_dir is None:
         env["PATH"] = ""
     else:
         env["PATH"] = f"{shim_dir}:{env.get('PATH', '')}"
     return subprocess.run(
-        [sys.executable, str(CHECKER)],
+        [sys.executable, str(CHECKER), *(["--notice"] if notice else [])],
         cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,
@@ -93,16 +91,9 @@ def test_a_red_master_refuses_and_names_the_run(tmp_path: Path):
     assert run.returncode == 1, combined
     assert "failure" in combined, combined
     assert "actions/runs/1" in combined, combined
-    assert ENV_ALLOW_RED in combined, combined
     assert "Fix master first" in combined, combined
     assert "v0.15.0" not in combined, "a history lesson is not a remedy"
-
-
-def test_the_override_lets_the_fix_for_the_redness_through(tmp_path: Path):
-    run = _run(_fake_gh(tmp_path, stdout=_runs("failure")), **{ENV_ALLOW_RED: "1"})
-    combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
-    assert "on the supervisor's word" in combined, combined
+    assert "_ACK" not in combined, "there is no flag: a red base is nobody's to wave through"
 
 
 def test_a_run_still_going_is_not_a_verdict(tmp_path: Path):
@@ -135,6 +126,42 @@ def test_unreadable_output_is_announced_not_silent(tmp_path: Path):
     assert run.returncode == 0, combined
     assert "SKIPPED" in combined, combined
     assert "cannot read" in combined, combined
+
+
+@pytest.mark.parametrize(
+    ("label", "gh", "announced"),
+    [
+        ("a green master", {"stdout": _runs("success")}, "ok:"),
+        ("a red master", {"stdout": _runs("failure")}, "actions/runs/1"),
+        ("a run still going", {"stdout": _runs("", status="in_progress")}, "in_progress"),
+        ("gh refusing", {"stdout": "gh: not authenticated", "exit_code": 4}, "exited 4"),
+        ("unreadable output", {"stdout": "not json at all"}, "cannot read"),
+    ],
+)
+def test_the_notice_announces_every_outcome_and_never_refuses(
+    tmp_path: Path, label: str, gh: dict, announced: str
+):
+    """The push road: a push is how master gets fixed, so a red base is said,
+    not held against it."""
+    run = _run(_fake_gh(tmp_path, **gh), notice=True)
+    combined = run.stdout + run.stderr
+    assert run.returncode == 0, f"{label}: {combined}"
+    assert announced in combined, f"{label}: {combined}"
+    assert "Fix master first" not in combined, f"{label}: a notice gives no orders"
+
+
+def test_the_notice_without_gh_is_announced_not_silent():
+    run = _run(None, notice=True)
+    combined = run.stdout + run.stderr
+    assert run.returncode == 0, combined
+    assert "was not checked" in combined, combined
+
+
+def test_the_notice_on_a_red_master_says_why_it_does_not_refuse(tmp_path: Path):
+    run = _run(_fake_gh(tmp_path, stdout=_runs("failure")), notice=True)
+    combined = run.stdout + run.stderr
+    assert "failure" in combined, combined
+    assert "re-runs it" in combined, combined
 
 
 _GATE_HOOKS = "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks"

@@ -1,53 +1,29 @@
 #!/usr/bin/env python3
-"""Refuse a close while master's own CI is red.
+"""Read master's last CI verdict: a stage that refuses on red, or a notice that never does.
 
-HATS-1877: nine defects shipped in v0.15.0. Seven of them would have been
-caught by the CI `e2e` job, which had been failing since before 2026-07-28 for
-an unrelated reason. Nothing alarmed for a month, so the one arm that could see
-them was never read. This is the alarm: the gate that closes a card asks GitHub
-what master's last CI run concluded, and refuses on a red one.
+Nine defects shipped while the CI `e2e` job had been red for a month for an
+unrelated reason — the one arm that could see them was never read. Bare, this is
+the `master-ci` stage: run by hand, red on a non-success. With `--notice` it is
+what the push road prints: the same verdict, exit 0 whatever it is, because a
+push is how master gets fixed and a refusal there would block the fix.
 
-A skip is always announced. A check that quietly does nothing is the same
-defect class this exists to close.
+A skip is always announced: a check that quietly does nothing is the same defect.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
 
 TAG = "[master-ci]"
 
-#: Supervisor override, for the one legitimate case: the card being closed is
-#: itself the fix for the redness. It must arrive from the launching environment —
-#: a prefix on the agent's own command line is refused by safety-guard.
-ENV_ALLOW_RED = "AI_HATS_RED_MASTER_ACK"
-
 QUERY_TIMEOUT_S = 30
-
-#: Where the bypass journal's single writer lives, relative to this script.
-_JOURNAL_DIR = "../packages/ai-hats-library/src/ai_hats_library/hooks"
-
-
-def _journal_allowed() -> None:
-    """Record the one use of the hatch, the way every PreToolUse guard records its own.
-
-    The flag was withheld from sub-agents and never written down; a supervisor's
-    approval that leaves no line is indistinguishable afterwards from one nobody gave.
-    """
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), _JOURNAL_DIR))
-    try:
-        from bypass_journal import journal_bypass
-    except ImportError as exc:
-        print(f"{TAG} bypass NOT RECORDED ({ENV_ALLOW_RED}) — {exc}", file=sys.stderr)
-        return
-    finally:
-        sys.path.pop(0)
-    journal_bypass("hatch", ENV_ALLOW_RED, hook="check_master_ci.py")
+#: A pre-push hook shares the push's own budget: GitHub drops the connection
+#: after ~30s idle, so the notice must answer well inside it.
+NOTICE_TIMEOUT_S = 10
 
 
 def _skip(reason: str) -> int:
@@ -58,7 +34,7 @@ def _skip(reason: str) -> int:
     return 0
 
 
-def _query(branch: str, workflow: str) -> list[dict] | str:
+def _query(branch: str, workflow: str, timeout_s: int) -> list[dict] | str:
     """The run list, or a one-line reason it could not be obtained."""
     gh = shutil.which("gh")
     if gh is None:
@@ -77,9 +53,9 @@ def _query(branch: str, workflow: str) -> list[dict] | str:
         "conclusion,status,displayTitle,url,headSha",
     ]
     try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=QUERY_TIMEOUT_S)
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
     except subprocess.TimeoutExpired:
-        return f"gh did not answer within {QUERY_TIMEOUT_S}s (offline?)"
+        return f"gh did not answer within {timeout_s}s (offline?)"
     except OSError as exc:
         return f"gh could not be run: {exc}"
     if done.returncode != 0:
@@ -94,9 +70,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--branch", default="master", help="branch whose CI verdict to read")
     parser.add_argument("--workflow", default="ci.yml", help="workflow file whose verdict counts")
+    parser.add_argument(
+        "--notice",
+        action="store_true",
+        help="report the verdict and exit 0 whatever it is (the push road)",
+    )
     args = parser.parse_args(argv)
 
-    runs = _query(args.branch, args.workflow)
+    runs = _query(args.branch, args.workflow, NOTICE_TIMEOUT_S if args.notice else QUERY_TIMEOUT_S)
     if isinstance(runs, str):
         return _skip(runs)
     if not runs:
@@ -119,24 +100,19 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"{TAG} FAIL: {args.branch} last concluded '{conclusion}' — {title}", file=sys.stderr)
     print(f"{TAG}   {url}", file=sys.stderr)
-    if os.environ.get(ENV_ALLOW_RED) == "1":
+    if args.notice:
         print(
-            f"{TAG} {ENV_ALLOW_RED}=1 — allowed anyway, on the supervisor's word.", file=sys.stderr
+            f"{TAG} not refusing: this push is what re-runs it. Read that run before "
+            f"you rely on {args.branch} being green.",
+            file=sys.stderr,
         )
-        _journal_allowed()
         return 0
     print(
-        f"{TAG} Fix master first — this close waits on master, not on your branch.", file=sys.stderr
-    )
-    print(
-        f"{TAG} If THIS card is the fix, the supervisor sets {ENV_ALLOW_RED}=1 in the "
-        "environment that launches the agent. Writing it on the command line is refused "
-        "(safety-guard), because an approval you grant yourself is not one.",
+        f"{TAG} Fix master first — this stage waits on master, not on your branch.",
         file=sys.stderr,
     )
     print(
-        f"{TAG} If master's redness is not yours, say so with evidence rather than "
-        "asking for the flag: skill `red-attribution`.",
+        f"{TAG} If master's redness is not yours, say so with evidence: skill `red-attribution`.",
         file=sys.stderr,
     )
     return 1
