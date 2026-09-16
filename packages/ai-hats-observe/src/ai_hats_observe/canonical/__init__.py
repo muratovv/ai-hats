@@ -14,9 +14,12 @@ from .events import (
     GateVerdict,
     ItemDelta,
     ItemEmitted,
+    PersonAsked,
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    RunEnded,
+    RunStarted,
     ToolResultReceived,
 )
 from .reader import AsyncEventReader, EventReader
@@ -31,6 +34,8 @@ from .signals import (
     WorthRecording,
 )
 from .types import (
+    AgentId,
+    AskKind,
     Completion,
     EpochSeconds,
     GateDecision,
@@ -38,6 +43,7 @@ from .types import (
     Item,
     ItemKind,
     ModelName,
+    PromptOrigin,
     ResponseId,
     TextItem,
     ThinkingItem,
@@ -45,6 +51,7 @@ from .types import (
     ToolCallId,
     ToolCallItem,
     Usage,
+    now,
 )
 from .views import (
     ANSWER_ONLY,
@@ -60,6 +67,8 @@ from .views import (
 
 __all__ = [
     "ANSWER_ONLY",
+    "AgentId",
+    "AskKind",
     "Blocking",
     "Collected",
     "Response",
@@ -80,11 +89,15 @@ __all__ = [
     "ModelName",
     "Notice",
     "PersonActionRequired",
+    "PersonAsked",
     "PersonMustAct",
+    "PromptOrigin",
     "PromptReceived",
     "ResponseEnded",
     "ResponseId",
     "ResponseStarted",
+    "RunEnded",
+    "RunStarted",
     "Signal",
     "TextItem",
     "ThinkingItem",
@@ -97,6 +110,7 @@ __all__ = [
     "WorthRecording",
     "collect",
     "in_time_order",
+    "now",
     "AsyncEventReader",
     "EventReader",
     "select",

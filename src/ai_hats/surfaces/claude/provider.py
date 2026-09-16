@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from .. import SurfaceHint
     from ai_hats_observe.canonical.reader import EventReader
+    from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
 from ai_hats_core import CompositionResult
@@ -36,7 +38,7 @@ from .sdk_options import (
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
-from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG
+from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG, HOOK_NOTIFICATION, OBSERVED_NOTIFICATION
 from .runtime_hooks import materialize_hook_manifest
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
@@ -55,6 +57,8 @@ from ai_hats.constants import (
     INJECTION_END,
     PROVIDER_CLAUDE,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _entry_matcher(rows: list[dict[str, str]]) -> str:
@@ -184,6 +188,28 @@ class ClaudeSurface(Surface):
             else None,
             end_ts=end_ts,
         )
+
+    def event_sources(
+        self,
+        cwd: Path,
+        session_id: str,
+        *,
+        provider_session_id: str | None = None,
+    ) -> "list[EventSource]":
+        # A sub-agent's record sits under <sid>/subagents/, named by its id; it
+        # is followed only beside a main record, never as a run of its own.
+        from ai_hats.paths import claude_subagent_transcripts
+        from ai_hats_observe.canonical import AgentId
+        from ai_hats_observe.event_log_writer import EventSource
+
+        sources = super().event_sources(cwd, session_id, provider_session_id=provider_session_id)
+        if not sources or not provider_session_id:
+            return sources
+        sources.extend(
+            EventSource(path, agent=AgentId(agent_id))
+            for agent_id, path in claude_subagent_transcripts(cwd, provider_session_id)
+        )
+        return sources
 
     def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         """Claude uses per-session prompt cache; no root CLAUDE.md managed."""
@@ -490,21 +516,30 @@ class ClaudeSurface(Surface):
     def _desired_runtime_entries(
         self, rows: dict[str, list[dict[str, str]]]
     ) -> dict[str, list[dict]]:
-        """``{event: [the dispatcher entry]}`` for the rows the manifest holds.
+        """``{event: [the dispatcher entry]}`` for the rows the manifest holds,
+        plus the one observer that rides no skill.
 
         One entry per event: WHICH gates a call matched is the dispatcher's to
         answer from the manifest, and the harness only has to deliver the call.
-        An event the composition binds nothing to gets no entry.
+        An event the composition binds nothing to gets no entry — except the
+        notification that claude is showing the person its permission prompt,
+        which no gate judges and only a hook can see: the dispatcher records
+        it into the session's own log, and runs only then.
         """
-        return {
-            event: [
-                {
-                    "matcher": _entry_matcher(event_rows),
-                    "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
-                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
-                }
-            ]
+        entries = {
+            event: [self._dispatcher_entry(event, _entry_matcher(event_rows))]
             for event, event_rows in rows.items()
+        }
+        entries[HOOK_NOTIFICATION] = [
+            self._dispatcher_entry(HOOK_NOTIFICATION, OBSERVED_NOTIFICATION)
+        ]
+        return entries
+
+    def _dispatcher_entry(self, event: str, matcher: str) -> dict:
+        return {
+            "matcher": matcher,
+            "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
+            self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
         }
 
     @staticmethod
@@ -601,6 +636,30 @@ class ClaudeSurface(Surface):
         ]
 
 
+def _stream_signals_to(event_log: Path | None) -> "Callable[[object], None] | None":
+    """The seam's listener: what only the stream carries — a rate-limit
+    message — appended to the session's log, stamped as it arrives. The
+    transcript owns everything else, so nothing else is written twice.
+    Fail-open: a line that cannot land is logged, the run goes on."""
+    if event_log is None:
+        return None
+    from ai_hats_observe.canonical import now
+    from ai_hats_observe.event_log import write_events
+
+    from .stream_events import rate_limit_events
+
+    def listen(message: object) -> None:
+        info = getattr(message, "rate_limit_info", None)
+        if info is None or type(message).__name__ != "RateLimitEvent":
+            return
+        try:
+            write_events(rate_limit_events(info, ts=now()), event_log, append=True)
+        except Exception:
+            logger.warning("rate-limit signal not recorded in %s", event_log, exc_info=True)
+
+    return listen
+
+
 class ClaudeSubagentEngine(SubagentEngine):
     def __init__(self, provider: ClaudeSurface, *, run_blocking: Callable | None = None) -> None:
         self._provider = provider
@@ -623,6 +682,7 @@ class ClaudeSubagentEngine(SubagentEngine):
         metrics: MetricsSink,
         artifacts: BuiltArtifacts | None = None,
         provider_session_id: str | None = None,
+        event_log: Path | None = None,
     ) -> SurfaceRunResult:
         if artifacts is None:
             artifacts = self._provider.build_session_artifacts(
@@ -644,7 +704,9 @@ class ClaudeSubagentEngine(SubagentEngine):
             claude_session_id=provider_session_id,
         )
         msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
-        run_res = self._run_blocking(opts, msg, timeout_s=timeout_s)
+        run_res = self._run_blocking(
+            opts, msg, timeout_s=timeout_s, on_message=_stream_signals_to(event_log)
+        )
 
         metrics.record(
             {

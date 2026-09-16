@@ -4,6 +4,46 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0]
+
+Everything here is additive to `events/v1`: new kinds and new optional fields
+with `None` defaults, which an older decoder skips or ignores by contract.
+
+### Added
+
+- `RunStarted` / `RunEnded`: the first and last lines of `events.jsonl`, said
+  by `EventLogWriter` itself at `start()` and `close(exit_code=…)` — the one
+  thing a file that stopped growing cannot tell a follower. The ending is
+  written after a fault too, carrying it in `detail`.
+- `PersonAsked` (`kind`: `question` | `permission`): the run is waiting on a
+  person. Opened by the Claude transcript reader on a question tool
+  (`AskUserQuestion`), by `ai_hats.surfaces.gate_log` beside a `GateVerdict`
+  whose decision is `ask`, and by the Claude channel when the surface shows
+  its own permission prompt. No closing twin: the wait is open while the call
+  it names has no `ToolResultReceived`.
+- `PromptReceived.origin` (`person` | `harness`), from the transcript's own
+  provenance fields; absent when the surface did not say.
+- `agent` on every event: the sub-agent that produced it, absent for the main
+  agent. `EventSource(path, agent)` for the writer's `locate`, which stamps
+  events per source; `Surface.event_sources()` names a session's records,
+  and Claude's adds `<sid>/subagents/agent-*.jsonl`.
+- `WorthRecording.INTERRUPTED`: a person stopped the turn. Both Claude readers
+  emit it for the harness's `[Request interrupted by user…]` marker, which is
+  no longer a `PromptReceived`; the response it cut ends `CANCELLED` unless
+  the model had already reported a stop.
+- `GateVerdict(before_tool, deny)` from the Claude transcript when the auto-mode
+  classifier or the person refused a tool: `hook` names the decider, `source`
+  is `claude/jsonl`.
+- `canonical.now()`: this instant in the form every surface's stamps take.
+
+### Changed
+
+- `EventLogWriter.close()` takes `exit_code`; `events_written` counts the two
+  lifecycle lines; the file exists from `start()` (before: only once a source
+  had produced an event).
+- `parsers.claude_events.INTERRUPT_MARKERS` is public, shared with the SDK
+  reader.
+
 ## [0.10.0]
 
 ### Added

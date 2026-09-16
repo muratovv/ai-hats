@@ -43,6 +43,7 @@ from .hook_channel import HookRow
 
 if TYPE_CHECKING:
     from ai_hats_observe.canonical.reader import EventReader
+    from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,9 @@ class SubagentEngine(abc.ABC):
         # can be followed while the run is on; an engine that cannot pass one
         # on ignores it and reports the id the surface chose in ``metrics``.
         provider_session_id: str | None = None,
+        # The session's live log, for what only the surface's own stream
+        # carries (a quota pre-warning); ``None`` when the session writes none.
+        event_log: Path | None = None,
     ) -> SurfaceRunResult:
         pass
 
@@ -284,6 +288,30 @@ class Surface(abc.ABC):
         agy, cline, codex and opencode keep the default.
         """  # comment-length: allow — the None branch IS the contract
         return None
+
+    def event_sources(
+        self,
+        cwd: Path,
+        session_id: SessionId,
+        *,
+        provider_session_id: str | None = None,
+    ) -> "list[EventSource]":
+        """Every record the session's live writer follows, and whose work each
+        holds — the main agent's (``agent=None``) and each sub-agent's.
+
+        Default: what ``resolve_transcript`` names, as the main agent's. A surface
+        that files a sub-agent's record beside the parent's overrides to name
+        those too; ``resolve_transcript`` stays the post-hoc audit's input and
+        names the main record alone.
+        """
+        from ai_hats_observe.event_log_writer import EventSource
+
+        return [
+            EventSource(path)
+            for path in self.resolve_transcript(
+                cwd, session_id, provider_session_id=provider_session_id
+            )
+        ]
 
     def resolve_transcript(
         self,

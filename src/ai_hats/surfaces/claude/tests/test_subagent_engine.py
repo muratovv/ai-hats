@@ -72,7 +72,7 @@ def test_the_minted_session_id_reaches_the_sdk_options(tmp_path):
     or the SDK picks its own and the writer follows a file that never appears."""
     handed: list = []
 
-    def run_blocking(options, message, *, timeout_s):
+    def run_blocking(options, message, *, timeout_s, on_message=None):
         handed.append(options)
         return _sdk_result()
 

@@ -34,6 +34,11 @@ call site has to choose between.
 What the model asked and what a person asked are separate events. Pairing them
 into a dialogue is one possible reading, and belongs to the consumer that wants
 it rather than to the shape everyone else must carry.
+
+Every event says whose work it is: ``agent`` names the sub-agent that produced
+it and is absent for the main agent. A child's record is read beside its
+parent's into the same stream, so without the field a child's calls would count
+as the parent's — measured in one fan-out session, they outnumbered them.
 """
 
 from __future__ import annotations
@@ -42,12 +47,15 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 from .signals import Signal
 from .types import (
+    AgentId,
+    AskKind,
     Completion,
     GateDecision,
     GatePoint,
     Item,
     ItemKind,
     ModelName,
+    PromptOrigin,
     ResponseId,
     Timestamp,
     ToolCallId,
@@ -56,11 +64,50 @@ from .types import (
 
 
 @dataclass(frozen=True)
+class RunStarted:
+    """This session began observing a run.
+
+    Ours to say, not the surface's: no surface we read persists a start a
+    follower can trust, and the one moment that is true for every surface is
+    the moment before it is launched. So the writer says it.
+    """
+
+    ts: Timestamp | None = None
+    agent: AgentId | None = None
+
+
+@dataclass(frozen=True)
+class RunEnded:
+    """The run is over — the one thing silence cannot tell a follower.
+
+    A file that stops growing is idle, inside a long tool, or waiting on a
+    person; only this line says it ended. Said by the writer after the surface
+    exits and its record is drained, even when the follow faulted earlier: a
+    fault costs the events after it, never the ending. ``raw_code`` is the
+    surface's own word for how, kept verbatim as a signal keeps it. Cost is not
+    here — per-response usage already sums to the run.
+    """
+
+    ok: bool
+    raw_code: str | None = None
+    # what stopped the follow early, when something did
+    detail: str | None = None
+    ts: Timestamp | None = None
+    agent: AgentId | None = None
+
+
+@dataclass(frozen=True)
 class PromptReceived:
-    """Input addressed to the model, from a person or from the harness."""
+    """Input addressed to the model, from a person or from the harness.
+
+    ``origin`` says which, when the surface says; a controller waiting for the
+    person to come back reads it rather than counting prompts.
+    """
 
     text: str
     ts: Timestamp | None = None
+    origin: PromptOrigin | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +119,7 @@ class ResponseStarted:
     response_id: ResponseId
     model: ModelName | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +129,7 @@ class ItemEmitted:
     response_id: ResponseId
     item: Item
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +147,7 @@ class ItemDelta:
     index: int
     text: str
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +166,7 @@ class ToolResultReceived:
     ok: bool
     content: Any = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +186,7 @@ class ResponseEnded:
     usage: Usage = Usage()
     stop_reason: str | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
@@ -159,10 +211,36 @@ class GateVerdict:
     # which producer spoke: the chain itself, or a surface's transcript
     source: str | None = None
     ts: Timestamp | None = None
+    agent: AgentId | None = None
+
+
+@dataclass(frozen=True)
+class PersonAsked:
+    """A person is being waited on — for an answer, or for leave to run a tool.
+
+    The one state a controller cannot infer from the stream: an unanswered
+    call looks the same whether a tool is slow or a person is away. It has no
+    closing twin: the wait is open while the call it names has no
+    ``ToolResultReceived`` — the reading a response in flight already has —
+    and that result, with any verdict beside it, says how it closed.
+    """
+
+    kind: AskKind
+    call_id: ToolCallId | None = None
+    tool: str | None = None
+    # what a controller can show: the question, or the gate's reason
+    detail: str | None = None
+    # which producer spoke: a surface's reader, the chain, a surface's hook
+    source: str | None = None
+    ts: Timestamp | None = None
+    agent: AgentId | None = None
 
 
 Event = (
-    PromptReceived
+    RunStarted
+    | RunEnded
+    | PromptReceived
+    | PersonAsked
     | ResponseStarted
     | ItemDelta
     | ItemEmitted

@@ -13,18 +13,26 @@ from __future__ import annotations
 
 import random
 import time
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
 import pytest
 
-from ai_hats_observe.canonical import PromptReceived, ResponseStarted
+from ai_hats_observe.canonical import PromptReceived, ResponseStarted, RunEnded, RunStarted
 from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
-from ai_hats_observe.event_log_writer import EventLogWriter
+from ai_hats_observe.event_log_writer import EventLogWriter, EventSource
 from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
 TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
 RECORDS = (TRANSCRIPTS / "fragments.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
+
+
+def _run_events(log: Path) -> list:
+    """What the surface's record produced — the file minus the writer's own
+    ``RunStarted`` / ``RunEnded`` lines, which no post-hoc read of a transcript
+    can yield."""
+    return [e for e in read_events(log) if not isinstance(e, (RunStarted, RunEnded))]
 
 
 def _writer(tmp_path: Path, *sources: Path, **kwargs) -> EventLogWriter:
@@ -128,14 +136,15 @@ def test_close_drains_what_a_live_reader_held_back(tmp_path: Path) -> None:
 def test_a_record_that_never_appears_is_reported_as_no_source(tmp_path: Path) -> None:
     """A writer told to follow a record that never shows up — keyed under the
     wrong root, say — must not look like a session that had nothing to record:
-    the outcome says no source was located, and no file is created."""
+    the outcome says no source was located, and the file holds nothing but the
+    run's own ending."""
     writer = _writer(tmp_path, tmp_path / "never.jsonl")
     assert writer.tick() == 0
 
-    outcome = writer.close()
+    outcome = writer.close(exit_code=0)
 
-    assert (outcome.events_written, outcome.sources, outcome.error) == (0, 0, None)
-    assert not (tmp_path / EVENT_LOG_JSONL).exists()
+    assert (outcome.events_written, outcome.sources, outcome.error) == (1, 0, None)
+    assert [type(e) for e in read_events(tmp_path / EVENT_LOG_JSONL)] == [RunEnded]
 
 
 def test_a_source_that_appears_only_at_close_is_still_drained(tmp_path: Path) -> None:
@@ -152,8 +161,31 @@ def test_a_source_that_appears_only_at_close_is_still_drained(tmp_path: Path) ->
     outcome = writer.close()
 
     expected = list(ClaudeTranscriptReader(transcript).read())
-    assert list(read_events(log)) == expected
-    assert outcome.events_written == len(expected)
+    assert _run_events(log) == expected
+    assert outcome.events_written == len(expected) + 1, "plus the ending"
+
+
+# --- the run's own lifecycle --------------------------------------------------
+
+
+def test_the_file_opens_with_run_started_and_closes_with_run_ended(tmp_path: Path) -> None:
+    """A file that stops growing cannot say whether the run is over; only the
+    writer knows both moments, so it says them — the first line before the
+    surface can produce anything, the last after its record is drained."""
+    transcript = tmp_path / "t.jsonl"
+    log = tmp_path / EVENT_LOG_JSONL
+    writer = _writer(tmp_path, transcript, interval_s=0.005).start()
+    assert isinstance(next(iter(read_events(log))), RunStarted), "said before any source exists"
+    transcript.write_text("".join(RECORDS), encoding="utf-8")
+
+    outcome = writer.close(exit_code=0)
+
+    events = list(read_events(log))
+    assert isinstance(events[0], RunStarted) and events[0].ts is not None
+    assert events[-1] == RunEnded(ok=True, raw_code="0", ts=events[-1].ts)
+    assert events[-1].ts is not None
+    assert events[1:-1] == list(ClaudeTranscriptReader(transcript).read())
+    assert outcome.events_written == len(events)
 
 
 # --- identity with a finished-record read -----------------------------------
@@ -189,8 +221,8 @@ def test_a_record_fed_in_arbitrary_chunks_reads_back_as_one_pass(
     _feed_in_chunks(writer, transcript, source.read_bytes(), seed)
     outcome = writer.close()
 
-    assert list(read_events(tmp_path / EVENT_LOG_JSONL)) == expected
-    assert outcome.events_written == len(expected)
+    assert _run_events(tmp_path / EVENT_LOG_JSONL) == expected
+    assert outcome.events_written == len(expected) + 1, "plus the ending"
     assert outcome.error is None
 
 
@@ -213,10 +245,35 @@ def test_the_chunk_feed_is_hostile_enough_to_break_a_reader_that_closes_at_eof(
     _feed_in_chunks(writer, transcript, source.read_bytes(), seed=1)
     writer.close()
 
-    assert list(read_events(tmp_path / EVENT_LOG_JSONL)) != expected
+    assert _run_events(tmp_path / EVENT_LOG_JSONL) != expected
 
 
 # --- several sources, faults, the thread --------------------------------------
+
+
+def test_a_sub_agents_record_is_followed_and_its_events_carry_its_id(tmp_path: Path) -> None:
+    """A surface names the record a sub-agent writes beside the main one and
+    whose it is; every event read from it is stamped with that id, and the
+    main record's events with none — so the one file says whose work is whose
+    and a controller sees the child while the parent's call is still open."""
+    main, child = tmp_path / "main.jsonl", tmp_path / "agent-a25b.jsonl"
+    main.write_text("".join(RECORDS[:3]), encoding="utf-8")
+    child.write_text("".join(RECORDS[3:]), encoding="utf-8")
+    writer = EventLogWriter(
+        locate=lambda: [main, EventSource(child, agent="a25b")],
+        reader_factory=partial(ClaudeTranscriptReader, live=True),
+        path=tmp_path / EVENT_LOG_JSONL,
+    )
+
+    writer.tick()
+    writer.close(exit_code=0)
+
+    events = _run_events(tmp_path / EVENT_LOG_JSONL)
+    expected_main = list(ClaudeTranscriptReader(main).read())
+    expected_child = list(ClaudeTranscriptReader(child).read())
+    assert [e for e in events if e.agent is None] == expected_main
+    assert [replace(e, agent=None) for e in events if e.agent == "a25b"] == expected_child
+    assert len(expected_child) > 1, "child fixture too thin to prove the stamp"
 
 
 def test_every_located_source_reaches_the_file(tmp_path: Path) -> None:
@@ -233,8 +290,8 @@ def test_every_located_source_reaches_the_file(tmp_path: Path) -> None:
     writer.tick()
     outcome = writer.close()
 
-    assert outcome.events_written == expected
-    assert len(list(read_events(tmp_path / EVENT_LOG_JSONL))) == expected
+    assert outcome.events_written == expected + 1, "plus the ending"
+    assert len(_run_events(tmp_path / EVENT_LOG_JSONL)) == expected
 
 
 def _wait_until(condition, timeout_s: float = 5.0) -> None:
@@ -285,8 +342,16 @@ def test_a_reader_fault_stops_the_writer_and_is_said_once(tmp_path: Path) -> Non
     ).start()
 
     _wait_until(lambda: writer.error is not None)
-    outcome = writer.close()
+    outcome = writer.close(exit_code=1)
 
     assert outcome.error == "RuntimeError: boom"
     assert said == ["events.jsonl writer stopped: RuntimeError: boom"]
-    assert not (tmp_path / EVENT_LOG_JSONL).exists()
+    # The follow died, the ending did not: the file still says the run is over,
+    # and why the record stops where it does.
+    events = list(read_events(tmp_path / EVENT_LOG_JSONL))
+    assert [type(e) for e in events] == [RunStarted, RunEnded]
+    assert (events[-1].ok, events[-1].raw_code, events[-1].detail) == (
+        False,
+        "1",
+        "RuntimeError: boom",
+    )

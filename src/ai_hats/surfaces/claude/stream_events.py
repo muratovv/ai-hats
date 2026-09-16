@@ -35,14 +35,16 @@ from ai_hats_observe.canonical import (
     Signal,
     TextItem,
     ThinkingItem,
+    Timestamp,
     ToolCallId,
     ToolCallItem,
     ToolResultReceived,
     Usage,
     WorthRecording,
 )
+from ai_hats_observe.parsers.claude_events import INTERRUPT_MARKERS
 
-__all__ = ["SOURCE", "ClaudeStreamReader"]
+__all__ = ["SOURCE", "ClaudeStreamReader", "rate_limit_events"]
 
 
 # Which reader spoke. Only this one sees quota pre-warnings; only the transcript
@@ -123,6 +125,8 @@ class _OpenResponse:
     model: ModelName | None = None
     usage: Usage = Usage()
     stop_reason: str | None = None
+    # set from outside the model's own report: an interrupt, so far
+    completion: Completion | None = None
 
 
 class ClaudeStreamReader:
@@ -249,7 +253,8 @@ class ClaudeStreamReader:
         return [
             ResponseEnded(
                 response_id=open_response.response_id,
-                completion=_completion(open_response.stop_reason, terminal_reason),
+                completion=open_response.completion
+                or _completion(open_response.stop_reason, terminal_reason),
                 usage=open_response.usage,
                 stop_reason=open_response.stop_reason,
             )
@@ -348,7 +353,7 @@ class ClaudeStreamReader:
         sdk = _sdk()
         content = message.content
         if isinstance(content, str):
-            return [PromptReceived(text=content)] if content.strip() else []
+            return self._prompt(content)
 
         events: list[Event] = []
         prose: list[str] = []
@@ -372,9 +377,27 @@ class ClaudeStreamReader:
                     )
                 case _:
                     events.append(self._unsupported(type(block).__name__))
-        text = "\n".join(part for part in prose if part.strip())
-        if text.strip():
-            events.append(PromptReceived(text=text))
+        events.extend(self._prompt("\n".join(part for part in prose if part.strip())))
+        return events
+
+    def _prompt(self, text: str) -> list[Event]:
+        """A person's (or the harness's) input — unless it is the marker the
+        harness writes when a person stops the turn, which is not input."""
+        text = text.strip()
+        if not text:
+            return []
+        if text in INTERRUPT_MARKERS:
+            return self._interrupted(text)
+        return [PromptReceived(text=text)]
+
+    def _interrupted(self, marker: str) -> list[Event]:
+        """The model's own stop reason wins; only a response it never got to
+        close reads as cancelled. Same rule as the transcript reader."""
+        open_response = self._open
+        if open_response is not None and not open_response.stop_reason:
+            open_response.completion = Completion.CANCELLED
+        events = self._close_open(None)
+        events.append(Notice(reason=WorthRecording.INTERRUPTED, raw_code=marker, source=SOURCE))
         return events
 
     # --- system ------------------------------------------------------------
@@ -425,38 +448,11 @@ class ClaudeStreamReader:
     # --- rate limit --------------------------------------------------------
 
     def _from_rate_limit(self, message: Any) -> list[Event]:
-        """Quota state, which only the live stream reports.
-
-        ``allowed_warning`` is the one signal that arrives in time to change what
-        a caller does; ``rejected`` is the wall, and ``resets_at`` says when it lifts.
-        """
-        info = message.rate_limit_info
-        status = info.status
-        detail = _rate_limit_detail(info)
-        if status == "rejected":
-            resets_at = info.resets_at
-            return [
-                self._blocking(
-                    HarnessActionRequired(
-                        reason=HarnessMustAct.WAIT,
-                        retry_after=EpochSeconds(int(resets_at)) if resets_at else None,
-                        detail=detail,
-                        raw_code=status,
-                        source=SOURCE,
-                    )
-                )
-            ]
-        if status == "allowed_warning":
-            return [
-                Notice(
-                    reason=WorthRecording.APPROACHING_LIMIT,
-                    detail=detail,
-                    raw_code=status,
-                    source=SOURCE,
-                )
-            ]
-        # "allowed" — capacity is normal. No obligation, nothing to record.
-        return []
+        events = rate_limit_events(message.rate_limit_info)
+        for event in events:
+            if isinstance(event, HarnessActionRequired):
+                self._blocking(event)
+        return events
 
     # --- result ------------------------------------------------------------
 
@@ -595,6 +591,41 @@ def _detail(data: dict[str, Any]) -> str | None:
         return _cap(json.dumps(data, sort_keys=True, default=str))
     except (TypeError, ValueError):
         return _cap(str(data))
+
+
+def rate_limit_events(info: Any, *, ts: Timestamp | None = None) -> list[Event]:
+    """Quota state as events — what only the live stream reports.
+
+    ``allowed_warning`` is the one signal that arrives in time to change what a
+    caller does; ``rejected`` is the wall, and ``resets_at`` says when it lifts.
+    ``ts`` is stamped by the caller: the stream carries no time of its own.
+    """
+    status = info.status
+    detail = _rate_limit_detail(info)
+    if status == "rejected":
+        resets_at = info.resets_at
+        return [
+            HarnessActionRequired(
+                reason=HarnessMustAct.WAIT,
+                retry_after=EpochSeconds(int(resets_at)) if resets_at else None,
+                detail=detail,
+                raw_code=status,
+                source=SOURCE,
+                ts=ts,
+            )
+        ]
+    if status == "allowed_warning":
+        return [
+            Notice(
+                reason=WorthRecording.APPROACHING_LIMIT,
+                detail=detail,
+                raw_code=status,
+                source=SOURCE,
+                ts=ts,
+            )
+        ]
+    # "allowed" — capacity is normal. No obligation, nothing to record.
+    return []
 
 
 def _rate_limit_detail(info: Any) -> str:

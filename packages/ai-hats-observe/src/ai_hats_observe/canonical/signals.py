@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .types import EpochSeconds, ModelName, Timestamp
+from .types import AgentId, EpochSeconds, ModelName, Timestamp
 
 
 class PersonMustAct(StrEnum):
@@ -55,6 +55,10 @@ class WorthRecording(StrEnum):
     # signal that arrives in time to change what a caller does.
     APPROACHING_LIMIT = "approaching_limit"
 
+    # A person stopped the turn. The response it cut, if one was open, ends
+    # CANCELLED; this says the run went on afterwards because someone chose to.
+    INTERRUPTED = "interrupted"
+
     # A record shape we do not model. Reported rather than dropped so schema drift is
     # visible the first time it appears, instead of silently changing what our numbers
     # mean.
@@ -70,6 +74,8 @@ class _Signal:
     # which reader spoke: the two Claude sources see different things — only the
     # live stream carries quota pre-warnings, only the transcript carries status
     source: str | None = None
+    # the sub-agent this happened to; absent for the main agent
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)

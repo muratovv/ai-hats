@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_observe.canonical import ResponseStarted
+from ai_hats_observe.canonical import ResponseStarted, RunEnded, RunStarted
 from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
 from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
@@ -188,9 +188,12 @@ def test_the_event_log_is_written_while_the_surface_runs(tmp_path: Path) -> None
         if proc.isalive():
             proc.terminate(force=True)
 
-    # --- after: complete, on the same inode ----------------------------------
+    # --- after: complete, framed, on the same inode ---------------------------
     after = list(read_events(log))
-    assert after == list(ClaudeTranscriptReader(transcript).read())
+    assert isinstance(after[0], RunStarted), "the first line is the writer's, before any record"
+    assert isinstance(after[-1], RunEnded), "the last line says the run is over"
+    assert (after[-1].ok, after[-1].raw_code) == (True, "0")
+    assert after[1:-1] == list(ClaudeTranscriptReader(transcript).read())
     assert len(after) > len(during) or after == during
     assert after[: len(during)] == during, "the live prefix was rewritten at close"
     assert log.stat().st_ino == inode_during, "the file was replaced, not appended"

@@ -413,12 +413,13 @@ class SubAgentRunner:
                     # followed before the surface reports an id. HITL's rule too.
                     provider_session_id = str(uuid.uuid4())
                     session.record_provider_session_id(provider_session_id)
-                    observe_kwargs["event_log"] = start_event_log(
+                    event_log = start_event_log(
                         provider,
                         session,
                         cwd=run_layout.cwd,
                         provider_session_id=provider_session_id,
                     )
+                    observe_kwargs["event_log"] = event_log
                     metrics = CollectedMetrics()
                     run_result = engine.run(
                         result=result,
@@ -433,6 +434,7 @@ class SubAgentRunner:
                         metrics=metrics,
                         artifacts=artifacts,
                         provider_session_id=provider_session_id,
+                        event_log=None if event_log is None else event_log.path,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     surface_session_id = metrics.values.get("claude_session_id")

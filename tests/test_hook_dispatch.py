@@ -74,6 +74,9 @@ class Recorder:
     def emit(self, verdict, arrival):
         self.said.append(verdict)
 
+    def observe(self, payload, arrival):
+        return None
+
 
 def _hook(tmp_path: Path, name: str, body: str) -> HookRow:
     script = tmp_path / name

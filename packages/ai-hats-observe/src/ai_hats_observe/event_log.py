@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -24,9 +25,12 @@ from .canonical.events import (
     GateVerdict,
     ItemDelta,
     ItemEmitted,
+    PersonAsked,
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    RunEnded,
+    RunStarted,
     ToolResultReceived,
 )
 from .canonical.signals import (
@@ -39,6 +43,8 @@ from .canonical.signals import (
     WorthRecording,
 )
 from .canonical.types import (
+    AgentId,
+    AskKind,
     Completion,
     EpochSeconds,
     GateDecision,
@@ -46,6 +52,7 @@ from .canonical.types import (
     Item,
     ItemKind,
     ModelName,
+    PromptOrigin,
     ResponseId,
     TextItem,
     ThinkingItem,
@@ -175,8 +182,33 @@ def encode(event: Event) -> dict[str, Any]:
     silently missing is the one failure this artifact exists to prevent.
     """
     match event:
+        case RunStarted():
+            body = {"event": "run_started", "ts": event.ts}
+        case RunEnded():
+            body = {
+                "event": "run_ended",
+                "ok": event.ok,
+                "raw_code": event.raw_code,
+                "detail": event.detail,
+                "ts": event.ts,
+            }
         case PromptReceived():
-            body = {"event": "prompt_received", "text": event.text, "ts": event.ts}
+            body = {
+                "event": "prompt_received",
+                "text": event.text,
+                "origin": None if event.origin is None else str(event.origin),
+                "ts": event.ts,
+            }
+        case PersonAsked():
+            body = {
+                "event": "person_asked",
+                "kind": str(event.kind),
+                "call_id": event.call_id,
+                "tool": event.tool,
+                "detail": event.detail,
+                "source": event.source,
+                "ts": event.ts,
+            }
         case ResponseStarted():
             body = {
                 "event": "response_started",
@@ -233,6 +265,8 @@ def encode(event: Event) -> dict[str, Any]:
             body = {"event": "signal", **signal_fields(event)}
         case _:
             raise TypeError(f"no encoding for {type(event).__name__}")
+    if event.agent is not None:
+        body["agent"] = event.agent
     return {"v": EVENT_SCHEMA_VERSION, **body}
 
 
@@ -265,11 +299,48 @@ def decode(record: dict[str, Any]) -> Event | None:
     writing, and a shape we do not recognise is a line to skip, not a read to
     abandon.
     """
+    event = _decode(record)
+    agent = record.get("agent")
+    if event is None or not isinstance(agent, str) or not agent:
+        return event
+    return replace(event, agent=AgentId(agent))
+
+
+def _decode(record: dict[str, Any]) -> Event | None:
     response_id = ResponseId(str(record.get("response_id", "")))
     ts = _ts(record.get("ts"))
     match record.get("event"):
+        case "run_started":
+            return RunStarted(ts=ts)
+        case "run_ended":
+            raw_code, detail = record.get("raw_code"), record.get("detail")
+            return RunEnded(
+                ok=bool(record.get("ok")),
+                raw_code=raw_code if isinstance(raw_code, str) else None,
+                detail=detail if isinstance(detail, str) else None,
+                ts=ts,
+            )
         case "prompt_received":
-            return PromptReceived(text=str(record.get("text", "")), ts=ts)
+            origin = record.get("origin")
+            return PromptReceived(
+                text=str(record.get("text", "")),
+                ts=ts,
+                origin=PromptOrigin(origin) if origin in set(PromptOrigin) else None,
+            )
+        case "person_asked":
+            kind = record.get("kind")
+            if kind not in set(AskKind):
+                return None
+            call_id, tool = record.get("call_id"), record.get("tool")
+            detail, source = record.get("detail"), record.get("source")
+            return PersonAsked(
+                kind=AskKind(kind),
+                call_id=ToolCallId(call_id) if isinstance(call_id, str) else None,
+                tool=tool if isinstance(tool, str) else None,
+                detail=detail if isinstance(detail, str) else None,
+                source=source if isinstance(source, str) else None,
+                ts=ts,
+            )
         case "response_started":
             model = record.get("model")
             return ResponseStarted(

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**322 of 322 files catalogued — 330 flows.**
+**323 of 323 files catalogued — 331 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1351,19 +1351,19 @@ as a claim to check, not as evidence.
 
 ## `test_gate_verdict_lands_in_event_log.py`
 
-*pins HATS-1967*
+*pins HATS-1967, HATS-1987*
 
-- **flow** — an operator's session has a gate that refuses one path; while the session runs, its own events.jsonl says which gate refused which call
+- **flow** — an operator's session has a gate that refuses one path and asks about another; while the session runs, its own events.jsonl says which gate refused which call, and when the run is waiting on the person
 - **cmds**
 
   ```console
   sh -c "$DISPATCHER_COMMAND"   # the string a settings.json entry holds,
                                 # run once for a refused call, once for an
-                                # allowed one
+                                # allowed one, once for one the gate asks about
   cat <session_dir>/events.jsonl
   ```
 
-- **expect** — one gate_verdict line per call, appended by the hook process into the session's own log — deny naming the guard and the tool, then allow — and the verdict claude received is unchanged by the recording
+- **expect** — one gate_verdict line per call, appended by the hook process into the session's own log — deny naming the guard and the tool, then allow, then ask followed by a person_asked under the same call id — and the verdict claude received is unchanged by the recording
 - **why** — the verdict is recorded from inside the hook process, not the session process, so an in-process test of dispatch() cannot see whether a real hook run finds its session and lands the line beside the session's other artifacts — the one fact no transcript carries
 
 ## `test_gates_check_run.py`
@@ -2148,6 +2148,23 @@ as a claim to check, not as evidence.
 
 - **expect** — a `permissionDecision` refusal throws the call out, a nudge reaches the console with its author, a vanished manifest refuses while naming the hatch, and that hatch lets a human past
 - **why** — the plugin read a verdict off an exit code and understood two shapes, one of which no shipped hook emits — seven of eight gates could refuse and be waved through — and it returned {} on a missing manifest, so a session that lost one ran with every gate off for its whole life
+
+## `test_person_asked_from_claude_prompt.py`
+
+*pins HATS-1987*
+
+- **flow** — claude shows the person its own permission prompt — the one wait no transcript records before it resolves — and the session's events.jsonl says so while the person is still being asked
+- **cmds**
+
+  ```console
+  sh -c "$DISPATCHER_COMMAND"   # the string the session's settings.json
+                                # binds under Notification, run with the
+                                # payload claude 2.1.272 was measured to send
+  cat <session_dir>/events.jsonl
+  ```
+
+- **expect** — one person_asked line, kind permission, source claude/hooks — with no tool and no call id, because the measured payload carries neither — and the dispatcher's own answer is exit 0 with no decision, so the prompt claude shows is unchanged; a notification of another type leaves no line
+- **why** — the wait is opened from inside a hook process claude spawns, not from the session process, so only a real run of the dispatcher string with the surface's real payload proves the line lands beside the session's other artifacts
 
 ## `test_plan_canonical_home.py`
 

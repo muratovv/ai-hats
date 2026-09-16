@@ -24,9 +24,12 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Protocol, Sequence
+from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
-from .gate_log import record_verdict
+from .gate_log import record_event, record_verdict
+
+if TYPE_CHECKING:
+    from ai_hats_observe.canonical import Event
 from .hook_channel import (
     ChainDecision,
     ChainVerdict,
@@ -107,6 +110,11 @@ class SurfaceChannel(Protocol):
     def emit(self, verdict: ChainVerdict, arrival: Arrival) -> None:
         """Write the verdict as this surface's own document."""
 
+    def observe(self, payload: dict, arrival: Arrival) -> "Event | None":
+        """What an arrival no gate point binds to says about the run — the
+        surface showing the person its own permission prompt, say — as the
+        canonical event it is; ``None`` when it says nothing worth the record."""
+
 
 def dispatch(
     channel: SurfaceChannel,
@@ -147,7 +155,9 @@ def dispatch(
     if unreadable:
         return _refuse(channel, arrival, unreadable, env)
     if arrival.event is None or arrival.native not in channel.profile.native_events:
-        # Nothing composed can bind here, so no gate was missed.
+        # Nothing composed can bind here, so no gate was missed — but the
+        # arrival may still say something about the run only a hook can see.
+        record_event(channel.observe(payload, arrival), env)
         return _say(
             channel,
             ChainVerdict(decision=ChainDecision.ALLOW, event=arrival.event),

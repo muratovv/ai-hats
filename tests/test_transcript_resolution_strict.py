@@ -103,3 +103,42 @@ def test_end_ts_filters_out_future_transcripts(tmp_path: Path) -> None:
     # With end_ts set before file2's mtime, only file1 is resolved
     res_bounded = resolve_transcript(d, "*.jsonl", "20260101-120000-1", end_ts=1767270000.0)
     assert res_bounded == [file1]
+
+
+def test_claude_names_a_sub_agents_record_beside_the_main_one(tmp_path: Path, monkeypatch) -> None:
+    """The live writer follows what ``event_sources`` names. Claude files a
+    sub-agent's record under ``<sid>/subagents/agent-<id>.jsonl``; each is a
+    source of its own, tagged with the id in its name, and the main record
+    carries no tag. ``resolve_transcript`` — the post-hoc audit's input — is
+    unchanged: it names the main record alone."""
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
+    from ai_hats_observe.event_log_writer import EventSource
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    from ai_hats.paths import claude_transcripts_dir
+
+    cwd = tmp_path / "proj"
+    cwd.mkdir()
+    transcripts = claude_transcripts_dir(cwd)
+    transcripts.mkdir(parents=True)
+    main = transcripts / f"{OURS}.jsonl"
+    main.write_text('{"type":"user"}\n')
+    children = transcripts / OURS / "subagents"
+    children.mkdir(parents=True)
+    (children / "agent-a25b9c51717cdb6ba.jsonl").write_text('{"type":"user"}\n')
+    (children / "agent-ffff000011112222.jsonl").write_text('{"type":"user"}\n')
+    # a stranger's child under another session is not ours
+    (transcripts / STRANGER / "subagents").mkdir(parents=True)
+    (transcripts / STRANGER / "subagents" / "agent-9999.jsonl").write_text('{"type":"user"}\n')
+
+    provider = ClaudeSurface()
+    sources = provider.event_sources(cwd, SESSION_ID, provider_session_id=OURS)
+
+    assert sources == [
+        EventSource(main),
+        EventSource(children / "agent-a25b9c51717cdb6ba.jsonl", agent="a25b9c51717cdb6ba"),
+        EventSource(children / "agent-ffff000011112222.jsonl", agent="ffff000011112222"),
+    ]
+    assert provider.resolve_transcript(cwd, SESSION_ID, provider_session_id=OURS) == [main]
+    # before any child exists, the main record alone — and no error
+    assert provider.event_sources(cwd, SESSION_ID, provider_session_id=STRANGER) == []

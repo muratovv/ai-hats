@@ -7,19 +7,37 @@ the file afterwards — this is the only thing that writes it — so a consumer
 following it during the run and one reading it later see the same record. The
 surface hands in WHERE its record is (``locate``) and HOW to read it
 (``reader_factory``); nothing here names a provider.
-"""
+
+The run's own lifecycle is the writer's to say: ``RunStarted`` is the first line,
+written before the surface can produce anything, and ``RunEnded`` the last,
+written after the record is drained — a fault in the follow costs the events
+after it, never the ending.
+"""  # comment-length: allow — one writer, one file, its two lifecycle lines: the contract
 
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
+from .canonical.events import RunEnded, RunStarted
 from .canonical.reader import EventReader
-from .event_log import write_events
+from .canonical.types import AgentId, now
+from .event_log import append_event, write_events
 
-Locate = Callable[[], Sequence[Path]]
+
+@dataclass(frozen=True)
+class EventSource:
+    """One record to follow, and whose work it holds: a sub-agent's id, or
+    ``None`` for the main agent. A bare ``Path`` from ``locate`` means the main
+    agent's record."""
+
+    path: Path
+    agent: AgentId | None = None
+
+
+Locate = Callable[[], Sequence[Path | EventSource]]
 ReaderFactory = Callable[[Path], EventReader]
 Report = Callable[[str], None]
 
@@ -55,7 +73,7 @@ class EventLogWriter:
         self._path = Path(path)
         self._interval_s = interval_s
         self._report = report
-        self._readers: dict[Path, EventReader] = {}
+        self._readers: dict[Path, tuple[EventReader, AgentId | None]] = {}
         self._written = 0
         self._error: str | None = None
         self._stop = threading.Event()
@@ -84,15 +102,18 @@ class EventLogWriter:
             return self._tick()
 
     def _tick(self) -> int:
-        for source in self._locate():
-            source = Path(source)
-            if source not in self._readers:
-                self._readers[source] = self._reader_factory(source)
+        for located in self._locate():
+            source = located if isinstance(located, EventSource) else EventSource(Path(located))
+            if source.path not in self._readers:
+                self._readers[source.path] = (self._reader_factory(source.path), source.agent)
         written = 0
-        for reader in self._readers.values():
+        for reader, agent in self._readers.values():
             # Materialized first: an empty pass must not open the file, and a
             # reader's offset has moved by the time its events are written.
             events = list(reader.read())
+            if agent is not None:
+                # The reader knows its record, not whose it is; the source does.
+                events = [replace(event, agent=agent) for event in events]
             if events:
                 written += write_events(events, self._path, append=True)
         self._written += written
@@ -101,6 +122,9 @@ class EventLogWriter:
     # -- the thread ----------------------------------------------------------
 
     def start(self) -> EventLogWriter:
+        """Say the run began, then follow it on a thread."""
+        append_event(RunStarted(ts=now()), self._path)
+        self._written += 1
         self._thread = threading.Thread(target=self._run, name="event-log-writer", daemon=True)
         self._thread.start()
         return self
@@ -119,9 +143,14 @@ class EventLogWriter:
         if self._report is not None:
             self._report(f"events.jsonl writer stopped: {text}")
 
-    def close(self, timeout_s: float = 5.0) -> EventLogOutcome:
+    def close(self, *, exit_code: int | None = None, timeout_s: float = 5.0) -> EventLogOutcome:
         """Declare the run over: stop the thread, tell every reader its source
-        is finished, and drain what a live reader was holding back."""
+        is finished, drain what a live reader was holding back, and say so.
+
+        ``exit_code`` is how the surface ended as the harness saw it; ``None``
+        when the harness never learned one. The ending is written even after a
+        fault, and a fault in writing it is reported like any other.
+        """
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout_s)
@@ -133,14 +162,27 @@ class EventLogWriter:
                     # ending the readers: one adopted during the drain would
                     # never be told the run is over.
                     self._tick()
-                    for reader in self._readers.values():
+                    for reader, _agent in self._readers.values():
                         reader.close()
                     self._tick()
             except Exception as exc:  # same contract as the thread: report, never raise
                 self._fault(f"{type(exc).__name__}: {exc}")
+        try:
+            append_event(
+                RunEnded(
+                    ok=exit_code == 0,
+                    raw_code=None if exit_code is None else str(exit_code),
+                    detail=self._error,
+                    ts=now(),
+                ),
+                self._path,
+            )
+            self._written += 1
+        except Exception as exc:  # the ending is the last thing that may fail; still reported
+            self._fault(f"{type(exc).__name__}: {exc}")
         return EventLogOutcome(
             events_written=self._written, error=self._error, sources=len(self._readers)
         )
 
 
-__all__ = ["EventLogOutcome", "EventLogWriter"]
+__all__ = ["EventLogOutcome", "EventLogWriter", "EventSource"]

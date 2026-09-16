@@ -472,6 +472,8 @@ def run_claude_dispatch(
     event: str = "PreToolUse",
     tool: str = "Bash",
     tool_input: dict | None = None,
+    tool_use_id: str | None = None,
+    extra: dict | None = None,
     timeout: int = 60,
 ) -> subprocess.CompletedProcess[str]:
     """Run one ``tool`` call through claude's whole hook chain, as claude runs it.
@@ -479,13 +481,18 @@ def run_claude_dispatch(
     The production dispatcher string is what a ``settings.json`` entry holds, so
     driving THAT through a real shell is what makes the run evidence about the
     surface rather than about a Python entry point no host calls — including its
-    guard, which refuses when the session pins are missing.
+    guard, which refuses when the session pins are missing. ``tool_use_id`` is
+    what claude's own payload carries; a test that reads the record by call id
+    passes one. ``extra`` is the rest of an event's own fields — a
+    notification's type and message.
     """
     from ai_hats.surfaces.claude.channel import DISPATCHER_COMMAND
 
-    payload = json.dumps(
-        {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input or {}}
-    )
+    document = {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input or {}}
+    if tool_use_id is not None:
+        document["tool_use_id"] = tool_use_id
+    document.update(extra or {})
+    payload = json.dumps(document)
     return subprocess.run(  # noqa: S603 - the production dispatcher string, run as claude runs it
         ["sh", "-c", DISPATCHER_COMMAND],  # noqa: S607 - sh from PATH
         input=payload,
