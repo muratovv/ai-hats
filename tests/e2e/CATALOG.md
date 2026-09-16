@@ -22,8 +22,8 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  AI_HATS_PRIVACY_ACK=1 git commit -m x
-  grep -rn AI_HATS_PRIVACY_ACK .githooks/
+  AI_HATS_FUTURE_GATE_ACK=1 make done-gate
+  grep -rn AI_HATS_FUTURE_GATE_ACK scripts/
   ```
 
 - **expect** — the composed PreToolUse chain refuses the grant and leaves the grep alone

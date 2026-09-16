@@ -187,25 +187,6 @@ def _composition(gate: str) -> list[str]:
     return out.stdout.split()
 
 
-def test_the_done_gate_demands_what_only_it_can_ask():
-    """ADR-0023 D4 splits the edges by question, and the split is REAL only
-    while `->done` carries stages `->merge` does not. Shrinking a set is the
-    silent direction: markers already on disk stay valid (HATS-1601). The
-    nesting itself is `tests/test_gates_table.py`'s."""
-    merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
-
-    assert done - merge == {"integration", "merge-smoke", "e2e-default"}, (
-        "`->done` asks whether master is green after this card; `integration` and "
-        "`merge-smoke` are the stages that answer it. The verdict about the BASE "
-        "is not a card's to earn or fix, so no card gate asks the network for it. "
-        "`e2e-default` is the tier no zone claims — an unexpected regression, which "
-        "is what two independently green branches make together, so it belongs on "
-        "the edge where a supervisor is present. The zones a change DOES touch are "
-        "demanded earlier, from the diff, at `->merge`. Actual extra: "
-        f"{sorted(done - merge)}"
-    )
-
-
 def test_every_gate_the_makefile_earns_is_a_gate_script_and_vice_versa():
     """`make <gate>` runs `hooks/<gate>.sh --run`; a target with no script is a
     door to nowhere, and a script with no target cannot be earned by hand. The

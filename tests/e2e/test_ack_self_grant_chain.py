@@ -3,8 +3,8 @@
 flow:   an agent handing itself a GATE flag inline, the way the gate's own red
         verdict used to invite, and the reading of that same flag it must keep
 cmds:
-    AI_HATS_PRIVACY_ACK=1 git commit -m x
-    grep -rn AI_HATS_PRIVACY_ACK .githooks/
+    AI_HATS_FUTURE_GATE_ACK=1 make done-gate
+    grep -rn AI_HATS_FUTURE_GATE_ACK scripts/
 expect: the composed PreToolUse chain refuses the grant and leaves the grep alone
 why:    gate flags read by a script inside `make` or a git hook are reached by an
         inline prefix (unlike hook-read flags), so the hatch `master-ci` once
@@ -70,7 +70,7 @@ def test_the_refusal_routes_to_the_road_that_does_exist(hooked_project):
     """A deny with nowhere to go leaves the agent only blunt instruments."""
     project, env, settings = hooked_project
     verdict = run_chain(
-        project, "AI_HATS_PRIVACY_ACK=1 git commit -m x", settings=settings, env=env
+        project, "AI_HATS_FUTURE_GATE_ACK=1 make done-gate", settings=settings, env=env
     )
     assert "LAUNCHES" in verdict.reason, f"no road named: {verdict}"
     assert "red-attribution" in verdict.reason, f"no procedure named: {verdict}"
@@ -79,8 +79,8 @@ def test_the_refusal_routes_to_the_road_that_does_exist(hooked_project):
 @pytest.mark.parametrize(
     "command",
     [
-        "grep -rn AI_HATS_PRIVACY_ACK .githooks/",
-        'echo "AI_HATS_PRIVACY_ACK=1 git commit -m x"',
+        "grep -rn AI_HATS_FUTURE_GATE_ACK scripts/",
+        'echo "AI_HATS_FUTURE_GATE_ACK=1 make done-gate"',
         "make done-gate",
     ],
 )

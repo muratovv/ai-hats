@@ -101,15 +101,15 @@ suite stubbed the very contracts the change broke.
 2. **Refused?** The refusal ends with that command — run it:
 
        Missing:
-           integration
-           merge-smoke
-           e2e-default
+           <stage>
+           <stage>
 
        Run the gate on that exact content, then retry:
 
            cd <worktree> && make done-gate
 
-   (`make done-gate REV=<sha>` for a card already merged.) It runs only the
+   (`make done-gate REV=<sha>` for a card already merged; the stages a gate
+   requires are `<gate>.sh --stages`, never a list in this file.) It runs only the
    stages the tree has not earned, in order, stops at the first red, and
    stamps each green one.
 
@@ -127,7 +127,7 @@ suite stubbed the very contracts the change broke.
    the transition after this one will additionally demand, so you can earn it
    now instead of being refused for it later:
 
-       [gates] next: merge-gate, review-gate also need wheel-contents; done-gate also needs integration, merge-smoke, e2e-default
+       [gates] next: done-gate also needs <stage>, <stage>
 
    `next: nothing` means no gate on the road is short of anything. Transition.
 4. **Red** — the run's block, verdict first:
@@ -174,8 +174,8 @@ suite stubbed the very contracts the change broke.
    fix that never ran. Commit, then run again.
 5. **Touched what the gate does not name?** No card gate runs the whole tier
    under one name: `->merge` asks for the zones your diff touches, `->done` for
-   `e2e-default` — the half no zone claims — plus `merge-smoke`, and never for
-   your zones again. What that leaves out is a zone your change breaks WITHOUT
+   the half no zone claims (`done-gate.sh --stages`), and never for your zones
+   again. What that leaves out is a zone your change breaks WITHOUT
    touching its prefix, and nothing refuses there. Run the tier yourself and say
    so. It outlives a foreground call, so run it in the background through the
    wrapper, which exits with the tier's own status:
