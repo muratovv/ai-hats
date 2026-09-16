@@ -33,6 +33,7 @@ from ..hook_channel import (
 )
 from ..hook_dispatch import Arrival, ManifestUnresolved, dispatch, manifest_rows
 from .profile import PROFILE
+from .statusline import is_render, quota_notice
 
 if TYPE_CHECKING:
     from ai_hats_observe.canonical import Event
@@ -82,6 +83,17 @@ _ASK = (
 
 DISPATCHER_COMMAND = "sh -c '" + _ASK + _SPAWN + "'"
 
+#: What `statusLine` runs in a HITL session's settings: the same dispatcher (a
+#: render is observed like a notification), then the person's own command with
+#: the same payload, since `--settings` replaced their slot. Exit 0: not a gate.
+STATUSLINE_COMMAND = (
+    "sh -c '"
+    'p=$(cat); printf "%s" "$p" | ( ' + _ASK + _SPAWN + " ) >/dev/null; "
+    'if [ -n "$AI_HATS_STATUSLINE_INNER" ]; then '
+    'printf "%s" "$p" | sh -c "$AI_HATS_STATUSLINE_INNER"; fi; '
+    "exit 0'"
+)
+
 
 class ClaudeChannel:
     """The five things only claude can answer."""
@@ -117,16 +129,21 @@ class ClaudeChannel:
         hooks are written against."""
         return [HookCall(payload, str(payload.get("tool_name", "")))]
 
-    def observe(self, payload: dict, arrival: Arrival) -> "Event | None":
-        """Claude showing the person its own permission prompt — the one wait
-        no transcript records before it resolves.
+    def observe(
+        self, payload: dict, arrival: Arrival, environ: Mapping[str, str]
+    ) -> "Event | None":
+        """Two things only a process claude spawns can see: the person being
+        shown claude's own permission prompt, and a status-line render.
 
         ``Notification`` with ``notification_type: permission_prompt``, measured
         on 2.1.272: it names neither the tool nor the call (the documented
         ``notification_details`` is absent), so the wait carries only the
         surface's message; the open call right before it in the record is the
-        one being asked about.
-        """  # comment-length: allow — what the measured payload does and does not carry
+        one being asked about. A render names no event at all and carries
+        ``rate_limits`` — the quota state a PTY session sees nowhere else.
+        """  # comment-length: allow — what the measured payloads do and do not carry
+        if arrival.native == "" and is_render(payload):
+            return quota_notice(payload, environ)
         if (
             arrival.native != HOOK_NOTIFICATION
             or payload.get("notification_type") != OBSERVED_NOTIFICATION
@@ -194,4 +211,4 @@ if __name__ == "__main__":
     main()
 
 
-__all__ = ["DISPATCHER_COMMAND", "ClaudeChannel", "main"]
+__all__ = ["DISPATCHER_COMMAND", "STATUSLINE_COMMAND", "ClaudeChannel", "main"]

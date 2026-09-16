@@ -42,11 +42,17 @@ from .sdk_options import (
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
-from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG, HOOK_NOTIFICATION, OBSERVED_NOTIFICATION
+from .channel import (
+    DISPATCHER_COMMAND,
+    DISPATCHER_TAG,
+    HOOK_NOTIFICATION,
+    OBSERVED_NOTIFICATION,
+    STATUSLINE_COMMAND,
+)
 from ai_hats.env import ENV_STATUSLINE_INNER
 
 from .statusline import SETTINGS_KEY as STATUS_LINE_KEY
-from .statusline import person_status_line, status_line_entry
+from .statusline import person_status_line
 from .runtime_hooks import materialize_hook_manifest, plan_hooks
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
@@ -460,10 +466,19 @@ class ClaudeSurface(Surface):
                     claude_settings_local_json(cwd),
                 ]
             )
-            document[STATUS_LINE_KEY] = status_line_entry(person)
+            document[STATUS_LINE_KEY] = self._status_line_entry(person)
             if person is not None:
                 env[ENV_STATUSLINE_INNER] = person["command"]
         return document, env
+
+    @staticmethod
+    def _status_line_entry(person: dict | None) -> dict:
+        """The session's ``statusLine`` value: our command, with the person's
+        own ``padding`` carried over so the bar sits where they put it."""
+        entry: dict = {"type": "command", "command": STATUSLINE_COMMAND}
+        if person is not None and "padding" in person:
+            entry["padding"] = person["padding"]
+        return entry
 
     def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
         """--settings merges additively; the user's root settings stay untouched."""

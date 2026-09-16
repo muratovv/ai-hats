@@ -20,10 +20,13 @@ from ai_hats.env import (
 from ai_hats.materialization import WriteKind
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ai_hats.surfaces import HookEvent
-from ai_hats.surfaces.claude.channel import DISPATCHER_COMMAND, DISPATCHER_TAG
+from ai_hats.surfaces.claude.channel import (
+    DISPATCHER_COMMAND,
+    DISPATCHER_TAG,
+    STATUSLINE_COMMAND,
+)
 from ai_hats.surfaces.claude.hook_server import socket_path
 from ai_hats.surfaces.claude.provider import ClaudeSurface
-from ai_hats.surfaces.claude.statusline import STATUSLINE_COMMAND
 from ai_hats.surfaces.hook_dispatch import MANIFEST_VERSION
 from ai_hats.surfaces.plan import (
     CompositionPlan,

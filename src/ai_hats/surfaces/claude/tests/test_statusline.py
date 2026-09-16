@@ -16,15 +16,16 @@ import pytest
 
 from ai_hats.env import ENV_APPROACHING_LIMIT_PERCENT
 from ai_hats.session_identity import SessionIdentity
+from ai_hats.surfaces.claude.channel import ClaudeChannel
 from ai_hats.surfaces.claude.statusline import (
     MEMO_NAME,
     SOURCE,
-    STATUSLINE_COMMAND,
-    main,
+    is_render,
     person_status_line,
+    quota_notice,
     quota_notices,
-    status_line_entry,
 )
+from ai_hats.surfaces.hook_dispatch import dispatch
 from ai_hats_observe.canonical import Notice, Timestamp, WorthRecording
 from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
 
@@ -114,7 +115,7 @@ def test_a_malformed_window_is_skipped_not_raised() -> None:
     assert warned == {"five_hour": 1789563600}
 
 
-# --- the entry point ---------------------------------------------------------
+# --- one render, remembered ----------------------------------------------------
 
 
 @pytest.fixture
@@ -131,45 +132,63 @@ def session(tmp_path: Path) -> tuple[dict[str, str], Path]:
     return identity.to_env(), session_dir
 
 
-def _run(env: dict[str, str], payload: dict) -> int:
-    return main(stdin=io.StringIO(json.dumps(payload)), environ=env)
+def test_a_render_is_told_from_a_hooks_payload_by_what_it_carries() -> None:
+    assert is_render(CALM)
+    assert not is_render(FIRST), "before the first response there is nothing to read"
+    assert not is_render({**CALM, "hook_event_name": "PreToolUse"})
 
 
-def test_main_records_the_notice_beside_the_sessions_events_and_remembers(session) -> None:
+def test_quota_notice_says_a_window_once_and_remembers_it_in_the_session_dir(session) -> None:
     env, session_dir = session
 
-    assert _run(env, near(82)) == 0
-    assert _run(env, near(84)) == 0
+    first = quota_notice(near(82), env)
+    again = quota_notice(near(84), env)
 
-    events = list(read_events(session_dir / EVENT_LOG_JSONL))
-    assert [type(e) for e in events] == [Notice], events
-    assert events[0].raw_code == "five_hour=82%"
-    assert events[0].ts
+    assert isinstance(first, Notice) and first.raw_code == "five_hour=82%"
+    assert again is None
     assert json.loads((session_dir / MEMO_NAME).read_text()) == {"five_hour": 1789563600}
 
 
-def test_main_reads_the_threshold_from_the_budget(session) -> None:
+def test_quota_notice_says_one_window_per_render_and_the_other_on_the_next(session) -> None:
+    """``observe`` returns one event, so the second window waits one render —
+    the memo remembers only what was said."""
+    env, session_dir = session
+    both = near(90, seven_day=95)
+
+    assert quota_notice(both, env).raw_code == "five_hour=90%"
+    assert json.loads((session_dir / MEMO_NAME).read_text()) == {"five_hour": 1789563600}
+    assert quota_notice(both, env).raw_code == "seven_day=95%"
+    assert quota_notice(both, env) is None
+
+
+def test_quota_notice_reads_the_threshold_from_the_budget(session) -> None:
     env, session_dir = session
 
-    assert _run({**env, ENV_APPROACHING_LIMIT_PERCENT: "90"}, near(82)) == 0
-    assert not (session_dir / EVENT_LOG_JSONL).exists()
+    assert quota_notice(near(82), {**env, ENV_APPROACHING_LIMIT_PERCENT: "90"}) is None
     assert not (session_dir / MEMO_NAME).exists()
-
     # POSITIVE CONTROL: the same render fires at the default
-    assert _run(env, near(82)) == 0
-    assert (session_dir / EVENT_LOG_JSONL).exists()
+    assert quota_notice(near(82), env) is not None
 
 
-def test_main_outside_a_session_says_so_and_exits_clean(capsys) -> None:
-    assert main(stdin=io.StringIO(json.dumps(near(95))), environ={}) == 0
+def test_quota_notice_outside_a_session_says_so_and_records_nothing(capsys) -> None:
+    assert quota_notice(near(95), {}) is None
     assert "no session" in capsys.readouterr().err
 
 
-def test_main_never_raises_on_an_unreadable_payload(session, capsys) -> None:
+def test_a_render_through_the_dispatcher_lands_beside_the_sessions_events(session, capsys) -> None:
+    """The route is the hook dispatcher's: a payload naming no event is observed,
+    the notice recorded, and the answer to the surface is nothing at all."""
     env, session_dir = session
-    assert main(stdin=io.StringIO("not json"), environ=env) == 0
-    assert "payload" in capsys.readouterr().err
-    assert not (session_dir / EVENT_LOG_JSONL).exists()
+    stdin = io.StringIO(json.dumps(near(82)))
+
+    status = dispatch(ClaudeChannel(), stdin=stdin, environ=env, hook_environ=env)
+
+    assert status == 0
+    assert capsys.readouterr().out == ""
+    events = list(read_events(session_dir / EVENT_LOG_JSONL))
+    assert [type(e) for e in events] == [Notice], events
+    assert (events[0].source, events[0].raw_code) == (SOURCE, "five_hour=82%")
+    assert events[0].ts
 
 
 # --- the person's own bar ------------------------------------------------------
@@ -217,14 +236,3 @@ def test_a_settings_file_that_will_not_parse_is_skipped_aloud(tmp_path: Path, ca
 
     assert person_status_line([broken, user, empty]) == {"command": "echo hi"}
     assert str(broken) in capsys.readouterr().err
-
-
-def test_the_sessions_entry_runs_ours_and_keeps_the_persons_padding() -> None:
-    assert status_line_entry(None) == {"type": "command", "command": STATUSLINE_COMMAND}
-    assert status_line_entry({"command": "x", "padding": 2}) == {
-        "type": "command",
-        "command": STATUSLINE_COMMAND,
-        "padding": 2,
-    }
-    # the person's other keys do not travel: the slot is ours to fill
-    assert "refreshInterval" not in status_line_entry({"command": "x", "refreshInterval": 1})
