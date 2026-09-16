@@ -437,8 +437,9 @@ ci_e2e() {
 # and is keyed the same way, so "already green" means green on THIS content.
 #
 # Only the stages that PARTITION the tier share it. `unit`, `integration` and
-# `merge-smoke` keep their full runs: `merge-smoke` is the floor `->done` stands
-# on, and a floor that skips what another stage happened to run is not a floor.
+# `merge-smoke` keep their full runs: `merge-smoke` is the floor every card gate
+# stands on, and a floor that skips what another stage happened to run is not
+# a floor.
 _tier_memo_env() {
     [[ -n "${AI_HATS_GATE_STORE:-}" && -n "${AI_HATS_GATE_TREE:-}" ]] || return 0
     export AI_HATS_GATE_TIER_MEMO="$AI_HATS_GATE_STORE/$AI_HATS_GATE_TREE/tier-passed"
@@ -741,24 +742,31 @@ _pytest_probe() {
     fi
 }
 
-# Bare stage invocations stay serial; a run uses the cores. What was found
-# goes into ADDOPTS_NOTE for the run's block rather than straight to stderr.
+# Bare stage invocations stay serial; a run uses three workers — a cap of eight
+# starved the laptop the agent shares with its supervisor — unless the caller's
+# own PYTEST_ADDOPTS already says how many. What was found goes into
+# ADDOPTS_NOTE for the run's block rather than straight to stderr.
 ADDOPTS_NOTE=''
 _export_pytest_addopts() {
     local checkout="$1"
     local addopts='--tb=line --no-header -p no:cacheprovider --disable-warnings'
     if _pytest_probe "$checkout" | grep -qi xdist; then
-        local cores ceiling n
-        cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
-                 || nproc 2>/dev/null \
-                 || sysctl -n hw.logicalcpu 2>/dev/null \
-                 || echo 4)"
-        [[ "$cores" =~ ^[0-9]+$ ]] || cores=4
-        ceiling=8
-        n=$(( cores < ceiling ? cores : ceiling ))
-        (( n < 1 )) && n=1
-        ADDOPTS_NOTE="pytest-xdist detected — -n$n --dist=loadgroup (cores=$cores, cap=$ceiling)"
-        addopts="$addopts -n$n --dist=loadgroup"
+        if [[ "${PYTEST_ADDOPTS:-}" =~ (^|[[:space:]])(-n[[:space:]]*[0-9a-z]+|--numprocesses[=[:space:]]+[0-9a-z]+) ]]; then
+            ADDOPTS_NOTE="pytest-xdist detected — ${BASH_REMATCH[2]} from PYTEST_ADDOPTS, --dist=loadgroup"
+        else
+            local cores ceiling n
+            cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
+                     || nproc 2>/dev/null \
+                     || sysctl -n hw.logicalcpu 2>/dev/null \
+                     || echo 4)"
+            [[ "$cores" =~ ^[0-9]+$ ]] || cores=4
+            ceiling=3
+            n=$(( cores < ceiling ? cores : ceiling ))
+            (( n < 1 )) && n=1
+            ADDOPTS_NOTE="pytest-xdist detected — -n$n --dist=loadgroup (cores=$cores, cap=$ceiling)"
+            addopts="$addopts -n$n"
+        fi
+        addopts="$addopts --dist=loadgroup"
     fi
     export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+$PYTEST_ADDOPTS }$addopts"
 }

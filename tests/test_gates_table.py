@@ -157,7 +157,6 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     does touch are demanded earlier, by the diff, at `->merge`."""
     assert set(_stages("done-gate")) - set(_stages("merge-gate")) == {
         "integration",
-        "merge-smoke",
         "e2e-default",
     }
 

@@ -85,7 +85,7 @@ hook-подложкой и контрактом кодов возврата. **A
 | `master-ci`        | -                                                                                        | master's last CI verdict is green (network)                                                                             |
 | `unit`             | review-gate done-gate merge-gate push-gate                                               | every test not marked integration                                                                                       |
 | `integration`      | done-gate                                                                                | the real-subprocess tests outside tests/e2e                                                                             |
-| `merge-smoke`      | done-gate                                                                                | the curated smoke subset of tests/e2e                                                                                   |
+| `merge-smoke`      | review-gate done-gate merge-gate                                                         | the curated smoke subset of tests/e2e                                                                                   |
 | `e2e`              | -                                                                                        | the full tier: integration or smoke, quarantine and live agents excluded                                                |
 | `e2e-default`      | done-gate push-gate                                                                      | the half of the tier no zone claims — an unexpected regression                                                          |
 | `e2e-rack`         | push-gate; review-gate merge-gate, когда дифф трогает зону `rack` (`gates.sh zones`)     | the rack zone of the tier: what a change to the rack surface is expected to break                                       |
@@ -128,7 +128,10 @@ HATS-1921 к ним прибавился **`e2e`** — весь тир под о
 линтинга (все офлайновые стадии до `unit`) — около девяти секунд вместе;
 `merge-smoke` ~20 с; `integration` ~98 с; `unit` ~95 с; `coverage` ~195 с.
 `wheel-contents` ~3 с на пять пакетов, `master-ci` — сеть (HATS-1877; с
-HATS-1991 её не требует ни один гейт).
+HATS-1991 её не требует ни один гейт). Под xdist на 14 ядрах,
+2026-09-16 (HATS-1673): при дефолтном `-n3` — `merge-smoke` 9,7 с, `unit`
+94 с, `review-gate` целиком с нуля вместе с зонами диффа (`gates`, `rack`)
+260 с; при `-n8` — 6,6 с, 62 с и 183 с.
 
 Полный `e2e` при `-n 8`: 245–251 с (2026-08-17, HATS-1708; два прогона одного
 дерева, 911 passed), **295 с на 2026-09-09** (HATS-1921, master 1670d0c7, 1162
@@ -242,9 +245,9 @@ flowchart TD
 
 | гейт          | где применяется          | стадии                                                                                                                                                                                                |
 | ------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                          |
+| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                              |
 | `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default      |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                          |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                              |
 | `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe |
 
 <!-- /gate-table:gates -->
@@ -258,9 +261,12 @@ flowchart TD
   числа, которое можно прочесть неверно. Требует то же множество, что
   `merge-gate`, намеренно — гейты различаются моментом, а не требованием, и
   `unit` — та стадия, ради которой гейт существует.
-- **`merge-gate` спрашивает: годна ли ветка войти в master.** Тир линтинга плюс
-  `unit` плюс `wheel-contents` (HATS-1877) — минимум, ловящий явно сломанное до
-  общего ствола и чинимый агентом в одиночку.
+- **`merge-gate` спрашивает: годна ли ветка войти в master.** Минимум, ловящий
+  явно сломанное до общего ствола и чинимый агентом в одиночку; состав — в
+  таблице выше, не здесь. Одна стадия названа, потому что стоит здесь по
+  решению: `merge-smoke` — единственная до слияния, что проверяет
+  установленный бинарь, а не исходники; `unit` и `integration` его не трогают
+  (рулинг 2026-08-14, HATS-1673).
 - **`done-gate` спрашивает: зелен ли master после этой карточки.** Сверх
   `merge-gate` — то, что может спросить только это ребро: результат слияния и
   остаток тира, который не забрала ни одна зона (D11); состав — в таблице
@@ -581,8 +587,8 @@ e2e**: тир стоял на `push-gate`, то есть после того, к
 возвращать широкий набор на карточный гейт. **Цена этого решения названа:** когда
 дефолт опустеет, карточные гейты перестанут ловить неожидаемое, и оно останется
 на `push-gate` и в CI, то есть на сегодняшнем уровне. Планка не опускается нигде,
-но и не поднимается для неожидаемого; поднимается она для ожидаемого. Пол на
-`->done` даёт `merge-smoke`, который остаётся на месте.
+но и не поднимается для неожидаемого; поднимается она для ожидаемого. Пол
+даёт `merge-smoke`, который стоит на каждом карточном гейте и остаётся на месте.
 
 **Что остаётся незаверяемым.** Зона — заявление автора; никакая машина не
 докажет, что тест трогает именно её. То же ограничение уже записано про себя в
