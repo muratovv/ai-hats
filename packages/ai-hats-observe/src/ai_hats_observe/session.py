@@ -350,10 +350,10 @@ class Session:
         }
 
         def _line(name: str) -> str:
-            bare = name.split("::", 1)[1] if "::" in name else name
+            bare = name.split("::", 1)[1] if name.startswith(("rules::", "skills::")) else name
             return f"{bare} ({brought.get(name, 'expression')})"
 
-        traits = [term for term in brought if "::" not in term]
+        traits = [term for term in brought if not term.startswith(("rules::", "skills::"))]
         rules = [
             m["name"]
             for block in record.get("prompt", {}).get("blocks", ())

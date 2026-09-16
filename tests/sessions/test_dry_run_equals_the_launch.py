@@ -311,6 +311,30 @@ def test_the_automate_meta_prompt_is_what_the_sdk_was_actually_sent(project: Pat
     )
 
 
+def test_the_audit_lists_the_rules_and_skills_the_snapshot_listed(project: Path, monkeypatch):
+    """The reflexive loop's input is not narrowed (ADR-0036 D6): ``audit.md``
+    rendered off the plan's record names the same rules and skills the
+    composition snapshot named."""
+    from ai_hats.composition_seam import build_composition_payload
+
+    launched = _launch_for_real(monkeypatch, project)
+    runs = project / ".agent" / "ai-hats" / "sessions" / "runs"
+    audit = (runs / f"session_{_sid_of(launched)}" / "audit.md").read_text()
+    section = audit.split("## Composition", 1)[1].split("## Events", 1)[0]
+    listed = {
+        label: {name.split(" (")[0] for name in line.split(": ", 1)[1].split(", ")}
+        for line in section.splitlines()
+        if line.startswith("- **")
+        for label in [line[4 : line.index("**", 4)]]
+    }
+    snapshot = build_composition_payload(project, role_override="maintainer").snapshot
+
+    assert listed["Rules"] == set(snapshot["rules"])
+    assert listed["Skills"] == set(snapshot["skills"])
+    assert listed["Traits"] == set(snapshot["traits"])
+    assert snapshot["rules"] and snapshot["skills"], "the sample must compose both"
+
+
 def test_the_reported_automate_env_is_the_environment_the_sub_agent_receives(
     project: Path, monkeypatch
 ):
