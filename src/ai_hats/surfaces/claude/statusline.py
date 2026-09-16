@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
@@ -30,7 +30,52 @@ SOURCE = "claude/statusline"
 #: Beside the session's events: which windows were already said, by their reset.
 MEMO_NAME = "quota_warnings.json"
 
+#: The settings key claude reads the status line from — one slot, so a session's
+#: `--settings` replaces the person's.
+SETTINGS_KEY = "statusLine"
+
+#: What that slot runs in a HITL session: this module, then the person's own
+#: command with the same payload. A bar is not a gate: the recorder is skipped
+#: without its interpreter, and the exit is 0 whatever either half said.
+STATUSLINE_COMMAND = (
+    "sh -c '"
+    "p=$(cat); "
+    'if [ -x "$AI_HATS_PYTHON" ]; then '
+    'printf "%s" "$p" | "$AI_HATS_PYTHON" -m ai_hats.surfaces.claude.statusline; fi; '
+    'if [ -n "$AI_HATS_STATUSLINE_INNER" ]; then '
+    'printf "%s" "$p" | sh -c "$AI_HATS_STATUSLINE_INNER"; fi; '
+    "exit 0'"
+)
+
 Warned = dict[str, int | None]
+
+
+def person_status_line(settings_files: Sequence[Path]) -> dict[str, Any] | None:
+    """The status line the person configured, read the way claude layers its
+    settings: each file's ``statusLine`` replaces the one before it. ``None``
+    when no file names a command; a file that will not parse is skipped aloud."""
+    found: dict[str, Any] | None = None
+    for path in settings_files:
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as exc:
+            _said(f"{path}: skipped, {exc}")
+            continue
+        entry = document.get(SETTINGS_KEY) if isinstance(document, dict) else None
+        if isinstance(entry, dict) and isinstance(entry.get("command"), str) and entry["command"]:
+            found = dict(entry)
+    return found
+
+
+def status_line_entry(person: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The session's ``statusLine`` value: our command, with the person's own
+    ``padding`` carried over so the bar sits where they put it."""
+    entry: dict[str, Any] = {"type": "command", "command": STATUSLINE_COMMAND}
+    if person is not None and "padding" in person:
+        entry["padding"] = person["padding"]
+    return entry
 
 
 def quota_notices(

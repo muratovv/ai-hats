@@ -110,6 +110,7 @@ UNDECLARED: dict[str, frozenset[str]] = {
             "AI_HATS_SESSION_CACHE_DIR",
             "AI_HATS_SESSION_ID",
             "AI_HATS_SESSION_IDENTITY",
+            "AI_HATS_STATUSLINE_INNER",
             "AI_HATS_TASKS_DIR",
             "AI_HATS_TASK_ID",
             "AI_HATS_WORKTREE_PATH",

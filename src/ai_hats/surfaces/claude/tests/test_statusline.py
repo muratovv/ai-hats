@@ -16,7 +16,15 @@ import pytest
 
 from ai_hats.env import ENV_APPROACHING_LIMIT_PERCENT
 from ai_hats.session_identity import SessionIdentity
-from ai_hats.surfaces.claude.statusline import MEMO_NAME, SOURCE, main, quota_notices
+from ai_hats.surfaces.claude.statusline import (
+    MEMO_NAME,
+    SOURCE,
+    STATUSLINE_COMMAND,
+    main,
+    person_status_line,
+    quota_notices,
+    status_line_entry,
+)
 from ai_hats_observe.canonical import Notice, Timestamp, WorthRecording
 from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
 
@@ -162,3 +170,61 @@ def test_main_never_raises_on_an_unreadable_payload(session, capsys) -> None:
     assert main(stdin=io.StringIO("not json"), environ=env) == 0
     assert "payload" in capsys.readouterr().err
     assert not (session_dir / EVENT_LOG_JSONL).exists()
+
+
+# --- the person's own bar ------------------------------------------------------
+
+
+def _settings(path: Path, document: object) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(document if isinstance(document, str) else json.dumps(document))
+    return path
+
+
+def test_the_persons_status_line_is_read_the_way_claude_layers_settings(tmp_path: Path) -> None:
+    """User, then project, then local — the last file naming a command wins, and
+    a file naming none leaves the one before it standing."""
+    user = _settings(
+        tmp_path / "home" / ".claude" / "settings.json",
+        {"statusLine": {"type": "command", "command": "bash ~/bar.sh", "padding": 0}},
+    )
+    project = _settings(tmp_path / "proj" / ".claude" / "settings.json", {"permissions": {}})
+    local = _settings(
+        tmp_path / "proj" / ".claude" / "settings.local.json",
+        {"statusLine": {"type": "command", "command": "~/other.sh"}},
+    )
+    missing = tmp_path / "nowhere.json"
+
+    assert person_status_line([user]) == {
+        "type": "command",
+        "command": "bash ~/bar.sh",
+        "padding": 0,
+    }
+    assert person_status_line([user, project]) == person_status_line([user])
+    assert person_status_line([user, project, local]) == {
+        "type": "command",
+        "command": "~/other.sh",
+    }
+    assert person_status_line([missing, project]) is None
+    assert person_status_line([]) is None
+
+
+def test_a_settings_file_that_will_not_parse_is_skipped_aloud(tmp_path: Path, capsys) -> None:
+    broken = _settings(tmp_path / "broken.json", "{not json")
+    user = _settings(tmp_path / "ok.json", {"statusLine": {"command": "echo hi"}})
+    # a statusLine without a command string is not a bar
+    empty = _settings(tmp_path / "empty.json", {"statusLine": {"type": "command", "command": ""}})
+
+    assert person_status_line([broken, user, empty]) == {"command": "echo hi"}
+    assert str(broken) in capsys.readouterr().err
+
+
+def test_the_sessions_entry_runs_ours_and_keeps_the_persons_padding() -> None:
+    assert status_line_entry(None) == {"type": "command", "command": STATUSLINE_COMMAND}
+    assert status_line_entry({"command": "x", "padding": 2}) == {
+        "type": "command",
+        "command": STATUSLINE_COMMAND,
+        "padding": 2,
+    }
+    # the person's other keys do not travel: the slot is ours to fill
+    assert "refreshInterval" not in status_line_entry({"command": "x", "refreshInterval": 1})

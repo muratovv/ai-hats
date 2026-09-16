@@ -134,9 +134,9 @@
       "target": "<cache>/sessions/dry-run/hooks.json"
     },
     {
-      "digest": "f8474dac9b515c6a0d929fcc68c2f030f2bc9acc41f520b272c989e117d65799",
+      "digest": "871202e3cb3ca829f34fb83a8a38adc1ef908c3ff50f2d782b1aefeb732850bb",
       "kind": "write_text",
-      "size": 1148,
+      "size": 1468,
       "source": null,
       "target": "<cache>/sessions/dry-run/settings.json"
     }

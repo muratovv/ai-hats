@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**323 of 323 files catalogued — 331 flows.**
+**324 of 324 files catalogued — 332 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -201,6 +201,24 @@ as a claim to check, not as evidence.
 
 - **expect** — worktree gate hook denies destructive writes in main checkout
 - **why** — without worktree gate hooks materialized for agy, agents make unauthorized direct edits to main checkout
+
+## `test_approaching_limit_from_claude_statusline.py`
+
+*pins HATS-1992*
+
+- **flow** — a HITL claude session nears its quota window, and the session's events.jsonl says so — from the status line, the one place a PTY session sees its rate limits — while the person's own bar keeps rendering
+- **cmds**
+
+  ```console
+  sh -c "$STATUSLINE_COMMAND"   # the string the session's settings.json
+                                # holds under statusLine, run with the
+                                # payload claude 2.1.273 was measured to send
+  cat <session_dir>/events.jsonl
+  cat <session_dir>/quota_warnings.json
+  ```
+
+- **expect** — one approaching_limit line, source claude/statusline, at 82% of the five-hour window; nothing more on the next render of the same window, nothing at 17%, nothing at 82% under AI_HATS_APPROACHING_LIMIT_PERCENT=90; the inner bar's output on stdout and exit 0 every time — with no interpreter in the env too, because a bar is not a gate
+- **why** — the notice is appended from inside a process claude spawns per render, not from the session process, and --settings replaces the person's statusLine slot — so only a real run of the settings string proves both that the line lands beside the session's artifacts and that the person's bar survives
 
 ## `test_arrow_consent_chain.py`
 

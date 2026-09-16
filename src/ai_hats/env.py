@@ -45,6 +45,10 @@ ENV_AI_HATS_PYTHON = "AI_HATS_PYTHON"
 #: Where this session's resident hook dispatcher listens.
 ENV_HOOK_SOCKET = "AI_HATS_HOOK_SOCK"
 
+#: The person's own status-line command, run by ours after it records: the
+#: session's `--settings` replaces the `statusLine` slot, so theirs rides here.
+ENV_STATUSLINE_INNER = "AI_HATS_STATUSLINE_INNER"
+
 # Hook-point vocabulary, owned by ADR-0020 D2; named here so it has one home.
 ENV_HOOK_POINT = "AI_HATS_HOOK_POINT"
 ENV_IN_HOOK = "AI_HATS_IN_HOOK"
@@ -410,6 +414,7 @@ __all__ = [
     "ENV_ROOT_PID",
     "ENV_AI_HATS_PYTHON",
     "ENV_HOOK_SOCKET",
+    "ENV_STATUSLINE_INNER",
     "ENV_HOOK_POINT",
     "ENV_IN_HOOK",
     "ENV_FORCE",

@@ -43,6 +43,10 @@ from .sdk_options import (
 )
 from . import sdk_runner
 from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG, HOOK_NOTIFICATION, OBSERVED_NOTIFICATION
+from ai_hats.env import ENV_STATUSLINE_INNER
+
+from .statusline import SETTINGS_KEY as STATUS_LINE_KEY
+from .statusline import person_status_line, status_line_entry
 from .runtime_hooks import materialize_hook_manifest, plan_hooks
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
@@ -285,15 +289,10 @@ class ClaudeSurface(Surface):
             manifest, rows, hook_env = plan_hooks(composition, root, host)
             settings = root / "settings.json"
             entries.append(manifest)
-            entries.append(
-                describe_write_text(
-                    settings,
-                    json.dumps(
-                        {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}, indent=2
-                    ),
-                )
-            )
+            document, settings_env = self._session_settings(rows, hitl=hitl, cwd=layout.cwd)
+            entries.append(describe_write_text(settings, json.dumps(document, indent=2)))
             env.update(hook_env)
+            env.update(settings_env)
             if hitl:
                 args += ["--settings", str(settings)]
             else:
@@ -424,7 +423,7 @@ class ClaudeSurface(Surface):
     # -- hooks -----------------------------------------------------------------
 
     def _write_cache_settings(
-        self, layout: ProjectLayout, session_id: str, result, artifacts
+        self, layout: ProjectLayout, session_id: str, result, artifacts, *, hitl: bool
     ) -> Path:
         cache_dir = self._cache_dir(layout, session_id, artifacts)
         cache_settings = cache_dir / "settings.json"
@@ -438,23 +437,45 @@ class ClaudeSurface(Surface):
             session_id=session_id,
             skills_dir=skills_dir,
         )
-        artifacts.port.write_text(
-            cache_settings,
-            json.dumps(
-                {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)},
-                indent=2,
-            ),
-        )
+        document, settings_env = self._session_settings(rows, hitl=hitl, cwd=layout.cwd)
+        artifacts.port.write_text(cache_settings, json.dumps(document, indent=2))
+        artifacts.extra_env.update(settings_env)
         artifacts.materialized.append(cache_settings)
         return cache_settings
 
+    def _session_settings(
+        self, rows: dict[str, list[dict[str, str]]], *, hitl: bool, cwd: Path
+    ) -> tuple[dict, dict[str, str]]:
+        """The session's ``settings.json`` and the env it needs: the dispatcher
+        entries, and on the HITL path the status line — ours records the quota
+        state a PTY session sees nowhere else, then runs the person's own, whose
+        command travels in the env because ``--settings`` replaces that slot."""
+        document: dict = {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}
+        env: dict[str, str] = {}
+        if hitl:
+            person = person_status_line(
+                [
+                    claude_user_settings_json(),
+                    claude_settings_json(cwd),
+                    claude_settings_local_json(cwd),
+                ]
+            )
+            document[STATUS_LINE_KEY] = status_line_entry(person)
+            if person is not None:
+                env[ENV_STATUSLINE_INNER] = person["command"]
+        return document, env
+
     def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
         """--settings merges additively; the user's root settings stay untouched."""
-        cache_settings = self._write_cache_settings(layout, session_id, result, artifacts)
+        cache_settings = self._write_cache_settings(
+            layout, session_id, result, artifacts, hitl=True
+        )
         artifacts.cli_args.extend(["--settings", str(cache_settings)])
 
     def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
-        cache_settings = self._write_cache_settings(layout, session_id, result, artifacts)
+        cache_settings = self._write_cache_settings(
+            layout, session_id, result, artifacts, hitl=False
+        )
         artifacts.sdk_options["settings"] = str(cache_settings)
         artifacts.sdk_options["setting_sources"] = []
 
