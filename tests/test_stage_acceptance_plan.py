@@ -18,10 +18,10 @@ from ai_hats.surfaces.plan import Prompt, PromptBlock, PromptMember
 
 PLANNING = [name for name in surface_names() if plans(get_surface(name))]
 
-#: Where a reworded prompt lands: the context file for a surface that writes
-#: one, nowhere on disk for one that hands the prompt inline (the launch shows
-#: it instead). A surface joining the planners declares which it is.
-REWORDED_PROMPT_WRITES = {"claude": ["write_bytes"], "codex": []}
+#: Where a reworded prompt lands: a context file, a merged config document, or
+#: nowhere on disk for a surface that hands it inline (the launch shows it
+#: instead). A surface joining the planners declares which it is.
+REWORDED_PROMPT_WRITES = {"claude": ["write_bytes"], "codex": [], "opencode": ["write_text"]}
 
 
 @pytest.fixture
@@ -37,6 +37,9 @@ def maintainer(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AI_HATS_CODEX_BASE_HOME", str(codex_home))
     monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.delenv("CODEX_SQLITE_HOME", raising=False)
+    (tmp_path / "config-home" / "opencode").mkdir(parents=True)
+    monkeypatch.setenv("AI_HATS_OPENCODE_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     project = tmp_path / "proj"
     project.mkdir()
     asm = Assembler(project)
@@ -66,7 +69,7 @@ def _plan(asm, composition, surface_name: str, root: Path, run_mode: RunMode):
 
 
 def test_every_surface_plans():
-    assert set(PLANNING) >= {"claude", "codex"}
+    assert set(PLANNING) >= {"claude", "codex", "opencode"}
     assert set(PLANNING) <= set(REWORDED_PROMPT_WRITES), (
         "a surface that plans declares where a reworded prompt lands"
     )
