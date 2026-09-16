@@ -194,10 +194,10 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     nesting itself is `tests/test_gates_table.py`'s."""
     merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
 
-    assert done - merge == {"integration", "master-ci", "merge-smoke", "e2e-default"}, (
+    assert done - merge == {"integration", "merge-smoke", "e2e-default"}, (
         "`->done` asks whether master is green after this card; `integration` and "
-        "`merge-smoke` are the stages that answer it, and `master-ci` (HATS-1877) "
-        "asks the same question of the base the card is about to land on. "
+        "`merge-smoke` are the stages that answer it. The verdict about the BASE "
+        "is not a card's to earn or fix, so no card gate asks the network for it. "
         "`e2e-default` is the tier no zone claims — an unexpected regression, which "
         "is what two independently green branches make together, so it belongs on "
         "the edge where a supervisor is present. The zones a change DOES touch are "

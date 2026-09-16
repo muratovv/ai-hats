@@ -38,6 +38,9 @@ KNOWN_UNGATED = {
     "coverage",
     "security",
     "version-skew",
+    # Network, and about the BASE, not the card: a manual stage, and a notice on
+    # the push road — never a card gate's refusal.
+    "master-ci",
     "python-pin",
     "tmp-sweep",
     "prepare",
@@ -154,7 +157,6 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     does touch are demanded earlier, by the diff, at `->merge`."""
     assert set(_stages("done-gate")) - set(_stages("merge-gate")) == {
         "integration",
-        "master-ci",
         "merge-smoke",
         "e2e-default",
     }

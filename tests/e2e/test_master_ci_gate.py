@@ -140,8 +140,9 @@ def test_unreadable_output_is_announced_not_silent(tmp_path: Path):
 _GATE_HOOKS = "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks"
 
 
-def test_the_done_gate_composition_names_the_stage():
-    """The gate runs what its `--stages` names, so dropping it here disarms it."""
+def test_the_done_gate_stays_offline():
+    """A card can neither earn nor fix master's verdict, so `->done` does not ask
+    for it — a finished card sat in review behind a red run it had no part in."""
     listed = subprocess.run(
         ["bash", f"{_GATE_HOOKS}/done-gate.sh", "--stages"],
         cwd=str(REPO_ROOT),
@@ -150,7 +151,9 @@ def test_the_done_gate_composition_names_the_stage():
         timeout=60,
     )
     assert listed.returncode == 0, listed.stdout + listed.stderr
-    assert "master-ci" in listed.stdout.split(), listed.stdout
+    stages = listed.stdout.split()
+    assert "master-ci" not in stages, listed.stdout
+    assert "integration" in stages, "positive control: the composition is being read"
 
 
 def test_the_merge_gate_stays_offline():

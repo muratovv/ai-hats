@@ -82,7 +82,7 @@ hook-подложкой и контрактом кодов возврата. **A
 | `adr-integrity`    | push-gate                                                                                | every ADR citation resolves and a number names exactly one file                                                         |
 | `bidi`             | push-gate                                                                                | no bidirectional control characters, which are invisible in review                                                      |
 | `wheel-contents`   | review-gate done-gate merge-gate                                                         | every tracked src file reaches the wheel built through the sdist                                                        |
-| `master-ci`        | done-gate                                                                                | master's last CI verdict is green (network)                                                                             |
+| `master-ci`        | -                                                                                        | master's last CI verdict is green (network)                                                                             |
 | `unit`             | review-gate done-gate merge-gate push-gate                                               | every test not marked integration                                                                                       |
 | `integration`      | done-gate                                                                                | the real-subprocess tests outside tests/e2e                                                                             |
 | `merge-smoke`      | done-gate                                                                                | the curated smoke subset of tests/e2e                                                                                   |
@@ -109,7 +109,9 @@ hook-подложкой и контрактом кодов возврата. **A
 `-` — стадия, которую не требует ни один гейт: `coverage`, `security`,
 `version-skew` живут в CI, `python-pin` — в бандле `all` и CI, `tmp-sweep` —
 уборка, которая не может быть красной, `prepare` — предусловие, которое ничего
-не утверждает. С HATS-1921 к ним прибавился **`e2e`** — весь тир под одним
+не утверждает, `master-ci` — сеть и вопрос о **базе**, а не о карточке: ручная
+стадия и notice на дороге пуша, никогда не отказ карточного гейта (D4). С
+HATS-1921 к ним прибавился **`e2e`** — весь тир под одним
 именем, то, что гоняет job `e2e` в CI и что значит `make e2e`; гейты требуют его
 **частей** (D11), чтобы дерево не гоняло те же тесты второй раз под другим
 именем. Строка с `-` стоит в таблице нарочно: «не названа ни одним гейтом»
@@ -237,12 +239,12 @@ flowchart TD
 
 <!-- gate-table:gates -->
 
-| гейт          | где применяется          | стадии                                                                                                                                                                                                     |
-| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                               |
-| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default master-ci |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                               |
-| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe      |
+| гейт          | где применяется          | стадии                                                                                                                                                                                                |
+| ------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                          |
+| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default      |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit                                          |
+| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe |
 
 <!-- /gate-table:gates -->
 
