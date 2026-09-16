@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from ai_hats.materialization import MaterializationEntry, describe_merge_json
 
 if TYPE_CHECKING:
     from ai_hats.materialization import Materializer
@@ -21,6 +24,28 @@ DISPATCHER_COMMAND = (
     'hooks cannot run; restart it" >&2; exit 2; fi; '
     'exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.agy.hook_dispatcher "$@"\' sh'
 )
+DISPATCHER_EVENTS = ("PreToolUse", "PostToolUse", "Stop", "Notification", "PostInvocation")
+
+
+def desired_entry() -> dict:
+    """The one managed row every event carries — identical in every venv, so
+    two ai-hats installs never rewrite each other's."""
+    return {
+        "matcher": "*",
+        "command": DISPATCHER_COMMAND,
+        "_ai_hats_managed": MANAGED_DISPATCHER_TAG,
+    }
+
+
+def desired_hooks() -> dict:
+    """What ai-hats adds to the person's settings document, and nothing else."""
+    return {"hooks": {event: [desired_entry()] for event in DISPATCHER_EVENTS}}
+
+
+def plan_global_hook(settings_path: Path) -> MaterializationEntry:
+    """The registration as one entry outside the session root (ADR-0036 D2):
+    application merges the managed row into whatever the person's file holds."""
+    return dataclasses.replace(describe_merge_json(settings_path, desired_hooks()), escape=True)
 
 
 def ensure_global_dispatcher_hook(settings_path: Path, port: "Materializer") -> bool:
@@ -49,30 +74,26 @@ def ensure_global_dispatcher_hook(settings_path: Path, port: "Materializer") -> 
         data["hooks"] = hooks_root
 
     changed = False
-    for event in ("PreToolUse", "PostToolUse", "Stop", "Notification", "PostInvocation"):
+    for event in DISPATCHER_EVENTS:
         event_list = hooks_root.setdefault(event, [])
         if not isinstance(event_list, list):
             event_list = []
             hooks_root[event] = event_list
 
-        desired_entry = {
-            "matcher": "*",
-            "command": DISPATCHER_COMMAND,
-            "_ai_hats_managed": MANAGED_DISPATCHER_TAG,
-        }
+        wanted = desired_entry()
 
         # Check if already correctly present
         already_present = False
         for i, entry in enumerate(event_list):
             if isinstance(entry, dict) and entry.get("_ai_hats_managed") == MANAGED_DISPATCHER_TAG:
                 already_present = True
-                if entry != desired_entry:
-                    event_list[i] = desired_entry
+                if entry != wanted:
+                    event_list[i] = wanted
                     changed = True
                 break
 
         if not already_present:
-            event_list.append(desired_entry)
+            event_list.append(wanted)
             changed = True
 
     if not changed:
