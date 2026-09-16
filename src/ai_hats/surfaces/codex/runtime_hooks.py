@@ -20,9 +20,12 @@ from ai_hats.env import (
 )
 from .profile import PROFILE
 from ai_hats.hook_collection import composed_rows
+from ai_hats.materialization import MaterializationEntry, describe_write_text
 from ai_hats.session_artifacts import BuiltArtifacts
 
 from ..hook_channel import surface_timeout
+from ..mirror import manifest_rows
+from ..plan import CompositionPlan, Host
 from .hook_dispatcher import DISPATCHER_COMMAND
 
 #: Every bindable event, plus the arrival only this surface has. Derived, so a
@@ -57,6 +60,37 @@ def build_hook_cli_args() -> list[str]:
     for event in CODEX_HOOK_EVENTS:
         args.extend(["-c", f"hooks.{event}={handler}"])
     return args
+
+
+def plan_hooks(
+    composition: CompositionPlan,
+    root: Path,
+    host: Host,
+    *,
+    layout: ProjectLayout,
+    skills_root: Path,
+) -> tuple[MaterializationEntry, dict[str, str]]:
+    """The manifest entry and the pins, from the plan's runtime rows; what
+    makes codex read it is ``build_hook_cli_args``, the same for every session."""
+    manifest = describe_write_text(
+        root / "hooks.json",
+        json.dumps(
+            {
+                "version": MANIFEST_VERSION,
+                "session": {
+                    "id": root.name,
+                    "ai_hats_dir": str(layout.base),
+                    "skills_root": str(skills_root),
+                },
+                "hooks": manifest_rows(composition, skills_root),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    env = {ENV_SESSION_CACHE_DIR: str(root), ENV_AI_HATS_PYTHON: str(host.python)}
+    return manifest, env
 
 
 def _manifest(
@@ -118,4 +152,5 @@ __all__ = [
     "MANIFEST_VERSION",
     "build_hook_cli_args",
     "materialize_hook_manifest",
+    "plan_hooks",
 ]
