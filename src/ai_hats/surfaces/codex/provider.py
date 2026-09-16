@@ -35,7 +35,6 @@ from .home import (
     ENV_CODEX_SQLITE_HOME,
     CodexHome,
     configured_base_home,
-    configured_sqlite_home,
     managed_root,
     plan_session_home,
     probe_home,
@@ -234,10 +233,6 @@ class CodexSurface(Surface):
     @staticmethod
     def _validate_sqlite_home(sqlite_home: Path, base_home: Path) -> Path:
         return validate_sqlite_home(sqlite_home, base_home, os.environ)
-
-    @staticmethod
-    def _configured_sqlite_home(base_home: Path) -> Path:
-        return configured_sqlite_home(os.environ, base_home)
 
     # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 

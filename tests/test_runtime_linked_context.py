@@ -3,9 +3,9 @@
 ``linked_context.load_linked_context`` assembles a ``LINKED_CONTEXT`` body from
 a ticket's *direct* links (parent epic first, then depends_on / related /
 see_also), trimmed per-card with only the latest work_log entry; the parent epic
-additionally carries its ``plan.md``. The body is wired into both live sub-agent
-prompt channels (``build_first_user_message`` for Claude, ``assemble_brief``
-for Agy).
+additionally carries its ``plan.md``. The body is wired into the one live
+sub-agent prompt channel, the launch's ``brief`` (``assemble_brief``): the SDK's
+first user turn on claude, the meta-prompt on the CLI surfaces.
 """
 
 from __future__ import annotations
@@ -161,28 +161,12 @@ def test_load_linked_context_unknown_ticket_returns_empty(tmp_path: Path) -> Non
     assert _linked(project_dir, "") == ""
 
 
-# --- wiring into the two live prompt channels ---
-
-
-def test_build_first_user_message_wires_linked_context_after_ticket() -> None:
-    """Claude live channel: LINKED_CONTEXT sits after TICKET_CONTEXT."""
-    from ai_hats.surfaces.claude.sdk_options import build_first_user_message
-
-    msg = build_first_user_message(
-        ticket_context="TICKET BODY",
-        linked_context="LINKED BODY",
-        task="do the thing",
-    )
-    assert "# LINKED_CONTEXT\nLINKED BODY" in msg
-    assert msg.index("# TICKET_CONTEXT") < msg.index("# LINKED_CONTEXT") < msg.index("# TASK")
-
-    # Empty linked_context emits no section.
-    msg_empty = build_first_user_message(ticket_context="T", task="t")
-    assert "# LINKED_CONTEXT" not in msg_empty
+# --- wiring into the live prompt channel ---
 
 
 def test_assemble_brief_wires_linked_context_section(tmp_path: Path) -> None:
-    """The CLI surfaces' brief emits LINKED_CONTEXT after TICKET_CONTEXT."""
+    """The brief emits TICKET_CONTEXT, LINKED_CONTEXT, TASK in that order,
+    one blank line apart."""
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_card(
@@ -207,7 +191,8 @@ def test_assemble_brief_wires_linked_context_section(tmp_path: Path) -> None:
     assert "# TICKET_CONTEXT" in out
     assert "# LINKED_CONTEXT" in out
     assert "EPIC BODY FOR AGY" in out
-    assert out.index("# TICKET_CONTEXT") < out.index("# LINKED_CONTEXT")
+    assert out.index("# TICKET_CONTEXT") < out.index("# LINKED_CONTEXT") < out.index("# TASK")
+    assert out.endswith("\n\n# TASK\ngo")
 
     # A ticket with no links → no LINKED_CONTEXT section.
     _write_card(
@@ -216,3 +201,12 @@ def test_assemble_brief_wires_linked_context_section(tmp_path: Path) -> None:
     )
     out_nolinks = assemble_brief(ProjectLayout.at(project_dir), task="go", ticket_id="HATS-903")
     assert "# LINKED_CONTEXT" not in out_nolinks
+
+
+def test_a_brief_with_no_ticket_is_the_task_alone_and_with_nothing_is_empty(tmp_path: Path) -> None:
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    layout = ProjectLayout.at(project_dir)
+
+    assert assemble_brief(layout, task="Do thing", ticket_id="") == "# TASK\nDo thing"
+    assert assemble_brief(layout, task="", ticket_id="") == ""
