@@ -176,17 +176,19 @@ def test_record_quota_says_every_window_once_and_remembers_what_it_recorded(sess
     assert _memo(session_dir) == {"five_hour": 1789563600, "seven_day": 1789714800}
 
 
-def test_the_memo_follows_the_record_never_precedes_it(session, monkeypatch) -> None:
+def test_the_memo_follows_the_record_never_precedes_it(session, capsys) -> None:
     """A notice that could not land must not be remembered as said, or the
-    window stays silent until its reset."""
+    window stays silent until its reset. The fault is real: the log's path is
+    taken by a directory, so the append fails the way a full disk would."""
     env, session_dir = session
-    monkeypatch.setattr("ai_hats.surfaces.claude.statusline.record_event", lambda e, env: None)
+    (session_dir / EVENT_LOG_JSONL).mkdir()
 
     assert record_quota(near(90), env) == []
+    assert "not recorded" in capsys.readouterr().err
     assert not (session_dir / MEMO_NAME).exists()
 
     # POSITIVE CONTROL: with the record landing, the same render is remembered
-    monkeypatch.undo()
+    (session_dir / EVENT_LOG_JSONL).rmdir()  # safe-delete: ok empty-dir
     assert [n.raw_code for n in record_quota(near(90), env)] == ["five_hour=90%"]
     assert _memo(session_dir) == {"five_hour": 1789563600}
 
