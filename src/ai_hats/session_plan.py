@@ -240,7 +240,7 @@ def preview(
         policy=policy or SessionPolicy(),
         root=root,
         layout=layout,
-        host=probe_host(),
+        host=probe_host(surface=surface),
     )
     flags = LaunchFlags(
         session_id=sid,

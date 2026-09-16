@@ -434,3 +434,30 @@ def test_the_reported_automate_launch_is_the_options_the_sdk_receives(project: P
     assert delivered <= reported, (
         f"the SDK gets options the record never names: {sorted(delivered - reported)}"
     )
+
+
+def test_the_dry_run_probes_the_host_for_the_surface_the_launch_plans_with(
+    project: Path, monkeypatch
+):
+    """``probe_host`` takes the surface in hand, so a surface that enumerates
+    its home plans the same way on the dry-run as on the launch (ADR-0036 D5)."""
+    import ai_hats.session_plan as sp
+
+    seen: dict[str, object] = {}
+    real_probe, real_plan = sp.probe_host, sp.plan_session
+
+    def probe(*args, **kwargs):
+        seen["probed"] = kwargs.get("surface")
+        return real_probe(*args, **kwargs)
+
+    def plan(composition, surface, **kwargs):
+        seen["planned"] = surface
+        return real_plan(composition, surface, **kwargs)
+
+    monkeypatch.setattr(sp, "probe_host", probe)
+    monkeypatch.setattr(sp, "plan_session", plan)
+
+    preview(ProjectLayout.at(project), role=None, provider=None, run_mode=RunMode.HITL)
+
+    assert seen["probed"] is not None, "the spy saw the probe at all"
+    assert seen["probed"] is seen["planned"] and seen["probed"].name == "claude"
