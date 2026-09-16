@@ -266,26 +266,12 @@ class Session:
     ) -> None:
         """Initialize incremental audit.md.
 
-        HATS-442: ``composition`` is an optional snapshot of the effective
-        role composition with per-component source layers
-        (``built-in``/``global``/``project``) — captured at session start
-        so post-session reviewers can cite exactly what loaded.
-
-        Expected shape::
-
-            {
-                "traits":   ["name", ...],          # effective order
-                "rules":    ["name", ...],
-                "skills":   ["name", ...],
-                "provenance": {
-                    "traits": {"name": "built-in" | "global" | "project"},
-                    "rules":  {...},
-                    "skills": {...},
-                },
-            }
-
-        Persisted in audit.md (human-readable) and surfaced again in
-        metrics.json via ``finalize_audit`` (machine-readable).
+        ``composition`` is what the session was made of, captured at start so
+        a reviewer can cite exactly what loaded: on the plan path the
+        ``composition`` part of the session record (prompt blocks, skills,
+        hooks, trace — ADR-0036 D6); on the older path a snapshot of
+        ``traits`` / ``rules`` / ``skills`` with a ``provenance`` layer map.
+        Persisted in audit.md and surfaced again in metrics.json.
         """
         self._composition = composition  # latched for finalize_audit
         header = (
@@ -325,7 +311,10 @@ class Session:
 
     @staticmethod
     def _render_composition_md(composition: dict) -> str:
-        """Render the composition snapshot as a markdown section."""
+        """Render the composition as a markdown section — the plan's record
+        (ADR-0036 D6) or the older snapshot, the same three lists either way."""
+        if "prompt" in composition:
+            return Session._render_plan_composition_md(composition)
         prov = composition.get("provenance", {}) or {}
 
         def _line(name: str, layer_map: dict) -> str:
@@ -348,6 +337,34 @@ class Session:
             lines.append(
                 "- **Skills**: " + ", ".join(_line(s, prov.get("skills", {})) for s in skills)
             )
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _render_plan_composition_md(record: dict) -> str:
+        """Traits, rules and skills off the plan's composition record, each
+        name attributed to the composite or override that brought it."""
+        brought = {
+            t["term"]: t["brought_by"]
+            for t in record.get("trace", ())
+            if t.get("removed_by") is None
+        }
+
+        def _line(name: str) -> str:
+            bare = name.split("::", 1)[1] if name.startswith(("rules::", "skills::")) else name
+            return f"{bare} ({brought.get(name, 'expression')})"
+
+        traits = [term for term in brought if not term.startswith(("rules::", "skills::"))]
+        rules = [
+            m["name"]
+            for block in record.get("prompt", {}).get("blocks", ())
+            for m in block.get("members", ())
+            if str(m.get("name", "")).startswith("rules::")
+        ]
+        skills = [s["name"] for s in record.get("skills", ())]
+        lines = ["## Composition\n"]
+        for label, names in (("Traits", traits), ("Rules", rules), ("Skills", skills)):
+            if names:
+                lines.append(f"- **{label}**: " + ", ".join(_line(n) for n in names))
         return "\n".join(lines) + "\n"
 
     def append_audit(self, event: str) -> None:

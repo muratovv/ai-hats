@@ -40,8 +40,10 @@ from .session_artifacts import (
     assemble_launch_env,
     consumed_session_id,
 )
+from .session_plan import launch, plan_session, plans, probe_host, session_record
 from .session_report import SessionReport
 from .session_run import SessionRun
+from .surfaces import LaunchFlags, apply
 from .startup_checks import run_startup_checks
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
@@ -603,6 +605,119 @@ class WrapRunner:
         # No override channel on WrapRunner — the payload's
         # composition flows straight into the builder.
         builder_notices: list[StartupNotice] = []
+        result = payload.result
+        claude_session_id = str(uuid.uuid4())
+        if plans(provider):
+            cmd, env_map, meta_prompt, record = self._session_on_the_plan(
+                session, extra_args=extra_args, provider_session_id=claude_session_id
+            )
+            composition_section = record["composition"]
+        else:
+            cmd, env_map, meta_prompt, record = self._session_through_the_port(
+                session,
+                run,
+                extra_args=extra_args,
+                provider_session_id=claude_session_id,
+                notices=builder_notices,
+            )
+            composition_section = payload.snapshot
+        _claim_session_cache(self.layout.cache.session(session.session_id))
+        session.init_audit(
+            role=active_role,
+            provider=provider_name,
+            composition=composition_section,
+        )
+        # Persist materialized system prompt to
+        # <session_dir>/meta_prompt.txt — symmetric with SubAgentRunner
+        # (runtime.py ~1091). Exact bytes that reached the provider
+        # (placeholder expansion). Saved before hooks / _pty_spawn so
+        # the artefact survives early failures.
+        session.save_meta_prompt(meta_prompt)
+        # The argv the provider built is the only honest answer to
+        # "is this id ours?", and the link is persisted here rather than at
+        # teardown so a killed session still names its transcript.
+        claude_session_id = consumed_session_id(cmd, claude_session_id)
+        session.record_provider_session_id(claude_session_id)
+        session.save_role_materialization(record)
+
+        session.log_sys(f"Session started: role={active_role}")
+
+        # Log CLI restart gap from previous session (helps judge distinguish
+        # restarts from provider stalls).
+        self._log_restart_gap(session)
+
+        # The record above IS this environment minus the inherited part — one
+        # expression, so the report cannot under-state what the child receives.
+        env = {**os.environ, **env_map}
+
+        return self._launch_after_the_record(
+            session,
+            run,
+            cmd=cmd,
+            env=env,
+            env_map=env_map,
+            result=result,
+            claude_session_id=claude_session_id,
+            builder_notices=builder_notices,
+            tags=tags,
+            pty_tap_factory=pty_tap_factory,
+        )
+
+    def _session_on_the_plan(
+        self, session: Session, *, extra_args: list[str] | None, provider_session_id: str
+    ) -> tuple[list[str], dict[str, str], str, dict]:
+        """plan → apply → launch → record (ADR-0036 D2–D6): the one path a
+        surface with a planner takes."""
+        payload = self.payload
+        provider = payload.provider
+        if payload.plan is None:
+            raise RuntimeError("the seam adapted no composition")
+        root = self.layout.cache.session(session.session_id)
+        with provider.execution_context(self.layout):
+            plan = plan_session(
+                payload.plan,
+                provider,
+                run_mode=RunMode.HITL,
+                policy=payload.policy,
+                root=root,
+                layout=self.layout,
+                host=probe_host(),
+            )
+            applied = apply(plan)
+        flags = LaunchFlags(
+            session_id=session.session_id,
+            session_dir=session.session_dir,
+            trace_path=str(session.trace_path),
+            root_pid=str(os.getpid()),  # Ownership liveness anchor
+            provider_session_id=provider_session_id,
+            extra_args=tuple(extra_args or ()),
+        )
+        launched = launch(plan, flags, layout=self.layout)
+        record = session_record(
+            plan,
+            launched,
+            applied,
+            role=payload.effective_role,
+            cwd=str(self.layout.cwd),  # where the pty child runs, not the root
+            notes=[d.render() for d in payload.diagnostics],
+        )
+        return list(launched.args or ()), dict(launched.env), launched.prompt, record
+
+    def _session_through_the_port(
+        self,
+        session: Session,
+        run: SessionRun,
+        *,
+        extra_args: list[str] | None,
+        provider_session_id: str,
+        notices: list[StartupNotice],
+    ) -> tuple[list[str], dict[str, str], str, dict]:
+        """The builder path, for a surface that has no planner yet."""
+        payload = self.payload
+        provider = payload.provider
+        provider_name = provider.name
+        active_role = payload.effective_role
+        builder_notices = notices
         artifacts = BuiltArtifacts(resources=run)
         with provider.execution_context(self.layout):
             result = payload.result
@@ -640,32 +755,14 @@ class WrapRunner:
             )
             session_env = artifacts.extra_env
         builder_notices.extend(StartupNotice("warn", text) for text in artifacts.notices)
-        _claim_session_cache(self.layout.cache.session(session.session_id))
-        session.init_audit(
-            role=active_role,
-            provider=provider_name,
-            composition=payload.snapshot,
-        )
-        # Persist materialized system prompt to
-        # <session_dir>/meta_prompt.txt — symmetric with SubAgentRunner
-        # (runtime.py ~1091). Exact bytes that reached the provider
-        # (placeholder expansion). Saved before hooks / _pty_spawn so
-        # the artefact survives early failures.
-        session.save_meta_prompt(meta_prompt)
 
         # Build CLI command with session ID for JSONL linkage
-        claude_session_id = str(uuid.uuid4())
         cmd = assemble_launch_command(
             provider,
             extra_args=extra_args,
             session_args=session_args,
-            provider_session_id=claude_session_id,
+            provider_session_id=provider_session_id,
         )
-        # The argv the provider built is the only honest answer to
-        # "is this id ours?", and the link is persisted here rather than at
-        # teardown so a killed session still names its transcript.
-        claude_session_id = consumed_session_id(cmd, claude_session_id)
-        session.record_provider_session_id(claude_session_id)
 
         # Persist launch record as role_materialization.json
         env_map = assemble_launch_env(
@@ -710,17 +807,26 @@ class WrapRunner:
             composition=payload.plan,
             notes=report_notes,
         )
-        session.save_role_materialization(report.to_dict())
+        return cmd, env_map, meta_prompt, report.to_dict()
 
-        session.log_sys(f"Session started: role={active_role}")
-
-        # Log CLI restart gap from previous session (helps judge distinguish
-        # restarts from provider stalls).
-        self._log_restart_gap(session)
-
-        # The record above IS this environment minus the inherited part — one
-        # expression, so the report cannot under-state what the child receives.
-        env = {**os.environ, **env_map}
+    def _launch_after_the_record(
+        self,
+        session: Session,
+        run: SessionRun,
+        *,
+        cmd: list[str],
+        env: dict[str, str],
+        env_map: dict[str, str],
+        result,
+        claude_session_id: str,
+        builder_notices: list[StartupNotice],
+        tags: dict[str, str] | None,
+        pty_tap_factory: PtyTapFactory | None,
+    ) -> tuple[int, Session]:
+        payload = self.payload
+        provider = payload.provider
+        provider_name = provider.name
+        active_role = payload.effective_role
 
         # Fail-open session-start drift net for all managed-hook
         # surfaces; reuses the composition above and returns startup notices.

@@ -37,11 +37,20 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     from .plan import (
         Applied,  # noqa: F401
         CompositionPlan,  # noqa: F401
+        ExternalHook,  # noqa: F401
+        Host,  # noqa: F401
+        Launch,  # noqa: F401
+        Launched,  # noqa: F401
+        LaunchFlags,  # noqa: F401
         MaterializationPlan,  # noqa: F401
         Outcome,  # noqa: F401
         PlanRefused,  # noqa: F401
+        Prompt,  # noqa: F401
+        PromptBlock,  # noqa: F401
+        PromptMember,  # noqa: F401
         apply,  # noqa: F401
         composition_record,  # noqa: F401
+        context_entry,  # noqa: F401
         validate,  # noqa: F401
     )
 
@@ -82,12 +91,21 @@ _HOMES = {
     "TranscriptResolver": ".contract",
     "Applied": ".plan",
     "CompositionPlan": ".plan",
+    "ExternalHook": ".plan",
+    "Host": ".plan",
+    "Launch": ".plan",
+    "LaunchFlags": ".plan",
+    "Launched": ".plan",
     "MaterializationPlan": ".plan",
     "Outcome": ".plan",
     "PlanRefused": ".plan",
+    "Prompt": ".plan",
+    "PromptBlock": ".plan",
+    "PromptMember": ".plan",
     "adapt": ".plan_adapter",
     "apply": ".plan",
     "composition_record": ".plan",
+    "context_entry": ".plan",
     "sweep_stale_managed_tags": ".managed_tags",
     "validate": ".plan",
 }

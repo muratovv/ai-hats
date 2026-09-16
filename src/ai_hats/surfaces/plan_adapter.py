@@ -45,6 +45,8 @@ if TYPE_CHECKING:
 
 _OVERRIDE_NS = "overrides"
 _RUNTIME_LAYER = "runtime"
+#: In PATH order: an earlier skill's script shadows a later one's of the same name.
+_ON_PATH = ("scripts", "bin")
 
 
 class AdaptError(RuntimeError):
@@ -69,9 +71,13 @@ def adapt(
     a refusal, not a guess. ``diagnostics``: the composer's own sink; what the
     adapter finds lands beside what the composer found, never in the plan.
     """
+    from ..skills_dir import find_skill_script_collisions
+
     for err in result.errors:
         if not err.lossy:
             diagnostics.append(Diagnostic(Level.WARN, err.message))
+    for collision in find_skill_script_collisions(result.skills):
+        diagnostics.append(Diagnostic(Level.WARN, collision))
     return CompositionPlan(
         identity=identity,
         prompt=Prompt(blocks=_prompt_blocks(result, overlays, layout)),
@@ -80,6 +86,8 @@ def adapt(
                 name=_skill_name(s.name),
                 path=s.source_path.resolve(),
                 content_digest=dir_digest(s.source_path),
+                document=_document(s.source_path, layout),
+                on_path=tuple(d for d in _ON_PATH if (s.source_path / d).is_dir()),
             )
             for s in result.skills
         ),
@@ -90,6 +98,16 @@ def adapt(
 
 def _skill_name(name: str) -> str:
     return f"skills::{name}"
+
+
+def _document(skill_dir: Path, layout: ProjectLayout) -> str | None:
+    """``SKILL.md`` rendered the way every surface's mirror writes it."""
+    from ..placeholders import expand_fsm_edges_token, expand_path_placeholders
+
+    source = skill_dir / "SKILL.md"
+    if not source.is_file():
+        return None
+    return expand_fsm_edges_token(expand_path_placeholders(source.read_text(), layout), layout)
 
 
 def _rule_name(name: str) -> str:

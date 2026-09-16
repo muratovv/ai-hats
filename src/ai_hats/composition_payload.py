@@ -18,6 +18,8 @@ from .diagnostics import Diagnostic
 from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:
+    from ai_hats_core.layout import ProjectLayout
+
     from .hooks_manager import HooksManager
     from .surfaces import CompositionPlan
     from .surfaces import Surface, TranscriptResolver
@@ -56,3 +58,5 @@ class CompositionPayload:
     #: ``result`` adapted into the plan's composition half (ADR-0036 D7) — the
     #: value ``show-prompt`` and ``dry-run`` project. Adapted once, at the seam.
     plan: "CompositionPlan | None" = None
+    #: The project the composition was made for — what a surface plans against.
+    layout: "ProjectLayout | None" = None

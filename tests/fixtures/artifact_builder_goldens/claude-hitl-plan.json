@@ -1,0 +1,154 @@
+{
+  "composition": {
+    "digest": "<path-derived>",
+    "hooks": {
+      "external": [],
+      "runtime": []
+    },
+    "identity": "test-role",
+    "prompt": {
+      "blocks": [
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::priorities"
+            }
+          ],
+          "name": "PRIORITIES"
+        },
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::prompt"
+            }
+          ],
+          "name": null
+        }
+      ]
+    },
+    "skills": [
+      {
+        "content_digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+        "digest": "<path-derived>",
+        "name": "skills::s",
+        "path": "<tmp>/lib/skills/s"
+      }
+    ],
+    "trace": [
+      {
+        "brought_by": "test-role",
+        "removed_by": null,
+        "term": "skills::s"
+      }
+    ]
+  },
+  "consent": [],
+  "cwd": "<project>",
+  "env_keys": [
+    "AI_HATS_DIR",
+    "AI_HATS_HOOK_SOCK",
+    "AI_HATS_PROJECT_DIR",
+    "AI_HATS_PYTHON",
+    "AI_HATS_ROLE",
+    "AI_HATS_ROOT_PID",
+    "AI_HATS_SESSION_CACHE_DIR",
+    "AI_HATS_SESSION_ID",
+    "AI_HATS_SESSION_IDENTITY",
+    "TRACE_LOG_PATH"
+  ],
+  "launch": [
+    "claude",
+    "--system-prompt-file",
+    "<cache>/sessions/dry-run/prompt.md",
+    "--plugin-dir",
+    "<cache>/sessions/dry-run/plugin",
+    "--settings",
+    "<cache>/sessions/dry-run/settings.json",
+    "--session-id",
+    "<assigned at launch>"
+  ],
+  "materialized": [
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<cache>/sessions/dry-run"
+    },
+    {
+      "digest": "2f3755a72609cd3b279158a6d3e7934296f38a5affe39f683eff180504f80ef3",
+      "kind": "write_text",
+      "size": 81,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/prompt.md"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/plugin"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/plugin/.claude-plugin"
+    },
+    {
+      "digest": "01e6b0dc200a024bf1a3eb1b1a827d6d61e3b760485492255dc5e9ba1baaa540",
+      "kind": "write_text",
+      "size": 49,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/plugin/.claude-plugin/plugin.json"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/plugin/skills"
+    },
+    {
+      "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+      "kind": "copy_tree",
+      "size": null,
+      "source": "<tmp>/lib/skills/s",
+      "target": "<cache>/sessions/dry-run/plugin/skills/s"
+    },
+    {
+      "digest": "f22b8706a74e9bf1ad6a09952aacf7733ed23b52dc3a7c5e6111fd7c404f9f9a",
+      "kind": "write_text",
+      "size": 38,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/plugin/skills/s/SKILL.md"
+    },
+    {
+      "digest": "039b1185a54fde1d6095cf1ee3a47f0039549b33cf73211efd986f1690bcaf1f",
+      "kind": "write_text",
+      "size": 74,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/hooks.json"
+    },
+    {
+      "digest": "f8474dac9b515c6a0d929fcc68c2f030f2bc9acc41f520b272c989e117d65799",
+      "kind": "write_text",
+      "size": 1148,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/settings.json"
+    }
+  ],
+  "notes": [],
+  "policy": {
+    "context": true,
+    "hooks": true,
+    "settings": true
+  },
+  "prompt": "<cache>/sessions/dry-run/prompt.md",
+  "provider": "claude",
+  "role": "test-role",
+  "run_mode": "hitl"
+}

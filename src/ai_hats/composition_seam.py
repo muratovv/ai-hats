@@ -299,6 +299,7 @@ def build_composition_payload(
         effective_role=effective_role,
         role_expression=role_expression,
         plan=plan,
+        layout=asm.layout,
         snapshot=_composition_snapshot(
             asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec
         ),
@@ -367,6 +368,7 @@ def build_preview_payload(
         effective_role=eff_role,
         role_expression=role_expression,
         plan=plan,
+        layout=asm.layout,
         diagnostics=tuple(diagnostics),
     )
 

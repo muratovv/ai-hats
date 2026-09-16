@@ -51,6 +51,13 @@ from ai_hats_wt import IsolationMode
     "materialized files) and exit without spawning. Writes nothing.",
 )
 @click.option(
+    "--dry-run-experimental",
+    "dry_run_experimental",
+    is_flag=True,
+    help="Like --dry-run, read off the materialization plan (ADR-0036). Only for a "
+    "surface that plans a session yet (claude).",
+)
+@click.option(
     "--materialize",
     "materialize",
     is_flag=True,
@@ -66,6 +73,7 @@ def run_subagent(
     tags_raw: tuple[str, ...],
     as_json: bool,
     dry_run: bool,
+    dry_run_experimental: bool,
     materialize: bool,
 ):
     """Run a sub-agent with the given role.
@@ -81,6 +89,30 @@ def run_subagent(
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
     from ._entry import resolve_project
+
+    if dry_run_experimental:
+        import json as _json
+
+        from ..session_artifacts import RunMode, assemble_brief
+        from ..session_plan import preview, render_record
+
+        layout = resolve_project().layout
+        shown = preview(
+            layout,
+            role=role,
+            provider=provider,
+            run_mode=RunMode.AUTOMATE,
+            brief=assemble_brief(layout, task=task or "", ticket_id=ticket or ""),
+            model=model or None,
+            materialize=materialize,
+        )
+        click.echo(
+            _json.dumps(shown.record, indent=2)
+            if as_json
+            else render_record(shown.record, prompt_text=shown.prompt),
+            nl=as_json,
+        )
+        return
 
     if dry_run or materialize:
         import json as _json

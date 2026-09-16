@@ -41,16 +41,27 @@ def consent_entry(consent) -> dict:
     cut returned nothing, which disarmed the question on BOTH roads into master
     without a word. Fields, not grammar.
     """
+    return _consent_dict(consent.app, tuple(consent.path), consent.selector, consent.declared_by)
+
+
+def consent_row(hook) -> dict:
+    """The same row from the plan's external hook (ADR-0036 D1): the operation
+    is the hook's object, the selector its point."""
+    path = (hook.object,) if hook.object is not None else ()
+    return _consent_dict(hook.app, path, hook.at, hook.declared_by)
+
+
+def _consent_dict(app: str, path: tuple[str, ...], selector: str, declared_by: str) -> dict:
     from .check_points import selector_ends
 
-    source, target = selector_ends(consent.app, consent.selector, consent.path)
+    source, target = selector_ends(app, selector, path)
     return {
-        "app": consent.app,
-        "path": list(consent.path),
-        "selector": consent.selector,
+        "app": app,
+        "path": list(path),
+        "selector": selector,
         "from": source,
         "to": target,
-        "declared_by": consent.declared_by,
+        "declared_by": declared_by,
     }
 
 
@@ -204,54 +215,64 @@ class SessionReport:
         return payload
 
     def render(self, *, full: bool = False) -> str:
-        d = self.to_dict()
-        lines = [
-            f"role      {d['role']} -> {d['provider']}   run_mode={d['run_mode']}",
-            "policy    " + " ".join(f"{k}={'on' if v else 'off'}" for k, v in d["policy"].items()),
-        ]
-        if d["cwd"]:
-            lines.append(f"cwd       {d['cwd']}")
-        # Both surfaces pass the whole role text as one argv token (claude's
-        # system_prompt, agy's -p) — unreadable inline, verbatim in --json.
-        shown = [
-            t if len(t) <= 160 else f"{t[:80]}… <{_human_size(len(t.encode()))} total>"
-            for t in d["launch"]
-        ]
-        lines += [
-            "",
-            "launch    " + " ".join(shown),
-            "env       " + (", ".join(d["env_keys"]) or "(none)"),
-        ]
+        return render_report(self.to_dict(), full=full, prompt_text=self.prompt_text)
 
-        if d["prompt"]:
-            lines += ["", f"prompt    {d['prompt']}"]
-            if full:
-                body = Path(d["prompt"])
-                lines.append(
-                    self.prompt_text
-                    if self.prompt_text is not None
-                    else (body.read_text() if body.is_file() else "(not written)")
-                )
 
-        lines += ["", "materialized"]
-        if not d["materialized"]:
-            lines.append("  (nothing)")
-        composed = [Path(s["path"]) for s in d.get("composition", {}).get("skills", ())]
-        for e in d["materialized"]:
-            line = f"  {e['kind']:<11} {e['target']}"
-            if e["size"]:
-                line += f"  {_human_size(e['size'])}"
-            if e["source"]:
-                # A source under no composed skill is a planning input from the
-                # person's own environment — the reader must see it as such.
-                line += f"  <- {e['source']}"
-                if "composition" in d and not _under_any(Path(e["source"]), composed):
-                    line += "  (outside the composition)"
-            lines.append(line)
+def render_report(d: dict, *, full: bool = False, prompt_text: str | None = None) -> str:
+    """The human rendering of a record — the same dict ``--json`` prints, so
+    the two cannot disagree. Sections a record does not carry are not drawn."""
+    lines = [
+        f"role      {d['role']} -> {d['provider']}   run_mode={d['run_mode']}",
+        "policy    " + " ".join(f"{k}={'on' if v else 'off'}" for k, v in d["policy"].items()),
+    ]
+    if d["cwd"]:
+        lines.append(f"cwd       {d['cwd']}")
+    # Both surfaces pass the whole role text as one argv token (claude's
+    # system_prompt, agy's -p) — unreadable inline, verbatim in --json.
+    shown = [
+        t if len(t) <= 160 else f"{t[:80]}… <{_human_size(len(t.encode()))} total>"
+        for t in d["launch"]
+    ]
+    lines += [
+        "",
+        "launch    " + " ".join(shown),
+        "env       " + (", ".join(d["env_keys"]) or "(none)"),
+    ]
 
-        for dup in d["duplicates"]:
-            lines.append(f"  ! {dup} materialized twice")
+    if d["prompt"]:
+        lines += ["", f"prompt    {d['prompt']}"]
+        if full:
+            body = Path(d["prompt"])
+            lines.append(
+                prompt_text
+                if prompt_text is not None
+                else (body.read_text() if body.is_file() else "(not written)")
+            )
 
+    lines += ["", "materialized"]
+    if not d["materialized"]:
+        lines.append("  (nothing)")
+    composed = [Path(s["path"]) for s in d.get("composition", {}).get("skills", ())]
+    for e in d["materialized"]:
+        line = f"  {e['kind']:<11} {e['target']}"
+        if e["size"]:
+            line += f"  {_human_size(e['size'])}"
+        if e.get("files") is not None:
+            line += f"  ({e['files']} files)"
+        if e["source"]:
+            # A source under no composed skill is a planning input from the
+            # person's own environment — the reader must see it as such.
+            line += f"  <- {e['source']}"
+            if "composition" in d and not _under_any(Path(e["source"]), composed):
+                line += "  (outside the composition)"
+        if e.get("outcome") is not None:
+            line += f"  [{e['outcome']}]"
+        lines.append(line)
+
+    for dup in d.get("duplicates", ()):
+        lines.append(f"  ! {dup} materialized twice")
+
+    if "checks" in d:
         lines += ["", "checks"]
         if not d["checks"]:
             lines.append("  (none bound)")
@@ -267,31 +288,31 @@ class SessionReport:
             elif not c["planned"]:
                 lines.append(f"    ! {c['runs_from']} is NOT written by this launch")
 
-        lines += ["", "consent"]
-        # Printed even when empty: "this role asks about nothing" and "the
-        # section did not render" are different facts, and only one is fine.
-        if not d["consent"]:
-            lines.append("  (none declared)")
-        for c in d["consent"]:
-            lines.append(
-                f"  {_consent_where(c):<14} {c['selector']!r:<20}"
-                f" -> {_consent_key(c):<22} by {c['declared_by']}"
-            )
+    lines += ["", "consent"]
+    # Printed even when empty: "this role asks about nothing" and "the
+    # section did not render" are different facts, and only one is fine.
+    if not d["consent"]:
+        lines.append("  (none declared)")
+    for c in d["consent"]:
+        lines.append(
+            f"  {_consent_where(c):<14} {c['selector']!r:<20}"
+            f" -> {_consent_key(c):<22} by {c['declared_by']}"
+        )
 
-        if "composition" in d:
-            lines += ["", *_render_composition(d["composition"])]
+    if "composition" in d:
+        lines += ["", *_render_composition(d["composition"])]
 
-        if d["notes"]:
-            lines.append("")
-            lines += [f"note      {n}" for n in d["notes"]]
+    if d["notes"]:
+        lines.append("")
+        lines += [f"note      {n}" for n in d["notes"]]
 
-        if d["escapes"]:
-            lines += [
-                "",
-                "BYPASS — these were written for real during a dry-run, i.e. by a",
-                "path that does not go through the materialization port:",
-            ]
-            lines += [f"  ! {p}" for p in d["escapes"]]
-            lines.append("  (removed again; the dry-run left nothing behind)")
+    if d.get("escapes"):
+        lines += [
+            "",
+            "BYPASS — these were written for real during a dry-run, i.e. by a",
+            "path that does not go through the materialization port:",
+        ]
+        lines += [f"  ! {p}" for p in d["escapes"]]
+        lines.append("  (removed again; the dry-run left nothing behind)")
 
-        return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n"

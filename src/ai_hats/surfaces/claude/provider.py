@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -29,17 +30,20 @@ from .. import (
     SurfaceRunResult,
     sweep_stale_managed_tags,
 )
-from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
+from ai_hats.materialization import describe_mkdir, describe_write_text
+from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode, SessionPolicy
+from ..plan import CompositionPlan, Host, Launch, Launched, LaunchFlags, MaterializationPlan
 from .sdk_options import (
     SESSION_ID_PLACEHOLDER,
     assemble_first_user_message,
     automate_options,
     describe_options,
+    render_sdk_audit,
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
 from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG, HOOK_NOTIFICATION, OBSERVED_NOTIFICATION
-from .runtime_hooks import materialize_hook_manifest
+from .runtime_hooks import materialize_hook_manifest, plan_hooks
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
@@ -232,6 +236,115 @@ class ClaudeSurface(Surface):
         return self._compose_sections(result)
 
     # SETTINGS delivers nothing in either mode — hence no handler for it.
+
+    # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
+
+    def plan(
+        self,
+        composition: CompositionPlan,
+        *,
+        run_mode: RunMode,
+        policy: SessionPolicy,
+        root: Path,
+        layout: ProjectLayout,
+        host: Host,
+    ) -> MaterializationPlan:
+        mode = RunMode(run_mode)
+        hitl = mode is RunMode.HITL
+        entries = [describe_mkdir(root)]
+        args: list[str] = []
+        options: dict[str, object] = {}
+        env: dict[str, str] = {}
+        prompt = composition.prompt  # claude adds no block of its own
+        if policy.context:
+            context = root / "prompt.md"
+            entries.append(
+                describe_write_text(context, self._build_full_content(layout, prompt.text))
+            )
+            if hitl:
+                args += ["--system-prompt-file", str(context)]
+            else:
+                options["system_prompt"] = {
+                    "type": "preset",
+                    "preset": "claude_code",
+                    "append": prompt.text,
+                }
+        from .plugin_dir import path_dirs, plan_plugin
+
+        plugin_dir = root / "plugin"
+        entries += plan_plugin(composition, plugin_dir)
+        if dirs := path_dirs(composition, plugin_dir):
+            env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
+        if hitl:
+            args += ["--plugin-dir", str(plugin_dir)]
+        else:
+            options["plugins"] = (
+                [{"type": "local", "path": str(plugin_dir)}] if composition.skills else []
+            )
+        if policy.hooks:
+            manifest, rows, hook_env = plan_hooks(composition, root, host)
+            settings = root / "settings.json"
+            entries.append(manifest)
+            entries.append(
+                describe_write_text(
+                    settings,
+                    json.dumps(
+                        {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}, indent=2
+                    ),
+                )
+            )
+            env.update(hook_env)
+            if hitl:
+                args += ["--settings", str(settings)]
+            else:
+                options["settings"] = str(settings)
+                options["setting_sources"] = []
+        env.update(self.get_env(root, layout))
+        return MaterializationPlan(
+            composition=composition,
+            prompt=prompt,
+            surface=self.name,
+            run_mode=mode,
+            policy=policy,
+            root=root,
+            entries=tuple(entries),
+            env=env,
+            launch=Launch(args=tuple(args), sdk_options=None)
+            if hitl
+            else Launch(args=None, sdk_options=options),
+        )
+
+    def automate_launch(
+        self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        env: Mapping[str, str],
+        *,
+        layout: ProjectLayout,
+    ) -> Launched:
+        """No argv here — the launch IS the option document handed to the SDK:
+        the plan's options, then what only this run knows."""
+        options: dict[str, object] = dict(plan.launch.sdk_options or {})
+        options["cwd"] = str(flags.work_dir if flags.work_dir is not None else layout.root)
+        if flags.provider_session_id is not None:
+            options["session_id"] = flags.provider_session_id
+        if flags.model:
+            options["model"] = flags.model
+        if env:
+            options["env"] = dict(env)
+        return Launched(
+            args=None,
+            sdk_options=options,
+            env=env,
+            prompt=render_sdk_audit(plan.prompt.text, flags.brief or ""),
+        )
+
+    def describe_launch(self, launched: Launched) -> list[str]:
+        if launched.sdk_options is None:
+            return list(launched.args or ())
+        from claude_agent_sdk import ClaudeAgentOptions
+
+        return describe_options(ClaudeAgentOptions(**launched.sdk_options))
 
     def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
         cache_dir = layout.cache.session(session_id)
@@ -683,27 +796,35 @@ class ClaudeSubagentEngine(SubagentEngine):
         artifacts: BuiltArtifacts | None = None,
         provider_session_id: str | None = None,
         event_log: Path | None = None,
+        launched: Launched | None = None,
+        brief: str | None = None,
     ) -> SurfaceRunResult:
-        if artifacts is None:
-            artifacts = self._provider.build_session_artifacts(
-                layout,
+        if launched is not None:
+            from claude_agent_sdk import ClaudeAgentOptions
+
+            opts = ClaudeAgentOptions(**(launched.sdk_options or {}))
+            msg = brief if brief is not None else ""
+        else:
+            if artifacts is None:
+                artifacts = self._provider.build_session_artifacts(
+                    layout,
+                    result,
+                    session_id,
+                    run_mode="automate",
+                    artifacts=BuiltArtifacts(),
+                )
+            opts = automate_options(
                 result,
-                session_id,
-                run_mode="automate",
-                artifacts=BuiltArtifacts(),
+                provider=self._provider,
+                layout=layout,
+                session_id=session_id,
+                artifacts=artifacts,
+                work_dir=work_dir,
+                model=model or "",
+                env=env,
+                claude_session_id=provider_session_id,
             )
-        opts = automate_options(
-            result,
-            provider=self._provider,
-            layout=layout,
-            session_id=session_id,
-            artifacts=artifacts,
-            work_dir=work_dir,
-            model=model or "",
-            env=env,
-            claude_session_id=provider_session_id,
-        )
-        msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
+            msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
         run_res = self._run_blocking(
             opts, msg, timeout_s=timeout_s, on_message=_stream_signals_to(event_log)
         )

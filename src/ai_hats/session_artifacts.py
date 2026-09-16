@@ -74,7 +74,7 @@ def assemble_launch_command(
     return provider.get_cli_launch_args(cmd, provider_session_id, is_resume)
 
 
-def _withheld_from_child() -> dict[str, str]:
+def withheld_from_child() -> dict[str, str]:
     """The approvals a sub-agent does not inherit from the session that spawned it.
 
     An approval is scoped to the session it was given in — the export "pre-approves
@@ -142,7 +142,7 @@ def assemble_launch_env(
     # ``claim`` separates a report from a launch: only the launch may take a
     # resource (cline binds a hub port). Same keys either way — a key set that
     # depended on the mode would be the reporting defect, moved.
-    withheld = _withheld_from_child() if run_mode is RunMode.AUTOMATE else {}
+    withheld = withheld_from_child() if run_mode is RunMode.AUTOMATE else {}
     return {
         **withheld,
         **session_env(session_id, trace_path),
@@ -183,7 +183,6 @@ def assemble_meta_prompt(
     sections — and since agy and cline take the whole prompt as one argv token,
     the reported command was not the command.
     """
-    project_dir = layout.root
     from .linked_context import ticket_sections
 
     ticket_context, linked_context = ticket_sections(
@@ -192,16 +191,7 @@ def assemble_meta_prompt(
     sections = []
     if role_context:
         sections.append(role_context)
-    # A surface whose tool picks its own cwd otherwise resolves the
-    # project to whatever absolute path the prompt happens to name.
-    sections.append(
-        "# WORKING_DIRECTORY\n"
-        f"{project_dir.resolve().as_posix()}\n\n"
-        "This is the project every path and CLI call below refers to. Run "
-        "each command with this directory as its working directory — `rack` "
-        "resolves its backlog by walking up from where it runs, so a command "
-        "started elsewhere reads and writes a different project."
-    )
+    sections.append(working_directory_section(layout))
     if ticket_context:
         sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
     if linked_context:
@@ -209,6 +199,37 @@ def assemble_meta_prompt(
     if task:
         sections.append(f"# TASK\n{task}")
     return "\n\n".join(sections)
+
+
+def assemble_brief(layout: ProjectLayout, *, task: str, ticket_id: str) -> str:
+    """The sub-agent's first turn — TICKET_CONTEXT, LINKED_CONTEXT, TASK — assembled
+    where the ticket id is known, so a launch never resolves one."""
+    from .linked_context import ticket_sections
+
+    ticket_context, linked_context = ticket_sections(
+        tasks_root=layout.tracker.tasks_dir, ticket_id=ticket_id
+    )
+    sections = []
+    if ticket_context:
+        sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
+    if linked_context:
+        sections.append(f"# LINKED_CONTEXT\n{linked_context}")
+    if task:
+        sections.append(f"# TASK\n{task}")
+    return "\n\n".join(sections)
+
+
+def working_directory_section(layout: ProjectLayout) -> str:
+    """A surface whose tool picks its own cwd otherwise resolves the project
+    to whatever absolute path the prompt happens to name."""
+    return (
+        "# WORKING_DIRECTORY\n"
+        f"{layout.root.resolve().as_posix()}\n\n"
+        "This is the project every path and CLI call below refers to. Run "
+        "each command with this directory as its working directory — `rack` "
+        "resolves its backlog by walking up from where it runs, so a command "
+        "started elsewhere reads and writes a different project."
+    )
 
 
 def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:

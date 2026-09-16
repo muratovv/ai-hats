@@ -64,6 +64,18 @@ class HoldfastProvider(ClaudeSurface):
         from ai_hats.surfaces import Surface
 
         return Surface.describe_automate_launch(self, *args, **kwargs)
+
+    def automate_launch(self, *args, **kwargs):
+        # The same swap on the plan path: the base class launches a CLI surface
+        # with one argv, which is what the subprocess path executes.
+        from ai_hats.surfaces import Surface
+
+        return Surface.automate_launch(self, *args, **kwargs)
+
+    def describe_launch(self, launched):
+        from ai_hats.surfaces import Surface
+
+        return Surface.describe_launch(self, launched)
 '''
 
 #: Waits out its hold and nothing else — no ``getppid() == 1`` self-exit, which

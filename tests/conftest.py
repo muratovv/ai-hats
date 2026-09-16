@@ -47,6 +47,40 @@ for _pinned in (
 _EntryPointFingerprint = tuple[tuple[str, int, int], ...]
 
 
+_WRITE_PRIMITIVES = (
+    (Path, "write_text"),
+    (Path, "write_bytes"),
+    (Path, "mkdir"),
+    (Path, "symlink_to"),
+    (Path, "unlink"),
+    (Path, "chmod"),
+    (shutil, "copy2"),
+    (shutil, "copytree"),
+    (shutil, "rmtree"),
+    (os, "replace"),
+    (os, "rename"),
+)
+
+
+@pytest.fixture
+def writes(monkeypatch) -> list[str]:
+    """Every filesystem write primitive reached, by name — the idempotency
+    counter a second application must leave empty."""
+    reached: list[str] = []
+    for owner, name in _WRITE_PRIMITIVES:
+        original = getattr(owner, name)
+
+        def spy(*args, _name=name, _original=original, **kwargs):
+            # filelock re-mkdirs the lock's directory on every acquire; an
+            # existing directory is not a write, so only a creation counts.
+            if _name != "mkdir" or not Path(args[0]).exists():
+                reached.append(_name)
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(owner, name, spy)
+    return reached
+
+
 @pytest.fixture
 def hook_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "hook-cwd"

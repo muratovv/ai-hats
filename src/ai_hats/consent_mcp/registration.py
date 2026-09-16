@@ -28,12 +28,23 @@ def register_server(
     provider: Surface,
     artifacts: BuiltArtifacts,
 ) -> None:
+    artifacts.cli_args.extend(form_server_args(project_dir, policy, provider, artifacts.extra_env))
+
+
+def form_server_args(
+    project_dir: Path,
+    policy: Mapping[str, Sequence[str]],
+    provider: Surface,
+    env: Mapping[str, str],
+) -> list[str]:
+    """The launch arguments that register the form server — none where the
+    policy, the surface or the session's hook pins do not call for one."""
     if (
         RACK_FORM.operation not in policy
         or provider.name != RACK_FORM.provider
-        or ENV_SESSION_CACHE_DIR not in artifacts.extra_env
+        or ENV_SESSION_CACHE_DIR not in env
     ):
-        return
+        return []
     spec = operations.spec_for(RACK_FORM.operation)
     if spec is None:
         raise RuntimeError(f"Missing consent operation: {RACK_FORM.operation}")
@@ -66,4 +77,4 @@ def register_server(
     args = provider.mcp_form_cli_args(server)
     if args is None:
         raise RuntimeError(f"{provider.name} cannot deliver its registered consent form")
-    artifacts.cli_args.extend(args)
+    return args

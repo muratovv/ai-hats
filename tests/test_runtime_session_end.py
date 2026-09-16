@@ -432,12 +432,17 @@ def test_wrap_runner_finally_prints_summary_on_happy_path(
 def test_wrap_runner_closes_session_resources_before_session_cache(
     wrap_runner_factory,
 ):
+    from ai_hats.surfaces import Surface
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     runner, _project = wrap_runner_factory(pty_exit_code=0)
     events: list[str] = []
 
     class LifecycleProvider(ClaudeSurface):
+        # The deferral rides the builder's ``resources``; a surface with a
+        # planner never builds, so this one stands on the builder path.
+        plan = Surface.plan
+
         def build_session_artifacts(self, layout, result, session_id, **kwargs):
             artifacts = kwargs["artifacts"]
             assert artifacts.resources is not None

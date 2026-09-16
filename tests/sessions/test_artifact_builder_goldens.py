@@ -29,7 +29,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.dry_run import dry_run_automate, dry_run_hitl
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.session_artifacts import SessionPolicy
+from ai_hats.session_artifacts import RunMode, SessionPolicy
 
 SURFACES = ["claude", "agy", "cline"]
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "artifact_builder_goldens"
@@ -80,6 +80,10 @@ def _normalize(obj, subs: list[tuple[str, str]]):
 
 
 def _payload(report, project: Path) -> dict:
+    return _payload_dict(report.to_dict(), project)
+
+
+def _payload_dict(record: dict, project: Path) -> dict:
     # Longest first: <project> lives under <tmp>, so substituting <tmp> first
     # would leave a half-rewritten project path behind.
     # <cache> first: it lives under <tmp> and carries a path-derived digest that
@@ -90,7 +94,7 @@ def _payload(report, project: Path) -> dict:
         (str(project.parent / "home"), "<home>"),
         (str(project.parent), "<tmp>"),
     ]
-    payload = _normalize(report.to_dict(), subs)
+    payload = _normalize(record, subs)
     # The composition's digests fold absolute library paths in (a tree at two
     # paths is two skills), so under tmp they are machine-specific by design;
     # the content digests beside them are what a golden can pin.
@@ -145,3 +149,67 @@ def test_golden_automate_default_policy(project: Path, surface: str):
     )
 
     _assert_golden(f"{surface}-automate", _payload(report, project))
+
+
+# ── the plan path (ADR-0036 D5): its own goldens, and parity with the old path ──
+
+
+def _plan_path(project: Path, run_mode: RunMode):
+    from ai_hats.session_artifacts import assemble_brief
+    from ai_hats.session_plan import preview
+
+    layout = ProjectLayout.at(project)
+    brief = (
+        assemble_brief(layout, task="demo", ticket_id="") if run_mode is RunMode.AUTOMATE else None
+    )
+    return preview(layout, role="test-role", provider="claude", run_mode=run_mode, brief=brief)
+
+
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_golden_claude_on_the_plan_path(project: Path, run_mode: RunMode):
+    shown = _plan_path(project, run_mode)
+    _assert_golden(f"claude-{run_mode.value}-plan", _payload_dict(shown.record, project))
+
+
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_the_plan_path_reports_the_session_the_old_path_reports(project: Path, run_mode: RunMode):
+    """Same launch, same environment, same consent, same composition — the plan
+    path adds the skill documents it always writes and drops what has no reader."""
+    layout = ProjectLayout.at(project)
+    if run_mode is RunMode.HITL:
+        old = dry_run_hitl(layout, role="test-role", provider="claude", policy=SessionPolicy())
+    else:
+        old = dry_run_automate(
+            layout, role="test-role", provider="claude", task="demo", policy=SessionPolicy()
+        )
+    shown = _plan_path(project, run_mode)
+    old_record = old.to_dict()
+    new = shown.record
+
+    for key in (
+        "role",
+        "provider",
+        "run_mode",
+        "cwd",
+        "policy",
+        "env_keys",
+        "prompt",
+        "consent",
+        "composition",
+    ):
+        assert new[key] == old_record[key], key
+    # Both name the slot the SDK's id fills at launch, each in its own words.
+    from ai_hats.session_artifacts import AT_LAUNCH
+    from ai_hats.surfaces.claude.sdk_options import SESSION_ID_PLACEHOLDER
+
+    assert new["launch"] == [
+        t.replace(SESSION_ID_PLACEHOLDER, AT_LAUNCH) for t in old_record["launch"]
+    ]
+    assert shown.prompt == old.prompt_text
+    old_writes = {(e["kind"], e["target"], e["digest"]) for e in old_record["materialized"]}
+    new_writes = {(e["kind"], e["target"], e["digest"]) for e in new["materialized"]}
+    assert old_writes <= new_writes
+    assert {e["target"].rsplit("/", 1)[-1] for e in new["materialized"]} - {
+        e["target"].rsplit("/", 1)[-1] for e in old_record["materialized"]
+    } == {"SKILL.md"}
+    assert set(old_record) - set(new) == {"checks", "duplicates", "escapes"}

@@ -20,7 +20,7 @@ from pathlib import Path
 # The exact filter ``materialize_consent_wrappers`` applies before resolving a
 # surface. Imported rather than restated: a second copy would drift, and the
 # drift would show up as a green test over the live wrong answer.
-from ai_hats.consent_wrapper import _original_lookup_path
+from ai_hats.consent_wrapper import original_lookup_path
 from ai_hats_library.hooks.consent_gate.operations import REGISTRY, wrapped_surfaces
 
 from _helpers.surfaces import SURFACES, write_surface_shims
@@ -44,7 +44,7 @@ def decoy_bin(root: Path) -> Path:
 def resolve(surface: str, entries: list[Path]) -> Path | None:
     """Where the wrapper would find ``surface`` on a PATH led by ``entries``."""
     path = os.pathsep.join([*(str(e) for e in entries), os.environ.get("PATH", "")])
-    found = shutil.which(surface, path=_original_lookup_path(path))
+    found = shutil.which(surface, path=original_lookup_path(path))
     return Path(found) if found else None
 
 

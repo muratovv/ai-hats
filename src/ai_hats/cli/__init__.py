@@ -190,6 +190,13 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     "files) and exit without spawning the provider. Writes nothing.",
 )
 @click.option(
+    "--dry-run-experimental",
+    "dry_run_experimental",
+    is_flag=True,
+    help="Like --dry-run, read off the materialization plan (ADR-0036); takes the "
+    "same modifiers. Only for a surface that plans a session yet (claude).",
+)
+@click.option(
     "--dry-run-json",
     "dry_run_json",
     is_flag=True,
@@ -223,6 +230,7 @@ def main(
     model: str | None,
     tags_raw: tuple[str, ...],
     dry_run: bool,
+    dry_run_experimental: bool,
     dry_run_json: bool,
     dry_run_full: bool,
     materialize: bool,
@@ -251,6 +259,16 @@ def main(
         # lands in the launch and the dry-run report from a single prepend.
         ctx.args = with_model_flag(model, ctx.args)
 
+        if dry_run_experimental:
+            _dry_run_plan(
+                provider=provider,
+                role=role,
+                extra_args=ctx.args,
+                as_json=dry_run_json,
+                full=dry_run_full,
+                materialize=materialize,
+            )
+            return
         if dry_run or dry_run_json or dry_run_full or materialize:
             _dry_run_session(
                 provider=provider,
@@ -303,6 +321,37 @@ def _dry_run_session(
         click.echo(_json.dumps(report.to_dict(), indent=2))
     else:
         click.echo(report.render(full=full), nl=False)
+
+
+def _dry_run_plan(
+    *,
+    provider: str | None,
+    role: str | None,
+    extra_args: list[str] | None,
+    as_json: bool,
+    full: bool,
+    materialize: bool = False,
+) -> None:
+    """Print the record of the plan a launch would apply — the plan's own
+    projection, no build behind it (ADR-0036 D5)."""
+    import json as _json
+
+    from ..session_artifacts import RunMode
+    from ..session_plan import preview, render_record
+    from ._entry import resolve_project
+
+    shown = preview(
+        resolve_project().layout,
+        role=role,
+        provider=provider,
+        run_mode=RunMode.HITL,
+        extra_args=list(extra_args or []),
+        materialize=materialize,
+    )
+    if as_json:
+        click.echo(_json.dumps(shown.record, indent=2))
+    else:
+        click.echo(render_record(shown.record, full=full, prompt_text=shown.prompt), nl=False)
 
 
 def _launch_session(
