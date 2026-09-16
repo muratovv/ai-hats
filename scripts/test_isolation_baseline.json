@@ -32,7 +32,7 @@
   "tests/sessions/conftest.py": 6,
   "tests/sessions/test_check_update_step.py": 11,
   "tests/sessions/test_compose_overlay_propagation.py": 1,
-  "tests/sessions/test_dry_run_equals_the_launch.py": 9,
+  "tests/sessions/test_dry_run_equals_the_launch.py": 8,
   "tests/sessions/test_dry_run_matches_session.py": 2,
   "tests/sessions/test_hitl_meta_prompt_persisted.py": 5,
   "tests/sessions/test_launch_record_persisted.py": 4,
