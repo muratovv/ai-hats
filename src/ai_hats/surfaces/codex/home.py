@@ -105,16 +105,17 @@ def probe_home(environ: Mapping[str, str]) -> CodexHome:
     base_home = configured_base_home(environ)
     sqlite_home = configured_sqlite_home(environ, base_home)
     try:
-        entries = tuple(
-            sorted(
-                path.name
-                for path in base_home.iterdir()
-                if path.name not in _UNPROJECTED
-                and not path.name.endswith(SQLITE_ARTIFACT_SUFFIXES)
-            )
-        )
+        # `sessions` is linked whether or not it is there yet: the plan creates it.
+        names = {path.name for path in base_home.iterdir()} | {"sessions"}
     except OSError:
         raise RuntimeError("Codex session home projection failed") from None
+    entries = tuple(
+        sorted(
+            name
+            for name in names
+            if name not in _UNPROJECTED and not name.endswith(SQLITE_ARTIFACT_SUFFIXES)
+        )
+    )
     base_skills = base_home / "skills"
     skills: tuple[str, ...] = ()
     if base_skills.is_dir():

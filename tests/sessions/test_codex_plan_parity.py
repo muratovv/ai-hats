@@ -106,8 +106,11 @@ def test_the_plan_path_reports_the_session_the_builder_path_reports(
     assert {("copy_file", target, None) for _kind, target, _digest in staged} <= new_rows
     assert len(staged) == (1 if populated else 0)
     names = {target.rsplit("/", 1)[-1] for _kind, target, _digest in new_rows - old_rows}
-    assert names == ({"SKILL.md", "auth.json"} if populated else {"SKILL.md"})
+    # `sessions`: the real launch links it after creating it, and the builder's
+    # dry-run never saw the directory it had only recorded — the plan names it.
+    expected = {"SKILL.md", "sessions"} | ({"auth.json"} if populated else set())
+    assert names == expected
     assert set(old_record) - set(new) == {"duplicates", "escapes"}
-    if populated:
-        linked = {t.rsplit("/", 1)[-1] for k, t, _d in new_rows if k == "symlink"}
-        assert linked == {"config.toml", "personal"}, "sqlite state and auth are never linked"
+    linked = {t.rsplit("/", 1)[-1] for k, t, _d in new_rows if k == "symlink"}
+    expected_links = {"sessions"} | ({"config.toml", "personal"} if populated else set())
+    assert linked == expected_links, "sqlite state and auth are never linked"
