@@ -47,12 +47,13 @@ def _composition(skills) -> CompositionPlan:
     )
 
 
-def test_the_block_renders_the_bytes_todays_index_appends(tmp_path: Path):
-    """Read off ``Skill.document``, never off the disk — and byte-equal to
-    what ``_skill_index`` reads off the disk and appends after two newlines."""
+def test_the_block_renders_the_bytes_the_index_always_had(tmp_path: Path):
+    """Read off ``Skill.document``, never off the disk — and byte-equal to the
+    index the builder used to append after two newlines: one heading, one
+    lead sentence, one line per skill naming its mirrored ``SKILL.md``."""
     from ai_hats.surfaces.opencode.provider import OpenCodeSurface
 
-    skills, result = _library(tmp_path)
+    skills, _result = _library(tmp_path)
     layout = ProjectLayout.at(tmp_path / "proj")
     surface = OpenCodeSurface()
     skills_root = surface.session_skills_root(layout, "s")
@@ -60,10 +61,19 @@ def test_the_block_renders_the_bytes_todays_index_appends(tmp_path: Path):
 
     block = skill_index_block(composition, skills_root, surface="opencode")
 
-    old = surface._skill_index(layout, result, "s")
-    assert old, "the sample composes skills"
+    expected = "\n".join(
+        [
+            "## AVAILABLE SKILLS",
+            "Use a skill when its description matches the task. Before using it, read the "
+            "exact SKILL.md path below; resolve its relative references from that skill "
+            "directory.",
+            f"- **described** — does one thing (`{skills_root / 'described' / 'SKILL.md'}`)",
+            f"- **silent** — silent (`{skills_root / 'silent' / 'SKILL.md'}`)",
+            f"- **broken** — broken (`{skills_root / 'broken' / 'SKILL.md'}`)",
+        ]
+    )
     surface_prompt = Prompt((*composition.prompt.blocks, block))
-    assert surface_prompt.text == f"{composition.prompt.text}\n\n{old}"
+    assert surface_prompt.text == f"{composition.prompt.text}\n\n{expected}"
     assert block.name == "AVAILABLE SKILLS"
     assert [m.name for m in block.members] == ["opencode::skill-index"]
 

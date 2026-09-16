@@ -1,18 +1,11 @@
 """Agy surface adapter — maps the `agy` (Antigravity) CLI to the ai-hats `Surface`.
 
-Materialization contract (``build_session_artifacts`` / ADR-0018). ``<sc>`` is the
-out-of-project per-session cache ``<cache_root>/sessions/<sid>/``:
-
-- **Role / system prompt** — ``build_system_prompt`` composes PRIORITIES + the
-  merged role/trait injection + always-on RULES. Written to
-  ``<sc>/rules/GEMINI.md`` and passed via ``--add-dir <rules_dir>``.
-  Root ``GEMINI.md`` is untouched and native-by-default.
-- **Skills** — ``materialize_runtime_skills`` mirrors composed skills into
-  ``<sc>/rules/.agents/skills/``.
-- **Hooks** — ``ensure_global_dispatcher_hook`` idempotently ensures the global
-  dispatcher (``ai-hats-hook-dispatcher``) is registered in ``~/.gemini/antigravity-cli/settings.json``.
-  Active session hooks are written to ``<sc>/hooks.json``.
-  Zero files created in project root.
+The session is planned (ADR-0036) under the out-of-project per-session cache
+``<sc>`` = ``<cache_root>/sessions/<sid>/``: the role prompt at
+``<sc>/rules/GEMINI.md`` (passed via ``--add-dir``), the skill mirror at
+``<sc>/rules/.agents/skills/``, the session hooks at ``<sc>/hooks.json`` and the
+global dispatcher merged into ``~/.gemini/antigravity-cli/settings.json``. Root
+``GEMINI.md`` is untouched; zero files are created in the project root.
 """
 
 from __future__ import annotations
@@ -25,7 +18,7 @@ from pathlib import Path
 from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING, Generator
 
-from .global_hook import ensure_global_dispatcher_hook, plan_global_hook
+from .global_hook import plan_global_hook
 
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 from ai_hats.materialization import describe_mkdir, describe_write_text
@@ -36,7 +29,7 @@ from ai_hats.paths import (
     gemini_md,
 )
 from ai_hats.surfaces import Surface
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import RunMode, SessionPolicy
 
 from ..mirror import manifest_rows, mirror_entries, path_dirs
 from ..plan import CompositionPlan, Host, Launch, MaterializationPlan
@@ -132,11 +125,6 @@ class AgySurface(Surface):
         """What a bound check resolves its script from in-session."""
         return self._session_skills_dir(layout, session_id)
 
-    def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
-        cache_dir = layout.cache.session(session_id)
-        artifacts.port.mkdir(cache_dir)
-        return cache_dir
-
     # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 
     def plan(
@@ -195,139 +183,11 @@ class AgySurface(Surface):
     def _session_skills_dir_under(root: Path) -> Path:
         return root / "rules" / ".agents" / "skills"
 
-    # -- context ---------------------------------------------------------------
-
-    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
-        """Rules dir on disk, handed over with --add-dir."""
-        project_dir = layout.root
-        from ai_hats.placeholders import expand_path_placeholders
-        from ai_hats.role_catalog import expand_role_catalog
-
-        cache_dir = self._cache_dir(layout, session_id, artifacts)
-        prompt_content = self.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, layout)
-        prompt_content = expand_role_catalog(prompt_content, project_dir)
-
-        artifacts.full_content = prompt_content
-        rules_dir = cache_dir / "rules"
-        artifacts.port.mkdir(rules_dir)
-        session_md = rules_dir / GEMINI_MD_FILENAME
-        artifacts.port.write_text(session_md, prompt_content)
-        artifacts.materialized.append(session_md)
-        artifacts.cli_args.extend(["--add-dir", str(rules_dir)])
-
-    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
-        """Role sections inline in the meta-prompt — nothing on disk, no flag."""
-        project_dir = layout.root
-        from ai_hats.placeholders import expand_path_placeholders
-        from ai_hats.role_catalog import expand_role_catalog
-
-        prompt_content = self.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, layout)
-        prompt_content = expand_role_catalog(prompt_content, project_dir)
-        artifacts.full_content = prompt_content
-
-    # -- skills ----------------------------------------------------------------
-
-    def _materialize_skills(self, layout, result, session_id, artifacts) -> Path:
-        # Not via materialize_runtime_skills: that is a published extension point
-        # and cannot take the port.
-        from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
-
-        self._cache_dir(layout, session_id, artifacts)
-        skills_dir = self._session_skills_dir(layout, session_id)
-        materialize_skills_dir(skills_dir, result.skills, layout, artifacts.port)
-        inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
-        artifacts.materialized.append(skills_dir)
-        return skills_dir
-
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._materialize_skills(layout, result, session_id, artifacts)
-
-    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
-        self._materialize_skills(layout, result, session_id, artifacts)
-
-    # -- hooks -----------------------------------------------------------------
-
-    def _hooks_manifest(
-        self, layout: ProjectLayout, result, session_id: str, artifacts: BuiltArtifacts
-    ) -> dict[str, list[dict]]:
-        """The flat ``{event: [row, ...]}`` the global dispatcher reads.
-
-        Rows keep the Claude matcher vocabulary: translating it here once covered
-        one class and left ``Bash`` alone, so the shared-state guard never fired
-        on this surface; the dispatcher asks ``claude_hook_adapter`` instead.
-        """
-        from ai_hats.hook_collection import composed_rows
-
-        rows, notices = composed_rows(
-            result, self._session_skills_dir(layout, session_id), port=artifacts.port
-        )
-        artifacts.notices.extend(notices)
-        return rows
-
-    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
-        """Global dispatcher registration plus the session manifest it reads."""
-        from ai_hats.env import ENV_SESSION_CACHE_DIR
-
-        cache_dir = self._cache_dir(layout, session_id, artifacts)
-        # The dispatcher is a standalone process on every tool call — hand it the
-        # resolved dir rather than have it import ai-hats to re-derive it.
-        artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
-        ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
-
-        manifest = self._hooks_manifest(layout, result, session_id, artifacts)
-        hooks_json = cache_dir / "hooks.json"
-        artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
-        artifacts.materialized.append(hooks_json)
-
-    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
-
-    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
-
-    def materialize_runtime_skills(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: str,
-    ) -> list[str]:
-        """Mirror the role's skills into the session's ``rules/.agents/skills/``."""
-        from ai_hats.materialization import ApplyMaterializer
-        from ai_hats.skills_dir import materialize_skills_dir
-
-        # A published extension point cannot carry the port, so this path always
-        # writes — it is one of the builder bypasses a later cleanup removes.
-        materialize_skills_dir(
-            self._session_skills_dir(layout, session_id),
-            result.skills,
-            layout,
-            ApplyMaterializer(),
-        )
-        return []
-
     def ensure_runtime_hooks(
         self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
     ) -> None:
-        """Runtime hooks write to session cache hooks.json via build_session_artifacts."""
+        """Runtime hooks ride the plan's session ``hooks.json``; nothing at the project."""
         pass
-
-    def build_session_prompt(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: str,
-    ) -> tuple[list[str], dict[str, str], str]:
-        """Write composed prompt & session artifacts via build_session_artifacts (ADR-0018)."""
-        artifacts = self.build_session_artifacts(
-            layout,
-            result,
-            session_id,
-            run_mode=RunMode.HITL,
-            artifacts=BuiltArtifacts(),
-        )
-        return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["agy"]

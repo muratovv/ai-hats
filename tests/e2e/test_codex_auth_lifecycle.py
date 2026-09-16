@@ -18,10 +18,49 @@ from pathlib import Path
 import pytest
 
 from _helpers.env import clean_env
-from ai_hats.materialization import ApplyMaterializer
-from ai_hats.surfaces.codex.session_auth import reconcile_auth, stage_auth
+from ai_hats.materialization import describe_mkdir
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.surfaces.codex.session_auth import auth_digest, plan_auth, reconcile_auth
+from ai_hats.surfaces.plan import (
+    CompositionPlan,
+    Hooks,
+    Launch,
+    MaterializationPlan,
+    Prompt,
+    PromptBlock,
+    PromptMember,
+    apply,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
+
+
+def stage_auth(base_home: Path, session_home: Path) -> None:
+    """The credential staged the way a session plans it: a private copy and
+    its baseline digest, applied under the session home as the root."""
+    composition = CompositionPlan(
+        identity="codex-auth",
+        prompt=Prompt((PromptBlock(None, (PromptMember("codex-auth::prompt", "# r\n", None),)),)),
+        skills=(),
+        hooks=Hooks((), ()),
+        trace=(),
+    )
+    apply(
+        MaterializationPlan(
+            composition=composition,
+            prompt=composition.prompt,
+            surface="codex",
+            run_mode=RunMode.HITL,
+            policy=SessionPolicy(),
+            root=session_home,
+            entries=(
+                describe_mkdir(session_home),
+                *plan_auth(base_home, session_home, auth_digest(base_home)),
+            ),
+            env={},
+            launch=Launch(args=(), sdk_options=None),
+        )
+    )
 
 
 def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> None:
@@ -52,7 +91,7 @@ def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> No
     assert login.returncode == 0, login.stderr
     assert (base_home / "auth.json").is_file()
     session_home = tmp_path / "logout"
-    stage_auth(base_home, session_home, ApplyMaterializer())
+    stage_auth(base_home, session_home)
 
     logout = run(session_home, "logout")
     assert logout.returncode == 0, logout.stderr
@@ -61,7 +100,7 @@ def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> No
     assert not (base_home / "auth.json").exists()
 
     next_home = tmp_path / "login"
-    stage_auth(base_home, next_home, ApplyMaterializer())
+    stage_auth(base_home, next_home)
     status = run(next_home, "login", "status")
     assert status.returncode == 1, status.stderr
     login = run(next_home, "login", "--with-api-key", key="synthetic-renewed-key\n")
@@ -69,7 +108,7 @@ def test_real_codex_logout_and_login_survive_session_homes(tmp_path: Path) -> No
     assert reconcile_auth(base_home, next_home) is None
 
     final_home = tmp_path / "verify"
-    stage_auth(base_home, final_home, ApplyMaterializer())
+    stage_auth(base_home, final_home)
     status = run(final_home, "login", "status")
     assert status.returncode == 0, status.stderr
     assert (final_home / "auth.json").read_bytes() == (next_home / "auth.json").read_bytes()

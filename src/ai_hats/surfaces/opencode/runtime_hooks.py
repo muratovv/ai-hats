@@ -10,7 +10,6 @@ codex surfaces.
 from __future__ import annotations
 
 import json
-import sys
 from importlib import resources
 from pathlib import Path
 
@@ -19,9 +18,7 @@ from ai_hats_core.layout import ProjectLayout
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 
 from ..hook_channel import ENV_HOOK_SURFACE_TIMEOUT_MS, surface_timeout
-from ai_hats.hook_collection import composed_rows
 from ai_hats.materialization import MaterializationEntry, describe_write_text
-from ai_hats.session_artifacts import BuiltArtifacts
 
 from ..mirror import manifest_rows
 from ..plan import CompositionPlan, Host
@@ -76,83 +73,9 @@ def plan_hooks(
     return manifest, plugin, env
 
 
-def _manifest(
-    layout: ProjectLayout,
-    result,
-    session_id: str,
-    *,
-    skills_dir: Path,
-    permission_rules: list[dict[str, str]],
-    artifacts: BuiltArtifacts,
-) -> dict:
-    hooks, notices = composed_rows(result, skills_dir, port=artifacts.port)
-    artifacts.notices.extend(notices)
-    return {
-        "version": MANIFEST_VERSION,
-        "session": {
-            "id": session_id,
-            "ai_hats_dir": str(layout.base),
-        },
-        "hooks": hooks,
-        "permissions": permission_rules,
-    }
-
-
-def materialize_hook_manifest(
-    layout: ProjectLayout,
-    result,
-    session_id: str,
-    artifacts: BuiltArtifacts,
-    *,
-    skills_dir: Path,
-    permission_rules: list[dict[str, str]],
-) -> tuple[Path, Path]:
-    """Write this composition's hook manifest and dispatcher plugin.
-
-    Returns ``(manifest_path, plugin_path)``; the provider registers the plugin
-    through the session config's ``plugin`` array and pins the cache dir env.
-
-    ``skills_dir`` must be the already-materialized session mirror. Commands
-    never point back at library sources or into the project root.
-    """
-    cache_dir = layout.cache.session(session_id)
-    session_dir = cache_dir / "opencode"
-    artifacts.port.mkdir(cache_dir)
-    manifest_path = session_dir / "hooks.json"
-    content = json.dumps(
-        _manifest(
-            layout,
-            result,
-            session_id,
-            skills_dir=skills_dir,
-            permission_rules=permission_rules,
-            artifacts=artifacts,
-        ),
-        indent=2,
-        sort_keys=True,
-    )
-    artifacts.port.write_text(manifest_path, content + "\n")
-    artifacts.materialized.append(manifest_path)
-
-    plugin_path = session_dir / "plugin" / PLUGIN_ASSET
-    artifacts.port.write_text(plugin_path, plugin_source())
-    artifacts.materialized.append(plugin_path)
-
-    artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
-    # The plugin is JavaScript and cannot judge a call; it shells out to the
-    # dispatcher, which needs the interpreter this session was built with.
-    artifacts.extra_env[ENV_AI_HATS_PYTHON] = sys.executable
-    # The plugin's kill bound, derived rather than written into the asset: it is
-    # copied verbatim, so a literal there could not track the chain's budget and
-    # would bound the dispatcher below it as soon as the budget was raised.
-    artifacts.extra_env[ENV_HOOK_SURFACE_TIMEOUT_MS] = str(int(surface_timeout() * 1000))
-    return manifest_path, plugin_path
-
-
 __all__ = [
     "MANIFEST_VERSION",
     "PLUGIN_ASSET",
-    "materialize_hook_manifest",
     "plan_hooks",
     "plugin_source",
 ]
