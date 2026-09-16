@@ -31,6 +31,8 @@ REWORDED_PROMPT_WRITES = {
     ("opencode", RunMode.AUTOMATE): ["write_text"],
     ("agy", RunMode.HITL): ["write_bytes"],
     ("agy", RunMode.AUTOMATE): [],
+    ("cline", RunMode.HITL): [],
+    ("cline", RunMode.AUTOMATE): [],
 }
 
 
@@ -95,7 +97,10 @@ def _plan(asm, composition, surface_name: str, root: Path, run_mode: RunMode):
 
 
 def test_every_surface_plans():
-    assert set(PLANNING) >= {"claude", "codex", "opencode", "agy"}
+    assert set(PLANNING) == set(surface_names()), (
+        "every registered surface plans its session — cline was the fifth and last"
+    )
+    assert set(PLANNING) >= {"claude", "codex", "opencode", "agy", "cline"}
     declared = {surface for surface, _mode in REWORDED_PROMPT_WRITES}
     assert set(PLANNING) <= declared, "a surface that plans declares where a reworded prompt lands"
     assert all((surface, mode) in REWORDED_PROMPT_WRITES for surface in PLANNING for mode in MODES)
