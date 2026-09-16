@@ -150,6 +150,66 @@ def test_skills_carry_full_names_paths_and_tree_digests(maintainer):
     assert elsewhere.digest != hatrack.digest, "one tree at two paths is two skills"
 
 
+def test_a_skill_carries_its_document_as_the_agent_reads_it(maintainer):
+    """SKILL.md expanded for the layout: every surface renders it the same way
+    on its way to the mirror, so it is a fact of the composition, and the
+    planner never opens the tree to produce it."""
+    from ai_hats.placeholders import expand_fsm_edges_token, expand_path_placeholders
+
+    asm, _result, plan = maintainer
+    sample = next(
+        s for s in plan.skills if "{{backlog_fsm_edges}}" in (s.path / "SKILL.md").read_text()
+    )
+    source = (sample.path / "SKILL.md").read_text()
+    assert sample.document == expand_fsm_edges_token(
+        expand_path_placeholders(source, asm.layout), asm.layout
+    )
+    assert "{{backlog_fsm_edges}}" not in sample.document
+    assert all(s.document is not None for s in plan.skills), "every composed skill ships one"
+
+
+def test_a_skill_names_the_directories_the_agent_calls_by_name(maintainer):
+    """``scripts`` and ``bin`` go on the child's PATH; which of them a tree has
+    is a fact of the library, read once by the adapter and never by a planner."""
+    _asm, _result, plan = maintainer
+    for skill in plan.skills:
+        assert skill.on_path == tuple(d for d in ("scripts", "bin") if (skill.path / d).is_dir())
+    assert any(skill.on_path for skill in plan.skills), "the sample must ship at least one"
+
+
+def test_two_skills_shipping_one_script_name_is_a_diagnostic(tmp_path: Path):
+    """The later skill's script is shadowed on PATH; the adapter says so where
+    it reads the trees, and the plan carries both skills unchanged."""
+    from ai_hats.diagnostics import Level
+    from ai_hats.resolver import LibraryResolver
+    from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+
+    skills = []
+    for name in ("first", "second"):
+        skill = tmp_path / "skills" / name
+        (skill / "scripts").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"---\nname: {name}\n---\n# {name}\n")
+        (skill / "scripts" / "same.sh").write_text("#!/bin/sh\n")
+        skills.append(ResolvedComponent(name, ComponentKind.SKILL, skill))
+    (tmp_path / "roles" / "r").mkdir(parents=True)
+    (tmp_path / "roles" / "r" / "config.yaml").write_text(
+        "name: r\ncomposition:\n  skills: [first, second]\n"
+    )
+    result = CompositionResult(name="r", priorities=[], rules=[], skills=skills, injections=[])
+    found = []
+    plan = adapt(
+        result,
+        identity="r",
+        layout=ProjectLayout.at(tmp_path),
+        resolver=LibraryResolver([tmp_path]),
+        overlays=(),
+        diagnostics=found,
+    )
+    assert [s.on_path for s in plan.skills] == [("scripts",), ("scripts",)]
+    assert [d.level for d in found] == [Level.WARN]
+    assert "same.sh" in found[0].text and "second" in found[0].text
+
+
 def test_runtime_hooks_are_the_rows_a_surface_wires(maintainer):
     _asm, _result, plan = maintainer
     guard = [h for h in plan.hooks.runtime if h.run.path.name == "safety_gate.py"]

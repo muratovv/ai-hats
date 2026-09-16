@@ -236,6 +236,12 @@ class Skill(Digested):
     path: Path
     #: ``dir_digest`` of the tree, streamed by whoever read it.
     content_digest: str
+    #: ``SKILL.md`` as the agent reads it — placeholders and the FSM edge table
+    #: expanded for the layout, by whoever read the tree; ``None`` where it ships none.
+    document: str | None = None
+    #: Subdirectories whose contents the agent calls by name (``scripts``,
+    #: ``bin``): only those the tree has, so a planner puts nothing absent on PATH.
+    on_path: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _absolute(self.path, "a skill path")
@@ -281,6 +287,23 @@ class CompositionPlan(Digested):
     trace: tuple[TraceEntry, ...]
 
 
+# ── what planning is told about the machine ──────────────────── ADR-0036 D2
+
+
+@dataclass(frozen=True)
+class Host(Digested):
+    """Facts of the machine a session runs on, handed to planning as a value:
+    probed once by the stage before it, never read by a planner."""
+
+    #: The interpreter hooks, wrappers and the form server run under.
+    python: Path
+    #: The ``PATH`` the child inherits, with no consent-wrapper directory in it.
+    path: str
+    #: Where each command the consent gate can wrap resolves; a command that is
+    #: not on the path has no key.
+    commands: Mapping[str, Path]
+
+
 # ── effect half ──────────────────────────────────────────────── ADR-0036 D1
 
 
@@ -317,6 +340,45 @@ class MaterializationPlan(Digested):
         own = self.composition.prompt.blocks
         if self.prompt.blocks[: len(own)] != own:
             raise ValueError("the surface prompt must open with the composition's blocks")
+
+
+# ── the launch pair ──────────────────────────────────────────── ADR-0036 D4
+
+
+@dataclass(frozen=True)
+class LaunchFlags:
+    """What changes how a plan is invoked and never the plan itself."""
+
+    session_id: str
+    trace_path: str
+    root_pid: str
+    #: The harness's own session id; ``None`` where the harness mints it.
+    provider_session_id: str | None
+    #: The operator's additions to the argv.
+    extra_args: tuple[str, ...] = ()
+    #: Where the child runs; ``None`` is the project root.
+    work_dir: Path | None = None
+    model: str | None = None
+    #: The sub-agent's first turn, assembled by the caller that owns the card
+    #: it comes from — so a launch never resolves a tracker id. ``None`` in HITL.
+    brief: str | None = None
+    #: Take resources for real (a bound port); a report leaves them unclaimed.
+    claim: bool = True
+
+
+@dataclass(frozen=True)
+class Launched:
+    """What the harness is handed: an argv or an SDK option document, exactly
+    one of the two, with the environment ai-hats adds and the bytes the agent reads."""
+
+    args: tuple[str, ...] | None
+    sdk_options: Mapping[str, object] | None
+    env: Mapping[str, str]
+    prompt: str
+
+    def __post_init__(self) -> None:
+        if (self.args is None) == (self.sdk_options is None):
+            raise ValueError("a launch is either an argv or an SDK option document")
 
 
 # ── planning refusals, as functions over the plan ────────────── ADR-0036 D2

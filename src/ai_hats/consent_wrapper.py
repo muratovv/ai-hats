@@ -177,7 +177,7 @@ def _is_consent_wrapper_path(path: str | Path) -> bool:
     )
 
 
-def _original_lookup_path(search_path: str) -> str:
+def original_lookup_path(search_path: str) -> str:
     return os.pathsep.join(
         entry for entry in search_path.split(os.pathsep) if not _is_consent_wrapper_path(entry)
     )
@@ -331,7 +331,7 @@ def materialize_consent_wrappers(
 
     env = os.environ if environ is None else environ
     effective_path = artifacts.extra_env.get("PATH", env.get("PATH", ""))
-    lookup_path = _original_lookup_path(effective_path)
+    lookup_path = original_lookup_path(effective_path)
     surfaces = operations.wrapped_surfaces(policy)
     originals: dict[str, str] = {}
     for surface in surfaces:

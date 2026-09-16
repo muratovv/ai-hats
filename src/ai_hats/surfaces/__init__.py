@@ -37,6 +37,9 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     from .plan import (
         Applied,  # noqa: F401
         CompositionPlan,  # noqa: F401
+        Host,  # noqa: F401
+        Launched,  # noqa: F401
+        LaunchFlags,  # noqa: F401
         MaterializationPlan,  # noqa: F401
         Outcome,  # noqa: F401
         PlanRefused,  # noqa: F401
@@ -82,6 +85,9 @@ _HOMES = {
     "TranscriptResolver": ".contract",
     "Applied": ".plan",
     "CompositionPlan": ".plan",
+    "Host": ".plan",
+    "LaunchFlags": ".plan",
+    "Launched": ".plan",
     "MaterializationPlan": ".plan",
     "Outcome": ".plan",
     "PlanRefused": ".plan",
