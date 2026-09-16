@@ -17,12 +17,7 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import ResolvedComponent
 
-from ai_hats.materialization import (
-    MaterializationEntry,
-    WriteKind,
-    describe_mkdir,
-    describe_write_text,
-)
+from ai_hats.materialization import MaterializationEntry, describe_mkdir, describe_write_text
 from ai_hats.paths import (
     claude_plugin_manifest,
     claude_plugin_manifest_dir,
@@ -30,7 +25,9 @@ from ai_hats.paths import (
 )
 from ai_hats.placeholders import expand_fsm_edges_token, expand_path_placeholders
 
-from ..plan import CompositionPlan, mirror_name
+from .. import mirror
+from ..mirror import mirror_entries
+from ..plan import CompositionPlan
 
 if TYPE_CHECKING:
     from ai_hats.materialization import Materializer
@@ -42,38 +39,23 @@ def plugin_name(identity: str) -> str:
 
 
 def plan_plugin(composition: CompositionPlan, plugin_dir: Path) -> list[MaterializationEntry]:
-    """The plugin as entries: manifest, then each skill's tree with its
-    document written over the copy. No wipe — a session root is its own, and
-    the tree sync leaves nothing stale behind."""
-    entries = [
+    """The plugin as entries: manifest, then the skill mirror every surface derives."""
+    skills_root = claude_plugin_skills_dir(plugin_dir)
+    return [
         describe_mkdir(plugin_dir),
         describe_mkdir(claude_plugin_manifest_dir(plugin_dir)),
         describe_write_text(
             claude_plugin_manifest(plugin_dir),
             json.dumps({"name": plugin_name(composition.identity), "version": "0.0.0"}),
         ),
+        describe_mkdir(skills_root),
+        *mirror_entries(composition, skills_root),
     ]
-    skills_root = claude_plugin_skills_dir(plugin_dir)
-    entries.append(describe_mkdir(skills_root))
-    for skill in composition.skills:
-        dest = skills_root / mirror_name(skill)
-        entries.append(
-            MaterializationEntry(
-                kind=WriteKind.COPY_TREE,
-                target=dest,
-                source=skill.path,
-                tree_digest=skill.content_digest,
-            )
-        )
-        if skill.document is not None:
-            entries.append(describe_write_text(dest / "SKILL.md", skill.document))
-    return entries
 
 
 def path_dirs(composition: CompositionPlan, plugin_dir: Path) -> list[Path]:
     """The mirrored directories the agent calls scripts from, in composition order."""
-    skills_root = claude_plugin_skills_dir(plugin_dir)
-    return [skills_root / mirror_name(s) / d for s in composition.skills for d in s.on_path]
+    return mirror.path_dirs(composition, claude_plugin_skills_dir(plugin_dir))
 
 
 def materialize_plugin_dir(

@@ -19,11 +19,10 @@ from ai_hats.paths import claude_plugin_skills_dir
 from ai_hats.session_artifacts import BuiltArtifacts
 
 from ..hook_dispatch import MANIFEST_VERSION
-from ..plan import CompositionPlan, Host, home_of, mirror_name
+from ..mirror import Rows, manifest_rows
+from ..plan import CompositionPlan, Host
 from .hook_server import socket_path
 from .profile import PROFILE
-
-Rows = dict[str, list[dict[str, str]]]
 
 
 def plan_hooks(
@@ -35,24 +34,7 @@ def plan_hooks(
     the script lives in the library; the mirror is executable by construction
     (the tree sync keeps modes), so nothing is checked on disk.
     """
-    rows: Rows = {}
-    skills_root = claude_plugin_skills_dir(root / "plugin")
-    for hook in composition.hooks.runtime:
-        home = home_of(hook.run, composition.skills)
-        if home is None:
-            raise ValueError(
-                f"runtime hook {hook.at.value}/{hook.matcher} runs {hook.run.path}, "
-                "outside every composed skill"
-            )
-        skill, inside = home
-        name = mirror_name(skill)
-        rows.setdefault(hook.at.value, []).append(
-            {
-                "matcher": hook.matcher,
-                "command": str(skills_root / name / inside),
-                "tag": f"ai-hats:{name}:{hook.at.value}:{hook.matcher}:{inside.stem}",
-            }
-        )
+    rows = manifest_rows(composition, claude_plugin_skills_dir(root / "plugin"))
     manifest = describe_write_text(
         PROFILE.manifest_path(root),
         json.dumps(
