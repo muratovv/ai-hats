@@ -163,30 +163,29 @@ def test_hooks_are_wired_to_the_mirrored_script_through_the_dispatcher(tmp_path:
     skill = _skill(tmp_path, "guard")
     plan = _plan(tmp_path, _composition([skill], Hooks((_hook(skill, "hooks/gate.py"),), ())))
     mirror = plan.root / "plugin" / "skills" / "guard"
+    rows = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "command": str(mirror / "hooks" / "gate.py"),
+                "tag": "ai-hats:guard:PreToolUse:Bash:gate",
+            }
+        ]
+    }
     assert _content(plan, "hooks.json") == {
         "version": MANIFEST_VERSION,
         "session": {"id": "s1"},
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "Bash",
-                    "command": str(mirror / "hooks" / "gate.py"),
-                    "tag": "ai-hats:guard:PreToolUse:Bash:gate",
-                }
-            ]
-        },
+        "hooks": rows,
     }
-    assert _content(plan, "settings.json") == {
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "Bash",
-                    "_ai_hats_managed": f"{DISPATCHER_TAG}:PreToolUse",
-                    "hooks": [{"type": "command", "command": DISPATCHER_COMMAND}],
-                }
-            ]
-        }
-    }
+    # The wiring is built from the manifest's rows — the same pass, so neither
+    # can name a gate the other does not; the entry's shape is the dispatcher's.
+    wired = _content(plan, "settings.json")
+    assert wired == {"hooks": ClaudeSurface()._desired_runtime_entries(rows)}
+    entry = wired["hooks"]["PreToolUse"][0]
+    assert (
+        entry["matcher"] == "Bash" and entry["_ai_hats_managed"] == f"{DISPATCHER_TAG}:PreToolUse"
+    )
+    assert entry["hooks"][0]["command"] == DISPATCHER_COMMAND
     assert plan.env[ENV_SESSION_CACHE_DIR] == str(plan.root)
     assert plan.env[ENV_AI_HATS_PYTHON] == "/opt/py/bin/python3"
     assert plan.env[ENV_HOOK_SOCKET] == str(socket_path(plan.root))
