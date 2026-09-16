@@ -311,28 +311,70 @@ def test_the_automate_meta_prompt_is_what_the_sdk_was_actually_sent(project: Pat
     )
 
 
-def test_the_audit_lists_the_rules_and_skills_the_snapshot_listed(project: Path, monkeypatch):
-    """The reflexive loop's input is not narrowed (ADR-0036 D6): ``audit.md``
-    rendered off the plan's record names the same rules and skills the
-    composition snapshot named."""
-    from ai_hats.composition_seam import build_composition_payload
-
-    launched = _launch_for_real(monkeypatch, project)
+def _listed_in_audit(project: Path, sid: str) -> dict[str, set[str]]:
+    """The names ``audit.md``'s composition section lists, by label."""
     runs = project / ".agent" / "ai-hats" / "sessions" / "runs"
-    audit = (runs / f"session_{_sid_of(launched)}" / "audit.md").read_text()
+    audit = (runs / f"session_{sid}" / "audit.md").read_text()
     section = audit.split("## Composition", 1)[1].split("## Events", 1)[0]
-    listed = {
+    return {
         label: {name.split(" (")[0] for name in line.split(": ", 1)[1].split(", ")}
         for line in section.splitlines()
         if line.startswith("- **")
         for label in [line[4 : line.index("**", 4)]]
     }
-    snapshot = build_composition_payload(project, role_override="maintainer").snapshot
+
+
+def _assert_audit_lists_the_snapshot(project: Path, sid: str, role: str) -> None:
+    from ai_hats.composition_seam import build_composition_payload
+
+    listed = _listed_in_audit(project, sid)
+    snapshot = build_composition_payload(project, role_override=role).snapshot
 
     assert listed["Rules"] == set(snapshot["rules"])
     assert listed["Skills"] == set(snapshot["skills"])
     assert listed["Traits"] == set(snapshot["traits"])
     assert snapshot["rules"] and snapshot["skills"], "the sample must compose both"
+
+
+def test_the_audit_lists_the_rules_and_skills_the_snapshot_listed(project: Path, monkeypatch):
+    """The reflexive loop's input is not narrowed (ADR-0036 D6): ``audit.md``
+    rendered off the plan's record names the same rules and skills the
+    composition snapshot named."""
+    launched = _launch_for_real(monkeypatch, project)
+
+    _assert_audit_lists_the_snapshot(project, _sid_of(launched), "maintainer")
+
+
+@pytest.fixture
+def agy_project(tmp_path: Path, monkeypatch) -> Path:
+    """A CLI surface on a role that declares no consent (agy wraps no command):
+    the plan's record reaches the audit by the same road as claude's."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ProjectConfig(
+        provider="agy",
+        library_paths=[str(LIBRARY_DIR)],
+        ai_hats_dir=".agent/ai-hats",
+        active_role="role-judge",
+        default_role="role-judge",
+    ).save(proj / PROJECT_CONFIG)
+    asm = Assembler(proj, library_paths=[LIBRARY_DIR])
+    asm.init()
+    asm.set_role("role-judge", provider_name="agy")
+    monkeypatch.chdir(proj)
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
+    monkeypatch.setenv("GEMINI_CONFIG_DIR", str(tmp_path / "gemini-home"))
+    return proj
+
+
+def test_the_audit_lists_the_rules_and_skills_the_snapshot_listed_on_a_cli_surface(
+    agy_project: Path, monkeypatch
+):
+    """The same claim on a surface that plans a CLI launch (ADR-0036 D6, R9)."""
+    launched = _launch_for_real(monkeypatch, agy_project)
+
+    _assert_audit_lists_the_snapshot(agy_project, _sid_of(launched), "role-judge")
+    assert launched["provider"] == "agy" and launched["launch"][:2] == ["agy", "--add-dir"]
 
 
 def test_the_reported_automate_env_is_the_environment_the_sub_agent_receives(
