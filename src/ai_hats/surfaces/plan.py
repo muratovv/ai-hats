@@ -251,6 +251,16 @@ class Skill(Digested):
         return _content_at(self.path, self.content_digest)
 
 
+_SKILLS_NS = "skills::"
+
+
+def mirror_name(skill: Skill) -> str:
+    """The directory a surface mirrors the skill under: its name below ``skills::``."""
+    if not skill.name.startswith(_SKILLS_NS):
+        raise ValueError(f"not a skill name: {skill.name!r}")
+    return skill.name[len(_SKILLS_NS) :]
+
+
 def home_of(run: Executable, skills: Sequence[Skill]) -> tuple[Skill, PurePath] | None:
     """The mirrored skill an executable lives in, and its path inside it —
     what a surface's manifest command, a gate's mirror rebase and a git sort

@@ -14,11 +14,60 @@ from pathlib import Path
 
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_HOOK_SOCKET, ENV_SESSION_CACHE_DIR
 from ai_hats.hook_collection import composed_rows
+from ai_hats.materialization import MaterializationEntry, describe_write_text
+from ai_hats.paths import claude_plugin_skills_dir
 from ai_hats.session_artifacts import BuiltArtifacts
 
 from ..hook_dispatch import MANIFEST_VERSION
+from ..plan import CompositionPlan, Host, home_of, mirror_name
 from .hook_server import socket_path
 from .profile import PROFILE
+
+Rows = dict[str, list[dict[str, str]]]
+
+
+def plan_hooks(
+    composition: CompositionPlan, root: Path, host: Host
+) -> tuple[MaterializationEntry, Rows, dict[str, str]]:
+    """The manifest entry, its rows and the pins, from the plan's runtime rows.
+
+    A command points into the session's own skill mirror, derived from where
+    the script lives in the library; the mirror is executable by construction
+    (the tree sync keeps modes), so nothing is checked on disk.
+    """
+    rows: Rows = {}
+    skills_root = claude_plugin_skills_dir(root / "plugin")
+    for hook in composition.hooks.runtime:
+        home = home_of(hook.run, composition.skills)
+        if home is None:
+            raise ValueError(
+                f"runtime hook {hook.at.value}/{hook.matcher} runs {hook.run.path}, "
+                "outside every composed skill"
+            )
+        skill, inside = home
+        name = mirror_name(skill)
+        rows.setdefault(hook.at.value, []).append(
+            {
+                "matcher": hook.matcher,
+                "command": str(skills_root / name / inside),
+                "tag": f"ai-hats:{name}:{hook.at.value}:{hook.matcher}:{inside.stem}",
+            }
+        )
+    manifest = describe_write_text(
+        PROFILE.manifest_path(root),
+        json.dumps(
+            {"version": MANIFEST_VERSION, "session": {"id": root.name}, "hooks": rows},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    env = {
+        ENV_SESSION_CACHE_DIR: str(root),
+        ENV_AI_HATS_PYTHON: str(host.python),
+        ENV_HOOK_SOCKET: str(socket_path(root)),
+    }
+    return manifest, rows, env
 
 
 def materialize_hook_manifest(
@@ -63,4 +112,4 @@ def materialize_hook_manifest(
     return rows
 
 
-__all__ = ["materialize_hook_manifest"]
+__all__ = ["materialize_hook_manifest", "plan_hooks"]

@@ -46,6 +46,8 @@ if TYPE_CHECKING:
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
+    from .plan import CompositionPlan, Host, MaterializationPlan
+
 logger = logging.getLogger(__name__)
 
 
@@ -231,6 +233,24 @@ class Surface(abc.ABC):
         return any(
             hasattr(self, f"_build_{c.value}_{m.value}") for c in ArtifactCategory for m in RunMode
         )
+
+    def plan(
+        self,
+        composition: CompositionPlan,
+        *,
+        run_mode: RunMode,
+        policy: SessionPolicy,
+        root: Path,
+        layout: ProjectLayout,
+        host: Host,
+    ) -> MaterializationPlan:
+        """This surface's entries, environment and launch for one session root
+        (ADR-0036 D2): a function of its inputs that reads no disk.
+
+        No default: a surface that has not written its planner is built the old
+        way, through ``build_session_artifacts``, until it does.
+        """
+        raise NotImplementedError(f"{self.name} does not plan a session yet")
 
     def build_session_artifacts(
         self,
