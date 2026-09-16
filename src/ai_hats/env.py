@@ -172,7 +172,7 @@ BUDGETS: tuple[Budget, ...] = (
     ),
     Budget(
         ENV_APPROACHING_LIMIT_PERCENT,
-        80,
+        80.0,
         "Percent of a quota window used at which a Claude HITL session's log says "
         "the limit is near, once per window per reset; above 100 it never says so.",
     ),

@@ -315,7 +315,7 @@ class SubAgentRunner:
                 policy=self.payload.policy,
                 root=root,
                 layout=self.layout,
-                host=probe_host(),
+                host=probe_host(cwd=self.layout.cwd),
             )
             applied = apply(plan)
             _claim_session_cache(root)

@@ -52,7 +52,7 @@ from .channel import (
 from ai_hats.env import ENV_STATUSLINE_INNER
 
 from .statusline import SETTINGS_KEY as STATUS_LINE_KEY
-from .statusline import person_status_line
+from .statusline import person_settings_files, person_status_line
 from .runtime_hooks import materialize_hook_manifest, plan_hooks
 
 from ai_hats.skills_dir import inject_skill_paths_to_env
@@ -61,8 +61,6 @@ from ai_hats.paths import (
     ENV_AI_HATS_DIR,
     claude_plugin_skills_dir,
     claude_settings_json,
-    claude_settings_local_json,
-    claude_user_settings_json,
 )
 from ai_hats.placeholders import expand_path_placeholders
 from ai_hats.role_catalog import expand_role_catalog
@@ -295,7 +293,9 @@ class ClaudeSurface(Surface):
             manifest, rows, hook_env = plan_hooks(composition, root, host)
             settings = root / "settings.json"
             entries.append(manifest)
-            document, settings_env = self._session_settings(rows, hitl=hitl, cwd=layout.cwd)
+            document, settings_env = self._session_settings(
+                rows, hitl=hitl, person=host.status_line
+            )
             entries.append(describe_write_text(settings, json.dumps(document, indent=2)))
             env.update(hook_env)
             env.update(settings_env)
@@ -443,41 +443,42 @@ class ClaudeSurface(Surface):
             session_id=session_id,
             skills_dir=skills_dir,
         )
-        document, settings_env = self._session_settings(rows, hitl=hitl, cwd=layout.cwd)
+        # The builder is the apply half and may read the machine; the plan half gets it on Host.
+        person = person_status_line(person_settings_files(os.environ, layout.cwd))
+        document, settings_env = self._session_settings(rows, hitl=hitl, person=person)
         artifacts.port.write_text(cache_settings, json.dumps(document, indent=2))
         artifacts.extra_env.update(settings_env)
         artifacts.materialized.append(cache_settings)
         return cache_settings
 
     def _session_settings(
-        self, rows: dict[str, list[dict[str, str]]], *, hitl: bool, cwd: Path
+        self,
+        rows: dict[str, list[dict[str, str]]],
+        *,
+        hitl: bool,
+        person: Mapping[str, object] | None,
     ) -> tuple[dict, dict[str, str]]:
         """The session's ``settings.json`` and the env it needs: the dispatcher
         entries, and on the HITL path the status line — ours records the quota
         state a PTY session sees nowhere else, then runs the person's own, whose
-        command travels in the env because ``--settings`` replaces that slot."""
+        command travels in the env because ``--settings`` replaces that slot.
+        The env key is always set: an empty one is "no bar", not "inherit"."""
         document: dict = {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}
         env: dict[str, str] = {}
         if hitl:
-            person = person_status_line(
-                [
-                    claude_user_settings_json(),
-                    claude_settings_json(cwd),
-                    claude_settings_local_json(cwd),
-                ]
-            )
             document[STATUS_LINE_KEY] = self._status_line_entry(person)
-            if person is not None:
-                env[ENV_STATUSLINE_INNER] = person["command"]
+            env[ENV_STATUSLINE_INNER] = str(person["command"]) if person else ""
         return document, env
 
     @staticmethod
-    def _status_line_entry(person: dict | None) -> dict:
+    def _status_line_entry(person: Mapping[str, object] | None) -> dict:
         """The session's ``statusLine`` value: our command, with the person's
-        own ``padding`` carried over so the bar sits where they put it."""
+        own ``padding`` and ``refreshInterval`` carried over — where the bar
+        sits and how often it re-renders are theirs."""
         entry: dict = {"type": "command", "command": STATUSLINE_COMMAND}
-        if person is not None and "padding" in person:
-            entry["padding"] = person["padding"]
+        for key in ("padding", "refreshInterval"):
+            if person is not None and key in person:
+                entry[key] = person[key]
         return entry
 
     def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
@@ -770,14 +771,8 @@ class ClaudeSurface(Surface):
         """One warning per deprecated permission rule in the Claude settings
         chain (user-global + project + local). Warn-only — the settings files
         are user-owned and never mutated."""
-        project_dir = layout.root
-        findings = lint_settings_files(
-            [
-                claude_user_settings_json(),
-                claude_settings_json(project_dir),
-                claude_settings_local_json(project_dir),
-            ]
-        )
+        # the root, not the run cwd: this lints what the person edits, not what a worktree run reads
+        findings = lint_settings_files(person_settings_files(os.environ, layout.root))
         return [
             f"{f.source}: {f.array} rule {f.rule} is ignored by Claude Code "
             f"≥2.1.210 — replace with {f.replacement}"

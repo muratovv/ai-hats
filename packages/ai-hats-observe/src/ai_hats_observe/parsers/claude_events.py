@@ -441,7 +441,7 @@ class ClaudeTranscriptReader:
                     raw_code="block:fallback",
                     source=SOURCE,
                     reason=WorthRecording.MODEL_SWITCHED,
-                    model=_model(block.get("to") or {}),
+                    model=_model(block.get("to")),
                 )
             case _ if btype in _IGNORED_BLOCKS:
                 return
@@ -717,7 +717,12 @@ def _hook_failure(attachment: dict[str, Any]) -> str:
     where = f" ({command})" if isinstance(command, str) and command else ""
     if attachment.get("type") == "hook_cancelled":
         timeout = attachment.get("timeoutMs")
-        how = f"timed out after {timeout} ms" if isinstance(timeout, int) else "cancelled"
+        timed_out = attachment.get("timedOut") is True
+        how = "cancelled"
+        if timed_out and isinstance(timeout, int) and not isinstance(timeout, bool):
+            how = f"timed out after {timeout} ms"
+        elif timed_out:
+            how = "timed out"
         return f"{hook} {how}{where}"
     code = attachment.get("exitCode")
     head = f"{hook} exit {code}{where}" if code is not None else f"{hook} failed{where}"

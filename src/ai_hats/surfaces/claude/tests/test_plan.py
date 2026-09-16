@@ -53,14 +53,16 @@ def _composition(skills=(), hooks=Hooks((), ())) -> CompositionPlan:
     )
 
 
-def _plan(tmp_path: Path, composition: CompositionPlan, run_mode=RunMode.HITL, policy=None):
+def _plan(
+    tmp_path: Path, composition: CompositionPlan, run_mode=RunMode.HITL, policy=None, host=HOST
+):
     return ClaudeSurface().plan(
         composition,
         run_mode=run_mode,
         policy=policy or SessionPolicy(),
         root=tmp_path / "sessions" / "s1",
         layout=ProjectLayout.at(tmp_path / "proj"),
-        host=HOST,
+        host=host,
     )
 
 
@@ -211,43 +213,45 @@ def test_automate_hands_the_settings_to_the_sdk_and_no_other_source(tmp_path: Pa
 # ── the status line ─────────────────────────────────────────────────────────
 
 
-def _person_bar(tmp_path: Path, monkeypatch, entry: dict | None) -> None:
-    home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
-    if entry is not None:
-        (home / ".claude").mkdir(parents=True)
-        (home / ".claude" / "settings.json").write_text(json.dumps({"statusLine": entry}))
+def _with_bar(entry: dict | None) -> Host:
+    """The person's status line is a fact of the machine, probed onto Host
+    before planning — the planner reads no settings file itself."""
+    return dataclasses.replace(HOST, status_line=entry)
 
 
-def test_hitl_wires_the_status_line_and_hands_the_persons_own_bar_down(tmp_path, monkeypatch):
+def test_hitl_wires_the_status_line_and_hands_the_persons_own_bar_down(tmp_path):
     """`--settings` replaces the `statusLine` slot, so ours records the quota
     state and then runs theirs — whose command rides the env, and whose
-    padding stays on the entry."""
-    _person_bar(
-        tmp_path, monkeypatch, {"type": "command", "command": "bash ~/bar.sh", "padding": 0}
-    )
-    plan = _plan(tmp_path, _composition())
+    padding and refresh cadence stay on the entry."""
+    bar = {"type": "command", "command": "bash ~/bar.sh", "padding": 0, "refreshInterval": 1}
+    plan = _plan(tmp_path, _composition(), host=_with_bar(bar))
 
     wired = _content(plan, "settings.json")
-    assert wired["statusLine"] == {"type": "command", "command": STATUSLINE_COMMAND, "padding": 0}
+    assert wired["statusLine"] == {
+        "type": "command",
+        "command": STATUSLINE_COMMAND,
+        "padding": 0,
+        "refreshInterval": 1,
+    }
     assert plan.env[ENV_STATUSLINE_INNER] == "bash ~/bar.sh"
 
 
-def test_hitl_with_no_bar_of_the_persons_wires_the_recorder_alone(tmp_path, monkeypatch):
-    _person_bar(tmp_path, monkeypatch, None)
-    plan = _plan(tmp_path, _composition())
+def test_hitl_with_no_bar_of_the_persons_wires_the_recorder_alone(tmp_path):
+    """The env key is still set, empty: a nested session must not inherit an
+    outer session's bar as its own."""
+    plan = _plan(tmp_path, _composition(), host=_with_bar(None))
 
     assert _content(plan, "settings.json")["statusLine"] == {
         "type": "command",
         "command": STATUSLINE_COMMAND,
     }
-    assert ENV_STATUSLINE_INNER not in plan.env
+    assert plan.env[ENV_STATUSLINE_INNER] == ""
 
 
-def test_automate_wires_no_status_line(tmp_path, monkeypatch):
+def test_automate_wires_no_status_line(tmp_path):
     """The SDK stream carries the quota state itself, and no TUI renders a bar."""
-    _person_bar(tmp_path, monkeypatch, {"type": "command", "command": "bash ~/bar.sh"})
-    plan = _plan(tmp_path, _composition(), run_mode=RunMode.AUTOMATE)
+    bar = {"type": "command", "command": "bash ~/bar.sh"}
+    plan = _plan(tmp_path, _composition(), run_mode=RunMode.AUTOMATE, host=_with_bar(bar))
 
     assert "statusLine" not in _content(plan, "settings.json")
     assert ENV_STATUSLINE_INNER not in plan.env

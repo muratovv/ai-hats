@@ -56,6 +56,7 @@
     "AI_HATS_SESSION_CACHE_DIR",
     "AI_HATS_SESSION_ID",
     "AI_HATS_SESSION_IDENTITY",
+    "AI_HATS_STATUSLINE_INNER",
     "TRACE_LOG_PATH"
   ],
   "launch": [
@@ -134,9 +135,9 @@
       "target": "<cache>/sessions/dry-run/hooks.json"
     },
     {
-      "digest": "d50ee1abf5d2bc81d3685f615b2860b74179ac7b4aa21104bdfa5bc81eb3931e",
+      "digest": "7511160b93102d65000b03f45a496bb2e2c4b5443e79bc5cc578106545467dba",
       "kind": "write_text",
-      "size": 2242,
+      "size": 1935,
       "source": null,
       "target": "<cache>/sessions/dry-run/settings.json"
     }

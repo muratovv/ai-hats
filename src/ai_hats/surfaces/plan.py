@@ -312,6 +312,10 @@ class Host(Digested):
     #: Where each command the consent gate can wrap resolves; a command that is
     #: not on the path has no key.
     commands: Mapping[str, Path]
+    #: The status line the person configured for claude (their settings chain,
+    #: last file naming a command wins); ``None`` when none. A settings fact the
+    #: claude HITL plan needs, probed here so the planner never reads a file.
+    status_line: Mapping[str, object] | None = None
 
 
 # ── effect half ──────────────────────────────────────────────── ADR-0036 D1

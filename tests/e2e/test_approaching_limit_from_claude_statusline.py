@@ -139,20 +139,21 @@ def test_the_threshold_is_the_budget_in_the_sessions_env(session) -> None:
 def test_without_the_dispatchers_pins_the_bar_still_renders_and_nothing_is_recorded(
     session,
 ) -> None:
-    """The spawn path refuses an incomplete environment aloud, as it does for a
-    hook — but the refusal stays in the subshell: the bar renders, exit 0."""
+    """A hook entry refuses an incomplete environment aloud and names the hatch;
+    a render is not a gate, so it neither refuses nor advises — the bar renders,
+    exit 0, and nothing else is said."""
     env = {k: v for k, v in session.env.items() if k != ENV_AI_HATS_PYTHON}
     done = render(session, payload(95), env)
 
     assert done.returncode == 0, done
     assert done.stdout.strip() == "THE-PERSONS-BAR", done.stdout
-    assert "incomplete dispatcher environment" in done.stderr, done.stderr
+    assert done.stderr == "", done.stderr
     assert not (session.run_dir / EVENT_LOG_JSONL).exists()
 
 
 def test_with_no_bar_of_the_persons_the_render_is_silent_and_still_records(session) -> None:
-    env = {k: v for k, v in session.env.items() if k != ENV_STATUSLINE_INNER}
-    done = render(session, payload(95), env)
+    """The plan sets the key empty when no bar was found — "none", not "inherit"."""
+    done = render(session, payload(95), {**session.env, ENV_STATUSLINE_INNER: ""})
 
     assert (done.returncode, done.stdout) == (0, ""), done
     assert [e.raw_code for e in read_events(session.run_dir / EVENT_LOG_JSONL)] == ["five_hour=95%"]

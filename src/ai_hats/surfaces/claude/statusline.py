@@ -11,8 +11,10 @@ session's dispatcher like any hook's; ``ClaudeChannel.observe`` calls here.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
+import threading
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +23,9 @@ from typing import Any
 from ai_hats_observe.canonical import Notice, Timestamp, WorthRecording, now
 
 from ...env import APPROACHING_LIMIT_PERCENT, read_budget
+from ...paths import claude_settings_json, claude_settings_local_json
 from ...session_identity import SessionIdentity, SessionIdentityError
+from ..gate_log import record_event
 
 #: What ``Notice.source`` says when the status line spoke.
 SOURCE = "claude/statusline"
@@ -33,73 +37,94 @@ MEMO_NAME = "quota_warnings.json"
 #: `--settings` replaces the person's.
 SETTINGS_KEY = "statusLine"
 
-#: The payload field only a status-line render carries; a hook's names its event.
+#: The payload field only a status-line render carries.
 RENDER_FIELD = "rate_limits"
+
+#: What a render's window said: its name, its reset, the notice.
+Said = tuple[str, "int | None", Notice]
 
 Warned = dict[str, int | None]
 
+# The resident dispatcher answers renders from threads of one process.
+_MEMO_LOCK = threading.Lock()
+
 
 def is_render(payload: Mapping[str, Any]) -> bool:
-    """A status-line render, told from a hook's payload by what it carries."""
-    return "hook_event_name" not in payload and RENDER_FIELD in payload
+    """A status-line render, told by what it carries — never by what it lacks."""
+    return RENDER_FIELD in payload
 
 
-def quota_notice(payload: Mapping[str, Any], environ: Mapping[str, str]) -> Notice | None:
-    """What one render says about quota that the session's log does not yet
-    hold — one notice at most, the rest on the next render — remembered in the
-    session dir so the same window is never said twice. Never raises: trouble
-    is said on stderr, and a render is not a gate."""
+def record_quota(payload: Mapping[str, Any], environ: Mapping[str, str]) -> list[Notice]:
+    """Record what one render says about quota beside the session's events and
+    remember it, so the same window is never said twice: the memo follows the
+    record, never precedes it. What was recorded; never raises — a render is
+    not a gate, so trouble is said on stderr."""
     try:
         identity = SessionIdentity.from_env(dict(environ))
     except SessionIdentityError as exc:
         _said(str(exc))
-        return None
+        return []
     if identity is None:
         _said("no session in the environment; nothing recorded")
-        return None
+        return []
     memo = identity.session_dir / MEMO_NAME
-    warned = _load(memo)
     threshold = read_budget(APPROACHING_LIMIT_PERCENT, dict(environ))
-    notices, _ = quota_notices(payload, warned, threshold=threshold, ts=now())
-    if not notices:
-        return None
-    first = notices[0]
-    window = first.raw_code.split("=", 1)[0] if first.raw_code else ""
-    _save(memo, {**warned, window: _reset_of(payload, window)})
-    return first
+    with _MEMO_LOCK:
+        warned = _load(memo)
+        recorded: list[Notice] = []
+        for window, reset, notice in quota_notices(payload, warned, threshold=threshold, ts=now()):
+            if record_event(notice, environ) is None:
+                continue
+            warned[window] = reset
+            recorded.append(notice)
+        if recorded:
+            _save(memo, warned)
+    return recorded
 
 
 def quota_notices(
     payload: Mapping[str, Any], warned: Mapping[str, int | None], *, threshold: float, ts: Timestamp
-) -> tuple[list[Notice], Warned]:
+) -> list[Said]:
     """What one render says about quota: a notice per window at or past
     ``threshold`` percent that ``warned`` does not already hold for the same
-    reset, and the memo to keep. Pure; a malformed window is skipped."""
-    remembered: Warned = dict(warned)
+    reset. Pure; a malformed window is skipped."""
     windows = payload.get(RENDER_FIELD)
     if not isinstance(windows, Mapping):
-        return [], remembered
-    said: list[Notice] = []
+        return []
+    said: list[Said] = []
     for window, state in windows.items():
-        if not isinstance(state, Mapping):
+        if not isinstance(state, Mapping) or not isinstance(window, str):
             continue
         used = state.get("used_percentage")
-        if not _is_number(used) or used < threshold:
+        if not _is_finite(used) or used < threshold:
             continue
-        reset = _reset_of(payload, window)
-        if window in remembered and remembered[window] == reset:
+        resets_at = state.get("resets_at")
+        reset = int(resets_at) if _is_finite(resets_at) else None
+        if window in warned and warned[window] == reset:
             continue
-        remembered[window] = reset
-        said.append(
-            Notice(
-                ts=ts,
-                detail=_detail(window, used, reset),
-                raw_code=f"{window}={used:.0f}%",
-                source=SOURCE,
-                reason=WorthRecording.APPROACHING_LIMIT,
-            )
+        notice = Notice(
+            ts=ts,
+            detail=_detail(window, used, reset),
+            raw_code=f"{window}={used:.0f}%",
+            source=SOURCE,
+            reason=WorthRecording.APPROACHING_LIMIT,
         )
-    return said, remembered
+        said.append((window, reset, notice))
+    return said
+
+
+def person_settings_files(environ: Mapping[str, str], base: Path) -> list[Path]:
+    """Claude's settings chain — user, project, local — as claude layers it.
+    The user's home by the rule ``tool_home`` applies, read from ``environ``."""
+    config_dir = environ.get("CLAUDE_CONFIG_DIR") or ""
+    home = environ.get("HOME") or ""
+    files: list[Path] = []
+    if config_dir:
+        files.append(Path(config_dir) / "settings.json")
+    elif home:
+        files.append(Path(home) / ".claude" / "settings.json")
+    files += [claude_settings_json(base), claude_settings_local_json(base)]
+    return files
 
 
 def person_status_line(settings_files: Sequence[Path]) -> dict[str, Any] | None:
@@ -121,21 +146,18 @@ def person_status_line(settings_files: Sequence[Path]) -> dict[str, Any] | None:
     return found
 
 
-def _reset_of(payload: Mapping[str, Any], window: str) -> int | None:
-    state = payload.get(RENDER_FIELD, {}).get(window)
-    resets_at = state.get("resets_at") if isinstance(state, Mapping) else None
-    return int(resets_at) if _is_number(resets_at) else None
-
-
-def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+def _is_finite(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _detail(window: str, used: float, reset: int | None) -> str:
     head = f"{window} {used:.0f}% used"
     if reset is None:
         return head
-    when = datetime.fromtimestamp(reset, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        when = datetime.fromtimestamp(reset, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (OverflowError, OSError, ValueError):
+        return f"{head}; resets at {reset}"  # not a second of any calendar — kept as sent
     return f"{head}; resets at {when}"
 
 
@@ -157,7 +179,7 @@ def _load(memo: Path) -> Warned:
 def _save(memo: Path, remembered: Warned) -> None:
     try:
         memo.parent.mkdir(parents=True, exist_ok=True)
-        staged = memo.with_name(f".{memo.name}.{os.getpid()}")
+        staged = memo.with_name(f".{memo.name}.{os.getpid()}.{threading.get_ident()}")
         staged.write_text(json.dumps(remembered, sort_keys=True), encoding="utf-8")
         os.replace(staged, memo)
     except OSError as exc:

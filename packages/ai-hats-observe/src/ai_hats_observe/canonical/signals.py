@@ -50,9 +50,9 @@ class WorthRecording(StrEnum):
     # from UNSUPPORTED_RECORD, which must stay rare enough to mean schema drift.
     SURFACE_WARNING = "surface_warning"
 
-    # Capacity is running low but nothing has been refused yet. Only a live
-    # stream reports this, and only before the wall is hit — it is the one
-    # signal that arrives in time to change what a caller does.
+    # Capacity is running low but nothing has been refused yet — the one signal
+    # that arrives in time to change what a caller does. A live stream reports
+    # it before the wall; a surface's own status line can too (claude, HITL).
     APPROACHING_LIMIT = "approaching_limit"
 
     # A person stopped the turn. The response it cut, if one was open, ends

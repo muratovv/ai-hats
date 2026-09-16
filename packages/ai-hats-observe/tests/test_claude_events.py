@@ -876,12 +876,26 @@ def test_a_hook_that_failed_or_timed_out_is_a_surface_warning(tmp_path: Path) ->
 
 
 def test_a_hook_failure_with_bare_fields_still_reads(tmp_path: Path) -> None:
-    """Never raise, never drop: whatever the record carries is the detail."""
+    """Never raise, never drop: whatever the record carries is the detail — and
+    a cancel that did not time out (``timedOut: false``, a person's Esc) says
+    so, whatever ``timeoutMs`` the record also carries."""
     events = events_of(
         tmp_path,
-        [attachment("hook_non_blocking_error"), attachment("hook_cancelled", hookName="Stop")],
+        [
+            attachment("hook_non_blocking_error"),
+            attachment("hook_cancelled", hookName="Stop"),
+            attachment(
+                "hook_cancelled", hookName="PreToolUse:Bash", timedOut=False, timeoutMs=60000
+            ),
+            attachment("hook_cancelled", hookName="PreToolUse:Bash", timedOut=True, timeoutMs=True),
+        ],
     )
-    assert [s.detail for s in signals(events)] == ["hook failed", "Stop cancelled"]
+    assert [s.detail for s in signals(events)] == [
+        "hook failed",
+        "Stop cancelled",
+        "PreToolUse:Bash cancelled",
+        "PreToolUse:Bash timed out",
+    ]
 
 
 # --- prompts ---------------------------------------------------------------

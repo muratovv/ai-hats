@@ -26,6 +26,8 @@ existing kind.
 - The top-level record types the reader keeps silent are a named set with the
   reason per group (`_SILENT_RECORD_TYPES`); `KNOWN_RECORD_TYPES` is unchanged
   as a name and as a set.
+- `APPROACHING_LIMIT` no longer claims a live stream is its only producer: a
+  surface's own status line reports it too (claude, HITL, in `ai-hats`).
 
 ### Fixed
 

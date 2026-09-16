@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -21,9 +22,10 @@ from ai_hats.surfaces.claude.statusline import (
     MEMO_NAME,
     SOURCE,
     is_render,
+    person_settings_files,
     person_status_line,
-    quota_notice,
     quota_notices,
+    record_quota,
 )
 from ai_hats.surfaces.hook_dispatch import dispatch
 from ai_hats_observe.canonical import Notice, Timestamp, WorthRecording
@@ -46,76 +48,99 @@ CALM = {
 FIRST = {k: v for k, v in CALM.items() if k != "rate_limits"}
 
 
-def near(five_hour: float, seven_day: float = 58, resets_at: int = 1789563600) -> dict:
+def near(five_hour: float, seven_day: float = 58, resets_at: int | None = 1789563600) -> dict:
     payload = json.loads(json.dumps(CALM))
     payload["rate_limits"]["five_hour"] = {"used_percentage": five_hour, "resets_at": resets_at}
     payload["rate_limits"]["seven_day"]["used_percentage"] = seven_day
     return payload
 
 
-def test_a_window_past_the_threshold_is_said_once_per_reset() -> None:
-    events, warned = quota_notices(near(82), {}, threshold=80, ts=TS)
+def said(payload: dict, warned: dict, threshold: float = 80) -> list[Notice]:
+    return [notice for _, _, notice in quota_notices(payload, warned, threshold=threshold, ts=TS)]
 
-    (notice,) = events
+
+# --- the pure reading ------------------------------------------------------------
+
+
+def test_a_window_past_the_threshold_is_said_with_its_reset() -> None:
+    ((window, reset, notice),) = quota_notices(near(82), {}, threshold=80, ts=TS)
+
+    assert (window, reset) == ("five_hour", 1789563600)
     assert isinstance(notice, Notice)
     assert notice.reason is WorthRecording.APPROACHING_LIMIT
     assert notice.raw_code == "five_hour=82%"
     assert notice.detail == "five_hour 82% used; resets at 2026-09-16T13:00:00Z"
     assert notice.source == SOURCE == "claude/statusline"
     assert notice.ts == TS
-    assert warned == {"five_hour": 1789563600}
 
-    # the next render of the same window says nothing more
-    again, still = quota_notices(near(83), warned, threshold=80, ts=TS)
-    assert again == []
-    assert still == warned
-
+    # the same window, already remembered for this reset, says nothing more
+    assert said(near(83), {"five_hour": 1789563600}) == []
     # a new reset is a new window — said again
-    later, moved = quota_notices(near(81, resets_at=1789581600), warned, threshold=80, ts=TS)
-    assert [n.raw_code for n in later] == ["five_hour=81%"]
-    assert moved == {"five_hour": 1789581600}
+    assert [
+        n.raw_code for n in said(near(81, resets_at=1789581600), {"five_hour": 1789563600})
+    ] == ["five_hour=81%"]
 
 
 def test_below_the_threshold_nothing_is_said() -> None:
-    assert quota_notices(CALM, {}, threshold=80, ts=TS) == ([], {})
+    assert said(CALM, {}) == []
 
 
 def test_a_first_render_with_no_rate_limits_says_nothing() -> None:
-    assert quota_notices(FIRST, {}, threshold=80, ts=TS) == ([], {})
+    assert said(FIRST, {}) == []
 
 
 def test_every_window_is_judged_and_a_float_at_the_line_counts() -> None:
-    events, warned = quota_notices(near(80.0, seven_day=99.5), {}, threshold=80, ts=TS)
-    assert [n.raw_code for n in events] == ["five_hour=80%", "seven_day=100%"]
-    assert warned == {"five_hour": 1789563600, "seven_day": 1789714800}
-
+    assert [n.raw_code for n in said(near(80.0, seven_day=99.5), {})] == [
+        "five_hour=80%",
+        "seven_day=100%",
+    ]
     # 79.999 is not 80: the threshold is a line, not a rounding
-    assert quota_notices(near(79.999, seven_day=10), {}, threshold=80, ts=TS)[0] == []
+    assert said(near(79.999, seven_day=10), {}) == []
 
 
 def test_a_threshold_above_one_hundred_never_fires() -> None:
-    assert quota_notices(near(100, seven_day=100), {}, threshold=101, ts=TS)[0] == []
+    assert said(near(100, seven_day=100), {}, threshold=101) == []
 
 
 def test_a_window_with_no_reset_is_still_said_once() -> None:
-    payload = near(90)
-    del payload["rate_limits"]["five_hour"]["resets_at"]
-    events, warned = quota_notices(payload, {}, threshold=80, ts=TS)
-    assert [n.detail for n in events] == ["five_hour 90% used"]
-    assert warned == {"five_hour": None}
-    assert quota_notices(payload, warned, threshold=80, ts=TS)[0] == []
+    payload = near(90, resets_at=None)
+    ((window, reset, notice),) = quota_notices(payload, {}, threshold=80, ts=TS)
+    assert (window, reset, notice.detail) == ("five_hour", None, "five_hour 90% used")
+    assert said(payload, {"five_hour": None}) == []
 
 
 def test_a_malformed_window_is_skipped_not_raised() -> None:
     payload = near(90)
     payload["rate_limits"]["seven_day"] = "?"
     payload["rate_limits"]["spend_limit"] = {"used_percentage": "high"}
-    events, warned = quota_notices(payload, {}, threshold=80, ts=TS)
-    assert [n.raw_code for n in events] == ["five_hour=90%"]
-    assert warned == {"five_hour": 1789563600}
+    assert [n.raw_code for n in said(payload, {})] == ["five_hour=90%"]
 
 
-# --- one render, remembered ----------------------------------------------------
+@pytest.mark.parametrize(
+    ("used", "resets_at", "expect"),
+    [
+        (float("nan"), 1789563600, []),
+        (float("inf"), 1789563600, []),
+        (True, 1789563600, []),
+        (82, float("inf"), ["five_hour 82% used"]),
+        (82, 1789563600000, ["five_hour 82% used; resets at 1789563600000"]),
+        (82, True, ["five_hour 82% used"]),
+    ],
+)
+def test_a_number_that_is_not_one_never_raises(used, resets_at, expect) -> None:
+    """``json.loads`` accepts NaN and Infinity; a bool is an int; a millisecond
+    epoch is no second of any calendar. None of them may take a render down."""
+    payload = near(used, seven_day=10, resets_at=resets_at)
+    assert [n.detail for n in said(payload, {})] == expect
+
+
+def test_a_render_is_told_by_what_it_carries() -> None:
+    assert is_render(CALM)
+    assert not is_render(FIRST), "before the first response there is nothing to read"
+    assert is_render({**CALM, "hook_event_name": "Status"}), "a name for it would not hide it"
+
+
+# --- one render, recorded and remembered ---------------------------------------
 
 
 @pytest.fixture
@@ -132,47 +157,74 @@ def session(tmp_path: Path) -> tuple[dict[str, str], Path]:
     return identity.to_env(), session_dir
 
 
-def test_a_render_is_told_from_a_hooks_payload_by_what_it_carries() -> None:
-    assert is_render(CALM)
-    assert not is_render(FIRST), "before the first response there is nothing to read"
-    assert not is_render({**CALM, "hook_event_name": "PreToolUse"})
+def _memo(session_dir: Path) -> dict:
+    return json.loads((session_dir / MEMO_NAME).read_text())
 
 
-def test_quota_notice_says_a_window_once_and_remembers_it_in_the_session_dir(session) -> None:
+def test_record_quota_says_every_window_once_and_remembers_what_it_recorded(session) -> None:
     env, session_dir = session
 
-    first = quota_notice(near(82), env)
-    again = quota_notice(near(84), env)
+    first = record_quota(near(90, seven_day=95), env)
+    again = record_quota(near(91, seven_day=96), env)
 
-    assert isinstance(first, Notice) and first.raw_code == "five_hour=82%"
-    assert again is None
-    assert json.loads((session_dir / MEMO_NAME).read_text()) == {"five_hour": 1789563600}
+    assert [n.raw_code for n in first] == ["five_hour=90%", "seven_day=95%"]
+    assert again == []
+    assert [e.raw_code for e in read_events(session_dir / EVENT_LOG_JSONL)] == [
+        "five_hour=90%",
+        "seven_day=95%",
+    ]
+    assert _memo(session_dir) == {"five_hour": 1789563600, "seven_day": 1789714800}
 
 
-def test_quota_notice_says_one_window_per_render_and_the_other_on_the_next(session) -> None:
-    """``observe`` returns one event, so the second window waits one render —
-    the memo remembers only what was said."""
+def test_the_memo_follows_the_record_never_precedes_it(session, monkeypatch) -> None:
+    """A notice that could not land must not be remembered as said, or the
+    window stays silent until its reset."""
     env, session_dir = session
-    both = near(90, seven_day=95)
+    monkeypatch.setattr("ai_hats.surfaces.claude.statusline.record_event", lambda e, env: None)
 
-    assert quota_notice(both, env).raw_code == "five_hour=90%"
-    assert json.loads((session_dir / MEMO_NAME).read_text()) == {"five_hour": 1789563600}
-    assert quota_notice(both, env).raw_code == "seven_day=95%"
-    assert quota_notice(both, env) is None
-
-
-def test_quota_notice_reads_the_threshold_from_the_budget(session) -> None:
-    env, session_dir = session
-
-    assert quota_notice(near(82), {**env, ENV_APPROACHING_LIMIT_PERCENT: "90"}) is None
+    assert record_quota(near(90), env) == []
     assert not (session_dir / MEMO_NAME).exists()
-    # POSITIVE CONTROL: the same render fires at the default
-    assert quota_notice(near(82), env) is not None
+
+    # POSITIVE CONTROL: with the record landing, the same render is remembered
+    monkeypatch.undo()
+    assert [n.raw_code for n in record_quota(near(90), env)] == ["five_hour=90%"]
+    assert _memo(session_dir) == {"five_hour": 1789563600}
 
 
-def test_quota_notice_outside_a_session_says_so_and_records_nothing(capsys) -> None:
-    assert quota_notice(near(95), {}) is None
+def test_record_quota_reads_the_threshold_from_the_budget(session) -> None:
+    env, session_dir = session
+
+    assert record_quota(near(82), {**env, ENV_APPROACHING_LIMIT_PERCENT: "90"}) == []
+    assert record_quota(near(82), {**env, ENV_APPROACHING_LIMIT_PERCENT: "82.5"}) == []
+    assert not (session_dir / MEMO_NAME).exists()
+    # POSITIVE CONTROL: a decimal threshold parses, and the default fires
+    assert [
+        n.raw_code for n in record_quota(near(82), {**env, ENV_APPROACHING_LIMIT_PERCENT: "81.5"})
+    ]
+    assert record_quota(near(82), env) == [], "already said under the lower threshold"
+
+
+def test_record_quota_outside_a_session_says_so_and_records_nothing(capsys) -> None:
+    assert record_quota(near(95), {}) == []
     assert "no session" in capsys.readouterr().err
+
+
+def test_concurrent_renders_say_a_window_once(session) -> None:
+    """The resident dispatcher answers renders from threads of one process."""
+    env, session_dir = session
+    results: list[list[Notice]] = []
+    threads = [
+        threading.Thread(target=lambda: results.append(record_quota(near(90), env)))
+        for _ in range(8)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert sum(len(r) for r in results) == 1
+    assert [e.raw_code for e in read_events(session_dir / EVENT_LOG_JSONL)] == ["five_hour=90%"]
+    assert _memo(session_dir) == {"five_hour": 1789563600}
 
 
 def test_a_render_through_the_dispatcher_lands_beside_the_sessions_events(session, capsys) -> None:
@@ -198,6 +250,23 @@ def _settings(path: Path, document: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(document if isinstance(document, str) else json.dumps(document))
     return path
+
+
+def test_the_settings_chain_is_the_users_home_then_the_project(tmp_path: Path) -> None:
+    """The user's file by the rule ``tool_home`` applies — ``CLAUDE_CONFIG_DIR``
+    over ``HOME/.claude`` — read from the env handed in, not the process's."""
+    project = tmp_path / "proj"
+    by_home = person_settings_files({"HOME": "/h"}, project)
+    by_config = person_settings_files({"HOME": "/h", "CLAUDE_CONFIG_DIR": "/c"}, project)
+    by_nothing = person_settings_files({}, project)
+
+    assert by_home == [
+        Path("/h/.claude/settings.json"),
+        project / ".claude" / "settings.json",
+        project / ".claude" / "settings.local.json",
+    ]
+    assert by_config[0] == Path("/c/settings.json")
+    assert by_nothing == by_home[1:]
 
 
 def test_the_persons_status_line_is_read_the_way_claude_layers_settings(tmp_path: Path) -> None:

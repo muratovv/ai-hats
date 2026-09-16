@@ -42,16 +42,20 @@ def probe_host(
     *,
     python: str = sys.executable,
     which: Callable[..., str | None] = shutil.which,
+    cwd: Path | None = None,
 ) -> Host:
     """The one read of the machine planning is allowed, taken before it.
 
     Every command the consent gate can wrap is resolved here, whether or not
     the composition asks for it: the host is a fact of the machine, not of the
-    role, and a planner that finds no key refuses on its own terms.
+    role, and a planner that finds no key refuses on its own terms. The
+    person's claude status line is read here for the same reason, from the
+    settings chain under ``environ``'s home and ``cwd``'s project.
     """
     from ai_hats_library.hooks.consent_gate import operations
 
     from .consent_wrapper import original_lookup_path
+    from .surfaces.claude.statusline import person_settings_files, person_status_line
 
     env = os.environ if environ is None else environ
     path = original_lookup_path(env.get("PATH", ""))
@@ -60,7 +64,8 @@ def probe_host(
         for name in operations.wrapped_surfaces(operations.REGISTRY)
         if (found := which(name, path=path))
     }
-    return Host(python=Path(python), path=path, commands=commands)
+    status_line = person_status_line(person_settings_files(env, Path.cwd() if cwd is None else cwd))
+    return Host(python=Path(python), path=path, commands=commands, status_line=status_line)
 
 
 def plan_session(
@@ -237,7 +242,7 @@ def preview(
         policy=policy or SessionPolicy(),
         root=root,
         layout=layout,
-        host=probe_host(),
+        host=probe_host(cwd=layout.cwd),
     )
     flags = LaunchFlags(
         session_id=sid,

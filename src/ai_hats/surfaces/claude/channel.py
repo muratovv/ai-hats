@@ -33,7 +33,7 @@ from ..hook_channel import (
 )
 from ..hook_dispatch import Arrival, ManifestUnresolved, dispatch, manifest_rows
 from .profile import PROFILE
-from .statusline import is_render, quota_notice
+from .statusline import is_render, record_quota
 
 if TYPE_CHECKING:
     from ai_hats_observe.canonical import Event
@@ -54,11 +54,13 @@ OBSERVED_SOURCE = "claude/hooks"
 #: What an entry runs when there is no resident dispatcher to ask. Starting one
 #: is not optional: an entry that cannot must REFUSE (exit 2) and name the hatch
 #: — python honours the hatch everywhere else, and this branch never reaches it.
-_SPAWN = (
+_SPAWN_ONE = (
     'if [ -n "$AI_HATS_SESSION_ID" ] '
     '&& [ -n "$AI_HATS_SESSION_CACHE_DIR" ] && [ -x "$AI_HATS_PYTHON" ]; '
     'then printf "%s" "$p" | "$AI_HATS_PYTHON" -m ai_hats.surfaces.claude.channel; '
-    'elif [ -n "$AI_HATS_GATE_BROKEN_ACK" ]; '
+)
+_SPAWN = (
+    _SPAWN_ONE + 'elif [ -n "$AI_HATS_GATE_BROKEN_ACK" ]; '
     'then printf "%s\\n" "ai-hats-claude-hook: AI_HATS_GATE_BROKEN_ACK set, '
     'SKIPPED: incomplete dispatcher environment" >&2; '
     'else printf "%s\\n" "ai-hats-claude-hook: incomplete dispatcher environment '
@@ -84,11 +86,11 @@ _ASK = (
 DISPATCHER_COMMAND = "sh -c '" + _ASK + _SPAWN + "'"
 
 #: What `statusLine` runs in a HITL session's settings: the same dispatcher (a
-#: render is observed like a notification), then the person's own command with
-#: the same payload, since `--settings` replaced their slot. Exit 0: not a gate.
+#: render is observed like a notification; no hatch advice, a bar is not a
+#: gate), then the person's own command under `sh`, as claude runs it (2.1.273).
 STATUSLINE_COMMAND = (
     "sh -c '"
-    'p=$(cat); printf "%s" "$p" | ( ' + _ASK + _SPAWN + " ) >/dev/null; "
+    'p=$(cat); printf "%s" "$p" | ( ' + _ASK + _SPAWN_ONE + "fi ) >/dev/null; "
     'if [ -n "$AI_HATS_STATUSLINE_INNER" ]; then '
     'printf "%s" "$p" | sh -c "$AI_HATS_STATUSLINE_INNER"; fi; '
     "exit 0'"
@@ -142,8 +144,10 @@ class ClaudeChannel:
         one being asked about. A render names no event at all and carries
         ``rate_limits`` — the quota state a PTY session sees nowhere else.
         """  # comment-length: allow — what the measured payloads do and do not carry
-        if arrival.native == "" and is_render(payload):
-            return quota_notice(payload, environ)
+        if is_render(payload):
+            # A render records its own notices: the memo must follow the record.
+            record_quota(payload, environ)
+            return None
         if (
             arrival.native != HOOK_NOTIFICATION
             or payload.get("notification_type") != OBSERVED_NOTIFICATION
