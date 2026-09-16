@@ -66,9 +66,17 @@ def _consent_dict(app: str, path: tuple[str, ...], selector: str, declared_by: s
 
 
 def _where(check: dict) -> str:
-    """The app and points a row binds, as one column of the launch report."""
-    at = ",".join(check.get("at") or []) or "-"
-    return f"{check['app']}:{at}"
+    """The app and points a row binds, as one column of the launch report —
+    one point per row off the plan, a list of them off the old builder."""
+    at = check.get("at")
+    if isinstance(at, list):
+        at = ",".join(at)
+    return f"{check['app']}:{at or '-'}"
+
+
+def _which_script(check: dict) -> str:
+    """``skill/script``; the script's own path where no composed skill holds it."""
+    return f"{check['skill']}/{check['script']}" if check["skill"] else check["script"]
 
 
 def _consent_where(consent: dict) -> str:
@@ -278,7 +286,7 @@ def render_report(d: dict, *, full: bool = False, prompt_text: str | None = None
             lines.append("  (none bound)")
         for c in d["checks"]:
             lines.append(
-                f"  {_where(c):<20} {c['skill']}/{c['script']}"
+                f"  {_where(c):<20} {_which_script(c)}"
                 f"  on_error={c['on_error']}  by {c['declared_by']}"
             )
             # An armed gate is the quiet case; anything else is what the operator

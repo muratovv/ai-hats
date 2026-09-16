@@ -217,8 +217,9 @@ def test_a_hitl_launch_is_todays_argv_and_environment(maintainer, tmp_path: Path
 
 
 def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Path):
-    """The base ``automate_launch`` builds the prompt from the context entry,
-    the working directory and the brief — byte-equal to ``assemble_meta_prompt``."""
+    """The base ``automate_launch`` builds the prompt from the context entry the
+    plan names, the working directory and the brief — byte-equal to
+    ``assemble_meta_prompt``."""
     from ai_hats.materialization import describe_write_text
     from ai_hats.session_artifacts import BuiltArtifacts, assemble_brief
     from ai_hats.surfaces.cline.provider import ClineSurface
@@ -244,6 +245,7 @@ def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Pat
         entries=(describe_write_text(root / "rules.md", "CONTEXT\n"),),
         env={},
         launch=Launch(args=("--config", str(root)), sdk_options=None),
+        context=root / "rules.md",
     )
     brief = assemble_brief(layout, task="demo", ticket_id="")
     surface = ClineSurface()
@@ -303,6 +305,7 @@ def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_
         "env_keys",
         "prompt",
         "materialized",
+        "checks",
         "consent",
         "notes",
         "composition",
@@ -315,3 +318,162 @@ def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_
     ] == "written"
     assert applied["prompt"] == str(root / "prompt.md")
     assert applied["consent"], "the maintainer role declares consent"
+
+
+# ── the context the plan names, the home the surface probes, the checks it covers ──
+
+
+def _bare_plan(root: Path, entries=(), *, context: Path | None = None, surface: str = "cline"):
+    from ai_hats.surfaces.plan import CompositionPlan, Hooks, Launch, MaterializationPlan
+
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(),
+        hooks=Hooks((), ()),
+        trace=(),
+    )
+    return MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface=surface,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        entries=tuple(entries),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
+        context=context,
+    )
+
+
+def test_the_launch_reports_the_context_entry_the_plan_names_else_the_prompt(tmp_path: Path):
+    """No ``.md`` heuristic: codex and opencode write ``SKILL.md`` documents
+    under the root, so the plan says which entry, if any, is the context."""
+    from ai_hats.materialization import describe_write_text
+    from ai_hats.session_plan import launch, session_record
+    from ai_hats.surfaces import context_entry, context_text
+    from ai_hats_core.layout import ProjectLayout
+
+    layout = ProjectLayout.at(tmp_path / "proj")
+    root = tmp_path / "sessions" / "s"
+    document = describe_write_text(root / "skills" / "s" / "SKILL.md", "# a skill\n")
+    context = describe_write_text(root / "rules.md", "CONTEXT\n")
+
+    named = _bare_plan(root, (document, context), context=root / "rules.md")
+    assert context_entry(named) is context
+    launched = launch(named, _flags(root, claim=False), layout=layout)
+    assert launched.prompt == "CONTEXT\n"
+    assert session_record(named, launched, role="r")["prompt"] == str(root / "rules.md")
+
+    inline = _bare_plan(root, (document,))
+    assert context_entry(inline) is None
+    assert context_text(inline) == inline.prompt.text
+    launched = launch(inline, _flags(root, claim=False), layout=layout)
+    assert launched.prompt == "# r\n", "the surface prompt, never the skill document"
+    assert session_record(inline, launched, role="r")["prompt"] is None
+
+
+def test_a_context_no_entry_writes_is_refused_before_anything_is_touched(tmp_path: Path):
+    from ai_hats.materialization import describe_write_text
+    from ai_hats.surfaces import ContextUnwritten, validate
+
+    root = tmp_path / "sessions" / "s"
+    context = describe_write_text(root / "rules.md", "CONTEXT\n")
+    validate(_bare_plan(root, (context,), context=root / "rules.md"))
+    with pytest.raises(ContextUnwritten):
+        validate(_bare_plan(root, (), context=root / "rules.md"))
+    with pytest.raises(ContextUnwritten):
+        validate(_bare_plan(root, (context,), context=root / "other.md"))
+
+
+def test_the_host_carries_the_home_the_surface_probes(tmp_path: Path):
+    """The one read of the person's home is the surface's, taken by
+    ``probe_host`` for the surface in hand; a surface without one leaves ``None``."""
+    from ai_hats.surfaces.cline.provider import ClineSurface
+    from ai_hats.surfaces.plan import Digested
+
+    @dataclasses.dataclass(frozen=True)
+    class Home(Digested):
+        root: Path
+        entries: tuple[str, ...]
+
+    class Homed(ClineSurface):
+        def probe_home(self, environ):
+            return Home(Path(environ["HOME"]) / ".tool", ("config.json",))
+
+    environ = {"PATH": str(tmp_path), "HOME": str(tmp_path)}
+    bare = probe_host(environ, python="/opt/py", surface=ClineSurface())
+    homed = probe_host(environ, python="/opt/py", surface=Homed())
+    assert bare.home is None and probe_host(environ, python="/opt/py").home is None
+    assert homed.home == Home(tmp_path / ".tool", ("config.json",))
+    assert homed.digest != bare.digest, "the home is an input of planning"
+
+
+def test_the_record_says_where_each_check_runs_from_off_the_plans_own_entries(tmp_path: Path):
+    """``runs_from`` is the mirror the plan writes for the check's skill; a
+    script outside every composed skill has no mirror and says so."""
+    from ai_hats.materialization import MaterializationEntry
+    from ai_hats.surfaces import checks_record
+    from ai_hats.surfaces.plan import (
+        CompositionPlan,
+        Executable,
+        ExternalHook,
+        Hooks,
+        Launch,
+        MaterializationPlan,
+        OnError,
+        Skill,
+    )
+
+    root = tmp_path / "sessions" / "s"
+    skill_dir = tmp_path / "lib" / "skills" / "s"
+    skill = Skill(name="skills::s", path=skill_dir, content_digest="t")
+    inside = Executable(skill_dir / "hooks" / "gate.sh", "g")
+    outside = Executable(tmp_path / "elsewhere" / "gate.sh", "e")
+
+    def check(run: Executable) -> ExternalHook:
+        return ExternalHook("rack", "tasks", "plan->execute", run, OnError.REFUSE, "r")
+
+    consent = ExternalHook("consent_gate", "rack.transition", "->done", None, None, "r")
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(skill,),
+        hooks=Hooks((), (check(inside), check(outside), consent)),
+        trace=(),
+    )
+    mirror = MaterializationEntry(
+        kind=WriteKind.COPY_TREE, target=root / "skills" / "s", source=skill_dir, tree_digest="t"
+    )
+
+    def plan(entries) -> MaterializationPlan:
+        return MaterializationPlan(
+            composition=composition,
+            prompt=composition.prompt,
+            surface="cline",
+            run_mode=RunMode.HITL,
+            policy=SessionPolicy(),
+            root=root,
+            entries=entries,
+            env={},
+            launch=Launch(args=(), sdk_options=None),
+        )
+
+    mirrored, unmirrored = checks_record(plan((mirror,)))
+    assert mirrored == {
+        "skill": "s",
+        "script": "hooks/gate.sh",
+        "app": "rack",
+        "object": "tasks",
+        "at": "plan->execute",
+        "on_error": "refuse",
+        "declared_by": "r",
+        "runs_from": str(root / "skills" / "s" / "hooks" / "gate.sh"),
+        "planned": True,
+    }
+    assert unmirrored["skill"] is None and unmirrored["script"] == str(outside.path)
+    assert unmirrored["runs_from"] is None and unmirrored["planned"] is False
+    (unplanned, _) = checks_record(plan(()))
+    assert unplanned["runs_from"] is None and unplanned["planned"] is False
+    assert unplanned["skill"] == "s", "the skill is composed; this launch just writes no mirror"

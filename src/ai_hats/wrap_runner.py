@@ -609,7 +609,7 @@ class WrapRunner:
         claude_session_id = str(uuid.uuid4())
         if plans(provider):
             cmd, env_map, meta_prompt, record = self._session_on_the_plan(
-                session, extra_args=extra_args, provider_session_id=claude_session_id
+                session, run, extra_args=extra_args, provider_session_id=claude_session_id
             )
             composition_section = record["composition"]
         else:
@@ -664,26 +664,20 @@ class WrapRunner:
         )
 
     def _session_on_the_plan(
-        self, session: Session, *, extra_args: list[str] | None, provider_session_id: str
+        self,
+        session: Session,
+        run: SessionRun,
+        *,
+        extra_args: list[str] | None,
+        provider_session_id: str,
     ) -> tuple[list[str], dict[str, str], str, dict]:
-        """plan → apply → launch → record (ADR-0036 D2–D6): the one path a
-        surface with a planner takes."""
+        """plan → apply → claim → launch → record (ADR-0036 D2–D6): the one
+        path a surface with a planner takes."""
         payload = self.payload
         provider = payload.provider
         if payload.plan is None:
             raise RuntimeError("the seam adapted no composition")
         root = self.layout.cache.session(session.session_id)
-        with provider.execution_context(self.layout):
-            plan = plan_session(
-                payload.plan,
-                provider,
-                run_mode=RunMode.HITL,
-                policy=payload.policy,
-                root=root,
-                layout=self.layout,
-                host=probe_host(),
-            )
-            applied = apply(plan)
         flags = LaunchFlags(
             session_id=session.session_id,
             session_dir=session.session_dir,
@@ -692,6 +686,18 @@ class WrapRunner:
             provider_session_id=provider_session_id,
             extra_args=tuple(extra_args or ()),
         )
+        with provider.execution_context(self.layout):
+            plan = plan_session(
+                payload.plan,
+                provider,
+                run_mode=RunMode.HITL,
+                policy=payload.policy,
+                root=root,
+                layout=self.layout,
+                host=probe_host(surface=provider),
+            )
+            applied = apply(plan)
+            provider.claim_resources(plan, flags, layout=self.layout, run=run)
         launched = launch(plan, flags, layout=self.layout)
         record = session_record(
             plan,

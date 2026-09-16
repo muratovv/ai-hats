@@ -212,4 +212,5 @@ def test_the_plan_path_reports_the_session_the_old_path_reports(project: Path, r
     assert {e["target"].rsplit("/", 1)[-1] for e in new["materialized"]} - {
         e["target"].rsplit("/", 1)[-1] for e in old_record["materialized"]
     } == {"SKILL.md"}
-    assert set(old_record) - set(new) == {"checks", "duplicates", "escapes"}
+    assert new["checks"] == old_record["checks"] == []
+    assert set(old_record) - set(new) == {"duplicates", "escapes"}

@@ -256,6 +256,7 @@ class ClaudeSurface(Surface):
         options: dict[str, object] = {}
         env: dict[str, str] = {}
         prompt = composition.prompt  # claude adds no block of its own
+        context: Path | None = None
         if policy.context:
             context = root / "prompt.md"
             entries.append(
@@ -312,6 +313,7 @@ class ClaudeSurface(Surface):
             launch=Launch(args=tuple(args), sdk_options=None)
             if hitl
             else Launch(args=None, sdk_options=options),
+            context=context,
         )
 
     def automate_launch(

@@ -23,7 +23,6 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.surfaces import Surface
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.paths import PROJECT_CONFIG
@@ -184,23 +183,8 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     from ai_hats_observe import SessionManager
 
     class LifecycleProvider(ClaudeSurface):
-        # The deferral rides the builder's ``resources``; a surface with a
-        # planner never builds, so this one stands on the builder path.
-        plan = Surface.plan
-
-        def build_session_artifacts(self, layout, result, session_id, **kwargs):
-            artifacts = kwargs["artifacts"]
-            assert artifacts.resources is not None
-            artifacts.resources.defer(
-                "provider artifacts",
-                lambda: lifecycle.append("provider"),
-            )
-            return super().build_session_artifacts(
-                layout,
-                result,
-                session_id,
-                **kwargs,
-            )
+        def claim_resources(self, plan, flags, *, layout, run):
+            run.defer("provider artifacts", lambda: lifecycle.append("provider"))
 
     payload = replace(
         build_composition_payload(project, role_override="guest"),

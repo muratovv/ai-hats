@@ -312,6 +312,9 @@ class Host(Digested):
     #: Where each command the consent gate can wrap resolves; a command that is
     #: not on the path has no key.
     commands: Mapping[str, Path]
+    #: The person's configuration home as the surface projects it into a session
+    #: (``Surface.probe_home``); ``None`` for a surface that projects none.
+    home: Digested | None = None
 
 
 # ── effect half ──────────────────────────────────────────────── ADR-0036 D1
@@ -344,9 +347,14 @@ class MaterializationPlan(Digested):
     #: What ai-hats adds to the child's environment.
     env: Mapping[str, str]
     launch: Launch
+    #: The target of the entry that carries the agent's context; ``None`` where
+    #: the surface hands the prompt inline (an argv token, a config document).
+    context: Path | None = None
 
     def __post_init__(self) -> None:
         _absolute(self.root, "the session root")
+        if self.context is not None:
+            _absolute(self.context, "the context path")
         own = self.composition.prompt.blocks
         if self.prompt.blocks[: len(own)] != own:
             raise ValueError("the surface prompt must open with the composition's blocks")
@@ -394,16 +402,22 @@ class Launched:
 
 
 def context_entry(plan: MaterializationPlan) -> MaterializationEntry | None:
-    """The entry that carries the agent's context: the one markdown file
-    written under the root, on every surface that writes one."""
-    return next(
-        (
-            e
-            for e in plan.entries
-            if e.kind is WriteKind.WRITE_TEXT and e.target.suffix.lower() == ".md"
-        ),
-        None,
-    )
+    """The entry that carries the agent's context — the one the plan names;
+    ``None`` where the surface hands the prompt inline."""
+    if plan.context is None:
+        return None
+    wanted = _normal(plan.context)
+    for entry in plan.entries:
+        if entry.kind is WriteKind.WRITE_TEXT and _normal(entry.target) == wanted:
+            return entry
+    raise ContextUnwritten(plan.context)
+
+
+def context_text(plan: MaterializationPlan) -> str:
+    """The bytes the agent reads: the context entry's, or the surface prompt
+    where the plan writes no context file."""
+    entry = context_entry(plan)
+    return cast(str, entry.content) if entry is not None else plan.prompt.text
 
 
 # ── planning refusals, as functions over the plan ────────────── ADR-0036 D2
@@ -423,6 +437,12 @@ class EscapeUndeclared(PlanRefused):
     def __init__(self, target: Path, root: Path) -> None:
         self.target = target
         super().__init__(f"{target} lies outside {root} and the entry does not declare escape")
+
+
+class ContextUnwritten(PlanRefused):
+    def __init__(self, context: Path) -> None:
+        self.context = context
+        super().__init__(f"the plan names {context} as its context and no entry writes it")
 
 
 class StalePlan(PlanRefused):
@@ -454,8 +474,8 @@ _CREATING = (
 
 
 def validate(plan: MaterializationPlan) -> None:
-    """Refuse a plan two entries create one target in, or that writes outside
-    its root without saying so.
+    """Refuse a plan two entries create one target in, that writes outside
+    its root without saying so, or that names a context no entry writes.
 
     A target counts once per creating entry whatever stands between them: a
     remove in the middle does not make the second creation a rebuild.
@@ -471,6 +491,7 @@ def validate(plan: MaterializationPlan) -> None:
     for entry in plan.entries:
         if not entry.escape and not _normal(entry.target).is_relative_to(root):
             raise EscapeUndeclared(entry.target, plan.root)
+    context_entry(plan)
 
 
 def _normal(path: Path) -> Path:
@@ -834,3 +855,39 @@ def composition_record(plan: CompositionPlan) -> dict:
             for t in plan.trace
         ],
     }
+
+
+def checks_record(plan: MaterializationPlan) -> list[dict]:
+    """The check bindings as the record names them: where each runs from in
+    the session's mirror, read off the plan's own tree entries — nothing is
+    resolved on disk. A script outside every composed skill has no mirror and
+    says so; the adapter reported it when it read the library."""
+    mirrored = {
+        e.source: e.target
+        for e in plan.entries
+        if e.kind is WriteKind.COPY_TREE and e.source is not None
+    }
+    rows = []
+    for hook in plan.composition.hooks.external:
+        if hook.on_error is None or hook.run is None:
+            continue
+        home = home_of(hook.run, plan.composition.skills)
+        runs_from = None
+        if home is not None:
+            skill, inside = home
+            target = mirrored.get(skill.path)
+            runs_from = None if target is None else str(target / inside)
+        rows.append(
+            {
+                "skill": None if home is None else mirror_name(home[0]),
+                "script": str(hook.run.path) if home is None else str(home[1]),
+                "app": hook.app,
+                "object": hook.object,
+                "at": hook.at,
+                "on_error": hook.on_error.value,
+                "declared_by": hook.declared_by,
+                "runs_from": runs_from,
+                "planned": runs_from is not None,
+            }
+        )
+    return rows

@@ -47,7 +47,9 @@ if TYPE_CHECKING:
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
-    from .plan import CompositionPlan, Host, Launched, LaunchFlags, MaterializationPlan
+    from ai_hats.session_run import SessionRun
+
+    from .plan import CompositionPlan, Digested, Host, Launched, LaunchFlags, MaterializationPlan
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +242,15 @@ class Surface(abc.ABC):
             hasattr(self, f"_build_{c.value}_{m.value}") for c in ArtifactCategory for m in RunMode
         )
 
+    def probe_home(self, environ: Mapping[str, str]) -> Digested | None:
+        """The person's configuration home as this surface projects it into a
+        session, enumerated before planning and handed in as ``Host.home``
+        (ADR-0036 D2) — the one read of the home a plan is built on. ``None``:
+        this surface projects no home.
+        """
+        del environ
+        return None
+
     def plan(
         self,
         composition: CompositionPlan,
@@ -270,16 +281,11 @@ class Surface(abc.ABC):
         plus the model, and one prompt token — context, working directory, brief.
         An SDK surface overrides with its option document.
         """
-        from .plan import Launched, context_entry
+        from .plan import Launched, context_text
 
-        context = context_entry(plan)
         prompt = "\n\n".join(
             s
-            for s in (
-                context.content if context and context.content else "",
-                working_directory_section(layout),
-                flags.brief or "",
-            )
+            for s in (context_text(plan), working_directory_section(layout), flags.brief or "")
             if s
         )
         model = self.model_flags(flags.model) if flags.model else []
@@ -527,6 +533,21 @@ class Surface(abc.ABC):
         """
         del session_dir, layout
         return {}
+
+    def claim_resources(
+        self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        *,
+        layout: ProjectLayout,
+        run: SessionRun,
+    ) -> None:
+        """What a real session takes beyond the plan and gives back at its end:
+        finalizers registered on ``run``, warnings about what was recovered on
+        the way in. The runners call it once the plan is applied; a preview
+        never does. Default: nothing to take.
+        """
+        del plan, flags, layout, run
 
     def build_session_prompt(
         self,

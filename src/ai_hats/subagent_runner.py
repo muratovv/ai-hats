@@ -315,7 +315,7 @@ class SubAgentRunner:
                 policy=self.payload.policy,
                 root=root,
                 layout=self.layout,
-                host=probe_host(),
+                host=probe_host(surface=provider),
             )
             applied = apply(plan)
             _claim_session_cache(root)
@@ -329,6 +329,7 @@ class SubAgentRunner:
                 model=model or None,
                 brief=assemble_brief(self.layout, task=task, ticket_id=ticket_id),
             )
+            provider.claim_resources(plan, flags, layout=self.layout, run=run)
             launched = launch(plan, flags, layout=self.layout)
             launch_env = dict(launched.env)
             meta_prompt = launched.prompt

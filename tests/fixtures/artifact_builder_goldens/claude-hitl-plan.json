@@ -1,4 +1,5 @@
 {
+  "checks": [],
   "composition": {
     "digest": "<path-derived>",
     "hooks": {
