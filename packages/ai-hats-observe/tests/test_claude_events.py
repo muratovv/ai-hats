@@ -363,8 +363,15 @@ def test_an_unmodelled_record_type_is_reported_once_with_its_raw_type(tmp_path: 
     known: list[dict[str, Any]] = [
         {"type": t, "uuid": f"k-{t}"} for t in sorted(KNOWN_RECORD_TYPES)
     ]
-    # `system` is classified by subtype, so the control feeds it a real one
+    # `system` and `attachment` are classified by subtype, so the control feeds
+    # each a real one
     known = [r | {"subtype": "turn_duration"} if r["type"] == "system" else r for r in known]
+    known = [
+        r | {"attachment": {"type": "date", "date": "2026-09-16"}}
+        if r["type"] == "attachment"
+        else r
+        for r in known
+    ]
     events = events_of(tmp_path, [*known, {"type": "not-a-real-type", "uuid": "x"}])
 
     drift = [
@@ -716,6 +723,130 @@ def test_a_stop_hook_that_failed_is_a_surface_warning(tmp_path: Path) -> None:
     assert [w.detail for w in warnings] == ["notify-stop.sh: exit 1"]
     assert warnings[0].raw_code == "system/stop_hook_summary"
     assert len([e for e in events if isinstance(e, GateVerdict)]) == 1
+
+
+# --- attachments -------------------------------------------------------------
+
+# The measured attachment subtypes minus the two hook failures: context the
+# harness injects, advice to the model, or a fact another event already carries.
+# The triage per subtype is in the live-log surface survey.
+QUIET_ATTACHMENTS = [
+    "agent_listing_delta",
+    "auto_mode",
+    "auto_mode_exit",
+    "bash_output_audience_note",
+    "batching_reminder_sent",
+    "command_permissions",
+    "compact_file_reference",
+    "date",
+    "date_change",
+    "deferred_tools_delta",
+    "deferred_tools_record",
+    "edited_text_file",
+    "environment",
+    "file",
+    "hook_additional_context",
+    "hook_success",
+    "instructions",
+    "invoked_skills",
+    "model",
+    "plan_mode_exit",
+    "prompt_snapshot",
+    "queued_command",
+    "read_truncation_notice",
+    "remote_session_change",
+    "session_context",
+    "silent_turn_reminder",
+    "skill_listing",
+    "task_reminder",
+    "total_tokens_reminder",
+]
+
+
+def attachment(subtype: str, **fields: Any) -> dict[str, Any]:
+    return {
+        "type": "attachment",
+        "uuid": f"a-{subtype}",
+        "timestamp": "2026-09-16T09:00:00.000Z",
+        "attachment": {"type": subtype, **fields},
+    }
+
+
+@pytest.mark.parametrize("subtype", QUIET_ATTACHMENTS)
+def test_a_measured_attachment_subtype_is_read_and_says_nothing(
+    tmp_path: Path, subtype: str
+) -> None:
+    """Silence by decision: each of these is named, so a new subtype is drift
+    (the test below) rather than one more thing that happens to be quiet."""
+    assert events_of(tmp_path, [attachment(subtype)]) == []
+
+
+def test_an_unmeasured_attachment_subtype_is_reported(tmp_path: Path) -> None:
+    """Positive control for the quiet set: a decision, not a blanket ignore of
+    ``attachment`` — and a record with no attachment object at all is drift too."""
+    unmeasured = events_of(tmp_path, [attachment("brand-new")])
+    shapeless = events_of(tmp_path, [{"type": "attachment", "uuid": "a-none"}])
+
+    assert [s.raw_code for s in signals(unmeasured)] == ["attachment/brand-new"]
+    assert unmeasured[0].reason is WorthRecording.UNSUPPORTED_RECORD
+    assert unmeasured[0].ts == "2026-09-16T09:00:00.000Z"
+    assert [s.raw_code for s in signals(shapeless)] == ["attachment/non-object"]
+
+
+def test_a_hook_that_failed_or_timed_out_is_a_surface_warning(tmp_path: Path) -> None:
+    """A gate that ran and delivered no verdict: the run went on ungated. 131
+    non-blocking errors and one timeout in the measured corpus, recorded
+    nowhere until now — same reading as a Stop hook that errored."""
+    events = events_of(
+        tmp_path,
+        [
+            attachment(
+                "hook_non_blocking_error",
+                hookName="PreToolUse:Bash",
+                hookEvent="PreToolUse",
+                toolUseID="toolu_01",
+                command="$CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh",
+                exitCode=127,
+                stdout="",
+                stderr="Failed with non-blocking status code: /bin/sh: guard.sh: No such file",
+                durationMs=14,
+            ),
+            attachment(
+                "hook_cancelled",
+                hookName="PreToolUse:Bash",
+                hookEvent="PreToolUse",
+                toolUseID="toolu_02",
+                command="/tmp/hooks/slow.sh",
+                durationMs=2016,
+                timedOut=True,
+                timeoutMs=2000,
+            ),
+        ],
+    )
+
+    warnings = [s for s in signals(events) if s.reason is WorthRecording.SURFACE_WARNING]
+    assert [w.raw_code for w in warnings] == [
+        "attachment/hook_non_blocking_error",
+        "attachment/hook_cancelled",
+    ]
+    assert warnings[0].detail == (
+        "PreToolUse:Bash exit 127 ($CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh): "
+        "Failed with non-blocking status code: /bin/sh: guard.sh: No such file"
+    )
+    assert warnings[1].detail == "PreToolUse:Bash timed out after 2000 ms (/tmp/hooks/slow.sh)"
+    assert all(w.source == "claude/jsonl" and w.ts == "2026-09-16T09:00:00.000Z" for w in warnings)
+    # POSITIVE CONTROL: a failure is not a decision — no verdict, and no drift
+    assert len(events) == 2
+    assert not [e for e in events if isinstance(e, GateVerdict)]
+
+
+def test_a_hook_failure_with_bare_fields_still_reads(tmp_path: Path) -> None:
+    """Never raise, never drop: whatever the record carries is the detail."""
+    events = events_of(
+        tmp_path,
+        [attachment("hook_non_blocking_error"), attachment("hook_cancelled", hookName="Stop")],
+    )
+    assert [s.detail for s in signals(events)] == ["hook failed", "Stop cancelled"]
 
 
 # --- prompts ---------------------------------------------------------------

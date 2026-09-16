@@ -122,6 +122,46 @@ _SILENT_SYSTEM_SUBTYPES = frozenset(
     }
 )
 
+# `attachment` subtypes that say a gate of ours ran and delivered no verdict.
+_HOOK_FAILURES = frozenset({"hook_cancelled", "hook_non_blocking_error"})
+
+# Measured `attachment` subtypes that say nothing about the run: context the
+# harness injects, advice to the model, or a fact another event already carries
+# (the triage per subtype: docs/adr/attachments/live-log-surface-survey.md).
+_SILENT_ATTACHMENTS = frozenset(
+    {
+        "agent_listing_delta",
+        "auto_mode",
+        "auto_mode_exit",
+        "bash_output_audience_note",
+        "batching_reminder_sent",
+        "command_permissions",
+        "compact_file_reference",
+        "date",
+        "date_change",
+        "deferred_tools_delta",
+        "deferred_tools_record",
+        "edited_text_file",
+        "environment",
+        "file",
+        "hook_additional_context",  # the chain's own GateVerdict.nudges
+        "hook_success",  # the chain's own GateVerdict; a Stop is stop_hook_summary
+        "instructions",
+        "invoked_skills",
+        "model",  # ResponseStarted.model, per call
+        "plan_mode_exit",
+        "prompt_snapshot",
+        "queued_command",  # lands as a `user` record → PromptReceived
+        "read_truncation_notice",
+        "remote_session_change",
+        "session_context",
+        "silent_turn_reminder",
+        "skill_listing",
+        "task_reminder",
+        "total_tokens_reminder",  # the per-turn cap, reset at every prompt; not quota
+    }
+)
+
 # Content blocks that are known but carry nothing the canonical items model.
 _IGNORED_BLOCKS = frozenset({"image"})
 
@@ -284,6 +324,8 @@ class ClaudeTranscriptReader:
                 yield from self._user_events(record)
             case "system":
                 yield from self._system_events(record)
+            case "attachment":
+                yield from self._attachment_events(record)
 
     def _assistant_events(self, record: dict[str, Any]) -> Iterator[Event]:
         message = record.get("message")
@@ -574,6 +616,27 @@ class ClaudeTranscriptReader:
                 reason=WorthRecording.SURFACE_WARNING,
             )
 
+    def _attachment_events(self, record: dict[str, Any]) -> Iterator[Event]:
+        """What the harness attached to a turn: read for the one thing in it
+        that happened to the run — a hook of ours that failed — and classified
+        for the rest, so a subtype nobody measured is drift, not silence."""
+        attachment = record.get("attachment")
+        ts = _ts(record)
+        if not isinstance(attachment, dict):
+            yield self._notice("attachment/non-object", ts=ts)
+            return
+        subtype = attachment.get("type")
+        if subtype in _HOOK_FAILURES:
+            yield Notice(
+                ts=ts,
+                detail=_hook_failure(attachment),
+                raw_code=f"attachment/{subtype}",
+                source=SOURCE,
+                reason=WorthRecording.SURFACE_WARNING,
+            )
+        elif subtype not in _SILENT_ATTACHMENTS:
+            yield self._notice(f"attachment/{subtype}", ts=ts)
+
     # -- helpers -----------------------------------------------------------
 
     def _end_open(self) -> Iterator[Event]:
@@ -636,6 +699,21 @@ def _questions(inputs: dict[str, Any]) -> str | None:
 
 def _entry_text(entry: Any) -> str:
     return entry if isinstance(entry, str) else json.dumps(entry, ensure_ascii=False, default=str)
+
+
+def _hook_failure(attachment: dict[str, Any]) -> str:
+    """One line: which hook, how it failed, which command."""
+    hook = attachment.get("hookName") or attachment.get("hookEvent") or "hook"
+    command = attachment.get("command")
+    where = f" ({command})" if isinstance(command, str) and command else ""
+    if attachment.get("type") == "hook_cancelled":
+        timeout = attachment.get("timeoutMs")
+        how = f"timed out after {timeout} ms" if isinstance(timeout, int) else "cancelled"
+        return f"{hook} {how}{where}"
+    code = attachment.get("exitCode")
+    head = f"{hook} exit {code}{where}" if code is not None else f"{hook} failed{where}"
+    said = attachment.get("stderr") or attachment.get("stdout")
+    return f"{head}: {said}" if isinstance(said, str) and said.strip() else head
 
 
 def _model(message: Any) -> ModelName | None:
