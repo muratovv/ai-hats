@@ -143,6 +143,11 @@ class SubagentEngine(abc.ABC):
         # The session's live log, for what only the surface's own stream
         # carries (a quota pre-warning); ``None`` when the session writes none.
         event_log: Path | None = None,
+        # On the plan path (ADR-0036 D4): the option document already launched
+        # for this run, and the first turn; ``result`` and ``artifacts`` are
+        # then the old path's and unread.
+        launched: Launched | None = None,
+        brief: str | None = None,
     ) -> SurfaceRunResult:
         pass
 

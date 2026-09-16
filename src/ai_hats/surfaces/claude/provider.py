@@ -796,27 +796,35 @@ class ClaudeSubagentEngine(SubagentEngine):
         artifacts: BuiltArtifacts | None = None,
         provider_session_id: str | None = None,
         event_log: Path | None = None,
+        launched: Launched | None = None,
+        brief: str | None = None,
     ) -> SurfaceRunResult:
-        if artifacts is None:
-            artifacts = self._provider.build_session_artifacts(
-                layout,
+        if launched is not None:
+            from claude_agent_sdk import ClaudeAgentOptions
+
+            opts = ClaudeAgentOptions(**(launched.sdk_options or {}))
+            msg = brief if brief is not None else ""
+        else:
+            if artifacts is None:
+                artifacts = self._provider.build_session_artifacts(
+                    layout,
+                    result,
+                    session_id,
+                    run_mode="automate",
+                    artifacts=BuiltArtifacts(),
+                )
+            opts = automate_options(
                 result,
-                session_id,
-                run_mode="automate",
-                artifacts=BuiltArtifacts(),
+                provider=self._provider,
+                layout=layout,
+                session_id=session_id,
+                artifacts=artifacts,
+                work_dir=work_dir,
+                model=model or "",
+                env=env,
+                claude_session_id=provider_session_id,
             )
-        opts = automate_options(
-            result,
-            provider=self._provider,
-            layout=layout,
-            session_id=session_id,
-            artifacts=artifacts,
-            work_dir=work_dir,
-            model=model or "",
-            env=env,
-            claude_session_id=provider_session_id,
-        )
-        msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
+            msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
         run_res = self._run_blocking(
             opts, msg, timeout_s=timeout_s, on_message=_stream_signals_to(event_log)
         )

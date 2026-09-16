@@ -45,6 +45,9 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
         MaterializationPlan,  # noqa: F401
         Outcome,  # noqa: F401
         PlanRefused,  # noqa: F401
+        Prompt,  # noqa: F401
+        PromptBlock,  # noqa: F401
+        PromptMember,  # noqa: F401
         apply,  # noqa: F401
         composition_record,  # noqa: F401
         context_entry,  # noqa: F401
@@ -96,6 +99,9 @@ _HOMES = {
     "MaterializationPlan": ".plan",
     "Outcome": ".plan",
     "PlanRefused": ".plan",
+    "Prompt": ".plan",
+    "PromptBlock": ".plan",
+    "PromptMember": ".plan",
     "adapt": ".plan_adapter",
     "apply": ".plan",
     "composition_record": ".plan",

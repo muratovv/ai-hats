@@ -103,15 +103,23 @@ def test_skills_mirror_each_tree_and_rewrite_its_document(tmp_path: Path):
     plan = _plan(tmp_path, _composition(skills=[skill]))
     mirror = plan.root / "plugin" / "skills" / "s"
     tree = next(e for e in plan.entries if e.kind is WriteKind.COPY_TREE)
-    assert (tree.source, tree.target, tree.tree_digest) == (skill.path, mirror, skill.content_digest)
+    assert (tree.source, tree.target, tree.tree_digest) == (
+        skill.path,
+        mirror,
+        skill.content_digest,
+    )
     document = next(e for e in plan.entries if e.target == mirror / "SKILL.md")
     assert document.content == "# rendered\n"
     assert plan.entries.index(tree) < plan.entries.index(document), "the document shadows the copy"
     manifest = next(e for e in plan.entries if e.target.name == "plugin.json")
     assert json.loads(manifest.content) == {"name": "ai-hats-r", "version": "0.0.0"}
-    assert plan.env["PATH"] == os.pathsep.join([str(mirror / "scripts"), str(mirror / "bin"), "/usr/bin"])
+    assert plan.env["PATH"] == os.pathsep.join(
+        [str(mirror / "scripts"), str(mirror / "bin"), "/usr/bin"]
+    )
     assert _flag(plan.launch.args, "--plugin-dir") == str(plan.root / "plugin")
-    assert not any(e.kind is WriteKind.REMOVE_TREE for e in plan.entries), "a wipe is not idempotent"
+    assert not any(e.kind is WriteKind.REMOVE_TREE for e in plan.entries), (
+        "a wipe is not idempotent"
+    )
 
 
 def test_a_skill_without_a_document_or_scripts_adds_neither(tmp_path: Path):
@@ -122,8 +130,13 @@ def test_a_skill_without_a_document_or_scripts_adds_neither(tmp_path: Path):
 
 def test_automate_registers_the_plugin_as_a_local_sdk_plugin(tmp_path: Path):
     plan = _plan(tmp_path, _composition(skills=[_skill(tmp_path, "s")]), run_mode=RunMode.AUTOMATE)
-    assert plan.launch.sdk_options["plugins"] == [{"type": "local", "path": str(plan.root / "plugin")}]
-    assert _plan(tmp_path, _composition(), run_mode=RunMode.AUTOMATE).launch.sdk_options["plugins"] == []
+    assert plan.launch.sdk_options["plugins"] == [
+        {"type": "local", "path": str(plan.root / "plugin")}
+    ]
+    assert (
+        _plan(tmp_path, _composition(), run_mode=RunMode.AUTOMATE).launch.sdk_options["plugins"]
+        == []
+    )
 
 
 def test_the_plugin_name_is_a_slug_of_the_identity(tmp_path: Path):
@@ -194,6 +207,8 @@ def test_a_policy_without_hooks_wires_none(tmp_path: Path):
 
 
 def test_a_hook_outside_every_composed_skill_is_refused(tmp_path: Path):
-    stray = RuntimeHook(HookEvent.PRE_TOOL_USE, "Bash", Executable(Path("/elsewhere/g.py"), "cd" * 32))
+    stray = RuntimeHook(
+        HookEvent.PRE_TOOL_USE, "Bash", Executable(Path("/elsewhere/g.py"), "cd" * 32)
+    )
     with pytest.raises(ValueError, match="outside every composed skill"):
         _plan(tmp_path, _composition(hooks=Hooks((stray,), ())))

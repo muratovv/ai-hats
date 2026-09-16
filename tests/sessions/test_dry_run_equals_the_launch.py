@@ -34,9 +34,11 @@ from click.testing import CliRunner
 
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
-from ai_hats.dry_run import AT_LAUNCH, DRY_RUN_SESSION_ID, dry_run_automate, dry_run_hitl
+from ai_hats.dry_run import AT_LAUNCH, DRY_RUN_SESSION_ID
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.session_artifacts import RunMode, assemble_brief
+from ai_hats.session_plan import preview
 from ai_hats_observe.artifacts import ROLE_MATERIALIZATION_JSON
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -142,12 +144,22 @@ def _comparable(payload: dict, sid: str) -> dict:
         if Path(entry["target"]).name in SID_IN_CONTENT:
             entry["digest"] = "<sid-dependent content>"
             entry["size"] = "<sid-dependent content>"
+        # What application did is the launch's alone to know (ADR-0036 D3);
+        # a dry-run reports the plan, not an outcome.
+        entry.pop("outcome", None)
+        entry.pop("files", None)
     return d
+
+
+def _planned_hitl(project: Path) -> dict:
+    return preview(
+        ProjectLayout.at(project), role=None, provider=None, run_mode=RunMode.HITL
+    ).record
 
 
 def test_the_dry_run_payload_equals_the_launch_record(project: Path, monkeypatch):
     """Field for field, once the launch-minted values are folded away."""
-    planned = dry_run_hitl(ProjectLayout.at(project)).to_dict()
+    planned = _planned_hitl(project)
     launched = _launch_for_real(monkeypatch, project)
 
     sid = _sid_of(launched)
@@ -177,11 +189,14 @@ def test_the_gates_survive_the_round_trip(project: Path, monkeypatch):
     Named separately because the equality above cannot fail on it: drop the
     section and both payloads lose it together.
     """
-    planned = dry_run_hitl(ProjectLayout.at(project)).to_dict()
+    planned = _planned_hitl(project)
     launched = _launch_for_real(monkeypatch, project)
 
-    assert planned["checks"], "the maintainer role binds a gate — the fixture must show it"
-    assert planned["checks"] == _normalize(launched["checks"], _sid_of(launched))
+    gates = [h for h in planned["composition"]["hooks"]["external"] if h["app"] == "rack"]
+    assert gates, "the maintainer role binds a gate — the fixture must show it"
+    assert planned["composition"]["hooks"] == _normalize(
+        launched["composition"]["hooks"], _sid_of(launched)
+    )
 
 
 # AUTOMATE (HATS-1552): the HITL half above shares its launch assembly between
@@ -249,15 +264,20 @@ def _automate_for_real(monkeypatch, project: Path) -> dict:
 
 
 def _planned_automate(project: Path):
-    return dry_run_automate(
-        ProjectLayout.at(project), role="maintainer", task=TASK_TEXT, ticket_id=TICKET
+    layout = ProjectLayout.at(project)
+    return preview(
+        layout,
+        role="maintainer",
+        provider=None,
+        run_mode=RunMode.AUTOMATE,
+        brief=assemble_brief(layout, task=TASK_TEXT, ticket_id=TICKET),
     )
 
 
 def test_the_automate_dry_run_payload_equals_the_launch_record(project: Path, monkeypatch):
     """Same claim as the HITL case, on the path that shares no assembly with it."""
     _write_ticket(project)
-    planned = _planned_automate(project).to_dict()
+    planned = _planned_automate(project).record
     real = _automate_for_real(monkeypatch, project)
 
     assert _comparable(planned, real["sid"]) == _comparable(real["record"], real["sid"])
@@ -273,8 +293,8 @@ def test_the_automate_dry_run_reports_the_prompt_the_sub_agent_receives(project:
     planned = _planned_automate(project)
     real = _automate_for_real(monkeypatch, project)
 
-    assert planned.prompt_text, "the report must carry the prompt the sub-agent is given"
-    assert planned.prompt_text == _normalize(real["meta_prompt"], real["sid"])
+    assert planned.prompt, "the report must carry the prompt the sub-agent is given"
+    assert planned.prompt == _normalize(real["meta_prompt"], real["sid"])
 
 
 def test_the_automate_meta_prompt_is_what_the_sdk_was_actually_sent(project: Path, monkeypatch):

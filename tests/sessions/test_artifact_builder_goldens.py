@@ -175,9 +175,6 @@ def test_golden_claude_on_the_plan_path(project: Path, run_mode: RunMode):
 def test_the_plan_path_reports_the_session_the_old_path_reports(project: Path, run_mode: RunMode):
     """Same launch, same environment, same consent, same composition — the plan
     path adds the skill documents it always writes and drops what has no reader."""
-    from ai_hats.session_artifacts import AT_LAUNCH
-    from ai_hats.surfaces.claude.sdk_options import SESSION_ID_PLACEHOLDER
-
     layout = ProjectLayout.at(project)
     if run_mode is RunMode.HITL:
         old = dry_run_hitl(layout, role="test-role", provider="claude", policy=SessionPolicy())
@@ -201,6 +198,10 @@ def test_the_plan_path_reports_the_session_the_old_path_reports(project: Path, r
         "composition",
     ):
         assert new[key] == old_record[key], key
+    # Both name the slot the SDK's id fills at launch, each in its own words.
+    from ai_hats.session_artifacts import AT_LAUNCH
+    from ai_hats.surfaces.claude.sdk_options import SESSION_ID_PLACEHOLDER
+
     assert new["launch"] == [
         t.replace(SESSION_ID_PLACEHOLDER, AT_LAUNCH) for t in old_record["launch"]
     ]
