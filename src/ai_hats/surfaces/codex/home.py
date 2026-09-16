@@ -63,11 +63,7 @@ def session_home_of(base_home: Path, project_key: str, session_id: str) -> Path:
 
 def configured_base_home(environ: Mapping[str, str]) -> Path:
     configured = environ.get(ENV_CODEX_BASE_HOME) or environ.get(ENV_CODEX_HOME)
-    if configured:
-        candidate = Path(configured).expanduser()
-    else:
-        home = environ.get("HOME")
-        candidate = (Path(home) if home else Path.home()) / ".codex"
+    candidate = Path(configured).expanduser() if configured else Path.home() / ".codex"
     if not candidate.is_absolute() or not candidate.is_dir():
         raise RuntimeError("Codex base home must be an existing absolute directory")
     base_home = candidate.resolve()
