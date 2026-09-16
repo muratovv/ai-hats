@@ -717,8 +717,8 @@ def test_a_direct_wt_merge_is_refused_before_it_mutates_anything(
     assert merged.returncode != 0, f"the direct merge road is unguarded\n{said}"
     assert "checks" in said.lower(), f"the refusal must name the subsystem\n{said}"
     # `merge-gate`, not `done-gate`: this road is about entering master, and
-    # handing the agent the wrong command costs it the ~12s of `merge-smoke`
-    # plus a second look at which gate actually refused (HATS-1614).
+    # handing the agent the wrong command costs it `integration` and
+    # `e2e-default` plus a second look at which gate actually refused.
     assert "make merge-gate" in said, f"the refusal must carry the command that clears it\n{said}"
     assert git(project, "rev-parse", "master").stdout.strip() == master_before, "master moved"
     assert Path(worktree).is_dir(), "a refused pre-merge destroyed the worktree"

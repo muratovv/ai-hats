@@ -437,8 +437,9 @@ ci_e2e() {
 # and is keyed the same way, so "already green" means green on THIS content.
 #
 # Only the stages that PARTITION the tier share it. `unit`, `integration` and
-# `merge-smoke` keep their full runs: `merge-smoke` is the floor `->done` stands
-# on, and a floor that skips what another stage happened to run is not a floor.
+# `merge-smoke` keep their full runs: `merge-smoke` is the floor every card gate
+# stands on, and a floor that skips what another stage happened to run is not
+# a floor.
 _tier_memo_env() {
     [[ -n "${AI_HATS_GATE_STORE:-}" && -n "${AI_HATS_GATE_TREE:-}" ]] || return 0
     export AI_HATS_GATE_TIER_MEMO="$AI_HATS_GATE_STORE/$AI_HATS_GATE_TREE/tier-passed"
