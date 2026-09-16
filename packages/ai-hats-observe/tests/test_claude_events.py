@@ -554,6 +554,37 @@ def test_a_model_refusal_fallback_reads_the_model_out_of_prose_when_unnamed(
     assert signals(events)[0].model == "Opus 4.8"
 
 
+def test_a_fallback_block_is_a_model_switch_naming_the_model_that_took_over(
+    tmp_path: Path,
+) -> None:
+    """The API rerouting one call mid-response arrives as a content block,
+    ``{"type": "fallback", "from": {"model": …}, "to": {"model": …}}`` — 14 in
+    the measured corpus, every one of them reported as drift until now."""
+    events = events_of(
+        tmp_path,
+        [
+            assistant(
+                "req-a",
+                [
+                    {
+                        "type": "fallback",
+                        "from": {"model": "claude-fable-5-1"},
+                        "to": {"model": "claude-opus-5"},
+                    },
+                    {"type": "text", "text": "kept"},
+                ],
+            )
+        ],
+    )
+    raised = signals(events)
+    assert [s.reason for s in raised] == [WorthRecording.MODEL_SWITCHED]
+    assert raised[0].model == "claude-opus-5"
+    assert raised[0].raw_code == "block:fallback"
+    assert raised[0].detail == "claude-fable-5-1 → claude-opus-5"
+    # POSITIVE CONTROL: the block is read, not skipped — the text beside it survives
+    assert [i.text for i in items(events, ItemKind.TEXT)] == ["kept"]
+
+
 def test_a_compact_boundary_is_recorded(tmp_path: Path) -> None:
     """Context overflow never arrives as an error — Claude compacts instead."""
     events = events_of(

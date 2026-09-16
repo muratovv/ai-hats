@@ -380,6 +380,16 @@ class ClaudeTranscriptReader:
                         source=SOURCE,
                         ts=ts,
                     )
+            case "fallback":
+                # The API rerouted this one call: the block names both models.
+                yield Notice(
+                    ts=ts,
+                    detail=_fallback_detail(block),
+                    raw_code="block:fallback",
+                    source=SOURCE,
+                    reason=WorthRecording.MODEL_SWITCHED,
+                    model=_model(block.get("to") or {}),
+                )
             case _ if btype in _IGNORED_BLOCKS:
                 return
             case _:
@@ -626,9 +636,14 @@ def _entry_text(entry: Any) -> str:
     return entry if isinstance(entry, str) else json.dumps(entry, ensure_ascii=False, default=str)
 
 
-def _model(message: dict[str, Any]) -> ModelName | None:
-    value = message.get("model")
+def _model(message: Any) -> ModelName | None:
+    value = message.get("model") if isinstance(message, dict) else None
     return ModelName(value) if isinstance(value, str) and value else None
+
+
+def _fallback_detail(block: dict[str, Any]) -> str | None:
+    switched = [_model(block.get("from")), _model(block.get("to"))]
+    return " → ".join(m or "?" for m in switched) if any(switched) else None
 
 
 def _response_id(record: dict[str, Any], message: dict[str, Any]) -> ResponseId:
