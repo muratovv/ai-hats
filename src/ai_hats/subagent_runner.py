@@ -271,26 +271,15 @@ class SubAgentRunner:
 
         # The ONE composition arrived in the payload (compose seam).
         role_name = self.payload.effective_role
-        result = self.payload.result
-        # Trap: ``with_injection_override`` REPLACES
-        # ``result.injections`` WHOLESALE — every overlay contribution (global +
-        # project ``injection_append``, ``add_traits`` bodies) is dropped from
-        # the SDK system_prompt. The pipeline no longer feeds an override here;
-        # the only legitimate caller is an explicit-prompt
-        # API consumer. A new caller's override text MUST already contain
-        # everything the role would compose — or compose first and pass an
-        # *augmented* (not replacement) string. Layered ``result`` is above.
-        if system_prompt_override is not None:
-            # Explicit immutable transformation via the typed
-            # ``with_*`` API on ``CompositionResult`` (D1 in ADR-0005).
-            result = result.with_injection_override(system_prompt_override)
         provider = self.payload.provider
         provider_name = provider.name
         _ctx = provider.execution_context(self.layout)
         _ctx.__enter__()
 
         # plan → apply → launch → record (ADR-0036 D2–D6); the composition
-        # half is what the seam adapted, an override replaces its prompt.
+        # half is what the seam adapted. An override REPLACES its prompt
+        # wholesale — every overlay contribution with it — so a caller's text
+        # must already carry everything the role would compose.
         composition = self.payload.plan
         if composition is None:
             raise RuntimeError("the seam adapted no composition")
@@ -411,21 +400,17 @@ class SubAgentRunner:
                         layout=self.layout,
                     )
                     run_result = engine.run(
-                        result=result,
                         layout=self.layout,
                         work_dir=work_dir,
                         session_id=session.session_id,
-                        task=task,
-                        ticket_id=ticket_id,
                         env=launch_env,
                         model=model,
                         timeout_s=timeout_s,
                         metrics=metrics,
-                        artifacts=None,
-                        provider_session_id=provider_session_id,
-                        event_log=None if event_log is None else event_log.path,
                         launched=launched_here,
                         brief=flags.brief,
+                        provider_session_id=provider_session_id,
+                        event_log=None if event_log is None else event_log.path,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     surface_session_id = metrics.values.get("claude_session_id")
@@ -448,10 +433,8 @@ class SubAgentRunner:
                         **observe_kwargs,
                     )
                 else:
-                    # Legacy subprocess path (Agy and future non-SDK providers).
-                    # The reported argv IS the executed one — this used to
-                    # re-derive it from materialize_runtime_skills, and matched
-                    # what was reported only by coincidence.
+                    # Subprocess path (the CLI surfaces): the reported argv IS
+                    # the executed one — the launch pair, not a re-derivation.
                     with provider.execution_context(self.layout):
                         proc = _run_surface(
                             described_launch,

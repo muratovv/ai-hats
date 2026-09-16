@@ -9,11 +9,8 @@ Expansion happens at every writer layer (each "last gate" before the
 prompt or path reaches the agent / filesystem):
 
 - The canonical-dir writer in :mod:`ai_hats.assembler`.
-- :meth:`ai_hats.surfaces.agy.provider.AgySurface.build_session_prompt` and
-  :meth:`ai_hats.surfaces.claude.provider.ClaudeSurface.build_session_prompt` (the
-  per-session composed prompt) plus the plugin-dir materialization in
-  :mod:`ai_hats.plugin_dir` (parity for SKILL.md content).
-- :func:`ai_hats.session_artifacts.assemble_meta_prompt`.
+- The plan adapter (:mod:`ai_hats.surfaces.plan_adapter`): every prompt member
+  and every skill document, once, for whichever surface plans the session.
 - The pipeline ``save_artifact`` step
   (:class:`ai_hats.pipeline.steps.save.SaveArtifact`) —
   the path template is expanded before ``.format(...)`` is applied

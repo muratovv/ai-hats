@@ -1,7 +1,7 @@
 """A surface without a planner is refused on every road into a session (ADR-0036 D2).
 
 ``ai_hats.providers`` is a published entry point, so a third-party surface may
-predate ``Surface.plan``. It used to be built through ``build_session_prompt``
+predate ``Surface.plan``. It used to be built through a prompt-only entry point
 and handed a session it could not fully deliver; now the runners, ``--dry-run``
 and ``show-prompt`` all pass ``plan_session``, which refuses it before anything
 is written — loudly, with the member to implement named.
@@ -50,9 +50,6 @@ class LegacySurface(Surface):
 
     def build_system_prompt(self, result) -> str:
         return f"LEGACY PROMPT for {result.name}"
-
-    def build_session_prompt(self, layout, result, session_id):
-        return (["--prompt", self.build_system_prompt(result)], {}, "meta")
 
 
 class PlanningSurface(LegacySurface):

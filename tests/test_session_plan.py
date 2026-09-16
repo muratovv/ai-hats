@@ -216,12 +216,12 @@ def test_a_hitl_launch_is_todays_argv_and_environment(maintainer, tmp_path: Path
     assert "--session-id" in launched.args and "u" in launched.args
 
 
-def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Path):
+def test_a_cli_sub_agent_launch_is_one_meta_prompt_token(tmp_path: Path):
     """The base ``automate_launch`` builds the prompt from the context entry the
-    plan names, the working directory and the brief — byte-equal to
-    ``assemble_meta_prompt``."""
+    plan names, the working directory and the brief, and hands it to the CLI
+    as the one token ``get_run_command`` appends."""
     from ai_hats.materialization import describe_write_text
-    from ai_hats.session_artifacts import BuiltArtifacts, assemble_brief
+    from ai_hats.session_artifacts import assemble_brief, working_directory_section
     from ai_hats.surfaces.cline.provider import ClineSurface
     from ai_hats.surfaces.plan import CompositionPlan, Hooks, Launch, MaterializationPlan
     from ai_hats_core.layout import ProjectLayout
@@ -254,17 +254,18 @@ def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Pat
         plan, _flags(root, model="m", brief=brief), {}, layout=layout
     )
 
-    old = surface.describe_automate_launch(
-        layout,
-        None,
-        "s",
-        BuiltArtifacts(cli_args=["--config", str(root)], full_content="CONTEXT\n"),
-        task="demo",
-        ticket_id="",
-        model="m",
-        env={},
-    )
-    assert list(launched.args) == old.launch and launched.prompt == old.prompt
+    prompt = "\n\n".join(["CONTEXT\n", working_directory_section(layout), brief])
+    assert launched.prompt == prompt
+    assert list(launched.args) == [
+        "cline",
+        "--config",
+        str(root),
+        "--model",
+        "m",
+        "--yolo",
+        "--json",
+        prompt,
+    ]
     other = surface.automate_launch(
         plan, _flags(root, model="m", brief="# TASK\nother"), {}, layout=layout
     )

@@ -618,8 +618,8 @@ def _lock(root: Path):
     """Serialise on a lock beside the root — inside it, a remove_tree would take it away."""
     import filelock
 
-    if not root.parent.is_dir():
-        root.parent.mkdir(parents=True)
+    # exist_ok: two processes applying one root both find it missing at once.
+    root.parent.mkdir(parents=True, exist_ok=True)
     lock = filelock.FileLock(str(root.parent / f"{root.name}.lock"), timeout=LOCK_TIMEOUT)
     try:
         with lock:

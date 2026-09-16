@@ -404,23 +404,13 @@ def test_the_reported_automate_env_is_the_environment_the_sub_agent_receives(
 
 
 def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch):
-    """The record's ``launch`` is the argv, not a third derivation of it.
+    """The record's ``launch`` is the argv, not a second derivation of it.
 
-    The runner used to re-assemble the command from ``materialize_runtime_skills``
-    at spawn time and agreed with its own record only by coincidence — for cline
-    because that call rebuilds the same args, for agy because it returns none.
-    Coincidence is not a property, so the decoy below makes the two derivations
-    disagree: without it, this test passes against the code it was written for.
-    """  # comment-length: allow — why the decoy exists is the point of the test
+    The runner used to re-assemble the command at spawn time and agreed with
+    its own record only by coincidence; now the one launch pair is both what
+    the record names and what the spawn seam receives.
+    """
     import subprocess
-
-    from ai_hats.surfaces.cline import ClineSurface
-
-    monkeypatch.setattr(
-        ClineSurface,
-        "materialize_runtime_skills",
-        lambda *a, **k: ["--config", "/decoy-from-the-second-derivation"],
-    )
 
     proj = tmp_path / "proj"
     proj.mkdir()

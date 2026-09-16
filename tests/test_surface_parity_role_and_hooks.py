@@ -1,8 +1,8 @@
-"""Parity contract tests across all surfaces (claude, agy, cline).
+"""Parity contract tests across the surfaces that mirror skills (claude, agy, cline).
 
-Verifies that for every surface provider:
-1. Roles are correctly threaded / propagated into session prompt.
-2. Skills and their hooks are correctly materialized in the surface's native registry.
+Verifies that for every one of them, on the plan path:
+1. Roles are correctly threaded / propagated into the session prompt.
+2. Skills and their hooks are correctly mirrored in the surface's native registry.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.surfaces.cline import ClineSurface
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from tests._plan_helpers import composition_of, materialized
 
 
 @pytest.fixture
@@ -56,35 +57,26 @@ def test_role_propagation_and_hook_materialization_parity(
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
+    layout = ProjectLayout.at(project)
     provider = provider_cls()
     sid = f"sid-{provider.name}"
 
-    args, env, prompt = provider.build_session_prompt(
-        ProjectLayout.at(project), composition_result, sid
+    plan = materialized(
+        provider,
+        composition_of(composition_result, layout=layout),
+        layout=layout,
+        root=layout.cache.session(sid),
     )
 
     # 1. Verify role propagation: prompt contains role injection + priorities
-    assert "## ROLE INJECTION" in prompt
-    assert "Reliability" in prompt
+    assert "## ROLE INJECTION" in plan.prompt.text
+    assert "Reliability" in plan.prompt.text
 
-    # 2. Verify skill & hook materialization
-    if provider.name == "claude":
-        plugin_idx = args.index("--plugin-dir")
-        plugin_path = Path(args[plugin_idx + 1])
-        skill_mat = plugin_path / "skills" / "my-skill" / "SKILL.md"
-        hook_mat = plugin_path / "skills" / "my-skill" / "hooks" / "pre_tool.sh"
-    elif provider.name == "agy":
-        skills_root = provider._session_skills_dir(ProjectLayout.at(project), sid)
-        skill_mat = skills_root / "my-skill" / "SKILL.md"
-        hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
-    elif provider.name == "cline":
-        # HATS-1171: cline skills materialize into the per-session cache, not the
-        # project root (clean-root invariant); delivered to cline via --config.
-
-        skills_root = ProjectLayout.at(project).cache.session(sid) / "skills"
-        skill_mat = skills_root / "my-skill" / "SKILL.md"
-        hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
-        assert not (project / ".cline").exists()  # clean root
-
-    assert skill_mat.is_file(), f"Skill not materialized for provider {provider.name}"
-    assert hook_mat.is_file(), f"Hook script not materialized for provider {provider.name}"
+    # 2. Verify skill & hook mirroring where the surface says it mirrors
+    skills_root = provider.session_skills_root(layout, sid)
+    assert skills_root is not None
+    skill_mat = skills_root / "my-skill" / "SKILL.md"
+    hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
+    assert skill_mat.is_file(), f"Skill not mirrored for provider {provider.name}"
+    assert hook_mat.is_file(), f"Hook script not mirrored for provider {provider.name}"
+    assert not (project / ".cline").exists() and not (project / ".claude").exists()  # clean root

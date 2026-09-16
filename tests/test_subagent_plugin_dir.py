@@ -4,12 +4,9 @@ Originally written against the subprocess engine (asserting
 ``--plugin-dir`` ended up in argv). HATS-474 Phase 2 moved the Claude
 path onto :mod:`claude_agent_sdk`; skills now reach the agent via
 ``ClaudeAgentOptions.plugins`` instead of an explicit CLI flag. The
-end-to-end test is rewritten to assert the same behavioural contract on
-the new surface: the plugin entry is built, populated on disk, and
-removed after the attempt finishes. The legacy
-:meth:`ClaudeSurface.materialize_runtime_skills` unit test stays —
-it still covers the same disk layout the Agy / future-CLI providers
-will keep using.
+end-to-end test asserts the same behavioural contract on the plan path:
+the plugin entry is planned, applied on disk, and removed after the
+attempt finishes.
 """
 
 from __future__ import annotations
@@ -24,7 +21,6 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.surfaces.claude.provider import ClaudeSurface
-from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.paths import PROJECT_CONFIG
 
 
@@ -66,61 +62,6 @@ def project_with_two_roles(tmp_path: Path) -> tuple[Path, Path]:
 
     ProjectConfig(provider="claude", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     return project, lib
-
-
-def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
-    """ClaudeSurface returns --plugin-dir with a directory that holds the skills."""
-    import shutil
-    from ai_hats_core import ComponentKind, ResolvedComponent
-
-    skill_src = tmp_path / "lib" / "guest-only-skill"
-    skill_src.mkdir(parents=True)
-    (skill_src / "SKILL.md").write_text("---\nname: guest-only-skill\ndescription: x\n---\n")
-
-    result_skills = [
-        ResolvedComponent(
-            name="guest-only-skill",
-            component_type=ComponentKind.SKILL,
-            source_path=skill_src,
-            injection="",
-        )
-    ]
-    from ai_hats_core import CompositionResult
-
-    result = CompositionResult(
-        name="guest",
-        priorities=[],
-        rules=[],
-        skills=result_skills,
-        injections=[],
-    )
-
-    provider = ClaudeSurface()
-    args = provider.materialize_runtime_skills(ProjectLayout.at(tmp_path), result, "test-sid")
-    try:
-        assert args[0] == "--plugin-dir"
-        plugin_dir = Path(args[1])
-        assert plugin_dir.is_dir()
-        assert (plugin_dir / "skills" / "guest-only-skill" / "SKILL.md").exists()
-    finally:
-        shutil.rmtree(args[1], ignore_errors=True)
-
-
-def test_agy_materialize_runtime_skills_is_noop(tmp_path):
-    """Agy has no plugin-dir analog (HATS-367 follow-up)."""
-    from ai_hats_core import CompositionResult
-
-    result = CompositionResult(
-        name="anything",
-        priorities=[],
-        rules=[],
-        skills=[],
-        injections=[],
-    )
-    assert (
-        AgySurface().materialize_runtime_skills(ProjectLayout.at(tmp_path), result, "test-sid")
-        == []
-    )
 
 
 def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_roles, monkeypatch):

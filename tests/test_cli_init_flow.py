@@ -341,8 +341,22 @@ def test_subcommands_work_with_passthrough_context(cli_project):
     assert ALL_ROLES[0] in r.output
 
 
+def _session_context(asm, surface, role: str, sid: str):
+    """Plan and apply ``role`` on ``surface`` for ``sid``; the plan it ran from."""
+    from tests._plan_helpers import composition_of, materialized
+
+    result = asm.composer.compose(role)
+    return materialized(
+        surface,
+        composition_of(result, layout=asm.layout, resolver=asm.resolver),
+        layout=asm.layout,
+        root=asm.layout.cache.session(sid),
+        middleware=False,
+    )
+
+
 def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
-    """--role override produces a temp file and writes nothing to the project root."""
+    """--role override produces a session context file and writes nothing to the project root."""
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
@@ -357,16 +371,14 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     assert original_profile.default_role == "assistant"
     assert original_profile.active_role == ""  # runtime-only field
 
-    # Build override for a different role (simulate what WrapRunner.run does)
+    # Plan a different role (what WrapRunner.run does)
     asm = Assembler(project)
-    provider = ClaudeSurface()
-    result = asm.composer.compose("sre")
-    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
+    plan = _session_context(asm, ClaudeSurface(), "sre", "test-sid")
 
     # Shadow prompt created
-    assert args[0] == "--system-prompt-file"
-    override_path = Path(args[1])
-    assert override_path.exists()
+    assert plan.launch.args[0] == "--system-prompt-file"
+    override_path = Path(plan.launch.args[1])
+    assert override_path == plan.context and override_path.exists()
     override_content = override_path.read_text()
     assert "sre" in override_content.lower() or "RELIABILITY" in override_content.upper()
 
@@ -380,7 +392,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
 
 def test_multiple_parallel_overrides_are_independent(cli_project):
-    """Multiple simultaneous role overrides get independent temp files."""
+    """Multiple simultaneous role overrides get independent session roots."""
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
@@ -390,17 +402,13 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     asm = Assembler(project)
-    provider = ClaudeSurface()
 
     # Simulate 3 parallel override sessions for different roles. Each session
     # gets its own session_id (HATS-294 isolation contract).
     overrides = {}
     for role in ("sre", "go-dev", "architect"):
-        result = asm.composer.compose(role)
-        args, _, _ = provider.build_session_prompt(
-            ProjectLayout.at(project), result, f"test-sid-{role}"
-        )
-        override_path = Path(args[1])
+        plan = _session_context(asm, ClaudeSurface(), role, f"test-sid-{role}")
+        override_path = Path(plan.context)
         overrides[role] = {
             "path": override_path,
             "content": override_path.read_text(),
@@ -446,16 +454,14 @@ def test_agy_override_creates_session_rules_dir(cli_project):
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "agy"])
 
     asm = Assembler(project)
-    provider = AgySurface()
 
-    # Build two parallel overrides
-    result_a = asm.composer.compose("judge")
-    args_a, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result_a, "test-sid-a")
-    result_b = asm.composer.compose("go-dev")
-    args_b, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result_b, "test-sid-b")
+    # Plan two parallel overrides
+    plan_a = _session_context(asm, AgySurface(), "judge", "test-sid-a")
+    plan_b = _session_context(asm, AgySurface(), "go-dev", "test-sid-b")
+    assert plan_a.launch.args[0] == plan_b.launch.args[0] == "--add-dir"
 
-    dir_a = Path(args_a[1])
-    dir_b = Path(args_b[1])
+    dir_a = Path(plan_a.launch.args[1])
+    dir_b = Path(plan_b.launch.args[1])
 
     # Independent dirs
     assert dir_a != dir_b

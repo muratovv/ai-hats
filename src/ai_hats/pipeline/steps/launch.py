@@ -120,7 +120,7 @@ class Provider(Step):
                 eff_extra = [prompt_text, *eff_extra]
             # D2 in ADR-0005: WrapRunner is HITL — no override
             # channel; the payload's composition reaches the agent via
-            # ``build_session_prompt`` inside ``run``.
+            # ``plan_session`` inside ``run``.
             runner = WrapRunner(
                 layout,
                 composition,

@@ -548,7 +548,7 @@ class WrapRunner:
 
         D2 in ADR-0005. ``WrapRunner`` is the **HITL** runner —
         a human is at the keyboard and the role's full composition reaches
-        the agent through ``build_session_prompt``. It deliberately has
+        the agent through the plan (``plan_session``). It deliberately has
         **no** ``system_prompt_override`` channel: prompt injection in HITL
         is meaningless and the previously-exposed Optional override was the
         literal trap that made this necessary. Callers needing an explicit
@@ -585,7 +585,7 @@ class WrapRunner:
         # `create_session` (EnvironmentRecovery), the universal seam both
         # WrapRunner and SubAgentRunner traverse — so the previously
         # WrapRunner-only inline sweeps are gone from here. Create the session
-        # before build_session_prompt so we can key the per-session cache dir on
+        # before planning so we can key the per-session cache dir on
         # session.session_id.
         session = run.session
         run.defer(
