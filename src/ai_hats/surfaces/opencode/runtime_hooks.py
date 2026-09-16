@@ -20,7 +20,11 @@ from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 
 from ..hook_channel import ENV_HOOK_SURFACE_TIMEOUT_MS, surface_timeout
 from ai_hats.hook_collection import composed_rows
+from ai_hats.materialization import MaterializationEntry, describe_write_text
 from ai_hats.session_artifacts import BuiltArtifacts
+
+from ..mirror import manifest_rows
+from ..plan import CompositionPlan, Host
 
 MANIFEST_VERSION = 1
 
@@ -34,6 +38,42 @@ def plugin_source() -> str:
         .joinpath("plugin", PLUGIN_ASSET)
         .read_text(encoding="utf-8")
     )
+
+
+def plan_hooks(
+    composition: CompositionPlan,
+    root: Path,
+    host: Host,
+    *,
+    layout: ProjectLayout,
+    skills_root: Path,
+    permission_rules: list[dict[str, str]],
+) -> tuple[MaterializationEntry, MaterializationEntry, dict[str, str]]:
+    """The manifest entry, the dispatcher plugin entry and the pins, from the
+    plan's runtime rows; the plugin is the package's own asset, so its bytes
+    are in hand like a constant's."""
+    session_dir = root / "opencode"
+    manifest = describe_write_text(
+        session_dir / "hooks.json",
+        json.dumps(
+            {
+                "version": MANIFEST_VERSION,
+                "session": {"id": root.name, "ai_hats_dir": str(layout.base)},
+                "hooks": manifest_rows(composition, skills_root),
+                "permissions": permission_rules,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    plugin = describe_write_text(session_dir / "plugin" / PLUGIN_ASSET, plugin_source())
+    env = {
+        ENV_SESSION_CACHE_DIR: str(root),
+        ENV_AI_HATS_PYTHON: str(host.python),
+        ENV_HOOK_SURFACE_TIMEOUT_MS: str(int(surface_timeout() * 1000)),
+    }
+    return manifest, plugin, env
 
 
 def _manifest(
@@ -113,5 +153,6 @@ __all__ = [
     "MANIFEST_VERSION",
     "PLUGIN_ASSET",
     "materialize_hook_manifest",
+    "plan_hooks",
     "plugin_source",
 ]

@@ -40,7 +40,7 @@ ELSEWHERE = {
     "migration_backup.py": "a bump's backup dir override",
     "update_check/__init__.py": "the update check's opt-out",
     "surfaces/codex/home.py": "that surface's own XDG home override",
-    "surfaces/opencode/provider.py": "that surface's own XDG home override",
+    "surfaces/opencode/home.py": "that surface's own XDG home override",
     "surfaces/agy/hook_dispatcher.py": "runs on every tool call and must not import ai_hats",
     "pipeline/harness.py": "the pipeline's own trace knobs",
     "startup_notices.py": "the startup notice's own switch and its hold in seconds",

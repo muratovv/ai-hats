@@ -13,26 +13,34 @@ touching user-owned directories. The project root is never written: no
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
+from ai_hats.materialization import describe_merge_json, describe_mkdir
 from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
+from ..mirror import mirror_entries, path_dirs
+from ..plan import CompositionPlan, Host, Launch, MaterializationPlan, Prompt, mirror_name
+from ..skill_index import skill_index_block
+from .home import (
+    ENV_OPENCODE_CONFIG,
+    ENV_OPENCODE_CONFIG_HOME,
+    ENV_XDG_CONFIG_HOME,
+    OpenCodeHome,
+    base_config_home,
+    plan_projection,
+    probe_home,
+)
 from .runtime_hooks import materialize_hook_manifest
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
 
-ENV_OPENCODE_CONFIG = "OPENCODE_CONFIG"
-ENV_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
-
-#: Where the user's real opencode config home lives. Points at the BASE
-#: (``~/.config``), not at the ``opencode/`` dir inside it — same shape as
-#: ``XDG_CONFIG_HOME`` itself.
-_ENV_OPENCODE_CONFIG_HOME = "AI_HATS_OPENCODE_CONFIG_HOME"
+_ENV_OPENCODE_CONFIG_HOME = ENV_OPENCODE_CONFIG_HOME
 
 #: The single session agent opencode is launched with (`--agent`). One stable
 #: name keeps launch argv free of role-derived values that change per project.
@@ -106,13 +114,7 @@ class OpenCodeSurface(Surface):
 
     def _base_config_home(self) -> Path:
         """Resolve the user's real config home (the base, not ``opencode/``)."""
-        configured = os.environ.get(_ENV_OPENCODE_CONFIG_HOME) or os.environ.get(
-            ENV_XDG_CONFIG_HOME
-        )
-        candidate = Path(configured).expanduser() if configured else Path.home() / ".config"
-        if not candidate.is_absolute():
-            raise RuntimeError("OpenCode config home must be an absolute directory")
-        return candidate
+        return base_config_home(os.environ)
 
     def _project_base_home(self, session_config_dir: Path, artifacts) -> None:
         """Symlink user-owned config entries next to the session-owned ones."""
@@ -187,6 +189,86 @@ class OpenCodeSurface(Surface):
             skill_md = skills_root / skill.name / "SKILL.md"
             lines.append(f"- **{skill.name}** — {self._skill_description(skill)} (`{skill_md}`)")
         return "\n".join(lines)
+
+    # --- the plan (ADR-0036 D2): entries, env and launch from the composition half --
+
+    def probe_home(self, environ: Mapping[str, str]) -> OpenCodeHome:
+        return probe_home(environ)
+
+    def plan(
+        self,
+        composition: CompositionPlan,
+        *,
+        run_mode: RunMode,
+        policy: SessionPolicy,
+        root: Path,
+        layout: ProjectLayout,
+        host: Host,
+    ) -> MaterializationPlan:
+        from .runtime_hooks import plan_hooks
+
+        home = host.home
+        if not isinstance(home, OpenCodeHome):
+            raise RuntimeError(
+                "opencode plans from its probed home: probe_host(surface=<opencode>) "
+                "before planning"
+            )
+        mode = RunMode(run_mode)
+        xdg_root = root / "opencode-xdg"
+        session_config_dir = xdg_root / "opencode"
+        skills_root = session_config_dir / "skills"
+        config_path = root / "opencode" / "opencode.json"
+        prompt = composition.prompt
+        if index := skill_index_block(composition, skills_root, surface=self.name):
+            prompt = Prompt((*prompt.blocks, index))
+        document: dict[str, object] = {"$schema": _SCHEMA}
+        entries = [describe_mkdir(root)]
+        args: list[str] = []
+        env: dict[str, str] = {}
+        if policy.context:
+            document["agent"] = {
+                AGENT_NAME: {
+                    "description": f"ai-hats composed role session ({composition.identity})",
+                    "mode": "primary",
+                    "prompt": prompt.text,
+                }
+            }
+            args += ["--agent", AGENT_NAME]
+            env[ENV_OPENCODE_CONFIG] = str(config_path)
+        if composition.skills:
+            entries.append(describe_mkdir(skills_root))
+            entries += mirror_entries(composition, skills_root)
+            mirrored = {mirror_name(skill) for skill in composition.skills}
+            entries += plan_projection(home, session_config_dir, mirrored=mirrored)
+            if dirs := path_dirs(composition, skills_root):
+                env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
+            env[ENV_XDG_CONFIG_HOME] = str(xdg_root)
+        if policy.hooks:
+            manifest, plugin, hook_env = plan_hooks(
+                composition,
+                root,
+                host,
+                layout=layout,
+                skills_root=skills_root,
+                permission_rules=self._permission_rules(layout),
+            )
+            entries += [manifest, plugin]
+            env.update(hook_env)
+            document["plugin"] = [f"file://{plugin.target}"]
+        if policy.context or policy.hooks:
+            entries.append(describe_merge_json(config_path, document))
+        env.update(self.get_env(root, layout))
+        return MaterializationPlan(
+            composition=composition,
+            prompt=prompt,
+            surface=self.name,
+            run_mode=mode,
+            policy=policy,
+            root=root,
+            entries=tuple(entries),
+            env=env,
+            launch=Launch(args=tuple(args), sdk_options=None),
+        )
 
     # --- session config accumulation -------------------------------------------------
     #
