@@ -9,13 +9,18 @@ runtime-hook chain from the same session cache.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
+from ai_hats.materialization import describe_mkdir
 from ai_hats.surfaces import Surface
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+
+from ..mirror import mirror_entries, path_dirs
+from ..plan import CompositionPlan, Host, Launch, MaterializationPlan
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -97,6 +102,57 @@ class ClineSurface(Surface):
     def build_system_prompt(self, result: CompositionResult) -> str:
         # Skills reach cline natively via <cache>/skills/ — a text index duplicates them.
         return self._compose_sections(result)
+
+    # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
+
+    def plan(
+        self,
+        composition: CompositionPlan,
+        *,
+        run_mode: RunMode,
+        policy: SessionPolicy,
+        root: Path,
+        layout: ProjectLayout,
+        host: Host,
+    ) -> MaterializationPlan:
+        from .runtime_hooks import plan_hooks
+
+        mode = RunMode(run_mode)
+        skills_dir = root / "skills"
+        prompt = composition.prompt  # cline adds no block of its own
+        entries = [describe_mkdir(root)]
+        args: list[str] = []
+        env: dict[str, str] = {}
+        # HITL takes the role inline; a sub-agent takes the same text in its
+        # prompt token, so no flag and nothing on disk carry it.
+        if policy.context and mode is RunMode.HITL:
+            args += ["-s", prompt.text]
+        # cline scans <T()>/skills and --config sets T() to the root (a spike),
+        # so the mirror dir and the flag are there with or without skills.
+        entries.append(describe_mkdir(skills_dir))
+        entries += mirror_entries(composition, skills_dir)
+        args += ["--config", str(root)]
+        if dirs := path_dirs(composition, skills_dir):
+            env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
+        if policy.hooks and (
+            hooked := plan_hooks(composition, root, host, layout=layout, skills_dir=skills_dir)
+        ):
+            hook_entries, hook_env = hooked
+            entries += hook_entries
+            env.update(hook_env)
+            args += ["--hooks-dir", str(root / "hooks")]
+        env.update(self.get_env(root, layout))
+        return MaterializationPlan(
+            composition=composition,
+            prompt=prompt,
+            surface=self.name,
+            run_mode=mode,
+            policy=policy,
+            root=root,
+            entries=tuple(entries),
+            env=env,
+            launch=Launch(args=tuple(args), sdk_options=None),
+        )
 
     # ----- unified artifact-builder (ADR-0018) -----
 
