@@ -58,6 +58,7 @@ tool when a question goes beyond built-in instructions.
 
 - [`adr/`](adr/) — architecture decision records (one file per decision).
 - [Codex file credential reconciliation](adr/0032-codex-file-credential-reconciliation.md) — logout, concurrent updates, and session-end synchronization limits.
+- [Canonical events are named by what the consumer does](adr/0033-canonical-events-are-named-by-what-the-consumer-does.md) — how a surface's own fact enters the shared `events.jsonl` vocabulary, and the three questions that decide whether a private type merges into a common one.
 - [`adr/attachments/`](adr/attachments/) — material an ADR leans on that is neither the
   decision nor user documentation: working context, measured baselines, corpora
   ([README](adr/attachments/README.md)).
