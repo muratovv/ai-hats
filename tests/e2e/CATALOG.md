@@ -2017,7 +2017,7 @@ as a claim to check, not as evidence.
   hooks/done-gate.sh --stages
   ```
 
-- **expect** — a green master passes; a red one refuses with exit 1, names the conclusion and the run url, and points at the one override; the override lets the card that fixes master through; and every reason the check cannot answer (no gh, gh refusing, a run still going) is ANNOUNCED, never silent
+- **expect** — a green master passes; everything else refuses with exit 1 — a red run names the conclusion and the run url, a run still going names the run to wait on, and every reason the check cannot answer (no gh, gh refusing, unreadable output, no run) names itself as unknown, which is not green; the one override lets any of them through on the supervisor's word
 - **why** — CI had been red since before 2026-07-28 for an unrelated reason, so the one arm that could see seven of v0.15.0's nine defects went unread for a month. A skip nobody is told about is that same defect wearing the gate's own colours
 
 ## `test_migration_no_replay_without_config.py`
