@@ -325,10 +325,12 @@ def _consent_script(python: str = sys.executable) -> str:
 
 
 def _config_document(project_dir: Path, originals: Mapping[str, str], policy) -> str:
+    # The root arrives settled (``resolve_root``); resolving again here would be
+    # the planner's one disk read.
     return (
         json.dumps(
             {
-                "project_dir": str(project_dir.resolve()),
+                "project_dir": str(project_dir),
                 "originals": dict(originals),
                 "policy": {key: list(value) for key, value in policy.items()},
             },
