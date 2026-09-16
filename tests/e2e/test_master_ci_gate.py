@@ -4,11 +4,12 @@ flow:   a maintainer closes a card while master's own CI has been failing
 cmds:
     bash scripts/gates.sh master-ci
     hooks/done-gate.sh --stages
-expect: a green master passes; a red one refuses with exit 1, names the
-        conclusion and the run url, and points at the one override; the
-        override lets the card that fixes master through; and every reason the
-        check cannot answer (no gh, gh refusing, a run still going) is
-        ANNOUNCED, never silent
+expect: a green master passes; everything else refuses with exit 1 — a red
+        run names the conclusion and the run url, a run still going names the
+        run to wait on, and every reason the check cannot answer (no gh, gh
+        refusing, unreadable output, no run) names itself as unknown, which is
+        not green; the one override lets any of them through on the
+        supervisor's word
 why:    CI had been red since before 2026-07-28 for an unrelated reason, so the
         one arm that could see seven of v0.15.0's nine defects went unread for
         a month. A skip nobody is told about is that same defect wearing the
@@ -105,36 +106,57 @@ def test_the_override_lets_the_fix_for_the_redness_through(tmp_path: Path):
     assert "on the supervisor's word" in combined, combined
 
 
-def test_a_run_still_going_is_not_a_verdict(tmp_path: Path):
+def test_a_run_still_going_refuses_and_names_the_run_to_wait_on(tmp_path: Path):
+    """A card once closed through this window: the run it raced went red
+    twenty minutes later. 'No verdict yet' is not green."""
     run = _run(_fake_gh(tmp_path, stdout=_runs("", status="in_progress")))
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
+    assert run.returncode == 1, combined
     assert "in_progress" in combined, combined
+    assert "actions/runs/1" in combined, combined
+    assert "wait" in combined.lower(), combined
+    assert "Unknown is not green" in combined, combined
 
 
-def test_no_gh_is_announced_not_silent():
+def test_no_gh_refuses_as_unknown():
     run = _run(None)
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
-    assert "SKIPPED" in combined, combined
+    assert run.returncode == 1, combined
     assert "not on PATH" in combined, combined
-    assert "was not checked" in combined, combined
+    assert "Unknown is not green" in combined, combined
+    assert "SKIPPED" not in combined, combined
 
 
-def test_gh_refusing_is_announced_not_silent(tmp_path: Path):
+def test_gh_refusing_refuses_as_unknown(tmp_path: Path):
     run = _run(_fake_gh(tmp_path, stdout="gh: not authenticated", exit_code=4))
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
-    assert "SKIPPED" in combined, combined
+    assert run.returncode == 1, combined
     assert "exited 4" in combined, combined
+    assert "Unknown is not green" in combined, combined
 
 
-def test_unreadable_output_is_announced_not_silent(tmp_path: Path):
+def test_unreadable_output_refuses_as_unknown(tmp_path: Path):
     run = _run(_fake_gh(tmp_path, stdout="not json at all"))
     combined = run.stdout + run.stderr
-    assert run.returncode == 0, combined
-    assert "SKIPPED" in combined, combined
+    assert run.returncode == 1, combined
     assert "cannot read" in combined, combined
+    assert "Unknown is not green" in combined, combined
+
+
+def test_no_run_recorded_refuses_as_unknown(tmp_path: Path):
+    run = _run(_fake_gh(tmp_path, stdout="[]"))
+    combined = run.stdout + run.stderr
+    assert run.returncode == 1, combined
+    assert "no ci.yml run recorded for master" in combined, combined
+    assert "Unknown is not green" in combined, combined
+
+
+def test_the_override_lets_an_unfinished_run_through_on_the_supervisors_word(tmp_path: Path):
+    """Unknown is red, so the one hatch for red is the one hatch for unknown."""
+    run = _run(_fake_gh(tmp_path, stdout=_runs("", status="in_progress")), **{ENV_ALLOW_RED: "1"})
+    combined = run.stdout + run.stderr
+    assert run.returncode == 0, combined
+    assert "on the supervisor's word" in combined, combined
 
 
 _GATE_HOOKS = "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate/hooks"

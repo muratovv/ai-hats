@@ -249,7 +249,8 @@ fix it, and the 2022 community keepalive workaround no longer works (paid for tw
 There is no `AI_HATS_E2E_SKIP` and no `--ack`. `git push --no-verify` and forging
 a marker are deliberate local acts by the trusted maintainer, never an accidental
 skip. The one knob is `AI_HATS_RED_MASTER_ACK=1`: it lets `master-ci` pass on a
-red master, for the card that fixes it, and says so in the run.
+master that is not green — red, still running, or a verdict the check could not
+read; unknown is not green — for the card that fixes it, and says so in the run.
 
 That knob is the supervisor's, and it reaches the check only from the environment
 that LAUNCHED the agent. Writing it on your own command line is refused
