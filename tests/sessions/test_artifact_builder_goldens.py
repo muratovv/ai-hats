@@ -90,7 +90,24 @@ def _payload(report, project: Path) -> dict:
         (str(project.parent / "home"), "<home>"),
         (str(project.parent), "<tmp>"),
     ]
-    return _normalize(report.to_dict(), subs)
+    payload = _normalize(report.to_dict(), subs)
+    # The composition's digests fold absolute library paths in (a tree at two
+    # paths is two skills), so under tmp they are machine-specific by design;
+    # the content digests beside them are what a golden can pin.
+    if "composition" in payload:
+        payload["composition"] = _blank_path_derived(payload["composition"])
+    return payload
+
+
+def _blank_path_derived(obj):
+    if isinstance(obj, dict):
+        return {
+            k: ("<path-derived>" if k == "digest" else _blank_path_derived(v))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_blank_path_derived(o) for o in obj]
+    return obj
 
 
 def _assert_golden(name: str, payload: dict) -> None:

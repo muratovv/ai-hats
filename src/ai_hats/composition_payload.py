@@ -19,6 +19,7 @@ from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:
     from .hooks_manager import HooksManager
+    from .surfaces import CompositionPlan
     from .surfaces import Surface, TranscriptResolver
 
 
@@ -52,3 +53,6 @@ class CompositionPayload:
     diagnostics: tuple[Diagnostic, ...] = ()
     # Session policy passed down to runners
     policy: SessionPolicy = field(default_factory=SessionPolicy)
+    #: ``result`` adapted into the plan's composition half (ADR-0036 D7) — the
+    #: value ``show-prompt`` and ``dry-run`` project. Adapted once, at the seam.
+    plan: "CompositionPlan | None" = None

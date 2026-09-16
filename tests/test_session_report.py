@@ -25,7 +25,7 @@ def _report(tmp_path: Path) -> SessionReport:
         launch=["agy", "--add-dir", str(tmp_path / "cache" / "rules")],
         env={"AI_HATS_DIR": "/secret/path", "AI_HATS_PYTHON": "/venv/bin/python"},
         prompt=tmp_path / "cache" / "prompt.md",
-        plan=port.plan,
+        record=port.record,
     )
 
 
@@ -76,7 +76,7 @@ def test_duplicate_materialization_is_surfaced(tmp_path: Path):
         launch=["claude"],
         env={},
         prompt=None,
-        plan=port.plan,
+        record=port.record,
     )
 
     assert report.to_dict()["duplicates"] == [str(tmp_path / "p")]
@@ -96,7 +96,7 @@ def test_materialized_entries_carry_sha256_digests(tmp_path: Path):
         launch=["claude"],
         env={},
         prompt=None,
-        plan=port.plan,
+        record=port.record,
     )
     mat = report.to_dict()["materialized"]
     assert len(mat) == 1
@@ -123,7 +123,7 @@ def test_full_render_dumps_the_body_a_plan_mode_build_never_wrote(tmp_path: Path
         launch=["agy"],
         env={},
         prompt=tmp_path / "cache" / "prompt.md",
-        plan=port.plan,
+        record=port.record,
         prompt_text="# ROLE: MAINTAINER\nbody bytes",
     )
 
@@ -145,7 +145,7 @@ def test_full_render_still_falls_back_to_the_file_on_a_real_record(tmp_path: Pat
         launch=["agy"],
         env={},
         prompt=written,
-        plan=PlanMaterializer().plan,
+        record=PlanMaterializer().record,
     )
 
     assert "bytes on disk" in report.render(full=True)
@@ -234,3 +234,181 @@ def test_a_role_declaring_no_consent_says_so_instead_of_dropping_the_section(tmp
 
     assert "\nconsent\n" in text
     assert "(none declared)" in text
+
+
+def _composition():
+    from ai_hats.surfaces import HookEvent
+    from ai_hats.surfaces.plan import (
+        CompositionPlan,
+        Executable,
+        ExternalHook,
+        Hooks,
+        OnError,
+        Prompt,
+        PromptBlock,
+        PromptMember,
+        RuntimeHook,
+        Skill,
+        TraceEntry,
+    )
+
+    def payload(name: str) -> Executable:
+        return Executable(path=Path("/lib/skills") / name, content_digest="ab" * 32)
+
+    return CompositionPlan(
+        identity="maintainer + sre",
+        prompt=Prompt(
+            blocks=(
+                PromptBlock("PRIORITIES", (PromptMember("maintainer::priorities", "1. x", None),)),
+                PromptBlock(None, (PromptMember("maintainer::prompt", "# t", None),)),
+                PromptBlock(
+                    "RULES",
+                    (
+                        PromptMember(
+                            "rules::rule_backlog_discipline", "R", "rule_backlog_discipline"
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        skills=(
+            Skill("skills::safety-guard", Path("/lib/skills/safety-guard"), "cd" * 32),
+            Skill("skills::hatrack", Path("/lib/skills/hatrack"), "ef" * 32),
+        ),
+        hooks=Hooks(
+            runtime=(
+                RuntimeHook(
+                    HookEvent.PRE_TOOL_USE, "Bash", payload("safety-guard/hooks/safety_gate.py")
+                ),
+            ),
+            external=(
+                ExternalHook(
+                    "git",
+                    None,
+                    "pre-push",
+                    payload("quality-gate/git_hooks/pre-push-e2e-master.sh"),
+                    None,
+                    "skills::quality-gate",
+                ),
+                ExternalHook(
+                    "rack",
+                    "tasks",
+                    "->done",
+                    payload("quality-gate/hooks/done-gate.sh"),
+                    OnError.REFUSE,
+                    "ai-hats-gates",
+                ),
+                ExternalHook(
+                    "wt", None, "teardown[merge]", payload("x/hooks/drain.sh"), None, "skills::x"
+                ),
+                ExternalHook(
+                    "consent_gate", "rack.transition", "plan->execute", None, None, "trait-agent"
+                ),
+            ),
+        ),
+        trace=(
+            TraceEntry("trait-agent", "maintainer", None),
+            TraceEntry("skills::hatrack", "trait-agent", "overrides::project"),
+        ),
+    )
+
+
+def test_composition_section_shows_hooks_by_kind_and_consent_ends(tmp_path: Path):
+    report = replace(_report(tmp_path), composition=_composition())
+
+    payload = report.to_dict()
+    text = report.render()
+
+    composition = payload["composition"]
+    assert composition["identity"] == "maintainer + sre"
+    assert len(composition["digest"]) == 64
+    assert composition["prompt"]["blocks"][2] == {
+        "name": "RULES",
+        "members": [
+            {"name": "rules::rule_backlog_discipline", "heading": "rule_backlog_discipline"}
+        ],
+    }
+    assert "text" not in composition["prompt"], "bytes stay out of the record"
+    assert "text" not in json.dumps(composition["prompt"]), "member text stays out too"
+    assert composition["skills"][1]["name"] == "skills::hatrack"
+    assert composition["skills"][1]["content_digest"] == "ef" * 32
+    assert (
+        composition["hooks"]["runtime"][0]["run"]["path"]
+        == "/lib/skills/safety-guard/hooks/safety_gate.py"
+    )
+    assert composition["hooks"]["external"][1] == {
+        "app": "rack",
+        "object": "tasks",
+        "at": "->done",
+        "run": {
+            "path": "/lib/skills/quality-gate/hooks/done-gate.sh",
+            "content_digest": "ab" * 32,
+            "digest": composition["hooks"]["external"][1]["run"]["digest"],
+        },
+        "on_error": "refuse",
+        "declared_by": "ai-hats-gates",
+    }
+    assert composition["hooks"]["external"][3] == {
+        "app": "consent_gate",
+        "object": "rack.transition",
+        "at": "plan->execute",
+        "run": None,
+        "on_error": None,
+        "declared_by": "trait-agent",
+    }
+    assert composition["trace"][1]["removed_by"] == "overrides::project"
+    assert "diagnostics" not in composition, "findings ride the payload's sink, not the plan"
+
+    assert "\ncomposition  maintainer + sre" in text
+    assert "runtime   PreToolUse  Bash  /lib/skills/safety-guard/hooks/safety_gate.py" in text
+    assert (
+        "external  git 'pre-push'  /lib/skills/quality-gate/git_hooks/pre-push-e2e-master.sh  by skills::quality-gate"
+        in text
+    )
+    assert (
+        "external  rack.tasks '->done'  /lib/skills/quality-gate/hooks/done-gate.sh  on_error=refuse  by ai-hats-gates"
+        in text
+    )
+    assert "external  wt 'teardown[merge]'  /lib/skills/x/hooks/drain.sh  by skills::x" in text
+    assert "external  consent_gate.rack.transition 'plan->execute'  by trait-agent" in text
+    assert "skills::hatrack" in text and "removed by overrides::project" in text
+    assert "1 PRIORITIES, 1 (prose), 1 RULES" in text
+
+
+def test_an_entry_shows_its_source_and_one_from_outside_the_composition_is_marked(tmp_path: Path):
+    """A link into the person's home is a planning input, not a skill mirror;
+    the reader must be able to tell the two apart without --json."""
+    from ai_hats.surfaces.plan import Skill
+
+    skill = tmp_path / "lib" / "skills" / "hatrack"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# h\n")
+    home_entry = tmp_path / "home" / ".config" / "opencode" / "themes"
+    port = PlanMaterializer()
+    port.copy_tree(skill, tmp_path / "cache" / "skills" / "hatrack")
+    port.symlink(home_entry, tmp_path / "cache" / "opencode" / "themes")
+    port.write_text(tmp_path / "cache" / "prompt.md", "role text")
+    report = replace(
+        _report(tmp_path),
+        record=port.record,
+        composition=replace(_composition(), skills=(Skill("skills::hatrack", skill, "ef" * 32),)),
+    )
+
+    text = report.render()
+
+    mirror, link, prompt = (
+        line
+        for line in text.splitlines()
+        if line.startswith("  copy_tree")
+        or line.startswith("  symlink")
+        or line.startswith("  write_text")
+    )
+    assert f"<- {skill}" in mirror and "outside" not in mirror
+    assert f"<- {home_entry}" in link and "outside the composition" in link
+    assert "<-" not in prompt
+
+
+def test_a_report_without_a_composition_carries_no_section(tmp_path: Path):
+    report = _report(tmp_path)
+    assert "composition" not in report.to_dict()
+    assert "\ncomposition" not in report.render()

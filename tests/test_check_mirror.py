@@ -543,7 +543,7 @@ def _described(project: Path, result, provider=None, sid: str = SID):
     surface.build_session_artifacts(
         ProjectLayout.at(project), result, sid, run_mode=RunMode.HITL, artifacts=artifacts
     )
-    return describe_checks(surface, ProjectLayout.at(project), result, sid, artifacts.port.plan)
+    return describe_checks(surface, ProjectLayout.at(project), result, sid, artifacts.port.record)
 
 
 def test_a_planned_gate_is_reported_as_armed(tmp_path: Path):
@@ -659,17 +659,19 @@ def test_a_gate_under_a_symlinked_root_is_still_reported_as_armed(tmp_path: Path
     proves nothing (measured — the first version of this test did exactly that).
     """
     from ai_hats.check_snapshot import _plan_covers
-    from ai_hats.materialization import MaterializationPlan, describe_copy_tree
+    from ai_hats.materialization import MaterializationRecord, describe_copy_tree
 
     real = tmp_path / "real"
     (real / "skills" / "gate-skill").mkdir(parents=True)
     link = tmp_path / "link"
     link.symlink_to(real, target_is_directory=True)
 
-    plan = MaterializationPlan(entries=[describe_copy_tree(real, link / "skills" / "gate-skill")])
+    record = MaterializationRecord(
+        entries=[describe_copy_tree(real, link / "skills" / "gate-skill")]
+    )
     runs_from = (real / "skills" / "gate-skill" / "check.sh").resolve()
 
-    assert _plan_covers(plan, runs_from) is True
+    assert _plan_covers(record, runs_from) is True
 
 
 def test_resolve_checks_at_filters_by_app_as_well_as_point(tmp_path):

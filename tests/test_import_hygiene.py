@@ -67,6 +67,10 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     # `surfaces/`. It subclasses Surface and reuses that module's markers, so
     # it IS the provider layer at a new path — not a brick reaching into it.
     "surfaces",
+    # The tail of today's composition path (ADR-0036 D7): it reads the library
+    # through the resolver to name what the composer flattened. The value it
+    # returns lives in `plan`, which stays a brick-legal leaf.
+    "plan_adapter",
 )
 
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)

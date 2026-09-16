@@ -96,6 +96,101 @@ def test_classifier_verdicts(command: str, verdict: str) -> None:
     assert _classify(command) == verdict
 
 
+@pytest.mark.parametrize(
+    ("spelled", "bare"),
+    [
+        pytest.param(
+            "git -C /x push --force origin master",
+            "git push --force origin master",
+            id="git-C-force",
+        ),
+        pytest.param(
+            "git -C /x push origin master",
+            "git push origin master",
+            id="git-C-plain",
+        ),
+        pytest.param(
+            "git -C /x -C y push -f",
+            "git push -f",
+            id="git-C-stacked",
+        ),
+        pytest.param(
+            "git -c push.default=simple push --force origin master",
+            "git push --force origin master",
+            id="git-c-config",
+        ),
+        pytest.param(
+            "git --git-dir=/x/.git push origin master",
+            "git push origin master",
+            id="git-dir-joined",
+        ),
+        pytest.param(
+            "git --git-dir /x/.git --work-tree /x push origin master",
+            "git push origin master",
+            id="git-dir-separate",
+        ),
+        pytest.param(
+            "git -P push origin master",
+            "git push origin master",
+            id="git-no-pager",
+        ),
+        pytest.param(
+            "git --literal-pathspecs push origin +master:master",
+            "git push origin +master:master",
+            id="git-long-valueless",
+        ),
+        # gh: -R/--repo sits before the group or between group and verb
+        pytest.param("gh -R o/r pr merge 1", "gh pr merge 1", id="gh-R-before-group"),
+        pytest.param("gh pr -R o/r merge 1", "gh pr merge 1", id="gh-R-between"),
+        pytest.param("gh --repo=o/r pr merge 1", "gh pr merge 1", id="gh-repo-joined"),
+        pytest.param(
+            "gh --repo o/r issue comment 1 --body hi",
+            "gh issue comment 1 --body hi",
+            id="gh-repo-issue-comment",
+        ),
+        pytest.param(
+            "gh -R o/r release create v1",
+            "gh release create v1",
+            id="gh-R-release-create",
+        ),
+        pytest.param("gh pr -R o/r create --fill", "gh pr create --fill", id="gh-R-pr-create"),
+    ],
+)
+def test_global_options_do_not_change_the_verdict(spelled: str, bare: str) -> None:
+    """An option between the binary and the verb must not turn a push `safe`.
+
+    `git -C <main>` is the spelling worktree-isolation itself teaches for
+    reaching another checkout, so this is the everyday push from a worktree —
+    and it went through the guard unasked, force flag included. gh has the same
+    slot: `-R/--repo` is accepted both before the group and between group and
+    verb (probed on gh 2.90.0; any other flag there is an error).
+    """
+    expected = _classify(bare)
+    assert expected != "safe", f"positive control: {bare!r} must itself be gated"
+    assert _classify(spelled) == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "verdict"),
+    [
+        # Reading past the options must not turn `push` into a plain word.
+        pytest.param("git -C /x log | grep push", "safe", id="push-as-grep-operand"),
+        pytest.param("git -C /x pushd", "safe", id="verb-prefix-only"),
+        pytest.param("git -c push.default=simple status", "safe", id="push-inside-config-key"),
+        pytest.param("gh -R o/r pr list --search merge", "safe", id="merge-as-search-term"),
+        # ...and the whole-string scan survives: a chained push is still found.
+        pytest.param("git -C /x status && git push origin master", "gated", id="chained-push"),
+        pytest.param(
+            "git -C /x status && git -C /x push --force origin master",
+            "irreversible",
+            id="chained-force-through-C",
+        ),
+    ],
+)
+def test_widened_matcher_does_not_overreach(command: str, verdict: str) -> None:
+    assert _classify(command) == verdict
+
+
 def test_irreversible_command_asks_rather_than_denying(_run_guard) -> None:
     """The guard must escalate to the user, not hard-deny.
 

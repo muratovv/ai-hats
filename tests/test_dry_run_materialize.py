@@ -54,7 +54,7 @@ def test_dry_run_materialize_leaves_tree_on_disk(project: Path):
     assert cache_mat.is_dir()
     files = [p for p in cache_mat.rglob("*") if p.is_file()]
     assert len(files) > 0
-    assert report.plan.entries
+    assert report.record.entries
 
     # S3 / R6 & R7: Report includes notes stating tree location and synthetic sid
     assert any("materialized session tree written to disk at" in n for n in report.notes)
@@ -75,7 +75,7 @@ def test_dry_run_automate_materialize_leaves_tree_on_disk(project: Path):
     assert cache_mat.is_dir()
     files = [p for p in cache_mat.rglob("*") if p.is_file()]
     assert len(files) > 0
-    assert report.plan.entries
+    assert report.record.entries
     assert any("materialized session tree written to disk at" in n for n in report.notes)
 
 
@@ -95,11 +95,11 @@ def test_dry_run_materialize_determinism_on_repeated_runs(project: Path):
     cache_mat = ProjectLayout.at(project).cache.session(DRY_RUN_MATERIALIZE_SESSION_ID)
 
     report1 = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
-    entries1 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report1.plan.entries]
+    entries1 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report1.record.entries]
     files1 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
 
     report2 = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=True)
-    entries2 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report2.plan.entries]
+    entries2 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report2.record.entries]
     files2 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
 
     assert entries1 == entries2
@@ -186,14 +186,14 @@ def test_a_held_lock_does_not_stall_a_plain_dry_run(project: Path):
     with filelock.FileLock(str(lock_path)):
         report = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
 
-    assert report.plan.entries
+    assert report.record.entries
 
 
 def test_dry_run_materialize_does_not_affect_subsequent_default_dry_run(project: Path):
     """S6 / R3: --materialize followed by default --dry-run leaves default report unchanged."""
     report_clean = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
     entries_clean = [
-        (e.kind.value, str(e.target), e.size, e.digest) for e in report_clean.plan.entries
+        (e.kind.value, str(e.target), e.size, e.digest) for e in report_clean.record.entries
     ]
 
     # Run --materialize
@@ -202,7 +202,7 @@ def test_dry_run_materialize_does_not_affect_subsequent_default_dry_run(project:
     # Run default dry-run again
     report_after = dry_run_hitl(ProjectLayout.at(project), provider="claude", materialize=False)
     entries_after = [
-        (e.kind.value, str(e.target), e.size, e.digest) for e in report_after.plan.entries
+        (e.kind.value, str(e.target), e.size, e.digest) for e in report_after.record.entries
     ]
 
     assert entries_clean == entries_after

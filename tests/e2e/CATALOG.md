@@ -1630,9 +1630,10 @@ as a claim to check, not as evidence.
 
   ```console
   git push origin master
+  git -C <main-checkout> push --force origin master
   ```
 
-- **expect** — unapproved pushes block and display consent flags while approved pushes and mandated resource cleanup commands execute cleanly
+- **expect** — unapproved pushes block and display consent flags — with a git global option between `git` and `push` just the same — while approved pushes and mandated resource cleanup commands execute cleanly
 - **why** — permission guards must provide actionable consent flags on denial without blocking non-destructive or rule-mandated cleanup operations
 
 ## `test_hook_materialization_self_heals.py`

@@ -277,17 +277,28 @@ def build_composition_payload(
         result=result,
     )
 
+    from .surfaces import adapt
     from .role_spec import format_role_spec
 
+    role_expression = format_role_spec(
+        effective_role,
+        spec.adds if spec else (),
+        spec.removes if spec else (),
+    )
+    plan = adapt(
+        result,
+        identity=role_expression,
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=_labelled_overlays(asm, effective_role, runtime_overlay),
+        diagnostics=diagnostics,
+    )
     return CompositionPayload(
         result=result,
         provider=provider,
         effective_role=effective_role,
-        role_expression=format_role_spec(
-            effective_role,
-            spec.adds if spec else (),
-            spec.removes if spec else (),
-        ),
+        role_expression=role_expression,
+        plan=plan,
         snapshot=_composition_snapshot(
             asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec
         ),
@@ -320,11 +331,11 @@ def build_preview_payload(
     renders as a friendly exit 2.
     """
     from .materialize import compose_to_run
+    from .surfaces import adapt
+    from .role_spec import format_role_spec
     from .surface_registry import get_surface
 
-    asm, cfg, eff_role, runtime_overlay, _spec = _project_context(
-        project_dir, role, prefer_cwd=True
-    )
+    asm, cfg, eff_role, runtime_overlay, spec = _project_context(project_dir, role, prefer_cwd=True)
     if not eff_role:
         raise RuntimeError(
             "materialize_system_prompt: no role to materialize "
@@ -332,15 +343,46 @@ def build_preview_payload(
             "ai-hats.yaml). Set one or pass `role=...` to the step."
         )
     eff_provider = _effective_provider(cfg, provider)
+    diagnostics: list[Diagnostic] = []
     if runtime_overlay is not None:
-        result = compose_to_run(asm, eff_role, runtime_overlay=runtime_overlay)
+        result = compose_to_run(
+            asm, eff_role, runtime_overlay=runtime_overlay, diagnostics=diagnostics
+        )
     else:
-        result = compose_to_run(asm, eff_role)
+        result = compose_to_run(asm, eff_role, diagnostics=diagnostics)
+    role_expression = format_role_spec(
+        eff_role, spec.adds if spec else (), spec.removes if spec else ()
+    )
+    plan = adapt(
+        result,
+        identity=role_expression,
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=_labelled_overlays(asm, eff_role, runtime_overlay),
+        diagnostics=diagnostics,
+    )
     return CompositionPayload(
         result=result,
         provider=get_surface(eff_provider),
         effective_role=eff_role,
+        role_expression=role_expression,
+        plan=plan,
+        diagnostics=tuple(diagnostics),
     )
+
+
+def _labelled_overlays(assembler, role_name: str, runtime_overlay: OverlayConfig | None):
+    """The layers the composer applied to ``role_name``, each with its label.
+
+    The same walk ``_get_overlay_provenance`` takes; the adapter's trace names
+    the layer that brought or removed a term by it.
+    """
+    layers = [
+        (assembler._get_global_overlay(role_name), "global"),
+        (assembler._get_overlay(role_name), "project"),
+        (runtime_overlay, "runtime"),
+    ]
+    return [(layer, label) for layer, label in layers if layer is not None]
 
 
 def compose_for_checks(project_dir: Path, role: str | None = None) -> CompositionResult | None:
