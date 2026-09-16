@@ -285,16 +285,9 @@ def assemble_first_user_message(layout: ProjectLayout, *, task: str, ticket_id: 
     the whole card plus ``LINKED_CONTEXT``, so ``meta_prompt.txt`` named a
     message the SDK had never received.
     """
-    from ai_hats.linked_context import ticket_sections
+    from ai_hats.session_artifacts import assemble_brief
 
-    ticket_context, linked_context = ticket_sections(
-        tasks_root=layout.tracker.tasks_dir, ticket_id=ticket_id
-    )
-    return build_first_user_message(
-        ticket_context=ticket_context,
-        linked_context=linked_context,
-        task=task,
-    )
+    return assemble_brief(layout, task=task, ticket_id=ticket_id)
 
 
 def render_sdk_prompt_audit(
@@ -308,10 +301,14 @@ def render_sdk_prompt_audit(
     sys_opt = artifacts.sdk_options.get("system_prompt")
     system_text = sys_opt.get("append", "") if isinstance(sys_opt, dict) else (sys_opt or "")
     initial_message = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
+    return render_sdk_audit(system_text, initial_message)
+
+
+def render_sdk_audit(system_text: str, first_message: str) -> str:
     return (
         "==== SDK system_prompt (preset=claude_code, append) ====\n"
         f"{system_text}\n"
         "\n"
         "==== SDK first user message ====\n"
-        f"{initial_message}\n"
+        f"{first_message}\n"
     )

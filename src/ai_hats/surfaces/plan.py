@@ -360,6 +360,8 @@ class LaunchFlags:
     """What changes how a plan is invoked and never the plan itself."""
 
     session_id: str
+    #: Where the session's record lives — what a gate reads the plan back from.
+    session_dir: Path
     trace_path: str
     root_pid: str
     #: The harness's own session id; ``None`` where the harness mints it.
@@ -389,6 +391,19 @@ class Launched:
     def __post_init__(self) -> None:
         if (self.args is None) == (self.sdk_options is None):
             raise ValueError("a launch is either an argv or an SDK option document")
+
+
+def context_entry(plan: MaterializationPlan) -> MaterializationEntry | None:
+    """The entry that carries the agent's context: the one markdown file
+    written under the root, on every surface that writes one."""
+    return next(
+        (
+            e
+            for e in plan.entries
+            if e.kind is WriteKind.WRITE_TEXT and e.target.suffix.lower() == ".md"
+        ),
+        None,
+    )
 
 
 # ── planning refusals, as functions over the plan ────────────── ADR-0036 D2

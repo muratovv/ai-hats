@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -32,12 +32,13 @@ from .. import (
 )
 from ai_hats.materialization import describe_mkdir, describe_write_text
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode, SessionPolicy
-from ..plan import CompositionPlan, Host, Launch, MaterializationPlan
+from ..plan import CompositionPlan, Host, Launch, Launched, LaunchFlags, MaterializationPlan
 from .sdk_options import (
     SESSION_ID_PLACEHOLDER,
     assemble_first_user_message,
     automate_options,
     describe_options,
+    render_sdk_audit,
     render_sdk_prompt_audit,
 )
 from . import sdk_runner
@@ -257,7 +258,9 @@ class ClaudeSurface(Surface):
         prompt = composition.prompt  # claude adds no block of its own
         if policy.context:
             context = root / "prompt.md"
-            entries.append(describe_write_text(context, self._build_full_content(layout, prompt.text)))
+            entries.append(
+                describe_write_text(context, self._build_full_content(layout, prompt.text))
+            )
             if hitl:
                 args += ["--system-prompt-file", str(context)]
             else:
@@ -310,6 +313,38 @@ class ClaudeSurface(Surface):
             if hitl
             else Launch(args=None, sdk_options=options),
         )
+
+    def automate_launch(
+        self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        env: Mapping[str, str],
+        *,
+        layout: ProjectLayout,
+    ) -> Launched:
+        """No argv here — the launch IS the option document handed to the SDK:
+        the plan's options, then what only this run knows."""
+        options: dict[str, object] = dict(plan.launch.sdk_options or {})
+        options["cwd"] = str(flags.work_dir if flags.work_dir is not None else layout.root)
+        if flags.provider_session_id is not None:
+            options["session_id"] = flags.provider_session_id
+        if flags.model:
+            options["model"] = flags.model
+        if env:
+            options["env"] = dict(env)
+        return Launched(
+            args=None,
+            sdk_options=options,
+            env=env,
+            prompt=render_sdk_audit(plan.prompt.text, flags.brief or ""),
+        )
+
+    def describe_launch(self, launched: Launched) -> list[str]:
+        if launched.sdk_options is None:
+            return list(launched.args or ())
+        from claude_agent_sdk import ClaudeAgentOptions
+
+        return describe_options(ClaudeAgentOptions(**launched.sdk_options))
 
     def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
         cache_dir = layout.cache.session(session_id)

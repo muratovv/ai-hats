@@ -47,6 +47,7 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
         PlanRefused,  # noqa: F401
         apply,  # noqa: F401
         composition_record,  # noqa: F401
+        context_entry,  # noqa: F401
         validate,  # noqa: F401
     )
 
@@ -98,6 +99,7 @@ _HOMES = {
     "adapt": ".plan_adapter",
     "apply": ".plan",
     "composition_record": ".plan",
+    "context_entry": ".plan",
     "sweep_stale_managed_tags": ".managed_tags",
     "validate": ".plan",
 }

@@ -34,6 +34,7 @@ from ai_hats.session_artifacts import (
     RunMode,
     SessionPolicy,
     assemble_meta_prompt,
+    working_directory_section,
 )
 
 from ..debt import SessionId
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
-    from .plan import CompositionPlan, Host, MaterializationPlan
+    from .plan import CompositionPlan, Host, Launched, LaunchFlags, MaterializationPlan
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,40 @@ class Surface(abc.ABC):
         way, through ``build_session_artifacts``, until it does.
         """
         raise NotImplementedError(f"{self.name} does not plan a session yet")
+
+    def automate_launch(
+        self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        env: Mapping[str, str],
+        *,
+        layout: ProjectLayout,
+    ) -> Launched:
+        """The sub-agent launch of a CLI surface (ADR-0036 D4): the plan's argv
+        plus the model, and one prompt token — context, working directory, brief.
+        An SDK surface overrides with its option document.
+        """
+        from .plan import Launched, context_entry
+
+        context = context_entry(plan)
+        prompt = "\n\n".join(
+            s
+            for s in (
+                context.content if context and context.content else "",
+                working_directory_section(layout),
+                flags.brief or "",
+            )
+            if s
+        )
+        model = self.model_flags(flags.model) if flags.model else []
+        cmd = self.get_cli_command() + list(plan.launch.args or ()) + model
+        return Launched(
+            args=tuple(self.get_run_command(cmd, prompt)), sdk_options=None, env=env, prompt=prompt
+        )
+
+    def describe_launch(self, launched: Launched) -> list[str]:
+        """How a record names the launch: the argv; an SDK surface says ``k=v``."""
+        return list(launched.args or ())
 
     def build_session_artifacts(
         self,

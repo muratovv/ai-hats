@@ -11,7 +11,7 @@ import pytest
 
 from ai_hats.materialization import WriteKind
 from ai_hats.session_artifacts import RunMode, SessionPolicy
-from ai_hats.session_plan import probe_host
+from ai_hats.session_plan import plan_session, probe_host
 from ai_hats.surface_registry import get_surface
 from ai_hats.surfaces import apply
 from ai_hats.surfaces.plan import (
@@ -63,7 +63,13 @@ def test_a_launch_is_an_argv_or_an_option_document_never_both():
 
 
 def test_launch_flags_default_to_what_a_hitl_launch_needs():
-    flags = LaunchFlags(session_id="s", trace_path="t", root_pid="1", provider_session_id="u")
+    flags = LaunchFlags(
+        session_id="s",
+        session_dir=Path("/runs/s"),
+        trace_path="t",
+        root_pid="1",
+        provider_session_id="u",
+    )
     assert flags.extra_args == () and flags.work_dir is None and flags.brief is None
     assert flags.model is None and flags.claim is True
 
@@ -156,3 +162,156 @@ def test_applying_the_plan_twice_reaches_no_primitive(
     writes.clear()
     apply(other)
     assert writes == ["write_bytes"], "one changed byte sequence, one write"
+
+
+# ── the launch pair against today's assemblers: one builder, proven before the cut ──
+
+
+def _flags(root: Path, **overrides) -> LaunchFlags:
+    given = dict(
+        session_id="s", session_dir=root, trace_path="t", root_pid="1", provider_session_id="u"
+    )
+    given.update(overrides)
+    return LaunchFlags(**given)
+
+
+def test_a_hitl_launch_is_todays_argv_and_environment(maintainer, tmp_path: Path):
+    from ai_hats.session_artifacts import assemble_launch_command, assemble_launch_env
+    from ai_hats.session_plan import launch, launch_env
+
+    asm, composition = maintainer
+    root = asm.layout.cache.session("s")
+    surface = get_surface("claude")
+    plan = plan_session(
+        composition,
+        surface,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        layout=asm.layout,
+        host=probe_host(),
+    )
+    flags = _flags(root, extra_args=("--model", "opus"))
+
+    launched = launch(plan, flags, layout=asm.layout)
+
+    assert list(launched.args) == assemble_launch_command(
+        surface,
+        extra_args=["--model", "opus"],
+        session_args=list(plan.launch.args),
+        provider_session_id="u",
+    )
+    assert launch_env(plan, surface, flags, layout=asm.layout) == assemble_launch_env(
+        surface,
+        asm.layout,
+        root,
+        session_id="s",
+        trace_path="t",
+        role="maintainer",
+        root_pid="1",
+        extra_env=dict(plan.env),
+        run_mode=RunMode.HITL,
+    )
+    assert launched.prompt.startswith("<!-- AI-HATS:START -->\n"), "the context file's bytes"
+    assert "--session-id" in launched.args and "u" in launched.args
+
+
+def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Path):
+    """The base ``automate_launch`` builds the prompt from the context entry,
+    the working directory and the brief — byte-equal to ``assemble_meta_prompt``."""
+    from ai_hats.materialization import describe_write_text
+    from ai_hats.session_artifacts import BuiltArtifacts, assemble_brief
+    from ai_hats.surfaces.cline.provider import ClineSurface
+    from ai_hats.surfaces.plan import CompositionPlan, Hooks, Launch, MaterializationPlan
+    from ai_hats_core.layout import ProjectLayout
+
+    layout = ProjectLayout.at(tmp_path / "proj")
+    root = tmp_path / "sessions" / "s"
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(),
+        hooks=Hooks((), ()),
+        trace=(),
+    )
+    plan = MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface="cline",
+        run_mode=RunMode.AUTOMATE,
+        policy=SessionPolicy(),
+        root=root,
+        entries=(describe_write_text(root / "rules.md", "CONTEXT\n"),),
+        env={},
+        launch=Launch(args=("--config", str(root)), sdk_options=None),
+    )
+    brief = assemble_brief(layout, task="demo", ticket_id="")
+    surface = ClineSurface()
+
+    launched = surface.automate_launch(
+        plan, _flags(root, model="m", brief=brief), {}, layout=layout
+    )
+
+    old = surface.describe_automate_launch(
+        layout,
+        None,
+        "s",
+        BuiltArtifacts(cli_args=["--config", str(root)], full_content="CONTEXT\n"),
+        task="demo",
+        ticket_id="",
+        model="m",
+        env={},
+    )
+    assert list(launched.args) == old.launch and launched.prompt == old.prompt
+    other = surface.automate_launch(
+        plan, _flags(root, model="m", brief="# TASK\nother"), {}, layout=layout
+    )
+    assert other.args != launched.args, "a different brief is a different launch"
+
+
+def test_a_consent_row_of_the_plan_is_the_row_the_guard_reads_today():
+    from ai_hats_core import ConsentPoint
+
+    from ai_hats.session_report import consent_entry, consent_row
+    from ai_hats.surfaces.plan import ExternalHook
+
+    point = ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "plan->execute")
+    hook = ExternalHook(
+        "consent_gate", "rack.transition", "plan->execute", None, None, "trait-agent"
+    )
+    assert consent_row(hook) == consent_entry(point)
+    assert consent_row(hook)["to"] == "execute" and consent_row(hook)["from"] == "plan"
+
+
+def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_path: Path):
+    from ai_hats.session_plan import launch, session_record
+
+    asm, composition = maintainer
+    root = tmp_path / "sessions" / "s"
+    plan = _claude(asm, composition, root, RunMode.HITL)
+    launched = launch(plan, _flags(root), layout=asm.layout)
+
+    planned = session_record(plan, launched, role="maintainer", cwd="x")
+    assert "outcome" not in planned["materialized"][0]
+    assert set(planned) == {
+        "role",
+        "provider",
+        "run_mode",
+        "cwd",
+        "policy",
+        "launch",
+        "env_keys",
+        "prompt",
+        "materialized",
+        "consent",
+        "notes",
+        "composition",
+    }
+    applied = session_record(plan, launched, apply(plan), role="maintainer", cwd="x")
+    tree = next(e for e in applied["materialized"] if e["kind"] == "copy_tree")
+    assert tree["outcome"] == "written" and tree["files"] > 0
+    assert [e["outcome"] for e in applied["materialized"] if e["kind"] == "write_text"][
+        0
+    ] == "written"
+    assert applied["prompt"] == str(root / "prompt.md")
+    assert applied["consent"], "the maintainer role declares consent"
