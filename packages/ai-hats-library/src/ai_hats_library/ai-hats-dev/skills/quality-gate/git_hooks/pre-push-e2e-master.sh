@@ -41,6 +41,22 @@ if ! . "$_self_dir/../lib/gate.sh"; then
     exit 1
 fi
 
+# What the pusher is TOLD, never what blocks them: master's own CI verdict, read
+# by the checker of the project under judgement. A push is how master gets fixed.
+master_ci_notice() {
+    local checker="$1/scripts/check_master_ci.py" py
+    [[ -f "$checker" ]] || return 0
+    if [[ -x "$1/.venv/bin/python" ]]; then
+        py="$1/.venv/bin/python"
+    elif ! py="$(command -v python3 2>/dev/null)"; then
+        echo "[master-ci] not checked: no python3 on PATH" >&2
+        return 0
+    fi
+    "$py" "$checker" --notice >&2 \
+        || echo "[master-ci] not checked: the checker itself failed (rc=$?)" >&2
+    return 0
+}
+
 check_mode() {
     # Collect master-targeting, non-deletion local_shas from the pre-push
     # protocol. Newline-accumulator instead of an array so the empty case is
@@ -68,6 +84,8 @@ check_mode() {
         echo "[push-gate] a marker, so the push to master is BLOCKED" >&2
         exit 1
     fi
+
+    master_ci_notice "$repo_root"
 
     local sha tree missing rc
     while IFS= read -r sha; do
