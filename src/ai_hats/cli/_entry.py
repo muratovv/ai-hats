@@ -29,7 +29,7 @@ from ..config.project import ProjectConfig
 from ..env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_VENV
 from ..paths import PROJECT_CONFIG, ProjectConfigError, builtin_library_layers
 from ..project import Project
-from ..session_identity import SessionIdentity
+from ..session_identity import ENV_SESSION_IDENTITY, SessionIdentity
 from ..version_refs import read_current_sha
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 def resolve_project(
     start: Path | None = None,
     environ: Mapping[str, str] | None = None,
+    *,
+    writes: bool = False,
 ) -> Project:
     """Build the process's ONE ``Project``.
 
@@ -46,15 +48,22 @@ def resolve_project(
     resolvers cannot diverge here — they are not consulted at all. An envelope
     that is present but unreadable raises rather than falling back: "no
     session" and "a session we cannot read" are different answers.
+
+    ``writes`` is a command that edits the project (``config set``, ``self
+    init``): under a live session, standing inside ANOTHER onboarded project,
+    it refuses instead of editing the session's project in silence — the
+    envelope still names the root, so a reader and a hook are unchanged.
     """
     env = dict(os.environ if environ is None else environ)
-    root = _resolve_root(start, env)
+    root = _resolve_root(start, env, writes=writes)
     return _assemble(root, _load_config(root), env, cwd=_resolve_cwd(start, root))
 
 
 def resolve_project_lenient(
     start: Path | None = None,
     environ: Mapping[str, str] | None = None,
+    *,
+    writes: bool = False,
 ) -> Project:
     """The same ``Project``, for a command that must answer anyway.
 
@@ -69,7 +78,7 @@ def resolve_project_lenient(
     """
     env = dict(os.environ if environ is None else environ)
     try:
-        return resolve_project(start, environ)
+        return resolve_project(start, environ, writes=writes)
     except ProjectNotFoundError:
         root = start or Path.cwd()
         click.echo(
@@ -100,9 +109,11 @@ def _resolve_cwd(start: Path | None, root: Path) -> Path:
         return root
 
 
-def _resolve_root(start: Path | None, env: Mapping[str, str]) -> Path:
+def _resolve_root(start: Path | None, env: Mapping[str, str], *, writes: bool = False) -> Path:
     identity = SessionIdentity.from_env(env)
     if identity is not None:
+        if writes:
+            _refuse_foreign_cwd(start, Path(identity.project_dir), env)
         return Path(identity.project_dir)
     if start is None:
         try:
@@ -111,6 +122,33 @@ def _resolve_root(start: Path | None, env: Mapping[str, str]) -> Path:
         except OSError as exc:  # the worktree under our feet was torn down
             raise DeadCwdError() from exc
     return resolve_root(start, env, on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE)
+
+
+def _refuse_foreign_cwd(start: Path | None, pinned: Path, env: Mapping[str, str]) -> None:
+    """Raise when the process stands inside an onboarded project other than the
+    session's — a worktree of the session's project hops to it and passes; a
+    directory under no project at all is not another project."""
+    here = start if start is not None else Path.cwd()
+    unpinned = {k: v for k, v in env.items() if k != AI_HATS_PROJECT_DIR_ENV}
+    try:
+        structural = resolve_root(here, unpinned, on_foreign_pin=ForeignPinPolicy.WARN_AND_IGNORE)
+    except (ProjectNotFoundError, OSError):
+        return
+    if pin_is_foreign(str(pinned), structural):
+        raise ForeignCwdError(structural, pinned)
+
+
+class ForeignCwdError(click.ClickException):
+    """A writer under a live session, standing in another project."""
+
+    def __init__(self, here: Path, pinned: Path) -> None:
+        super().__init__(
+            f"refusing to write: you stand in {here}, but this session is pinned to "
+            f"{pinned} — the write would land in the session's project, not the one "
+            f"under you. To act on {here} from inside the session, drop the identity "
+            f"for that one command:\n"
+            f"    env -u {ENV_SESSION_IDENTITY} -u {AI_HATS_PROJECT_DIR_ENV} ai-hats <command>"
+        )
 
 
 def project_at(root: Path, environ: Mapping[str, str] | None = None) -> Project:

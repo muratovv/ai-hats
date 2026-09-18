@@ -48,7 +48,7 @@ def config_feedback_session_retro(
     """Configure session-retro policy and options."""
     from ..models import FeedbackPolicy
 
-    project = resolve_project()
+    project = resolve_project(writes=True)
     path = project.layout.root / PROJECT_CONFIG
     cfg = project.config
     sr = cfg.feedback.session_retro
