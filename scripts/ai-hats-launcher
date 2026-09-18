@@ -17,7 +17,7 @@ set -euo pipefail
 
 # HATS-1617: resolution contract this launcher implements. Bump ONLY when the
 # resolution behaviour changes; a drift lock holds it equal to the package constant.
-LAUNCHER_CONTRACT=1
+LAUNCHER_CONTRACT=2
 
 PROJECT="$(pwd)"
 # HATS-1306: linked git worktree resolution — hop to main checkout root when inside a linked worktree,
