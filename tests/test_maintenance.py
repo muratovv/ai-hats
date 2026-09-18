@@ -1637,7 +1637,7 @@ def test_update_edge_repo_that_is_a_path_without_ai_hats_refuses_before_uv(tmp_p
         [], run_check_return=None, tmp_path=tmp_path, project=project
     )
 
-    assert exit_code == 2, output
+    assert exit_code == 1, output  # the install-failure exit, as uv's refusal was
     assert not _install_called(captured), captured
     flat = " ".join(output.split())  # rich wraps at 80 columns
     assert "has no pyproject.toml" in flat and "harness.repo" in flat, flat

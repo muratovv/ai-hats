@@ -1634,7 +1634,7 @@ def update(
                 f"[red]Update failed[/]: edge repo {edge_source.problem} ({edge_source.origin}).\n"
                 f"  [dim]fix: {edge_source.fix}[/]"
             )
-            sys.exit(2)
+            sys.exit(1)  # an install that cannot happen: the install-failure exit
         probe_url = resolve_edge_probe_url(harness_repo)
         probe = (
             None

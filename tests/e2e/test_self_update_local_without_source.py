@@ -205,7 +205,7 @@ def test_an_edge_repo_given_as_a_path_without_ai_hats_is_refused_before_uv(tmp_p
         cwd=project,
         env=env_no_override,
         timeout=300,
-        expect_exit=2,
+        expect_exit=1,
     )
     combined = " ".join((res.stdout + res.stderr).split())
     assert "does not appear to be a Python project" not in combined, combined
