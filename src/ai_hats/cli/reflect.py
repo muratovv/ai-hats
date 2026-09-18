@@ -473,6 +473,8 @@ def _materialize_target_composition(
 
     import yaml
 
+    from ..resolver import read_rule_body
+
     target_dir = base_dir / target_role
     if target_dir.exists():
         # Role-mirror is a publish artefact regenerated from the live
@@ -505,20 +507,18 @@ def _materialize_target_composition(
         for name, text in composition.trait_injections.items():
             (traits_dir / f"{name}.md").write_text(text)
 
+    # Bodies are read from source_path: the composer does not eager-load them
+    # into ``injection``, so that field is empty for every rule and skill here.
     if composition.rules:
         rules_dir = target_dir / "rules"
         rules_dir.mkdir()
         for r in composition.rules:
-            (rules_dir / f"{r.name}.md").write_text(r.injection or "")
+            (rules_dir / f"{r.name}.md").write_text(read_rule_body(r.source_path))
 
     if composition.skills:
         skills_dir = target_dir / "skills"
         skills_dir.mkdir()
         for s in composition.skills:
-            # Read the body on demand from source_path. The composer
-            # no longer eager-loads it into ``injection`` (reflect is its sole
-            # consumer), so reading ``s.injection`` here would write an empty
-            # file.
             skill_md = s.source_path / "SKILL.md"
             body = skill_md.read_text() if skill_md.exists() else ""
             (skills_dir / f"{s.name}.md").write_text(body)
