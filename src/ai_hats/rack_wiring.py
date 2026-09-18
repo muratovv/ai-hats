@@ -51,7 +51,7 @@ from ai_hats_core.deadline import Deadline
 from . import ownership
 from .constants import ENV_ROOT_PID
 from .session_identity import SessionIdentity, SessionIdentityError
-from .wt_effects import WtWorktreeEffects
+from .wt_effects import WtWorktreeEffects, carry_role
 
 TERMINAL_STATES = ("done", "failed", "cancelled")
 
@@ -295,14 +295,18 @@ class WorktreeExtension:
             # A forced execute is a manual state correction — no
             # fresh worktree (one spun off HEAD orphaned retro work, PROX-287).
             return Delta(work_log=("Forced → execute: no worktree created (manual override)",))
+        # The session's role, never the card's: the card names who should do
+        # the task, the session who is entering the tree the hooks provision.
+        role = carry_role(self.project_dir, os.environ)
         wt_path = self._effects.setup(
             ctx.task.id,
-            ctx.task.role,
+            role,
             caller_cwd=ctx.caller_cwd,
             outer_deadline=_rack_lock_deadline(ctx),
         )
         if wt_path is not None:
-            return Delta(work_log=(f"Worktree: {wt_path}",))
+            provisioned = role or "the configured role"
+            return Delta(work_log=(f"Worktree: {wt_path} (carry for {provisioned})",))
         return None
 
     # ----- teardown ---------------------------------------------------------

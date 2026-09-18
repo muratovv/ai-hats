@@ -225,9 +225,9 @@ def wt_create(branch: str):
     # the loser got an opaque CalledProcessError + a leaked tempdir.
     # WorktreeManager.create() now re-checks under the repo-scoped L1 lock
     # and raises WorktreeCreateError with a friendly message; we just relay.
-    # Thread the project's effective-role worktree carry (wt_in/wt_out
-    # hooks) in at create; persisted to state for teardown (D3).
-    from ..wt_effects import collect_carry_for_project
+    # Thread the session's worktree carry (wt_in/wt_out hooks) in at create;
+    # persisted to state for teardown (D3).
+    from ..wt_effects import carry_role, collect_carry_for_project
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
     mgr = WorktreeManager(
@@ -240,7 +240,9 @@ def wt_create(branch: str):
         worktree_checkouts_dir=layout.cache.worktree_checkouts,
     )
     try:
-        wt_path = mgr.create(wt_hooks=collect_carry_for_project(project_dir))
+        wt_path = mgr.create(
+            wt_hooks=collect_carry_for_project(project_dir, carry_role(project_dir, os.environ))
+        )
     except WorktreeCreateError as exc:
         console.print(f"[red]{exc}[/]")
         sys.exit(1)
