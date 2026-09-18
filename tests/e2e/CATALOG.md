@@ -3832,7 +3832,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
+  bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
   python -m ai_hats.cli.githooks_hook pre-commit --project-dir . --githooks-dir .githooks
   ```
 

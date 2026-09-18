@@ -18,7 +18,7 @@ HOOK_PATH = (
     / "ai-hats-library"
     / "src"
     / "ai_hats_library"
-    / "usage"
+    / "ai-hats-dev"
     / "skills"
     / "rule-delivery-gate"
     / "git_hooks"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # git pre-commit: refuse a tracker id in STAGED library prose.
 #
-# Ships with the `ticket-id-gate` skill, attached to the `skill-engineer` trait
-# → installed only for the roles that author library content.
+# Ships with the `ticket-id-gate` skill, attached to the `ai-hats-dev` trait
+# → installed only for the roles that author the SHIPPED library.
 #
 # The prefix is LEARNED from the project's own tracker card ids, never
 # hardcoded: this script is itself shipped library content, so naming one

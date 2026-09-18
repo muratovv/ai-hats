@@ -21,10 +21,13 @@ LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 HOOK_GLOBS = (
     "core/skills/*/git_hooks/*.sh",
     "usage/skills/*/git_hooks/*.sh",
+    "ai-hats-dev/skills/*/git_hooks/*.sh",
     "core/skills/*/hooks/*.sh",
     "core/skills/*/hooks/*.py",
     "usage/skills/*/hooks/*.sh",
     "usage/skills/*/hooks/*.py",
+    "ai-hats-dev/skills/*/hooks/*.sh",
+    "ai-hats-dev/skills/*/hooks/*.py",
     "hooks/*.sh",
 )
 

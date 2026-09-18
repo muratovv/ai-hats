@@ -3,7 +3,7 @@
 flow:   a library author commits prose that still carries a tracker id, and the
         pre-commit gate has to refuse it before the id ships to other projects
 cmds:
-    bash packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
+    bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
     python -m ai_hats.cli.githooks_hook pre-commit --project-dir . --githooks-dir .githooks
 expect: the hook blocks on a staged `<PREFIX>-<digits>`, spares the `<PREFIX>-NNN`
         placeholder beside it, honours the same-line allow marker, learns the
@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.guards]
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/ticket-id-gate"
     / "git_hooks/pre-commit-ticket-ids.sh"
 )
 PROSE = "packages/ai-hats-library/src/ai_hats_library/core/skills/demo/SKILL.md"

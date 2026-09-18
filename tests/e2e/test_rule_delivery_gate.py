@@ -25,7 +25,7 @@ pytestmark = pytest.mark.guards
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh"
 )
 
 

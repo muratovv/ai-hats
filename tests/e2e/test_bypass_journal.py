@@ -38,12 +38,12 @@ GIT_HOOK_HATCHES = [
     (f"{GM}/pre-commit-no-raw-destructive.sh", "pre-commit", "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP"),
     (f"{GM}/pre-push-shared-state.sh", "pre-push", "AI_HATS_SHARED_STATE_ACK"),
     (
-        "usage/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh",
+        "ai-hats-dev/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh",
         "pre-commit",
         "AI_HATS_RULE_DELIVERY_ACK",
     ),
     (
-        "usage/skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh",
+        "ai-hats-dev/skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh",
         "pre-commit",
         "AI_HATS_SKILL_LINT_ACK",
     ),
