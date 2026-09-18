@@ -1,13 +1,9 @@
-"""Unit: reflect's role-mirror writes skill bodies from source_path.
+"""Unit: what ``ai-hats reflect role`` hands the auditor.
 
-HATS-706. The composer no longer eager-loads each ``SKILL.md`` body into
-``ResolvedComponent.injection`` (that read was dead work for every non-reflect
-session). reflect mode is the *sole* consumer of a skill's body, so it must
-read the body on demand from ``source_path`` — not from ``injection`` (which is
-now the empty default).
-
-This pins R3 of the plan: the published ``skills/<name>.md`` still contains the
-full body even though ``injection == ""``.
+The composed dir is the composition the session runs — rule and skill bodies
+read from ``source_path`` (the composer eager-loads neither), overlays applied,
+and the plan's trace in the manifest so a finding can be routed to the trait,
+role or override layer that brought the term.
 """
 
 from __future__ import annotations
@@ -84,3 +80,66 @@ def test_reflect_writes_skill_body_from_source_path(tmp_path: Path) -> None:
         "reflect must read the skill body from source_path, not from the "
         "(now empty) injection field"
     )
+
+
+def test_reflect_manifest_carries_trace(tmp_path: Path) -> None:
+    """The auditor routes a finding by who brought the term — a trait, the
+    role, or an override layer — so the manifest carries the plan's trace in
+    the shape the session record uses."""
+    import yaml
+
+    from ai_hats.surfaces.plan import TraceEntry
+
+    composition = CompositionResult(
+        name="demo-role", priorities=[], rules=[], skills=[], injections=[]
+    )
+    trace = (
+        TraceEntry("trait-agent", "demo-role", removed_by=None),
+        TraceEntry("rules::demo_rule", "trait-agent", removed_by=None),
+        TraceEntry("dev::shell", "demo-role", removed_by="overrides::project"),
+    )
+
+    target_dir = _materialize_target_composition(
+        tmp_path / "out", composition, "demo-role", identity="demo-role", trace=trace
+    )
+
+    manifest = yaml.safe_load((target_dir / "manifest.yaml").read_text())
+    assert manifest["identity"] == "demo-role"
+    assert manifest["trace"] == [
+        {"term": "trait-agent", "brought_by": "demo-role", "removed_by": None},
+        {"term": "rules::demo_rule", "brought_by": "trait-agent", "removed_by": None},
+        {"term": "dev::shell", "brought_by": "demo-role", "removed_by": "overrides::project"},
+    ]
+
+
+LIBRARY_DIR = Path(__file__).resolve().parent.parent / "packages" / "ai-hats-library" / "src"
+LIBRARY_DIR = LIBRARY_DIR / "ai_hats_library"
+
+
+def test_reflect_audits_the_overlaid_composition(tmp_path: Path, monkeypatch) -> None:
+    """The audit reads the composition the session runs: a rule a project
+    overlay adds is in it, attributed to that layer, beside the role's own."""
+    from ai_hats.assembler import Assembler
+    from ai_hats.cli.reflect import _audit_target
+    from ai_hats.models import OverlayConfig, ProjectConfig
+    from ai_hats.paths import PROJECT_CONFIG
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    monkeypatch.chdir(project)  # the preview path prefers a library found in cwd
+    ProjectConfig(
+        provider="claude",
+        library_paths=[str(LIBRARY_DIR)],
+        ai_hats_dir=".agent/ai-hats",
+        active_role="maintainer",
+        default_role="maintainer",
+        customizations={"maintainer": OverlayConfig(add_rules=["env_rule_proxmox_infra"])},
+    ).save(project / PROJECT_CONFIG)
+    Assembler(project, library_paths=[LIBRARY_DIR]).init()
+
+    payload = _audit_target(project, "maintainer")
+
+    assert "env_rule_proxmox_infra" in [r.name for r in payload.result.rules]
+    brought = {t.term: t.brought_by for t in payload.plan.trace if t.removed_by is None}
+    assert brought["rules::env_rule_proxmox_infra"] == "overrides::project"
+    assert brought["ai-hats-framework"] == "maintainer"

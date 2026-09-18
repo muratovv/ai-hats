@@ -3,10 +3,10 @@
 flow:   a developer running role coherence audit command
 cmds:
     ai-hats reflect role maintainer
-expect: pre-flight composes and serializes target role manifest and launches role-judge
-        session
+expect: pre-flight composes the target with overlays, serializes its manifest with the
+        plan's trace and every rule body, then launches the role-judge session
 why:    without composition materialization, role-judge auditor lacks structured role
-        breakdown to audit
+        breakdown to audit; with empty rule files it audits rules it never saw
 """
 
 from __future__ import annotations
@@ -58,6 +58,15 @@ def test_reflect_role_materializes_target_composition(
     # non-zero size means the dump succeeded (compose produced something
     # to serialize).
     assert composed[0].stat().st_size > 0, f"composed manifest is empty: {composed[0]}"
+    # The manifest carries the plan's trace, the auditor's route from a
+    # finding to the trait / role / override layer that brought the term.
+    assert "trace:" in composed[0].read_text(), f"manifest carries no trace: {composed[0]}"
+    # Rule bodies come from source_path: with the composer no longer
+    # eager-loading rule.md, an ``injection`` read shipped 0-byte files.
+    rule_files = sorted(composed[0].parent.glob("rules/*.md"))
+    assert rule_files, f"{TARGET_ROLE} composes rules, none were materialized"
+    empty = [p.name for p in rule_files if p.stat().st_size == 0]
+    assert not empty, f"materialized rule bodies are empty: {empty}"
 
     # ---- Pin that we actually got past pre-flight into PTY ----
     # Same rationale as test_reflect_all_e2e.py — the session-start

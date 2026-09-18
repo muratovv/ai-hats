@@ -26,8 +26,10 @@ Subcommands:
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ai_hats_observe.artifacts import RETRO_LOG, session_dirname
 
@@ -69,6 +71,10 @@ from ai_hats_core.layout import ProjectLayout
 
 from ._entry import resolve_project
 from ._helpers import console
+
+if TYPE_CHECKING:
+    from ..composition_payload import CompositionPayload
+    from ..surfaces.plan import TraceEntry
 
 
 @click.group("reflect")
@@ -387,23 +393,7 @@ def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
 
     project_dir = layout.root
     assembler = Assembler(project_dir)
-    composer = assembler.composer
-    # Deliberately no ``overlays=`` — ``reflect`` shows the
-    # role's BUILT-IN composition for inspection (what the library
-    # ships), excluding the project / global overlay layering that
-    # runtime consumers apply. This is the whole point of ``reflect``;
-    # using ``compose_for_role`` here would conflate "what does the
-    # role contain" with "what would my project see after overlays".
-    # Out of scope for both drift tests in
-    # ``tests/test_no_direct_compose_outside_facade.py``:
-    # ``test_compose_with_overlays_only_in_facade`` matches the
-    # ``overlays=`` form only and this call has none;
-    # ``test_no_direct_compose_inside_pipeline_subtree`` scans
-    # ``src/ai_hats/pipeline/`` only and this file is under ``cli/``.
-    composition = composer.compose(target_role)
-    if composition.errors:
-        reported = "; ".join(str(e) for e in composition.errors)
-        raise click.ClickException(f"Cannot compose role {target_role!r}: {reported}")
+    target = _audit_target(project_dir, target_role)
 
     preamble_path = assembler.resolver.resolve_injection("reflect-role")
     if preamble_path is None:
@@ -437,8 +427,10 @@ def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
                 target=target_role,
                 materialize=lambda scratch: _materialize_target_composition(
                     scratch / "composed",
-                    composition,
+                    target.result,
                     target_role,
+                    identity=target.plan.identity,
+                    trace=target.plan.trace,
                 ),
                 message_template=preamble_template,
             ),
@@ -451,18 +443,34 @@ def _run_role_audit(layout: ProjectLayout, target_role: str) -> SessionOutcome:
     return outcome
 
 
+def _audit_target(project_dir: Path, target_role: str) -> CompositionPayload:
+    """Compose the audited role as the session runs it: global and project
+    overlays applied, the same read-only path ``config show-prompt --role`` takes.
+    """
+    from ..composition_seam import build_preview_payload
+
+    payload = build_preview_payload(project_dir, role=target_role)
+    if payload.result.errors:
+        reported = "; ".join(str(e) for e in payload.result.errors)
+        raise click.ClickException(f"Cannot compose role {target_role!r}: {reported}")
+    return payload
+
+
 def _materialize_target_composition(
     base_dir: Path,
     composition,
     target_role: str,
+    *,
+    identity: str | None = None,
+    trace: Sequence[TraceEntry] = (),
 ) -> Path:
     """Write the composition's layered breakdown to ``base_dir/<role>/``.
 
     Layout (everything the reviewer needs to trace findings to source):
 
-        manifest.yaml          # name, priorities, traits/rules/skills
+        manifest.yaml          # name, identity, priorities, traits/rules/skills, trace
         role-injection.md      # role's own injection (if non-empty)
-        overlay-injection.md   # overlay text (if any)
+        overlay-injection.md   # each overlay layer's injection_append (if any)
         traits/<name>.md       # per-trait injection texts
         rules/<name>.md        # bundled rule bodies
         skills/<name>.md       # bundled skill bodies
@@ -474,6 +482,7 @@ def _materialize_target_composition(
     import yaml
 
     from ..resolver import read_rule_body
+    from ..surfaces.plan import trace_record
 
     target_dir = base_dir / target_role
     if target_dir.exists():
@@ -485,12 +494,14 @@ def _materialize_target_composition(
 
     manifest = {
         "name": composition.name,
+        "identity": identity or composition.name,
         "priorities": list(composition.priorities),
         "composition": {
             "traits": list(composition.trait_injections.keys()),
             "rules": [r.name for r in composition.rules],
             "skills": [s.name for s in composition.skills],
         },
+        "trace": trace_record(trace),
     }
     (target_dir / "manifest.yaml").write_text(
         yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True)
