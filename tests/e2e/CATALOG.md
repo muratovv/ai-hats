@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**325 of 325 files catalogued — 333 flows.**
+**326 of 326 files catalogued — 334 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2512,6 +2512,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the command executes successfully with exit code 0 and displays all core rack subcommands
 - **why** — python -m ai_hats_rack provides a direct execution entry point required when console scripts are unavailable or isolated
+
+## `test_rack_execute_carry_follows_session_role.py`
+
+*pins HATS-2003*
+
+- **flow** — a session of one role takes a card filed under another role into execute, and the new worktree must be provisioned for the role that is actually entering it
+- **cmds**
+
+  ```console
+  AI_HATS_PLAN_ACK=1 rack transition T-1 execute
+  ai-hats wt create task/probe
+  ```
+
+- **expect** — the wt_in hook the SESSION's role composes runs (its marker lands on disk) and the card's work log names that role; a hook only the CARD's role composes does not run; with both roles equal the marker lands — the positive control on the fixture
+- **why** — a card filed under behaviorist by a role-curator session got a worktree provisioned for behaviorist: no worktree-venv, no .venv, and nothing said which role it had been provisioned for
 
 ## `test_rack_grep_field_e2e.py`
 

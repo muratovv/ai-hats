@@ -490,6 +490,13 @@ ai_hats:
 ---
 ```
 
+**Whose hooks.** The set is collected once, at create, from the composition of the
+role the **session** runs under (the identity in `AI_HATS_SESSION_IDENTITY`), or
+the project's configured role outside a session — never from a card's `role`
+field, which names who should do the task, not who is entering the tree. Both
+roads (`rack transition … execute` and `ai-hats wt create`) resolve it the same
+way, and the execute edge's work-log line names the role it provisioned for.
+
 **Who fires where.** The two events sit at opposite ends of the worktree lifecycle
 and have deliberately different failure postures:
 
