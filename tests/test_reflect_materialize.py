@@ -126,7 +126,8 @@ def test_reflect_audits_the_overlaid_composition(tmp_path: Path, monkeypatch) ->
 
     project = tmp_path / "proj"
     project.mkdir()
-    monkeypatch.chdir(project)  # the preview path prefers a library found in cwd
+    # The preview path may pick a library up from cwd; pin the one the project names.
+    monkeypatch.setenv("AI_HATS_LIBRARY_ROOT", str(LIBRARY_DIR))
     ProjectConfig(
         provider="claude",
         library_paths=[str(LIBRARY_DIR)],
