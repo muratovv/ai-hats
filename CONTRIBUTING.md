@@ -333,17 +333,21 @@ component that says "ai-hats" in prose but fires on any project is `usage`; one
 that never says it but only ever fires here is `ai-hats-dev`. Step 4 is `yes`
 when the component names `src/ai_hats/…`, `packages/ai-hats-library/…`, this
 repo's `CONTRIBUTING.md`, `docs/adr/…` or `scripts/gates.sh` **as a
-dependency rather than as an example**. A guarded fast path is not a dependency:
-`rule-delivery-gate` hard-codes the library path and still lives in `usage`,
-because the hard-code is an `if [[ -d … ]]` branch with a package-resolve
-fallback, so it works in any project.
+dependency rather than as an example**. A guarded fast path (an `if [[ -d … ]]`
+branch with a fallback) is not a dependency — but neither is the path the whole
+signal. What decides is **whose invariant the component holds**:
+`ticket-id-gate` names no repo path and runs in any project, yet what it refuses
+is "an id that is a dead link in the projects this library installs into" — a
+property of the SHIPPED library, false for a consumer's `libraries/`, where the
+id is a live link into that project's own tracker. It is `ai-hats-dev`, and so
+are `rule-delivery-gate` and `skill-lint-gate` beside it, for the same reason.
 
 | Component                                                    | Layer         | Why                                          |
 | ------------------------------------------------------------ | ------------- | -------------------------------------------- |
 | `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                |
 | `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them |
-| `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path             |
 | `quality-gate`, `doc-protocol`, `worktree-venv`              | `ai-hats-dev` | wired to this repo's gates and docs          |
+| `rule-delivery-gate`, `skill-lint-gate`, `ticket-id-gate`    | `ai-hats-dev` | hold the shipped library's publishing rules  |
 | `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`     |
 | `skill-engineer` trait, `behaviorist` role                   | `usage`       | component-authoring craft, no repo path      |
 | `ai-hats-dev` trait                                          | `ai-hats-dev` | repo discipline shared by both roles here    |

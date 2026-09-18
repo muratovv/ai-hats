@@ -1,6 +1,6 @@
 ---
 name: ticket-id-gate
-description: Pre-commit gate refusing a tracker id in staged library prose. Use when composing a library-authoring role, or when diagnosing why the ticket-ids hook blocked a commit.
+description: Pre-commit gate refusing a tracker id in staged library prose. Use when composing a role that authors the shipped library (the `ai-hats-dev` trait), or when diagnosing why the ticket-ids hook blocked a commit.
 ai_hats:
   # hook-carrier skill. The assembler installs the script below into
   # `.githooks/pre-commit.d/` at composition time. Over STAGED library

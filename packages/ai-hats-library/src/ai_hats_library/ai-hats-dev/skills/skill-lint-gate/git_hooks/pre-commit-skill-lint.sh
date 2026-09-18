@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # HATS-617 — git pre-commit: lint STAGED library SKILL.md files with agnix.
 #
-# Ships with the `skill-lint-gate` skill, attached to the `skill-engineer`
-# trait → installed only for the `maintainer` and `role-curator` roles (the
-# two roles that author library skills).
+# Ships with the `skill-lint-gate` skill, attached to the `ai-hats-dev` trait
+# → installed only for the roles that author the SHIPPED library.
 #
 # Scope: only STAGED library SKILL.md files (any of the three layouts named at the filter) are checked, EXCLUDING the
 # third-party `golang-*` pack (HATS-627 decision — pack drift is handled

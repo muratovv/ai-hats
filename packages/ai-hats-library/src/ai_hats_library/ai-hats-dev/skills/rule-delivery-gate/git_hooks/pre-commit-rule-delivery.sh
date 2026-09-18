@@ -2,9 +2,8 @@
 # HATS-700 — git pre-commit: block a commit that introduces a `see rule X`
 # pointer to a rule the agent cannot read.
 #
-# Ships with the `rule-delivery-gate` skill, attached to the `skill-engineer`
-# trait → installed only for the `maintainer` and `role-curator` roles (the two
-# roles that author library traits/roles).
+# Ships with the `rule-delivery-gate` skill, attached to the `ai-hats-dev`
+# trait → installed only for the roles that author the SHIPPED library.
 #
 # Scope: fires only when a commit stages a library config.yaml (any of the three layouts named at the filter).
 # injection — the place a dangling pointer is introduced). The check itself scans

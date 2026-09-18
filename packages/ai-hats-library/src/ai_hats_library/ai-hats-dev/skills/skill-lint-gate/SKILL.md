@@ -1,6 +1,6 @@
 ---
 name: skill-lint-gate
-description: Pre-commit gate over staged library `SKILL.md`. Use when composing a role that carries the `skill-engineer` trait, or when diagnosing why the skill-lint hook blocked a commit.
+description: Pre-commit gate over staged library `SKILL.md`. Use when composing a role that carries the `ai-hats-dev` trait, or when diagnosing why the skill-lint hook blocked a commit.
 ai_hats:
   # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. Over STAGED
