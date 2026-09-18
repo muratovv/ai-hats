@@ -745,3 +745,39 @@ def test_same_project_pin_keeps_the_session_envelope(tmp_path):
     seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
     for key in _ENVELOPE:
         assert seen[key] == _pinned_session(project_b, b_venv)[key]
+
+
+# ---------- the project is the nearest onboarded dir above cwd, not cwd ----------
+
+
+def test_launcher_resolves_the_project_from_a_subdirectory(tmp_path):
+    """HATS-2002: from `<root>/a/b` the launcher must answer for `<root>` — the
+    python side walks up to the nearest `.agent/` or `ai-hats.yaml`; the launcher
+    used `$(pwd)` and bootstrapped a stray project in the subdirectory."""
+    root = tmp_path / "root"
+    sub = root / "a" / "b"
+    sub.mkdir(parents=True)
+    (root / "ai-hats.yaml").write_text("schema_version: 4\nai_hats_dir: .agent/ai-hats\n")
+    _env_dumping_venv(root / ".agent" / "ai-hats" / ".venv")
+
+    res = _run_scrubbed(["status"], cwd=sub, env={})
+
+    assert res.returncode == 0, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    assert seen["AI_HATS_PROJECT_DIR"] == str(root), seen
+    assert seen[ENV_AI_HATS_VENV] == str(root / ".agent" / "ai-hats" / ".venv"), seen
+    assert not (sub / ".agent").exists(), "a stray project was bootstrapped in the subdirectory"
+
+
+def test_launcher_keeps_a_bare_directory_as_the_project(tmp_path):
+    """The walk-up stops at the first marker; a dir with none above it is a fresh
+    project (the `self init` premise), not an error."""
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    _env_dumping_venv(bare / ".agent" / "ai-hats" / ".venv")  # a venv is not a marker; .agent is
+
+    res = _run_scrubbed(["status"], cwd=bare, env={})
+
+    assert res.returncode == 0, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    assert seen["AI_HATS_PROJECT_DIR"] == str(bare), seen

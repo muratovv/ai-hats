@@ -2,9 +2,11 @@
 # ai-hats launcher — universal host-level entry-point (HATS-339).
 #
 # Installed once per host at ~/.local/bin/ai-hats by scripts/install-launcher.sh.
-# Resolves the project venv (AI_HATS_VENV env > ai-hats.yaml venv_path >
-# default <pwd>/.agent/ai-hats/.venv), heals the default venv if it's
-# missing/broken, then exec's into <venv>/bin/python -m ai_hats. Self update
+# Resolves the project root (linked-worktree hop, else the nearest dir above
+# cwd carrying .agent/ or ai-hats.yaml, else cwd), then the venv (AI_HATS_VENV
+# env > ai-hats.yaml venv_path > default <root>/.agent/ai-hats/.venv), heals the
+# default venv if it's missing/broken, then exec's into <venv>/bin/python -m
+# ai_hats. Self update
 # flows through the same path: heal-if-needed → delegate to python ai-hats
 # (which renders the rich diff + auto-bumps).
 #
@@ -17,11 +19,14 @@ set -euo pipefail
 
 # HATS-1617: resolution contract this launcher implements. Bump ONLY when the
 # resolution behaviour changes; a drift lock holds it equal to the package constant.
-LAUNCHER_CONTRACT=2
+LAUNCHER_CONTRACT=3
 
 PROJECT="$(pwd)"
+# The one marker table, mirrored from ai_hats_core.layout.is_onboarded.
+is_onboarded() { [[ -d "$1/.agent" || -f "$1/ai-hats.yaml" ]]; }
 # HATS-1306: linked git worktree resolution — hop to main checkout root when inside a linked worktree,
 # provided that main checkout is an onboarded ai-hats project (.agent/ or ai-hats.yaml).
+hopped=""
 if git_dirs="$(git rev-parse --git-dir --git-common-dir 2>/dev/null)" && [[ -n "$git_dirs" ]]; then
     git_dir="$(echo "$git_dirs" | head -1)"
     common_dir="$(echo "$git_dirs" | tail -1)"
@@ -29,10 +34,24 @@ if git_dirs="$(git rev-parse --git-dir --git-common-dir 2>/dev/null)" && [[ -n "
     common_dir_abs="$(cd "$common_dir" 2>/dev/null && pwd -P || true)"
     if [[ -n "$git_dir_abs" && -n "$common_dir_abs" && "$git_dir_abs" != "$common_dir_abs" ]]; then
         main_root="$(cd "$common_dir_abs/.." 2>/dev/null && pwd -P || true)"
-        if [[ -n "$main_root" && ( -d "$main_root/.agent" || -f "$main_root/ai-hats.yaml" ) ]]; then
+        if [[ -n "$main_root" ]] && is_onboarded "$main_root"; then
             PROJECT="$main_root"
+            hopped=1
         fi
     fi
+fi
+# Else the nearest onboarded dir above cwd, as resolve_root walks; a cwd with
+# none above it stays the project (a bare dir is a fresh `self init`).
+if [[ -z "$hopped" ]]; then
+    candidate="$PROJECT"
+    while :; do
+        if is_onboarded "$candidate"; then
+            PROJECT="$candidate"
+            break
+        fi
+        [[ "$candidate" == "/" ]] && break
+        candidate="$(dirname "$candidate")"
+    done
 fi
 
 # HATS-766: anonymous git+https default (override still accepts ssh/local).

@@ -68,6 +68,17 @@ def test_yaml_only_project_agrees(tmp_path: Path) -> None:
     assert _launcher_resolved_root(proj) == _python_resolved_root(proj)
 
 
+def test_subdirectory_agrees(tmp_path: Path) -> None:
+    """HATS-2002: from `<proj>/sub/deeper` both walk up to `<proj>`; the launcher
+    used to answer with the subdirectory and bootstrap a stray project there."""
+    proj = tmp_path / "proj"
+    deeper = proj / "sub" / "deeper"
+    deeper.mkdir(parents=True)
+    (proj / "ai-hats.yaml").write_text("schema_version: 4\nai_hats_dir: .agent/ai-hats\n")
+    assert _launcher_resolved_root(deeper) == _python_resolved_root(deeper) == str(proj)
+    assert not (deeper / ".agent").exists()
+
+
 def test_worktree_hop_agrees(tmp_path: Path) -> None:
     """1a: onboarded main → both hop; the case no prior fixture reached."""
     main = tmp_path / "main"
