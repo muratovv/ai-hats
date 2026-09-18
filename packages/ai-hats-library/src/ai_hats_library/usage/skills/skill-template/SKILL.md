@@ -122,7 +122,9 @@ A shipped example to copy: `usage/skills/py-security-lint/` — frontmatter plus
 `SKILL.md` body is live for the next session. The same holds for `ai-hats.yaml`
 — it is re-read at launch, so adding your skill to a trait or role also lands on
 its own. `ai-hats self init` validates the config and refreshes the project
-scaffold; it is not how composition changes take effect.
+scaffold; it is not how composition changes take effect — with one exception, a
+skill declaring a git hook on an event that has no `.githooks/<event>`
+dispatcher yet (`library-editing` §4).
 
 Skills materialize into the per-session cache under
 `<cache_root>/sessions/<sid>/` — outside the project, default
@@ -130,10 +132,12 @@ Skills materialize into the per-session cache under
 (claude `plugin/`, agy `rules/.agents/skills/`, cline `skills/`).
 
 **Never `cp` skill files by hand** into `.claude/skills/` or
-`<ai_hats_dir>/library/skills/`. Neither is a mirror of the installed library:
-the first is retired, the second is where components **you** author
-locally live. A hand-made copy drifts from source-of-truth and earns a WARN
-about an orphan `.ai-hats-managed` marker on every run.
+`<ai_hats_dir>/library/skills/`. Neither is a root the resolver reads: the
+first is retired, the second is created empty by `ai-hats init` as the landing
+spot for a legacy `.agent/skills/` and nothing composes from it. A skill
+**you** author lives in `<project>/libraries/skills/<name>/` (the other roots:
+`library-editing` §1). A hand-made copy in either place drifts from
+source-of-truth and never reaches a prompt.
 
 Confirm what a launch would actually compose with `ai-hats config status` or
 `ai-hats --dry-run`.

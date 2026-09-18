@@ -110,10 +110,13 @@ command. `ai-hats.yaml` is re-read and the role re-composed at every launch, so
 editing a `SKILL.md` body, swapping a role, or adding a customization all land
 on the next session by themselves. `self init` is for step 1 above — validating
 the config and refreshing the project scaffold — not for making composition
-changes take effect. There is no permanent skill mirror at
-`.claude/skills/` (retired) and none at
-`<ai_hats_dir>/library/skills/` — that directory is the landing spot for
-components **you** author locally, not an export of the installed library.
+changes take effect — except for a git hook on an event with no
+`.githooks/<event>` dispatcher yet, whose stub only `init` / `self init` /
+`self update` / the first interactive launch writes. There is no permanent
+skill mirror at `.claude/skills/` (retired) and none at
+`<ai_hats_dir>/library/skills/` — that directory is the landing spot for a
+legacy `.agent/skills/`, not a root the resolver reads. Components **you**
+author live in `<project>/libraries/` or `~/.ai-hats/`.
 
 Design record: [ADR-0018](adr/0018-unified-artifact-builder.md). The consolidated surface-materialization map — storage roots, write points, hooks integration, cache, cleanup — lives in [ADR-0021](adr/0021-surface-materialization.md).
 

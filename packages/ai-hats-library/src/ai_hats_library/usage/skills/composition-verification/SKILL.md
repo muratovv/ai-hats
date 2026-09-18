@@ -11,7 +11,7 @@ Prove the edit arrived — by reading the render, not the file you just edited.
 ## When to Use
 
 Not for judging whether the change is *good*: auditing a composed role for
-contradictions is `role-coherence-protocol`, run by the `role-auditor` role.
+contradictions is `role-coherence-protocol`, run by `ai-hats reflect role <name>`.
 This skill answers the narrower question that must come first — did the change
 reach the prompt at all?
 

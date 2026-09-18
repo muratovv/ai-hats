@@ -723,7 +723,7 @@ when:
 
 ## Replacing a system role (e.g. your own auditor)
 
-Some built-in roles are reached by name: `session-reviewer` from engine code, `role-judge` from `ai-hats reflect role`, and `role-auditor` by agents that delegate an audit to a sub-agent. Their **content** is overrideable — drop a file with the same name in any later-precedence path:
+Some built-in roles are reached by name: `session-reviewer` from engine code and `role-judge` from `ai-hats reflect role`. Their **content** is overrideable — drop a file with the same name in any later-precedence path:
 
 ```bash
 # 1. Inspect the default (read-only — don't edit the installed file)
