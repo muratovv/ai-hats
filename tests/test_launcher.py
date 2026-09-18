@@ -318,6 +318,7 @@ def test_self_update_channel_local_heals_editable(tmp_path):
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     src = tmp_path / "src-tree"
     src.mkdir()
+    (src / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
     (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         f"harness:\n  channel: local\n  path: {src}\n"
@@ -334,8 +335,10 @@ def test_self_update_channel_local_heals_editable(tmp_path):
 
 def test_self_update_channel_local_default_path_is_editable(tmp_path):
     """HATS-766: `channel: local` with no explicit `path` → editable install of
-    the project root (the resolve_channel default), still `-e`."""
+    the project root (the resolve_channel default), still `-e` — when that root
+    is an installable project (the ai-hats checkout's own shape)."""
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
     (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         "harness:\n  channel: local\n"
@@ -346,6 +349,26 @@ def test_self_update_channel_local_default_path_is_editable(tmp_path):
     text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
     assert "-e" in text.splitlines(), f"editable flag missing (default path): {text}"
     assert "ai-hats @" not in text
+
+
+def test_self_update_channel_local_without_source_heals_from_the_pip_target(tmp_path):
+    """`channel: local` whose source is not an installable project (no `path`,
+    a project root without pyproject.toml/setup.py) heals the venv from the
+    PIP_TARGET instead of failing the recreate on uv's refusal, and stderr
+    names the one command that fixes the config."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: local\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
+    assert "-e" not in text.splitlines(), f"an uninstallable source must not be -e'd: {text}"
+    assert "ai-hats @" in text, "the heal falls back to the PIP_TARGET form"
+    assert "not an installable project" in res.stderr, res.stderr
+    assert "ai-hats config set --channel local --path" in res.stderr, res.stderr
 
 
 def test_self_update_channel_edge_heals_non_editable(tmp_path):

@@ -78,6 +78,20 @@ if [[ "$HARNESS_CHANNEL" == "local" ]]; then
     [[ "${LOCAL_SRC:0:1}" != "/" ]] && LOCAL_SRC="$PROJECT/$LOCAL_SRC"
 fi
 
+# uv's own installability rule; a `channel: local` whose source fails it (the
+# default, the project root, passes only for the ai-hats checkout itself) heals
+# from PIP_TARGET and says so — the python `self update` nags with the same fix.
+local_src_installable() {
+    [[ -f "$LOCAL_SRC/pyproject.toml" || -f "$LOCAL_SRC/setup.py" ]]
+}
+heal_editable() {
+    [[ "$HARNESS_CHANNEL" == "local" ]] && local_src_installable
+}
+warn_local_src_not_installable() {
+    echo "ai-hats: $LOCAL_SRC is not an installable project (neither pyproject.toml nor setup.py is present), so channel local has no editable source — healing from $PIP_TARGET instead." >&2
+    echo "  fix: ai-hats config set --channel local --path <checkout>" >&2
+}
+
 # --- HATS-944: pin-scope guard mirroring HATS-897. An inherited AI_HATS_VENV
 # paired with an AI_HATS_PROJECT_DIR that resolves to a *different* project is a
 # leaked session pin (an agent shell cd'd into another project) — honoring it
@@ -287,9 +301,10 @@ heal_if_needed() {
     if ! is_default_venv; then
         echo "ai-hats: override venv $VENV is missing or broken ($PROBE_REASON)." >&2
         echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
-        if [[ "$HARNESS_CHANNEL" == "local" ]]; then
+        if heal_editable; then
             echo "  Fix manually:  uv venv --python 3.13 $VENV && uv pip install --python $VENV/bin/python -e '$LOCAL_SRC'" >&2
         else
+            [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_installable
             echo "  Fix manually:  uv venv --python 3.13 $VENV && uv pip install --python $VENV/bin/python '$PIP_TARGET'" >&2
         fi
         exit 1
@@ -312,9 +327,10 @@ heal_if_needed() {
     # with --reinstall and render the rich diff + auto-bump.
     # HATS-766: channel:local heals EDITABLE (-e), else the PIP_TARGET rebuild.
     local install_rc=0
-    if [[ "$HARNESS_CHANNEL" == "local" ]]; then
+    if heal_editable; then
         uv pip install --quiet --python "$VENV/bin/python" -e "$LOCAL_SRC" || install_rc=$?
     else
+        [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_installable
         uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET" || install_rc=$?
     fi
     if [[ $install_rc -ne 0 ]]; then
