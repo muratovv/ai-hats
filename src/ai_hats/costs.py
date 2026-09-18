@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from .composer import Composer
 from .frontmatter import FrontmatterError, parse_frontmatter
+
+if TYPE_CHECKING:
+    from .surfaces.plan import CompositionPlan
 
 
 @dataclass
@@ -145,6 +149,36 @@ def analyze_composition(
             components.append(("injection", name, inj, inj))
 
     return _build_breakdown(components, errors, exact)
+
+
+# A block's name says what its members are; the nameless block is the injections.
+_BLOCK_CATEGORY = {
+    None: "injection",
+    "PRIORITIES": "priorities",
+    "RULES": "rule",
+    "USER RULES": "user-rule",
+}
+_SKILLS_NS = "skills::"
+
+
+def analyze_plan(plan: CompositionPlan, *, exact: bool = True) -> CostBreakdown:
+    """Price the plan a session would render: every prompt member is always-on,
+    every skill keeps its name+description resident and its body on demand.
+
+    Overlays are already in the plan, so the figure is the composed role's, not
+    the declared one's — the answer ``show-prompt`` renders, priced.
+    """
+    components: list[tuple[str, str, str, str]] = []
+    for block in plan.prompt.blocks:
+        category = _BLOCK_CATEGORY.get(block.name, "injection")
+        for member in block.members:
+            components.append((category, member.name, member.text, member.text))
+    for skill in plan.skills:
+        text = skill.document or ""
+        bare = skill.name.removeprefix(_SKILLS_NS)
+        always_on = _skill_always_on_text(bare, text) if text else ""
+        components.append(("skill", skill.name, text, always_on))
+    return _build_breakdown(components, [], exact)
 
 
 def _build_breakdown(
