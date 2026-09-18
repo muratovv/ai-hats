@@ -905,6 +905,7 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
     # HATS-648: the .complete sentinel is written on a fully-successful install.
@@ -928,6 +929,7 @@ def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
                 config_unreadable=False,
                 migrate_force=False,
                 check_branches=False,
+                live_prefix=tmp_path / "elsewhere",
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None  # never flipped
@@ -950,6 +952,7 @@ def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
                 config_unreadable=False,
                 migrate_force=False,
                 check_branches=False,
+                live_prefix=tmp_path / "elsewhere",
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None  # never flipped
@@ -972,11 +975,83 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
                 config_unreadable=False,
                 migrate_force=False,
                 check_branches=False,
+                live_prefix=tmp_path / "elsewhere",
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None
     # The half-written dir exists but is incomplete — no sentinel.
     assert ProjectLayout.at(tmp_path).versions.dir("cafef00d").is_dir()
+    assert not is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
+
+
+def _launcher_recreated_live_venv(tmp_path: Path) -> Path:
+    """versions/<sha> as the launcher's heal leaves it: bin/python present, no
+    .complete sentinel, current pointing at it — and it is the venv we run in."""
+    layout = ProjectLayout.at(tmp_path)
+    vdir = layout.versions.dir("cafef00d")
+    (vdir / "bin").mkdir(parents=True)
+    (vdir / "bin" / "python").write_text("#!/bin/sh\n")
+    _flip_current(layout.versions, "cafef00d")
+    assert read_current_sha(layout.versions) is None  # incomplete → not current, by design
+    return vdir
+
+
+def test_managed_update_adopts_the_live_venv_the_launcher_recreated(tmp_path, monkeypatch):
+    """Review F5: the launcher recreates versions/<sha> without the sentinel; the
+    python side then saw an incomplete target and rmtree'd sys.prefix mid-run.
+    The venv this process runs in is verified and adopted, never rebuilt."""
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    vdir = _launcher_recreated_live_venv(tmp_path)
+    calls: list[list[str]] = []
+
+    def rec_run(args, **kwargs):
+        calls.append(list(args))
+        return _make_completed(list(args), returncode=0, stdout="9.9.9\n")
+
+    with patch("subprocess.run", side_effect=rec_run):
+        _run_managed_versioned_update(
+            ProjectLayout.at(tmp_path),
+            _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
+            old_version="1.0.0",
+            active_role="assistant",
+            config_unreadable=False,
+            migrate_force=False,
+            check_branches=False,
+            live_prefix=vdir,
+        )
+
+    assert (vdir / "bin" / "python").exists(), "the live venv was rebuilt under us"
+    assert not any("venv" in c and "uv" in c for c in calls)
+    assert not any("pip" in c for c in calls)
+    assert any(c[:3] == [sys.executable, "-m", "ai_hats._bootstrap"] for c in calls), calls
+    assert is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
+
+
+def test_managed_update_does_not_adopt_a_live_venv_that_fails_verify(tmp_path, monkeypatch):
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    vdir = _launcher_recreated_live_venv(tmp_path)
+
+    def rec_run(args, **kwargs):
+        a = list(args)
+        if any("_bootstrap" in x for x in a):
+            return _make_completed(a, returncode=1, stderr="entry point broken")
+        return _make_completed(a, returncode=0)
+
+    with patch("subprocess.run", side_effect=rec_run), pytest.raises(SystemExit) as exc:
+        _run_managed_versioned_update(
+            ProjectLayout.at(tmp_path),
+            _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
+            old_version="1.0.0",
+            active_role=None,
+            config_unreadable=False,
+            migrate_force=False,
+            check_branches=False,
+            live_prefix=vdir,
+        )
+
+    assert exc.value.code == 1
+    assert (vdir / "bin" / "python").exists(), "a failed verify must not rmtree the live venv"
     assert not is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
 
 
@@ -1007,6 +1082,7 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     # No venv create / pip install / verify happened.
     assert not any("venv" in c and "uv" in c for c in calls)
@@ -1060,6 +1136,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     # REBUILT (not reused): a venv create + pip install ran for the target sha.
     assert any("venv" in c and "uv" in c for c in calls)
@@ -1095,6 +1172,7 @@ def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeyp
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert not residue.exists()  # crash residue reclaimed
     assert (
@@ -1132,6 +1210,7 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     # Reused: no rebuild, but current re-flipped to the complete dir.
     assert not any("venv" in c and "uv" in c for c in calls)
@@ -1160,6 +1239,7 @@ def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeyp
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert not legacy.exists()  # legacy .venv reclaimed
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
@@ -1184,6 +1264,7 @@ def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert legacy.exists()  # kept — we ran from it
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
@@ -1221,6 +1302,7 @@ def _update_with_launcher(tmp_path, monkeypatch, stamp):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     return printed
 

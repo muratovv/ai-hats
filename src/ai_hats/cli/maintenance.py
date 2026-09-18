@@ -409,6 +409,13 @@ def _run_post_install_verify(python_exe: str) -> tuple[bool, str]:
     return False, (verify.stderr or verify.stdout or "").strip() or "see logs"
 
 
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False
+
+
 def _flip_current(versions: VersionsLayout, sha: str) -> None:
     """Atomically point ``versions/current`` at ``sha`` (tmp-write + replace).
 
@@ -467,6 +474,7 @@ def _run_managed_versioned_update(
     config_unreadable: bool,
     migrate_force: bool,
     check_branches: bool,
+    live_prefix: Path,
 ) -> None:
     """Blue-green ``self update`` for the managed default venv.
 
@@ -487,7 +495,10 @@ def _run_managed_versioned_update(
     install+verify, so an interrupted update never bricks the tool — at worst
     it leaves an unreferenced half-written ``versions/<sha>/`` dir. The proper
     ``.tmp-<sha>`` staging + ``.complete`` sentinel + ``.tmp-*`` recovery sweep
-    is R1; here we simply never trust a pre-existing dir.
+    is R1; here we simply never trust a pre-existing dir — except the one this
+    process runs in (``live_prefix``, ``sys.prefix`` at the entry point): the
+    launcher's heal recreates ``versions/<sha>`` without the sentinel, and that
+    venv is verified and adopted, never rebuilt under its own interpreter.
     """
     import shutil
 
@@ -579,6 +590,31 @@ def _run_managed_versioned_update(
             console.print(
                 f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
                 f"[dim](current → {target_sha[:12]})[/]"
+            )
+        elif vdir.exists() and _same_dir(vdir, live_prefix):
+            # The launcher recreated the venv we run in (bare install, no
+            # sentinel): verify it as a fresh install would be, then adopt.
+            with console.status(
+                "[cyan]Verifying the venv this run was healed into …[/]", spinner="dots"
+            ):
+                verify = subprocess.run(
+                    [sys.executable, "-m", "ai_hats._bootstrap", "verify"],
+                    capture_output=True,
+                    text=True,
+                )
+            if verify.returncode != 0:
+                warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
+                console.print(
+                    f"[red]Update failed[/] (verify): versions/{target_sha[:12]} was recreated "
+                    f"by the launcher and does not verify: {warning}"
+                )
+                sys.exit(1)
+            layout.versions.sentinel(target_sha).write_text("", encoding="utf-8")
+            _flip_current(layout.versions, target_sha)
+            new_python = sys.executable
+            console.print(
+                f"[green]Adopted[/] versions/{target_sha[:12]} "
+                "[dim](recreated by the launcher, verified; current → it)[/]"
             )
         else:
             # No dir, or incomplete crash residue (no .complete sentinel) — never
@@ -1704,6 +1740,7 @@ def update(
                 config_unreadable=config_unreadable,
                 migrate_force=migrate_force,
                 check_branches=check_branches,
+                live_prefix=Path(sys.prefix),
             )
         except VersionLockError as exc:
             # A concurrent `self update` holds the acquire lock past the timeout.
