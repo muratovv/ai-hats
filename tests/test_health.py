@@ -201,13 +201,6 @@ def _harness(channel: str, **kw):
     return HarnessConfig(channel=Channel(channel), **kw)
 
 
-@pytest.fixture
-def no_detected_source(monkeypatch):
-    """The test process is itself an editable dev install — hide it, or the
-    local rows resolve to this checkout instead of the fixture."""
-    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: None)
-
-
 def test_no_harness_row_when_no_harness_is_given(project: Path) -> None:
     assert [r for r in triage(ProjectLayout.at(project)) if r.name == "harness"] == []
 
@@ -235,15 +228,17 @@ def test_harness_row_is_ok_for_a_remote_channel(
     assert row.remediation == ""
 
 
-def test_harness_row_is_ok_for_a_local_source_that_installs(
-    project: Path, tmp_path: Path, no_detected_source
-) -> None:
+def test_harness_row_is_ok_for_a_local_source_that_installs(project: Path, tmp_path: Path) -> None:
     checkout = tmp_path / "checkout"
     checkout.mkdir()
     (checkout / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
 
     row = _row(
-        triage(ProjectLayout.at(project), harness=_harness("local", path=str(checkout))),
+        triage(
+            ProjectLayout.at(project),
+            harness=_harness("local", path=str(checkout)),
+            detected_source=None,
+        ),
         "harness",
     )
 
@@ -251,10 +246,11 @@ def test_harness_row_is_ok_for_a_local_source_that_installs(
     assert row.detail == f"local → {checkout}"
 
 
-def test_harness_row_is_broken_for_a_local_source_that_cannot_install(
-    project: Path, no_detected_source
-) -> None:
-    row = _row(triage(ProjectLayout.at(project), harness=_harness("local")), "harness")
+def test_harness_row_is_broken_for_a_local_source_that_cannot_install(project: Path) -> None:
+    row = _row(
+        triage(ProjectLayout.at(project), harness=_harness("local"), detected_source=None),
+        "harness",
+    )
 
     assert row.layer is Layer.RUNTIME
     assert row.status is Status.BROKEN

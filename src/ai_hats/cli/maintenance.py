@@ -1334,7 +1334,10 @@ def _render_triage(reports: list[health.LayerReport]) -> None:
 
 
 def _reverify_layers(
-    layout: ProjectLayout, before: list[health.LayerReport], harness: "HarnessConfig"
+    layout: ProjectLayout,
+    before: list[health.LayerReport],
+    harness: "HarnessConfig",
+    detected_source: str | None,
 ) -> None:
     """Re-run the triage after the update and report what the bump did NOT fix.
 
@@ -1344,7 +1347,11 @@ def _reverify_layers(
     was_broken = {r.name for r in before if r.status is health.Status.BROKEN}
     if not was_broken:
         return
-    still = {r.name for r in health.triage(layout, harness) if r.status is health.Status.BROKEN}
+    still = {
+        r.name
+        for r in health.triage(layout, harness, detected_source)
+        if r.status is health.Status.BROKEN
+    }
     healed = was_broken - still
     if healed:
         console.print(f"[green]Layers restored:[/] {', '.join(sorted(healed))}")
@@ -1464,11 +1471,14 @@ def update(
     # The harness channel (config) selects BOTH the install source and
     # the downgrade guard. Read it up front, degrading to the stable default if
     # the installed code can't parse the config (`self update` self-heals).
+    from ..channel import detect_editable_source, resolve_local_source
+
     harness = _read_harness(project_dir)
     channel, harness_repo, harness_path = harness.channel, harness.repo, harness.path
+    detected_source = detect_editable_source()
 
     # Triage before any write, so --check can short-circuit here.
-    reports = health.triage(layout, harness)
+    reports = health.triage(layout, harness, detected_source)
     _render_triage(reports)
     if check:
         sys.exit(1 if health.worst_status(reports) is health.Status.BROKEN else 0)
@@ -1483,11 +1493,7 @@ def update(
     # the yaml is the user's and stays, so the nag repeats until it is set.
     local_source = None
     if channel is Channel.LOCAL and not revision:
-        from ..channel import detect_editable_source, resolve_local_source
-
-        local_source = resolve_local_source(
-            project_dir, harness_path, detected=detect_editable_source()
-        )
+        local_source = resolve_local_source(project_dir, harness_path, detected=detected_source)
         if local_source.problem is not None:
             console.print(
                 f"[yellow]Warning:[/] {local_source.problem} — installing edge for this run.\n"
@@ -1653,7 +1659,7 @@ def update(
             check_branches=check_branches,
         )
         _invalidate_update_cache(layout.cache)
-        _reverify_layers(layout, reports, harness)
+        _reverify_layers(layout, reports, harness, detected_source)
         return
 
     # Edge/stable on the managed default venv → blue-green
@@ -1687,7 +1693,7 @@ def update(
             console.print(f"[red]Update failed[/] (another update in progress):\n{exc}")
             sys.exit(2)
         _invalidate_update_cache(layout.cache)
-        _reverify_layers(layout, reports, harness)
+        _reverify_layers(layout, reports, harness, detected_source)
         return
 
     # 2. Install — short-circuited when the probe confirms the installed SHA
@@ -1939,7 +1945,7 @@ def update(
         if bump_in_process_failed:
             sys.exit(1)
 
-    _reverify_layers(layout, reports, harness)
+    _reverify_layers(layout, reports, harness, detected_source)
 
 
 # `ai-hats self migrate` removed. Migration is transparent inside

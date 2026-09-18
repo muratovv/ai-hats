@@ -154,14 +154,17 @@ def _drift_report(layout: ProjectLayout) -> LayerReport:
 _LOCAL_SOURCE_FIX = "ai-hats config set --channel local --path <checkout>"
 
 
-def _harness_report(layout: ProjectLayout, harness: HarnessConfig) -> LayerReport:
+def _harness_report(
+    layout: ProjectLayout, harness: HarnessConfig, detected_source: str | None
+) -> LayerReport:
     """Where ``self update`` would install from — BROKEN when it could not.
 
     Only ``channel: local`` can be wrong by fact while valid by schema: a
     ``path`` that is not an installable project (the default, the project
-    root, is one only for the ai-hats checkout itself).
+    root, is one only for the ai-hats checkout itself). ``detected_source`` is
+    the editable install the caller runs from, read once at the entry point.
     """
-    from .channel import detect_editable_source, resolve_local_source, resolve_edge_repo
+    from .channel import resolve_edge_repo, resolve_local_source
     from .config.harness import Channel
 
     if harness.channel is Channel.STABLE:
@@ -170,7 +173,7 @@ def _harness_report(layout: ProjectLayout, harness: HarnessConfig) -> LayerRepor
         return LayerReport(
             Layer.RUNTIME, "harness", Status.OK, f"edge → {resolve_edge_repo(harness.repo)}"
         )
-    source = resolve_local_source(layout.root, harness.path, detected=detect_editable_source())
+    source = resolve_local_source(layout.root, harness.path, detected=detected_source)
     if source.problem is None:
         return LayerReport(Layer.RUNTIME, "harness", Status.OK, f"local → {source.path}")
     return LayerReport(Layer.RUNTIME, "harness", Status.BROKEN, source.problem, _LOCAL_SOURCE_FIX)
@@ -197,11 +200,16 @@ def _collapsed_warnings() -> Iterator[None]:
         warnings.warn(w.message, stacklevel=2)
 
 
-def triage(layout: ProjectLayout, harness: HarnessConfig | None = None) -> list[LayerReport]:
+def triage(
+    layout: ProjectLayout,
+    harness: HarnessConfig | None = None,
+    detected_source: str | None = None,
+) -> list[LayerReport]:
     """Run every layer check against the project. Read-only.
 
     ``harness`` is the install source to judge; ``None`` (no config read by the
-    caller) skips that row rather than guessing one.
+    caller) skips that row rather than guessing one. ``detected_source`` is the
+    editable install the process runs from, if any — the entry point reads it.
     """
     with _collapsed_warnings():
         reports = [
@@ -210,7 +218,7 @@ def triage(layout: ProjectLayout, harness: HarnessConfig | None = None) -> list[
             _drift_report(layout),
         ]
         if harness is not None:
-            reports.append(_harness_report(layout, harness))
+            reports.append(_harness_report(layout, harness, detected_source))
     return reports
 
 

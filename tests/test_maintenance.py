@@ -33,7 +33,7 @@ from ai_hats.cli.maintenance import (
     _probe_remote_state,
     update,
 )
-from ai_hats.constants import ENV_REPO_URL
+from ai_hats.constants import ENV_AI_HATS_INIT_SRC, ENV_REPO_URL
 from ai_hats.models import ProjectConfigError
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.update_check.cache import CacheEntry, cache_path, write_cache
@@ -1389,7 +1389,6 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch, verify_returncode
     """channel: local → `uv pip install -e <path>` in place, no versioned dir;
     a relative ``path`` resolves against the project root, never the cwd."""
     project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
-    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: None)
     captured: list[list[str]] = []
 
     def fake_run(args, **kwargs):
@@ -1442,10 +1441,13 @@ def test_update_invalidates_update_cache(tmp_path, monkeypatch):
 
 def _local_no_source(tmp_path: Path, monkeypatch) -> Path:
     """`channel: local`, no `path`, a project root that is not a Python project,
-    and no editable install to detect — the infield shape."""
+    and no editable install to detect — the shape a git-installed host leaves.
+    The test process IS an editable install, so the dist-metadata read is the
+    one boundary replaced here (test-isolation exit 3, recorded)."""
     project = _setup_channel_env(tmp_path, "local")
     _seed_healthy_layers(project)
-    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: None)
+    monkeypatch.delenv(ENV_AI_HATS_INIT_SRC, raising=False)
+    monkeypatch.setattr("ai_hats.cli.maintenance._is_editable_install", lambda: (False, None))
     return project
 
 
@@ -1474,21 +1476,14 @@ def test_update_local_detected_editable_wins_over_the_project_root(tmp_path, mon
     checkout = tmp_path / "dev" / "ai-hats"
     checkout.mkdir(parents=True)
     (checkout / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
-    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: str(checkout))
-    captured: list[list[str]] = []
+    monkeypatch.setenv(ENV_AI_HATS_INIT_SRC, str(checkout))
 
-    def fake_run(args, **kwargs):
-        captured.append(list(args))
-        return _make_completed(list(args), returncode=0)
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
 
-    with (
-        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
-        patch("subprocess.run", side_effect=fake_run),
-    ):
-        result = CliRunner().invoke(update, [])
-
-    assert result.exit_code == 0, result.output
-    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2] == "-e"]
+    assert exit_code == 0, output
+    editable = [c[0] for c in captured if c[0][:3] == ("uv", "pip", "install") and "-e" in c[0]]
     assert [c[-1] for c in editable] == [str(checkout)], captured
 
 
@@ -1497,12 +1492,13 @@ def test_check_exits_one_with_the_harness_row_for_a_local_source_that_cannot_ins
 ):
     project = _local_no_source(tmp_path, monkeypatch)
 
-    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
-        result = CliRunner().invoke(update, ["--check"])
+    exit_code, output, _ = _invoke_update(
+        ["--check"], run_check_return=None, tmp_path=tmp_path, project=project
+    )
 
-    assert result.exit_code == 1, result.output
-    assert "BROKEN" in result.output and "harness" in result.output
-    assert "ai-hats config set --channel local --path" in result.output
+    assert exit_code == 1, output
+    assert "BROKEN" in output and "harness" in output
+    assert "ai-hats config set --channel local --path" in output
 
 
 # ---------- HATS-595: --check layer triage ----------
