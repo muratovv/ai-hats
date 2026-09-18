@@ -302,9 +302,9 @@ packages/ai-hats-library/src/ai_hats_library/core/skills/command-lifetime/ | gua
 packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/ | guards
 packages/ai-hats-library/src/ai_hats_library/usage/skills/comment-length-lint/ | guards
 packages/ai-hats-library/src/ai_hats_library/usage/skills/py-security-lint/ | guards
-packages/ai-hats-library/src/ai_hats_library/usage/skills/rule-delivery-gate/ | guards
-packages/ai-hats-library/src/ai_hats_library/usage/skills/skill-lint-gate/ | guards
-packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/ | guards
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/rule-delivery-gate/ | guards
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/skill-lint-gate/ | guards
+packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/ticket-id-gate/ | guards
 src/ai_hats/hook_collection.py | guards
 src/ai_hats/hook_exec.py | guards
 src/ai_hats/hooks_manager.py | guards
