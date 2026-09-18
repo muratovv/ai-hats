@@ -27,7 +27,8 @@ Your own roots are **flat** — no layer directory under them:
 ~/.ai-hats/{roles,traits,rules,skills}/<name>/              # user-wide
 ```
 
-Any further root listed in `~/.ai-hats/library_paths.yaml` has the same shape.
+Any further root listed in `~/.ai-hats/library_paths.yaml` or under
+`library_paths:` in the project's `ai-hats.yaml` has the same shape.
 `~/.ai-hats/core/rules/foo/` resolves to nothing — the `core/` / `usage/` split
 exists only inside the shipped library. Roots layer last-wins, so a component
 whose name matches a shipped one overrides it.
@@ -35,11 +36,13 @@ whose name matches a shipped one overrides it.
 **Start a new component from a shipped one, not from memory.** A rule is a bare
 `rule.md`; a skill is a `SKILL.md` (`skill-template` owns its shape); a trait is
 a `config.yaml` with `name`, `composition` (`traits` / `rules` / `skills` /
-`apps`) and `injection`. `ai-hats list traits` (and `list rules` / `list skills`)
-names the shipped ones — copy the closest and edit it, so the keys are right
-before the content is. `ai-hats config status` then tags each component of the
-active role with the layer it resolved from (`built-in` / `global` / `project`),
-which is how you confirm yours won.
+`apps`) and `injection`; a role is that same `config.yaml` plus `priorities`,
+and is the usual unit of work in a project of your own. `ai-hats list roles`
+(and `list traits` / `list rules` / `list skills`) names the shipped ones — copy
+the closest and edit it, so the keys are right before the content is.
+`ai-hats config status` then tags each component of the active role with the
+layer it resolved from (`built-in` / `global` / `project`), which is how you
+confirm yours won.
 
 ### 2. Wire it — persistently, or for one session
 
@@ -87,9 +90,16 @@ to a component body, to `ai-hats.yaml`, or to a customization is live for the
 init` validates the config and refreshes the project scaffold; it is not how a
 composition change lands.
 
+One exception. A skill's git gates are resolved at commit time from the composed
+role, but the `.githooks/<event>` dispatcher that runs them is a stub written
+only by `ai-hats init` / `self init` / `self update` / the first interactive
+launch — `config customize` never writes one. A gate under an event whose stub
+exists is live at the next commit; a gate on an event with no stub yet is inert
+until you run `ai-hats self init` once.
+
 Never hand-copy component files into a provider's own directory. Those trees are
 materialized per session from the resolved library; a hand-made copy drifts from
-the source and earns a warning about an orphan managed-marker on every run.
+the source and never composes.
 
 ### 5. Then prove it arrived
 

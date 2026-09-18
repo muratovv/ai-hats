@@ -47,5 +47,8 @@ injection: |
   ## Delegation
 
   Auditing a composed role for internal contradictions and interference with
-  project context is `role-auditor`'s job — delegate it as a sub-agent rather
-  than doing it inline.
+  project context is `role-coherence-protocol`'s job, not yours inline. Its one
+  entry point is `ai-hats reflect role <name>`: it materializes the layered
+  breakdown the protocol reads and launches `role-judge` on it, interactively —
+  ask the supervisor to run it. A bare `ai-hats agent role-auditor --task …`
+  hands the auditor nothing to audit.

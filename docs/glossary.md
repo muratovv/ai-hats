@@ -70,7 +70,7 @@ Key system roles you will meet in cross-doc prose:
 
 - `initial-wizard` — interactive setup that runs on `ai-hats self init`. See [6].
 - `session-reviewer` — per-session retrospective; votes on active HYPs and files a PROP on self-problem. Triggered by `ai-hats reflect session` (auto on `session_end` per policy, or manual). See [5].
-- `judge-auditor` / `judge` / `role-judge` / `role-auditor` — the reflection-loop roles. Backlog triage runs two-phase: `judge-auditor` (Phase 1, headless, read-only audit) → `judge` (Phase 2, HITL, ack'd mutations) via `ai-hats reflect hypothesis`. Role-coherence audits run via `role-judge` (`ai-hats reflect role`); `role-auditor` exists as a standalone L0 audit role for subagent delegation. See [5].
+- `judge-auditor` / `judge` / `role-judge` / `role-auditor` — the reflection-loop roles. Backlog triage runs two-phase: `judge-auditor` (Phase 1, headless, read-only audit) → `judge` (Phase 2, HITL, ack'd mutations) via `ai-hats reflect hypothesis`. Role-coherence audits run via `role-judge` (`ai-hats reflect role`); `role-auditor` is the same protocol under the L0 `base-auditor` trait (no CLI, no dialogue) and has no launcher of its own — `reflect role` is the audit's only entry point. See [5].
 
 ## Role spec
 
@@ -222,7 +222,7 @@ Retrospective and triage flows. The CLI subcommand `ai-hats reflect` is the sing
 **Reflection roles:**
 
 - Backlog triage: `judge-auditor` (L0, read-only audit) → `judge` (L1, HITL + ack'd mutations). Entry: `ai-hats reflect hypothesis`.
-- Role coherence: `role-judge` (L1, interactive review against project context). Entry: `ai-hats reflect role`. (`role-auditor` is a standalone L0 role available for subagent delegation).
+- Role coherence: `role-judge` (L1, interactive review against project context). Entry: `ai-hats reflect role`. (`role-auditor` is the L0 sibling of the same protocol; no command launches it with a composed breakdown.)
 
 L0 baselines (`base-auditor`) forbid CLI mutations and source-file edits; L1 baselines (`base-judge`) permit ack'd CLI from a whitelist. See [`ai_hats_library/core/traits/base-auditor/`](../packages/ai-hats-library/src/ai_hats_library/core/traits/base-auditor/) and [`base-judge/`](../packages/ai-hats-library/src/ai_hats_library/core/traits/base-judge/). `hypothesis-intake` exists for Haiku-class observation classification but is **not** wired into `reflect *` directly.
 
