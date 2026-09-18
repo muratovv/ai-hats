@@ -475,7 +475,9 @@ def init(
     "--path",
     "harness_path",
     default=None,
-    help="Local-only: editable source path for the local channel (default: project root).",
+    help="Local-only: editable source path for the local channel "
+    "(default: detected editable source, else project root; a root that is not "
+    "a Python project makes `self update` install edge and name this flag).",
 )
 def set_role(
     provider: str | None,

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**323 of 323 files catalogued — 331 flows.**
+**324 of 324 files catalogued — 332 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1874,9 +1874,10 @@ as a claim to check, not as evidence.
 
   ```console
   ai-hats --version
+  ai-hats config status
   ```
 
-- **expect** — launcher detects mismatched project directory, ignores foreign venv pin with warning, and uses local project venv
+- **expect** — launcher detects mismatched project directory, ignores foreign venv pin with warning, drops the session envelope that came with it, and uses local project venv
 - **why** — without foreign venv isolation, sub-agents operating across projects execute tools inside the wrong project venv
 
 ## `test_launcher_refuses_venv_missing_workspace_member.py`
@@ -3234,6 +3235,21 @@ as a claim to check, not as evidence.
 
 - **expect** — self update reinstalls local source as editable without pulling remote packages
 - **why** — without local editable update handling, channel:local projects overwrite local edits with remote packages
+
+## `test_self_update_local_without_source.py`
+
+*pins HATS-1998*
+
+- **flow** — a project whose ai-hats.yaml says `channel: local` with no `path`, in a directory that is not a Python project — the wizard's `local` on a host whose ai-hats was a git install
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ai-hats self update --check
+  ```
+
+- **expect** — self update installs edge for that run, names the config fix, and leaves the yaml alone; --check exits 1 with a BROKEN harness row; with a path set the same commands reinstall editable and report OK
+- **why** — without this heal, self update ran `uv pip install -e <project root>` and handed the user uv's refusal with every triage row green
 
 ## `test_self_update_orphan_version_gc.py`
 
