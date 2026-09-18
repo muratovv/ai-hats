@@ -73,23 +73,45 @@ HARNESS_CHANNEL="$(read_harness_key channel)"
 LOCAL_SRC=""
 if [[ "$HARNESS_CHANNEL" == "local" ]]; then
     LOCAL_SRC="$(read_harness_key path)"
-    LOCAL_SRC="${LOCAL_SRC:-.}"
     LOCAL_SRC="${LOCAL_SRC/#\~/$HOME}"
-    [[ "${LOCAL_SRC:0:1}" != "/" ]] && LOCAL_SRC="$PROJECT/$LOCAL_SRC"
+    if [[ -z "$LOCAL_SRC" ]]; then
+        LOCAL_SRC="$PROJECT"
+    elif [[ "${LOCAL_SRC:0:1}" != "/" ]]; then
+        LOCAL_SRC="$PROJECT/$LOCAL_SRC"
+    fi
 fi
 
-# uv's own installability rule; a `channel: local` whose source fails it (the
-# default, the project root, passes only for the ai-hats checkout itself) heals
-# from PIP_TARGET and says so — the python `self update` nags with the same fix.
-local_src_installable() {
-    [[ -f "$LOCAL_SRC/pyproject.toml" || -f "$LOCAL_SRC/setup.py" ]]
+# A source that is a path is the ai-hats source or nothing: identity (the
+# pyproject naming ai-hats), not "uv would accept it" — a consumer's own
+# pyproject installs the consumer. Mirrors channel.source_problem.
+is_ai_hats_source() {
+    [[ -f "$1/pyproject.toml" ]] \
+        && grep -Eq '^[[:space:]]*name[[:space:]]*=[[:space:]]*"ai-hats"[[:space:]]*$' "$1/pyproject.toml"
+}
+why_not_source() {
+    if [[ ! -e "$1" ]]; then echo "it does not exist"
+    elif [[ ! -f "$1/pyproject.toml" ]]; then echo "it has no pyproject.toml"
+    else
+        local name
+        name="$(sed -nE 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/p' "$1/pyproject.toml" | head -1)"
+        echo "its pyproject.toml names \"${name:-nothing}\", not ai-hats"
+    fi
 }
 heal_editable() {
-    [[ "$HARNESS_CHANNEL" == "local" ]] && local_src_installable
+    [[ "$HARNESS_CHANNEL" == "local" ]] && is_ai_hats_source "$LOCAL_SRC"
 }
-warn_local_src_not_installable() {
-    echo "ai-hats: $LOCAL_SRC is not an installable project (neither pyproject.toml nor setup.py is present), so channel local has no editable source — healing from $PIP_TARGET instead." >&2
+warn_local_src_not_source() {
+    echo "ai-hats: $LOCAL_SRC is not an ai-hats source ($(why_not_source "$LOCAL_SRC")), so channel local has no editable source — healing from $PIP_TARGET instead." >&2
     echo "  fix: ai-hats config set --channel local --path <checkout>" >&2
+}
+# The pip target itself, when it is a path (a local AI_HATS_REPO_URL), is judged
+# the same way before uv is asked — uv's refusal names no fix.
+require_pip_target_source() {
+    [[ "$PIP_TARGET" == *"://"* || "$PIP_TARGET" == "ai-hats @ "* ]] && return 0
+    is_ai_hats_source "$PIP_TARGET" && return 0
+    echo "ai-hats: $PIP_TARGET is not an ai-hats source ($(why_not_source "$PIP_TARGET")); nothing to heal from." >&2
+    echo "  fix: unset AI_HATS_REPO_URL or point it at an ai-hats checkout" >&2
+    exit 1
 }
 
 # --- HATS-944: pin-scope guard mirroring HATS-897. An inherited AI_HATS_VENV
@@ -312,7 +334,7 @@ heal_if_needed() {
         if heal_editable; then
             echo "  Fix manually:  uv venv --python 3.13 $VENV && uv pip install --python $VENV/bin/python -e '$LOCAL_SRC'" >&2
         else
-            [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_installable
+            [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_source
             echo "  Fix manually:  uv venv --python 3.13 $VENV && uv pip install --python $VENV/bin/python '$PIP_TARGET'" >&2
         fi
         exit 1
@@ -338,7 +360,8 @@ heal_if_needed() {
     if heal_editable; then
         uv pip install --quiet --python "$VENV/bin/python" -e "$LOCAL_SRC" || install_rc=$?
     else
-        [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_installable
+        [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_source
+        require_pip_target_source
         uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET" || install_rc=$?
     fi
     if [[ $install_rc -ne 0 ]]; then

@@ -297,6 +297,7 @@ def test_self_update_with_local_path_repo_url(tmp_path):
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     fake_repo = tmp_path / "local-repo"
     fake_repo.mkdir()
+    (fake_repo / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')  # it IS the source
     env = {
         "PATH": f"{stub_dir}:{os.environ['PATH']}",
         ENV_REPO_URL: str(fake_repo),
@@ -318,7 +319,7 @@ def test_self_update_channel_local_heals_editable(tmp_path):
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     src = tmp_path / "src-tree"
     src.mkdir()
-    (src / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
+    (src / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
     (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         f"harness:\n  channel: local\n  path: {src}\n"
@@ -338,7 +339,7 @@ def test_self_update_channel_local_default_path_is_editable(tmp_path):
     the project root (the resolve_channel default), still `-e` — when that root
     is an installable project (the ai-hats checkout's own shape)."""
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
     (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         "harness:\n  channel: local\n"
@@ -367,8 +368,49 @@ def test_self_update_channel_local_without_source_heals_from_the_pip_target(tmp_
     text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
     assert "-e" not in text.splitlines(), f"an uninstallable source must not be -e'd: {text}"
     assert "ai-hats @" in text, "the heal falls back to the PIP_TARGET form"
-    assert "not an installable project" in res.stderr, res.stderr
+    assert "is not an ai-hats source" in res.stderr, res.stderr
+    assert f"{tmp_path} is not an ai-hats source" in res.stderr, (
+        f"the resolved dir, not <project>/.: {res.stderr}"
+    )
     assert "ai-hats config set --channel local --path" in res.stderr, res.stderr
+
+
+def test_self_update_channel_local_consumer_root_with_a_pyproject_is_not_a_source(tmp_path):
+    """Review F1/F4: a consumer project with its own pyproject is installable
+    but is not ai-hats; the heal must not -e it into the tool venv."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "consumer"\n')
+    (tmp_path / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: local\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
+    assert "-e" not in text.splitlines(), f"a consumer root must not be -e'd: {text}"
+    assert "ai-hats @" in text
+    assert "is not an ai-hats source" in res.stderr and "consumer" in res.stderr, res.stderr
+
+
+def test_self_update_edge_pip_target_that_is_a_path_without_ai_hats_fails_loud(tmp_path):
+    """Review F2/M6: a local AI_HATS_REPO_URL that is not the ai-hats source is
+    named before uv is asked, with the fix."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    notpy = tmp_path / "gitrepo-notpy"
+    notpy.mkdir()
+    (tmp_path / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: edge\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}", ENV_REPO_URL: str(notpy)}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 1, res.stderr
+    assert not (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").exists(), (
+        "uv must not be asked to install a dir that is not ai-hats"
+    )
+    assert "is not an ai-hats source" in res.stderr and str(notpy) in res.stderr, res.stderr
+    assert "AI_HATS_REPO_URL" in res.stderr, res.stderr
 
 
 def test_self_update_channel_edge_heals_non_editable(tmp_path):
