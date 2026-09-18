@@ -2832,19 +2832,21 @@ as a claim to check, not as evidence.
 
 ## `test_runner_spelling_consent_chain.py`
 
-*pins HATS-1754*
+*pins HATS-1754, HATS-1999*
 
-- **flow** — an agent typing a gated move through a language runner — `uv run`, `uvx`, or `python -m <module>` — instead of the console script
+- **flow** — an agent typing a gated move through a language runner — `uv run`, `uvx`, or `python -m <module>` — or inside a shell's `-c` payload, instead of the console script
 - **cmds**
 
   ```console
   uv run rack transition HATS-1 execute
   python3 -m ai_hats_rack transition HATS-1 execute
   uv run ai-hats wt merge task/x
+  bash -c 'ai-hats wt merge task/x'
+  timeout 600 bash -c 'rack transition HATS-1 execute; rc=$?; exit $rc'
   ```
 
 - **expect** — the composed chain raises the supervisor's question on every spelling, exactly as it does for the bare one
-- **why** — measured 2026-08-20 — the chain returned NOTHING for these. `WRAPPERS` knew `sudo`/`env`/`timeout` but no language runner, so `slice_for` read the head binary as `uv` or `python3` and never found the guarded call. Both roads into master and the `plan -> execute` arrow were reachable by re-spelling the command, in silence. Revert the runner half and the parametrized assertions below go quiet rather than red elsewhere.
+- **why** — measured 2026-08-20 — the chain returned NOTHING for these. `WRAPPERS` knew `sudo`/`env`/`timeout` but no language runner, so `slice_for` read the head binary as `uv` or `python3` and never found the guarded call. Both roads into master and the `plan -> execute` arrow were reachable by re-spelling the command, in silence. Measured again 2026-09-18: a shell's `-c` payload was one token to the consent readers, so a merge wrapped the way the hygiene hook advises for runners raised nothing and the engine refused with a verb only a human can type. Revert either half and the parametrized assertions below go quiet rather than red elsewhere.
 
 ## `test_runs_retention.py`
 
