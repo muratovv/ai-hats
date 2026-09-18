@@ -29,6 +29,7 @@ from .canonical.signals import (
     PersonActionRequired,
     Signal,
 )
+from .composition import stored_composition_names
 from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
 
@@ -160,15 +161,12 @@ class AuditWriter:
             lines.append(f"- **Tokens**: {total_in:,} in / {total_out:,} out")
         lines.append("")
 
-        # HATS-442: preserve composition snapshot through the post-session
-        # audit rebuild. The init_audit path wrote a `## Composition` section
-        # in the live audit.md and a `composition` field in metrics.json; the
-        # AuditWriter then rebuilds audit.md from JSONL/trace and would
-        # clobber it. Pull the snapshot back from metrics.json (whose existing
-        # keys survive via `_write_metrics`' existing.update) and re-emit.
+        # The rebuild would clobber init_audit's section; re-emit it off
+        # metrics.json, in whichever shape the session's date wrote.
         composition = metrics.get("composition")
         if isinstance(composition, dict) and composition:
-            lines.append(Session._render_composition_md(composition).rstrip())
+            names = stored_composition_names(composition)
+            lines.append(Session._render_composition_md(names).rstrip())
             lines.append("")
 
         lines.extend(_render_signals(signals or []))
