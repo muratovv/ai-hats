@@ -115,6 +115,39 @@ def worktree_local_libraries(project_dir: Path) -> Path | None:
     return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
 
 
+def _worktree_remap(project_dir: Path, cwd: Path) -> tuple[Path, Path] | None:
+    """``(main, top)`` of the linked worktree ``cwd`` is in, else ``None``.
+
+    Same pre-gate as :func:`worktree_local_libraries`: under ``project_dir``
+    is the main checkout, so no git probe runs on the common path.
+    """
+    try:
+        if cwd.resolve().is_relative_to(project_dir.resolve()):
+            return None
+    except (OSError, ValueError):
+        return None
+
+    from ai_hats_wt import WorktreeManager
+
+    main = WorktreeManager.main_worktree_root(cwd)
+    top = WorktreeManager.worktree_toplevel(cwd) if main is not None else None
+    if main is None or top is None:
+        return None
+    return main.resolve(), top
+
+
+def _repoint(root: Path, remap: tuple[Path, Path] | None) -> Path:
+    """``root`` moved from the worktree's MAIN into the worktree, when it is there."""
+    if remap is None:
+        return root
+    main, top = remap
+    try:
+        candidate = top / root.resolve().relative_to(main)
+    except (OSError, ValueError):
+        return root
+    return candidate if candidate.is_dir() else root
+
+
 def build_library_paths(
     project_dir: Path,
     *,
@@ -136,9 +169,14 @@ def build_library_paths(
 
     ``prefer_cwd`` is for READ-ONLY composition only, and ``cwd`` names the
     directory that counts as "here" — see
-    :func:`ai_hats.paths.library.builtin_library_root`.
+    :func:`ai_hats.paths.library.builtin_library_root`. Under it, a user-global
+    or configured root inside the MAIN checkout of the linked worktree ``cwd``
+    is in re-points to that worktree, so a read renders the edit made there; a
+    writer keeps MAIN — the builtin checkout's own split.
     """
     paths: list[Path] = list(builtin_library_layers(project_dir, prefer_cwd=prefer_cwd, cwd=cwd))
+    here = cwd if cwd is not None else Path.cwd()
+    remap = _worktree_remap(project_dir, here) if prefer_cwd else None
 
     # ADR-0016: out-of-tree packages contribute their skills/ via the
     # ``ai_hats.skills`` entry-point (open registry). Shipped tier — ranks above
@@ -147,13 +185,13 @@ def build_library_paths(
 
     paths.extend(skill_source_roots())
 
-    paths.extend(user_global_library_paths())
+    paths.extend(_repoint(root, remap) for root in user_global_library_paths())
 
     for configured in config_paths:
         p = Path(configured).expanduser()
         expanded = (project_dir / p).resolve() if not p.is_absolute() else p.resolve()
         if expanded.is_dir():
-            paths.append(expanded)
+            paths.append(_repoint(expanded, remap))
 
     local_lib = local_libraries or project_dir / LIBRARIES_DIRNAME
     if local_lib.is_dir():

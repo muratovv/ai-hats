@@ -108,10 +108,18 @@ export AI_HATS_LIBRARY_ROOT=<path to a library root>
 
 ### 7. From a worktree, read-only and writing commands disagree
 
-A read-only command run inside a worktree composes THAT worktree's library, so
-your edit is what you see. That is the whole read-only family: `config
-show-prompt`, `--dry-run`, `config status`'s role tree, and every `list`
-subcommand that reads the library (`list providers` reads none).
+Run the read-only command from inside the worktree you edited: `config
+show-prompt`, `--dry-run`, `config status`'s role tree, or a `list` subcommand
+that reads the library (`list providers` reads none). It composes from that
+worktree when the root you edited is one of:
+
+- the built-in layers — the worktree is an ai-hats source checkout;
+- the project's `libraries/`;
+- a user-global or configured root (`~/.ai-hats`, an entry of
+  `~/.ai-hats/library_paths.yaml` or of `ai-hats.yaml: library_paths`) whose
+  MAIN checkout the worktree belongs to.
+
+Any other root is read where it is listed.
 
 Two things in that output still answer about the PROJECT, and are not bugs:
 `config status`'s **Health** block (version, venv, materialized prompt) reports
@@ -124,8 +132,9 @@ directory — deliberately still keys off the project, which for a linked
 worktree is the MAIN checkout, so tracker operations reach the one live
 backlog. Do not expect a worktree edit to reach a materialized artifact.
 
-Passing the path explicitly (step 6) or `AI_HATS_LIBRARY_ROOT` is how you force
-either side; neither ever consulted cwd.
+To force either side: `AI_HATS_LIBRARY_ROOT` pins the built-in root, and a path
+passed in-process (step 6, `Assembler(project, library_paths=[<root>])`) outranks
+every listed root; neither ever consulted cwd.
 
 ### 8. Know when the edit takes effect
 
