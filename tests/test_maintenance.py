@@ -1546,9 +1546,10 @@ def test_update_local_without_source_installs_edge_and_names_the_fix(tmp_path, m
     assert exit_code == 0, output
     assert _install_called(captured), captured
     assert not any("-e" in c[0] for c in captured), f"must not install editable: {captured}"
-    assert "has no pyproject.toml" in output and "the project root" in output
-    assert "ai-hats config set --channel local --path" in output
-    assert "installing edge" in output
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "has no pyproject.toml" in flat and "the project root" in flat, flat
+    assert "ai-hats config set --channel local --path" in flat
+    assert "installing edge" in flat
     assert (project / PROJECT_CONFIG).read_text() == before, "the yaml is the user's — untouched"
 
 
@@ -1579,8 +1580,9 @@ def test_check_exits_one_with_the_harness_row_for_a_local_source_that_cannot_ins
     )
 
     assert exit_code == 1, output
-    assert "BROKEN" in output and "harness" in output
-    assert "ai-hats config set --channel local --path" in output
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "BROKEN harness" in flat, flat
+    assert "ai-hats config set --channel local --path" in flat
 
 
 def test_update_refuses_to_replace_an_editable_install_it_cannot_resolve(tmp_path, monkeypatch):
@@ -1601,9 +1603,10 @@ def test_update_refuses_to_replace_an_editable_install_it_cannot_resolve(tmp_pat
 
     assert exit_code == 2, output
     assert not _install_called(captured) and not any("-e" in c[0] for c in captured), captured
-    assert "does not exist" in output and "harness.path" in output
-    assert "editable" in output and "refus" in output
-    assert "ai-hats config set --channel local --path" in output
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "does not exist" in flat and "harness.path" in flat, flat
+    assert "editable" in flat and "refus" in flat
+    assert "ai-hats config set --channel local --path" in flat
 
 
 def test_update_local_consumer_root_with_its_own_pyproject_is_healed(tmp_path, monkeypatch):
@@ -1636,9 +1639,10 @@ def test_update_edge_repo_that_is_a_path_without_ai_hats_refuses_before_uv(tmp_p
 
     assert exit_code == 2, output
     assert not _install_called(captured), captured
-    assert "has no pyproject.toml" in output and "harness.repo" in output
-    assert "offline" not in output
-    assert "ai-hats config set --channel edge --repo" in output
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "has no pyproject.toml" in flat and "harness.repo" in flat, flat
+    assert "offline" not in flat
+    assert "ai-hats config set --channel edge --repo" in flat
 
 
 # ---------- HATS-595: --check layer triage ----------
