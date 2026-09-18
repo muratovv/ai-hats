@@ -47,15 +47,8 @@ from ai_hats_wt import IsolationMode
     "--dry-run",
     "dry_run",
     is_flag=True,
-    help="Report what the sub-agent would receive (prompt sections, launch, "
-    "materialized files) and exit without spawning. Writes nothing.",
-)
-@click.option(
-    "--dry-run-experimental",
-    "dry_run_experimental",
-    is_flag=True,
-    help="Like --dry-run, read off the materialization plan (ADR-0036). Only for a "
-    "surface that plans a session yet (claude).",
+    help="Print the plan the sub-agent would be launched from (prompt, launch, "
+    "files, hooks, consent) and exit without spawning. Writes nothing.",
 )
 @click.option(
     "--materialize",
@@ -73,7 +66,6 @@ def run_subagent(
     tags_raw: tuple[str, ...],
     as_json: bool,
     dry_run: bool,
-    dry_run_experimental: bool,
     materialize: bool,
 ):
     """Run a sub-agent with the given role.
@@ -90,12 +82,14 @@ def run_subagent(
     from ._batch_launch import run_batch
     from ._entry import resolve_project
 
-    if dry_run_experimental:
+    if dry_run or materialize:
         import json as _json
 
         from ..session_artifacts import RunMode, assemble_brief
         from ..session_plan import preview, render_record
 
+        # The seam's typed errors render at the root group —
+        # cli/_helpers.dispatch_friendly_error.
         layout = resolve_project().layout
         shown = preview(
             layout,
@@ -110,28 +104,6 @@ def run_subagent(
             _json.dumps(shown.record, indent=2)
             if as_json
             else render_record(shown.record, prompt_text=shown.prompt),
-            nl=as_json,
-        )
-        return
-
-    if dry_run or materialize:
-        import json as _json
-
-        from ..dry_run import dry_run_automate
-
-        # The seam's typed errors render at the root group —
-        # cli/_helpers.dispatch_friendly_error.
-        report = dry_run_automate(
-            resolve_project().layout,
-            role=role,
-            task=task or "",
-            ticket_id=ticket or "",
-            model=model or "",
-            provider=provider,
-            materialize=materialize,
-        )
-        click.echo(
-            _json.dumps(report.to_dict(), indent=2) if as_json else report.render(),
             nl=as_json,
         )
         return

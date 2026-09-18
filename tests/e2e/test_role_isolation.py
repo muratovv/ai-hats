@@ -135,15 +135,39 @@ def _run_probe(
     *,
     extra_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Compose ``role``, build the session prompt, and run claude --print.
+    """Compose ``role``, plan and apply its session, and run claude --print.
 
     Returns the parsed probe output as ``{KEY: value}``. Raises
     AssertionError on non-zero exit, empty output, or missing keys.
     """
+    from _helpers.sessions import build_session
+    from tests._plan_helpers import composition_of, flags
+
+    from ai_hats.session_plan import launch_env
+
     asm = Assembler(project)
     result = asm.composer.compose(role, overlay=asm._get_overlay(role))
     provider = ClaudeSurface()
-    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, session_id)
+    layout = ProjectLayout.at(project)
+    plan = build_session(
+        project, composition_of(result, layout=layout, resolver=asm.resolver), provider, session_id
+    )
+    args = list(plan.launch.args or ())
+    session_dir = layout.sessions.runs / session_id
+    env = launch_env(
+        plan,
+        provider,
+        flags(
+            plan.root,
+            session_id=session_id,
+            session_dir=session_dir,
+            trace_path=str(session_dir / "trace.jsonl"),
+            root_pid=str(os.getpid()),
+            provider_session_id=None,
+            claim=False,
+        ),
+        layout=layout,
+    )
 
     cmd = [
         "claude",

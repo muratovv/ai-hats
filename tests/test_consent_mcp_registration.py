@@ -37,14 +37,9 @@ def test_surface_configures_form_server_without_operation_knowledge():
     ],
 )
 def test_unregistered_policy_or_disabled_hooks_do_not_add_form_server(policy, hooks_enabled):
-    from ai_hats.consent_mcp.registration import register_server
-    from ai_hats.session_artifacts import BuiltArtifacts
+    from ai_hats.consent_mcp.registration import form_server_args
     from ai_hats.env import ENV_SESSION_CACHE_DIR
 
-    artifacts = BuiltArtifacts()
-    if hooks_enabled:
-        artifacts.extra_env[ENV_SESSION_CACHE_DIR] = "/session-cache"
+    env = {ENV_SESSION_CACHE_DIR: "/session-cache"} if hooks_enabled else {}
 
-    register_server(Path("/project"), policy, CodexSurface(), artifacts)
-
-    assert artifacts.cli_args == []
+    assert form_server_args(Path("/project"), policy, CodexSurface(), env) == []

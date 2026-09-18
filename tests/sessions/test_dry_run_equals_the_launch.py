@@ -2,19 +2,18 @@
 
 ``tests/sessions/test_dry_run_matches_session.py`` promises this in its filename
 and proves something narrower: that a dry-run writes nothing. Nothing anywhere
-compared a dry-run payload against a real session's, even though both sides
-build the same :class:`SessionReport` and the launch already persists its own to
+compared a dry-run payload against a real session's, even though both are one
+``session_record`` of the plan and the launch persists its own to
 ``role_materialization.json`` (HATS-1216).
 
-What this is worth: the artifact build IS shared code (one
-``build_session_artifacts`` with a swapped port), so agreement there is cheap.
-The load-bearing part is everything NOT shared — a different composition entry
+What this is worth: the plan IS shared code, so agreement there is cheap. The
+load-bearing part is everything NOT shared — a different composition entry
 point (``build_preview_payload`` against ``build_composition_payload``), a
 different policy source, a fixed session id, and a launch that skips the runner's
-post-build phase entirely. That surface had no coverage at all.
+post-plan phase entirely. That surface had no coverage at all.
 
 What it does NOT catch, stated so nobody reads a green run as more than it is:
-dropping a field from ``SessionReport`` keeps this green, because both sides lose
+dropping a key from ``session_record`` keeps this green, because both sides lose
 it together. The bindings section has its own inversion in
 ``tests/e2e/test_check_mirror_dry_run.py``.
 """  # comment-length: allow — a test that proves less than its name must say so
@@ -34,11 +33,10 @@ from click.testing import CliRunner
 
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
-from ai_hats.dry_run import AT_LAUNCH, DRY_RUN_SESSION_ID
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.session_artifacts import RunMode, assemble_brief
-from ai_hats.session_plan import preview
+from ai_hats.session_artifacts import AT_LAUNCH, RunMode, assemble_brief
+from ai_hats.session_plan import DRY_RUN_SESSION_ID, preview
 from ai_hats_observe.artifacts import ROLE_MATERIALIZATION_JSON
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -311,28 +309,82 @@ def test_the_automate_meta_prompt_is_what_the_sdk_was_actually_sent(project: Pat
     )
 
 
-def test_the_audit_lists_the_rules_and_skills_the_snapshot_listed(project: Path, monkeypatch):
-    """The reflexive loop's input is not narrowed (ADR-0036 D6): ``audit.md``
-    rendered off the plan's record names the same rules and skills the
-    composition snapshot named."""
-    from ai_hats.composition_seam import build_composition_payload
-
-    launched = _launch_for_real(monkeypatch, project)
+def _listed_in_audit(project: Path, sid: str) -> dict[str, set[str]]:
+    """The names ``audit.md``'s composition section lists, by label."""
     runs = project / ".agent" / "ai-hats" / "sessions" / "runs"
-    audit = (runs / f"session_{_sid_of(launched)}" / "audit.md").read_text()
+    audit = (runs / f"session_{sid}" / "audit.md").read_text()
     section = audit.split("## Composition", 1)[1].split("## Events", 1)[0]
-    listed = {
+    return {
         label: {name.split(" (")[0] for name in line.split(": ", 1)[1].split(", ")}
         for line in section.splitlines()
         if line.startswith("- **")
         for label in [line[4 : line.index("**", 4)]]
     }
-    snapshot = build_composition_payload(project, role_override="maintainer").snapshot
 
-    assert listed["Rules"] == set(snapshot["rules"])
-    assert listed["Skills"] == set(snapshot["skills"])
-    assert listed["Traits"] == set(snapshot["traits"])
-    assert snapshot["rules"] and snapshot["skills"], "the sample must compose both"
+
+def _assert_audit_lists_the_composition(project: Path, sid: str, role: str) -> None:
+    """What the seam composed, by kind: rules are the prompt members named
+    ``rules::``, skills the skills, traits the trace's remaining terms."""
+    from ai_hats.composition_seam import build_composition_payload
+
+    listed = _listed_in_audit(project, sid)
+    plan = build_composition_payload(project, role_override=role).plan
+    bare = lambda name: name.split("::", 1)[1]  # noqa: E731 — one strip, read inline
+    rules = {
+        bare(m.name) for b in plan.prompt.blocks for m in b.members if m.name.startswith("rules::")
+    }
+    skills = {bare(s.name) for s in plan.skills}
+    traits = {
+        t.term
+        for t in plan.trace
+        if t.removed_by is None and not t.term.startswith(("rules::", "skills::"))
+    }
+
+    assert listed["Rules"] == rules
+    assert listed["Skills"] == skills
+    assert listed["Traits"] == traits
+    assert rules and skills, "the sample must compose both"
+
+
+def test_the_audit_lists_the_rules_and_skills_the_composition_holds(project: Path, monkeypatch):
+    """The reflexive loop's input is not narrowed (ADR-0036 D6): ``audit.md``
+    rendered off the plan's record names every rule, skill and trait the
+    composition holds."""
+    launched = _launch_for_real(monkeypatch, project)
+
+    _assert_audit_lists_the_composition(project, _sid_of(launched), "maintainer")
+
+
+@pytest.fixture
+def agy_project(tmp_path: Path, monkeypatch) -> Path:
+    """A CLI surface on a role that declares no consent (agy wraps no command):
+    the plan's record reaches the audit by the same road as claude's."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ProjectConfig(
+        provider="agy",
+        library_paths=[str(LIBRARY_DIR)],
+        ai_hats_dir=".agent/ai-hats",
+        active_role="role-judge",
+        default_role="role-judge",
+    ).save(proj / PROJECT_CONFIG)
+    asm = Assembler(proj, library_paths=[LIBRARY_DIR])
+    asm.init()
+    asm.set_role("role-judge", provider_name="agy")
+    monkeypatch.chdir(proj)
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
+    monkeypatch.setenv("GEMINI_CONFIG_DIR", str(tmp_path / "gemini-home"))
+    return proj
+
+
+def test_the_audit_lists_the_rules_and_skills_the_composition_holds_on_a_cli_surface(
+    agy_project: Path, monkeypatch
+):
+    """The same claim on a surface that plans a CLI launch (ADR-0036 D6, R9)."""
+    launched = _launch_for_real(monkeypatch, agy_project)
+
+    _assert_audit_lists_the_composition(agy_project, _sid_of(launched), "role-judge")
+    assert launched["provider"] == "agy" and launched["launch"][:2] == ["agy", "--add-dir"]
 
 
 def test_the_reported_automate_env_is_the_environment_the_sub_agent_receives(
@@ -352,23 +404,13 @@ def test_the_reported_automate_env_is_the_environment_the_sub_agent_receives(
 
 
 def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch):
-    """The record's ``launch`` is the argv, not a third derivation of it.
+    """The record's ``launch`` is the argv, not a second derivation of it.
 
-    The runner used to re-assemble the command from ``materialize_runtime_skills``
-    at spawn time and agreed with its own record only by coincidence — for cline
-    because that call rebuilds the same args, for agy because it returns none.
-    Coincidence is not a property, so the decoy below makes the two derivations
-    disagree: without it, this test passes against the code it was written for.
-    """  # comment-length: allow — why the decoy exists is the point of the test
+    The runner used to re-assemble the command at spawn time and agreed with
+    its own record only by coincidence; now the one launch pair is both what
+    the record names and what the spawn seam receives.
+    """
     import subprocess
-
-    from ai_hats.surfaces.cline import ClineSurface
-
-    monkeypatch.setattr(
-        ClineSurface,
-        "materialize_runtime_skills",
-        lambda *a, **k: ["--config", "/decoy-from-the-second-derivation"],
-    )
 
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -434,3 +476,30 @@ def test_the_reported_automate_launch_is_the_options_the_sdk_receives(project: P
     assert delivered <= reported, (
         f"the SDK gets options the record never names: {sorted(delivered - reported)}"
     )
+
+
+def test_the_dry_run_probes_the_host_for_the_surface_the_launch_plans_with(
+    project: Path, monkeypatch
+):
+    """``probe_host`` takes the surface in hand, so a surface that enumerates
+    its home plans the same way on the dry-run as on the launch (ADR-0036 D5)."""
+    import ai_hats.session_plan as sp
+
+    seen: dict[str, object] = {}
+    real_probe, real_plan = sp.probe_host, sp.plan_session
+
+    def probe(*args, **kwargs):
+        seen["probed"] = kwargs.get("surface")
+        return real_probe(*args, **kwargs)
+
+    def plan(composition, surface, **kwargs):
+        seen["planned"] = surface
+        return real_plan(composition, surface, **kwargs)
+
+    monkeypatch.setattr(sp, "probe_host", probe)
+    monkeypatch.setattr(sp, "plan_session", plan)
+
+    preview(ProjectLayout.at(project), role=None, provider=None, run_mode=RunMode.HITL)
+
+    assert seen["probed"] is not None, "the spy saw the probe at all"
+    assert seen["probed"] is seen["planned"] and seen["probed"].name == "claude"

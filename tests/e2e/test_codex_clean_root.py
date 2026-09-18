@@ -221,9 +221,9 @@ def test_codex_exit_cleans_session_home_and_preserves_shared_state(
     assert not (project / "AGENTS.md").exists()
     assert not (project / ".agents").exists()
     assert not (project / ".codex").exists()
-    assert _snapshot_non_agent_files(base_home) == base_before | {
-        ".ai-hats/auth.lock": hashlib.sha256(b"").hexdigest()
-    }
+    # No auth.lock left behind: the plan copies the credential without taking
+    # the lock, and reconciliation locks only when the session changed it.
+    assert _snapshot_non_agent_files(base_home) == base_before
 
 
 def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
@@ -307,7 +307,7 @@ def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
         )
     assert len(list(barrier.glob("*.ready"))) == 2
     assert _snapshot_non_agent_files(project) == before
-    assert _snapshot_non_agent_files(base_home) == base_before | {
-        ".ai-hats/auth.lock": hashlib.sha256(b"").hexdigest()
-    }
+    # No auth.lock left behind: the plan copies the credential without taking
+    # the lock, and reconciliation locks only when the session changed it.
+    assert _snapshot_non_agent_files(base_home) == base_before
     assert not (project / ".codex").exists()

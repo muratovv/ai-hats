@@ -12,6 +12,15 @@ Linchpin decision record for Epic HATS-1165 (*Provider Context & Harness Filteri
 > контрактом artifact-builder'а. При расхождении описаний builder-слоя истина
 > здесь; при расхождении карты — там.
 
+> **Указатель (2026-09-16, HATS-1982).** Builder-слой снят: `BuiltArtifacts`,
+> порт материализации с двумя реализациями, `build_session_artifacts` /
+> `build_category_artifact` / `_build_<категория>_<режим>` и legacy-ветка
+> `build_session_prompt` больше не существуют. Каждая поверхность планирует
+> (`Surface.plan`) и план применяется механически — контракт в
+> `docs/adr/0036-materialization-plan-harness-interface.md`. Здесь остаются в
+> силе `SessionPolicy` и категории из §1 (форма, которую читают планировщики)
+> и §2 (clean-root invariant); код §1 ниже — запись того дня.
+
 ## Context
 
 Provider runtime artifacts (system prompt overrides, plugin skills, event hooks, and provider settings) were historically materialized through fragmented, per-provider ad-hoc code paths:

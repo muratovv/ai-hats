@@ -13,7 +13,6 @@ from ai_hats_core.layout import ProjectLayout
 import logging
 from pathlib import Path
 
-from ai_hats_core import ComponentKind, ResolvedComponent
 
 from ai_hats_rack.fsm import load_topology
 from ai_hats.placeholders import (
@@ -22,8 +21,9 @@ from ai_hats.placeholders import (
     expand_fsm_edges_token,
     render_backlog_fsm_edges,
 )
-from ai_hats.materialization import ApplyMaterializer
-from ai_hats.surfaces.claude.plugin_dir import materialize_plugin_dir
+from ai_hats.materialization import describe_mkdir
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.surfaces.plan import Launch, MaterializationPlan, apply
 
 
 def _row(table: str, state_value: str) -> str:
@@ -163,27 +163,38 @@ def test_multiple_occurrences_all_replaced(tmp_path: Path) -> None:
     assert out.count("| From state | Legal transitions |") == 2
 
 
-# ---------- end-to-end at the materialization gate (layer-agnostic) ----------
+# ---------- end-to-end at the mirror (layer-agnostic) ----------
 
 
-def _make_skill(name: str, root: Path, body: str) -> ResolvedComponent:
-    skill_dir = root / name
+def _mirrored(tmp_path: Path, name: str, skills_root: Path, body: str) -> str:
+    """The ``SKILL.md`` the session mirror holds for a skill whose source
+    says ``body`` — the adapter renders the document, the plan writes it."""
+    from ai_hats.surfaces.claude.plugin_dir import plan_plugin
+    from tests._plan_helpers import composition_with, skill_of
+
+    skill_dir = skills_root / name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(body)
-    return ResolvedComponent(
-        name=name,
-        component_type=ComponentKind.SKILL,
-        source_path=skill_dir,
-        injection="",
+    layout = ProjectLayout.at(tmp_path)
+    composition = composition_with("some-role", [skill_of(skill_dir, layout=layout)])
+    root = tmp_path / "session"
+    plan = MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface="claude",
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        entries=(describe_mkdir(root), *plan_plugin(composition, root / "plugin")),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
     )
+    apply(plan)
+    return (root / "plugin" / "skills" / name / "SKILL.md").read_text()
 
 
 def test_materialize_substitutes_token_in_skill_md(tmp_path: Path) -> None:
-    skill = _make_skill("hatrack", tmp_path / "src", body=f"# Hatrack\n\n{FSM_EDGES_TOKEN}\n")
-    out = materialize_plugin_dir(
-        "some-role", [skill], ProjectLayout.at(tmp_path), tmp_path / "plugin", ApplyMaterializer()
-    )
-    body = (out / "skills" / "hatrack" / "SKILL.md").read_text()
+    body = _mirrored(tmp_path, "hatrack", tmp_path / "src", f"# Hatrack\n\n{FSM_EDGES_TOKEN}\n")
     assert FSM_EDGES_TOKEN not in body
     assert "| From state | Legal transitions |" in body
     assert "| `execute` |" in body
@@ -191,22 +202,14 @@ def test_materialize_substitutes_token_in_skill_md(tmp_path: Path) -> None:
 
 def test_materialize_leaves_non_token_skill_byte_identical(tmp_path: Path) -> None:
     original = "# Plain skill\n\nno tokens here.\n"
-    skill = _make_skill("plain", tmp_path / "src", body=original)
-    out = materialize_plugin_dir(
-        "some-role", [skill], ProjectLayout.at(tmp_path), tmp_path / "plugin", ApplyMaterializer()
-    )
-    assert (out / "skills" / "plain" / "SKILL.md").read_text() == original
+    assert _mirrored(tmp_path, "plain", tmp_path / "src", original) == original
 
 
 def test_materialize_is_layer_agnostic_for_arm_dir_source(tmp_path: Path) -> None:
     # An arm-dir override (library_paths last-wins) resolves the skill's
-    # source_path to a dir outside the built-in library. Materialization runs
+    # source_path to a dir outside the built-in library. The adapter renders
     # AFTER resolution, so the override body gets the same substitution.
     arm_skills = tmp_path / "arms" / "new" / "skills"
-    skill = _make_skill("hatrack", arm_skills, body=f"arm-dir body\n\n{FSM_EDGES_TOKEN}\n")
-    out = materialize_plugin_dir(
-        "some-role", [skill], ProjectLayout.at(tmp_path), tmp_path / "plugin", ApplyMaterializer()
-    )
-    body = (out / "skills" / "hatrack" / "SKILL.md").read_text()
+    body = _mirrored(tmp_path, "hatrack", arm_skills, f"arm-dir body\n\n{FSM_EDGES_TOKEN}\n")
     assert FSM_EDGES_TOKEN not in body
     assert "| `brainstorm` |" in body

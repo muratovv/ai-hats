@@ -14,16 +14,15 @@ Scope of this test. Drives bare ``ai-hats`` (no ``--role``,
 ``active_role=maintainer``) through the full ``human`` pipeline with this
 repo's real ``library/``. ``WrapRunner._pty_spawn`` is stubbed so we don't
 launch a real Claude binary, but every step BEFORE the spawn — composition,
-``provider.build_session_prompt`` (which now returns the materialized text
-as the 3rd tuple element), ``session.save_meta_prompt`` — runs for real.
+``plan_session`` / ``launch`` (whose ``Launched.prompt`` is the materialized
+text), ``session.save_meta_prompt`` — runs for real.
 We then assert ``<session_dir>/meta_prompt.txt`` exists with the expected
 role/trait markers.
 
 Fail-under-revert. Reverting any of:
 
-- ``providers.py`` (drop ``meta_prompt`` from ``build_session_prompt``
-  3-tuple) → unpack error in ``WrapRunner.run``, test fails on session
-  exit code.
+- ``session_plan.py`` (drop ``prompt`` from ``Launched``) → attribute error
+  in ``WrapRunner.run``, test fails on session exit code.
 - ``runtime.py`` (drop ``session.save_meta_prompt(meta_prompt)`` from
   ``WrapRunner.run``) → ``meta_prompt.txt`` is missing, assertion fails.
 

@@ -123,7 +123,8 @@ def test_a_new_operation_is_one_entry():
     of `match_operation`, and to a two-case selector validator — and missing any
     one of them failed at session materialization instead of at the declaration.
     """
-    from ai_hats.consent_wrapper import policy_from
+    from ai_hats.consent_wrapper import policy_of
+    from ai_hats.surfaces.plan import ExternalHook
 
     spec = operations.OperationSpec(
         type="probe.verb",
@@ -145,17 +146,15 @@ def test_a_new_operation_is_one_entry():
     assert reading is not None and reading.subject == "subj"
     assert operations.wrapped_surfaces(["probe.verb"], registry=registry) == ["probe-bin"]
 
-    point = type(
-        "P",
-        (),
-        {
-            "app": "consent_gate",
-            "path": ("probe.verb",),
-            "selector": "pre-probe",
-            "declared_by": "probe-trait",
-        },
-    )()
-    assert policy_from([point], registry=registry) == {"probe.verb": ("pre-probe",)}
+    point = ExternalHook(
+        app="consent_gate",
+        object="probe.verb",
+        at="pre-probe",
+        run=None,
+        on_error=None,
+        declared_by="probe-trait",
+    )
+    assert policy_of([point], registry=registry) == {"probe.verb": ("pre-probe",)}
 
 
 def test_the_gate_records_a_missing_registry_instead_of_going_quiet():

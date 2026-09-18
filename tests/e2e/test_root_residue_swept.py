@@ -199,7 +199,7 @@ def test_bump_sweeps_gemini_root_residue(seeded):
 def test_bump_sweeps_claude_root_residue(seeded):
     """The pre-1170 ``.claude/settings.json`` managed entries are reclaimed.
 
-    Nothing else can: ``ensure_runtime_hooks`` is a no-op, so while the
+    Nothing else can: no surface writes the project root, so while the
     ``runtime-hooks`` owner stayed registered these entries were unreachable
     by any code path (HATS-905 designed dropping that registration as the
     retirement switch).

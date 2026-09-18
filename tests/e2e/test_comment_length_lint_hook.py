@@ -59,7 +59,7 @@ BLOATED_DOCSTRING = (
 
 # The healthy contract docstring review KEPT (≈9 lines / ≈470 chars) — must stay silent.
 HEALTHY_DOCSTRING = (
-    "def materialize_runtime_hooks(result=None):\n"
+    "def plan_runtime_hooks(result=None):\n"
     '    """Materialize runtime-hook scripts to the managed library hooks dir.\n'
     "\n"
     "    Two sources under one manifest: the package-data guards (the shared-state\n"

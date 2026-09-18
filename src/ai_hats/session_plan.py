@@ -25,15 +25,20 @@ from .surfaces import (
     MaterializationPlan,
     Surface,
     apply,
+    checks_record,
     composition_record,
-    context_entry,
+    context_text,
 )
+
+# A real sid is minted by the session manager, which a dry-run must not touch.
+# Fixed so reported paths are stable and diffable.
+DRY_RUN_SESSION_ID = "dry-run"
+DRY_RUN_MATERIALIZE_SESSION_ID = "dry-run-materialize"
 
 
 def plans(surface: Surface) -> bool:
-    """Whether the surface has a planner — the one predicate the runners,
-    ``--dry-run-experimental`` and ``show-prompt`` branch on while the old
-    path still carries the surfaces that have none."""
+    """Whether the surface has a planner: every road into a session passes
+    ``plan_session``, which refuses one that has none."""
     return type(surface).plan is not Surface.plan
 
 
@@ -42,12 +47,15 @@ def probe_host(
     *,
     python: str = sys.executable,
     which: Callable[..., str | None] = shutil.which,
+    surface: Surface | None = None,
 ) -> Host:
     """The one read of the machine planning is allowed, taken before it.
 
     Every command the consent gate can wrap is resolved here, whether or not
     the composition asks for it: the host is a fact of the machine, not of the
-    role, and a planner that finds no key refuses on its own terms.
+    role, and a planner that finds no key refuses on its own terms. The
+    person's configuration home is the surface's to enumerate (``probe_home``),
+    so it is taken here too, for the surface in hand.
     """
     from ai_hats_library.hooks.consent_gate import operations
 
@@ -60,7 +68,8 @@ def probe_host(
         for name in operations.wrapped_surfaces(operations.REGISTRY)
         if (found := which(name, path=path))
     }
-    return Host(python=Path(python), path=path, commands=commands)
+    home = surface.probe_home(env) if surface is not None else None
+    return Host(python=Path(python), path=path, commands=commands, home=home)
 
 
 def plan_session(
@@ -73,9 +82,17 @@ def plan_session(
     layout: ProjectLayout,
     host: Host,
 ) -> MaterializationPlan:
-    """The surface's plan, with the role's command middleware on a HITL launch."""
+    """The surface's plan, with the role's command middleware on a HITL launch.
+
+    A surface without a planner is refused here, before anything is written:
+    the runners, the dry-run and ``show-prompt`` all pass through.
+    """
     from .consent_wrapper import plan_consent
 
+    if not plans(surface):
+        raise RuntimeError(
+            f"surface {surface.name!r} does not plan a session; implement Surface.plan"
+        )
     mode = RunMode(run_mode)
     plan = surface.plan(
         composition, run_mode=mode, policy=policy, root=root, layout=layout, host=host
@@ -100,9 +117,7 @@ def launch(plan: MaterializationPlan, flags: LaunchFlags, *, layout: ProjectLayo
     cmd.extend(plan.launch.args or ())
     is_resume = any(f in flags.extra_args for f in _RESUME_FLAGS)
     argv = surface.get_cli_launch_args(cmd, flags.provider_session_id or "", is_resume)
-    context = context_entry(plan)
-    prompt = context.content if context is not None and context.content else ""
-    return Launched(args=tuple(argv), sdk_options=None, env=env, prompt=prompt)
+    return Launched(args=tuple(argv), sdk_options=None, env=env, prompt=context_text(plan))
 
 
 def launch_env(
@@ -166,7 +181,6 @@ def session_record(
             row["outcome"] = applied.entries[i].outcome.value
             row["files"] = applied.entries[i].files
         materialized.append(row)
-    context = context_entry(plan)
     return {
         "role": role,
         "provider": plan.surface,
@@ -179,8 +193,9 @@ def session_record(
         },
         "launch": surface.describe_launch(launched),
         "env_keys": sorted(launched.env),
-        "prompt": str(context.target) if context is not None else None,
+        "prompt": str(plan.context) if plan.context is not None else None,
         "materialized": materialized,
+        "checks": checks_record(plan),
         "consent": [
             consent_row(h) for h in plan.composition.hooks.external if h.app == CONSENT_APP
         ],
@@ -197,8 +212,8 @@ def render_record(record: dict, *, full: bool = False, prompt_text: str | None =
 
 @dataclass(frozen=True)
 class Preview:
-    """What ``--dry-run-experimental`` shows: the record, and the prompt bytes
-    the agent would be handed (outside the record, as ``meta_prompt.txt`` is)."""
+    """What ``--dry-run`` shows: the record, and the prompt bytes the agent
+    would be handed (outside the record, as ``meta_prompt.txt`` is)."""
 
     record: dict
     prompt: str
@@ -219,12 +234,9 @@ def preview(
     """Plan for a stub root and launch with placeholder flags; write nothing
     unless ``materialize``, which applies the plan to the fixed dry-run root."""
     from .composition_seam import build_preview_payload
-    from .dry_run import DRY_RUN_MATERIALIZE_SESSION_ID, DRY_RUN_SESSION_ID
 
     payload = build_preview_payload(layout.root, role=role, provider=provider)
     surface = payload.provider
-    if not plans(surface):
-        raise RuntimeError(f"surface {surface.name!r} does not plan a session yet; use --dry-run")
     if payload.plan is None:
         raise RuntimeError("the seam adapted no composition")
     mode = RunMode(run_mode)
@@ -237,7 +249,7 @@ def preview(
         policy=policy or SessionPolicy(),
         root=root,
         layout=layout,
-        host=probe_host(),
+        host=probe_host(surface=surface),
     )
     flags = LaunchFlags(
         session_id=sid,
@@ -271,6 +283,8 @@ def preview(
 
 
 __all__ = [
+    "DRY_RUN_MATERIALIZE_SESSION_ID",
+    "DRY_RUN_SESSION_ID",
     "Preview",
     "launch",
     "launch_env",

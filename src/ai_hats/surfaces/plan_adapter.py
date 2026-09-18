@@ -34,6 +34,7 @@ from .plan import (
     RuntimeHook,
     Skill,
     TraceEntry,
+    home_of,
 )
 
 if TYPE_CHECKING:
@@ -78,22 +79,45 @@ def adapt(
             diagnostics.append(Diagnostic(Level.WARN, err.message))
     for collision in find_skill_script_collisions(result.skills):
         diagnostics.append(Diagnostic(Level.WARN, collision))
+    skills = tuple(
+        Skill(
+            name=_skill_name(s.name),
+            path=s.source_path.resolve(),
+            content_digest=dir_digest(s.source_path),
+            document=_document(s.source_path, layout),
+            on_path=tuple(d for d in _ON_PATH if (s.source_path / d).is_dir()),
+        )
+        for s in result.skills
+    )
+    hooks = _hooks(result, diagnostics)
+    _check_diagnostics(skills, hooks, diagnostics)
     return CompositionPlan(
         identity=identity,
         prompt=Prompt(blocks=_prompt_blocks(result, overlays, layout)),
-        skills=tuple(
-            Skill(
-                name=_skill_name(s.name),
-                path=s.source_path.resolve(),
-                content_digest=dir_digest(s.source_path),
-                document=_document(s.source_path, layout),
-                on_path=tuple(d for d in _ON_PATH if (s.source_path / d).is_dir()),
-            )
-            for s in result.skills
-        ),
-        hooks=_hooks(result, diagnostics),
+        skills=skills,
+        hooks=hooks,
         trace=_trace(result, identity, resolver, overlays, diagnostics),
     )
+
+
+def _check_diagnostics(
+    skills: tuple[Skill, ...], hooks: Hooks, diagnostics: list[Diagnostic]
+) -> None:
+    """A check binding whose script lies outside every composed skill, said
+    here where the library is read: no session mirror will hold its bytes."""
+    outside: dict[Path, str] = {}
+    for hook in hooks.external:
+        if hook.on_error is None or hook.run is None or home_of(hook.run, skills) is not None:
+            continue
+        outside.setdefault(hook.run.path, hook.declared_by)
+    for path, by in outside.items():
+        diagnostics.append(
+            Diagnostic(
+                Level.WARN,
+                f"check of {by} runs {path}, outside every composed skill; the session "
+                "mirror holds no bytes for it and the gate will not run in this session",
+            )
+        )
 
 
 def _skill_name(name: str) -> str:

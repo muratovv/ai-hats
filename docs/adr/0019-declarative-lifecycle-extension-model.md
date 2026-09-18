@@ -796,7 +796,9 @@ runs, which for an unbound point may be never. Validation moved from
 compensation is introspection — a command that reports what was picked up and in
 what state. **Both halves have since landed.** HATS-1548: `describe_checks`
 resolves every binding the way the session will and reports where each one runs
-from, wired into the launch report and `ai-hats --dry-run`. HATS-1584: `rack
+from, wired into the launch report and `ai-hats --dry-run` (since HATS-1982 the
+same rows are `checks` in the session record — read off the plan's mirror entry,
+nothing resolved on disk; ADR-0036 D5). HATS-1584: `rack
 doctor` grew a binding section — one line per point of every carried row, with
 the roster read through the same `CheckPort` a transition runs, and `dead` /
 `unaddressed` as findings. It is a *section of the existing verb*, not the
@@ -804,7 +806,7 @@ the roster read through the same `CheckPort` a transition runs, and `dead` /
 different subject. The two statuses this rev asked for and the doctor does not
 carry are `foreign-project` and `stale-session`, and deliberately: it runs
 **outside** a session, where there is no mirror to be stale against — that is
-what `describe_checks` answers at launch.
+what the record's `checks` (`describe_checks` until HATS-1982) answer at launch.
 
 Honestly stated, what remains: the doctor is a surface an operator must *run*.
 Firing it at session start (**HATS-1583**) is what makes a typo unmissable rather

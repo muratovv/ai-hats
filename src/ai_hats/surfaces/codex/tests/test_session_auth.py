@@ -3,8 +3,48 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.materialization import ApplyMaterializer, PlanMaterializer
-from ai_hats.surfaces.codex.session_auth import reconcile_auth, stage_auth
+from ai_hats.materialization import MaterializationEntry, WriteKind
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.surfaces import apply
+from ai_hats.surfaces.codex.session_auth import auth_digest, plan_auth, reconcile_auth
+from ai_hats.surfaces.plan import (
+    CompositionPlan,
+    Hooks,
+    Launch,
+    MaterializationPlan,
+    Prompt,
+    PromptBlock,
+    PromptMember,
+)
+
+
+def _plan(root: Path, entries: list[MaterializationEntry]) -> MaterializationPlan:
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(),
+        hooks=Hooks((), ()),
+        trace=(),
+    )
+    return MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface="codex",
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        entries=tuple(entries),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
+    )
+
+
+def _stage(base: Path, session: Path) -> list[MaterializationEntry]:
+    """What the session planner does with the credential: plan from the
+    probed digest, apply the entries."""
+    entries = plan_auth(base, session, auth_digest(base))
+    apply(_plan(session, entries))
+    return entries
 
 
 @pytest.mark.parametrize(
@@ -17,7 +57,7 @@ def test_invalid_baseline_is_reported_without_changing_credentials(
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "old"}')
-    stage_auth(base, session, ApplyMaterializer())
+    _stage(base, session)
     (session / "auth.json").write_text('{"fixture": "new"}')
     (session / ".ai-hats-auth-baseline.json").write_bytes(baseline)
 
@@ -36,7 +76,7 @@ def test_login_is_persisted_before_a_new_session_starts(
     base.mkdir()
     if initial is not None:
         (base / "auth.json").write_text(initial)
-    stage_auth(base, session, ApplyMaterializer())
+    _stage(base, session)
     (session / "auth.json").write_text('{"fixture": "renewed"}')
 
     assert reconcile_auth(base, session) is None
@@ -44,23 +84,38 @@ def test_login_is_persisted_before_a_new_session_starts(
     assert (base / "auth.json").read_text() == '{"fixture": "renewed"}'
     assert (base / "auth.json").stat().st_mode & 0o777 == 0o600
     next_session = tmp_path / "next"
-    stage_auth(base, next_session, ApplyMaterializer())
+    _stage(base, next_session)
     assert (next_session / "auth.json").read_bytes() == (base / "auth.json").read_bytes()
 
 
-def test_dry_run_never_copies_credentials_or_records_their_digest(tmp_path: Path) -> None:
+def test_planning_never_copies_credentials_or_records_their_digest(tmp_path: Path) -> None:
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "private"}')
-    preview = PlanMaterializer()
-    stage_auth(base, session, preview)
+
+    entries = plan_auth(base, session, auth_digest(base))
+
     assert not session.exists()
     assert not (base / ".ai-hats").exists()
-    apply = ApplyMaterializer()
-    stage_auth(base, session, apply)
-    assert preview.record.entries == apply.record.entries
-    assert all(entry.digest is None for entry in apply.record.entries)
+    assert [e.kind for e in entries] == [WriteKind.COPY_FILE, WriteKind.WRITE_TEXT]
+    assert all(entry.private and entry.digest is None for entry in entries)
+    assert entries[0].source == base / "auth.json"
+    apply(_plan(session, entries))
+    assert (session / "auth.json").read_text() == '{"fixture": "private"}'
     assert (session / "auth.json").stat().st_mode & 0o777 == 0o600
+    assert (session / ".ai-hats-auth-baseline.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_a_home_without_a_login_stages_only_the_baseline(tmp_path: Path) -> None:
+    base, session = tmp_path / "base", tmp_path / "session"
+    base.mkdir()
+
+    entries = plan_auth(base, session, auth_digest(base))
+
+    assert [e.kind for e in entries] == [WriteKind.WRITE_TEXT]
+    assert entries[0].content == '{"digest": null}'
+    apply(_plan(session, entries))
+    assert not (session / "auth.json").exists()
 
 
 def test_write_failure_is_reported_and_keeps_both_copies(tmp_path: Path) -> None:
@@ -69,7 +124,7 @@ def test_write_failure_is_reported_and_keeps_both_copies(tmp_path: Path) -> None
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "old"}')
-    stage_auth(base, session, ApplyMaterializer())
+    _stage(base, session)
     (session / "auth.json").write_text('{"fixture": "new"}')
 
     base.chmod(0o500)
@@ -90,7 +145,7 @@ def test_older_session_never_restores_auth_after_another_logout(
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "old"}')
-    stage_auth(base, session, ApplyMaterializer())
+    _stage(base, session)
     (base / "auth.json").unlink()  # safe-delete: ok synthetic logout fixture
     if changed:
         (session / "auth.json").write_text('{"fixture": "renewed"}')
@@ -106,7 +161,7 @@ def test_reconciliation_refuses_a_substituted_symlink(tmp_path: Path, location: 
     base, session = tmp_path / "base", tmp_path / "session"
     base.mkdir()
     (base / "auth.json").write_text('{"fixture": "old"}')
-    stage_auth(base, session, ApplyMaterializer())
+    _stage(base, session)
     target = tmp_path / "unrelated"
     target.write_text("untouched")
     replaced = tmp_path / location / "auth.json"

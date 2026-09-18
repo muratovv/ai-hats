@@ -21,9 +21,10 @@ import pytest
 from ai_hats import env, migration_backup, paths
 from ai_hats.cli._entry import project_at
 from ai_hats.paths import library as library_paths
+from ai_hats.surfaces.codex import home as codex_home
 from ai_hats.surfaces.codex import provider as codex_provider
 from ai_hats.surfaces.hook_channel import project_dir_from
-from ai_hats.surfaces.opencode import provider as opencode_provider
+from ai_hats.surfaces.opencode import home as opencode_home
 from ai_hats_core import safe_delete
 from ai_hats_core.layout import ProjectLayout, cache_home
 from ai_hats_rack import cli_common, roots_registry
@@ -63,11 +64,11 @@ ROSTER = {
 #: leaf and therefore spells it a second time.
 READER_CONSTANTS = {
     "AI_HATS_BUMP_BACKUP_DIR": migration_backup.ENV_BACKUP_DIR,
-    "AI_HATS_CODEX_BASE_HOME": codex_provider._ENV_CODEX_BASE_HOME,
-    "AI_HATS_OPENCODE_CONFIG_HOME": opencode_provider._ENV_OPENCODE_CONFIG_HOME,
-    "XDG_CONFIG_HOME": opencode_provider.ENV_XDG_CONFIG_HOME,
-    "CODEX_HOME": codex_provider._ENV_CODEX_HOME,
-    "CODEX_SQLITE_HOME": codex_provider._ENV_CODEX_SQLITE_HOME,
+    "AI_HATS_CODEX_BASE_HOME": codex_home.ENV_CODEX_BASE_HOME,
+    "AI_HATS_OPENCODE_CONFIG_HOME": opencode_home.ENV_OPENCODE_CONFIG_HOME,
+    "XDG_CONFIG_HOME": opencode_home.ENV_XDG_CONFIG_HOME,
+    "CODEX_HOME": codex_home.ENV_CODEX_HOME,
+    "CODEX_SQLITE_HOME": codex_home.ENV_CODEX_SQLITE_HOME,
 }
 
 #: The resolver each declared default is a claim about, called with no relevant
@@ -83,9 +84,7 @@ PROBES: dict[str, Callable[[Path], Path]] = {
     "AI_HATS_CODEX_BASE_HOME": lambda project_dir: (
         codex_provider.CodexSurface._configured_base_home()
     ),
-    "AI_HATS_OPENCODE_CONFIG_HOME": lambda project_dir: (
-        opencode_provider.OpenCodeSurface()._base_config_home()
-    ),
+    "AI_HATS_OPENCODE_CONFIG_HOME": lambda project_dir: opencode_home.base_config_home(os.environ),
     "RACK_ROOTS_FILE": lambda project_dir: roots_registry.registry_path(),
 }
 

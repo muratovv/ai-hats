@@ -56,14 +56,12 @@ def arrow_project(shared_launcher, tmp_path_factory):
 def test_the_declaration_reaches_the_guard_with_its_ends_parsed(arrow_project):
     """The envelope's shape, at the boundary — the guard reads fields, not grammar."""
     project, env, _settings = arrow_project
-    from ai_hats.assembler import Assembler
-    from ai_hats.session_report import consent_entry
+    from _helpers.sessions import consent_rows
 
-    consent = Assembler(project).composer.compose("assistant").consent
     rack_rows = [
-        consent_entry(c)
-        for c in consent
-        if c.app == "consent_gate" and c.path == ("rack.transition",)
+        row
+        for row in consent_rows(project, "assistant")
+        if row["app"] == "consent_gate" and row["path"] == ["rack.transition"]
     ]
 
     assert rack_rows, "the assistant role declares no rack consent — the probe is blind"

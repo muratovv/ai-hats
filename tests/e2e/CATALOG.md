@@ -564,7 +564,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ClaudeSurface().build_session_artifacts(...)   # what `ai-hats session` runs
+  apply(ClaudeSurface().plan(...))   # what `ai-hats session` runs
   ```
 
 - **expect** — the developer's file is byte-identical afterwards, and the session file handed over with `--settings` carries only ai-hats entries
@@ -1168,7 +1168,7 @@ as a claim to check, not as evidence.
   ai-hats agent test-role --task "e2e task" --json --dry-run --materialize
   ```
 
-- **expect** — a plain dry-run leaves both sid dirs absent; --materialize writes the tree under the fixed `dry-run-materialize` sid, reports its path in `notes`, and still shows no escapes; the AUTOMATE path writes the same tree.
+- **expect** — a plain dry-run leaves both sid dirs absent and reports no outcome; --materialize writes the tree under the fixed `dry-run-materialize` sid, reports its path in `notes` and every row as written; the AUTOMATE path writes the same tree.
 - **why** — the flag can regress in either direction — --materialize silently writing nothing, leaving the operator inspecting an empty tree, or a plain --dry-run starting to write, so a read-only inspection mutates the cache a real launch then reads.
 
 ## `test_e2e_catalog_gate.py`

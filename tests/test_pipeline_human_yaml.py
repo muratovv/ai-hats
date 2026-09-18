@@ -98,7 +98,7 @@ def test_human_pipeline_e2e(tmp_path: Path):
     fake_runner.run.assert_called_once()
     call_kwargs = fake_runner.run.call_args.kwargs
     # HATS-452 (D2 in ADR-0005): WrapRunner has NO system_prompt_override
-    # channel — composition reaches the agent via build_session_prompt.
+    # channel — composition reaches the agent via plan_session.
     assert "system_prompt_override" not in call_kwargs
 
 

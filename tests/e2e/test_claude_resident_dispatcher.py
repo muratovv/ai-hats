@@ -33,10 +33,10 @@ from pathlib import Path
 import pytest
 
 from _helpers.git import init_repo
-from _helpers.sessions import stand_in_session
+from _helpers.sessions import build_session, composition_for, stand_in_session
+from tests._plan_helpers import composition_of
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.hook_server import HookServer, socket_path
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 
@@ -82,17 +82,16 @@ def _session(tmp_path: Path, body: str = DENY):
         ],
         injections=[],
     )
-    artifacts = ClaudeSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
+    plan = build_session(
+        project,
+        composition_of(result, layout=ProjectLayout.at(project)),
+        ClaudeSurface(),
         SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
     )
     env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="claude")
-    env |= artifacts.extra_env | {"AI_HATS_PYTHON": sys.executable}
+    env |= dict(plan.env) | {"AI_HATS_PYTHON": sys.executable}
     env.pop("AI_HATS_GATE_BROKEN_ACK", None)
-    cache = ProjectLayout.at(project).cache.session(SESSION_ID)
+    cache = plan.root
     entry = json.loads((cache / "settings.json").read_text())["hooks"]["PreToolUse"][0]
     return project, env, cache, entry["hooks"][0]["command"]
 
@@ -241,24 +240,17 @@ def test_the_resident_gates_inherit_the_sessions_environment(tmp_path: Path, mon
 def _composed_session(tmp_path: Path):
     """The shipped `assistant` role, gates and consent declaration included, in a
     git project — what a real launch composes, minus the harness."""
-    from ai_hats.assembler import Assembler
-
     project = tmp_path / "project"
     project.mkdir()
     init_repo(project, branch="master")
     (project / "ai-hats.yaml").write_text("task_prefix: SBX\n", encoding="utf-8")
     (project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks").mkdir(parents=True)
 
-    result = Assembler(project).composer.compose("assistant")
-    artifacts = ClaudeSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
-        SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
+    plan = build_session(
+        project, composition_for(project, "assistant"), ClaudeSurface(), SESSION_ID
     )
     env = stand_in_session(dict(os.environ), project, SESSION_ID, provider="claude")
-    env |= artifacts.extra_env | {"AI_HATS_PYTHON": sys.executable}
+    env |= dict(plan.env) | {"AI_HATS_PYTHON": sys.executable}
     # An `ask` is only reachable when nothing pre-approved the move.
     for name in [key for key in env if ACK_FLAG.fullmatch(key)]:
         del env[name]

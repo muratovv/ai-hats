@@ -175,8 +175,14 @@ def _flags(root: Path, **overrides) -> LaunchFlags:
     return LaunchFlags(**given)
 
 
-def test_a_hitl_launch_is_todays_argv_and_environment(maintainer, tmp_path: Path):
-    from ai_hats.session_artifacts import assemble_launch_command, assemble_launch_env
+def test_a_hitl_launch_is_the_plans_argv_with_the_flags_and_its_environment(
+    maintainer, tmp_path: Path
+):
+    """The operator's arguments lead, the plan's follow, the surface's own
+    session-id linkage closes; the environment is the plan's plus the session's
+    identity, and the flags' root pid last."""
+    from ai_hats.constants import ENV_ROOT_PID
+    from ai_hats.session_identity import SessionIdentity
     from ai_hats.session_plan import launch, launch_env
 
     asm, composition = maintainer
@@ -195,32 +201,29 @@ def test_a_hitl_launch_is_todays_argv_and_environment(maintainer, tmp_path: Path
 
     launched = launch(plan, flags, layout=asm.layout)
 
-    assert list(launched.args) == assemble_launch_command(
-        surface,
-        extra_args=["--model", "opus"],
-        session_args=list(plan.launch.args),
-        provider_session_id="u",
-    )
-    assert launch_env(plan, surface, flags, layout=asm.layout) == assemble_launch_env(
-        surface,
-        asm.layout,
-        root,
-        session_id="s",
-        trace_path="t",
-        role="maintainer",
-        root_pid="1",
-        extra_env=dict(plan.env),
-        run_mode=RunMode.HITL,
-    )
+    assert list(launched.args) == [
+        "claude",
+        "--model",
+        "opus",
+        *plan.launch.args,
+        "--session-id",
+        "u",
+    ]
+    env = launch_env(plan, surface, flags, layout=asm.layout)
+    assert env.items() >= plan.env.items()
+    identity = SessionIdentity.from_env(env)
+    assert (identity.id, identity.role, identity.provider) == ("s", "maintainer", "claude")
+    assert identity.session_cache_dir == str(root)
+    assert env[ENV_ROOT_PID] == "1"
     assert launched.prompt.startswith("<!-- AI-HATS:START -->\n"), "the context file's bytes"
-    assert "--session-id" in launched.args and "u" in launched.args
 
 
-def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Path):
-    """The base ``automate_launch`` builds the prompt from the context entry,
-    the working directory and the brief — byte-equal to ``assemble_meta_prompt``."""
+def test_a_cli_sub_agent_launch_is_one_meta_prompt_token(tmp_path: Path):
+    """The base ``automate_launch`` builds the prompt from the context entry the
+    plan names, the working directory and the brief, and hands it to the CLI
+    as the one token ``get_run_command`` appends."""
     from ai_hats.materialization import describe_write_text
-    from ai_hats.session_artifacts import BuiltArtifacts, assemble_brief
+    from ai_hats.session_artifacts import assemble_brief, working_directory_section
     from ai_hats.surfaces.cline.provider import ClineSurface
     from ai_hats.surfaces.plan import CompositionPlan, Hooks, Launch, MaterializationPlan
     from ai_hats_core.layout import ProjectLayout
@@ -244,6 +247,7 @@ def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Pat
         entries=(describe_write_text(root / "rules.md", "CONTEXT\n"),),
         env={},
         launch=Launch(args=("--config", str(root)), sdk_options=None),
+        context=root / "rules.md",
     )
     brief = assemble_brief(layout, task="demo", ticket_id="")
     surface = ClineSurface()
@@ -252,35 +256,41 @@ def test_a_cli_sub_agent_launch_is_todays_meta_prompt_in_one_token(tmp_path: Pat
         plan, _flags(root, model="m", brief=brief), {}, layout=layout
     )
 
-    old = surface.describe_automate_launch(
-        layout,
-        None,
-        "s",
-        BuiltArtifacts(cli_args=["--config", str(root)], full_content="CONTEXT\n"),
-        task="demo",
-        ticket_id="",
-        model="m",
-        env={},
-    )
-    assert list(launched.args) == old.launch and launched.prompt == old.prompt
+    prompt = "\n\n".join(["CONTEXT\n", working_directory_section(layout), brief])
+    assert launched.prompt == prompt
+    assert list(launched.args) == [
+        "cline",
+        "--config",
+        str(root),
+        "--model",
+        "m",
+        "--yolo",
+        "--json",
+        prompt,
+    ]
     other = surface.automate_launch(
         plan, _flags(root, model="m", brief="# TASK\nother"), {}, layout=layout
     )
     assert other.args != launched.args, "a different brief is a different launch"
 
 
-def test_a_consent_row_of_the_plan_is_the_row_the_guard_reads_today():
-    from ai_hats_core import ConsentPoint
-
-    from ai_hats.session_report import consent_entry, consent_row
+def test_a_consent_row_of_the_plan_carries_the_ends_the_guard_keys_on():
+    """The guard is stdlib-only and reads fields, never grammar: the row names
+    the operation as its path and the selector's two ends already parsed."""
+    from ai_hats.session_report import consent_row
     from ai_hats.surfaces.plan import ExternalHook
 
-    point = ConsentPoint("trait-agent", "consent_gate", ("rack.transition",), "plan->execute")
     hook = ExternalHook(
         "consent_gate", "rack.transition", "plan->execute", None, None, "trait-agent"
     )
-    assert consent_row(hook) == consent_entry(point)
-    assert consent_row(hook)["to"] == "execute" and consent_row(hook)["from"] == "plan"
+    assert consent_row(hook) == {
+        "app": "consent_gate",
+        "path": ["rack.transition"],
+        "selector": "plan->execute",
+        "from": "plan",
+        "to": "execute",
+        "declared_by": "trait-agent",
+    }
 
 
 def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_path: Path):
@@ -303,6 +313,7 @@ def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_
         "env_keys",
         "prompt",
         "materialized",
+        "checks",
         "consent",
         "notes",
         "composition",
@@ -315,3 +326,177 @@ def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_
     ] == "written"
     assert applied["prompt"] == str(root / "prompt.md")
     assert applied["consent"], "the maintainer role declares consent"
+
+
+# ── the context the plan names, the home the surface probes, the checks it covers ──
+
+
+def _bare_plan(root: Path, entries=(), *, context: Path | None = None, surface: str = "cline"):
+    from ai_hats.surfaces.plan import CompositionPlan, Hooks, Launch, MaterializationPlan
+
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(),
+        hooks=Hooks((), ()),
+        trace=(),
+    )
+    return MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface=surface,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        entries=tuple(entries),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
+        context=context,
+    )
+
+
+def test_the_launch_reports_the_context_entry_the_plan_names_else_the_prompt(tmp_path: Path):
+    """No ``.md`` heuristic: codex and opencode write ``SKILL.md`` documents
+    under the root, so the plan says which entry, if any, is the context."""
+    from ai_hats.materialization import describe_write_text
+    from ai_hats.session_plan import launch, session_record
+    from ai_hats.surfaces import context_entry, context_text
+    from ai_hats_core.layout import ProjectLayout
+
+    layout = ProjectLayout.at(tmp_path / "proj")
+    root = tmp_path / "sessions" / "s"
+    document = describe_write_text(root / "skills" / "s" / "SKILL.md", "# a skill\n")
+    context = describe_write_text(root / "rules.md", "CONTEXT\n")
+
+    named = _bare_plan(root, (document, context), context=root / "rules.md")
+    assert context_entry(named) is context
+    launched = launch(named, _flags(root, claim=False), layout=layout)
+    assert launched.prompt == "CONTEXT\n"
+    assert session_record(named, launched, role="r")["prompt"] == str(root / "rules.md")
+
+    inline = _bare_plan(root, (document,))
+    assert context_entry(inline) is None
+    assert context_text(inline) == inline.prompt.text
+    launched = launch(inline, _flags(root, claim=False), layout=layout)
+    assert launched.prompt == "# r\n", "the surface prompt, never the skill document"
+    assert session_record(inline, launched, role="r")["prompt"] is None
+
+
+def test_a_policy_that_withholds_the_context_hands_the_agent_none_of_it(tmp_path: Path):
+    """The prompt half is always planned; whether the agent reads it is the
+    policy's — so an inline surface's sub-agent token carries no role text
+    under ``context=False``, as the builder's ``full_content`` was ``None``."""
+    import dataclasses
+
+    from ai_hats.surfaces import context_text
+
+    root = tmp_path / "sessions" / "s"
+    withheld = dataclasses.replace(_bare_plan(root, ()), policy=SessionPolicy(context=False))
+
+    assert withheld.prompt.text == "# r\n", "the plan still holds the prompt"
+    assert context_text(withheld) == ""
+
+
+def test_a_context_no_entry_writes_is_refused_before_anything_is_touched(tmp_path: Path):
+    from ai_hats.materialization import describe_write_text
+    from ai_hats.surfaces import ContextUnwritten, validate
+
+    root = tmp_path / "sessions" / "s"
+    context = describe_write_text(root / "rules.md", "CONTEXT\n")
+    validate(_bare_plan(root, (context,), context=root / "rules.md"))
+    with pytest.raises(ContextUnwritten):
+        validate(_bare_plan(root, (), context=root / "rules.md"))
+    with pytest.raises(ContextUnwritten):
+        validate(_bare_plan(root, (context,), context=root / "other.md"))
+
+
+def test_the_host_carries_the_home_the_surface_probes(tmp_path: Path):
+    """The one read of the person's home is the surface's, taken by
+    ``probe_host`` for the surface in hand; a surface without one leaves ``None``."""
+    from ai_hats.surfaces.cline.provider import ClineSurface
+    from ai_hats.surfaces.plan import Digested
+
+    @dataclasses.dataclass(frozen=True)
+    class Home(Digested):
+        root: Path
+        entries: tuple[str, ...]
+
+    class Homed(ClineSurface):
+        def probe_home(self, environ):
+            return Home(Path(environ["HOME"]) / ".tool", ("config.json",))
+
+    environ = {"PATH": str(tmp_path), "HOME": str(tmp_path)}
+    bare = probe_host(environ, python="/opt/py", surface=ClineSurface())
+    homed = probe_host(environ, python="/opt/py", surface=Homed())
+    assert bare.home is None and probe_host(environ, python="/opt/py").home is None
+    assert homed.home == Home(tmp_path / ".tool", ("config.json",))
+    assert homed.digest != bare.digest, "the home is an input of planning"
+
+
+def test_the_record_says_where_each_check_runs_from_off_the_plans_own_entries(tmp_path: Path):
+    """``runs_from`` is the mirror the plan writes for the check's skill; a
+    script outside every composed skill has no mirror and says so."""
+    from ai_hats.materialization import MaterializationEntry
+    from ai_hats.surfaces import checks_record
+    from ai_hats.surfaces.plan import (
+        CompositionPlan,
+        Executable,
+        ExternalHook,
+        Hooks,
+        Launch,
+        MaterializationPlan,
+        OnError,
+        Skill,
+    )
+
+    root = tmp_path / "sessions" / "s"
+    skill_dir = tmp_path / "lib" / "skills" / "s"
+    skill = Skill(name="skills::s", path=skill_dir, content_digest="t")
+    inside = Executable(skill_dir / "hooks" / "gate.sh", "g")
+    outside = Executable(tmp_path / "elsewhere" / "gate.sh", "e")
+
+    def check(run: Executable) -> ExternalHook:
+        return ExternalHook("rack", "tasks", "plan->execute", run, OnError.REFUSE, "r")
+
+    consent = ExternalHook("consent_gate", "rack.transition", "->done", None, None, "r")
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(skill,),
+        hooks=Hooks((), (check(inside), check(outside), consent)),
+        trace=(),
+    )
+    mirror = MaterializationEntry(
+        kind=WriteKind.COPY_TREE, target=root / "skills" / "s", source=skill_dir, tree_digest="t"
+    )
+
+    def plan(entries) -> MaterializationPlan:
+        return MaterializationPlan(
+            composition=composition,
+            prompt=composition.prompt,
+            surface="cline",
+            run_mode=RunMode.HITL,
+            policy=SessionPolicy(),
+            root=root,
+            entries=entries,
+            env={},
+            launch=Launch(args=(), sdk_options=None),
+        )
+
+    mirrored, unmirrored = checks_record(plan((mirror,)))
+    assert mirrored == {
+        "skill": "s",
+        "script": "hooks/gate.sh",
+        "app": "rack",
+        "object": "tasks",
+        "at": "plan->execute",
+        "on_error": "refuse",
+        "declared_by": "r",
+        "runs_from": str(root / "skills" / "s" / "hooks" / "gate.sh"),
+        "planned": True,
+    }
+    assert unmirrored["skill"] is None and unmirrored["script"] == str(outside.path)
+    assert unmirrored["runs_from"] is None and unmirrored["planned"] is False
+    (unplanned, _) = checks_record(plan(()))
+    assert unplanned["runs_from"] is None and unplanned["planned"] is False
+    assert unplanned["skill"] == "s", "the skill is composed; this launch just writes no mirror"

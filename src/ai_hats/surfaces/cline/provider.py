@@ -1,21 +1,25 @@
 """Cline surface adapter — maps the `cline` CLI to the ai-hats `Surface`.
 
-cline runs through the unified artifact-builder (ADR-0018) on the
-clean-root invariant — skills materialize into the per-session cache and reach
-cline via ``--config`` (a spike); nothing lands in the project root.
-Native ``--hooks-dir`` entrypoints deliver the composed per-tool
-runtime-hook chain from the same session cache.
+cline's session is planned (ADR-0036) on the clean-root invariant — skills
+mirror into the per-session cache and reach cline via ``--config`` (a spike);
+nothing lands in the project root. Native ``--hooks-dir`` entrypoints deliver
+the composed per-tool runtime-hook chain from the same session cache.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
+from ai_hats.materialization import describe_mkdir
 from ai_hats.surfaces import Surface
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+
+from ..mirror import mirror_entries, path_dirs
+from ..plan import CompositionPlan, Host, Launch, MaterializationPlan
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -98,9 +102,56 @@ class ClineSurface(Surface):
         # Skills reach cline natively via <cache>/skills/ — a text index duplicates them.
         return self._compose_sections(result)
 
-    # ----- unified artifact-builder (ADR-0018) -----
+    # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 
-    # SETTINGS has no Cline-native artifact. HOOKS use --hooks-dir below.
+    def plan(
+        self,
+        composition: CompositionPlan,
+        *,
+        run_mode: RunMode,
+        policy: SessionPolicy,
+        root: Path,
+        layout: ProjectLayout,
+        host: Host,
+    ) -> MaterializationPlan:
+        from .runtime_hooks import plan_hooks
+
+        mode = RunMode(run_mode)
+        skills_dir = root / "skills"
+        prompt = composition.prompt  # cline adds no block of its own
+        entries = [describe_mkdir(root)]
+        args: list[str] = []
+        env: dict[str, str] = {}
+        # HITL takes the role inline; a sub-agent takes the same text in its
+        # prompt token, so no flag and nothing on disk carry it.
+        if policy.context and mode is RunMode.HITL:
+            args += ["-s", prompt.text]
+        # cline scans <T()>/skills and --config sets T() to the root (a spike),
+        # so the mirror dir and the flag are there with or without skills.
+        entries.append(describe_mkdir(skills_dir))
+        entries += mirror_entries(composition, skills_dir)
+        args += ["--config", str(root)]
+        if dirs := path_dirs(composition, skills_dir):
+            env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
+        if policy.hooks and (
+            hooked := plan_hooks(composition, root, host, layout=layout, skills_dir=skills_dir)
+        ):
+            hook_entries, hook_env = hooked
+            entries += hook_entries
+            env.update(hook_env)
+            args += ["--hooks-dir", str(root / "hooks")]
+        env.update(self.get_env(root, layout))
+        return MaterializationPlan(
+            composition=composition,
+            prompt=prompt,
+            surface=self.name,
+            run_mode=mode,
+            policy=policy,
+            root=root,
+            entries=tuple(entries),
+            env=env,
+            launch=Launch(args=tuple(args), sdk_options=None),
+        )
 
     def get_cli_launch_args(
         self, base_cmd: list[str], session_id: str, is_resume: bool
@@ -110,128 +161,10 @@ class ClineSurface(Surface):
             cmd.insert(1, "-i")
         return super().get_cli_launch_args(cmd, session_id, is_resume)
 
-    def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
-
-        cache_dir = layout.cache.session(session_id)
-        artifacts.port.mkdir(cache_dir)
-        return cache_dir
-
-    # -- context ---------------------------------------------------------------
-
-    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
-        """Role inline via -s. The TUI flag is launch mode, not context — see
-        ``get_cli_launch_args`` (gating CONTEXT must not drop -i)."""
-        project_dir = layout.root
-        from ai_hats.placeholders import expand_path_placeholders
-        from ai_hats.role_catalog import expand_role_catalog
-
-        self._cache_dir(layout, session_id, artifacts)
-        prompt = self.build_system_prompt(result)
-        prompt = expand_path_placeholders(prompt, layout)
-        prompt = expand_role_catalog(prompt, project_dir)
-        artifacts.full_content = prompt
-        artifacts.cli_args.extend(["-s", prompt])
-
-    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
-        """Role sections inline in the meta-prompt — no flag."""
-        project_dir = layout.root
-        from ai_hats.placeholders import expand_path_placeholders
-        from ai_hats.role_catalog import expand_role_catalog
-
-        self._cache_dir(layout, session_id, artifacts)
-        prompt = self.build_system_prompt(result)
-        prompt = expand_path_placeholders(prompt, layout)
-        prompt = expand_role_catalog(prompt, project_dir)
-        artifacts.full_content = prompt
-
-    # -- skills ----------------------------------------------------------------
-
     def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
         """What a bound check resolves its script from in-session."""
 
         return layout.cache.session(session_id) / "skills"
-
-    def _deliver_skills(self, layout, result, session_id, artifacts) -> None:
-        from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
-
-        cache_dir = self._cache_dir(layout, session_id, artifacts)
-        skills_dir = self.session_skills_root(layout, session_id)
-        # Shared with agy: a private copy drifted and lost the
-        # {{backlog_fsm_edges}} expansion the shared one has done.
-        materialize_skills_dir(skills_dir, result.skills, layout, artifacts.port)
-        # cline scans <T()>/skills; --config sets T()=cache_dir (a spike).
-        # CLINE_DATA_DIR (get_env) keeps auth/state off this ephemeral base.
-        artifacts.cli_args.extend(["--config", str(cache_dir)])
-        inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
-        artifacts.materialized.append(skills_dir)
-
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_skills(layout, result, session_id, artifacts)
-
-    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_skills(layout, result, session_id, artifacts)
-
-    # -- hooks -----------------------------------------------------------------
-
-    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
-        from .runtime_hooks import materialize_runtime_hooks
-
-        hooks_dir = materialize_runtime_hooks(
-            layout,
-            result,
-            session_id,
-            artifacts,
-            skills_dir=self.session_skills_root(layout, session_id),
-        )
-        if hooks_dir is not None:
-            artifacts.cli_args.extend(["--hooks-dir", str(hooks_dir)])
-
-    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
-
-    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
-
-    def build_session_prompt(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: str,
-    ) -> tuple[list[str], dict[str, str], str]:
-        """HITL entry (WrapRunner): thin delegate over the artifact-builder.
-
-        Returns ``(cli_args, extra_env, meta_prompt)``; the third element is the
-        exact bytes WrapRunner persists to ``meta_prompt.txt``.
-        """
-        artifacts = self.build_session_artifacts(
-            layout,
-            result,
-            session_id,
-            run_mode=RunMode.HITL,
-            artifacts=BuiltArtifacts(),
-        )
-        return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
-
-    def materialize_runtime_skills(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: str,
-    ) -> list[str]:
-        """Automate entry (SubAgentRunner): thin delegate over the artifact-builder.
-
-        Materializes skills into the per-session cache and returns the CLI args
-        (``["--config", <cache>]``) the runner threads onto the cline command —
-        so the headless path lands skills in the cache too (no project-root leak).
-        """
-        artifacts = self.build_session_artifacts(
-            layout,
-            result,
-            session_id,
-            run_mode=RunMode.AUTOMATE,
-            artifacts=BuiltArtifacts(),
-        )
-        return artifacts.cli_args
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["cline"]

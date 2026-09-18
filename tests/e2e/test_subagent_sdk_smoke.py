@@ -114,7 +114,7 @@ def test_subagent_runner_via_sdk_smoke(minimal_claude_project: Path, requires_cl
         ),
     )
 
-    # Inject a per-call budget via the build_options call site by
+    # Inject a per-call budget via the option-document call site by
     # monkey-patching the wrapper's signature is fragile; instead we
     # rely on the SDK's max_budget_usd guard configured statically in
     # the helper. For this probe a static cap is not wired; we accept

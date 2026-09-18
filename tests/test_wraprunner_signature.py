@@ -27,7 +27,7 @@ def test_wraprunner_run_has_no_system_prompt_override():
     assert "system_prompt_override" not in params, (
         "HATS-452 regression: WrapRunner.run grew a "
         "system_prompt_override parameter again. HITL has no override "
-        "channel — composition flows via build_session_prompt inside "
+        "channel — composition flows via plan_session inside "
         "run_session. See ADR-0005 §D2."
     )
 

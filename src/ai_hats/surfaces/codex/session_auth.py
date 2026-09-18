@@ -19,7 +19,11 @@ from pathlib import Path
 from ai_hats_core.atomic_io import atomic_write_bytes
 from filelock import FileLock
 
-from ai_hats.materialization import Materializer
+from ai_hats.materialization import (
+    MaterializationEntry,
+    describe_copy_file,
+    describe_private_text,
+)
 
 _BASELINE = ".ai-hats-auth-baseline.json"
 
@@ -50,12 +54,20 @@ def _baseline_digest(data: bytes) -> str | None:
     return digest
 
 
-def stage_auth(base: Path, session: Path, port: Materializer) -> None:
-    with port.lock(base / ".ai-hats" / "auth.lock"):
-        data = _read(base / "auth.json")
-        if data is not None:
-            port.write_private_text(session / "auth.json", data.decode("utf-8"))
-        port.write_private_text(session / _BASELINE, json.dumps({"digest": _digest(data)}))
+def auth_digest(base: Path) -> str | None:
+    """sha256 of the shared credential, ``None`` where the person is not logged
+    in by file — the one fact of it a plan carries (ADR-0036 D2)."""
+    return _digest(_read(base / "auth.json"))
+
+
+def plan_auth(base: Path, session: Path, digest: str | None) -> list[MaterializationEntry]:
+    """The staging as entries: a private copy of the credential, read at
+    application, and the baseline its digest is reconciled against at the end."""
+    entries: list[MaterializationEntry] = []
+    if digest is not None:
+        entries.append(describe_copy_file(base / "auth.json", session / "auth.json", private=True))
+    entries.append(describe_private_text(session / _BASELINE, json.dumps({"digest": digest})))
+    return entries
 
 
 def reconcile_auth(base: Path, session: Path) -> str | None:

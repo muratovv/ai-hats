@@ -121,7 +121,6 @@ def test_dry_run_plans_the_one_mirror_copy_the_binding_will_run_from(project_wit
     copies = _skill_copies(payload)
     assert len(copies) == 1, payload["materialized"]
     assert copies[0].endswith(MIRROR_SUFFIX)
-    assert payload["escapes"] == [], "the mirror must go through the port"
 
 
 def test_binding_a_check_adds_nothing_to_the_plan(project_with_library):
@@ -152,20 +151,20 @@ def test_the_report_names_the_binding_the_plan_cannot_show(project_with_library)
 
     assert unbound["checks"] == []
     assert [
-        (c["skill"], c["script"], c["app"], tuple(c["at"]), c["on_error"], c["declared_by"])
+        (c["skill"], c["script"], c["app"], c["at"], c["on_error"], c["declared_by"])
         for c in bound["checks"]
-    ] == [("gate-skill", "check.sh", "wt", ("pre-merge",), "refuse", "checked")]
+    ] == [("gate-skill", "check.sh", "wt", "pre-merge", "refuse", "checked")]
 
 
-def test_the_report_says_where_the_gate_runs_from_and_that_the_plan_covers_it(
+def test_the_report_says_where_the_gate_runs_from_and_that_the_plan_carries_it(
     project_with_library,
 ):
     """A list of bindings is the weak half — the binding is already in the role.
 
     What an operator cannot read anywhere is whether the resolution SETTLES under
-    this surface: same mirror the plan writes, same leaf spelling. So the report
-    resolves it the way the session will and says whether the plan covers those
-    bytes. Cross-checked against the plan entry rather than asserted twice.
+    this surface: same mirror the plan writes, same leaf spelling. So the record
+    reads it off the plan's own mirror entry and says whether the plan covers
+    those bytes. Cross-checked against the plan entry rather than asserted twice.
     """
     payload = _dry_run(project_with_library, "checked")
 

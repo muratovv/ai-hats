@@ -75,7 +75,7 @@ def _be_session(monkeypatch, session_id: str, project: Path) -> None:
     """Stand in for a session the way a launch writes one — envelope included.
 
     A bare ``AI_HATS_SESSION_ID`` stands in for a session no launch produces
-    (HATS-1594): ``assemble_launch_env`` is the only writer and always writes
+    (HATS-1594): ``launch_env`` is the only writer and always writes
     both halves.
     """
     from ai_hats.session_identity import SessionIdentity
