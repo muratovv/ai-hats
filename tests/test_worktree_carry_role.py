@@ -107,4 +107,6 @@ def test_execute_edge_provisions_for_the_session_not_the_card(
 
     assert effects.roles == ["role-curator"]
     assert delta is not None
-    assert "role-curator" in delta.work_log[0], delta.work_log
+    # The path line stays a bare `Worktree: <path>` — readers split on the colon.
+    assert delta.work_log[0] == "Worktree: /nonexistent/wt", delta.work_log
+    assert "role-curator" in delta.work_log[1], delta.work_log

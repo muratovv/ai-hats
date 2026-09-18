@@ -305,8 +305,11 @@ class WorktreeExtension:
             outer_deadline=_rack_lock_deadline(ctx),
         )
         if wt_path is not None:
+            # `Worktree: <path>` is parsed as-is by readers; the role gets its own line.
             provisioned = role or "the configured role"
-            return Delta(work_log=(f"Worktree: {wt_path} (carry for {provisioned})",))
+            return Delta(
+                work_log=(f"Worktree: {wt_path}", f"Worktree hooks composed for {provisioned}")
+            )
         return None
 
     # ----- teardown ---------------------------------------------------------
