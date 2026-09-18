@@ -10,6 +10,8 @@ without a handler is a pure FSM (no worktree).
 from __future__ import annotations
 
 import logging
+import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
@@ -19,6 +21,33 @@ if TYPE_CHECKING:
     from ai_hats_core.deadline import Deadline
 
 logger = logging.getLogger(__name__)
+
+
+def carry_role(project_dir: Path, environ: Mapping[str, str] | None = None) -> str:
+    """The role a new worktree is provisioned for: the governing session's.
+
+    ``""`` outside a session — and for a session of another project — so the
+    config's own role chain answers. The card's role never does: it names who
+    should do the task, not who is entering the tree.
+
+    A session too old to carry an envelope is not torn, so it degrades to the
+    config and says so; any other unreadable envelope propagates — a carry
+    composed for a role that cannot be trusted would run hooks nobody asked for.
+    """
+    from .session_identity import IdentityFault, SessionIdentityError, identity_for_project
+
+    env = dict(environ) if environ is not None else None
+    try:
+        identity = identity_for_project(project_dir, env)
+    except SessionIdentityError as exc:
+        if exc.fault is not IdentityFault.TOO_OLD:
+            raise
+        print(
+            f"ai-hats: worktree carry composed for the configured role — {exc}",
+            file=sys.stderr,
+        )
+        return ""
+    return identity.role if identity is not None else ""
 
 
 def collect_carry_for_project(
