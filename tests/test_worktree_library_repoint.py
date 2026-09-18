@@ -144,12 +144,12 @@ def test_only_the_libraries_layer_repoints_everything_else_stays_main(tmp_path, 
     assert asm.project_dir == proj  # the hop target is untouched
 
 
-# ---- configured roots re-point under prefer_cwd ----------------------------
+# ---- configured roots re-point to the worktree -----------------------------
 #
 # A standalone library repo attached via ~/.ai-hats/library_paths.yaml (or
 # ai-hats.yaml: library_paths) is listed by its MAIN path. Editing it inside a
-# linked worktree and composing read-only from there must resolve THAT worktree,
-# the way libraries/ already does; a writer keeps MAIN (prefer_cwd split).
+# linked worktree and composing from there must resolve THAT worktree, the way
+# libraries/ already does — reads and writers alike.
 
 
 def _make_library_repo(root: Path) -> None:
@@ -182,8 +182,9 @@ def test_user_global_root_repoints_to_worktree_for_read_only(tmp_path, monkeypat
     assert lib not in paths
 
 
-def test_user_global_root_stays_main_for_a_writer(tmp_path, monkeypatch):
-    # prefer_cwd unset = a command that writes; it keys off MAIN by design.
+def test_user_global_root_repoints_for_a_writer_too(tmp_path, monkeypatch):
+    # Same rule as libraries/: a session launched inside the worktree composes
+    # the branch it is editing, prefer_cwd or not.
     lib = tmp_path / "custom"
     _make_library_repo(lib)
     wt = tmp_path / "custom-wt"
@@ -192,8 +193,8 @@ def test_user_global_root_stays_main_for_a_writer(tmp_path, monkeypatch):
 
     paths = build_library_paths(lib, cwd=wt)
 
-    assert lib in paths
-    assert wt not in paths
+    assert wt in paths
+    assert lib not in paths
 
 
 def test_user_global_root_stays_main_from_the_main_checkout(tmp_path, monkeypatch):
@@ -264,4 +265,4 @@ def test_assembler_read_only_sees_the_worktree_root(tmp_path, monkeypatch):
     _register_user_global(tmp_path, monkeypatch, lib)
 
     assert wt in Assembler(lib, prefer_cwd=True, cwd=wt).library_paths
-    assert lib in Assembler(lib, cwd=wt).library_paths
+    assert wt in Assembler(lib, cwd=wt).library_paths

@@ -127,10 +127,14 @@ what is installed here, and its `Library:` line comes from `importlib` rather
 than the resolver — so it can disagree with the tree the same command just
 composed from.
 
-A command that **writes** — init, anything materializing into the agent
-directory — deliberately still keys off the project, which for a linked
-worktree is the MAIN checkout, so tracker operations reach the one live
-backlog. Do not expect a worktree edit to reach a materialized artifact.
+A command that **writes** — `self init`, anything materializing into the agent
+directory — targets the project, which for a linked worktree is the MAIN
+checkout, so tracker operations reach the one live backlog. What it composes
+follows the list above for `libraries/` and same-repo roots; only the built-in
+layers differ — a writer takes them from the project's own source checkout
+(cwd only when the project names none). So `self init` run inside a worktree
+ships the branch's `libraries/` and same-repo roots into MAIN's shared
+artifacts: run it from MAIN unless that is what you want.
 
 To force either side: `AI_HATS_LIBRARY_ROOT` pins the built-in root, and a path
 passed in-process (step 6, `Assembler(project, library_paths=[<root>])`) outranks
