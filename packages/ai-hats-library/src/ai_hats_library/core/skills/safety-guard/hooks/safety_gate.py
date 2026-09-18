@@ -17,6 +17,7 @@ import re
 import shlex
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
 # The hooks are stdlib-only, so the journal arrives as a flattened sibling.
@@ -741,29 +742,59 @@ def prefixed_command(cmd: str, anchor: str, ordinal: int, total: int, assignment
     return f"{cmd[:at]}{assignment} {cmd[at:]}"
 
 
-def anchored_calls(cmd: str, name: str) -> list:
-    """Every logical command in ``cmd`` running ``name``, ready to be rewritten.
+class LogicalCommand(NamedTuple):
+    """One command ``cmd`` runs, placed by the top-level segment it sits in."""
 
-    Yields ``(anchor, ordinal, total, argv)``. The ordinal counts SEGMENTS whose
-    first token matches, not calls to ``name``, because that is what
-    :func:`prefixed_command` goes looking for in the raw string.
-    """
+    head: str
+    ordinal: int
+    total: int
+    tokens: list
+    nested: bool
+
+
+def logical_commands(cmd: str, depth: int = 0) -> list:
+    """Every logical command in ``cmd`` — and inside a shell's `-c` payload.
+
+    A shell's `-c` argument IS a command line, so what it runs is read the way
+    the destructive checks already read it (:func:`shell_payloads`); an
+    interpreter's `-c` argument is code and stays one token (HATS-1253 R5).
+    ``head`` / ``ordinal`` / ``total`` always name the TOP-LEVEL segment: that is
+    the one spot :func:`prefixed_command` can put an assignment — in front of
+    `timeout 600 bash -c '…'` the variable is inherited by the call inside,
+    while a spot inside the quoted payload would be a rewrite of the payload.
+    Measured 2026-09-18: with this half unread, `bash -c 'ai-hats wt merge …'`
+    raised no question and the engine refused with a verb only a human can type.
+    """  # comment-length: allow — the placement rule and the R5 boundary
     segments = parse_commands(cmd)
     heads = [tokens[0] for tokens in segments]
     found = []
     for index, tokens in enumerate(segments):
-        call = slice_for(tokens, name)
+        head = heads[index]
+        ordinal = sum(1 for h in heads[:index] if h == head)
+        total = sum(1 for h in heads if h == head)
+        found.append(LogicalCommand(head, ordinal, total, tokens, depth > 0))
+        if depth >= MAX_WRAPPER_DEPTH:
+            continue
+        for args in command_slices(tokens):
+            for payload in shell_payloads(get_bin(args), args):
+                for inner in logical_commands(payload, depth + 1):
+                    found.append(LogicalCommand(head, ordinal, total, inner.tokens, True))
+    return found
+
+
+def anchored_calls(cmd: str, name: str) -> list:
+    """Every logical command in ``cmd`` running ``name``, ready to be rewritten.
+
+    Yields ``(anchor, ordinal, total, argv)``. The ordinal counts top-level
+    SEGMENTS whose first token matches, not calls to ``name``, because that is
+    what :func:`prefixed_command` goes looking for in the raw string.
+    """
+    found = []
+    for command in logical_commands(cmd):
+        call = slice_for(command.tokens, name)
         if not call:
             continue
-        head = heads[index]
-        found.append(
-            (
-                head,
-                sum(1 for h in heads[:index] if h == head),
-                sum(1 for h in heads if h == head),
-                without_shell_redirects(call),
-            )
-        )
+        found.append((command.head, command.ordinal, command.total, without_shell_redirects(call)))
     return found
 
 
@@ -776,10 +807,12 @@ def target_cwd(cmd: str):
     clicks in one repo and `rack` looks in another.
     """
     where = Path.cwd()
-    for tokens in parse_commands(cmd):
-        cd = slice_for(tokens, "cd")
+    for command in logical_commands(cmd):
+        cd = slice_for(command.tokens, "cd")
         if not cd:
             continue
+        if command.nested:
+            return None  # a `cd` inside a payload moves the inner calls, not the outer
         args = [tok for tok in cd[1:] if not tok.startswith("-")]
         if len(args) != 1:
             return None  # `cd`, `cd -`, `cd a b`: not a destination we can name
@@ -801,8 +834,8 @@ def _python_module_calls(cmd: str, binary: str) -> list:
         _no_spellings_table()
         return []
     calls = []
-    for tokens in parse_commands(cmd):
-        for args in command_slices(tokens):
+    for command in logical_commands(cmd):
+        for args in command_slices(command.tokens):
             if not _is_interpreter(get_bin(args)):
                 continue
             for index, argument in enumerate(args[:-1]):
@@ -831,7 +864,8 @@ def _wrapper_bypass(operation: str) -> dict:
 
 
 def _changes_command_lookup(cmd: str, name: str) -> bool:
-    for tokens in parse_commands(cmd):
+    for command in logical_commands(cmd):
+        tokens = command.tokens
         call = slice_for(tokens, name)
         if not call:
             continue

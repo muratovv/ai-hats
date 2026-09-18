@@ -1,19 +1,26 @@
-"""e2e (HATS-1754)
+"""e2e (HATS-1754, HATS-1999)
 
 flow:   an agent typing a gated move through a language runner — `uv run`,
-        `uvx`, or `python -m <module>` — instead of the console script
+        `uvx`, or `python -m <module>` — or inside a shell's `-c` payload,
+        instead of the console script
 cmds:
     uv run rack transition HATS-1 execute
     python3 -m ai_hats_rack transition HATS-1 execute
     uv run ai-hats wt merge task/x
+    bash -c 'ai-hats wt merge task/x'
+    timeout 600 bash -c 'rack transition HATS-1 execute; rc=$?; exit $rc'
 expect: the composed chain raises the supervisor's question on every spelling,
         exactly as it does for the bare one
 why:    measured 2026-08-20 — the chain returned NOTHING for these. `WRAPPERS`
         knew `sudo`/`env`/`timeout` but no language runner, so `slice_for` read
         the head binary as `uv` or `python3` and never found the guarded call.
         Both roads into master and the `plan -> execute` arrow were reachable by
-        re-spelling the command, in silence. Revert the runner half and the
-        parametrized assertions below go quiet rather than red elsewhere.
+        re-spelling the command, in silence. Measured again 2026-09-18: a
+        shell's `-c` payload was one token to the consent readers, so a merge
+        wrapped the way the hygiene hook advises for runners raised nothing and
+        the engine refused with a verb only a human can type. Revert either
+        half and the parametrized assertions below go quiet rather than red
+        elsewhere.
 """  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
@@ -77,6 +84,12 @@ def in_session(runner_project):
         "python3 -m ai_hats wt merge task/x",
         # Both axes at once, the shape a venv-local run actually takes.
         "uv run python -m ai_hats_rack transition HATS-1 execute",
+        # A shell's `-c` payload is a command line, and the spelling the
+        # tool-call-hygiene hook advises for a backgrounded runner — carried
+        # over to a merge, it hid the merge from the consent readers (HATS-1999).
+        "bash -c 'ai-hats wt merge task/x'",
+        "timeout 600 bash -c 'rack transition HATS-1 execute; rc=$?; echo $rc > /tmp/x.rc; exit $rc'",
+        'sh -c "rack transition HATS-1 execute"',
     ],
 )
 def test_a_gated_move_spelled_through_a_runner_still_raises_the_question(in_session, command):
