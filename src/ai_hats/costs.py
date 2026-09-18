@@ -9,7 +9,7 @@ from .composer import Composer
 from .frontmatter import FrontmatterError, parse_frontmatter
 
 if TYPE_CHECKING:
-    from .surfaces.plan import CompositionPlan
+    from .surfaces import CompositionPlan
 
 
 @dataclass
