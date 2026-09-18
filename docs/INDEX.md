@@ -58,7 +58,7 @@ tool when a question goes beyond built-in instructions.
 
 - [`adr/`](adr/) — architecture decision records (one file per decision).
 - [Codex file credential reconciliation](adr/0032-codex-file-credential-reconciliation.md) — logout, concurrent updates, and session-end synchronization limits.
-- [Flat library model](adr/0033-named-expressions-replace-roles-and-traits.md) (proposed) — a series of four: overview and stages (0033), the DSL today vs under `-re` (0034), processing rules (0035), the materialization plan as the harness interface (0036).
+- [Flat library model](adr/0033-named-expressions-replace-roles-and-traits.md) — a series of four: overview and stages (0033), the DSL today vs under `-re` (0034), processing rules (0035), the materialization plan as the harness interface (0036).
 - [Canonical events are named by what the consumer does](adr/0037-canonical-events-are-named-by-what-the-consumer-does.md) — how a surface's own fact enters the shared `events.jsonl` vocabulary, and the three questions that decide whether a private type merges into a common one.
 - [`adr/attachments/`](adr/attachments/) — material an ADR leans on that is neither the
   decision nor user documentation: working context, measured baselines, corpora
