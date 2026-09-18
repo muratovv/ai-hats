@@ -8,9 +8,14 @@ cmds:
     ai-hats self update --check
 expect: self update installs edge for that run, names the config fix, and leaves
         the yaml alone; --check exits 1 with a BROKEN harness row; with a
-        path set the same commands reinstall editable and report OK
+        path set the same commands reinstall editable and report OK; a project
+        root with its own pyproject is named as not ai-hats, never -e'd; an
+        edge repo given as a path without the ai-hats pyproject is refused
+        before uv with the fix
 why: without this heal, self update ran `uv pip install -e <project root>` and
-     handed the user uv's refusal with every triage row green"""
+     handed the user uv's refusal with every triage row green — and with an
+     installability check instead of identity it installed the consumer's own
+     package into the tool venv and called it an update"""
 # comment-length: allow — deliberate fail-under-revert contract docstring
 
 from __future__ import annotations
@@ -120,7 +125,7 @@ def test_local_channel_without_a_source_is_healed_and_named(tmp_path: Path) -> N
         timeout=300,
     )
     combined = res.stdout + res.stderr
-    assert "not an installable project" in combined, combined
+    assert "has no pyproject.toml" in combined and "the project root" in combined, combined
     assert "installing edge" in combined, combined
     assert FIX in combined, combined
     assert "uv pip install -e" not in combined, f"an uninstallable source was -e'd:\n{combined}"
@@ -154,3 +159,55 @@ def test_local_channel_without_a_source_is_healed_and_named(tmp_path: Path) -> N
     assert f"OK harness local → {env[ENV_REPO_URL]}" in flat_ok, (
         f"expected an OK harness row naming the source:\n{check_ok.stdout}"
     )
+
+
+@pytest.mark.integration
+def test_a_consumer_root_with_its_own_pyproject_is_not_the_source(tmp_path: Path) -> None:
+    """Review F1/M1: installable is not ai-hats."""
+    launcher, project, env = _bootstrap(tmp_path)
+    (project / "pyproject.toml").write_text('[project]\nname = "consumer"\nversion = "0.1.0"\n')
+    _set_harness(project, "harness:\n  channel: local\n")
+
+    res = _run(
+        [str(launcher), "self", "update", "--force-downgrade"],
+        cwd=project,
+        env=env,
+        timeout=300,
+    )
+    combined = " ".join((res.stdout + res.stderr).split())
+    assert "names 'consumer', not ai-hats" in combined, combined
+    assert "uv pip install -e" not in combined, f"the consumer was installed:\n{combined}"
+    assert FIX in combined, combined
+
+    check = _run(
+        [str(launcher), "self", "update", "--check"],
+        cwd=project,
+        env=env,
+        timeout=120,
+        expect_exit=1,
+    )
+    assert "BROKEN harness" in " ".join(check.stdout.split()), check.stdout
+
+
+@pytest.mark.integration
+def test_an_edge_repo_given_as_a_path_without_ai_hats_is_refused_before_uv(tmp_path: Path) -> None:
+    """Review F2/M3: the identical raw uv refusal on the other channel."""
+    launcher, project, env = _bootstrap(tmp_path)
+    notpy = tmp_path / "gitrepo-notpy"
+    notpy.mkdir()
+    subprocess.run(["git", "init", "--quiet", str(notpy)], check=True, timeout=30)
+    _set_harness(project, f"harness:\n  channel: edge\n  repo: {notpy}\n")
+    env_no_override = dict(env)
+    env_no_override.pop(ENV_REPO_URL)
+
+    res = _run(
+        [str(launcher), "self", "update", "--force-downgrade"],
+        cwd=project,
+        env=env_no_override,
+        timeout=300,
+        expect_exit=2,
+    )
+    combined = " ".join((res.stdout + res.stderr).split())
+    assert "does not appear to be a Python project" not in combined, combined
+    assert "has no pyproject.toml" in combined and "harness.repo" in combined, combined
+    assert "ai-hats config set --channel edge --repo" in combined, combined
