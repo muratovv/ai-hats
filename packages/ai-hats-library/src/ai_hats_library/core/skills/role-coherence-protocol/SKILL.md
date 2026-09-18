@@ -47,7 +47,10 @@ Layout:
   per term with `brought_by` — the role, the trait, or an override layer
   (`overrides::global` from `~/.ai-hats/customizations.yaml`,
   `overrides::project` from the project's `ai-hats.yaml`) — and
-  `removed_by` for a term an override dropped.
+  `removed_by` for a term an override dropped. Attribution is a chain:
+  a rule's row names the trait that declares it, and the trait's row
+  names who brought the trait — follow `brought_by` until it reaches
+  the role or an override layer.
 - `role-injection.md` — the role's own injection text (if non-empty).
 - `overlay-injection.md` — each override layer's `injection_append`,
   global then project (if any).
@@ -109,10 +112,10 @@ agree? Categories of conflict to flag:
   "always include rationale").
 - **User-context interference.** A role instruction conflicts with
   something the user wrote in their CLAUDE.md or user-rules overlay, or
-  with a term the manifest's `trace` attributes to `overrides::global`
-  / `overrides::project` — those are the user's context too. Route the
-  fix by the layer: a built-in component gets a library fix, an
-  override-brought one a change to the customization.
+  with a term whose `trace` chain ends in `overrides::global` /
+  `overrides::project` — those are the user's context too. Route the
+  fix by where the chain ends: at the role, a library fix; at an
+  override layer, a change to the customization.
 - **Off-purpose components.** A bundled trait/rule/skill is unrelated
   to the role's stated purpose (priorities + role injection). Flag as
   a finding so the role author can drop it or justify it.
