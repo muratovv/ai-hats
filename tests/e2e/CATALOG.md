@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**324 of 324 files catalogued — 332 flows.**
+**325 of 325 files catalogued — 333 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3040,6 +3040,20 @@ as a claim to check, not as evidence.
 - **expect** — project config is created with local harness channel pointing at repository path
 - **why** — without local channel seeding, initialised projects default to remote git repositories for updates
 
+## `test_self_update_adopts_launcher_recreated_venv.py`
+
+*pins HATS-1998*
+
+- **flow** — a project on the versioned layout whose live versions/<sha> venv broke (its ai_hats package deleted — a host python upgrade or a torn-down checkout leaves the same shape) and is already at the edge repo's HEAD
+- **cmds**
+
+  ```console
+  ai-hats self update --force-downgrade
+  ```
+
+- **expect** — the launcher recreates versions/<sha>; the python side verifies and adopts that venv (sentinel written, current kept) and exits 0
+- **why** — the launcher's recreate carries no .complete sentinel, so the managed update read the target as crash residue and rmtree'd the very venv it was running in, dying with a ModuleNotFoundError traceback
+
 ## `test_self_update_auto_bump_fresh_code.py`
 
 *pins HATS-400*
@@ -3248,8 +3262,8 @@ as a claim to check, not as evidence.
   ai-hats self update --check
   ```
 
-- **expect** — self update installs edge for that run, names the config fix, and leaves the yaml alone; --check exits 1 with a BROKEN harness row; with a path set the same commands reinstall editable and report OK
-- **why** — without this heal, self update ran `uv pip install -e <project root>` and handed the user uv's refusal with every triage row green
+- **expect** — self update installs edge for that run, names the config fix, and leaves the yaml alone; --check exits 1 with a BROKEN harness row; with a path set the same commands reinstall editable and report OK; a project root with its own pyproject is named as not ai-hats, never -e'd; an edge repo given as a path without the ai-hats pyproject is refused before uv with the fix
+- **why** — without this heal, self update ran `uv pip install -e <project root>` and handed the user uv's refusal with every triage row green — and with an installability check instead of identity it installed the consumer's own package into the tool venv and called it an update
 
 ## `test_self_update_orphan_version_gc.py`
 

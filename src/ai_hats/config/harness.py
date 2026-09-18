@@ -78,8 +78,9 @@ class HarnessConfig(_YamlModel):
     - ``repo`` — edge-only override of the upstream repo URL
       (precedence ``AI_HATS_REPO_URL`` env > this field > default upstream https).
     - ``path`` — local-only editable source path. Absent, ``self update`` takes
-      the editable install it runs from, else the project root — and when that
-      is not an installable project it installs edge for the run and names the fix.
+      the editable install it runs from, else the project root; a source whose
+      pyproject does not name ai-hats is healed from edge (or refused, when the
+      running install is editable) and the fix is named.
 
     Inherits ``extra="ignore"`` from :class:`_YamlModel` (NOT ``forbid``): a
     newer ai-hats may add a nested ``harness`` sub-field, and an older binary
