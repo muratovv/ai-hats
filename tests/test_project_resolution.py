@@ -236,3 +236,62 @@ def test_project_venv_env_override_beats_versions(tmp_path, monkeypatch):
     override = tmp_path / "user-owned-venv"
     monkeypatch.setenv(ENV_AI_HATS_VENV, str(override))
     assert project_at(tmp_path, os.environ).venv == override
+
+
+# -- a writer under a live session refuses a cwd in another project ----------
+
+
+def _envelope_for(main: Path) -> dict[str, str]:
+    from ai_hats.session_identity import SessionIdentity
+
+    return SessionIdentity(
+        id="s1", role="r", provider="claude", project_dir=main, session_dir=main / "s"
+    ).to_env()
+
+
+def test_a_writer_refuses_a_foreign_cwd_under_the_envelope(tmp_path: Path) -> None:
+    """The defect: ``cd other && ai-hats config set -r X`` inside a session wrote
+    X into the SESSION's ai-hats.yaml — the envelope wins the root (ADR-0024)
+    and nothing said which project was edited."""
+    import click
+
+    from ai_hats.cli._entry import resolve_project
+
+    main, _ = _linked_worktree(tmp_path)
+    other = tmp_path / "other"
+    (other / ".agent" / "ai-hats").mkdir(parents=True)
+
+    with pytest.raises(click.ClickException) as excinfo:
+        resolve_project(other, _envelope_for(main), writes=True)
+
+    message = str(excinfo.value)
+    assert str(main) in message and str(other.resolve()) in message
+    assert "AI_HATS_SESSION_IDENTITY" in message
+
+
+def test_a_writer_in_a_worktree_of_the_session_project_passes(tmp_path: Path) -> None:
+    from ai_hats.cli._entry import resolve_project
+
+    main, wt = _linked_worktree(tmp_path)
+
+    assert resolve_project(wt, _envelope_for(main), writes=True).layout.root == main
+
+
+def test_a_writer_under_no_project_at_all_passes(tmp_path: Path) -> None:
+    from ai_hats.cli._entry import resolve_project
+
+    main, _ = _linked_worktree(tmp_path)
+    nowhere = tmp_path / "scratch"
+    nowhere.mkdir()
+
+    assert resolve_project(nowhere, _envelope_for(main), writes=True).layout.root == main
+
+
+def test_a_reader_in_another_project_still_answers_the_envelope(tmp_path: Path) -> None:
+    from ai_hats.cli._entry import resolve_project
+
+    main, _ = _linked_worktree(tmp_path)
+    other = tmp_path / "other"
+    (other / ".agent" / "ai-hats").mkdir(parents=True)
+
+    assert resolve_project(other, _envelope_for(main)).layout.root == main

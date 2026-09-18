@@ -1456,7 +1456,7 @@ def update(
 
     from ._entry import resolve_project_lenient
 
-    layout = resolve_project_lenient().layout
+    layout = resolve_project_lenient(writes=True).layout
     project_dir = layout.root
 
     # Triage before any write, so --check can short-circuit here.
