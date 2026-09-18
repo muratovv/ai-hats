@@ -11,13 +11,6 @@ license: MIT
 > here. If the PoC produces signal that curators skip the step, a future
 > task may lift enforcement into the engine.
 
-> **Shell prelude.** Where `ai-hats` is not on `PATH` (a source checkout
-> without the console script), fall back to the module:
->
-> ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
-> ```
-
 ## Timing — read this first
 
 Two checkpoints, NOT one:
