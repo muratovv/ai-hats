@@ -116,6 +116,14 @@ if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
             echo "ai-hats: AI_HATS_DIR=$AI_HATS_DIR is pinned to project $pin_proj — foreign to $PROJECT; dropping it." >&2
             unset AI_HATS_DIR
         fi
+        # The session envelope names the same project, and the python entry
+        # resolves from the envelope, never from AI_HATS_PROJECT_DIR (ADR-0024):
+        # re-pinning without dropping it changed nothing. A direct
+        # `python -m ai_hats` from a foreign cwd keeps envelope-wins by design.
+        if [[ -n "${AI_HATS_SESSION_IDENTITY:-}${AI_HATS_SESSION_ID:-}" ]]; then
+            echo "ai-hats: the session envelope is pinned to project $pin_proj — foreign to $PROJECT; dropping it." >&2
+            unset AI_HATS_SESSION_IDENTITY AI_HATS_SESSION_ID AI_HATS_ROLE
+        fi
     fi
 fi
 

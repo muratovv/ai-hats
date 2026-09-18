@@ -620,3 +620,86 @@ def test_launcher_probe_fails_on_missing_first_party_entry_point_attribute(tmp_p
     res = _run(["status"], cwd=tmp_path, env=env)
     assert res.returncode == 1
     assert "failed loading entry point" in res.stderr
+
+
+# ---------- foreign session pin: the envelope leaves with the pin ----------
+
+
+_ENVELOPE = ("AI_HATS_SESSION_IDENTITY", "AI_HATS_SESSION_ID", "AI_HATS_ROLE")
+
+
+def _env_dumping_venv(venv_path: Path) -> None:
+    """A healthy fake venv whose `python -m ai_hats` prints the AI_HATS_* env it
+    was exec'd with — what the python entry would resolve the project from."""
+    bindir = venv_path / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    stub = bindir / "python"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "${1:-}" == "-c" ]]; then exit 0; fi\n'
+        'if [[ "${1:-}" == "-m" && "${2:-}" == "ai_hats" ]]; then\n'
+        "    env | grep '^AI_HATS_' | sort\n"
+        "    exit 0\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    _make_executable(stub)
+
+
+def _run_scrubbed(args, *, cwd: Path, env: dict) -> subprocess.CompletedProcess:
+    """The launcher with NO inherited AI_HATS_* (the test runner may itself be a
+    session) plus exactly ``env``."""
+    base = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    base.update(env)
+    return subprocess.run(
+        [str(LAUNCHER), *args], cwd=str(cwd), env=base, capture_output=True, text=True
+    )
+
+
+def _pinned_session(project: Path, venv: Path) -> dict:
+    return {
+        ENV_AI_HATS_VENV: str(venv),
+        "AI_HATS_PROJECT_DIR": str(project),
+        "AI_HATS_SESSION_IDENTITY": '{"id":"s1","project_dir":"%s","v":1}' % project,
+        "AI_HATS_SESSION_ID": "s1",
+        "AI_HATS_ROLE": "maintainer",
+    }
+
+
+def test_foreign_pin_drops_the_session_envelope_with_it(tmp_path):
+    """A pin the launcher declares foreign carries the session's envelope, and
+    the python entry resolves the project from that envelope — so re-pinning
+    AI_HATS_PROJECT_DIR alone changed nothing. The envelope leaves with the pin."""
+    project_a = tmp_path / "a"
+    project_b = tmp_path / "b"
+    project_b.mkdir()
+    _env_dumping_venv(project_b / ".agent" / "ai-hats" / ".venv")
+
+    res = _run_scrubbed(
+        ["status"],
+        cwd=project_b,
+        env=_pinned_session(project_a, project_a / ".agent" / "ai-hats" / ".venv"),
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "foreign to" in res.stderr, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    assert seen["AI_HATS_PROJECT_DIR"] == str(project_b)
+    assert seen[ENV_AI_HATS_VENV] == str(project_b / ".agent" / "ai-hats" / ".venv")
+    assert not set(_ENVELOPE) & set(seen), f"envelope survived the foreign pin: {seen}"
+
+
+def test_same_project_pin_keeps_the_session_envelope(tmp_path):
+    """The positive control: a pin that matches the project is not foreign, and
+    the launcher touches none of the envelope."""
+    project_b = tmp_path / "b"
+    b_venv = project_b / ".agent" / "ai-hats" / ".venv"
+    _env_dumping_venv(b_venv)
+
+    res = _run_scrubbed(["status"], cwd=project_b, env=_pinned_session(project_b, b_venv))
+
+    assert res.returncode == 0, res.stderr
+    assert "foreign to" not in res.stderr, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    for key in _ENVELOPE:
+        assert seen[key] == _pinned_session(project_b, b_venv)[key]
