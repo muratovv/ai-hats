@@ -18,6 +18,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 from .models import Channel
 from .constants import ENV_REPO_URL
@@ -118,6 +119,78 @@ def resolve_channel(
             editable=False,
         )
     raise ValueError(f"unhandled channel {channel!r}")  # pragma: no cover
+
+
+# ---------- local source (channel: local) ----------
+
+# uv's own installability rule, quoted from its refusal ("neither `pyproject.toml`
+# nor `setup.py` are present").
+_INSTALLABLE_MARKERS = ("pyproject.toml", "setup.py")
+
+
+@dataclass(frozen=True)
+class LocalSource:
+    """Where ``channel: local`` installs from, and why it cannot when it cannot.
+
+    ``problem`` is ``None`` when ``path`` is an installable project; otherwise
+    the sentence the caller shows (it names the dir and the missing markers).
+    """
+
+    path: Path
+    problem: str | None
+
+
+def is_installable_project(path: Path) -> bool:
+    return any((path / marker).is_file() for marker in _INSTALLABLE_MARKERS)
+
+
+def detect_editable_source() -> str | None:
+    """The editable ai-hats source this process runs from, or ``None``.
+
+    Launcher-exported ``AI_HATS_INIT_SRC`` wins (robust to venv-bootstrap
+    ordering); else the running interpreter's PEP 610 ``file://`` editable url.
+    """
+    from .constants import ENV_AI_HATS_INIT_SRC
+
+    env_src = (os.environ.get(ENV_AI_HATS_INIT_SRC) or "").strip()
+    if env_src:
+        return env_src
+    from .cli.maintenance import _is_editable_install  # lazy: avoid maintenance<->channel cycle
+
+    editable, url = _is_editable_install()
+    if editable and url and url.startswith("file://"):
+        return url.removeprefix("file://")
+    return None
+
+
+def resolve_local_source(
+    project_root: Path, path: str | None, *, detected: str | None
+) -> LocalSource:
+    """Resolve ``harness.path`` for ``channel: local``.
+
+    Precedence: an explicit ``path`` (``~`` expanded; relative against the
+    project root — the launcher's rule) → ``detected`` (an editable install
+    this process already runs from, never to be clobbered) → the project root
+    (the ai-hats checkout dogfooding itself). The result carries a ``problem``
+    when the chosen dir is not installable, so the caller can heal instead of
+    handing the user uv's refusal.
+    """
+    if path:
+        candidate = Path(path).expanduser()
+        chosen = candidate if candidate.is_absolute() else project_root / candidate
+    elif detected:
+        chosen = Path(detected).expanduser()
+    else:
+        chosen = project_root
+    if is_installable_project(chosen):
+        return LocalSource(path=chosen, problem=None)
+    return LocalSource(
+        path=chosen,
+        problem=(
+            f"{chosen} is not an installable project (neither pyproject.toml nor setup.py "
+            "is present), so channel local has no editable source"
+        ),
+    )
 
 
 # ---------- effectful fetchers (run by the caller, injected into the resolver) ----------

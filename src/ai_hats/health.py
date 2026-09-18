@@ -11,11 +11,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 from .migration_assert import find_broken_hook_refs
 from .migration_backup import latest_snapshot
 from ai_hats_core.layout import ProjectLayout
+
+if TYPE_CHECKING:
+    from .config.harness import HarnessConfig
 
 
 __all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status", "check_venv_consistency"]
@@ -148,6 +151,31 @@ def _drift_report(layout: ProjectLayout) -> LayerReport:
     )
 
 
+_LOCAL_SOURCE_FIX = "ai-hats config set --channel local --path <checkout>"
+
+
+def _harness_report(layout: ProjectLayout, harness: HarnessConfig) -> LayerReport:
+    """Where ``self update`` would install from — BROKEN when it could not.
+
+    Only ``channel: local`` can be wrong by fact while valid by schema: a
+    ``path`` that is not an installable project (the default, the project
+    root, is one only for the ai-hats checkout itself).
+    """
+    from .channel import detect_editable_source, resolve_local_source, resolve_edge_repo
+    from .config.harness import Channel
+
+    if harness.channel is Channel.STABLE:
+        return LayerReport(Layer.RUNTIME, "harness", Status.OK, "stable (PyPI)")
+    if harness.channel is Channel.EDGE:
+        return LayerReport(
+            Layer.RUNTIME, "harness", Status.OK, f"edge → {resolve_edge_repo(harness.repo)}"
+        )
+    source = resolve_local_source(layout.root, harness.path, detected=detect_editable_source())
+    if source.problem is None:
+        return LayerReport(Layer.RUNTIME, "harness", Status.OK, f"local → {source.path}")
+    return LayerReport(Layer.RUNTIME, "harness", Status.BROKEN, source.problem, _LOCAL_SOURCE_FIX)
+
+
 @contextmanager
 def _collapsed_warnings() -> Iterator[None]:
     """Emit each distinct warning raised inside the block once.
@@ -169,14 +197,20 @@ def _collapsed_warnings() -> Iterator[None]:
         warnings.warn(w.message, stacklevel=2)
 
 
-def triage(layout: ProjectLayout) -> list[LayerReport]:
-    """Run every layer check against the project. Read-only."""
+def triage(layout: ProjectLayout, harness: HarnessConfig | None = None) -> list[LayerReport]:
+    """Run every layer check against the project. Read-only.
+
+    ``harness`` is the install source to judge; ``None`` (no config read by the
+    caller) skips that row rather than guessing one.
+    """
     with _collapsed_warnings():
         reports = [
             *_data_reports(layout),
             *_managed_reports(layout),
             _drift_report(layout),
         ]
+        if harness is not None:
+            reports.append(_harness_report(layout, harness))
     return reports
 
 

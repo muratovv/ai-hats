@@ -1260,8 +1260,12 @@ from ai_hats.paths import ENV_AI_HATS_DIR  # noqa: E402
 
 
 def _setup_channel_env(tmp_path: Path, channel: str, *, extra: str = "") -> Path:
+    """A project on ``channel``. With ``path: .`` in ``extra`` the root is the
+    local source, so it is made installable (the ai-hats checkout's own shape)."""
     project = tmp_path / "proj"
     project.mkdir()
+    if channel == "local" and "path: ." in extra:
+        (project / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
     (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -1382,8 +1386,10 @@ def test_update_stable_fetch_unreachable_exits_2(tmp_path, monkeypatch):
     ids=["verified", "verify-failed"],
 )
 def test_update_local_editable_in_place(tmp_path, monkeypatch, verify_returncode, expected_exit):
-    """channel: local → `uv pip install -e <path>` in place, no versioned dir."""
+    """channel: local → `uv pip install -e <path>` in place, no versioned dir;
+    a relative ``path`` resolves against the project root, never the cwd."""
     project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
+    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: None)
     captured: list[list[str]] = []
 
     def fake_run(args, **kwargs):
@@ -1407,9 +1413,9 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch, verify_returncode
         assert "Post-install verify failed" in result.output
         assert "ai_hats.steps entry point is broken" in result.output
         return
-    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2:] == ["-e", "."]]
+    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2] == "-e"]
     assert len(editable) == 1, f"expected one editable install, got {captured}"
-    assert editable[0][-1] == "."
+    assert editable[0][-1] == str(project)
     # No versioned dir is created for a local editable install.
     assert not (project / ".agent" / "ai-hats" / "versions").exists()
 
@@ -1432,6 +1438,71 @@ def test_update_invalidates_update_cache(tmp_path, monkeypatch):
         result = CliRunner().invoke(update, [])
     assert result.exit_code == 0, result.output
     assert not cache_file.exists()
+
+
+def _local_no_source(tmp_path: Path, monkeypatch) -> Path:
+    """`channel: local`, no `path`, a project root that is not a Python project,
+    and no editable install to detect — the infield shape."""
+    project = _setup_channel_env(tmp_path, "local")
+    _seed_healthy_layers(project)
+    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: None)
+    return project
+
+
+def test_update_local_without_source_installs_edge_and_names_the_fix(tmp_path, monkeypatch):
+    """A local channel whose source cannot install is healed for this run — edge
+    lands, the yaml stays, and the output names the one command that fixes it."""
+    project = _local_no_source(tmp_path, monkeypatch)
+    before = (project / PROJECT_CONFIG).read_text()
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 0, output
+    assert _install_called(captured), captured
+    assert not any("-e" in c[0] for c in captured), f"must not install editable: {captured}"
+    assert "not an installable project" in output
+    assert "ai-hats config set --channel local --path" in output
+    assert "installing edge" in output
+    assert (project / PROJECT_CONFIG).read_text() == before, "the yaml is the user's — untouched"
+
+
+def test_update_local_detected_editable_wins_over_the_project_root(tmp_path, monkeypatch):
+    """The install this process runs from is never clobbered by an edge fallback."""
+    project = _setup_channel_env(tmp_path, "local")
+    checkout = tmp_path / "dev" / "ai-hats"
+    checkout.mkdir(parents=True)
+    (checkout / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
+    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: str(checkout))
+    captured: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        captured.append(list(args))
+        return _make_completed(list(args), returncode=0)
+
+    with (
+        patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)),
+        patch("subprocess.run", side_effect=fake_run),
+    ):
+        result = CliRunner().invoke(update, [])
+
+    assert result.exit_code == 0, result.output
+    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2] == "-e"]
+    assert [c[-1] for c in editable] == [str(checkout)], captured
+
+
+def test_check_exits_one_with_the_harness_row_for_a_local_source_that_cannot_install(
+    tmp_path, monkeypatch
+):
+    project = _local_no_source(tmp_path, monkeypatch)
+
+    with patch("ai_hats.cli._entry.resolve_project", return_value=_project_value(project)):
+        result = CliRunner().invoke(update, ["--check"])
+
+    assert result.exit_code == 1, result.output
+    assert "BROKEN" in result.output and "harness" in result.output
+    assert "ai-hats config set --channel local --path" in result.output
 
 
 # ---------- HATS-595: --check layer triage ----------

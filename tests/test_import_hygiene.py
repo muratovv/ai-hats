@@ -469,7 +469,6 @@ EXPECTED_CLI_INBOUND: dict[str, tuple[str, ...]] = {
     "ai_hats.consent_mcp.server": (
         "ai_hats.cli._entry",
     ),  # the consent MCP server, a process entry point
-    "ai_hats.assembler": ("ai_hats.cli.maintenance",),
     "ai_hats.channel": ("ai_hats.cli.maintenance",),
     "ai_hats.pipeline.steps.handoff": ("ai_hats.cli.reflect",),
     "ai_hats.rack_cli_provider": ("ai_hats.cli._entry",),  # the rack-side process entry point

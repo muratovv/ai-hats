@@ -190,3 +190,73 @@ def test_triage_warns_at_most_once_about_a_leaked_dir_pin(
 
     leaked = [w for w in caught if "pinned to project" in str(w.message)]
     assert len(leaked) <= 1, [str(w.message) for w in leaked]
+
+
+# ---------- harness source row ----------
+
+
+def _harness(channel: str, **kw):
+    from ai_hats.models import Channel, HarnessConfig
+
+    return HarnessConfig(channel=Channel(channel), **kw)
+
+
+@pytest.fixture
+def no_detected_source(monkeypatch):
+    """The test process is itself an editable dev install — hide it, or the
+    local rows resolve to this checkout instead of the fixture."""
+    monkeypatch.setattr("ai_hats.channel.detect_editable_source", lambda: None)
+
+
+def test_no_harness_row_when_no_harness_is_given(project: Path) -> None:
+    assert [r for r in triage(ProjectLayout.at(project)) if r.name == "harness"] == []
+
+
+@pytest.mark.parametrize(
+    ("harness", "detail"),
+    [
+        (_harness("stable"), "stable (PyPI)"),
+        (
+            _harness("edge", repo="https://example.test/ai-hats.git"),
+            "edge → git+https://example.test/ai-hats.git",
+        ),
+    ],
+    ids=["stable", "edge"],
+)
+def test_harness_row_is_ok_for_a_remote_channel(
+    project: Path, harness, detail: str, monkeypatch
+) -> None:
+    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    row = _row(triage(ProjectLayout.at(project), harness=harness), "harness")
+
+    assert row.layer is Layer.RUNTIME
+    assert row.status is Status.OK
+    assert row.detail == detail
+    assert row.remediation == ""
+
+
+def test_harness_row_is_ok_for_a_local_source_that_installs(
+    project: Path, tmp_path: Path, no_detected_source
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
+
+    row = _row(
+        triage(ProjectLayout.at(project), harness=_harness("local", path=str(checkout))),
+        "harness",
+    )
+
+    assert row.status is Status.OK
+    assert row.detail == f"local → {checkout}"
+
+
+def test_harness_row_is_broken_for_a_local_source_that_cannot_install(
+    project: Path, no_detected_source
+) -> None:
+    row = _row(triage(ProjectLayout.at(project), harness=_harness("local")), "harness")
+
+    assert row.layer is Layer.RUNTIME
+    assert row.status is Status.BROKEN
+    assert str(project) in row.detail and "pyproject.toml" in row.detail
+    assert row.remediation == "ai-hats config set --channel local --path <checkout>"

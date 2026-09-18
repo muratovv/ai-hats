@@ -12,6 +12,9 @@ import urllib.error
 import pytest
 
 from ai_hats.channel import (
+    LocalSource,
+    is_installable_project,
+    resolve_local_source,
     ChannelResolution,
     ChannelResolveError,
     fetch_edge_head_sha,
@@ -216,3 +219,71 @@ def test_fetch_latest_stable_version_no_version_field(monkeypatch):
     )
     with pytest.raises(ChannelResolveError):
         fetch_latest_stable_version()
+
+
+# ---------- local source resolution ----------
+
+
+def _installable(root):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    return root
+
+
+def test_local_source_explicit_absolute_path_wins(tmp_path):
+    checkout = _installable(tmp_path / "checkout")
+    src = resolve_local_source(tmp_path / "proj", str(checkout), detected=str(tmp_path / "other"))
+    assert src == LocalSource(path=checkout, problem=None)
+
+
+def test_local_source_relative_path_is_against_the_project_root(tmp_path):
+    project = tmp_path / "proj"
+    _installable(project / "vendor" / "ai-hats")
+    src = resolve_local_source(project, "vendor/ai-hats", detected=None)
+    assert src.path == project / "vendor" / "ai-hats"
+    assert src.problem is None
+
+
+def test_local_source_expands_tilde(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _installable(tmp_path / "ai-hats")
+    src = resolve_local_source(tmp_path / "proj", "~/ai-hats", detected=None)
+    assert src.path == tmp_path / "ai-hats"
+
+
+def test_local_source_detected_editable_beats_the_project_root(tmp_path):
+    detected = _installable(tmp_path / "dev" / "ai-hats")
+    project = _installable(tmp_path / "proj")  # installable too — detection still wins
+    src = resolve_local_source(project, None, detected=str(detected))
+    assert src == LocalSource(path=detected, problem=None)
+
+
+def test_local_source_defaults_to_an_installable_project_root(tmp_path):
+    project = _installable(tmp_path / "proj")
+    src = resolve_local_source(project, None, detected=None)
+    assert src == LocalSource(path=project, problem=None)
+
+
+def test_local_source_names_the_problem_when_nothing_is_installable(tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    src = resolve_local_source(project, None, detected=None)
+    assert src.path == project
+    assert src.problem is not None
+    assert str(project) in src.problem
+    assert "pyproject.toml" in src.problem and "setup.py" in src.problem
+
+
+def test_local_source_explicit_path_that_is_not_installable_is_a_problem(tmp_path):
+    missing = tmp_path / "gone"
+    src = resolve_local_source(tmp_path / "proj", str(missing), detected=None)
+    assert src.path == missing
+    assert src.problem is not None and str(missing) in src.problem
+
+
+def test_setup_py_counts_as_installable(tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "setup.py").write_text("")
+    assert is_installable_project(project)
+    assert not is_installable_project(tmp_path / "nowhere")

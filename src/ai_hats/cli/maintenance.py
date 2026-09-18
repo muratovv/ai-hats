@@ -23,6 +23,7 @@ from ._helpers import _assembler, console, logger
 
 if TYPE_CHECKING:
     from ..channel import ChannelResolution
+    from ..config.harness import HarnessConfig
     from ..self_heal import HealResult
 
 # Accept tag / branch / full-or-short SHA as a --revision argument.
@@ -1152,8 +1153,8 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
 # ---------- Channel-driven source + per-channel guard ----------
 
 
-def _read_harness(project_dir: Path):
-    """Read ``(channel, repo, path)`` from ai-hats.yaml for the install router.
+def _read_harness(project_dir: Path) -> "HarnessConfig":
+    """Read the ``harness`` block from ai-hats.yaml for the install router.
 
     ``self update`` must self-heal, so resolution degrades:
       - no config file → ``STABLE`` (greenfield, the documented default).
@@ -1171,14 +1172,14 @@ def _read_harness(project_dir: Path):
     import contextlib
     import io
 
-    from ..models import Channel, ProjectConfig, ProjectConfigError
+    from ..models import Channel, HarnessConfig, ProjectConfig, ProjectConfigError
 
     config_path = project_dir / PROJECT_CONFIG
     if not config_path.exists():
-        return Channel.STABLE, None, None  # greenfield → documented default
+        return HarnessConfig(channel=Channel.STABLE)  # greenfield → documented default
     try:
         with contextlib.redirect_stderr(io.StringIO()):
-            h = ProjectConfig.from_yaml(config_path).harness
+            return ProjectConfig.from_yaml(config_path).harness
     except ProjectConfigError:
         # File EXISTS but the installed code can't parse it → edge recovery
         # (install from the configured source / upstream, NOT an
@@ -1192,8 +1193,7 @@ def _read_harness(project_dir: Path):
         # installed artifact (no direct_url.json + resolvable dist ⇒
         # was stable) AND add a stable→edge fallback for the unreachable-PyPI
         # case — not worth it for this path.
-        return Channel.EDGE, None, None
-    return h.channel, h.repo, h.path
+        return HarnessConfig(channel=Channel.EDGE)
 
 
 def _classify_semver_downgrade(installed: str, target: str) -> bool:
@@ -1262,7 +1262,7 @@ def _build_managed_resolution(
 
 def _run_editable_update(
     project_dir: Path,
-    path: str,
+    path: Path,
     *,
     old_version: str,
     active_role: str | None,
@@ -1278,7 +1278,7 @@ def _run_editable_update(
     fresh-interpreter subprocess only to refresh composition / migrations.
     """
     _require_uv()
-    cmd = ["uv", "pip", "install", "--python", sys.executable, "-e", path]
+    cmd = ["uv", "pip", "install", "--python", sys.executable, "-e", str(path)]
     run_env = os.environ.copy()
     run_env["PYTHONDONTWRITEBYTECODE"] = "1"
     with console.status(
@@ -1333,7 +1333,9 @@ def _render_triage(reports: list[health.LayerReport]) -> None:
     console.print()
 
 
-def _reverify_layers(layout: ProjectLayout, before: list[health.LayerReport]) -> None:
+def _reverify_layers(
+    layout: ProjectLayout, before: list[health.LayerReport], harness: "HarnessConfig"
+) -> None:
     """Re-run the triage after the update and report what the bump did NOT fix.
 
     The bump's ``_refresh`` already rebuilds the MANAGED layer, so this only
@@ -1342,7 +1344,7 @@ def _reverify_layers(layout: ProjectLayout, before: list[health.LayerReport]) ->
     was_broken = {r.name for r in before if r.status is health.Status.BROKEN}
     if not was_broken:
         return
-    still = {r.name for r in health.triage(layout) if r.status is health.Status.BROKEN}
+    still = {r.name for r in health.triage(layout, harness) if r.status is health.Status.BROKEN}
     healed = was_broken - still
     if healed:
         console.print(f"[green]Layers restored:[/] {', '.join(sorted(healed))}")
@@ -1459,8 +1461,14 @@ def update(
     layout = resolve_project_lenient(writes=True).layout
     project_dir = layout.root
 
+    # The harness channel (config) selects BOTH the install source and
+    # the downgrade guard. Read it up front, degrading to the stable default if
+    # the installed code can't parse the config (`self update` self-heals).
+    harness = _read_harness(project_dir)
+    channel, harness_repo, harness_path = harness.channel, harness.repo, harness.path
+
     # Triage before any write, so --check can short-circuit here.
-    reports = health.triage(layout)
+    reports = health.triage(layout, harness)
     _render_triage(reports)
     if check:
         sys.exit(1 if health.worst_status(reports) is health.Status.BROKEN else 0)
@@ -1471,10 +1479,21 @@ def update(
 
     _render_heal_result(run_editable_heal())
 
-    # The harness channel (config) selects BOTH the install source and
-    # the downgrade guard. Read it up front, degrading to the stable default if
-    # the installed code can't parse the config (`self update` self-heals).
-    channel, harness_repo, harness_path = _read_harness(project_dir)
+    # A local source that cannot install is healed for THIS run (edge) and named;
+    # the yaml is the user's and stays, so the nag repeats until it is set.
+    local_source = None
+    if channel is Channel.LOCAL and not revision:
+        from ..channel import detect_editable_source, resolve_local_source
+
+        local_source = resolve_local_source(
+            project_dir, harness_path, detected=detect_editable_source()
+        )
+        if local_source.problem is not None:
+            console.print(
+                f"[yellow]Warning:[/] {local_source.problem} — installing edge for this run.\n"
+                f"  [dim]fix: {health._LOCAL_SOURCE_FIX}[/]"
+            )
+            channel = Channel.EDGE
 
     # Built per channel / --revision below. `probe` feeds the edge (moving
     # target) git ahead/diverged guard; `latest_stable` the stable semver
@@ -1623,10 +1642,10 @@ def update(
     # Route by channel.
     #  - local → editable in-place install of the working tree (no versioned
     #    dir, no current flip). --revision overrides the channel.
-    if channel is Channel.LOCAL and not revision:
+    if local_source is not None and local_source.problem is None:
         _run_editable_update(
             project_dir,
-            harness_path or ".",
+            local_source.path,
             old_version=old_version,
             active_role=active_role,
             config_unreadable=config_unreadable,
@@ -1634,7 +1653,7 @@ def update(
             check_branches=check_branches,
         )
         _invalidate_update_cache(layout.cache)
-        _reverify_layers(layout, reports)
+        _reverify_layers(layout, reports, harness)
         return
 
     # Edge/stable on the managed default venv → blue-green
@@ -1668,7 +1687,7 @@ def update(
             console.print(f"[red]Update failed[/] (another update in progress):\n{exc}")
             sys.exit(2)
         _invalidate_update_cache(layout.cache)
-        _reverify_layers(layout, reports)
+        _reverify_layers(layout, reports, harness)
         return
 
     # 2. Install — short-circuited when the probe confirms the installed SHA
@@ -1920,7 +1939,7 @@ def update(
         if bump_in_process_failed:
             sys.exit(1)
 
-    _reverify_layers(layout, reports)
+    _reverify_layers(layout, reports, harness)
 
 
 # `ai-hats self migrate` removed. Migration is transparent inside
