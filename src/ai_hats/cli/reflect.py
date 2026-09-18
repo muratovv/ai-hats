@@ -74,7 +74,7 @@ from ._helpers import console
 
 if TYPE_CHECKING:
     from ..composition_payload import CompositionPayload
-    from ..surfaces.plan import TraceEntry
+    from ..surfaces import TraceEntry
 
 
 @click.group("reflect")
@@ -482,7 +482,7 @@ def _materialize_target_composition(
     import yaml
 
     from ..resolver import read_rule_body
-    from ..surfaces.plan import trace_record
+    from ..surfaces import trace_record
 
     target_dir = base_dir / target_role
     if target_dir.exists():

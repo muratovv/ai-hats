@@ -88,7 +88,7 @@ def test_reflect_manifest_carries_trace(tmp_path: Path) -> None:
     the shape the session record uses."""
     import yaml
 
-    from ai_hats.surfaces.plan import TraceEntry
+    from ai_hats.surfaces import TraceEntry
 
     composition = CompositionResult(
         name="demo-role", priorities=[], rules=[], skills=[], injections=[]
