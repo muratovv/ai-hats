@@ -193,9 +193,7 @@ def test_bump_passes_smoke_assert_on_clean_state(
     """Negative control: a project whose settings.json hook paths
     all resolve must NOT trigger the smoke-assert. This guards the
     happy path against false positives."""
-    # Minimal greenfield-ish layout: no .claude/settings.json yet —
-    # the bump's provider.ensure_runtime_hooks writes the managed
-    # entry pointing at the materialized .sh, which exists.
+    # Minimal greenfield-ish layout: no .claude/settings.json yet.
     (tmp_venv_project.path / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"

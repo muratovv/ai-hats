@@ -178,17 +178,6 @@ def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monk
     assert str(dev_repo) not in cmd
 
 
-def test_claude_ensure_runtime_hooks_leaves_root_clean(tmp_path: Path) -> None:
-    """HATS-1170: ensure_runtime_hooks is a no-op for project-root .claude/settings.json."""
-    ClaudeSurface().ensure_runtime_hooks(ProjectLayout.at(tmp_path))
-    assert not (tmp_path / SETTINGS).exists()
-
-
-def test_agy_provider_does_not_touch_settings(tmp_path: Path) -> None:
-    AgySurface().ensure_runtime_hooks(ProjectLayout.at(tmp_path))
-    assert not (tmp_path / SETTINGS).exists()
-
-
 # ----- HATS-597: skill-declared runtime hooks -----
 
 

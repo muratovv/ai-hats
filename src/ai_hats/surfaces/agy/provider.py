@@ -183,12 +183,6 @@ class AgySurface(Surface):
     def _session_skills_dir_under(root: Path) -> Path:
         return root / "rules" / ".agents" / "skills"
 
-    def ensure_runtime_hooks(
-        self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
-    ) -> None:
-        """Runtime hooks ride the plan's session ``hooks.json``; nothing at the project."""
-        pass
-
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["agy"]
         if args:

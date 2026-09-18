@@ -360,10 +360,6 @@ class Surface(abc.ABC):
         """Convert a model name into surface-specific CLI flags."""
         return ["--model", model]
 
-    def supports_sdk_engine(self) -> bool:
-        """Whether this surface provides a native SDK SubagentEngine."""
-        return False
-
     def mcp_form_cli_args(self, server: StdioMCPServer) -> list[str] | None:
         """Return form-server launch arguments, or None when this surface cannot deliver forms."""
         return None
@@ -435,24 +431,6 @@ class Surface(abc.ABC):
         never does. Default: nothing to take.
         """
         del plan, flags, layout, run
-
-    def ensure_runtime_hooks(
-        self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
-    ) -> None:
-        """Install project-level runtime hooks on every role apply (idempotent);
-        ``result`` is the active role's composition, ``None`` with no active
-        role. Default: nothing — session hooks ride the plan, not the project.
-        """
-        del layout, result
-        return None
-
-    def runtime_wiring_changes(
-        self, layout: ProjectLayout, result: CompositionResult | None = None
-    ) -> list[tuple[str, str]]:
-        """Managed runtime-hook wiring drift as ``[(name, "wiring")]``. Default:
-        none (no settings.json channel); ``ClaudeSurface`` overrides."""
-        del layout, result
-        return []
 
     def update_system_prompt(self, layout: ProjectLayout, content: str) -> Path | None:
         """Write or update the inline system prompt block.

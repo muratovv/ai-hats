@@ -28,7 +28,6 @@ from .. import (
     Surface,
     SubagentEngine,
     SurfaceRunResult,
-    sweep_stale_managed_tags,
 )
 from ai_hats.materialization import describe_mkdir, describe_write_text
 from ai_hats.session_artifacts import RunMode, SessionPolicy
@@ -345,10 +344,6 @@ class ClaudeSurface(Surface):
         """Writer and reader share this, so the two cannot drift."""
         return claude_plugin_skills_dir(self._plugin_dir(layout, session_id))
 
-    def supports_sdk_engine(self) -> bool:
-        """Indicates this provider uses the Python SDK path."""
-        return True
-
     def engine(self) -> "SubagentEngine | None":
         return ClaudeSubagentEngine(self)
 
@@ -410,32 +405,6 @@ class ClaudeSurface(Surface):
     _SETTINGS_HOOKS_KEY = "hooks"
     _LEAKED_PROJECT_HOOK_MARKERS = ("plugin/skills/", "ai-hats/library/hooks/")
 
-    def ensure_runtime_hooks(
-        self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
-    ) -> None:
-        """Managed runtime hooks ride the plan's session ``settings.json``, never
-        the project-root ``.claude/settings.json``."""
-        pass
-
-    def runtime_wiring_changes(
-        self, layout: ProjectLayout, result: CompositionResult | None = None
-    ) -> list[tuple[str, str]]:
-        """Project-root .claude/settings.json is no longer written or tracked."""
-        return []
-
-    @staticmethod
-    def _runtime_wiring_name(tag: str, desired_by_tag: dict[str, dict]) -> str:
-        """Human display name for a managed wiring tag — the script basename when
-        still desired, else the skill segment of the ``ai-hats:<skill>:…`` tag."""
-        entry = desired_by_tag.get(tag)
-        if entry:
-            cmd = (entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY) or [{}])[0].get("command", "")
-            base = str(cmd).rsplit("/", 1)[-1]
-            if base:
-                return base
-        parts = tag.split(":")
-        return parts[1] if len(parts) > 1 else tag
-
     def _desired_runtime_entries(
         self, rows: dict[str, list[dict[str, str]]]
     ) -> dict[str, list[dict]]:
@@ -464,47 +433,6 @@ class ClaudeSurface(Surface):
             "_ai_hats_managed": f"{DISPATCHER_TAG}:{event}",
             self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
         }
-
-    @staticmethod
-    def _upsert_managed_entry(event_list: list, want: dict) -> bool:
-        """Insert / update one managed entry in ``event_list``. Returns True
-        if the list changed.
-
-        1. An existing entry carrying the same managed tag → update in place
-           (or no-op if already identical).
-        2. Else, if a user-authored entry already wires the same script
-           basename → respect it (no managed dup, avoid double-firing).
-        3. Else append.
-        """
-        tag = want["_ai_hats_managed"]
-        for i, entry in enumerate(event_list):
-            if isinstance(entry, dict) and entry.get("_ai_hats_managed") == tag:
-                if entry == want:
-                    return False
-                event_list[i] = want
-                return True
-
-        want_basename = want[ClaudeSurface._SETTINGS_HOOKS_KEY][0]["command"].rsplit("/", 1)[-1]
-        for entry in event_list:
-            if not isinstance(entry, dict) or entry.get("_ai_hats_managed"):
-                continue
-            for hook in entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY, []) or []:
-                if not isinstance(hook, dict):
-                    continue
-                # Exact basename match — NOT endswith. A user file whose name
-                # merely ends with ours (e.g. ``my_pre_bash_shared_state_guard.sh``)
-                # is a DIFFERENT script and must not suppress our managed entry
-                # (that would silently drop the guard). rsplit drops any
-                # ``$CLAUDE_PROJECT_DIR/`` / directory prefix.
-                if str(hook.get("command", "")).rsplit("/", 1)[-1] == want_basename:
-                    return False  # user already wired this exact script — respect it
-
-        event_list.append(want)
-        return True
-
-    def _sweep_stale_managed(hooks_root: dict, desired_tags: set[str]) -> bool:
-        """Bool wrapper over the area's :func:`sweep_stale_managed_tags`."""
-        return bool(sweep_stale_managed_tags(hooks_root, desired_tags))
 
     def leaked_user_global_project_hooks(self, home: "Path") -> list[str]:
         """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.

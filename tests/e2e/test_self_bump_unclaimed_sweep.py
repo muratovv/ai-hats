@@ -71,9 +71,9 @@ def _seed_project(project: Path, env: dict[str, str]) -> dict[str, Path]:
     """Current-shape (v0.7) project with a dead-owner marker + a live surface.
 
     ``provider: agy`` (no runtime-hook channel) and no active role
-    (bare-bump, ``result=None``) on purpose: neither the living git-hooks
-    mechanism (``install_git_hooks`` → cleanup) nor ``ensure_runtime_hooks``
-    touches the seeded surfaces — only the generic sweeper acts on them.
+    (bare-bump, ``result=None``) on purpose: the living git-hooks mechanism
+    (``install_git_hooks`` → cleanup) does not touch the seeded surfaces, and
+    session hooks ride the plan — only the generic sweeper acts on them.
     """
     (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: agy\nai_hats_dir: .agent/ai-hats\n"

@@ -752,8 +752,7 @@ class Assembler:
 
         # Single entry-point. install_time=False → skip registry
         # (migrations replay only via init/do_bump). _refresh handles
-        # write_canonical, ensure_runtime_hooks, and the HooksManager
-        # materializers (runtime / worktree / git). Diagnostics are NOT
+        # write_canonical and the HooksManager's git hooks. Diagnostics are NOT
         # called from here — runtime auto-trigger stays silent.
         self._refresh(install_time=False, result=result, warnings_sink=warnings_sink)
 

@@ -353,17 +353,17 @@ autonomous invocations in two layers:
    the session it was given in: a sub-agent is a different session and the launch
    blanks the flag for it (`constants.BYPASS_FLAGS_NOT_INHERITED`).
 
-**Provider asymmetry.** Gemini CLI has no PreToolUse equivalent, so
-Gemini sessions get the rule + the git pre-push hook only — the
-`gh pr merge` deterministic block is Claude-only. `ClaudeSurface`
-overrides `Surface.ensure_runtime_hooks()` to perform the auto-wire;
-`GeminiProvider` keeps the default no-op.
+**Surface asymmetry.** The guard is a runtime hook, so it reaches only a
+surface with a hook channel — claude, codex, cline and opencode each wire the
+composition's runtime-hook rows into their session tree from the plan
+(`Surface.plan`); agy has no PreToolUse equivalent, so an agy session gets the
+rule + the git pre-push hook only, and the `gh pr merge` deterministic block is
+not there.
 
 **Skill-declared runtime hooks.** Beyond the built-in guard, any skill can
 declare its own `PreToolUse` / `PostToolUse` hooks via `runtime_hooks:` in its
-`SKILL.md` frontmatter (`ai_hats:` key); `ensure_runtime_hooks()` materializes
-and wires them through the same path. See
-[how-to-extend.md](how-to-extend.md).
+`SKILL.md` frontmatter (`ai_hats:` key); they are rows of the composition plan
+and ride the same session wiring. See [how-to-extend.md](how-to-extend.md).
 
 ### Worktree lifecycle hooks
 

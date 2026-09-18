@@ -96,15 +96,3 @@ def test_claude_session_policy_hooks_disabled(tmp_path: Path):
 
     assert "--settings" not in plan.launch.args
     assert not any(e.target.name == "settings.json" for e in plan.entries)
-
-
-def test_clean_root_scaffold_disabled(tmp_path: Path):
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-
-    provider = ClaudeSurface()
-
-    provider.ensure_runtime_hooks(ProjectLayout.at(project_dir))
-    assert not (project_dir / "CLAUDE.md").exists()
-    assert not (project_dir / ".claude" / "settings.json").exists()
-    assert provider.runtime_wiring_changes(ProjectLayout.at(project_dir)) == []
