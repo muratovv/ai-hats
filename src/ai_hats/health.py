@@ -18,6 +18,7 @@ from .migration_backup import latest_snapshot
 from ai_hats_core.layout import ProjectLayout
 
 if TYPE_CHECKING:
+    from .channel import EditableSource
     from .config.harness import HarnessConfig
 
 
@@ -151,32 +152,42 @@ def _drift_report(layout: ProjectLayout) -> LayerReport:
     )
 
 
-_LOCAL_SOURCE_FIX = "ai-hats config set --channel local --path <checkout>"
-
-
 def _harness_report(
-    layout: ProjectLayout, harness: HarnessConfig, detected_source: str | None
+    layout: ProjectLayout, harness: HarnessConfig, detected_source: EditableSource | None
 ) -> LayerReport:
     """Where ``self update`` would install from — BROKEN when it could not.
 
-    Only ``channel: local`` can be wrong by fact while valid by schema: a
-    ``path`` that is not an installable project (the default, the project
-    root, is one only for the ai-hats checkout itself). ``detected_source`` is
-    the editable install the caller runs from, read once at the entry point.
+    A source that is a path — ``channel: local``, or an edge repo given as a
+    path — is judged by identity (the ai-hats ``pyproject.toml``); a git url is
+    left to the ``ls-remote`` probe. ``detected_source`` is the editable install
+    the caller runs from, read once at the entry point.
     """
-    from .channel import resolve_edge_repo, resolve_local_source
+    from .channel import resolve_edge_source, resolve_local_source
     from .config.harness import Channel
 
     if harness.channel is Channel.STABLE:
         return LayerReport(Layer.RUNTIME, "harness", Status.OK, "stable (PyPI)")
     if harness.channel is Channel.EDGE:
+        edge = resolve_edge_source(harness.repo)
+        if edge.problem is None:
+            return LayerReport(Layer.RUNTIME, "harness", Status.OK, f"edge → {edge.spec}")
         return LayerReport(
-            Layer.RUNTIME, "harness", Status.OK, f"edge → {resolve_edge_repo(harness.repo)}"
+            Layer.RUNTIME,
+            "harness",
+            Status.BROKEN,
+            f"edge: {edge.problem} ({edge.origin})",
+            edge.fix,
         )
     source = resolve_local_source(layout.root, harness.path, detected=detected_source)
     if source.problem is None:
         return LayerReport(Layer.RUNTIME, "harness", Status.OK, f"local → {source.path}")
-    return LayerReport(Layer.RUNTIME, "harness", Status.BROKEN, source.problem, _LOCAL_SOURCE_FIX)
+    return LayerReport(
+        Layer.RUNTIME,
+        "harness",
+        Status.BROKEN,
+        f"local: {source.problem} ({source.origin})",
+        source.fix,
+    )
 
 
 @contextmanager
@@ -203,7 +214,7 @@ def _collapsed_warnings() -> Iterator[None]:
 def triage(
     layout: ProjectLayout,
     harness: HarnessConfig | None = None,
-    detected_source: str | None = None,
+    detected_source: EditableSource | None = None,
 ) -> list[LayerReport]:
     """Run every layer check against the project. Read-only.
 

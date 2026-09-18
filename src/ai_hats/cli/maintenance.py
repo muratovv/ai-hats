@@ -1489,15 +1489,27 @@ def update(
 
     _render_heal_result(run_editable_heal())
 
-    # A local source that cannot install is healed for THIS run (edge) and named;
-    # the yaml is the user's and stays, so the nag repeats until it is set.
+    # A local source that is not ai-hats is healed for THIS run (edge) and named;
+    # the yaml is the user's and stays, so the nag repeats until it is set. Only a
+    # non-editable install can be replaced without loss — an editable one is
+    # refused, never overwritten from edge.
     local_source = None
     if channel is Channel.LOCAL and not revision:
         local_source = resolve_local_source(project_dir, harness_path, detected=detected_source)
         if local_source.problem is not None:
+            is_editable, editable_url = _is_editable_install()
+            if is_editable:
+                console.print(
+                    f"[red]Update refused[/]: {local_source.problem} ({local_source.origin}), "
+                    f"and this install is editable ({editable_url}) — installing edge "
+                    "would replace your checkout.\n"
+                    f"  [dim]fix: {local_source.fix}[/]"
+                )
+                sys.exit(2)
             console.print(
-                f"[yellow]Warning:[/] {local_source.problem} — installing edge for this run.\n"
-                f"  [dim]fix: {health._LOCAL_SOURCE_FIX}[/]"
+                f"[yellow]Warning:[/] {local_source.problem} ({local_source.origin}) — "
+                "installing edge for this run.\n"
+                f"  [dim]fix: {local_source.fix}[/]"
             )
             channel = Channel.EDGE
 
@@ -1578,8 +1590,15 @@ def update(
         # Probe the edge repo's HEAD (bare url; env > harness.repo >
         # upstream), not hardwired master — else a custom edge repo silently
         # disables the guard.
-        from ..channel import resolve_edge_probe_url
+        from ..channel import resolve_edge_probe_url, resolve_edge_source
 
+        edge_source = resolve_edge_source(harness_repo)
+        if edge_source.problem is not None:
+            console.print(
+                f"[red]Update failed[/]: edge repo {edge_source.problem} ({edge_source.origin}).\n"
+                f"  [dim]fix: {edge_source.fix}[/]"
+            )
+            sys.exit(2)
         probe_url = resolve_edge_probe_url(harness_repo)
         probe = (
             None

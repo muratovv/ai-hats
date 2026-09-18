@@ -510,7 +510,8 @@ class Assembler:
         """Absolute path of the editable ai-hats source, or None if not editable."""
         from .channel import detect_editable_source
 
-        return detect_editable_source()
+        found = detect_editable_source()
+        return None if found is None else found.path
 
     def _get_overlay(self, role_name: str) -> OverlayConfig | None:
         """Get the **project** overlay for a role, or ``None`` if absent/empty.

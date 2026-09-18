@@ -256,3 +256,50 @@ def test_harness_row_is_broken_for_a_local_source_that_cannot_install(project: P
     assert row.status is Status.BROKEN
     assert str(project) in row.detail and "pyproject.toml" in row.detail
     assert row.remediation == "ai-hats config set --channel local --path <checkout>"
+
+
+def test_harness_row_judges_an_edge_repo_given_as_a_path(
+    project: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """An edge repo that is a path is judged like a local source (review F2/S3):
+    a git repo without the ai-hats pyproject is BROKEN with the fix, and a path
+    that does not exist is named as missing, not as offline."""
+    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    notpy = tmp_path / "gitrepo-notpy"
+    notpy.mkdir()
+
+    row = _row(
+        triage(ProjectLayout.at(project), harness=_harness("edge", repo=str(notpy))), "harness"
+    )
+    assert row.status is Status.BROKEN
+    assert "has no pyproject.toml" in row.detail and "harness.repo" in row.detail
+    assert row.remediation == "ai-hats config set --channel edge --repo <git-url-or-checkout>"
+
+    missing = _row(
+        triage(ProjectLayout.at(project), harness=_harness("edge", repo="/nonexistent/repo")),
+        "harness",
+    )
+    assert missing.status is Status.BROKEN and "does not exist" in missing.detail
+
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
+    ok = _row(
+        triage(ProjectLayout.at(project), harness=_harness("edge", repo=str(checkout))), "harness"
+    )
+    assert ok.status is Status.OK and ok.detail == f"edge → {checkout}"
+
+
+def test_harness_row_is_broken_for_a_consumer_root_that_has_its_own_pyproject(
+    project: Path,
+) -> None:
+    """Review F1/M1: installable is not the same as ai-hats."""
+    (project / "pyproject.toml").write_text('[project]\nname = "consumer"\n')
+
+    row = _row(
+        triage(ProjectLayout.at(project), harness=_harness("local"), detected_source=None),
+        "harness",
+    )
+
+    assert row.status is Status.BROKEN
+    assert "names 'consumer'" in row.detail and "the project root" in row.detail

@@ -1265,7 +1265,7 @@ def _setup_channel_env(tmp_path: Path, channel: str, *, extra: str = "") -> Path
     project = tmp_path / "proj"
     project.mkdir()
     if channel == "local" and "path: ." in extra:
-        (project / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
+        (project / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
     (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -1464,7 +1464,7 @@ def test_update_local_without_source_installs_edge_and_names_the_fix(tmp_path, m
     assert exit_code == 0, output
     assert _install_called(captured), captured
     assert not any("-e" in c[0] for c in captured), f"must not install editable: {captured}"
-    assert "not an installable project" in output
+    assert "has no pyproject.toml" in output and "the project root" in output
     assert "ai-hats config set --channel local --path" in output
     assert "installing edge" in output
     assert (project / PROJECT_CONFIG).read_text() == before, "the yaml is the user's — untouched"
@@ -1475,7 +1475,7 @@ def test_update_local_detected_editable_wins_over_the_project_root(tmp_path, mon
     project = _setup_channel_env(tmp_path, "local")
     checkout = tmp_path / "dev" / "ai-hats"
     checkout.mkdir(parents=True)
-    (checkout / "pyproject.toml").write_text("[project]\nname = 'ai-hats'\n")
+    (checkout / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
     monkeypatch.setenv(ENV_AI_HATS_INIT_SRC, str(checkout))
 
     exit_code, output, captured = _invoke_update(
@@ -1499,6 +1499,64 @@ def test_check_exits_one_with_the_harness_row_for_a_local_source_that_cannot_ins
     assert exit_code == 1, output
     assert "BROKEN" in output and "harness" in output
     assert "ai-hats config set --channel local --path" in output
+
+
+def test_update_refuses_to_replace_an_editable_install_it_cannot_resolve(tmp_path, monkeypatch):
+    """Review F3: the edge fallback is only for a non-editable install. Running
+    from an editable checkout whose configured source has a problem, `self update`
+    refuses with the fix instead of installing edge over the developer's tree."""
+    project = _setup_channel_env(tmp_path, "local", extra="  path: /nonexistent/checkout\n")
+    _seed_healthy_layers(project)
+    monkeypatch.delenv(ENV_AI_HATS_INIT_SRC, raising=False)
+    monkeypatch.setattr(
+        "ai_hats.cli.maintenance._is_editable_install",
+        lambda: (True, "file:///Users/dev/ai-hats"),
+    )
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 2, output
+    assert not _install_called(captured) and not any("-e" in c[0] for c in captured), captured
+    assert "does not exist" in output and "harness.path" in output
+    assert "editable" in output and "refus" in output
+    assert "ai-hats config set --channel local --path" in output
+
+
+def test_update_local_consumer_root_with_its_own_pyproject_is_healed(tmp_path, monkeypatch):
+    """Review F1/M1: a consumer project that is itself a Python project must not
+    have its own package installed editable into the tool venv."""
+    project = _local_no_source(tmp_path, monkeypatch)
+    (project / "pyproject.toml").write_text('[project]\nname = "consumer"\n')
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 0, output
+    assert _install_called(captured) and not any("-e" in c[0] for c in captured), captured
+    assert "names 'consumer', not ai-hats" in " ".join(output.split())  # rich wraps at 80
+
+
+def test_update_edge_repo_that_is_a_path_without_ai_hats_refuses_before_uv(tmp_path, monkeypatch):
+    """Review F2/S3: an edge repo given as a path is judged by identity before any
+    install; a missing path is named as missing, never as offline."""
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    notpy = tmp_path / "gitrepo-notpy"
+    notpy.mkdir()
+    project = _setup_channel_env(tmp_path, "edge", extra=f"  repo: {notpy}\n")
+    _seed_healthy_layers(project)
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 2, output
+    assert not _install_called(captured), captured
+    assert "has no pyproject.toml" in output and "harness.repo" in output
+    assert "offline" not in output
+    assert "ai-hats config set --channel edge --repo" in output
 
 
 # ---------- HATS-595: --check layer triage ----------
