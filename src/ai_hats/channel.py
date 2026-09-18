@@ -15,9 +15,13 @@ from __future__ import annotations
 
 import json
 import os
+import tomllib
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from .models import Channel
 from .constants import ENV_REPO_URL
@@ -118,6 +122,145 @@ def resolve_channel(
             editable=False,
         )
     raise ValueError(f"unhandled channel {channel!r}")  # pragma: no cover
+
+
+# ---------- source identity (channel: local, and an edge repo that is a path) ----------
+
+AI_HATS_DIST = "ai-hats"
+EDITABLE_INSTALL_ORIGIN = "the editable install this process runs from"
+_LOCAL_FIX = "ai-hats config set --channel local --path <checkout>"
+_EDGE_FIX = "ai-hats config set --channel edge --repo <git-url-or-checkout>"
+
+
+def source_problem(path: Path) -> str | None:
+    """Why ``path`` is not the ai-hats source, or ``None`` when it is.
+
+    Identity, not installability: uv accepts any dir with a ``pyproject.toml``,
+    and installing a consumer's own package into the tool venv "succeeds".
+    """
+    if not path.exists():
+        return f"{path} does not exist"
+    if not path.is_dir():
+        return f"{path} is not a directory"
+    pyproject = path / "pyproject.toml"
+    if not pyproject.is_file():
+        return f"{path} has no pyproject.toml"
+    try:
+        name = tomllib.loads(pyproject.read_text(encoding="utf-8")).get("project", {}).get("name")
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as exc:
+        return f"{path}: its pyproject.toml is unreadable ({exc})"
+    if name != AI_HATS_DIST:
+        named = f"names {name!r}" if name else "names nothing"
+        return f"{path}: its pyproject.toml {named}, not {AI_HATS_DIST}"
+    return None
+
+
+@dataclass(frozen=True)
+class EditableSource:
+    """An editable ai-hats source this process can vouch for, and what said so."""
+
+    path: str
+    origin: str
+
+
+def detect_editable_source() -> EditableSource | None:
+    """The editable ai-hats source this process runs from, or ``None``.
+
+    Launcher-exported ``AI_HATS_INIT_SRC`` wins (robust to venv-bootstrap
+    ordering); else the running interpreter's PEP 610 ``file://`` editable url,
+    decoded — uv percent-encodes it, and an undecoded path never exists.
+    """
+    from .constants import ENV_AI_HATS_INIT_SRC
+
+    env_src = (os.environ.get(ENV_AI_HATS_INIT_SRC) or "").strip()
+    if env_src:
+        return EditableSource(path=env_src, origin=ENV_AI_HATS_INIT_SRC)
+    from .cli.maintenance import _is_editable_install  # lazy: avoid maintenance<->channel cycle
+
+    editable, url = _is_editable_install()
+    return editable_source_from_url(url) if editable else None
+
+
+def editable_source_from_url(url: str | None) -> EditableSource | None:
+    """The PEP 610 ``file://`` url of an editable install as a filesystem path —
+    decoded, because uv percent-encodes it and an undecoded path never exists."""
+    if not url or not url.startswith("file://"):
+        return None
+    return EditableSource(path=url2pathname(urlparse(url).path), origin=EDITABLE_INSTALL_ORIGIN)
+
+
+@dataclass(frozen=True)
+class LocalSource:
+    """Where ``channel: local`` installs from, what chose it, and why it cannot."""
+
+    path: Path
+    origin: str
+    problem: str | None
+
+    @property
+    def fix(self) -> str:
+        from .constants import ENV_AI_HATS_INIT_SRC
+
+        if self.origin == ENV_AI_HATS_INIT_SRC:
+            return f"unset {ENV_AI_HATS_INIT_SRC} or point it at an ai-hats checkout"
+        return _LOCAL_FIX
+
+
+def resolve_local_source(
+    project_root: Path, path: str | None, *, detected: EditableSource | None
+) -> LocalSource:
+    """Resolve ``harness.path`` for ``channel: local``.
+
+    Precedence: an explicit ``path`` (``~`` expanded; relative against the
+    project root — the launcher's rule) → ``detected`` (an editable install
+    this process already runs from, never to be clobbered) → the project root
+    (the ai-hats checkout dogfooding itself). ``problem`` says why the chosen
+    dir is not the ai-hats source, so the caller can heal or refuse instead of
+    handing the user uv's refusal.
+    """
+    if path:
+        candidate = Path(path).expanduser()
+        chosen = candidate if candidate.is_absolute() else project_root / candidate
+        origin = "harness.path"
+    elif detected:
+        chosen = Path(detected.path).expanduser()
+        origin = detected.origin
+    else:
+        chosen = project_root
+        origin = "the project root"
+    return LocalSource(path=chosen, origin=origin, problem=source_problem(chosen))
+
+
+@dataclass(frozen=True)
+class EdgeSource:
+    """Where ``channel: edge`` installs from: a git url the probe validates, or a
+    local path judged here — and why the path cannot serve."""
+
+    spec: str
+    origin: str
+    problem: str | None
+
+    @property
+    def fix(self) -> str:
+        if self.origin == ENV_REPO_URL:
+            return f"unset {ENV_REPO_URL} or point it at an ai-hats checkout"
+        return _EDGE_FIX
+
+
+def resolve_edge_source(yaml_repo: str | None) -> EdgeSource:
+    """The edge repo after precedence (env > yaml > upstream), judged when it is
+    a path. A ``://`` url is left to ``git ls-remote``: its identity cannot be
+    read offline."""
+    if os.environ.get(ENV_REPO_URL):
+        origin = ENV_REPO_URL
+    elif yaml_repo:
+        origin = "harness.repo"
+    else:
+        origin = "the default upstream"
+    spec = resolve_edge_repo(yaml_repo)
+    if "://" in spec:
+        return EdgeSource(spec=spec, origin=origin, problem=None)
+    return EdgeSource(spec=spec, origin=origin, problem=source_problem(Path(spec).expanduser()))
 
 
 # ---------- effectful fetchers (run by the caller, injected into the resolver) ----------

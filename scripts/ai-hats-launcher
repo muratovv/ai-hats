@@ -17,7 +17,7 @@ set -euo pipefail
 
 # HATS-1617: resolution contract this launcher implements. Bump ONLY when the
 # resolution behaviour changes; a drift lock holds it equal to the package constant.
-LAUNCHER_CONTRACT=1
+LAUNCHER_CONTRACT=2
 
 PROJECT="$(pwd)"
 # HATS-1306: linked git worktree resolution — hop to main checkout root when inside a linked worktree,
@@ -73,10 +73,46 @@ HARNESS_CHANNEL="$(read_harness_key channel)"
 LOCAL_SRC=""
 if [[ "$HARNESS_CHANNEL" == "local" ]]; then
     LOCAL_SRC="$(read_harness_key path)"
-    LOCAL_SRC="${LOCAL_SRC:-.}"
     LOCAL_SRC="${LOCAL_SRC/#\~/$HOME}"
-    [[ "${LOCAL_SRC:0:1}" != "/" ]] && LOCAL_SRC="$PROJECT/$LOCAL_SRC"
+    if [[ -z "$LOCAL_SRC" ]]; then
+        LOCAL_SRC="$PROJECT"
+    elif [[ "${LOCAL_SRC:0:1}" != "/" ]]; then
+        LOCAL_SRC="$PROJECT/$LOCAL_SRC"
+    fi
 fi
+
+# A source that is a path is the ai-hats source or nothing: identity (the
+# pyproject naming ai-hats), not "uv would accept it" — a consumer's own
+# pyproject installs the consumer. Mirrors channel.source_problem.
+is_ai_hats_source() {
+    [[ -f "$1/pyproject.toml" ]] \
+        && grep -Eq '^[[:space:]]*name[[:space:]]*=[[:space:]]*"ai-hats"[[:space:]]*$' "$1/pyproject.toml"
+}
+why_not_source() {
+    if [[ ! -e "$1" ]]; then echo "it does not exist"
+    elif [[ ! -f "$1/pyproject.toml" ]]; then echo "it has no pyproject.toml"
+    else
+        local name
+        name="$(sed -nE 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/p' "$1/pyproject.toml" | head -1)"
+        echo "its pyproject.toml names \"${name:-nothing}\", not ai-hats"
+    fi
+}
+heal_editable() {
+    [[ "$HARNESS_CHANNEL" == "local" ]] && is_ai_hats_source "$LOCAL_SRC"
+}
+warn_local_src_not_source() {
+    echo "ai-hats: $LOCAL_SRC is not an ai-hats source ($(why_not_source "$LOCAL_SRC")), so channel local has no editable source — healing from $PIP_TARGET instead." >&2
+    echo "  fix: ai-hats config set --channel local --path <checkout>" >&2
+}
+# The pip target itself, when it is a path (a local AI_HATS_REPO_URL), is judged
+# the same way before uv is asked — uv's refusal names no fix.
+require_pip_target_source() {
+    [[ "$PIP_TARGET" == *"://"* || "$PIP_TARGET" == "ai-hats @ "* ]] && return 0
+    is_ai_hats_source "$PIP_TARGET" && return 0
+    echo "ai-hats: $PIP_TARGET is not an ai-hats source ($(why_not_source "$PIP_TARGET")); nothing to heal from." >&2
+    echo "  fix: unset AI_HATS_REPO_URL or point it at an ai-hats checkout" >&2
+    exit 1
+}
 
 # --- HATS-944: pin-scope guard mirroring HATS-897. An inherited AI_HATS_VENV
 # paired with an AI_HATS_PROJECT_DIR that resolves to a *different* project is a
@@ -101,6 +137,14 @@ if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
         if [[ -n "${AI_HATS_DIR:-}" ]]; then
             echo "ai-hats: AI_HATS_DIR=$AI_HATS_DIR is pinned to project $pin_proj — foreign to $PROJECT; dropping it." >&2
             unset AI_HATS_DIR
+        fi
+        # The session envelope names the same project, and the python entry
+        # resolves from the envelope, never from AI_HATS_PROJECT_DIR (ADR-0024):
+        # re-pinning without dropping it changed nothing. A direct
+        # `python -m ai_hats` from a foreign cwd keeps envelope-wins by design.
+        if [[ -n "${AI_HATS_SESSION_IDENTITY:-}${AI_HATS_SESSION_ID:-}" ]]; then
+            echo "ai-hats: the session envelope is pinned to project $pin_proj — foreign to $PROJECT; dropping it." >&2
+            unset AI_HATS_SESSION_IDENTITY AI_HATS_SESSION_ID AI_HATS_ROLE
         fi
     fi
 fi
@@ -287,9 +331,10 @@ heal_if_needed() {
     if ! is_default_venv; then
         echo "ai-hats: override venv $VENV is missing or broken ($PROBE_REASON)." >&2
         echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
-        if [[ "$HARNESS_CHANNEL" == "local" ]]; then
+        if heal_editable; then
             echo "  Fix manually:  uv venv --python 3.13 $VENV && uv pip install --python $VENV/bin/python -e '$LOCAL_SRC'" >&2
         else
+            [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_source
             echo "  Fix manually:  uv venv --python 3.13 $VENV && uv pip install --python $VENV/bin/python '$PIP_TARGET'" >&2
         fi
         exit 1
@@ -312,9 +357,11 @@ heal_if_needed() {
     # with --reinstall and render the rich diff + auto-bump.
     # HATS-766: channel:local heals EDITABLE (-e), else the PIP_TARGET rebuild.
     local install_rc=0
-    if [[ "$HARNESS_CHANNEL" == "local" ]]; then
+    if heal_editable; then
         uv pip install --quiet --python "$VENV/bin/python" -e "$LOCAL_SRC" || install_rc=$?
     else
+        [[ "$HARNESS_CHANNEL" == "local" ]] && warn_local_src_not_source
+        require_pip_target_source
         uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET" || install_rc=$?
     fi
     if [[ $install_rc -ne 0 ]]; then

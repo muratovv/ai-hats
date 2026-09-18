@@ -5,8 +5,9 @@ flow: a developer running ai-hats from Project B when environment carries AI_HAT
         to Project A
 cmds:
     ai-hats --version
+    ai-hats config status
 expect: launcher detects mismatched project directory, ignores foreign venv pin with
-        warning,
+        warning, drops the session envelope that came with it,
         and uses local project venv
 why: without foreign venv isolation, sub-agents operating across projects execute tools
      inside
@@ -23,6 +24,7 @@ import pytest
 
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_VENV, PROJECT_CONFIG
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
+from ai_hats.session_identity import SessionIdentity
 
 pytestmark = [
     pytest.mark.install_heavy,
@@ -128,3 +130,41 @@ def test_e2e_foreign_venv_pin_ignored(tmp_path: Path) -> None:
     match[AI_HATS_PROJECT_DIR_ENV] = str(project_b)
     res_c = _run([str(launcher), "--version"], cwd=project_b, env=match, timeout=120)
     assert "foreign to" not in res_c.stderr, f"guard fired on a same-project pin:\n{res_c.stderr}"
+
+    # --- Case (d): the envelope of A's session leaves with the foreign pin. ---
+    # The python entry resolves the project from the envelope (ADR-0024), so a
+    # re-pinned AI_HATS_PROJECT_DIR alone still answered for A: `config status`
+    # printed A's channel (no yaml → stable) from B's own venv.
+    session = dict(foreign)
+    session.update(
+        SessionIdentity(
+            id="s-a",
+            role="assistant",
+            provider="claude",
+            project_dir=project_a,
+            session_dir=project_a / ".agent" / "ai-hats" / "sessions" / "s-a",
+        ).to_env()
+    )
+    res_d = _run([str(launcher), "config", "status"], cwd=project_b, env=session, timeout=120)
+    assert "session envelope is pinned to project" in res_d.stderr, (
+        f"expected the envelope drop notice, got stderr:\n{res_d.stderr}"
+    )
+    assert "Channel: local" in res_d.stdout, (
+        f"config status answered for the wrong project:\nstdout:\n{res_d.stdout}\n"
+        f"stderr:\n{res_d.stderr}"
+    )
+    assert "UserWarning" not in res_d.stderr, (
+        f"the python side still saw a foreign pin:\n{res_d.stderr}"
+    )
+    # Positive control for the absence above: the same envelope WITHOUT the
+    # launcher's drop reaches the python side and answers for A.
+    res_direct = _run(
+        [str(b_venv / "bin" / "python"), "-m", "ai_hats", "config", "status"],
+        cwd=project_b,
+        env=session,
+        timeout=120,
+    )
+    assert "Channel: local" not in res_direct.stdout, (
+        f"premise broken: a direct python entry no longer honours the envelope:\n"
+        f"{res_direct.stdout}"
+    )
