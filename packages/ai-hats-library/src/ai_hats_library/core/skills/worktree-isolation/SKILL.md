@@ -20,18 +20,9 @@ license: MIT
 
 Isolated development using git worktrees. Each task gets its own working copy — main branch stays clean.
 
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script):
->
-> ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
-> ah wt list
-> ```
->
-> If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
-
 > **Worktree Python Environment & Interpreter Trap.** The main venv's editable install points at the MAIN checkout, so **any** command run with that interpreter observes the main checkout — not only tests. `ai-hats` CLI invocations and compose smokes count, and so does anything else you would call verification.
 >
-> - **Run everything through the worktree's own interpreter**: `./.venv/bin/python -m pytest …`. `wt create` mints that venv for you (`worktree-venv`); if it is missing, `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` (plus any workspace sub-packages `-e packages/...`).
+> - **Run everything through the worktree's own interpreter**: `./.venv/bin/python -m pytest …`, where a project provisions one per worktree. If it is missing, mint it: `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` (plus any workspace sub-packages `-e packages/...`).
 > - **Verifying a library-DATA change is the dangerous case.** For a code change the session tripwire (`tests/conftest.py`) refuses the run, so the trap is loud. For `SKILL.md` / trait / role `config.yaml` there is no tripwire: a compose smoke run against the main venv succeeds, exits 0, and validates a tree your change never touched. Validate the worktree file directly, or put the worktree venv on PATH.
 
 ## Workflow
@@ -271,7 +262,7 @@ lifecycle.
 Fork/dogfood repos can cut worktrees from one branch and merge them into another
 (base ≠ merge-target) via the `worktree` block in `ai-hats.yaml`. Rarely needed;
 full contract in `docs/how-to-configure.md`, section "The `worktree` block"
- — for a project whose dev trunk is not its upstream default branch.
+— for a project whose dev trunk is not its upstream default branch.
 
 ## If You End Up With a Stray Worktree
 
