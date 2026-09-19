@@ -853,11 +853,14 @@ def composition_record(plan: CompositionPlan) -> dict:
                 for h in hooks.external
             ],
         },
-        "trace": [
-            {"term": t.term, "brought_by": t.brought_by, "removed_by": t.removed_by}
-            for t in plan.trace
-        ],
+        "trace": trace_record(plan.trace),
     }
+
+
+def trace_record(trace: Sequence[TraceEntry]) -> list[dict]:
+    """The trace as the record carries it — one row per term; the reflect
+    manifest writes the same rows so an auditor reads one vocabulary."""
+    return [{"term": t.term, "brought_by": t.brought_by, "removed_by": t.removed_by} for t in trace]
 
 
 def checks_record(plan: MaterializationPlan) -> list[dict]:

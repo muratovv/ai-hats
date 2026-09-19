@@ -7,13 +7,11 @@ Every other "compose role X for this project" call must route through
 compose seam, the on-disk Assembler writer, the carry seam) cannot
 drift from each other.
 
-Allowed exception: the **no-overlay** form (``compose(role)`` without
-``overlays=``) belongs to deliberately different semantics:
-
-- ``cli/reflect.py`` — reflect a target role's *built-in* composition
-  for inspection / debugging, intentionally excluding project /global
-  overlay layering. The semantic difference is the whole point of the
-  command and is documented at the call site.
+The **no-overlay** form (``compose(role)`` without ``overlays=``) is not
+matched by the first test. Its one deliberate site, ``cli/reflect.py``
+composing a target role's built-in composition, is gone: the audit now
+reads the overlaid composition through ``build_preview_payload``, so no
+file under ``src/ai_hats/`` outside the facade calls ``composer.compose``.
 
 The first test below (overlays= form) only catches drift where a file
 *meant* to compose with overlays but did so outside the facade.
@@ -86,12 +84,9 @@ def test_compose_with_overlays_only_in_facade():
 
 
 # HATS-505 — whitelist for the pipeline-scoped guard. Each entry maps
-# the file to a non-empty justification. The single project-wide
-# deliberate no-overlay site (``cli/reflect.py``) is OUTSIDE
-# ``pipeline/`` and therefore not in scope here — its justification
-# lives at the call. The dict is empty by design; adding an entry
-# requires a one-line justification asserting why a pipeline step
-# legitimately wants the no-overlay form.
+# the file to a non-empty justification. The dict is empty by design;
+# adding an entry requires a one-line justification asserting why a
+# pipeline step legitimately wants the no-overlay form.
 NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED: dict[Path, str] = {}
 
 

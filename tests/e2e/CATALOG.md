@@ -2670,8 +2670,8 @@ as a claim to check, not as evidence.
   ai-hats reflect role maintainer
   ```
 
-- **expect** — pre-flight composes and serializes target role manifest and launches role-judge session
-- **why** — without composition materialization, role-judge auditor lacks structured role breakdown to audit
+- **expect** — pre-flight composes the target with overlays, serializes its manifest with the plan's trace and every rule body, then launches the role-judge session
+- **why** — without composition materialization, role-judge auditor lacks structured role breakdown to audit; with empty rule files it audits rules it never saw
 
 ## `test_refresh_unification.py`
 
