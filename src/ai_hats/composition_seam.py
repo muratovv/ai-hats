@@ -330,8 +330,10 @@ class PlanPreview:
     diagnostics: tuple[Diagnostic, ...]
 
 
-def _preview_context(project_dir: Path, role: str | None):
-    asm, cfg, eff_role, runtime_overlay, spec = _project_context(project_dir, role, prefer_cwd=True)
+def _preview_context(project_dir: Path, role: str | None, *, prefer_cwd: bool = True):
+    asm, cfg, eff_role, runtime_overlay, spec = _project_context(
+        project_dir, role, prefer_cwd=prefer_cwd
+    )
     if not eff_role:
         raise RuntimeError(
             "materialize_system_prompt: no role to materialize "
@@ -374,13 +376,21 @@ def _compose_plan(asm, eff_role: str, runtime_overlay, spec) -> PlanPreview:
     )
 
 
-def build_plan_preview(project_dir: Path, *, role: str | None = None) -> PlanPreview:
+def build_plan_preview(
+    project_dir: Path, *, role: str | None = None, prefer_cwd: bool = True
+) -> PlanPreview:
     """Compose ``role`` (or the project's active one) through the same overlay
     pass a session takes, with no provider required — a price needs none.
 
+    ``prefer_cwd`` follows the caller's question: a read-only CLI answers about
+    the checkout the person stands in (the default), while a measurement of a
+    session answers about the project, as that session's own compose did.
+
     Raises ``RuntimeError`` when no role can be resolved.
     """
-    asm, _cfg, eff_role, runtime_overlay, spec = _preview_context(project_dir, role)
+    asm, _cfg, eff_role, runtime_overlay, spec = _preview_context(
+        project_dir, role, prefer_cwd=prefer_cwd
+    )
     return _compose_plan(asm, eff_role, runtime_overlay, spec)
 
 
@@ -494,12 +504,12 @@ def _static_cost_analyzer(project_dir: Path):
     callable — composed here, threaded runner → finalize initial state."""
 
     def analyze(role: str) -> dict | None:
-        from .assembler import Assembler
-        from .composer import Composer
-        from .costs import analyze_composition
+        from .costs import analyze_plan
 
-        composer = Composer(Assembler(project_dir).resolver)
-        breakdown = analyze_composition(composer, role, exact=False)
+        # The same plan the session was rendered from, so the cross-check prices
+        # the composed role — overlays included — and not its declared tree.
+        preview = build_plan_preview(project_dir, role=role, prefer_cwd=False)
+        breakdown = analyze_plan(preview.plan, exact=False)
         return {
             "role": role,
             "total_tokens": breakdown.total_tokens,

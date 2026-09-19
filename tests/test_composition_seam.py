@@ -416,3 +416,39 @@ def test_runtime_role_composition_ambiguous_component(tmp_path: Path):
         RoleSpecError, match="'shared-name' is ambiguous — it is both a trait and a skill"
     ):
         _runtime_overlay(resolver, spec)
+
+
+# --- the static cross-check prices the composed role, not the declared one ---
+
+OVERLAY_TRAIT = "dev::go-grpc"  # not in assistant's declared tree
+
+
+def _project_with_project_overlay(tmp_path: Path) -> Path:
+    import yaml
+
+    project = tmp_path / "proj-static"
+    project.mkdir()
+    (project / "ai-hats.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "provider": "claude",
+                "active_role": "assistant",
+                "customizations": {"assistant": {"add": {"traits": [OVERLAY_TRAIT]}}},
+            }
+        )
+    )
+    return project
+
+
+def test_static_cost_analyzer_sees_the_project_overlay(tmp_path: Path):
+    """The session's always-on cross-check must price what the session composed."""
+    from ai_hats.composition_seam import _static_cost_analyzer
+
+    static = _static_cost_analyzer(_project_with_project_overlay(tmp_path))("assistant")
+
+    assert static is not None
+    names = {c["name"] for c in static["components"]}
+    assert f"{OVERLAY_TRAIT}::prompt" in names, sorted(names)
+    # the aggregate keys `session show` reads stay intact
+    assert isinstance(static["always_on_tokens"], int)
+    assert static["always_on_tokens"] + static["on_demand_tokens"] == static["total_tokens"]
