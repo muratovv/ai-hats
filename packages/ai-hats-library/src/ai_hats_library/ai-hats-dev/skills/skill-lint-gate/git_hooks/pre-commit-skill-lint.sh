@@ -22,7 +22,8 @@
 #
 # Override (per commit, after the user confirms the skill is intentionally
 # non-conforming):
-#   AI_HATS_SKILL_LINT_ACK=1 git commit ...
+#   AI_HATS_SKILL_LINT_ACK=1, exported in the shell that runs the commit —
+#   never a prefix on an agent's command line (safety-guard refuses it).
 set -uo pipefail
 
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
@@ -83,7 +84,9 @@ if [[ ${#lic_violations[@]} -gt 0 ]]; then
         echo "Every library SKILL.md must carry a 'license:'; a derived skill"
         echo "(upstream: in metadata.yaml) must ship its co-located LICENSE."
         echo "Fix, or skip this single commit after confirming intent:"
-        echo "  AI_HATS_SKILL_LINT_ACK=1 git commit ..."
+        echo "  AI_HATS_SKILL_LINT_ACK=1, exported in the shell that runs the"
+        echo "  commit. An agent cannot put it on its own command line —"
+        echo "  safety-guard refuses that — and every honoured use is journalled."
     } >&2
     ai_hats_journal_catch skill-lint block "staged SKILL.md fails the lint"
     exit 1
@@ -122,7 +125,9 @@ if [[ $rc -ne 0 ]]; then
         echo ""
         echo "Fix the issue(s), or skip this single commit after confirming the"
         echo "skill is intentionally non-conforming:"
-        echo "  AI_HATS_SKILL_LINT_ACK=1 git commit ..."
+        echo "  AI_HATS_SKILL_LINT_ACK=1, exported in the shell that runs the"
+        echo "  commit. An agent cannot put it on its own command line —"
+        echo "  safety-guard refuses that — and every honoured use is journalled."
     } >&2
     ai_hats_journal_catch skill-lint block "staged SKILL.md fails the lint"
     exit 1

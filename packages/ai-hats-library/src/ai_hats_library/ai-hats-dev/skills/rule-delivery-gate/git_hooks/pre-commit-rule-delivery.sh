@@ -22,7 +22,8 @@
 # the gate is live there. CI runs the same invariant (G2) regardless.
 #
 # Override (per commit, after confirming the pointer is intentional):
-#   AI_HATS_RULE_DELIVERY_ACK=1 git commit ...
+#   AI_HATS_RULE_DELIVERY_ACK=1, exported in the shell that runs the commit —
+#   never a prefix on an agent's command line (safety-guard refuses it).
 set -uo pipefail
 
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
@@ -125,7 +126,9 @@ if [[ $rc -ne 0 ]]; then
         echo ""
         echo "Fix the pointer, or skip this single commit after confirming it is"
         echo "intentional:"
-        echo "  AI_HATS_RULE_DELIVERY_ACK=1 git commit ..."
+        echo "  AI_HATS_RULE_DELIVERY_ACK=1, exported in the shell that runs the"
+        echo "  commit. An agent cannot put it on its own command line —"
+        echo "  safety-guard refuses that — and every honoured use is journalled."
     } >&2
     ai_hats_journal_catch rule_composition_value_contract block "undelivered rule pointer in staged injection"
     exit 1

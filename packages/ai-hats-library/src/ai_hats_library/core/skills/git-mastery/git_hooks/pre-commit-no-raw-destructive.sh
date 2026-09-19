@@ -21,7 +21,9 @@
 # exists in the repository — non-ai-hats projects that happen to include
 # the git-mastery skill get a silent no-op.
 #
-# Override (single commit):  AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ...
+# Override (single commit):  AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1, exported in the
+#                            shell that runs the commit — never a prefix on an
+#                            agent's command line (safety-guard refuses it).
 set -uo pipefail
 
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
@@ -131,7 +133,9 @@ if [[ -n "$violators" ]]; then
     echo "  path.rmdir()  # safe-delete: ok empty-dir" >&2
     echo "  shutil.rmtree(cache)  # safe-delete: ok session-cache" >&2
     echo "" >&2
-    echo "Override (one commit): AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ..." >&2
+    echo "Override (one commit): AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1, exported in the" >&2
+    echo "shell that runs the commit. An agent cannot put it on its own command line —" >&2
+    echo "safety-guard refuses that — and every honoured use is journalled." >&2
     ai_hats_journal_catch global_rule_destructive_actions block "raw destructive call in staged source"
     exit 1
 fi

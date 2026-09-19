@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from tests._self_grant_recipe import findings
 from _helpers.git import commit_file, git, init_repo
 
 pytestmark = [pytest.mark.integration, pytest.mark.guards]
@@ -95,6 +97,18 @@ def test_the_prefix_is_learned_from_the_project_not_carried_by_the_hook(tmp_path
     combined = done.stdout + done.stderr
     assert done.returncode == 1, combined
     assert "ACME-1430" in combined, combined
+
+
+def test_the_block_names_no_remedy_the_guard_refuses(tmp_path: Path):
+    """The way out it prints is one its reader can take.
+
+    `ack_prefix_guard.py` denies a Bash line binding the flag for the command
+    after it — the shape this refusal used to advertise."""
+    root = _repo(tmp_path, "history lives in ACME-1430.\n")
+    done = _run(root)
+    combined = done.stdout + done.stderr
+    assert done.returncode == 1, combined
+    assert not findings(combined), combined
 
 
 def test_a_project_with_no_cards_is_a_loud_no_op(tmp_path: Path):

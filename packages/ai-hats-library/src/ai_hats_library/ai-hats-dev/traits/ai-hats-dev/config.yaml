@@ -65,7 +65,8 @@ injection: |
   - Absolute paths with your username (`/Users/<name>/...`, `/home/<name>/...`).
   - `ai-hats.yaml` exports with personal customizations.
   - API keys, bearer tokens, `.env` files — the privacy pre-commit hook
-    blocks these; use `AI_HATS_PRIVACY_ACK=1` only with explicit justification.
+    blocks these; the supervisor's `AI_HATS_PRIVACY_ACK=1` is the only way past
+    it, and only with explicit justification.
   - Binary fixtures larger than ~5 KB under `tests/fixtures/`.
 
   ### Documentation discipline (see skill `doc-protocol`)

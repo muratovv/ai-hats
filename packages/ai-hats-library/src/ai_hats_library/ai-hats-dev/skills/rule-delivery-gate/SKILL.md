@@ -47,11 +47,9 @@ it never sees the gate. The server-side counterpart is the G2 unit test, run by 
 ## How to bypass
 
 Fix the pointer — create the missing rule in the library or drop the pointer — or, after
-confirming the pointer is intentional, skip the gate for a single commit:
-
-```bash
-AI_HATS_RULE_DELIVERY_ACK=1 git commit ...
-```
+confirming the pointer is intentional, ask the supervisor to skip the gate for a
+single commit: `AI_HATS_RULE_DELIVERY_ACK=1`, exported in the shell that runs the
+commit. Writing it onto your own command line is refused — see **safety-guard**.
 
 If `python` / the `ai_hats` package is unavailable the hook is a loud no-op
 (fail-open): it prints a SKIPPED notice and allows the commit, so a missing dev

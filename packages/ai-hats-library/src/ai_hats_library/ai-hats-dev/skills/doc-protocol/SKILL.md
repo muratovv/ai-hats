@@ -160,7 +160,8 @@ edits (status `M`) do not trigger the hook. This instruction explains
 the **why**; the hook is the safety net.
 
 Override (rare, only after user confirmation that the catalog drift is
-intentional): `AI_HATS_DOCS_INDEX_ACK=1 git commit ...`.
+intentional): `AI_HATS_DOCS_INDEX_ACK=1`, exported by the supervisor in the
+shell that runs the commit — see **safety-guard**.
 
 ### Worked example
 

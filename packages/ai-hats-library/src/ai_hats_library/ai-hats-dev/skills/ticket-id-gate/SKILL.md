@@ -72,10 +72,8 @@ is the boundary.
 
 ## Override
 
-After confirming the id belongs and the marker is wrong for the case:
-
-```bash
-AI_HATS_TICKET_IDS_ACK=1 git commit ...
-```
+After confirming the id belongs and the marker is wrong for the case, ask the
+supervisor for `AI_HATS_TICKET_IDS_ACK=1`, exported in the shell that runs the
+commit. Writing it onto your own command line is refused — see **safety-guard**.
 
 The bypass is journalled, not merely printed to stderr.

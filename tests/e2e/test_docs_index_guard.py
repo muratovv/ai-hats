@@ -27,6 +27,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._self_grant_recipe import findings
+
 pytestmark = pytest.mark.guards
 
 
@@ -92,6 +94,19 @@ def test_hook_blocks_add_without_index(repo_with_docs: Path):
     assert res.returncode == 1, res.stderr
     assert "BLOCKED" in res.stderr
     assert "docs/new.md" in res.stderr or "new.md" in res.stderr
+
+
+@pytest.mark.integration
+def test_the_block_names_no_remedy_the_guard_refuses(repo_with_docs: Path):
+    """The way out it prints is one its reader can take.
+
+    `ack_prefix_guard.py` denies a Bash line binding the flag for the command
+    after it — the shape this refusal used to advertise."""
+    (repo_with_docs / "docs/new.md").write_text("# New\n")
+    subprocess.run(["git", "add", "docs/new.md"], cwd=str(repo_with_docs), check=True)
+    res = _run_hook(repo_with_docs)
+    assert res.returncode == 1, res.stderr
+    assert not findings(res.stderr), res.stderr
 
 
 @pytest.mark.integration
