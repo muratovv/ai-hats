@@ -25,15 +25,6 @@ for hatrack's.
 
 ## CLI Interface
 
-**Invocation in a harness shell.** Harness-spawned bash does not inherit an
-activated venv. Resolve the `rack` console script once per session (host launcher
-on PATH, else the project venv's interpreter):
-
-```bash
-rk() { if command -v rack >/dev/null 2>&1; then rack "$@"; else ./.venv/bin/python -m ai_hats_rack.cli "$@"; fi; }
-rk create "Title" --description "Description" --priority medium --tag <tag>
-```
-
 ### `rack create`
 
 ```bash

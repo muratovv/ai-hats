@@ -17,12 +17,6 @@ Triage one improvement opportunity → vote on existing PROP or create new.
 Role-agnostic: same procedure whether you are running as `reflect-session`,
 `session-reviewer`, `judge`, or any other reviewer.
 
-> **Harness shell prelude.** Before any `ai-hats` invocation:
->
-> ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # no bin/ai-hats console script
-> ```
-
 ## When to Use
 
 Boundaries & disambiguation (the description states the trigger):

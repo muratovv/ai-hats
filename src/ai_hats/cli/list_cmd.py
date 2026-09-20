@@ -122,16 +122,35 @@ def list_skills():
     help="Use len//4 instead of Anthropic SDK",
 )
 def list_tokens(name: str, as_trait: bool, approx: bool):
-    """Show token cost breakdown for a role or trait."""
+    """Show token cost breakdown for a role or trait.
+
+    A role is priced as the plan a session would render — overlays applied,
+    the same composition ``config show-prompt`` prints. A trait has no
+    overlays, so ``--trait`` prices its declared tree.
+    """
     from rich.table import Table
 
-    from ..composer import Composer
-    from ..costs import analyze_composition
+    from ..costs import analyze_composition, analyze_plan
 
-    asm = _assembler(resolve_project().layout.root, prefer_cwd=True)
-    composer = Composer(asm.resolver)
+    project_dir = resolve_project().layout.root
+    if as_trait:
+        from ..composer import Composer
 
-    breakdown = analyze_composition(composer, name, as_trait=as_trait, exact=not approx)
+        asm = _assembler(project_dir, prefer_cwd=True)
+        breakdown = analyze_composition(
+            Composer(asm.resolver), name, as_trait=True, exact=not approx
+        )
+    else:
+        from ..composition_seam import build_plan_preview
+        from ..diagnostics import emit_to_stderr
+
+        try:
+            preview = build_plan_preview(project_dir, role=name)
+        except RuntimeError as exc:
+            console.print(f"[red]Error[/]: {exc}")
+            return
+        emit_to_stderr(preview.diagnostics)
+        breakdown = analyze_plan(preview.plan, exact=not approx)
 
     if breakdown.errors:
         for e in breakdown.errors:
@@ -141,7 +160,11 @@ def list_tokens(name: str, as_trait: bool, approx: bool):
     table = Table(title=f"Token costs: {name}", show_footer=True)
     table.add_column("Component", footer="TOTAL")
     table.add_column("Category", style="dim")
-    table.add_column("Tokens", justify="right", footer=f"[bold]{breakdown.total_tokens:,}[/]")
+    table.add_column("Tokens", justify="right", footer=f"{breakdown.total_tokens:,}")
+    table.add_column(
+        "Always-on", justify="right", footer=f"[bold]{breakdown.always_on_tokens:,}[/]"
+    )
+    table.add_column("On-demand", justify="right", footer=f"{breakdown.on_demand_tokens:,}")
     table.add_column(
         "Chars",
         justify="right",
@@ -150,8 +173,25 @@ def list_tokens(name: str, as_trait: bool, approx: bool):
     )
 
     for c in breakdown.components:
-        table.add_row(c.name, c.category, f"{c.tokens:,}", f"{c.chars:,}")
+        table.add_row(
+            _display_name(c.name),
+            c.category,
+            f"{c.tokens:,}",
+            f"[bold]{c.always_on_tokens:,}[/]",
+            f"{c.on_demand_tokens:,}",
+            f"{c.chars:,}",
+        )
 
     console.print(table)
     method = "anthropic SDK" if breakdown.exact else "approx (len//4)"
     console.print(f"[dim]Method: {method}[/]")
+
+
+def _display_name(member: str) -> str:
+    """The component behind a plan member's full name: the Category column
+    already says what kind it is."""
+    for suffix in ("::prompt", "::priorities"):
+        member = member.removesuffix(suffix)
+    for prefix in ("rules::", "skills::"):
+        member = member.removeprefix(prefix)
+    return member

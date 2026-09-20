@@ -81,9 +81,11 @@ recalled from an earlier session is not a measurement.
 ai-hats list tokens <role>
 ```
 
-The `TOTAL` column sums skill bodies too, and those are **not** resident. The
-always-on figure is injections plus rule bodies — read those rows, not the
-total. Quote the number this run produced.
+It prices the same composed plan `show-prompt` renders — overlays from
+`~/.ai-hats/customizations.yaml` and the project's `ai-hats.yaml` included.
+The `Tokens` total sums skill bodies too, and those are **not** resident: the
+figure to quote is the `Always-on` footer (injections, rule bodies, and each
+skill's name + description). Quote the number this run produced.
 
 Confirm you priced the tree you meant: the table should list a component that
 exists only there. Pricing the wrong library returns a plausible number with no

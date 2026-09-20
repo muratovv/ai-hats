@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**326 of 326 files catalogued — 334 flows.**
+**327 of 327 files catalogued — 335 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2005,6 +2005,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the rule is listed by name and nothing from the sidecar reaches stdout
 - **why** — rules are catalogued by name alone since HATS-1836 — a sidecar description was a second copy of the rule's meaning that drifted (5 of 14 had), and an external library's leftover sidecar must now be inert rather than half-read
+
+## `test_list_tokens_prices_overlays.py`
+
+*pins HATS-2004*
+
+- **flow** — a project shapes a shipped role through `customizations:` in ai-hats.yaml and asks what that role costs
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r assistant
+  ai-hats list tokens assistant --approx
+  ```
+
+- **expect** — the table carries the trait the overlay added (its injection and its skill) and the overlay's own injection_append, with an Always-on footer
+- **why** — `list tokens` walked the role's declared tree, so everything a project or a user-global customizations.yaml added was missing from the figure the skill-engineer injection tells the agent to quote; show-prompt composed with overlays and list tokens without, two answers to one question
 
 ## `test_master_ci_gate.py`
 
