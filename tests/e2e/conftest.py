@@ -279,6 +279,22 @@ def pytest_configure(config):  # noqa: ANN001, ANN201
         shutil.rmtree(build_dir, ignore_errors=True)
 
 
+def pytest_sessionfinish(session, exitstatus):  # noqa: ANN001, ANN201
+    """Reclaim what the per-worker clones left in the shared uv cache.
+
+    Once per session, on the controller (whose ``pytest_sessionfinish`` runs
+    after every worker has torn down and exited) or the serial process — never
+    on a worker, where eight finalizers would queue on one cache lock. Green
+    and red alike: a preserved sandbox is triage material, a cache entry is not.
+    Warn-continue — the report goes to the terminal, never to the exit status.
+    """
+    from _helpers.uv_cache import reclaim, reclaims_at_session_end
+
+    if not reclaims_at_session_end(exitstatus, os.environ):
+        return
+    print("\n" + "\n".join(f"[uv-cache] {line}" for line in reclaim(REPO_ROOT)))
+
+
 @pytest.fixture
 def requires_claude_auth() -> None:
     """Skip if ``claude`` binary missing or unauthenticated.
