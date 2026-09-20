@@ -551,34 +551,93 @@ def test_render_composition_returns_empty_string_for_no_snapshot():
     assert SessionReviewRunner._render_composition(facts) == ""
 
 
-def test_render_composition_emits_role_and_layer_tags():
+def _plan_record() -> dict:
+    """``metrics.json["composition"]`` as the plan path writes it — the shape
+    of ``composition_record`` (ADR-0036 D6), trimmed to what a reader needs."""
+    return {
+        "identity": "maintainer",
+        "digest": "0" * 64,
+        "prompt": {
+            "blocks": [
+                {"name": "PRIORITIES", "members": [{"name": "maintainer::priorities"}]},
+                {
+                    "name": None,
+                    "members": [
+                        {"name": "trait-base::prompt"},
+                        {"name": "personal-workflow::prompt"},
+                    ],
+                },
+                {
+                    "name": "RULES",
+                    "members": [
+                        {"name": "rules::global_rule_destructive_actions"},
+                        {"name": "rules::tracker-path-format"},
+                    ],
+                },
+            ]
+        },
+        "skills": [
+            {"name": "skills::design-minimalism", "path": "/lib/skills/design-minimalism"},
+            {"name": "skills::hatrack", "path": "/lib/skills/hatrack"},
+        ],
+        "hooks": {"runtime": [], "external": []},
+        "trace": [
+            {"term": "trait-base", "brought_by": "maintainer", "removed_by": None},
+            {"term": "personal-workflow", "brought_by": "overrides::global", "removed_by": None},
+            {
+                "term": "dev::shell",
+                "brought_by": "maintainer",
+                "removed_by": "maintainer - dev::shell",
+            },
+            {
+                "term": "rules::global_rule_destructive_actions",
+                "brought_by": "trait-base",
+                "removed_by": None,
+            },
+            {
+                "term": "rules::tracker-path-format",
+                "brought_by": "overrides::global",
+                "removed_by": None,
+            },
+            {"term": "skills::design-minimalism", "brought_by": "trait-base", "removed_by": None},
+            {"term": "skills::hatrack", "brought_by": "overrides::project", "removed_by": None},
+        ],
+    }
+
+
+def test_render_composition_on_the_plan_record():
+    """The plan path records ``composition_record`` (skills are dicts, the
+    layer is ``brought_by`` in ``trace``); the reviewer's prompt must list
+    the same three kinds audit.md does, each name tagged by what brought it."""
     from ai_hats.retro.session_review_runner import SessionReviewRunner
 
     facts = _facts()
-    facts.composition = {
-        "traits": ["trait-base", "personal-workflow"],
-        "rules": ["global_rule_destructive_actions"],
-        "skills": ["design-minimalism"],
-        "provenance": {
-            "traits": {
-                "trait-base": "built-in",
-                "personal-workflow": "global",
-            },
-            "rules": {"global_rule_destructive_actions": "built-in"},
-            "skills": {"design-minimalism": "built-in"},
-        },
-    }
+    facts.composition = _plan_record()
     out = SessionReviewRunner._render_composition(facts)
     assert "## Effective composition" in out
     assert f"Role: {facts.role}" in out
-    assert "trait-base (built-in)" in out
-    assert "personal-workflow (global)" in out
-    assert "global_rule_destructive_actions (built-in)" in out
-    assert "design-minimalism (built-in)" in out
-    # Layer-tags glossary present (helps the LLM use them in proposals).
-    assert "(built-in)" in out
-    assert "(global)" in out
-    assert "(project)" in out
+    assert "trait-base (maintainer)" in out
+    assert "personal-workflow (overrides::global)" in out
+    assert "dev::shell" not in out  # removed by the expression
+    assert "global_rule_destructive_actions (trait-base)" in out
+    assert "tracker-path-format (overrides::global)" in out
+    assert "design-minimalism (trait-base)" in out
+    assert "hatrack (overrides::project)" in out
+    assert "rules::" not in out and "skills::" not in out
+
+
+def test_render_composition_explains_the_tags():
+    """The glossary names every kind of tag the record can carry, so the
+    reviewer can route a proposal's `target` by it."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    facts = _facts()
+    facts.composition = _plan_record()
+    out = SessionReviewRunner._render_composition(facts)
+    assert "(overrides::global)" in out
+    assert "(overrides::project)" in out
+    assert "(expression)" in out
+    assert "(built-in)" in out and "(global)" in out and "(project)" in out
 
 
 def test_render_composition_handles_empty_buckets():
@@ -588,31 +647,106 @@ def test_render_composition_handles_empty_buckets():
 
     facts = _facts()
     facts.composition = {
-        "traits": ["trait-base"],
-        "rules": [],
+        "identity": "bare",
+        "prompt": {"blocks": [{"name": None, "members": [{"name": "trait-base::prompt"}]}]},
         "skills": [],
-        "provenance": {"traits": {"trait-base": "built-in"}, "rules": {}, "skills": {}},
+        "hooks": {"runtime": [], "external": []},
+        "trace": [{"term": "trait-base", "brought_by": "bare", "removed_by": None}],
     }
     out = SessionReviewRunner._render_composition(facts)
     assert "Skills: (none)" in out
     assert "Rules:  (none)" in out
-    assert "trait-base (built-in)" in out
+    assert "trait-base (bare)" in out
 
 
-def test_render_composition_provenance_defaults_to_built_in():
-    """When provenance map is missing an entry, the renderer falls back
-    to 'built-in' — safe-default for partial maps."""
+def test_composition_names_reads_what_composition_record_writes(tmp_path: Path):
+    """Writer ↔ reader contract: the record the integrator writes at session
+    start is the record observe's projection lists — every rule the prompt
+    carries, every skill, every trait the trace keeps."""
+    from ai_hats.assembler import Assembler
+    from ai_hats.materialize import compose_to_run
+    from ai_hats.surfaces import adapt
+    from ai_hats.surfaces.plan import composition_record
+    from ai_hats_observe import composition_names
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    asm = Assembler(project)
+    plan = adapt(
+        compose_to_run(asm, "maintainer"),
+        identity="maintainer",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
+    )
+
+    names = composition_names(composition_record(plan))
+
+    rules_in_prompt = {
+        m.name for b in plan.prompt.blocks for m in b.members if m.name.startswith("rules::")
+    }
+    assert names.rules and names.skills and names.traits
+    assert {f"rules::{n}" for n, _ in names.rules} == rules_in_prompt
+    assert {f"skills::{n}" for n, _ in names.skills} == {s.name for s in plan.skills}
+    assert {n for n, _ in names.traits} == {
+        t.term
+        for t in plan.trace
+        if t.removed_by is None and not t.term.startswith(("rules::", "skills::"))
+    }
+    assert all(by == "maintainer" or by in {n for n, _ in names.traits} for _, by in names.rules)
+
+
+def test_build_prompt_reaches_the_composition_off_a_plan_path_session(tmp_path: Path):
+    """The path that broke: a session dir whose metrics.json carries the plan's
+    record → facts → prompt, no LLM. Before the fix this raised TypeError."""
+    from ai_hats.retro.facts import compute_facts
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+    from ai_hats_observe.artifacts import session_dirname
+
+    sid = "20260918-065513-1-48915"
+    layout = ProjectLayout.at(tmp_path)
+    sdir = layout.sessions.runs / session_dirname(sid)
+    sdir.mkdir(parents=True)
+    (sdir / METRICS_JSON).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "finalized": True,
+                "role": "maintainer",
+                "provider": "claude",
+                "turns": 2,
+                "tool_calls": 3,
+                "exit_code": 0,
+                "composition": _plan_record(),
+            }
+        )
+    )
+
+    out = SessionReviewRunner(layout)._build_prompt(compute_facts(layout, sid))
+
+    assert "## Effective composition" in out
+    assert "Role: maintainer" in out
+    assert "hatrack (overrides::project)" in out
+    assert "global_rule_destructive_actions (trait-base)" in out
+
+
+def test_render_composition_reads_the_pre_plan_snapshot(tmp_path: Path):
+    """A session before 2026-09-16 carries the older snapshot; the reviewer
+    lists it through observe's legacy reader, tags in the snapshot's words."""
     from ai_hats.retro.session_review_runner import SessionReviewRunner
 
     facts = _facts()
     facts.composition = {
-        "traits": ["unmapped"],
-        "rules": [],
-        "skills": [],
-        "provenance": {"traits": {}, "rules": {}, "skills": {}},
+        "traits": ["trait-base"],
+        "rules": ["global_rule_destructive_actions"],
+        "skills": ["design-minimalism"],
+        "provenance": {"traits": {"trait-base": "built-in"}, "rules": {}, "skills": {}},
     }
     out = SessionReviewRunner._render_composition(facts)
-    assert "unmapped (built-in)" in out
+    assert "trait-base (built-in)" in out
+    assert "global_rule_destructive_actions (built-in)" in out
+    assert "design-minimalism (built-in)" in out
 
 
 # ---- HATS-534: verification_protocol surfacing ----

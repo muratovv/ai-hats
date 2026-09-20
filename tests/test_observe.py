@@ -250,22 +250,31 @@ def test_raw_dump_disabled_by_default(tmp_path):
     assert not session.pty_raw_path.exists()
 
 
-# --- HATS-442: composition snapshot ---
+# --- composition record in audit.md / metrics.json ---
 
 
 def _sample_composition() -> dict:
+    """The composition part of the session record (ADR-0036 D6), trimmed."""
     return {
-        "traits": ["trait-base", "personal-workflow"],
-        "rules": ["global_rule_resource_hygiene"],
-        "skills": ["design-minimalism"],
-        "provenance": {
-            "traits": {
-                "trait-base": "built-in",
-                "personal-workflow": "global",
-            },
-            "rules": {"global_rule_resource_hygiene": "built-in"},
-            "skills": {"design-minimalism": "built-in"},
+        "identity": "maintainer",
+        "prompt": {
+            "blocks": [
+                {"name": None, "members": [{"name": "trait-base::prompt"}]},
+                {"name": "RULES", "members": [{"name": "rules::global_rule_resource_hygiene"}]},
+            ]
         },
+        "skills": [{"name": "skills::design-minimalism", "path": "/lib/skills/design-minimalism"}],
+        "hooks": {"runtime": [], "external": []},
+        "trace": [
+            {"term": "trait-base", "brought_by": "maintainer", "removed_by": None},
+            {"term": "personal-workflow", "brought_by": "overrides::global", "removed_by": None},
+            {
+                "term": "rules::global_rule_resource_hygiene",
+                "brought_by": "trait-base",
+                "removed_by": None,
+            },
+            {"term": "skills::design-minimalism", "brought_by": "trait-base", "removed_by": None},
+        ],
     }
 
 
@@ -292,11 +301,11 @@ def test_init_audit_with_composition_renders_section(tmp_path):
     )
     body = session.audit_path.read_text()
     assert "## Composition" in body
-    # Traits line tags source layers explicitly.
-    assert "trait-base (built-in)" in body
-    assert "personal-workflow (global)" in body
-    assert "global_rule_resource_hygiene (built-in)" in body
-    assert "design-minimalism (built-in)" in body
+    # Each name carries what brought it — a composite or an override layer.
+    assert "trait-base (maintainer)" in body
+    assert "personal-workflow (overrides::global)" in body
+    assert "global_rule_resource_hygiene (trait-base)" in body
+    assert "design-minimalism (trait-base)" in body
     # Order: composition section sits BEFORE the events table (so reviewers
     # see context before the timeline).
     assert body.index("## Composition") < body.index("## Events")
@@ -324,10 +333,11 @@ def test_composition_section_omits_empty_buckets(tmp_path):
         role="bare",
         provider="claude",
         composition={
-            "traits": ["t1"],
-            "rules": [],
+            "identity": "bare",
+            "prompt": {"blocks": [{"name": None, "members": [{"name": "t1::prompt"}]}]},
             "skills": [],
-            "provenance": {"traits": {"t1": "built-in"}, "rules": {}, "skills": {}},
+            "hooks": {"runtime": [], "external": []},
+            "trace": [{"term": "t1", "brought_by": "bare", "removed_by": None}],
         },
     )
     body = session.audit_path.read_text()
@@ -336,27 +346,27 @@ def test_composition_section_omits_empty_buckets(tmp_path):
     assert "- **Skills**:" not in body
 
 
-def test_composition_provenance_defaults_to_built_in(tmp_path):
-    """A trait listed in the effective list but without an entry in the
-    provenance map falls back to 'built-in' — safe-default for partial maps."""
+def test_composition_member_outside_the_trace_came_with_the_expression(tmp_path):
+    """A rule the trace does not attribute came with the launched expression."""
     session = make_test_session(tmp_path)
     session.init_audit(
         role="r",
         provider="claude",
         composition={
-            "traits": ["unmapped-trait"],
-            "rules": [],
+            "identity": "r + sre",
+            "prompt": {"blocks": [{"name": "RULES", "members": [{"name": "rules::unmapped"}]}]},
             "skills": [],
-            "provenance": {"traits": {}, "rules": {}, "skills": {}},
+            "hooks": {"runtime": [], "external": []},
+            "trace": [],
         },
     )
     body = session.audit_path.read_text()
-    assert "unmapped-trait (built-in)" in body
+    assert "unmapped (expression)" in body
 
 
 def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch):
     """HATS-442 follow-up: AuditWriter.build rewrites audit.md from
-    JSONL/trace; the composition snapshot written by init_audit must
+    JSONL/trace; the composition record written by init_audit must
     survive the rebuild (read back from metrics.json which preserves
     existing keys via existing.update)."""
     import json
@@ -380,8 +390,39 @@ def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch)
 
     rebuilt = session.audit_path.read_text()
     assert "## Composition" in rebuilt, "composition section lost during AuditWriter rebuild"
+    assert "trait-base (maintainer)" in rebuilt
+    assert "personal-workflow (overrides::global)" in rebuilt
+
+
+def test_audit_rebuild_reads_the_pre_plan_snapshot_off_disk(tmp_path):
+    """``session backfill`` rebuilds audit.md for sessions written before
+    2026-09-16, whose metrics.json holds the older snapshot — the rebuild
+    must still list what loaded, through the legacy reader."""
+    import json
+    from ai_hats_observe import AuditWriter
+
+    session = make_test_session(tmp_path)
+    session.init_audit(role="maintainer", provider="claude")
+    metrics = json.loads(session.metrics_path.read_text())
+    metrics["composition"] = {
+        "traits": ["trait-base", "personal-workflow"],
+        "rules": ["global_rule_resource_hygiene"],
+        "skills": ["design-minimalism"],
+        "provenance": {
+            "traits": {"trait-base": "built-in", "personal-workflow": "global"},
+            "rules": {"global_rule_resource_hygiene": "built-in"},
+            "skills": {},
+        },
+    }
+    session.write_artifact_text(session.metrics_path, json.dumps(metrics))
+    session.trace_path.write_text("")
+
+    AuditWriter().build(session, jsonl_path=None, keep_raw=False)
+
+    rebuilt = session.audit_path.read_text()
     assert "trait-base (built-in)" in rebuilt
     assert "personal-workflow (global)" in rebuilt
+    assert "design-minimalism (built-in)" in rebuilt
 
 
 def test_build_folds_transcript_when_no_turns(tmp_path):

@@ -15,6 +15,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # re-export stubs for static checkers; runtime uses __getattr__
     from .audit import AuditWriter  # noqa: F401
+    from .composition import (  # noqa: F401
+        CompositionNames,
+        composition_names,
+        snapshot_names,
+        stored_composition_names,
+    )
     from .parsers.base import Turn  # noqa: F401
     from .parsers.trace import TraceEntry  # noqa: F401
     from .session import Session, SessionManager  # noqa: F401
@@ -26,6 +32,10 @@ _LAZY_EXPORTS = {
     "Session": "session",
     "SidecarTracer": "sidecar",
     "AuditWriter": "audit",
+    "CompositionNames": "composition",
+    "composition_names": "composition",
+    "snapshot_names": "composition",
+    "stored_composition_names": "composition",
     "TraceEntry": "parsers.trace",
     "Turn": "parsers.base",
 }
