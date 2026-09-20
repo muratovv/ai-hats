@@ -107,7 +107,7 @@ coverage         | the tests outside tests/e2e in one process, at the coverage f
 security         | pip-audit over the interpreter's whole environment (CI-authoritative)
 version-skew     | a changed package bumps its version in the same diff, and none is behind PyPI (network)
 python-pin       | every copy of the Python pin agrees and CI runs it
-tmp-sweep        | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing
+tmp-sweep        | housekeeping: reap dead test cruft from TMPDIR and prune the uv cache; it can fail nothing
 prepare          | precondition: this checkout's venv, at this tree's pins; it asserts nothing
 TABLE
 }
@@ -136,9 +136,9 @@ run_py() {
 }
 
 ci_tmp_sweep() {
-    # Housekeeping, not a check: in the `all` bundle and in NO gate, because a
-    # gate names what must be green and this can only free space. Runs FIRST so
-    # the heavy stages get the space, and never fails the bundle.
+    # Housekeeping, not a check: it can only free space, so it never fails a
+    # bundle. In `all` and in the done-gate, first so the heavy stages get the
+    # space; its stamp reads "swept at this tree", not "green".
     local sweep="$repo_root/scripts/clean-tmp-cruft.sh"
     [[ -x "$sweep" ]] || return 0
     echo "[gates] tmp-sweep (reap provably-dead test cruft)" >&2

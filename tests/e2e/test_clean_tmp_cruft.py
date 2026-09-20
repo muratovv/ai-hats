@@ -6,9 +6,12 @@ cmds:
     bash scripts/clean-tmp-cruft.sh [--dry-run|--force]
 expect: reaps only what it can prove dead — an unregistered worktree shell, a
         pytest run dir whose .lock names an exited pid — and keeps live
-        worktrees, live runs, and anything it cannot judge
+        worktrees, live runs, and anything it cannot judge; then prunes the uv
+        cache (never on --dry-run), a failed prune being a warning, not the
+        exit status
 why:    the sweeper ran on every gate and deleted nothing (dry-run only),
-        while 145 GB of killed-run residue accumulated in TMPDIR
+        while 145 GB of killed-run residue accumulated in TMPDIR — and 317 GB
+        of the builds those runs left in ~/.cache/uv
 """
 
 from __future__ import annotations
@@ -261,3 +264,76 @@ def test_gates_tmp_sweep_stage_reaps(tmp_path: Path, dead_pid) -> None:
 def test_rejects_unknown_argument(tmp_path: Path) -> None:
     cp = _run(tmp_path, "--delete-everything")
     assert cp.returncode == 2, "an unknown flag must not fall through to a sweep"
+
+
+@pytest.fixture
+def uv_shim(tmp_path: Path) -> tuple[Path, Path]:
+    """A ``uv`` on PATH that records its argv and lock-wait, and answers like uv.
+
+    ``$UV_SHIM_RC`` picks its exit status, so a test can make the prune fail.
+    """
+    bin_dir = tmp_path / "shim-bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "uv-calls"
+    shim = bin_dir / "uv"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf \'%s|lock=%s\\n\' "$*" "${{UV_LOCK_TIMEOUT:-unset}}" >> "{calls}"\n'
+        'echo "Removed 3 files (1.2KiB)" >&2\n'
+        'exit "${UV_SHIM_RC:-0}"\n'
+    )
+    shim.chmod(0o755)
+    return bin_dir, calls
+
+
+def _run_with_uv(
+    sandbox: Path, bin_dir: Path, *args: str, rc: int = 0
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        cwd=str(REPO_ROOT),
+        env={"TMPDIR": str(sandbox), "PATH": f"{bin_dir}:{_ENV['PATH']}", "UV_SHIM_RC": str(rc)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_prunes_the_uv_cache_after_the_sweep(tmp_path: Path, uv_shim) -> None:  # noqa: ANN001
+    """The gate's sweep is where a killed run's residue dies — its uv-cache
+    builds with it. The lock wait is bounded so a neighbour mid-install cannot
+    stall the gate for uv's five-minute default."""
+    bin_dir, calls = uv_shim
+    root = tmp_path / "fake-tmp"
+    root.mkdir()
+
+    cp = _run_with_uv(root, bin_dir)
+
+    assert cp.returncode == 0, cp.stderr
+    assert calls.read_text().splitlines() == ["cache prune|lock=10"]
+    assert "uv cache prune" in cp.stdout and "Removed 3 files" in cp.stdout
+
+
+def test_dry_run_touches_no_uv_cache(tmp_path: Path, uv_shim) -> None:  # noqa: ANN001
+    bin_dir, calls = uv_shim
+    root = tmp_path / "fake-tmp"
+    root.mkdir()
+
+    cp = _run_with_uv(root, bin_dir, "--dry-run")
+
+    assert cp.returncode == 0, cp.stderr
+    assert not calls.exists(), "dry-run ran uv"
+    assert "would run uv cache prune" in cp.stdout
+
+
+def test_a_failed_prune_is_a_warning_not_the_exit_status(sandbox, dead_pid, uv_shim) -> None:  # noqa: ANN001
+    """The sweep's own verdict is the exit status; uv's is one line on stderr."""
+    bin_dir, _calls = uv_shim
+    root, wt, _keep = sandbox
+    run = _run_dir(root, "pytest-7", pid=dead_pid)
+
+    cp = _run_with_uv(root, bin_dir, rc=2)
+
+    assert cp.returncode == 0, cp.stderr
+    assert not wt.exists() and not run.exists(), "the sweep itself must still reap"
+    assert "uv cache prune failed" in cp.stderr

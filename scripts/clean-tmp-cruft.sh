@@ -23,7 +23,8 @@
 #
 # Scans ${TMPDIR:-/tmp} and /tmp (deduplicated). Never deletes the directory
 # the caller is standing in (or an ancestor), so it is safe from inside a
-# live ai-hats worktree.
+# live ai-hats worktree. Ends with `uv cache prune` (when uv is on PATH): the
+# builds those runs left in the uv cache are the same leak in another root.
 set -euo pipefail
 
 FORCE=0
@@ -192,6 +193,27 @@ elif [[ "$DRY" -eq 1 ]]; then
 else
     printf "${BOLD}removed %d dir(s), ~%d MB freed${RESET}\n" "$total" "$freed_mb"
 fi
+
+# The uv cache keeps a build for every path a run installed from; a killed run's
+# die with its dirs. `prune` drops the revisions a later `--reinstall` superseded
+# (uv only; it is never safe to rm inside the cache). Bounded lock wait: a
+# neighbour mid-install holds the cache, and uv's default is five minutes.
+prune_uv_cache() {
+    command -v uv >/dev/null 2>&1 || return 0
+    if [[ "$DRY" -eq 1 ]]; then
+        printf "  ${DIM}would run${RESET} uv cache prune\n"
+        return 0
+    fi
+    local out
+    if out="$(UV_LOCK_TIMEOUT=10 uv cache prune 2>&1)"; then
+        printf "  ${GREEN}uv cache prune${RESET} ${DIM}%s${RESET}\n" "$(printf '%s\n' "$out" | tail -1)"
+    else
+        printf "  ${YELLOW}uv cache prune failed${RESET} ${DIM}(%s)${RESET}\n" \
+            "$(printf '%s\n' "$out" | tail -1)" >&2
+    fi
+}
+prune_uv_cache
+
 if [[ "$failed" -gt 0 ]]; then
     printf "${YELLOW}%d dir(s) could not be removed${RESET} (listed above on stderr)\n" "$failed" >&2
     exit 1

@@ -101,21 +101,24 @@ hook-подложкой и контрактом кодов возврата. **A
 | `security`         | -                                                                                        | pip-audit over the interpreter's whole environment (CI-authoritative)                                                   |
 | `version-skew`     | -                                                                                        | a changed package bumps its version in the same diff, and none is behind PyPI (network)                                 |
 | `python-pin`       | -                                                                                        | every copy of the Python pin agrees and CI runs it                                                                      |
-| `tmp-sweep`        | -                                                                                        | housekeeping: reap dead test cruft from TMPDIR; it can fail nothing                                                     |
+| `tmp-sweep`        | done-gate                                                                                | housekeeping: reap dead test cruft from TMPDIR and prune the uv cache; it can fail nothing                              |
 | `prepare`          | -                                                                                        | precondition: this checkout's venv, at this tree's pins; it asserts nothing                                             |
 
 <!-- /gate-table:stages -->
 
 `-` — стадия, которую не требует ни один гейт: `coverage`, `security`,
-`version-skew` живут в CI, `python-pin` — в бандле `all` и CI, `tmp-sweep` —
-уборка, которая не может быть красной, `prepare` — предусловие, которое ничего
-не утверждает, `master-ci` — сеть и вопрос о **базе**, а не о карточке: ручная
-стадия и notice на дороге пуша, никогда не отказ карточного гейта (D4). С
-HATS-1921 к ним прибавился **`e2e`** — весь тир под одним
-именем, то, что гоняет job `e2e` в CI и что значит `make e2e`; гейты требуют его
-**частей** (D11), чтобы дерево не гоняло те же тесты второй раз под другим
-именем. Строка с `-` стоит в таблице нарочно: «не названа ни одним гейтом»
-должно быть решением, которое читатель видит, а не строкой, которую кто-то забыл.
+`version-skew` живут в CI, `python-pin` — в бандле `all` и CI, `prepare` —
+предусловие, которое ничего не утверждает, `master-ci` — сеть и вопрос о
+**базе**, а не о карточке: ручная стадия и notice на дороге пуша, никогда не
+отказ карточного гейта (D4). С HATS-1921 к ним прибавился **`e2e`** — весь тир
+под одним именем, то, что гоняет job `e2e` в CI и что значит `make e2e`; гейты
+требуют его **частей** (D11), чтобы дерево не гоняло те же тесты второй раз под
+другим именем. Строка с `-` стоит в таблице нарочно: «не названа ни одним
+гейтом» должно быть решением, которое читатель видит, а не строкой, которую
+кто-то забыл. `tmp-sweep` — уборка, которая не может быть красной, — стояла
+здесь до HATS-2008; теперь её требует `->done`, и только он: закрытая карточка —
+единственная автоматическая каденция у уборки и у `uv cache prune`, которым она
+заканчивается. Её штамп значит «на этом дереве подметено», а не «зелено».
 
 Ячейка вида «`push-gate`; карточные, когда дифф трогает `<префикс>`» — **зонная
 стадия** (D11): её не объявляет ни один карточный гейт, и требуют её все трое,
@@ -243,12 +246,12 @@ flowchart TD
 
 <!-- gate-table:gates -->
 
-| гейт          | где применяется          | стадии                                                                                                                                                                                                |
-| ------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                              |
-| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default      |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                              |
-| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe |
+| гейт          | где применяется          | стадии                                                                                                                                                                                                     |
+| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                                   |
+| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog tmp-sweep lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                                   |
+| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe      |
 
 <!-- /gate-table:gates -->
 
