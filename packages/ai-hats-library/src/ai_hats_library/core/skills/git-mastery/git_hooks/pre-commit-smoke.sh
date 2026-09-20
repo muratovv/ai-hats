@@ -6,7 +6,9 @@
 # fails the commit is blocked. If no task is active, or the task lacks the
 # tag, the hook is a silent no-op.
 #
-# Override (per single commit):  AI_HATS_SMOKE_SKIP=1 git commit ...
+# Override (per single commit):  AI_HATS_SMOKE_SKIP=1, exported in the shell that
+#                                runs the commit — never a prefix on an agent's
+#                                command line (safety-guard refuses it).
 set -uo pipefail
 
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
@@ -99,8 +101,9 @@ if [[ $rc -ne 0 ]]; then
     # Limit output to keep context manageable.
     echo "$output" | head -30 >&2
     echo "" >&2
-    echo "Fix the failing tests or skip with:" >&2
-    echo "  AI_HATS_SMOKE_SKIP=1 git commit ..." >&2
+    echo "Fix the failing tests. Skipping needs AI_HATS_SMOKE_SKIP=1 exported in the" >&2
+    echo "shell that runs the commit: an agent cannot put it on its own command line —" >&2
+    echo "safety-guard refuses that — and every honoured use is journalled." >&2
     ai_hats_journal_catch smoke block "pre-commit smoke tests failed"
     exit 1
 fi

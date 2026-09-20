@@ -48,11 +48,9 @@ it never sees the gate. The server-side counterpart is the CI `lint-skills` job.
 ## How to bypass
 
 Fix the flagged issue, or — after confirming the skill is intentionally
-non-conforming — skip the gate for a single commit:
-
-```bash
-AI_HATS_SKILL_LINT_ACK=1 git commit ...
-```
+non-conforming — ask the supervisor to skip the gate for a single commit:
+`AI_HATS_SKILL_LINT_ACK=1`, exported in the shell that runs the commit. Writing
+it onto your own command line is refused — see **safety-guard**.
 
 If `agnix` / `node` is not installed, only the **agnix** check is a loud no-op
 (fail-open): it prints a SKIPPED notice and allows the commit, so a missing
