@@ -609,8 +609,8 @@ as a claim to check, not as evidence.
   bash scripts/clean-tmp-cruft.sh [--dry-run|--force]
   ```
 
-- **expect** — reaps only what it can prove dead — an unregistered worktree shell, a pytest run dir whose .lock names an exited pid — and keeps live worktrees, live runs, and anything it cannot judge
-- **why** — the sweeper ran on every gate and deleted nothing (dry-run only), while 145 GB of killed-run residue accumulated in TMPDIR
+- **expect** — reaps only what it can prove dead — an unregistered worktree shell, a pytest run dir whose .lock names an exited pid — and keeps live worktrees, live runs, and anything it cannot judge; then prunes the uv cache (never on --dry-run), a failed prune being a warning, not the exit status
+- **why** — the sweeper ran on every gate and deleted nothing (dry-run only), while 145 GB of killed-run residue accumulated in TMPDIR — and 317 GB of the builds those runs left in ~/.cache/uv
 
 ## `test_cli_unknown_subcommand_refused.py`
 
