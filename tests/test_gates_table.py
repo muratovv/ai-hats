@@ -42,7 +42,6 @@ KNOWN_UNGATED = {
     # the push road — never a card gate's refusal.
     "master-ci",
     "python-pin",
-    "tmp-sweep",
     "prepare",
     # The whole tier under one name: CI's `e2e` job and `make e2e`. The gates
     # require its PARTS, so a tree is never asked to re-run the same tests under
@@ -154,10 +153,13 @@ def test_the_done_gate_demands_what_only_it_can_ask():
     `e2e-default` is the tier no zone claims — an UNEXPECTED regression, which is
     the breakage two independently green branches make together, and so belongs
     on the edge where a supervisor is present (ADR-0023 D3). The zones a change
-    does touch are demanded earlier, by the diff, at `->merge`."""
+    does touch are demanded earlier, by the diff, at `->merge`. `tmp-sweep` can
+    fail nothing; it sits here because a closed card is the one automatic
+    cadence the sweep (and the uv-cache prune it ends with) has."""
     assert set(_stages("done-gate")) - set(_stages("merge-gate")) == {
         "integration",
         "e2e-default",
+        "tmp-sweep",
     }
 
 
