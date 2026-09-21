@@ -4,8 +4,9 @@ flow:   a developer starts a session in a project whose sessions/runs tree has
         been accumulating transcripts and traces for months
 cmds:
     ai-hats -r maintainer
-expect: bulk artifacts past the age bound are dropped and the drop is logged
-        with counts and bytes, while every facts-tier file and every run dir stay
+expect: bulk artifacts past the age bound are dropped and the drop is a startup
+        note with counts and bytes — on the banner and in the new session's
+        diagnostics.json — while every facts-tier file and every run dir stay
 why:    runs/ grew 27 MB/day with no GC, and trimming audit.md would blind every
         retro that links to it
 """
@@ -16,6 +17,7 @@ why:    runs/ grew 27 MB/day with no GC, and trimming audit.md would blind every
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -127,7 +129,13 @@ def test_the_next_run_expires_bulk_artifacts_and_keeps_every_fact(littered) -> N
     assert (recent / "transcript.jsonl").is_file(), (
         "a run that STARTED inside the bound was swept on its files' mtimes alone"
     )
-    assert (
+    report = (
         f"runs retention: dropped {len(STALE_BULK)} files / {expected_bytes} bytes "
-        f"across 1 run dirs (0 errors)" in done.stderr
-    ), f"the sweep did not report counts and bytes; stderr:\n{done.stderr[-2000:]}"
+        f"across 1 run dirs (0 errors)"
+    )
+    assert report in done.stdout, (
+        f"the sweep's counts and bytes are not on the banner; stdout:\n{done.stdout[-2000:]}"
+    )
+    new_run = next(p for p in old.parent.iterdir() if p not in (old, recent))
+    record = json.loads((new_run / "diagnostics.json").read_text())
+    assert {"level": "note", "text": report} in record["startup"]["notices"], record

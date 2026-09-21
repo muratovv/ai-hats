@@ -22,6 +22,9 @@ never blocks or breaks ``create_session``. Steps 1, 2 and 5 stay outside it.
 Recovery is injected into ``SessionManager`` as a mockable collaborator
 (:class:`EnvironmentRecovery` by default, :class:`NoOpRecovery` for unit tests
 that must not touch the filesystem) — per the supervisor's DI decision.
+``run()`` returns what it did as diagnostics, one line per sweep kind; the
+session carries them and the runner puts them on the banner and in the record.
+Nothing here prints — a log line is a trace, not a report.
 
 Leaf module by design: it imports only ``paths`` / ``version_recovery`` /
 ``version_refs`` / ``runs_retention`` / ``session_liveness`` (all leaves), so

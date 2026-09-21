@@ -7,6 +7,17 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `ai_hats_core.diagnostics` — `Level`, `Diagnostic` and `emit_to_stderr`, moved
+  here from the integrator unchanged so the recovery contract can name the type
+  (0.14.0).
+
+### Changed
+
+- `RecoveryProtocol.run()` returns `Sequence[Diagnostic]` — what the recovery
+  did, for the caller to put on a banner or in a record — and `NoOpRecovery`
+  returns `()`. A recovery whose `run()` still returns `None` no longer
+  satisfies the contract (0.14.0).
+
 - `ProjectLayout.cwd` — where the process stands, as distinct from the
   project root it resolved: a linked worktree or a subdirectory. A surface the
   process launches inherits it and keys its own record by it, so a consumer

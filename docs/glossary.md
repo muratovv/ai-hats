@@ -337,7 +337,8 @@ in YAML and give a stable surface for tests and docs to reference.
 
 Pre-launch lines `WrapRunner` renders BEFORE the wrapped TUI spawns, kept readable by the read-hold (10s countdown, Enter-skippable) so they survive the alt-screen switch.
 
-- **Startup notice** — one `StartupNotice(level, text)` line (`src/ai_hats/startup_notices.py`); `note` = green "we fixed drift", `warn` = yellow "degraded setup". Any notice triggers the read-hold; a clean start renders nothing and holds for nothing.
+- **Startup notice** — one `StartupNotice(level, text)` line (`src/ai_hats/startup_notices.py`); `note` = green "we fixed drift", `warn` = yellow "degraded setup". Any notice triggers the read-hold; a clean start renders nothing and holds for nothing. Every notice is also persisted to the session's `diagnostics.json["startup"]`, on the Automate path too, where no banner prints.
+- **Recovery diagnostic** — what environment recovery did at `create_session` (`src/ai_hats/environment_recovery.py`), returned as `ai_hats_core.diagnostics.Diagnostic` values and carried on `Session.startup_diagnostics`: one line per sweep kind with the count inside (`note` for a reclaim, `warn` for a failure), e.g. `runs retention: dropped 12 files / 402417 bytes across 1800 run dirs (0 errors)`. A sweep that reclaimed nothing says nothing. Rendered as startup notices; before this the line fell through `logging.lastResort` to stderr, outside the banner and the hold.
 - **Provider settings lint** — a warn producer fed by the surface (`Surface.settings_lint_warnings`): known pitfalls in the provider CLI's own settings files, e.g. permission rules Claude Code has deprecated. Warn-only: ai-hats never mutates user settings.
 
 Producers and the settings-lint detail — see [9].

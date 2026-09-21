@@ -4,6 +4,15 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.14.0]
+
+### Added
+
+- `Session.startup_diagnostics` — what the injected recovery reported at
+  `create_session`, as `ai_hats_core.diagnostics.Diagnostic` values; `()` under
+  the no-op default. The runner decides the channel. Requires `ai-hats-core`
+  0.14.0.
+
 ## [0.13.0]
 
 Additive to `events/v1`: new `raw_code` values and one more producer of an
