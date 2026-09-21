@@ -1,0 +1,6 @@
+schema_version: 1
+type: composite
+expr: >-
+  trait-base::prompt + global_rule_resource_hygiene
+  + global_rule_destructive_actions + rule_harness_reminder_hygiene
+  + safety-guard
