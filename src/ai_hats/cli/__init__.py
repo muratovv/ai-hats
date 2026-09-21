@@ -167,6 +167,15 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
 )
 @click.version_option(version=__version__)
 @session_options
+# Not in `session_options`: `-re` selects the candidate DSL for the projections
+# below, and there is no `-re` session for `headless` to share yet.
+@click.option(
+    "-re",
+    "experimental",
+    is_flag=True,
+    help="Candidate path (ADR-0033): the flat DSL under experimental/ and its "
+    'processing. Projections: `-re dry-run "<expr>"`, `-re show-prompt "<expr>"`.',
+)
 @click.option(
     "--dry-run",
     "dry_run",
@@ -205,6 +214,7 @@ def main(
     ctx,
     provider: str | None,
     role: str | None,
+    experimental: bool,
     model: str | None,
     tags_raw: tuple[str, ...],
     dry_run: bool,
@@ -224,6 +234,15 @@ def main(
     """
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
+
+        if experimental:
+            # A session from an expression arrives with the next slice; until
+            # then the flag reaches its two projections only.
+            raise click.UsageError(
+                "a session under -re is not available yet; the projections are:\n"
+                '       ai-hats -re dry-run "<expr>" [--json]\n'
+                '       ai-hats -re show-prompt "<expr>"'
+            )
 
         if "+" in ctx.args:
             raise click.UsageError(
@@ -355,6 +374,7 @@ from . import (  # noqa: E402
     acp as acp_mod,
     agent as agent_mod,
     assembly,
+    candidate,
     config as config_mod,
     execute as execute_mod,
     headless as headless_mod,
@@ -402,6 +422,10 @@ main.add_command(self_group)
 
 # List
 main.add_command(list_cmd.list_cmd)
+
+# The candidate path's projections — run under the root `-re` flag (ADR-0034 D5).
+main.add_command(candidate.dry_run)
+main.add_command(candidate.show_prompt)
 
 # Execute — unified launch primitive. Wraps WrapRunner / SubAgentRunner.
 main.add_command(execute_mod.execute_cmd)
