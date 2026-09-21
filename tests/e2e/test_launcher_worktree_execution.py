@@ -178,3 +178,38 @@ def test_launcher_non_ai_hats_worktree_no_hop(tmp_path: Path) -> None:
     assert res.returncode == 1
     assert "venv missing at" in res.stderr
     assert str(wt_plain) in res.stderr
+
+
+def test_launcher_resolves_the_git_dirs_without_a_pipe(tmp_path: Path) -> None:
+    """Under `set -euo pipefail`, `echo "$two_lines" | head -1` is a race: bash
+    line-buffers stdout, so the echo is two write()s, and a `head` that exits
+    between them kills echo with SIGPIPE — 141 before a byte of output. A `head`
+    that exits 141 without reading is what pipefail sees in that case; the
+    launcher must not consult it on the way to python."""
+    repo = tmp_path / "repo"
+    _init_git_repo(repo)
+    (repo / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+    )
+    venv = repo / ".agent" / "ai-hats" / ".venv"
+    _fake_venv(venv, ai_hats_echo="repo-stub")
+
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "head").write_text("#!/usr/bin/env bash\nexit 141\n")
+    _make_executable(shims / "head")
+
+    env = os.environ.copy()
+    env["PATH"] = f"{shims}:{env['PATH']}"
+    env[ENV_AI_HATS_VENV] = str(venv.resolve())
+    env[AI_HATS_PROJECT_DIR_ENV] = str(repo.resolve())
+
+    res = subprocess.run(
+        [str(LAUNCHER), "status"],
+        cwd=str(repo),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0, f"rc={res.returncode}\nstderr:\n{res.stderr}"
+    assert "repo-stub: status" in res.stdout

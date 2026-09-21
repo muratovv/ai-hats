@@ -28,8 +28,9 @@ is_onboarded() { [[ -d "$1/.agent" || -f "$1/ai-hats.yaml" ]]; }
 # provided that main checkout is an onboarded ai-hats project (.agent/ or ai-hats.yaml).
 hopped=""
 if git_dirs="$(git rev-parse --git-dir --git-common-dir 2>/dev/null)" && [[ -n "$git_dirs" ]]; then
-    git_dir="$(echo "$git_dirs" | head -1)"
-    common_dir="$(echo "$git_dirs" | tail -1)"
+    # No pipe: bash line-buffers stdout, so `echo | head -1` races into SIGPIPE.
+    git_dir="${git_dirs%%$'\n'*}"
+    common_dir="${git_dirs##*$'\n'}"
     git_dir_abs="$(cd "$git_dir" 2>/dev/null && pwd -P || true)"
     common_dir_abs="$(cd "$common_dir" 2>/dev/null && pwd -P || true)"
     if [[ -n "$git_dir_abs" && -n "$common_dir_abs" && "$git_dir_abs" != "$common_dir_abs" ]]; then
