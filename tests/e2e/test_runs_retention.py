@@ -136,6 +136,10 @@ def test_the_next_run_expires_bulk_artifacts_and_keeps_every_fact(littered) -> N
     assert report in done.stdout, (
         f"the sweep's counts and bytes are not on the banner; stdout:\n{done.stdout[-2000:]}"
     )
-    new_run = next(p for p in old.parent.iterdir() if p not in (old, recent))
+    new_run = next(
+        p
+        for p in old.parent.iterdir()
+        if p.is_dir() and p.name.startswith("session_") and p not in (old, recent)
+    )
     record = json.loads((new_run / "diagnostics.json").read_text())
     assert {"level": "note", "text": report} in record["startup"]["notices"], record
