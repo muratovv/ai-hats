@@ -63,7 +63,6 @@ def probe_host(
     from ai_hats_library.hooks.consent_gate import operations
 
     from .consent_wrapper import original_lookup_path
-    from .paths import claude_settings_chain, claude_status_line
 
     env = os.environ if environ is None else environ
     path = original_lookup_path(env.get("PATH", ""))
@@ -76,15 +75,7 @@ def probe_host(
     # No project directory, no project probe: falling back to the process's own
     # cwd would make a bare probe read whichever tree the caller happens to be in.
     project = surface.probe_project(env, cwd) if surface is not None and cwd is not None else None
-    status_line = claude_status_line(claude_settings_chain(env, Path.cwd() if cwd is None else cwd))
-    return Host(
-        python=Path(python),
-        path=path,
-        commands=commands,
-        home=home,
-        project=project,
-        status_line=status_line,
-    )
+    return Host(python=Path(python), path=path, commands=commands, home=home, project=project)
 
 
 def plan_session(

@@ -26,6 +26,7 @@ from ai_hats.surfaces.claude.channel import (
     STATUSLINE_COMMAND,
 )
 from ai_hats.surfaces.claude.hook_server import socket_path
+from ai_hats.surfaces.claude.project import ClaudeProject
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.hook_dispatch import MANIFEST_VERSION
 from ai_hats.surfaces.plan import (
@@ -215,9 +216,9 @@ def test_automate_hands_the_settings_to_the_sdk_and_no_other_source(tmp_path: Pa
 
 
 def _with_bar(entry: dict | None) -> Host:
-    """The person's status line is a fact of the machine, probed onto Host
-    before planning — the planner reads no settings file itself."""
-    return dataclasses.replace(HOST, status_line=entry)
+    """The person's status line reaches the plan as claude's own projection of
+    the project, probed onto Host — the planner reads no settings file itself."""
+    return dataclasses.replace(HOST, project=ClaudeProject(status_line=entry))
 
 
 def test_hitl_wires_the_status_line_and_hands_the_persons_own_bar_down(tmp_path):

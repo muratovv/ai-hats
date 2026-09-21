@@ -45,6 +45,7 @@ from .channel import (
 )
 from ai_hats.env import ENV_CLAUDE_RM_TIMER_OFF, ENV_STATUSLINE_INNER
 
+from .project import ClaudeProject, probe_project
 from .runtime_hooks import plan_hooks
 
 from ai_hats.paths import (
@@ -248,6 +249,9 @@ class ClaudeSurface(Surface):
 
     # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 
+    def probe_project(self, environ: Mapping[str, str], cwd: Path) -> ClaudeProject:
+        return probe_project(environ, cwd)
+
     def plan(
         self,
         composition: CompositionPlan,
@@ -295,8 +299,9 @@ class ClaudeSurface(Surface):
             manifest, rows, hook_env = plan_hooks(composition, root, host)
             settings = root / "settings.json"
             entries.append(manifest)
+            project = host.project if isinstance(host.project, ClaudeProject) else None
             document, settings_env = self._session_settings(
-                rows, hitl=hitl, person=host.status_line
+                rows, hitl=hitl, person=project.status_line if project else None
             )
             entries.append(describe_write_text(settings, json.dumps(document, indent=2)))
             env.update(hook_env)
