@@ -75,9 +75,12 @@ def test_run_reclaims_unpinned_orphan(tmp_path, monkeypatch):
     legacy.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(sys, "prefix", str(legacy))  # legacy run pins nothing
 
-    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
+    diagnostics = EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
 
     assert not orphan.exists()
+    assert ("note", "reclaimed orphaned version: 0ldc0de0") in [
+        (d.level.value, d.text) for d in diagnostics
+    ]
 
 
 # ---------- legacy .venv reclaim wiring (HATS-653 / Phase B) ----------
@@ -91,10 +94,13 @@ def test_run_reclaims_legacy_venv_when_running_from_versioned(tmp_path, monkeypa
     (legacy / "bin").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(sys, "prefix", str(pinned))
 
-    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
+    diagnostics = EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
 
     assert not legacy.exists()
     assert pinned.is_dir()  # the versioned venv we run from is untouched
+    assert [d.text for d in diagnostics if d.text.startswith("reclaimed legacy .venv")] == [
+        f"reclaimed legacy .venv: {legacy}"
+    ]
 
 
 def test_run_keeps_legacy_venv_on_legacy_run(tmp_path, monkeypatch):
@@ -154,7 +160,11 @@ def test_run_swallows_oserror_in_version_gc(tmp_path, monkeypatch):
 
     monkeypatch.setattr("ai_hats.environment_recovery.reclaim_orphan_versions", _boom)
 
-    EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()  # must not raise
+    diagnostics = EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()  # must not raise
+
+    assert [(d.level.value, d.text) for d in diagnostics if "version GC" in d.text] == [
+        ("warn", "version GC skipped on I/O error: disk gone")
+    ]
 
 
 # ---------- moved session-cache sweep still works ----------
@@ -288,9 +298,12 @@ def test_key_older_than_ttl_is_reclaimed(tmp_path, monkeypatch):
     _age(stale / "sessions", 30)
     _age(stale, 30)
 
-    _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
+    diagnostics = _sweep_orphan_project_keys(ProjectLayout.at(tmp_path))
 
     assert not stale.exists()
+    assert [(d.level.value, d.text) for d in diagnostics] == [
+        ("note", "reclaimed 1 orphaned project cache key")
+    ]
 
 
 def test_key_holding_a_worktree_is_never_reclaimed(tmp_path, monkeypatch):
@@ -595,7 +608,7 @@ def test_both_owners_gone_reaps_and_names_the_surface_child(tmp_path, caplog):
     write_session_anchor(entry)
     _rewrite_anchor(entry, root_pid=dead_wrapper, start_time_utc=None, child_pid=dead_child)
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
     assert not entry.exists()
@@ -698,22 +711,23 @@ def test_reclaim_says_what_it_dropped_and_why(tmp_path, caplog):
     assert f"owner pid {dead} is gone" in caplog.text
 
 
-def test_every_deletion_line_is_loud_enough_to_survive_no_handler(tmp_path, caplog):
-    """Nothing in this product configures logging, so a record below WARNING dies
-    at ``logging.lastResort``'s threshold and the deletion is never seen. Asserting
-    the TEXT alone cannot catch that — a handler installed by the test (or by an
-    e2e harness) makes INFO and WARNING read identically.
-    """  # comment-length: allow — the level IS the behaviour under test
-    _session_dir(tmp_path, _dead_pid())
+def test_every_deletion_is_reported_as_a_diagnostic(tmp_path):
+    """Nothing in this product configures logging, so a log record is not a report:
+    the sweep returns what it deleted, one note per sweep with the count inside."""
+    _session_dir(tmp_path, _dead_pid(), counter=1)
+    _session_dir(tmp_path, _dead_pid(), counter=2)
 
-    with caplog.at_level("INFO"):
-        _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
+    diagnostics = _sweep_orphan_session_caches(ProjectLayout.at(tmp_path))
 
-    reclaimed = [r for r in caplog.records if "reclaimed session cache" in r.message]
-    assert reclaimed, "the sweep must say what it deleted"
-    assert all(r.levelno >= logging.WARNING for r in reclaimed), [
-        (r.levelname, r.message) for r in reclaimed
+    assert [(d.level.value, d.text) for d in diagnostics] == [
+        ("note", "reclaimed 2 orphaned session cache dirs")
     ]
+
+
+def test_a_sweep_with_nothing_to_reap_reports_nothing(tmp_path):
+    _session_dir(tmp_path, os.getpid())
+
+    assert _sweep_orphan_session_caches(ProjectLayout.at(tmp_path)) == []
 
 
 def test_nothing_to_reap_never_reads_the_process_table(tmp_path):

@@ -54,11 +54,12 @@ from .runtime_common import (
 )
 from .startup_notices import (
     StartupNotice,
-    _countdown_hold,
-    _startup_hold_seconds,
     save_session_diagnostics,
     show_and_hold_startup_notices,
-    strip_ansi_and_control_codes,
+    notices_from_diagnostics,
+    startup_record,
+    _countdown_hold,
+    _startup_hold_seconds,
 )
 
 if TYPE_CHECKING:
@@ -255,14 +256,7 @@ class WrapRunner:
         """
         return [
             *(StartupNotice("warn", w) for w in self.payload.startup_warnings),
-            *(StartupNotice(diag.level.value, diag.render()) for diag in self.payload.diagnostics),
-        ]
-
-    @staticmethod
-    def _recovery_startup_notices(session: Session) -> list[StartupNotice]:
-        """What environment recovery did at ``create_session``, at the level it chose."""
-        return [
-            StartupNotice(diag.level.value, diag.render()) for diag in session.startup_diagnostics
+            *notices_from_diagnostics(self.payload.diagnostics),
         ]
 
     def _check_interpreter_pin(self, *, running: str | None = None) -> list[StartupNotice]:
@@ -722,7 +716,7 @@ class WrapRunner:
         startup_notices.extend(self._check_skill_collisions(session, result))
         startup_notices.extend(self._check_skill_script_collisions(session, result))
         startup_notices.extend(self._payload_startup_notices())
-        startup_notices.extend(self._recovery_startup_notices(session))
+        startup_notices.extend(notices_from_diagnostics(session.startup_diagnostics))
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))
@@ -804,20 +798,14 @@ class WrapRunner:
             save_session_diagnostics(
                 session.session_dir,
                 "startup",
-                {
-                    "hold_seconds": _startup_hold_seconds(
+                startup_record(
+                    startup_notices,
+                    _startup_hold_seconds(
                         bool(startup_notices),
                         is_tty=sys.stdin.isatty(),
                         env=env,
                     ),
-                    "notices": [
-                        {
-                            "level": n.level,
-                            "text": strip_ansi_and_control_codes(n.text),
-                        }
-                        for n in startup_notices
-                    ],
-                },
+                ),
             )
             # Brief pre-launch hold so the start banner + any
             # fail-open startup warning are readable before the TUI clobbers
