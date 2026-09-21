@@ -505,9 +505,11 @@ class ClaudeSurface(Surface):
         return leaked
 
     def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
+        """A test double that stubs ``engine()`` stubs this too — there is no
+        binary behind it to ask."""
         from .readiness import readiness_findings
 
-        return readiness_findings(environ)
+        return readiness_findings(environ, binary=self.get_cli_command()[0])
 
     def settings_lint_warnings(self, layout: ProjectLayout) -> list[str]:
         """One warning per deprecated permission rule in the Claude settings

@@ -127,6 +127,9 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
         def claim_resources(self, plan, flags, *, layout, run):
             run.defer("provider artifacts", lambda: lifecycle.append("provider"))
 
+        def readiness_findings(self, environ):
+            return []  # the engine is stubbed: no binary to ask
+
     payload = replace(
         build_composition_payload(project, role_override="guest"),
         provider=LifecycleProvider(),

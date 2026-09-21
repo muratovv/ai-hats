@@ -52,6 +52,9 @@ def test_automate_session_persists_recovery_diagnostics(project: Path):
         def engine(self):
             return ClaudeSubagentEngine(self, run_blocking=lambda *args, **kwargs: None)
 
+        def readiness_findings(self, environ):
+            return []  # the engine is stubbed: no binary to ask
+
     payload = replace(
         build_composition_payload(project, role_override="maintainer"), provider=_NoSdk()
     )

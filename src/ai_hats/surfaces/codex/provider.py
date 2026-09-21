@@ -121,16 +121,17 @@ READINESS_SOURCE = "codex/readiness"
 
 
 def _readiness_findings(
-    environ: Mapping[str, str], *, which=shutil.which, run=subprocess.run
+    environ: Mapping[str, str], *, binary: str = "codex", which=shutil.which, run=subprocess.run
 ) -> "list[Signal]":
-    binary = which("codex", path=environ.get("PATH"))
-    if not binary:
+    resolved = which(binary, path=environ.get("PATH"))
+    if not resolved:
         return [
             _person_must(
                 PersonMustAct.INSTALL,
                 "Codex CLI is not on PATH. Install it, then run `codex --version` and `codex login`.",
             )
         ]
+    binary = resolved
     try:
         version = run(
             [binary, "--version"],
@@ -241,7 +242,7 @@ class CodexSurface(Surface):
 
     def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
         """Probe CLI/auth readiness without reading or changing Codex config."""
-        return _readiness_findings(environ)
+        return _readiness_findings(environ, binary=self.get_cli_command()[0])
 
     def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         """Codex receives ai-hats context inline; no project file is managed."""

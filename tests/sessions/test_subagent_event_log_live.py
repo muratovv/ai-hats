@@ -80,6 +80,9 @@ def test_a_subagent_session_leaves_its_event_log_written_live(project: Path):
         def engine(self):
             return ClaudeSubagentEngine(self, run_blocking=fake_sdk)
 
+        def readiness_findings(self, environ):
+            return []  # the engine is stubbed: no binary to ask
+
     payload = replace(
         build_composition_payload(project, role_override="maintainer"), provider=StubbedSdk()
     )
@@ -154,6 +157,9 @@ def test_a_quota_warning_the_stream_alone_carries_reaches_the_log_as_it_happens(
     class StubbedSdk(ClaudeSurface):
         def engine(self):
             return ClaudeSubagentEngine(self, run_blocking=fake_sdk)
+
+        def readiness_findings(self, environ):
+            return []  # the engine is stubbed: no binary to ask
 
     payload = replace(
         build_composition_payload(project, role_override="maintainer"), provider=StubbedSdk()

@@ -24,14 +24,18 @@ _PROBE_TIMEOUT_S = 10
 def readiness_findings(
     environ: Mapping[str, str],
     *,
+    binary: str = "claude",
     which=shutil.which,
     run=subprocess.run,
 ) -> list[Signal]:
     """Refuse only on a parsed ``loggedIn: false``; anything the probe cannot
-    read is a ``Notice`` — a wrong refusal costs more than a late failure."""
-    binary = which("claude", path=environ.get("PATH"))
-    if not binary:
-        return [_notice("claude is not on PATH; auth not probed")]
+    read is a ``Notice`` — a wrong refusal costs more than a late failure.
+    ``binary`` is what the surface launches, so a surface that swaps its CLI
+    probes the swap."""
+    resolved = which(binary, path=environ.get("PATH"))
+    if not resolved:
+        return [_notice(f"{binary} is not on PATH; auth not probed")]
+    binary = resolved
     try:
         probe = run(
             [binary, "auth", "status"],

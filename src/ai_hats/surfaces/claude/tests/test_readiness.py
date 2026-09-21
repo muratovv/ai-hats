@@ -120,3 +120,19 @@ def test_a_logged_out_status_never_leaks_the_command_output() -> None:
     (finding,) = readiness_findings(_ENV, which=lambda name, path=None: "/bin/claude", run=run)
 
     assert "x@y.z" not in (finding.detail or "")
+
+
+def test_the_probe_asks_the_binary_the_surface_launches() -> None:
+    """A surface that swaps its CLI probes the swap, never the ambient claude."""
+    run = _run_returning("not json", 0)
+    asked: list[str] = []
+
+    def which(name, path=None):
+        asked.append(name)
+        return f"/bin/{name}"
+
+    findings = readiness_findings(_ENV, binary="fake-claude", which=which, run=run)
+
+    assert asked == ["fake-claude"]
+    assert run.calls[0][0] == ["/bin/fake-claude", "auth", "status"]
+    assert [type(f) for f in findings] == [Notice]
