@@ -56,10 +56,9 @@ def probe_host(
     Every command the consent gate can wrap is resolved here, whether or not
     the composition asks for it: the host is a fact of the machine, not of the
     role, and a planner that finds no key refuses on its own terms. The
-    person's configuration home is the surface's to enumerate (``probe_home``),
-    so it is taken here too, for the surface in hand, and so is their claude
-    status line, from the settings chain under ``environ``'s home and ``cwd``'s
-    project.
+    person's configuration is the surface's own to read — their home from
+    ``environ`` (``probe_home``) and this project's settings from ``cwd``
+    (``probe_project``) — so both are taken here, for the surface in hand.
     """
     from ai_hats_library.hooks.consent_gate import operations
 
@@ -74,9 +73,17 @@ def probe_host(
         if (found := which(name, path=path))
     }
     home = surface.probe_home(env) if surface is not None else None
+    # No project directory, no project probe: falling back to the process's own
+    # cwd would make a bare probe read whichever tree the caller happens to be in.
+    project = surface.probe_project(env, cwd) if surface is not None and cwd is not None else None
     status_line = claude_status_line(claude_settings_chain(env, Path.cwd() if cwd is None else cwd))
     return Host(
-        python=Path(python), path=path, commands=commands, home=home, status_line=status_line
+        python=Path(python),
+        path=path,
+        commands=commands,
+        home=home,
+        project=project,
+        status_line=status_line,
     )
 
 

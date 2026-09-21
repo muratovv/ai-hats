@@ -467,6 +467,33 @@ def test_the_host_carries_the_home_the_surface_probes(tmp_path: Path):
     assert homed.digest != bare.digest, "the home is an input of planning"
 
 
+def test_the_host_carries_the_project_the_surface_probes(tmp_path: Path):
+    """The home probe's sibling: what a surface reads from the PROJECT, which no
+    environment names. No project directory, no probe — a bare ``probe_host``
+    must not fall back to whichever tree the caller happens to stand in."""
+    from ai_hats.surfaces.cline.provider import ClineSurface
+    from ai_hats.surfaces.plan import Digested
+
+    @dataclasses.dataclass(frozen=True)
+    class Project(Digested):
+        settings: Path
+
+    class Configured(ClineSurface):
+        def probe_project(self, environ, cwd):
+            del environ
+            return Project(cwd / ".tool" / "settings.json")
+
+    environ = {"PATH": str(tmp_path), "HOME": str(tmp_path)}
+    probed = probe_host(environ, python="/opt/py", surface=Configured(), cwd=tmp_path)
+    assert probed.project == Project(tmp_path / ".tool" / "settings.json")
+
+    no_cwd = probe_host(environ, python="/opt/py", surface=Configured())
+    assert no_cwd.project is None, "no project directory, no project probe"
+    bare = probe_host(environ, python="/opt/py", surface=ClineSurface(), cwd=tmp_path)
+    assert bare.project is None, "a surface that projects none leaves it None"
+    assert probed.digest != bare.digest, "the project is an input of planning"
+
+
 def test_the_record_says_where_each_check_runs_from_off_the_plans_own_entries(tmp_path: Path):
     """``runs_from`` is the mirror the plan writes for the check's skill; a
     script outside every composed skill has no mirror and says so."""
