@@ -144,6 +144,14 @@ in stdout; the human-readable mode (without `--json`) is unchanged.
 | 124            | timeout (sub-agent exceeded the wall-clock limit) — GNU coreutils convention |
 | other non-zero | forwarded from the provider (claude/gemini exit code)                        |
 
+A run the surface could not serve at all — not logged in, CLI missing — is
+refused **before** a worktree or a session cache is taken and reports as
+exit 1 with `error` in the envelope naming what to do (`claude auth login`,
+`codex login`); its `events.jsonl` holds `run_started`, the
+`person_must_act` signal and `run_ended`, so an orchestrator reads the cause
+the same way it reads a mid-run one. The probe is the surface's readiness
+probe (glossary); a probe that cannot run never refuses.
+
 Fan-out example:
 
 ```bash
