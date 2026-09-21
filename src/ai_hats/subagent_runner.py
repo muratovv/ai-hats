@@ -45,9 +45,7 @@ from .runtime_common import (
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
-    blocking_findings,
-    readiness_findings,
-    record_refused_run,
+    refuse_unready,
     start_event_log,
 )
 
@@ -237,21 +235,15 @@ class SubAgentRunner:
             self.session_mgr,
             parent_session=parent_session,
         ) as run:
-            # Asked once the session exists and before anything is taken: a
-            # refusal is a session that says why, not a run that died later.
-            refusals = blocking_findings(
-                readiness_findings(self.payload.provider, os.environ, report=run.warn)
-            )
-            if refusals:
-                record_refused_run(
-                    run.session,
-                    refusals,
-                    role=self.payload.effective_role,
-                    provider=self.payload.provider.name,
-                    model=model,
-                    isolation_mode=isolation_mode,
-                    tags=tags,
-                )
+            if refuse_unready(
+                run,
+                self.payload.provider,
+                os.environ,
+                role=self.payload.effective_role,
+                model=model,
+                isolation_mode=isolation_mode,
+                tags=tags,
+            ):
                 return run.session
             session, work_dir = self._run_session_attempt(
                 run,

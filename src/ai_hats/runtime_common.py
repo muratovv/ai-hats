@@ -54,6 +54,8 @@ if TYPE_CHECKING:
     from ai_hats_observe.canonical.signals import Blocking, Signal
     from ai_hats_observe.event_log_writer import EventLogWriter
 
+    from .session_run import SessionRun
+
 logger = logging.getLogger(__name__)
 
 # Sub-agent subprocess wall-clock limit. Exceeding this raises TimeoutExpired,
@@ -646,6 +648,33 @@ def blocking_findings(findings: "list[Signal]") -> "list[Blocking]":
     from ai_hats_observe.canonical.signals import Blocking
 
     return [finding for finding in findings if isinstance(finding, Blocking)]
+
+
+def refuse_unready(
+    run: "SessionRun",
+    provider,
+    environ: "Mapping[str, str]",
+    *,
+    role: str,
+    model: str,
+    isolation_mode: str,
+    tags: dict[str, str] | None = None,
+) -> bool:
+    """Ask the surface once the session exists and before anything is taken;
+    ``True`` means the run is over and the session says why."""
+    refusals = blocking_findings(readiness_findings(provider, environ, report=run.warn))
+    if not refusals:
+        return False
+    record_refused_run(
+        run.session,
+        refusals,
+        role=role,
+        provider=provider.name,
+        model=model,
+        isolation_mode=isolation_mode,
+        tags=tags,
+    )
+    return True
 
 
 def record_refused_run(

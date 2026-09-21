@@ -1,6 +1,10 @@
 """The readiness probe on the Automate path: a blocking finding ends the run
 after the session is minted and before anything is taken, and the session
-says why — ``events.jsonl`` and a finalized ``metrics.json``."""
+says why — ``events.jsonl`` and a finalized ``metrics.json``.
+
+``refuse_unready`` is the whole decision; ``SubAgentRunner._run_attempt``
+returns the session when it says ``True`` (the e2e proves no worktree and no
+cache are taken on that road)."""
 
 from __future__ import annotations
 
@@ -21,7 +25,9 @@ from ai_hats_observe.canonical.signals import (
 )
 from ai_hats_observe.event_log import read_events
 
-from ai_hats.runtime import SUBAGENT_EXIT_ERROR, SubAgentRunner
+from ai_hats.runtime import SUBAGENT_EXIT_ERROR
+from ai_hats.runtime_common import refuse_unready
+from ai_hats.session_run import SessionRun
 
 _REFUSAL = PersonActionRequired(
     reason=PersonMustAct.REAUTHENTICATE, detail="not logged in, run `x auth login`", source="t"
@@ -34,71 +40,48 @@ class _Provider:
     name: str = "stub"
     findings: list = field(default_factory=list)
     raises: bool = False
+    asked_with: list = field(default_factory=list)
 
     def readiness_findings(self, environ):
+        self.asked_with.append(environ)
         if self.raises:
             raise RuntimeError("probe exploded")
         return list(self.findings)
 
 
-@dataclass
-class _Payload:
-    provider: _Provider
-    effective_role: str = "assistant"
+def _refuse(tmp_path: Path, provider: _Provider) -> tuple[bool, SessionRun]:
+    layout = ProjectLayout.at(tmp_path)
+    run = SessionRun.create(SessionManager(tmp_path, runs_dir=layout.sessions.runs))
+    with run:
+        refused = refuse_unready(
+            run,
+            provider,
+            {"PATH": "/usr/bin"},
+            role="assistant",
+            model="",
+            isolation_mode="discard",
+            tags={"k": "v"},
+        )
+    return refused, run
 
 
-def _runner(tmp_path: Path, provider: _Provider, monkeypatch) -> SubAgentRunner:
-    runner = SubAgentRunner.__new__(SubAgentRunner)
-    runner.layout = ProjectLayout.at(tmp_path)
-    runner.project_dir = tmp_path
-    runner.payload = _Payload(provider)
-    runner.session_mgr = SessionManager(tmp_path, runs_dir=tmp_path / "runs")
-    launched: list[str] = []
+def test_a_blocking_finding_refuses_and_finalizes_the_session(tmp_path):
+    refused, run = _refuse(tmp_path, _Provider(findings=[_REFUSAL]))
 
-    def _launch(run, **kwargs):
-        launched.append(run.session.session_id)
-        run.session.init_audit(role="assistant", provider=provider.name, model="")
-        run.session.finalize_audit({"exit_code": 0, "role": "assistant"})
-        return run.session, tmp_path
-
-    monkeypatch.setattr(runner, "_run_session_attempt", _launch)
-    runner.launched = launched  # type: ignore[attr-defined]
-    return runner
-
-
-def _attempt(runner: SubAgentRunner):
-    return runner._run_attempt(
-        task="ping",
-        ticket_id="",
-        model="",
-        parent_session=None,
-        isolation_mode="discard",
-        tags={"k": "v"},
-        system_prompt_override=None,
-        timeout_s=5,
-    )
-
-
-def test_a_blocking_finding_refuses_before_the_session_attempt(tmp_path, monkeypatch):
-    runner = _runner(tmp_path, _Provider(findings=[_REFUSAL]), monkeypatch)
-
-    session = _attempt(runner)
-
-    assert runner.launched == [], "the session attempt ran — resources were taken"
-    metrics = json.loads(session.metrics_path.read_text())
+    assert refused is True
+    metrics = json.loads(run.session.metrics_path.read_text())
     assert metrics["finalized"] is True
     assert metrics["exit_code"] == SUBAGENT_EXIT_ERROR
     assert metrics["error"] == _REFUSAL.detail
     assert metrics["provider"] == "stub"
     assert metrics["tags"] == {"k": "v"}
+    assert "refused before launch" in run.session.trace_path.read_text()
 
 
-def test_the_refusal_is_the_whole_event_log(tmp_path, monkeypatch):
-    runner = _runner(tmp_path, _Provider(findings=[_REFUSAL]), monkeypatch)
+def test_the_refusal_is_the_whole_event_log(tmp_path):
+    _refused, run = _refuse(tmp_path, _Provider(findings=[_REFUSAL]))
 
-    session = _attempt(runner)
-
-    events = list(read_events(session.session_dir / EVENT_LOG_JSONL))
+    events = list(read_events(run.session.session_dir / EVENT_LOG_JSONL))
     assert [type(e) for e in events] == [RunStarted, PersonActionRequired, RunEnded]
     assert events[1].reason is PersonMustAct.REAUTHENTICATE
     assert events[1].detail == _REFUSAL.detail
@@ -110,40 +93,36 @@ def test_the_refusal_is_the_whole_event_log(tmp_path, monkeypatch):
     )
 
 
-def test_a_ready_surface_runs_the_session_attempt(tmp_path, monkeypatch):
-    """Positive control for the refusal: the same runner, no finding → launched."""
-    runner = _runner(tmp_path, _Provider(findings=[]), monkeypatch)
+def test_a_ready_surface_is_not_refused_and_leaves_no_record(tmp_path):
+    """Positive control: the same road, no finding → ``False``, nothing written."""
+    provider = _Provider(findings=[])
 
-    session = _attempt(runner)
+    refused, run = _refuse(tmp_path, provider)
 
-    assert runner.launched == [session.session_id]
-    assert not (session.session_dir / EVENT_LOG_JSONL).exists()
-
-
-def test_a_notice_is_logged_and_the_run_proceeds(tmp_path, monkeypatch):
-    runner = _runner(tmp_path, _Provider(findings=[_NOTICE]), monkeypatch)
-
-    session = _attempt(runner)
-
-    assert runner.launched == [session.session_id]
-    assert "probe unavailable" in session.trace_path.read_text()
+    assert refused is False
+    assert provider.asked_with == [{"PATH": "/usr/bin"}]
+    assert not (run.session.session_dir / EVENT_LOG_JSONL).exists()
+    assert not run.session.metrics_path.exists()
 
 
-def test_a_probe_that_raises_is_reported_and_the_run_proceeds(tmp_path, monkeypatch):
-    runner = _runner(tmp_path, _Provider(raises=True), monkeypatch)
+def test_a_notice_is_logged_and_does_not_refuse(tmp_path):
+    refused, run = _refuse(tmp_path, _Provider(findings=[_NOTICE]))
 
-    session = _attempt(runner)
+    assert refused is False
+    assert "probe unavailable" in run.session.trace_path.read_text()
 
-    assert runner.launched == [session.session_id]
-    assert "probe exploded" in session.trace_path.read_text()
+
+def test_a_probe_that_raises_is_reported_and_does_not_refuse(tmp_path):
+    refused, run = _refuse(tmp_path, _Provider(raises=True))
+
+    assert refused is False
+    assert "probe exploded" in run.session.trace_path.read_text()
 
 
 @pytest.mark.parametrize("findings", [[_NOTICE, _REFUSAL], [_REFUSAL, _NOTICE]])
-def test_a_notice_beside_a_blocking_finding_still_refuses(tmp_path, monkeypatch, findings):
-    runner = _runner(tmp_path, _Provider(findings=findings), monkeypatch)
+def test_a_notice_beside_a_blocking_finding_still_refuses(tmp_path, findings):
+    refused, run = _refuse(tmp_path, _Provider(findings=findings))
 
-    session = _attempt(runner)
-
-    assert runner.launched == []
-    events = list(read_events(session.session_dir / EVENT_LOG_JSONL))
+    assert refused is True
+    events = list(read_events(run.session.session_dir / EVENT_LOG_JSONL))
     assert [type(e) for e in events] == [RunStarted, PersonActionRequired, RunEnded]
