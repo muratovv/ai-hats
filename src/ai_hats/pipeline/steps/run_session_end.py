@@ -72,22 +72,13 @@ class RunSessionEnd(Step):
 
 
 def _print_retro_banner(retro: dict) -> None:
-    """Render the cyan retro reminder + wrap-up nudge.
+    """Render the cyan retro reminder.
 
-    Extracted verbatim from the original ``_print_session_end``
-    body so behaviour is preserved modulo placement (now AFTER
-    SESSION_END hooks rather than before).
+    The decision's ``wrap_up`` payload is deliberately not rendered here: it
+    is advice for a live session, shown after the session has already exited.
+    It stays in ``diagnostics.json`` for ``session show``.
     """
     rem = retro.get("reminder")
     if rem:
         print(f"\033[33m  Reflect the project through {rem['count']} sessions:\033[0m")
         print(f"     \033[36m{rem['command']}\033[0m")
-
-    wrap = retro.get("wrap_up")
-    if wrap:
-        print(
-            f"\033[33m  Wrap up before next task — "
-            f"{wrap['tasks_closed']} tasks closed in "
-            f"{wrap['duration_min']}min, cache {wrap['cache_read_mb']}MB\033[0m"
-        )
-        print("     \033[36m/clear\033[0m before starting fresh work")

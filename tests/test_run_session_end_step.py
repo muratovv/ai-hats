@@ -52,6 +52,21 @@ def test_no_banner_and_no_raise_when_decision_absent(capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_wrap_up_payload_prints_nothing(capsys):
+    """The wrap-up nudge is data for ``session show`` only — the closing banner
+    never renders it."""
+    RunSessionEnd().run(
+        retro_decision={
+            "reminder": {"count": 3, "command": "ai-hats reflect"},
+            "wrap_up": {"tasks_closed": 13, "duration_min": 2992, "cache_read_mb": 31},
+        }
+    )
+    out = capsys.readouterr().out
+    assert "3 sessions" in out
+    assert "Wrap up" not in out
+    assert "/clear" not in out
+
+
 # ---------------------------------------------------------------------------
 # HATS-086 SIGINT-safety: banner failure swallowed; step never raises
 # ---------------------------------------------------------------------------
