@@ -10,15 +10,16 @@ Reads ``<root>/{core,usage,ai-hats-dev}`` in today's form and writes
 a role or trait becomes ``<name>.yaml`` (``type: composite``) with
 ``<name>/prompt.md`` and ``<name>/priorities.md``, a rule becomes
 ``rules/<name>.md``, a skill tree is copied with ``ai_hats.type: skill`` in its
-frontmatter. ``<root>/hooks`` is copied to ``<root>/experimental/hooks`` so the
-symlinks inside skills resolve at the same depth. ``--only`` limits the run to
-the transitive closure of the named composites.
+frontmatter. ``--only`` limits the run to the transitive closure of the named
+composites.
 
-Not translated yet: ``composition.apps`` rows and the ``git_hooks`` /
-``runtime_hooks`` / ``worktree`` frontmatter channels become ``hook`` files
-in a later slice; here they are dropped and listed in the report. The run is
-idempotent: same input, same bytes. A construct outside the table refuses,
-naming the file — it is a decision for the ADR, not a heuristic here.
+Not translated yet — prompts and skills only: ``composition.apps`` rows and the
+``git_hooks`` / ``runtime_hooks`` / ``worktree`` frontmatter channels become
+``hook`` files in a later slice, and the shared ``<root>/hooks`` payload comes
+with them, so a symlink inside a skill that points outside the skill is left
+out; each is dropped and listed in the report. The run is idempotent: same
+input, same bytes. A construct outside the table refuses, naming the file — it
+is a decision for the ADR, not a heuristic here.
 """
 
 from __future__ import annotations
@@ -33,7 +34,6 @@ from pathlib import Path
 import yaml
 
 LAYERS = ("core", "usage", "ai-hats-dev")
-HOOKS_DIRNAME = "hooks"
 EXPERIMENTAL = "experimental"
 SCHEMA_VERSION = 1
 
@@ -278,15 +278,31 @@ def write_rule(out: Path, name: str, layer: str, rule_md: Path, report: Report) 
     )
 
 
-def copy_tree(src: Path, dst: Path) -> None:
+def copy_skill_tree(src: Path, dst: Path, report: Report) -> None:
+    """The tree as is, symlinks kept — except one that leaves the skill: its
+    target is the shared hooks payload, which arrives with the hook files."""
+    root = src.resolve()
+
+    def ignore(folder: str, names: list[str]) -> set[str]:
+        skipped = set(COPY_IGNORE(folder, names))
+        for name in names:
+            path = Path(folder) / name
+            if path.is_symlink() and not path.resolve().is_relative_to(root):
+                skipped.add(name)
+                report.note(
+                    f"{path}: symlink to {path.readlink()} leaves the skill — not copied; "
+                    "the shared hooks payload arrives with the hook files"
+                )
+        return skipped
+
     if dst.exists() or dst.is_symlink():
         shutil.rmtree(dst)
-    shutil.copytree(src, dst, symlinks=True, ignore=COPY_IGNORE)
+    shutil.copytree(src, dst, symlinks=True, ignore=ignore)
 
 
 def write_skill(out: Path, name: str, layer: str, folder: Path, report: Report) -> None:
     dst = out / layer / "skills" / name.replace("::", "/")
-    copy_tree(folder, dst)
+    copy_skill_tree(folder, dst, report)
     document = dst / "SKILL.md"
     document.write_text(rewrite_skill_frontmatter(document.read_text(), document, report))
     report.written.append(dst)
@@ -361,10 +377,6 @@ def migrate(root: Path, only: Iterable[str]) -> Report:
         write_rule(out, name, layer, rule_md, report)
     for name, (layer, folder) in picked.skills.items():
         write_skill(out, name, layer, folder, report)
-    hooks = root / HOOKS_DIRNAME
-    if hooks.is_dir():
-        copy_tree(hooks, out / HOOKS_DIRNAME)
-        report.written.append(out / HOOKS_DIRNAME)
     return report
 
 

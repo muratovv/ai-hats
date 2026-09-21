@@ -1,1 +1,0 @@
-../../../../hooks/consent_ticket.py
