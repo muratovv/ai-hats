@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Translate a shipped library root into its flat-form copy (ADR-0034 D6).
 
+# comment-length: allow — this docstring is the script's --help text
+
     python scripts/migrate_experimental.py [--root <builtin_root>] [--only <composite>...]
 
 Reads ``<root>/{core,usage,ai-hats-dev}`` in today's form and writes
@@ -92,7 +94,9 @@ def read_composites(root: Path) -> dict[str, Composite]:
                 data = _load_yaml(config)
                 unknown = set(data) - COMPOSITE_KEYS
                 if unknown:
-                    raise Refusal(f"{config}: unknown key(s) {sorted(unknown)} — not in ADR-0034 D6")
+                    raise Refusal(
+                        f"{config}: unknown key(s) {sorted(unknown)} — not in ADR-0034 D6"
+                    )
                 composition = data.get("composition") or {}
                 if not isinstance(composition, dict):
                     raise Refusal(f"{config}: composition is not a mapping")
@@ -227,7 +231,9 @@ def write_composite(out: Path, comp: Composite, names: set[str], report: Report)
     for skill in composition.get("skills") or []:
         terms.append(spell(skill, f"skills::{skill}", names))
     if not terms:
-        raise Refusal(f"{comp.path}: nothing to compose — no injection, priorities, traits, rules or skills")
+        raise Refusal(
+            f"{comp.path}: nothing to compose — no injection, priorities, traits, rules or skills"
+        )
     if composition.get("apps"):
         report.note(
             f"{comp.path}: composition.apps ({', '.join(sorted(composition['apps']))}) not "
@@ -244,8 +250,10 @@ def write_composite(out: Path, comp: Composite, names: set[str], report: Report)
     rel = Path(*comp.name.split("::"))
     _write(out / comp.layer / rel.with_suffix(".yaml"), text, report)
 
-    injection = comp.data.get("injection") or ""
-    if injection.strip():
+    # Stripped, as the composer hands it to the prompt: the member's bytes are
+    # what the agent reads today, and stage 2 compares them.
+    injection = (comp.data.get("injection") or "").strip()
+    if injection:
         _write(
             out / comp.layer / rel / "prompt.md",
             f"---\nschema_version: {SCHEMA_VERSION}\ntype: prompt\nblock: body\n---\n{injection}",
@@ -310,7 +318,7 @@ def rewrite_skill_frontmatter(raw: str, path: Path, report: Report) -> str:
         while end < len(front) and (front[end].strip() == "" or front[end][0] in " \t"):
             end += 1
         block = front[head + 1 : end]
-        indent = next((len(l) - len(l.lstrip()) for l in block if l.strip()), 2)
+        indent = next((len(row) - len(row.lstrip()) for row in block if row.strip()), 2)
         kept: list[str] = []
         skipping = False
         for line in block:
@@ -333,7 +341,9 @@ def rewrite_skill_frontmatter(raw: str, path: Path, report: Report) -> str:
     if after != expected:
         raise Refusal(f"{path}: frontmatter rewrite did not parse back to the expected mapping")
     if dropped:
-        report.note(f"{path}: frontmatter channel(s) {', '.join(dropped)} dropped — hook files arrive in a later slice")
+        report.note(
+            f"{path}: frontmatter channel(s) {', '.join(dropped)} dropped — hook files arrive in a later slice"
+        )
     return "".join([lines[0], *front, *lines[close:]])
 
 
@@ -359,7 +369,9 @@ def migrate(root: Path, only: Iterable[str]) -> Report:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--root",
         type=Path,
@@ -370,7 +382,13 @@ def main(argv: list[str] | None = None) -> int:
         / "ai_hats_library",
         help="the builtin library root (default: this checkout's)",
     )
-    parser.add_argument("--only", nargs="+", default=[], metavar="COMPOSITE", help="roles/traits whose closure to translate")
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        default=[],
+        metavar="COMPOSITE",
+        help="roles/traits whose closure to translate",
+    )
     args = parser.parse_args(argv)
     if not all((args.root / layer).is_dir() for layer in LAYERS[:2]):
         print(f"error: {args.root} does not hold core/ and usage/", file=sys.stderr)
