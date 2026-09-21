@@ -157,11 +157,14 @@ def _head(repo: Path) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
-def _env(repo: Path, bindir: Path | None) -> dict[str, str]:
+SYSTEM_PATH = "/usr/bin:/bin"
+
+
+def _env(repo: Path, bindir: Path | None, *, system_path: str = SYSTEM_PATH) -> dict[str, str]:
     """A bare PATH: system bash 3.2 on macOS, and no `python` — so the xdist
     probe falls through to the `pytest` a case puts in `bindir`."""
     env = {
-        "PATH": "/usr/bin:/bin",
+        "PATH": system_path,
         "HOME": os.environ.get("HOME", "/tmp"),
         "GATES_STAGE_RUNNER": str(repo.parent / "runner.sh"),
     }
@@ -170,8 +173,30 @@ def _env(repo: Path, bindir: Path | None) -> dict[str, str]:
     return env
 
 
+def _system_path_without(tmp_path: Path, name: str) -> str:
+    """`SYSTEM_PATH` mirrored by symlink into one dir, minus `name`.
+
+    The only way to take a binary off a PATH the host owns: `shutil.which`
+    walks past a shim that is not executable, a directory or a dangling link,
+    straight on to the host's copy (ubuntu-latest keeps `gh` under /usr/bin).
+    """
+    mirror = tmp_path / f"no-{name}-bin"
+    mirror.mkdir()
+    for directory in SYSTEM_PATH.split(":"):
+        for entry in os.scandir(directory):
+            link = mirror / entry.name
+            if entry.name == name or link.is_symlink():
+                continue
+            link.symlink_to(entry.path)
+    return str(mirror)
+
+
 def _check(
-    stdin: str, *, cwd: Path, bindir: Path | None = None
+    stdin: str,
+    *,
+    cwd: Path,
+    bindir: Path | None = None,
+    system_path: str = SYSTEM_PATH,
 ) -> subprocess.CompletedProcess[str]:
     """The hook in CHECK mode: git's pre-push protocol on stdin."""
     return subprocess.run(
@@ -181,7 +206,7 @@ def _check(
         capture_output=True,
         text=True,
         timeout=30,
-        env=_env(cwd, bindir),
+        env=_env(cwd, bindir, system_path=system_path),
     )
 
 
@@ -356,6 +381,7 @@ def test_without_gh_the_notice_says_not_checked_and_the_push_still_allowed(tmp_p
         f"refs/heads/master {_head(repo)} refs/heads/master {OLD_SHA}\n",
         cwd=repo,
         bindir=_notice_bindir(tmp_path, None),
+        system_path=_system_path_without(tmp_path, "gh"),
     )
 
     assert res.returncode == 0, res.stderr
