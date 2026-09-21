@@ -2538,7 +2538,7 @@ as a claim to check, not as evidence.
   python scripts/migrate_experimental.py --root <synthetic> --only oddball
   ```
 
-- **expect** — the copy's experimental/ is byte-equal to the committed one; the second run changes nothing; a config.yaml key outside the ADR-0034 D6 table refuses naming the file, and a composition.apps row is reported as deferred
+- **expect** — the copy's experimental/ is byte-equal to the committed one, prompts and skills only — no hooks payload, a skill's symlink out of its tree left out and reported; the second run changes nothing; a config.yaml key outside the ADR-0034 D6 table refuses naming the file, and a composition.apps row is reported as deferred
 - **why** — experimental/ is a derived artifact: what is committed must be what the script produces, or the candidate reads a hand-edited library (ADR-0034 D6)
 
 ## `test_migration_no_replay_without_config.py`
