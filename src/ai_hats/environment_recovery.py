@@ -39,8 +39,9 @@ from pathlib import Path
 # consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
+from ai_hats_core.diagnostics import Diagnostic, Level
 from ai_hats_core.layout import ProjectLayout
-from .runs_retention import sweep_runs
+from .runs_retention import RetentionReport, sweep_runs
 from .session_liveness import LazyLiveness as _LazyLiveness
 from .session_liveness import session_owners
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
@@ -262,7 +263,7 @@ class EnvironmentRecovery:
     def __init__(self, layout: ProjectLayout) -> None:
         self.layout = layout
 
-    def run(self) -> None:
+    def run(self) -> list[Diagnostic]:
         # Order matters: write THIS run's ref before any reclaim can observe the
         # version we are pinned to as orphaned. A run started before a `self
         # update` flipped `current` is pinned to a now-non-current sha; its ref
@@ -273,9 +274,10 @@ class EnvironmentRecovery:
         write_current_run_ref(self.layout.versions)
         # One process table for both sweeps, read only if one of them needs it.
         liveness = _LazyLiveness()
+        diagnostics: list[Diagnostic] = []
         _sweep_orphan_session_caches(self.layout, liveness=liveness)
         _sweep_orphan_project_keys(self.layout, liveness=liveness)
-        sweep_runs(self.layout, liveness=liveness)
+        diagnostics.extend(_retention_diagnostics(sweep_runs(self.layout, liveness=liveness)))
 
         # The version GC mutates versions/ — serialize it against a concurrent
         # `self update` (acquire) or a peer GC pass under the crash-safe lock.
@@ -311,3 +313,12 @@ class EnvironmentRecovery:
         reclaimed_venv = reclaim_legacy_venv(self.layout)
         if reclaimed_venv is not None:
             logger.warning("reclaimed legacy .venv: %s", reclaimed_venv)
+        return diagnostics
+
+
+def _retention_diagnostics(report: RetentionReport) -> list[Diagnostic]:
+    """One line per sweep; a sweep that dropped nothing and failed nowhere says nothing."""
+    if not (report.files_removed or report.errors):
+        return []
+    level = Level.WARN if report.errors else Level.NOTE
+    return [Diagnostic(level, report.summary())]

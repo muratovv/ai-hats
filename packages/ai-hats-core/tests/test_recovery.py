@@ -1,29 +1,25 @@
-"""HATS-948 (T15) — recovery contract + no-op live in core.
+"""The recovery contract + no-op live in core.
 
-RED-under-revert: observe's package-pure default (`NoOpRecovery`) and the
-`RecoveryProtocol` it depends on must resolve from core alone, with no version
-subsystem in the import graph.
+observe's package-pure default (`NoOpRecovery`) and the `RecoveryProtocol` it
+depends on must resolve from core alone, with no version subsystem in the import
+graph. A recovery reports what it did as diagnostics; the no-op reports nothing.
 """
 
 from __future__ import annotations
 
+from ai_hats_core.diagnostics import Diagnostic, Level
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol
 
 
-def test_noop_runs_and_satisfies_protocol() -> None:
+def test_noop_runs_and_reports_nothing() -> None:
     rec: RecoveryProtocol = NoOpRecovery()
-    assert rec.run() is None  # pure no-op, returns None, touches nothing
+    assert rec.run() == ()  # pure no-op: touches nothing, reports nothing
 
 
-def test_arbitrary_run_object_is_a_recovery() -> None:
+def test_a_recovery_reports_its_diagnostics() -> None:
     class _Spy:
-        def __init__(self) -> None:
-            self.ran = False
+        def run(self) -> tuple[Diagnostic, ...]:
+            return (Diagnostic(Level.NOTE, "reclaimed one thing"),)
 
-        def run(self) -> None:
-            self.ran = True
-
-    spy = _Spy()
-    rec: RecoveryProtocol = spy
-    rec.run()
-    assert spy.ran
+    rec: RecoveryProtocol = _Spy()
+    assert [d.text for d in rec.run()] == ["reclaimed one thing"]

@@ -258,6 +258,13 @@ class WrapRunner:
             *(StartupNotice(diag.level.value, diag.render()) for diag in self.payload.diagnostics),
         ]
 
+    @staticmethod
+    def _recovery_startup_notices(session: Session) -> list[StartupNotice]:
+        """What environment recovery did at ``create_session``, at the level it chose."""
+        return [
+            StartupNotice(diag.level.value, diag.render()) for diag in session.startup_diagnostics
+        ]
+
     def _check_interpreter_pin(self, *, running: str | None = None) -> list[StartupNotice]:
         """WARN when this venv is not on the pinned interpreter.
 
@@ -715,6 +722,7 @@ class WrapRunner:
         startup_notices.extend(self._check_skill_collisions(session, result))
         startup_notices.extend(self._check_skill_script_collisions(session, result))
         startup_notices.extend(self._payload_startup_notices())
+        startup_notices.extend(self._recovery_startup_notices(session))
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))

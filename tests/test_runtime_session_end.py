@@ -363,6 +363,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         finalize_hitl_exc: BaseException | None = None,
         finalize_hitl_hook=None,
         layout: ProjectLayout | None = None,
+        recovery=None,
     ):
         from ai_hats.composition_seam import build_composition_payload
         from ai_hats_observe import SessionManager, SidecarTracer
@@ -376,7 +377,9 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         runner = WrapRunner(
             layout or ProjectLayout.at(project),
             payload,
-            session_mgr=SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs),
+            session_mgr=SessionManager(
+                project, runs_dir=ProjectLayout.at(project).sessions.runs, recovery=recovery
+            ),
             tracer_factory=SidecarTracer,
         )
 
@@ -427,6 +430,33 @@ def test_wrap_runner_finally_prints_summary_on_happy_path(
     assert exit_code == 0
     out = capsys.readouterr().out
     assert f"✨ Session {session.session_id} complete!" in out
+
+
+def test_wrap_runner_puts_recovery_diagnostics_in_the_banner_and_the_record(
+    wrap_runner_factory, capsys, monkeypatch
+):
+    """What recovery did at create_session is a startup note: printed inside the
+    hold and persisted with the other notices, not a bare line on stderr."""
+    import json
+
+    from ai_hats_core.diagnostics import Diagnostic, Level
+
+    class _Reporting:
+        def run(self):
+            return (Diagnostic(Level.NOTE, "runs retention: dropped 2 files / 140 bytes"),)
+
+    monkeypatch.setenv("AI_HATS_STARTUP_HOLD", "0")
+    runner, _project = wrap_runner_factory(pty_exit_code=0, recovery=_Reporting())
+
+    _exit_code, session = runner.run()
+
+    out = capsys.readouterr().out
+    assert "startup note(s)" in out, out
+    assert "runs retention: dropped 2 files / 140 bytes" in out
+    record = json.loads((session.session_dir / "diagnostics.json").read_text())
+    assert {"level": "note", "text": "runs retention: dropped 2 files / 140 bytes"} in record[
+        "startup"
+    ]["notices"]
 
 
 def test_wrap_runner_closes_session_resources_before_session_cache(

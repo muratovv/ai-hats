@@ -1,10 +1,10 @@
-"""HATS-1753: the diagnostics primitive — one value type, one spelling."""
+"""The diagnostics primitive — one value type, one spelling, resolvable from core alone."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.diagnostics import Diagnostic, Level, emit_to_stderr
+from ai_hats_core.diagnostics import Diagnostic, Level, emit_to_stderr
 
 
 def test_bare_diagnostic_renders_its_text_alone():

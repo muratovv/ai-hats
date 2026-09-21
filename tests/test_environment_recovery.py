@@ -220,6 +220,7 @@ class _SpyRecovery:
 
     def run(self):
         self.calls += 1
+        return ()
 
 
 def test_session_manager_calls_recovery_once_per_create(tmp_path):
@@ -814,6 +815,29 @@ def test_recovery_expires_aged_bulk_run_artifacts(tmp_path):
 
     assert not bulk.exists()
     assert facts.exists()
+
+
+def test_recovery_reports_the_retention_sweep_as_one_note(tmp_path):
+    """The deletion is reported through the diagnostics the run returns, not a log level."""
+    run = ProjectLayout.compute(tmp_path, os.environ).sessions.runs / "session_20250101-000000-1-1"
+    run.mkdir(parents=True)
+    bulk = run / "transcript.jsonl"
+    bulk.write_text("{}", encoding="utf-8")
+    _age(bulk, 90)
+
+    diagnostics = EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
+
+    retention = [d for d in diagnostics if d.text.startswith("runs retention:")]
+    assert [d.level.value for d in retention] == ["note"]
+    assert "dropped 1 files / 2 bytes" in retention[0].text
+
+
+def test_a_clean_retention_sweep_reports_nothing(tmp_path):
+    ProjectLayout.compute(tmp_path, os.environ).sessions.runs.mkdir(parents=True)
+
+    diagnostics = EnvironmentRecovery(ProjectLayout.at(tmp_path)).run()
+
+    assert [d.text for d in diagnostics if d.text.startswith("runs retention:")] == []
 
 
 def test_claim_marks_the_cache_dir_with_this_process(tmp_path):
