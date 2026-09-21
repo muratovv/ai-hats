@@ -16,7 +16,7 @@ Three contracts locked here, all under epic HATS-506:
 
 3. **HITL lock-in** — the same overlay content must reach
    ``--system-prompt-file`` in the HITL ``WrapRunner`` /
-   ``ClaudeSurface.build_session_prompt`` path. Direct invocation,
+   ``ClaudeSurface.plan`` path. Direct invocation,
    no pipeline involvement.
 
 Sister to ``test_funnel_value_contract.py`` — same HATS-452 contract
@@ -233,8 +233,8 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     sends to the Claude SDK as ``system_prompt`` — must include every
     overlay-layer contribution from both global + project layers.
 
-    Direct invocation of the same ``compose_for_role`` +
-    ``_build_system_prompt`` chain the runner uses internally;
+    Direct invocation of the same ``compose_for_role`` + plan +
+    ``automate_launch`` chain the runner uses internally;
     ``SubAgentRunner.run`` itself is not exercised (stubbed via
     ``mock_runners`` in the sibling test). Together, the two tests
     cover (a) "pipeline behaves" + (b) "runtime composes correctly"
@@ -271,25 +271,31 @@ def test_hitl_session_prompt_carries_all_overlay_content(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """Lock-in counterpart: ``WrapRunner`` / ``ClaudeSurface.
-    build_session_prompt`` already propagates overlay content (verified
-    empirically during HATS-501 brainstorm).
+    """Lock-in counterpart: the HITL plan of ``ClaudeSurface`` already
+    propagates overlay content (verified empirically during HATS-501
+    brainstorm).
 
     Assert it at the composer/provider boundary so a future runtime
     refactor can't silently regress HITL to match the broken Automate
     behaviour. No pipeline involvement — the contract is at
-    ``compose_for_role`` + ``provider.build_session_prompt``.
+    ``compose_for_role`` + ``plan_session`` + ``apply``.
     """
+    from ai_hats.surfaces.plan import context_text
+    from tests._plan_helpers import materialized
+
     project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
     asm = Assembler(project)
     result = compose_for_role(asm, "maintainer")
-    args, _env, _ = ClaudeSurface().build_session_prompt(
-        ProjectLayout.at(project),
-        result,
-        "test-sid-501",
+    layout = ProjectLayout.at(project)
+    plan = materialized(
+        ClaudeSurface(),
+        _composition(asm, result),
+        layout=layout,
+        root=layout.cache.session("test-sid-501"),
     )
-    prompt_md = Path(args[1]).read_text()
+    prompt_md = Path(plan.context).read_text()
+    assert prompt_md == context_text(plan)
 
     missing = [m for m in markers.values() if m not in prompt_md]
     assert not missing, (
@@ -297,22 +303,32 @@ def test_hitl_session_prompt_carries_all_overlay_content(
     )
 
 
-def _sdk_audit(provider, project, result, *, task: str) -> str:
-    """The bytes the real AUTOMATE path renders into ``meta_prompt.txt``.
+def _composition(asm, result):
+    """The composition half, with the layers ``compose_for_role`` applied."""
+    from ai_hats.composition_seam import _labelled_overlays
+    from ai_hats.surfaces import adapt
 
-    Built through ``build_session_artifacts`` in plan mode rather than a
-    test-only prompt builder — the point is to assert what ships (HATS-1552).
-    """
-    from ai_hats.materialization import PlanMaterializer
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.sdk_options import render_sdk_prompt_audit
-
-    artifacts = BuiltArtifacts(port=PlanMaterializer())
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
+    return adapt(
         result,
-        "audit-probe",
-        run_mode=RunMode.AUTOMATE,
-        artifacts=artifacts,
+        identity=result.name,
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=_labelled_overlays(asm, result.name, None),
+        diagnostics=[],
     )
-    return render_sdk_prompt_audit(artifacts, ProjectLayout.at(project), task=task, ticket_id="")
+
+
+def _sdk_audit(provider, project, result, *, task: str) -> str:
+    """The bytes the real AUTOMATE path renders into ``meta_prompt.txt`` —
+    the launch's own prompt, not a test-only builder (HATS-1552)."""
+    from tests._plan_helpers import automate_prompt
+
+    asm = Assembler(project)
+    layout = ProjectLayout.at(project)
+    return automate_prompt(
+        provider,
+        _composition(asm, result),
+        layout=layout,
+        root=layout.cache.session("audit-probe"),
+        task=task,
+    )

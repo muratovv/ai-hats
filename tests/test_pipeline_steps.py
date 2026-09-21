@@ -309,3 +309,49 @@ def test_run_session_review_delegates(tmp_path: Path):
 
 def test_run_session_review_failure_policy_halt():
     assert RunSessionReview().failure_policy == "halt"
+
+
+# ---------------- materialize_system_prompt ----------------
+
+
+def test_materialize_system_prompt_probes_the_host_for_the_surface_in_hand(
+    tmp_path: Path, monkeypatch
+):
+    """show-prompt plans with the same host the launch does (ADR-0036 D5): the
+    surface's own enumeration of the person's home rides ``Host.home``."""
+    from types import SimpleNamespace
+
+    import ai_hats.session_plan as sp
+    from ai_hats.pipeline.steps.materialize import MaterializeSystemPrompt
+    from ai_hats.surfaces.claude.provider import ClaudeSurface
+    from ai_hats.surfaces.plan import CompositionPlan, Hooks, Prompt, PromptBlock, PromptMember
+
+    seen: dict[str, object] = {"calls": 0}
+    real = sp.probe_host
+
+    def probe(*args, **kwargs):
+        seen["surface"] = kwargs.get("surface")
+        seen["calls"] = seen["calls"] + 1
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(sp, "probe_host", probe)
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(),
+        hooks=Hooks((), ()),
+        trace=(),
+    )
+    payload = SimpleNamespace(
+        provider=ClaudeSurface(),
+        layout=ProjectLayout.at(tmp_path / "proj"),
+        plan=composition,
+        result=MagicMock(name="result"),
+        effective_role="r",
+    )
+
+    out = MaterializeSystemPrompt().run(composition=payload)
+
+    assert out["system_prompt_text"] == "# r\n"
+    assert seen["calls"] == 1, "the spy saw the probe at all"
+    assert seen["surface"] is payload.provider

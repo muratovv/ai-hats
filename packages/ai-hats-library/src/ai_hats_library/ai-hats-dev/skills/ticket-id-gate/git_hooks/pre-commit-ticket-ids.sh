@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # git pre-commit: refuse a tracker id in STAGED library prose.
 #
-# Ships with the `ticket-id-gate` skill, attached to the `skill-engineer` trait
-# → installed only for the roles that author library content.
+# Ships with the `ticket-id-gate` skill, attached to the `ai-hats-dev` trait
+# → installed only for the roles that author the SHIPPED library.
 #
 # The prefix is LEARNED from the project's own tracker card ids, never
 # hardcoded: this script is itself shipped library content, so naming one
@@ -14,7 +14,8 @@
 # the whole comment, and removing it there is a rewrite, not a deletion.
 #
 # Override (per commit, after confirming the id belongs):
-#   AI_HATS_TICKET_IDS_ACK=1 git commit ...
+#   AI_HATS_TICKET_IDS_ACK=1, exported in the shell that runs the commit —
+#   never a prefix on an agent's command line (safety-guard refuses it).
 set -uo pipefail
 
 # shellcheck source=../../../../hooks/bypass_journal.sh
@@ -92,7 +93,9 @@ if [[ ${#violations[@]} -gt 0 ]]; then
         echo "  <!-- ${marker} the checkout guard prints this string -->"
         echo ""
         echo "Or skip this single commit after confirming intent:"
-        echo "  AI_HATS_TICKET_IDS_ACK=1 git commit ..."
+        echo "  AI_HATS_TICKET_IDS_ACK=1, exported in the shell that runs the"
+        echo "  commit. An agent cannot put it on its own command line —"
+        echo "  safety-guard refuses that — and every honoured use is journalled."
     } >&2
     ai_hats_journal_catch ticket-ids block "tracker id in staged library prose"
     exit 1

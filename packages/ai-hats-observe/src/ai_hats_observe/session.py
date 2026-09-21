@@ -33,6 +33,7 @@ from .artifacts import (
     private_opener,
     session_dirname,
 )
+from .composition import CompositionNames, composition_names
 from .trace import ENV_SESSION_ID, ENV_TRACE_LOG_PATH, TraceTag
 
 # HATS-948: the metrics.json (machine-readable audit) schema tag — observe's
@@ -266,12 +267,10 @@ class Session:
     ) -> None:
         """Initialize incremental audit.md.
 
-        ``composition`` is what the session was made of, captured at start so
-        a reviewer can cite exactly what loaded: on the plan path the
-        ``composition`` part of the session record (prompt blocks, skills,
-        hooks, trace — ADR-0036 D6); on the older path a snapshot of
-        ``traits`` / ``rules`` / ``skills`` with a ``provenance`` layer map.
-        Persisted in audit.md and surfaced again in metrics.json.
+        ``composition`` is the composition part of the session record (prompt
+        blocks, skills, hooks, trace — ADR-0036 D6), captured at start so a
+        reviewer can cite exactly what loaded. Persisted in audit.md and
+        surfaced again in metrics.json.
         """
         self._composition = composition  # latched for finalize_audit
         header = (
@@ -282,7 +281,7 @@ class Session:
             f"- **Started**: {datetime.now(timezone.utc).isoformat()}\n\n"
         )
         if composition:
-            header += self._render_composition_md(composition) + "\n"
+            header += self._render_composition_md(composition_names(composition)) + "\n"
         header += "## Events\n\n"
         self.write_artifact_text(self.audit_path, header)
         self._write_metrics_stub(role=role, provider=provider, model=model)
@@ -310,61 +309,16 @@ class Session:
         self.write_artifact_text(self.metrics_path, json.dumps(stub, indent=2))
 
     @staticmethod
-    def _render_composition_md(composition: dict) -> str:
-        """Render the composition as a markdown section — the plan's record
-        (ADR-0036 D6) or the older snapshot, the same three lists either way."""
-        if "prompt" in composition:
-            return Session._render_plan_composition_md(composition)
-        prov = composition.get("provenance", {}) or {}
-
-        def _line(name: str, layer_map: dict) -> str:
-            layer = layer_map.get(name, "built-in")
-            return f"{name} ({layer})"
-
+    def _render_composition_md(names: CompositionNames) -> str:
+        """Traits, rules and skills, each name attributed to what brought it."""
         lines = ["## Composition\n"]
-        traits = composition.get("traits", []) or []
-        if traits:
-            lines.append(
-                "- **Traits**: " + ", ".join(_line(t, prov.get("traits", {})) for t in traits)
-            )
-        rules = composition.get("rules", []) or []
-        if rules:
-            lines.append(
-                "- **Rules**: " + ", ".join(_line(r, prov.get("rules", {})) for r in rules)
-            )
-        skills = composition.get("skills", []) or []
-        if skills:
-            lines.append(
-                "- **Skills**: " + ", ".join(_line(s, prov.get("skills", {})) for s in skills)
-            )
-        return "\n".join(lines) + "\n"
-
-    @staticmethod
-    def _render_plan_composition_md(record: dict) -> str:
-        """Traits, rules and skills off the plan's composition record, each
-        name attributed to the composite or override that brought it."""
-        brought = {
-            t["term"]: t["brought_by"]
-            for t in record.get("trace", ())
-            if t.get("removed_by") is None
-        }
-
-        def _line(name: str) -> str:
-            bare = name.split("::", 1)[1] if name.startswith(("rules::", "skills::")) else name
-            return f"{bare} ({brought.get(name, 'expression')})"
-
-        traits = [term for term in brought if not term.startswith(("rules::", "skills::"))]
-        rules = [
-            m["name"]
-            for block in record.get("prompt", {}).get("blocks", ())
-            for m in block.get("members", ())
-            if str(m.get("name", "")).startswith("rules::")
-        ]
-        skills = [s["name"] for s in record.get("skills", ())]
-        lines = ["## Composition\n"]
-        for label, names in (("Traits", traits), ("Rules", rules), ("Skills", skills)):
-            if names:
-                lines.append(f"- **{label}**: " + ", ".join(_line(n) for n in names))
+        for label, kind in (
+            ("Traits", names.traits),
+            ("Rules", names.rules),
+            ("Skills", names.skills),
+        ):
+            if kind:
+                lines.append(f"- **{label}**: " + ", ".join(f"{n} ({by})" for n, by in kind))
         return "\n".join(lines) + "\n"
 
     def append_audit(self, event: str) -> None:

@@ -78,7 +78,7 @@ Both this command and `reflect all` also write a pre-flight handoff to `<ai_hats
 
 ### `ai-hats reflect role <target>` / `reflect roles`
 
-Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `role-judge`.
+Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `role-judge`. The breakdown is the composition the session runs — global and project overrides applied, composed through `build_preview_payload` like `config show-prompt --role` — with rule and skill bodies read from disk and the plan's `trace` in `manifest.yaml`, so the auditor can attribute each term to the role, a trait, `overrides::global` or `overrides::project`.
 
 The report lands at `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md` **only because the role is instructed to write it** (`core/roles/role-judge/config.yaml`, `core/initial_injections/reflect-role.md`). Unlike the phase1 / phase2 / reflect-all pipelines, `reflect-role.yaml` carries no `save_artifact` step — its three steps are `compose_role`, `resolve_prompt`, `launch_provider` — so nothing persists the report if the model does not call Write.
 

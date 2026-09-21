@@ -34,6 +34,7 @@ from ..rack_workspace import (
     open_proposals,
     rack_workspace,
 )
+from ai_hats_observe import stored_composition_names
 from ai_hats_observe.artifacts import AUDIT_MD, METRICS_JSON, TRANSCRIPT_TXT, session_dirname
 from ..paths import PROJECT_CONFIG
 from .facts import compute_facts
@@ -241,34 +242,38 @@ class SessionReviewRunner:
 
     @staticmethod
     def _render_composition(facts) -> str:
-        """Surface the effective composition with source-tags.
+        """Surface what loaded, each name tagged by what brought it.
 
-        Returns an empty string when the snapshot is absent (old sessions),
-        so the prompt stays clean for legacy data.
+        Empty when the session recorded no composition; a session before
+        2026-09-16 carries the older snapshot, which observe's legacy reader
+        projects to the same three lists.
         """
         composition = getattr(facts, "composition", None) or {}
         if not composition:
             return ""
-        prov = composition.get("provenance", {}) or {}
+        names = stored_composition_names(composition)
 
-        def _fmt(names: list[str], layer_map: dict) -> str:
-            if not names:
-                return "(none)"
-            return ", ".join(f"{n} ({layer_map.get(n, 'built-in')})" for n in names)
+        def _fmt(kind: tuple[tuple[str, str], ...]) -> str:
+            return ", ".join(f"{n} ({by})" for n, by in kind) if kind else "(none)"
 
         lines = [
             "## Effective composition (what actually loaded for this session)",
             "",
             f"Role: {facts.role}",
-            f"Traits: {_fmt(composition.get('traits', []) or [], prov.get('traits', {}))}",
-            f"Rules:  {_fmt(composition.get('rules', []) or [], prov.get('rules', {}))}",
-            f"Skills: {_fmt(composition.get('skills', []) or [], prov.get('skills', {}))}",
+            f"Traits: {_fmt(names.traits)}",
+            f"Rules:  {_fmt(names.rules)}",
+            f"Skills: {_fmt(names.skills)}",
             "",
-            "Layer tags: `(built-in)` = ships with ai-hats; `(global)` = the "
-            "user's `~/.ai-hats/customizations.yaml`; `(project)` = this "
-            "project's `ai-hats.yaml::customizations`. When citing why a "
-            "behaviour occurred (or didn't), the source-tag tells you whether "
-            "the issue belongs to framework defaults, the user's personal "
+            "The tag after each name is what brought it: a role or trait name = "
+            "the composite whose expansion carried it (a framework default); "
+            "`(overrides::global)` = the user's `~/.ai-hats/customizations.yaml`; "
+            "`(overrides::project)` = this project's `ai-hats.yaml::customizations`; "
+            "`(expression)` = added by the launched role expression itself. A "
+            "session before 2026-09-16 carries the older tags instead: "
+            "`(built-in)` = a framework default, `(global)` = the user's overlay, "
+            "`(project)` = this project's overlay. When "
+            "citing why a behaviour occurred (or didn't), the tag tells you "
+            "whether the issue belongs to framework defaults, the user's personal "
             "overlay, or this project's overlay — useful for the proposal's "
             "`target` field.",
         ]

@@ -11,7 +11,7 @@ Prove the edit arrived — by reading the render, not the file you just edited.
 ## When to Use
 
 Not for judging whether the change is *good*: auditing a composed role for
-contradictions is `role-coherence-protocol`, run by the `role-auditor` role.
+contradictions is `role-coherence-protocol`, run by `ai-hats reflect role <name>`.
 This skill answers the narrower question that must come first — did the change
 reach the prompt at all?
 
@@ -81,9 +81,11 @@ recalled from an earlier session is not a measurement.
 ai-hats list tokens <role>
 ```
 
-The `TOTAL` column sums skill bodies too, and those are **not** resident. The
-always-on figure is injections plus rule bodies — read those rows, not the
-total. Quote the number this run produced.
+It prices the same composed plan `show-prompt` renders — overlays from
+`~/.ai-hats/customizations.yaml` and the project's `ai-hats.yaml` included.
+The `Tokens` total sums skill bodies too, and those are **not** resident: the
+figure to quote is the `Always-on` footer (injections, rule bodies, and each
+skill's name + description). Quote the number this run produced.
 
 Confirm you priced the tree you meant: the table should list a component that
 exists only there. Pricing the wrong library returns a plausible number with no
@@ -108,10 +110,18 @@ export AI_HATS_LIBRARY_ROOT=<path to a library root>
 
 ### 7. From a worktree, read-only and writing commands disagree
 
-A read-only command run inside a worktree composes THAT worktree's library, so
-your edit is what you see. That is the whole read-only family: `config
-show-prompt`, `--dry-run`, `config status`'s role tree, and every `list`
-subcommand that reads the library (`list providers` reads none).
+Run the read-only command from inside the worktree you edited: `config
+show-prompt`, `--dry-run`, `config status`'s role tree, or a `list` subcommand
+that reads the library (`list providers` reads none). It composes from that
+worktree when the root you edited is one of:
+
+- the built-in layers — the worktree is an ai-hats source checkout;
+- the project's `libraries/`;
+- a user-global or configured root (`~/.ai-hats`, an entry of
+  `~/.ai-hats/library_paths.yaml` or of `ai-hats.yaml: library_paths`) whose
+  MAIN checkout the worktree belongs to.
+
+Any other root is read where it is listed.
 
 Two things in that output still answer about the PROJECT, and are not bugs:
 `config status`'s **Health** block (version, venv, materialized prompt) reports
@@ -119,13 +129,18 @@ what is installed here, and its `Library:` line comes from `importlib` rather
 than the resolver — so it can disagree with the tree the same command just
 composed from.
 
-A command that **writes** — init, anything materializing into the agent
-directory — deliberately still keys off the project, which for a linked
-worktree is the MAIN checkout, so tracker operations reach the one live
-backlog. Do not expect a worktree edit to reach a materialized artifact.
+A command that **writes** — `self init`, anything materializing into the agent
+directory — targets the project, which for a linked worktree is the MAIN
+checkout, so tracker operations reach the one live backlog. What it composes
+follows the list above for `libraries/` and same-repo roots; only the built-in
+layers differ — a writer takes them from the project's own source checkout
+(cwd only when the project names none). So `self init` run inside a worktree
+ships the branch's `libraries/` and same-repo roots into MAIN's shared
+artifacts: run it from MAIN unless that is what you want.
 
-Passing the path explicitly (step 6) or `AI_HATS_LIBRARY_ROOT` is how you force
-either side; neither ever consulted cwd.
+To force either side: `AI_HATS_LIBRARY_ROOT` pins the built-in root, and a path
+passed in-process (step 6, `Assembler(project, library_paths=[<root>])`) outranks
+every listed root; neither ever consulted cwd.
 
 ### 8. Know when the edit takes effect
 

@@ -11,12 +11,15 @@ role injection for the path) — do NOT emit `BEGIN_REFLECT` /
 All inputs are files on disk — read them as you need, in any order;
 do not ask the user for the content.
 
-- **Target role composition** — layered breakdown at:
+- **Target role composition** — the composition the user's session
+  runs (built-in role + the user's overrides), broken down at:
   `{composed_dir}/`
-  - `manifest.yaml` — name, priorities, and the lists of bundled
-    traits / rules / skills (start here to get the structure).
+  - `manifest.yaml` — name, identity, priorities, the lists of bundled
+    traits / rules / skills, and `trace`: who brought each term — the
+    role, a trait, `overrides::global` or `overrides::project` (start
+    here to get the structure).
   - `role-injection.md` — the role's own injection text (if present).
-  - `overlay-injection.md` — project-overlay text (if present).
+  - `overlay-injection.md` — the override layers' appended text (if present).
   - `traits/<name>.md` — per-trait injection text.
   - `rules/<name>.md` — bundled rule bodies.
   - `skills/<name>.md` — bundled skill bodies.

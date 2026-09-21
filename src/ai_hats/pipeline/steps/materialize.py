@@ -15,15 +15,14 @@ from ..step import Step, StepIO
 
 
 def _surface_prompt_text(composition: Any) -> str:
-    """What the agent reads: the surface's prompt where the surface plans one
-    (ADR-0036 D5), the composition's text where it does not yet."""
+    """What the agent reads: the surface's prompt (ADR-0036 D5), the
+    composition's own text where no project layout is seeded to plan for."""
     from ai_hats.session_artifacts import RunMode, SessionPolicy
-    from ai_hats.session_plan import plan_session, plans, probe_host
+    from ai_hats.session_plan import DRY_RUN_SESSION_ID, plan_session, probe_host
 
     surface = composition.provider
-    if composition.layout is None or not plans(surface):
+    if composition.layout is None:
         return composition.plan.prompt.text
-    from ai_hats.dry_run import DRY_RUN_SESSION_ID
 
     plan = plan_session(
         composition.plan,
@@ -32,7 +31,7 @@ def _surface_prompt_text(composition: Any) -> str:
         policy=SessionPolicy(),
         root=composition.layout.cache.session(DRY_RUN_SESSION_ID),
         layout=composition.layout,
-        host=probe_host(cwd=composition.layout.cwd),
+        host=probe_host(surface=surface, cwd=composition.layout.cwd),
     )
     return plan.prompt.text
 

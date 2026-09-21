@@ -39,7 +39,7 @@ def test_human_with_role(project_dir: Path, mock_runners):
     assert call["role"] == "assistant"
     # HATS-452 (D2 in ADR-0005): WrapRunner has NO system_prompt_override
     # channel — the role's composition reaches the agent via
-    # ``build_session_prompt`` inside ``run_session``, not via a
+    # ``plan_session`` inside ``run_session``, not via a
     # pipeline-side string handoff. The launch step deliberately stops
     # forwarding ``system_prompt`` to WrapRunner.
     assert "system_prompt_override" not in call

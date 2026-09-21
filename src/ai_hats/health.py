@@ -11,11 +11,15 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 from .migration_assert import find_broken_hook_refs
 from .migration_backup import latest_snapshot
 from ai_hats_core.layout import ProjectLayout
+
+if TYPE_CHECKING:
+    from .channel import EditableSource
+    from .config.harness import HarnessConfig
 
 
 __all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status", "check_venv_consistency"]
@@ -148,6 +152,44 @@ def _drift_report(layout: ProjectLayout) -> LayerReport:
     )
 
 
+def _harness_report(
+    layout: ProjectLayout, harness: HarnessConfig, detected_source: EditableSource | None
+) -> LayerReport:
+    """Where ``self update`` would install from — BROKEN when it could not.
+
+    A source that is a path — ``channel: local``, or an edge repo given as a
+    path — is judged by identity (the ai-hats ``pyproject.toml``); a git url is
+    left to the ``ls-remote`` probe. ``detected_source`` is the editable install
+    the caller runs from, read once at the entry point.
+    """
+    from .channel import resolve_edge_source, resolve_local_source
+    from .config.harness import Channel
+
+    if harness.channel is Channel.STABLE:
+        return LayerReport(Layer.RUNTIME, "harness", Status.OK, "stable (PyPI)")
+    if harness.channel is Channel.EDGE:
+        edge = resolve_edge_source(harness.repo)
+        if edge.problem is None:
+            return LayerReport(Layer.RUNTIME, "harness", Status.OK, f"edge → {edge.spec}")
+        return LayerReport(
+            Layer.RUNTIME,
+            "harness",
+            Status.BROKEN,
+            f"edge: {edge.problem} ({edge.origin})",
+            edge.fix,
+        )
+    source = resolve_local_source(layout.root, harness.path, detected=detected_source)
+    if source.problem is None:
+        return LayerReport(Layer.RUNTIME, "harness", Status.OK, f"local → {source.path}")
+    return LayerReport(
+        Layer.RUNTIME,
+        "harness",
+        Status.BROKEN,
+        f"local: {source.problem} ({source.origin})",
+        source.fix,
+    )
+
+
 @contextmanager
 def _collapsed_warnings() -> Iterator[None]:
     """Emit each distinct warning raised inside the block once.
@@ -169,14 +211,25 @@ def _collapsed_warnings() -> Iterator[None]:
         warnings.warn(w.message, stacklevel=2)
 
 
-def triage(layout: ProjectLayout) -> list[LayerReport]:
-    """Run every layer check against the project. Read-only."""
+def triage(
+    layout: ProjectLayout,
+    harness: HarnessConfig | None = None,
+    detected_source: EditableSource | None = None,
+) -> list[LayerReport]:
+    """Run every layer check against the project. Read-only.
+
+    ``harness`` is the install source to judge; ``None`` (no config read by the
+    caller) skips that row rather than guessing one. ``detected_source`` is the
+    editable install the process runs from, if any — the entry point reads it.
+    """
     with _collapsed_warnings():
         reports = [
             *_data_reports(layout),
             *_managed_reports(layout),
             _drift_report(layout),
         ]
+        if harness is not None:
+            reports.append(_harness_report(layout, harness, detected_source))
     return reports
 
 

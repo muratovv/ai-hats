@@ -37,6 +37,8 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     from .plan import (
         Applied,  # noqa: F401
         CompositionPlan,  # noqa: F401
+        ContextUnwritten,  # noqa: F401
+        Digested,  # noqa: F401
         ExternalHook,  # noqa: F401
         Host,  # noqa: F401
         Launch,  # noqa: F401
@@ -48,9 +50,13 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
         Prompt,  # noqa: F401
         PromptBlock,  # noqa: F401
         PromptMember,  # noqa: F401
+        TraceEntry,  # noqa: F401
         apply,  # noqa: F401
+        checks_record,  # noqa: F401
         composition_record,  # noqa: F401
         context_entry,  # noqa: F401
+        context_text,  # noqa: F401
+        trace_record,  # noqa: F401
         validate,  # noqa: F401
     )
 
@@ -91,6 +97,8 @@ _HOMES = {
     "TranscriptResolver": ".contract",
     "Applied": ".plan",
     "CompositionPlan": ".plan",
+    "ContextUnwritten": ".plan",
+    "Digested": ".plan",
     "ExternalHook": ".plan",
     "Host": ".plan",
     "Launch": ".plan",
@@ -102,11 +110,15 @@ _HOMES = {
     "Prompt": ".plan",
     "PromptBlock": ".plan",
     "PromptMember": ".plan",
+    "TraceEntry": ".plan",
     "adapt": ".plan_adapter",
     "apply": ".plan",
+    "checks_record": ".plan",
     "composition_record": ".plan",
     "context_entry": ".plan",
+    "context_text": ".plan",
     "sweep_stale_managed_tags": ".managed_tags",
+    "trace_record": ".plan",
     "validate": ".plan",
 }
 

@@ -574,8 +574,21 @@ def test_preserve_local_rules(project_with_library):
 # test_rollback_returns_false_when_no_backup retired with them.
 
 
-def test_claude_build_session_prompt_creates_temp_file(project_with_library):
-    """ClaudeSurface.build_session_prompt() creates temp file with override prompt."""
+def _session_of(asm, surface, role: str, sid: str = "test-sid"):
+    """Plan and apply ``role`` on ``surface``; the plan the session ran from."""
+    from tests._plan_helpers import composition_of, materialized
+
+    result = asm.composer.compose(role)
+    return materialized(
+        surface,
+        composition_of(result, layout=asm.layout, resolver=asm.resolver),
+        layout=asm.layout,
+        root=asm.layout.cache.session(sid),
+    )
+
+
+def test_claude_plan_writes_the_override_prompt_file(project_with_library):
+    """The claude plan writes the override prompt under the session root."""
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, lib = project_with_library
@@ -585,17 +598,16 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     # Set base role
     asm.set_role("test-role", provider_name="claude")
 
-    # Build override for other-role
-    provider = ClaudeSurface()
-    result = asm.composer.compose("other-role")
-    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
+    # Plan the other-role
+    plan = _session_of(asm, ClaudeSurface(), "other-role")
+    args = list(plan.launch.args)
 
-    # HATS-307: args now include --system-prompt-file AND --plugin-dir
+    # HATS-307: args include --system-prompt-file AND --plugin-dir
     assert args[0] == "--system-prompt-file"
     assert "--plugin-dir" in args
     override_path = Path(args[1])
     plugin_dir = Path(args[args.index("--plugin-dir") + 1])
-    assert override_path.exists()
+    assert override_path == plan.context and override_path.exists()
     assert plugin_dir.is_dir()
 
     content = override_path.read_text()
@@ -604,16 +616,9 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     # Original role injection is NOT present
     assert "Role injection." not in content
 
-    # Cleanup
-    override_path.unlink()
-    import shutil as _shutil
 
-    _shutil.rmtree(plugin_dir, ignore_errors=True)
-
-
-def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(project_with_library):
+def test_claude_plan_mirrors_role_skills_in_plugin_dir(project_with_library):
     """HATS-307: spawned role's skills must end up under --plugin-dir/skills/."""
-    import shutil as _shutil
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, lib = project_with_library
@@ -623,22 +628,17 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
     # composes test_skill — exactly the HATS-307 scenario.
     asm.set_role("other-role", provider_name="claude")
 
-    provider = ClaudeSurface()
-    result = asm.composer.compose("test-role")
-    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
+    plan = _session_of(asm, ClaudeSurface(), "test-role")
+    args = list(plan.launch.args)
 
     assert "--plugin-dir" in args
     plugin_dir = Path(args[args.index("--plugin-dir") + 1])
-    try:
-        assert claude_plugin_manifest(plugin_dir).exists()
-        assert (plugin_dir / "skills" / "test_skill" / "SKILL.md").exists()
-    finally:
-        Path(args[1]).unlink()
-        _shutil.rmtree(plugin_dir, ignore_errors=True)
+    assert claude_plugin_manifest(plugin_dir).exists()
+    assert (plugin_dir / "skills" / "test_skill" / "SKILL.md").exists()
 
 
-def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_with_library):
-    """build_session_prompt() must never modify the project CLAUDE.md if user authored one."""
+def test_claude_plan_does_not_modify_project_claude_md(project_with_library):
+    """The plan must never modify the project CLAUDE.md if user authored one."""
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
     project, lib = project_with_library
@@ -650,21 +650,13 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
     user_claude.write_text("# User hand-written CLAUDE.md\nRules here.\n")
     original_content = user_claude.read_text()
 
-    provider = ClaudeSurface()
-    result = asm.composer.compose("other-role")
-    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
+    _session_of(asm, ClaudeSurface(), "other-role")
 
     # CLAUDE.md unchanged
     assert (project / "CLAUDE.md").read_text() == original_content
-    # Cleanup
-    Path(args[1]).unlink()
-    if "--plugin-dir" in args:
-        import shutil as _shutil
-
-        _shutil.rmtree(args[args.index("--plugin-dir") + 1], ignore_errors=True)
 
 
-def test_agy_build_session_prompt_creates_rules_dir(project_with_library):
+def test_agy_plan_creates_rules_dir(project_with_library):
     """HATS-993: session role rides a GEMINI.md in an --include-directories dir."""
     import shutil
     from ai_hats.surfaces.agy.provider import AgySurface
@@ -674,12 +666,12 @@ def test_agy_build_session_prompt_creates_rules_dir(project_with_library):
     asm.init()
     asm.set_role("test-role")  # sets up .agent/rules/
 
-    provider = AgySurface()
-    result = asm.composer.compose("other-role")
-    args, env, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "test-sid")
+    plan = _session_of(asm, AgySurface(), "other-role")
+    args = list(plan.launch.args)
 
     assert args[0] == "--add-dir"
-    assert set(env) == {"AI_HATS_SESSION_CACHE_DIR"}  # the dispatcher pin (HATS-1398)
+    # the dispatcher pins (HATS-1398) plus the surface's own keys
+    assert "AI_HATS_SESSION_CACHE_DIR" in plan.env and "AI_HATS_PYTHON" in plan.env
     rules_dir = Path(args[1])
     assert rules_dir.exists()
 
@@ -1223,7 +1215,7 @@ def _assert_no_literal_placeholder(*paths: Path) -> None:
 def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_library):
     """Nothing ai-hats writes under the canonical dir may carry the literal
     token. Framework content with placeholders is composed per-session —
-    verified separately via the Provider.build_session_prompt path.
+    verified separately on the plan path.
     """
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
@@ -1251,42 +1243,36 @@ def test_agy_inline_prompt_has_no_literal_placeholder(
     assert ".agent/ai-hats/sessions/audits/" in content
 
 
-def test_agy_build_session_prompt_has_no_literal_placeholder(
+def test_agy_plan_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
     """Agy session GEMINI.md must be expanded."""
-    from ai_hats.composer import Composer
     from ai_hats.surfaces.agy.provider import AgySurface
-    from ai_hats.resolver import LibraryResolver
 
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _, _ = AgySurface().build_session_prompt(ProjectLayout.at(project), result, "test-sid")
-    override = Path(args[1]) / "GEMINI.md"
-    content = override.read_text()
+    plan = _session_of(asm, AgySurface(), "ph-role")
+    content = Path(plan.context).read_text()
+    assert plan.context == Path(plan.launch.args[1]) / "GEMINI.md"
     assert "<ai_hats_dir>" not in content
     assert ".agent/ai-hats/sessions/audits/" in content
 
 
-def test_claude_build_session_prompt_has_no_literal_placeholder(
+def test_claude_plan_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
     """Claude --system-prompt-file content must be expanded."""
-    from ai_hats.composer import Composer
     from ai_hats.surfaces.claude.provider import ClaudeSurface
-    from ai_hats.resolver import LibraryResolver
 
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("ph-role", provider_name="claude")
-    result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _, _ = ClaudeSurface().build_session_prompt(ProjectLayout.at(project), result, "test-sid")
-    # build_session_prompt returns ["--system-prompt-file", <path>]
+    plan = _session_of(asm, ClaudeSurface(), "ph-role")
+    args = list(plan.launch.args)
     prompt_file = Path(args[args.index("--system-prompt-file") + 1])
     content = prompt_file.read_text()
     assert "<ai_hats_dir>" not in content
@@ -1306,24 +1292,18 @@ def _subagent_payload(result):
 
 
 def _sdk_audit(provider, project, result, *, task: str) -> str:
-    """The bytes the real AUTOMATE path renders into ``meta_prompt.txt``.
+    """The bytes the real AUTOMATE path renders into ``meta_prompt.txt`` —
+    the launch's own prompt, not a test-only builder (HATS-1552)."""
+    from tests._plan_helpers import automate_prompt, composition_of
 
-    Built through ``build_session_artifacts`` in plan mode rather than a
-    test-only prompt builder — the point is to assert what ships (HATS-1552).
-    """
-    from ai_hats.materialization import PlanMaterializer
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.claude.sdk_options import render_sdk_prompt_audit
-
-    artifacts = BuiltArtifacts(port=PlanMaterializer())
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
-        "audit-probe",
-        run_mode=RunMode.AUTOMATE,
-        artifacts=artifacts,
+    asm = Assembler(project)
+    return automate_prompt(
+        provider,
+        composition_of(result, layout=asm.layout, resolver=asm.resolver),
+        layout=asm.layout,
+        root=asm.layout.cache.session("audit-probe"),
+        task=task,
     )
-    return render_sdk_prompt_audit(artifacts, ProjectLayout.at(project), task=task, ticket_id="")
 
 
 def test_subagent_meta_prompt_has_no_literal_placeholder(

@@ -63,8 +63,8 @@ def _library_with_a_gate_nobody_ships(root: Path) -> Path:
 def test_a_gate_the_skill_does_not_ship_is_named_at_launch_and_the_session_starts(
     tmp_project, tmp_path: Path, repo_root: Path
 ) -> None:
-    """The whole chain, in a real process: composer -> composed_rows ->
-    artifacts.notices -> the pre-launch banner -> the surface is spawned."""
+    """The whole chain, in a real process: composer -> the adapter's
+    diagnostics -> the pre-launch banner -> the surface is spawned."""
     lib = _library_with_a_gate_nobody_ships(tmp_path)
     (tmp_project.path / PROJECT_CONFIG).write_text(
         "provider: claude\n"

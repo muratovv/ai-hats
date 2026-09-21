@@ -5,8 +5,8 @@ in its injection ("Available base roles — do NOT read yaml"). That list
 drifted: new roles (e.g. ``dev-web``), project-local roles, and user roles
 never appeared. Instead, the wizard injection now carries the
 ``<available_roles>`` placeholder, expanded at prompt-build time
-(:func:`expand_role_catalog`, called from each provider's
-``build_session_prompt`` next to the ``<ai_hats_dir>`` expansion)
+(:func:`expand_role_catalog`, called by the plan adapter on every prompt
+member next to the ``<ai_hats_dir>`` expansion)
 with the **live** catalog the resolver actually sees.
 
 ``user_facing=True`` drops the two builtin layers a consuming project cannot

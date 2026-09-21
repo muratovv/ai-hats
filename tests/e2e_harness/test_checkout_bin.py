@@ -5,9 +5,9 @@ must carry for the tier to measure the checkout under test, and the writer that
 materialises them.
 
 The trap it closes: a PATH entry holding only ``ai-hats`` left ``rack`` to the
-ambient PATH, so ``materialize_consent_wrappers`` recorded ANOTHER checkout's
-binary in ``originals`` and ran it — metadata from one tree against code from
-another. It stayed invisible until a rename made the skew fatal, because the
+ambient PATH, so the consent planner recorded ANOTHER checkout's binary in
+``originals`` and ran it — metadata from one tree against code from another.
+It stayed invisible until a rename made the skew fatal, because the
 interpreter guard watches ``sys.executable`` and ``rack`` never came from it.
 """
 
@@ -17,9 +17,9 @@ import os
 import shutil
 from pathlib import Path
 
-# The exact filter ``materialize_consent_wrappers`` applies before resolving a
-# surface. Imported rather than restated: a second copy would drift, and the
-# drift would show up as a green test over the live wrong answer.
+# The exact filter ``probe_host`` applies before resolving a surface for the
+# consent planner. Imported rather than restated: a second copy would drift,
+# and the drift would show up as a green test over the live wrong answer.
 from ai_hats.consent_wrapper import original_lookup_path
 from ai_hats_library.hooks.consent_gate.operations import REGISTRY, wrapped_surfaces
 

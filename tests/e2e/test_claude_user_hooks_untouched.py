@@ -3,7 +3,7 @@
 flow:   a project whose own `.claude/settings.json` wires the developer's hooks,
         and an ai-hats session built on top of it
 cmds:
-    ClaudeSurface().build_session_artifacts(...)   # what `ai-hats session` runs
+    apply(ClaudeSurface().plan(...))   # what `ai-hats session` runs
 expect: the developer's file is byte-identical afterwards, and the session file
         handed over with `--settings` carries only ai-hats entries
 why:    `--settings` is additive — measured on claude 2.1.247 for PreToolUse
@@ -24,8 +24,9 @@ import pytest
 
 from ai_hats_core import CompositionResult
 from ai_hats.paths import claude_dir
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.claude.provider import ClaudeSurface
+from _helpers.sessions import build_session
+from tests._plan_helpers import composition_of
 
 pytestmark = [pytest.mark.guards, pytest.mark.surfaces]
 
@@ -50,21 +51,22 @@ def test_a_session_build_leaves_the_developers_own_hooks_alone(tmp_path: Path) -
     root_settings.write_text(json.dumps(USER_SETTINGS, indent=2), encoding="utf-8")
     before = root_settings.read_bytes()
 
-    artifacts = ClaudeSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        CompositionResult(name="r", priorities=[], rules=[], skills=[], injections=[]),
+    plan = build_session(
+        project,
+        composition_of(
+            CompositionResult(name="r", priorities=[], rules=[], skills=[], injections=[]),
+            layout=ProjectLayout.at(project),
+        ),
+        ClaudeSurface(),
         SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
     )
 
     assert root_settings.read_bytes() == before, (
         "ai-hats rewrote the developer's own settings — HATS-1874 collapses ITS entries only"
     )
-    handed_over = artifacts.cli_args[artifacts.cli_args.index("--settings") + 1]
-    assert (
-        Path(handed_over) == ProjectLayout.at(project).cache.session(SESSION_ID) / "settings.json"
-    )
+    args = list(plan.launch.args)
+    handed_over = args[args.index("--settings") + 1]
+    assert Path(handed_over) == plan.root / "settings.json"
     assert "my_own_guard.sh" not in Path(handed_over).read_text(), (
         "the session file absorbed a user entry — the harness merges the two, "
         "so absorbing one means running it twice"

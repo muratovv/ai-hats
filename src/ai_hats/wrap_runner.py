@@ -19,7 +19,6 @@ from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .consent_wrapper import materialize_consent_wrappers
 from .constants import PINNED_PYTHON
 
 # The session-cache sweep moved to ``environment_recovery`` so it sits
@@ -31,17 +30,9 @@ from .pipeline import warm
 from .pipeline_catalog import FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
-from .check_snapshot import describe_checks, legacy_launch_notices, surface_skew_notice
 from .session_identity import SessionIdentity
-from .session_artifacts import (
-    BuiltArtifacts,
-    RunMode,
-    assemble_launch_command,
-    assemble_launch_env,
-    consumed_session_id,
-)
-from .session_plan import launch, plan_session, plans, probe_host, session_record
-from .session_report import SessionReport
+from .session_artifacts import RunMode, consumed_session_id
+from .session_plan import launch, plan_session, probe_host, session_record
 from .session_run import SessionRun
 from .surfaces import LaunchFlags, apply
 from .startup_checks import run_startup_checks
@@ -557,7 +548,7 @@ class WrapRunner:
 
         D2 in ADR-0005. ``WrapRunner`` is the **HITL** runner —
         a human is at the keyboard and the role's full composition reaches
-        the agent through ``build_session_prompt``. It deliberately has
+        the agent through the plan (``plan_session``). It deliberately has
         **no** ``system_prompt_override`` channel: prompt injection in HITL
         is meaningless and the previously-exposed Optional override was the
         literal trap that made this necessary. Callers needing an explicit
@@ -594,7 +585,7 @@ class WrapRunner:
         # `create_session` (EnvironmentRecovery), the universal seam both
         # WrapRunner and SubAgentRunner traverse — so the previously
         # WrapRunner-only inline sweeps are gone from here. Create the session
-        # before build_session_prompt so we can key the per-session cache dir on
+        # before planning so we can key the per-session cache dir on
         # session.session_id.
         session = run.session
         run.defer(
@@ -602,30 +593,19 @@ class WrapRunner:
             lambda: _cleanup_session_cache(self.layout.cache.session(session.session_id)),
         )
 
-        # No override channel on WrapRunner — the payload's
-        # composition flows straight into the builder.
+        # No override channel on WrapRunner — the payload's composition half
+        # is what the surface plans from.
         builder_notices: list[StartupNotice] = []
         result = payload.result
         claude_session_id = str(uuid.uuid4())
-        if plans(provider):
-            cmd, env_map, meta_prompt, record = self._session_on_the_plan(
-                session, extra_args=extra_args, provider_session_id=claude_session_id
-            )
-            composition_section = record["composition"]
-        else:
-            cmd, env_map, meta_prompt, record = self._session_through_the_port(
-                session,
-                run,
-                extra_args=extra_args,
-                provider_session_id=claude_session_id,
-                notices=builder_notices,
-            )
-            composition_section = payload.snapshot
+        cmd, env_map, meta_prompt, record = self._session_on_the_plan(
+            session, run, extra_args=extra_args, provider_session_id=claude_session_id
+        )
         _claim_session_cache(self.layout.cache.session(session.session_id))
         session.init_audit(
             role=active_role,
             provider=provider_name,
-            composition=composition_section,
+            composition=record["composition"],
         )
         # Persist materialized system prompt to
         # <session_dir>/meta_prompt.txt — symmetric with SubAgentRunner
@@ -664,26 +644,19 @@ class WrapRunner:
         )
 
     def _session_on_the_plan(
-        self, session: Session, *, extra_args: list[str] | None, provider_session_id: str
+        self,
+        session: Session,
+        run: SessionRun,
+        *,
+        extra_args: list[str] | None,
+        provider_session_id: str,
     ) -> tuple[list[str], dict[str, str], str, dict]:
-        """plan → apply → launch → record (ADR-0036 D2–D6): the one path a
-        surface with a planner takes."""
+        """plan → apply → claim → launch → record (ADR-0036 D2–D6)."""
         payload = self.payload
         provider = payload.provider
         if payload.plan is None:
             raise RuntimeError("the seam adapted no composition")
         root = self.layout.cache.session(session.session_id)
-        with provider.execution_context(self.layout):
-            plan = plan_session(
-                payload.plan,
-                provider,
-                run_mode=RunMode.HITL,
-                policy=payload.policy,
-                root=root,
-                layout=self.layout,
-                host=probe_host(cwd=self.layout.cwd),
-            )
-            applied = apply(plan)
         flags = LaunchFlags(
             session_id=session.session_id,
             session_dir=session.session_dir,
@@ -692,6 +665,18 @@ class WrapRunner:
             provider_session_id=provider_session_id,
             extra_args=tuple(extra_args or ()),
         )
+        with provider.execution_context(self.layout):
+            plan = plan_session(
+                payload.plan,
+                provider,
+                run_mode=RunMode.HITL,
+                policy=payload.policy,
+                root=root,
+                layout=self.layout,
+                host=probe_host(surface=provider, cwd=self.layout.cwd),
+            )
+            applied = apply(plan)
+            provider.claim_resources(plan, flags, layout=self.layout, run=run)
         launched = launch(plan, flags, layout=self.layout)
         record = session_record(
             plan,
@@ -702,112 +687,6 @@ class WrapRunner:
             notes=[d.render() for d in payload.diagnostics],
         )
         return list(launched.args or ()), dict(launched.env), launched.prompt, record
-
-    def _session_through_the_port(
-        self,
-        session: Session,
-        run: SessionRun,
-        *,
-        extra_args: list[str] | None,
-        provider_session_id: str,
-        notices: list[StartupNotice],
-    ) -> tuple[list[str], dict[str, str], str, dict]:
-        """The builder path, for a surface that has no planner yet."""
-        payload = self.payload
-        provider = payload.provider
-        provider_name = provider.name
-        active_role = payload.effective_role
-        builder_notices = notices
-        artifacts = BuiltArtifacts(resources=run)
-        with provider.execution_context(self.layout):
-            result = payload.result
-            if provider.handles_artifact_categories():
-                artifacts = provider.build_session_artifacts(
-                    self.layout,
-                    result,
-                    session.session_id,
-                    run_mode=RunMode.HITL,
-                    policy=payload.policy,
-                    artifacts=artifacts,
-                )
-                session_args = artifacts.cli_args
-                session_env = artifacts.extra_env
-                meta_prompt = artifacts.full_content or ""
-                # A surface older than `session_skills_root` handles
-                # this seam fine and still cannot root a bound check. Said here,
-                # at launch, not at the first refused transition.
-                skew = surface_skew_notice(provider_name, provider, self.layout, result)
-                if skew:
-                    builder_notices.append(StartupNotice("warn", skew))
-            else:
-                # The legacy entry point predates both
-                # SessionPolicy and the check snapshot — loudly, not in silence.
-                session_args, session_env, meta_prompt = provider.build_session_prompt(
-                    self.layout, result, session.session_id
-                )
-                artifacts.extra_env.update(session_env)
-                builder_notices.extend(
-                    StartupNotice("warn", text)
-                    for text in legacy_launch_notices(provider_name, result, payload.policy)
-                )
-            materialize_consent_wrappers(
-                self.layout, result, session.session_id, provider, artifacts
-            )
-            session_env = artifacts.extra_env
-        builder_notices.extend(StartupNotice("warn", text) for text in artifacts.notices)
-
-        # Build CLI command with session ID for JSONL linkage
-        cmd = assemble_launch_command(
-            provider,
-            extra_args=extra_args,
-            session_args=session_args,
-            provider_session_id=provider_session_id,
-        )
-
-        # Persist launch record as role_materialization.json
-        env_map = assemble_launch_env(
-            provider,
-            self.layout,
-            session.session_dir,
-            session_id=session.session_id,
-            trace_path=str(session.trace_path),
-            # The expression, not the base name — a check bound by a
-            # runtime-added trait must resolve for the gate too.
-            role=payload.role_expression,
-            root_pid=str(os.getpid()),  # Ownership liveness anchor
-            extra_env=session_env,
-            run_mode=RunMode.HITL,
-        )
-        prompt_file = next(
-            (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
-            session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
-        )
-        # The same section --dry-run shows, on the launch record — one
-        # call site would be a report about a session nobody can compare against.
-        reported_checks, check_notes = describe_checks(
-            provider, self.layout, result, session.session_id, artifacts.port.record
-        )
-        builder_notices.extend(StartupNotice("warn", text) for text in check_notes)
-        # The record carries the same notes the dry-run does. They are already on
-        # their way to the screen as StartupNotices; a launch record that omitted
-        # them would disagree with `--dry-run` about the same session.
-        report_notes = tuple(n.text for n in builder_notices)
-        report = SessionReport(
-            role=active_role,
-            provider=provider_name,
-            run_mode=RunMode.HITL.value,
-            policy=payload.policy,
-            launch=cmd,
-            env=env_map,
-            prompt=prompt_file,
-            record=artifacts.port.record,
-            cwd=str(self.layout.cwd),  # where the pty child runs, not the root
-            checks=reported_checks,
-            consent=result.consent,
-            composition=payload.plan,
-            notes=report_notes,
-        )
-        return cmd, env_map, meta_prompt, report.to_dict()
 
     def _launch_after_the_record(
         self,

@@ -28,19 +28,11 @@ from .. import (
     Surface,
     SubagentEngine,
     SurfaceRunResult,
-    sweep_stale_managed_tags,
 )
 from ai_hats.materialization import describe_mkdir, describe_write_text
-from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ..plan import CompositionPlan, Host, Launch, Launched, LaunchFlags, MaterializationPlan
-from .sdk_options import (
-    SESSION_ID_PLACEHOLDER,
-    assemble_first_user_message,
-    automate_options,
-    describe_options,
-    render_sdk_audit,
-    render_sdk_prompt_audit,
-)
+from .sdk_options import describe_options, render_sdk_audit
 from . import sdk_runner
 from .channel import (
     DISPATCHER_COMMAND,
@@ -51,9 +43,8 @@ from .channel import (
 )
 from ai_hats.env import ENV_STATUSLINE_INNER
 
-from .runtime_hooks import materialize_hook_manifest, plan_hooks
+from .runtime_hooks import plan_hooks
 
-from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
     AI_HATS_PROJECT_DIR_ENV,
     CLAUDE_STATUS_LINE_KEY,
@@ -61,10 +52,7 @@ from ai_hats.paths import (
     claude_plugin_skills_dir,
     claude_settings_chain,
     claude_settings_json,
-    claude_status_line,
 )
-from ai_hats.placeholders import expand_path_placeholders
-from ai_hats.role_catalog import expand_role_catalog
 from ai_hats.constants import (
     INJECTION_START,
     INJECTION_END,
@@ -239,8 +227,8 @@ class ClaudeSurface(Surface):
 
     def build_system_prompt(self, result: CompositionResult) -> str:
         # Skills reach the agent via the native --plugin-dir (HITL) / SDK
-        # plugin (sub-agent) registry materialized in build_session_prompt /
-        # sdk_options, so the sections carry no skill index — it would be a 2-3x
+        # plugin (sub-agent) registry the plan writes, so the sections carry
+        # no skill index — it would be a 2-3x
         # duplicate listing (~1.5k tok/session).
         return self._compose_sections(result)
 
@@ -265,6 +253,7 @@ class ClaudeSurface(Surface):
         options: dict[str, object] = {}
         env: dict[str, str] = {}
         prompt = composition.prompt  # claude adds no block of its own
+        context: Path | None = None
         if policy.context:
             context = root / "prompt.md"
             entries.append(
@@ -318,6 +307,7 @@ class ClaudeSurface(Surface):
             launch=Launch(args=tuple(args), sdk_options=None)
             if hitl
             else Launch(args=None, sdk_options=options),
+            context=context,
         )
 
     def automate_launch(
@@ -352,48 +342,6 @@ class ClaudeSurface(Surface):
 
         return describe_options(ClaudeAgentOptions(**launched.sdk_options))
 
-    def _cache_dir(self, layout: ProjectLayout, session_id: str, artifacts: BuiltArtifacts) -> Path:
-        cache_dir = layout.cache.session(session_id)
-        artifacts.port.mkdir(cache_dir)
-        return cache_dir
-
-    # -- context ---------------------------------------------------------------
-
-    def _write_prompt_file(self, layout: ProjectLayout, session_id: str, result, artifacts) -> Path:
-        project_dir = layout.root
-        prompt_content = self.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, layout)
-        prompt_content = expand_role_catalog(prompt_content, project_dir)
-
-        artifacts.full_content = self._build_full_content(layout, prompt_content)
-        override_file = self._cache_dir(layout, session_id, artifacts) / "prompt.md"
-        artifacts.port.write_text(override_file, artifacts.full_content)
-        artifacts.materialized.append(override_file)
-        return override_file
-
-    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
-        """Marker-wrapped prompt file, handed over with --system-prompt-file."""
-        override_file = self._write_prompt_file(layout, session_id, result, artifacts)
-        artifacts.cli_args.extend(["--system-prompt-file", str(override_file)])
-
-    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
-        """The SDK's preset+append shape — NOT the marker-wrapped file bytes.
-
-        The file is still written (audit / meta_prompt symmetry), but what the SDK
-        receives is the bare role text appended to the claude_code preset.
-        """
-        project_dir = layout.root
-        self._write_prompt_file(layout, session_id, result, artifacts)
-        text = expand_path_placeholders(self.build_system_prompt(result), layout)
-        text = expand_role_catalog(text, project_dir)
-        artifacts.sdk_options["system_prompt"] = {
-            "type": "preset",
-            "preset": "claude_code",
-            "append": text,
-        }
-
-    # -- skills ----------------------------------------------------------------
-
     def _plugin_dir(self, layout: ProjectLayout, session_id: str) -> Path:
         return layout.cache.session(session_id) / "plugin"
 
@@ -401,187 +349,12 @@ class ClaudeSurface(Surface):
         """Writer and reader share this, so the two cannot drift."""
         return claude_plugin_skills_dir(self._plugin_dir(layout, session_id))
 
-    def _materialize_plugin(
-        self, layout: ProjectLayout, session_id: str, result, artifacts
-    ) -> Path:
-        # Not via materialize_runtime_skills: that is a published extension point
-        # and cannot take the port.
-        from .plugin_dir import materialize_plugin_dir
-
-        self._cache_dir(layout, session_id, artifacts)
-        plugin_dir = self._plugin_dir(layout, session_id)
-        materialize_plugin_dir(result.name, result.skills, layout, plugin_dir, artifacts.port)
-        inject_skill_paths_to_env(
-            artifacts.extra_env, result.skills, self.session_skills_root(layout, session_id)
-        )
-        artifacts.materialized.append(plugin_dir)
-        return plugin_dir
-
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        plugin_dir = self._materialize_plugin(layout, session_id, result, artifacts)
-        artifacts.cli_args.extend(["--plugin-dir", str(plugin_dir)])
-
-    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
-        plugin_dir = self._materialize_plugin(layout, session_id, result, artifacts)
-        artifacts.sdk_options["plugins"] = (
-            [{"type": "local", "path": str(plugin_dir)}] if result.skills else []
-        )
-
-    # -- hooks -----------------------------------------------------------------
-
-    def _write_cache_settings(
-        self, layout: ProjectLayout, session_id: str, result, artifacts, *, hitl: bool
-    ) -> Path:
-        cache_dir = self._cache_dir(layout, session_id, artifacts)
-        cache_settings = cache_dir / "settings.json"
-        # SKILLS precedes HOOKS in ArtifactCategory, so the mirror this points
-        # into is already written (scripts before wiring).
-        skills_dir = claude_plugin_skills_dir(cache_dir / "plugin")
-        rows = materialize_hook_manifest(
-            result,
-            artifacts,
-            cache_dir=cache_dir,
-            session_id=session_id,
-            skills_dir=skills_dir,
-        )
-        # The builder is the apply half and may read the machine; the plan half gets it on Host.
-        person = claude_status_line(claude_settings_chain(os.environ, layout.cwd))
-        document, settings_env = self._session_settings(rows, hitl=hitl, person=person)
-        artifacts.port.write_text(cache_settings, json.dumps(document, indent=2))
-        artifacts.extra_env.update(settings_env)
-        artifacts.materialized.append(cache_settings)
-        return cache_settings
-
-    def _session_settings(
-        self,
-        rows: dict[str, list[dict[str, str]]],
-        *,
-        hitl: bool,
-        person: Mapping[str, object] | None,
-    ) -> tuple[dict, dict[str, str]]:
-        """The session's ``settings.json`` and the env it needs: the dispatcher
-        entries, and on the HITL path the status line — ours records the quota
-        state a PTY session sees nowhere else, then runs the person's own, whose
-        command travels in the env because ``--settings`` replaces that slot.
-        The env key is always set: an empty one is "no bar", not "inherit"."""
-        document: dict = {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}
-        env: dict[str, str] = {}
-        if hitl:
-            document[CLAUDE_STATUS_LINE_KEY] = self._status_line_entry(person)
-            env[ENV_STATUSLINE_INNER] = str(person["command"]) if person else ""
-        return document, env
-
-    @staticmethod
-    def _status_line_entry(person: Mapping[str, object] | None) -> dict:
-        """The session's ``statusLine`` value: our command, with the person's
-        own ``padding`` and ``refreshInterval`` carried over — where the bar
-        sits and how often it re-renders are theirs."""
-        entry: dict = {"type": "command", "command": STATUSLINE_COMMAND}
-        for key in ("padding", "refreshInterval"):
-            if person is not None and key in person:
-                entry[key] = person[key]
-        return entry
-
-    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
-        """--settings merges additively; the user's root settings stay untouched."""
-        cache_settings = self._write_cache_settings(
-            layout, session_id, result, artifacts, hitl=True
-        )
-        artifacts.cli_args.extend(["--settings", str(cache_settings)])
-
-    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
-        cache_settings = self._write_cache_settings(
-            layout, session_id, result, artifacts, hitl=False
-        )
-        artifacts.sdk_options["settings"] = str(cache_settings)
-        artifacts.sdk_options["setting_sources"] = []
-
-    def build_session_prompt(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: str,
-    ) -> tuple[list[str], dict[str, str], str]:
-        """Write composed prompt & session artifacts via build_session_artifacts."""
-        artifacts = self.build_session_artifacts(
-            layout,
-            result,
-            session_id,
-            run_mode=RunMode.HITL,
-            artifacts=BuiltArtifacts(),
-        )
-        return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
-
-    def describe_automate_launch(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: str,
-        artifacts: BuiltArtifacts,
-        *,
-        task: str,
-        ticket_id: str,
-        model: str,
-        env: dict[str, str],
-    ) -> AutomateLaunch:
-        """No argv here — the launch IS the option set handed to the SDK.
-
-        Built by the same call the engine makes, so the record cannot name a
-        smaller set than the sub-agent receives. ``work_dir`` and the session id
-        are the two inputs a report cannot have; the record names them as what
-        they are, and metrics.json carries the id the run got.
-        """
-        return AutomateLaunch(
-            launch=describe_options(
-                automate_options(
-                    result,
-                    provider=self,
-                    layout=layout,
-                    session_id=session_id,
-                    artifacts=artifacts,
-                    work_dir=None,
-                    model=model,
-                    env=env,
-                    claude_session_id=SESSION_ID_PLACEHOLDER,
-                )
-            ),
-            prompt=render_sdk_prompt_audit(artifacts, layout, task=task, ticket_id=ticket_id),
-        )
-
-    def supports_sdk_engine(self) -> bool:
-        """Indicates this provider uses the Python SDK path."""
-        return True
-
     def engine(self) -> "SubagentEngine | None":
         return ClaudeSubagentEngine(self)
 
     def _build_full_content(self, layout: ProjectLayout, prompt_content: str) -> str:
         """Build prompt content without splicing root CLAUDE.md."""
         return f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
-
-    def materialize_runtime_skills(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: str,
-    ) -> list[str]:
-        """Materialize composed role's skills into a per-session plugin-dir.
-
-        Returns ``["--plugin-dir", <cache_dir>/plugin]``. The dir lives under
-        ``<cache_root>/sessions/<session_id>/plugin/`` and is cleaned
-        with the whole cache dir at session_end. Empty skill list still
-        produces a valid (empty) plugin-dir so the argument is always
-        consistent — the no-skills case is free.
-        """
-        from ai_hats.materialization import ApplyMaterializer
-
-        from .plugin_dir import materialize_plugin_dir
-
-        # A published extension point cannot carry the port, so this path always
-        # writes — it is one of the builder bypasses the refactor removes.
-        plugin_dir = self._plugin_dir(layout, session_id)
-        materialize_plugin_dir(result.name, result.skills, layout, plugin_dir, ApplyMaterializer())
-        return ["--plugin-dir", str(plugin_dir)]
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["claude"]
@@ -637,33 +410,6 @@ class ClaudeSurface(Surface):
     _SETTINGS_HOOKS_KEY = "hooks"
     _LEAKED_PROJECT_HOOK_MARKERS = ("plugin/skills/", "ai-hats/library/hooks/")
 
-    def ensure_runtime_hooks(
-        self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
-    ) -> None:
-        """Managed runtime hooks are written to session cache settings via
-        build_session_artifacts, NOT to project-root .claude/settings.json.
-        """
-        pass
-
-    def runtime_wiring_changes(
-        self, layout: ProjectLayout, result: CompositionResult | None = None
-    ) -> list[tuple[str, str]]:
-        """Project-root .claude/settings.json is no longer written or tracked."""
-        return []
-
-    @staticmethod
-    def _runtime_wiring_name(tag: str, desired_by_tag: dict[str, dict]) -> str:
-        """Human display name for a managed wiring tag — the script basename when
-        still desired, else the skill segment of the ``ai-hats:<skill>:…`` tag."""
-        entry = desired_by_tag.get(tag)
-        if entry:
-            cmd = (entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY) or [{}])[0].get("command", "")
-            base = str(cmd).rsplit("/", 1)[-1]
-            if base:
-                return base
-        parts = tag.split(":")
-        return parts[1] if len(parts) > 1 else tag
-
     def _desired_runtime_entries(
         self, rows: dict[str, list[dict[str, str]]]
     ) -> dict[str, list[dict]]:
@@ -693,46 +439,35 @@ class ClaudeSurface(Surface):
             self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
         }
 
+    def _session_settings(
+        self,
+        rows: dict[str, list[dict[str, str]]],
+        *,
+        hitl: bool,
+        person: Mapping[str, object] | None,
+    ) -> tuple[dict, dict[str, str]]:
+        """The session's ``settings.json`` and the env it needs: the dispatcher
+        entries, and on the HITL path the status line — ours records the quota
+        state a PTY session sees nowhere else, then runs the person's own, whose
+        command travels in the env because ``--settings`` replaces that slot.
+        The env key is always set: an empty one is "no bar", not "inherit"."""
+        document: dict = {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}
+        env: dict[str, str] = {}
+        if hitl:
+            document[CLAUDE_STATUS_LINE_KEY] = self._status_line_entry(person)
+            env[ENV_STATUSLINE_INNER] = str(person["command"]) if person else ""
+        return document, env
+
     @staticmethod
-    def _upsert_managed_entry(event_list: list, want: dict) -> bool:
-        """Insert / update one managed entry in ``event_list``. Returns True
-        if the list changed.
-
-        1. An existing entry carrying the same managed tag → update in place
-           (or no-op if already identical).
-        2. Else, if a user-authored entry already wires the same script
-           basename → respect it (no managed dup, avoid double-firing).
-        3. Else append.
-        """
-        tag = want["_ai_hats_managed"]
-        for i, entry in enumerate(event_list):
-            if isinstance(entry, dict) and entry.get("_ai_hats_managed") == tag:
-                if entry == want:
-                    return False
-                event_list[i] = want
-                return True
-
-        want_basename = want[ClaudeSurface._SETTINGS_HOOKS_KEY][0]["command"].rsplit("/", 1)[-1]
-        for entry in event_list:
-            if not isinstance(entry, dict) or entry.get("_ai_hats_managed"):
-                continue
-            for hook in entry.get(ClaudeSurface._SETTINGS_HOOKS_KEY, []) or []:
-                if not isinstance(hook, dict):
-                    continue
-                # Exact basename match — NOT endswith. A user file whose name
-                # merely ends with ours (e.g. ``my_pre_bash_shared_state_guard.sh``)
-                # is a DIFFERENT script and must not suppress our managed entry
-                # (that would silently drop the guard). rsplit drops any
-                # ``$CLAUDE_PROJECT_DIR/`` / directory prefix.
-                if str(hook.get("command", "")).rsplit("/", 1)[-1] == want_basename:
-                    return False  # user already wired this exact script — respect it
-
-        event_list.append(want)
-        return True
-
-    def _sweep_stale_managed(hooks_root: dict, desired_tags: set[str]) -> bool:
-        """Bool wrapper over the area's :func:`sweep_stale_managed_tags`."""
-        return bool(sweep_stale_managed_tags(hooks_root, desired_tags))
+    def _status_line_entry(person: Mapping[str, object] | None) -> dict:
+        """The session's ``statusLine`` value: our command, with the person's
+        own ``padding`` and ``refreshInterval`` carried over — where the bar
+        sits and how often it re-renders are theirs."""
+        entry: dict = {"type": "command", "command": STATUSLINE_COMMAND}
+        for key in ("padding", "refreshInterval"):
+            if person is not None and key in person:
+                entry[key] = person[key]
+        return entry
 
     def leaked_user_global_project_hooks(self, home: "Path") -> list[str]:
         """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.
@@ -815,50 +550,26 @@ class ClaudeSubagentEngine(SubagentEngine):
     def run(
         self,
         *,
-        result: "CompositionResult",
         layout: ProjectLayout,
         work_dir: Path,
         session_id: str,
-        task: str,
-        ticket_id: str,
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
         metrics: MetricsSink,
-        artifacts: BuiltArtifacts | None = None,
+        launched: Launched,
+        brief: str | None,
         provider_session_id: str | None = None,
         event_log: Path | None = None,
-        launched: Launched | None = None,
-        brief: str | None = None,
     ) -> SurfaceRunResult:
-        if launched is not None:
-            from claude_agent_sdk import ClaudeAgentOptions
+        """The option document is the launch: ``automate_launch`` already folded
+        the working directory, the model, the env and the minted id into it."""
+        from claude_agent_sdk import ClaudeAgentOptions
 
-            opts = ClaudeAgentOptions(**(launched.sdk_options or {}))
-            msg = brief if brief is not None else ""
-        else:
-            if artifacts is None:
-                artifacts = self._provider.build_session_artifacts(
-                    layout,
-                    result,
-                    session_id,
-                    run_mode="automate",
-                    artifacts=BuiltArtifacts(),
-                )
-            opts = automate_options(
-                result,
-                provider=self._provider,
-                layout=layout,
-                session_id=session_id,
-                artifacts=artifacts,
-                work_dir=work_dir,
-                model=model or "",
-                env=env,
-                claude_session_id=provider_session_id,
-            )
-            msg = assemble_first_user_message(layout, task=task, ticket_id=ticket_id)
+        del layout, work_dir, session_id, env, model, provider_session_id
+        opts = ClaudeAgentOptions(**(launched.sdk_options or {}))
         run_res = self._run_blocking(
-            opts, msg, timeout_s=timeout_s, on_message=_stream_signals_to(event_log)
+            opts, brief or "", timeout_s=timeout_s, on_message=_stream_signals_to(event_log)
         )
 
         metrics.record(

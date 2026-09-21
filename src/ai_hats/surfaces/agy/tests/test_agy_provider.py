@@ -1,35 +1,51 @@
-"""AgySurface skills + prompt-channel tests."""
+"""AgySurface: the session it plans, and the launch it shapes."""
 
 from __future__ import annotations
 
-from ai_hats_core.layout import ProjectLayout
-
+import dataclasses
 import json
-
 from pathlib import Path
 
 import pytest
+from ai_hats_core.layout import ProjectLayout
 
 from ai_hats.assembler import Assembler
+from ai_hats.materialization import WriteKind
+from ai_hats.materialize import compose_to_run
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG, gemini_md
-from ai_hats.surfaces.agy.provider import AgySurface
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.session_plan import probe_host
+from ai_hats.surfaces import adapt
+from ai_hats.surfaces.agy.provider import AgySurface, agy_user_settings_json
+from ai_hats.surfaces.plan import (
+    CompositionPlan,
+    EscapeUndeclared,
+    Executable,
+    Hooks,
+    LaunchFlags,
+    Prompt,
+    PromptBlock,
+    PromptMember,
+    RuntimeHook,
+    Skill,
+    apply,
+    context_text,
+    validate,
+)
+from ai_hats.surfaces.hook_channel import HookEvent
 
 
-@pytest.fixture
-def agy_project(tmp_path, monkeypatch):
-    """Minimal library + role composed for the agy provider."""
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-
-    project = tmp_path / "project"
-    project.mkdir()
-    lib = tmp_path / "lib"
-
+def _library(root: Path, skill_md: str, script: tuple[str, str] | None = None) -> Path:
+    """A library with one skill and one role composing it."""
+    lib = root / "lib"
     skill_dir = lib / "skills" / "s"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: s\ndescription: x\n---\n# body\n")
-
+    (skill_dir / "SKILL.md").write_text(skill_md)
+    if script is not None:
+        name, body = script
+        (skill_dir / name).write_text(body)
+        (skill_dir / name).chmod(0o755)
     role_dir = lib / "roles" / "test-role"
     role_dir.mkdir(parents=True)
     (role_dir / "config.yaml").write_text(
@@ -38,73 +54,321 @@ def agy_project(tmp_path, monkeypatch):
         "composition:\n  skills: [s]\n"
         "injection: Role body.\n"
     )
+    return lib
 
+
+def _compose(
+    project: Path, lib: Path, diagnostics: list | None = None
+) -> tuple[Assembler, CompositionPlan]:
     ProjectConfig(provider="agy", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    result = asm.composer.compose("test-role")
-    return project, result
+    result = compose_to_run(asm, "test-role")
+    composition = adapt(
+        result,
+        identity="test-role",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[] if diagnostics is None else diagnostics,
+    )
+    return asm, composition
 
 
-def test_wrap_materializes_skills_into_session_skills_dir(agy_project) -> None:
-    project, result = agy_project
-    provider = AgySurface()
+@pytest.fixture
+def agy_project(tmp_path, monkeypatch):
+    """Minimal library + role composed for the agy surface, the person's home pinned."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.delenv("GEMINI_CONFIG_DIR", raising=False)
+    project = tmp_path / "project"
+    project.mkdir()
+    lib = _library(tmp_path, "---\nname: s\ndescription: x\n---\n# body\n")
+    return _compose(project, lib)
 
-    provider.build_session_prompt(ProjectLayout.at(project), result, "sid-1")
 
-    skills_dir = ProjectLayout.at(project).cache.session("sid-1") / "rules" / ".agents" / "skills"
-    assert (skills_dir / "s" / "SKILL.md").is_file()
+def _plan(asm, composition, root: Path, run_mode: RunMode, policy: SessionPolicy | None = None):
+    surface = AgySurface()
+    return surface.plan(
+        composition,
+        run_mode=run_mode,
+        policy=policy or SessionPolicy(),
+        root=root,
+        layout=asm.layout,
+        host=probe_host(surface=surface),
+    )
 
 
-def test_automate_hook_materializes_and_returns_no_args(agy_project) -> None:
-    project, result = agy_project
-    provider = AgySurface()
+def _flags(root: Path, **overrides) -> LaunchFlags:
+    given = dict(
+        session_id="s", session_dir=root, trace_path="t", root_pid="1", provider_session_id="u"
+    )
+    given.update(overrides)
+    return LaunchFlags(**given)
 
-    args = provider.materialize_runtime_skills(ProjectLayout.at(project), result, "sid-2")
 
-    assert args == []
-    skills_dir = ProjectLayout.at(project).cache.session("sid-2") / "rules" / ".agents" / "skills"
-    assert (skills_dir / "s" / "SKILL.md").is_file()
+# --- the plan --------------------------------------------------------------
+
+
+def test_a_hitl_plan_writes_the_rules_dir_and_hands_it_over_with_add_dir(agy_project, tmp_path):
+    asm, composition = agy_project
+    root = tmp_path / "sessions" / "s1"
+    host = probe_host(surface=AgySurface())
+
+    plan = _plan(asm, composition, root, RunMode.HITL)
+
+    assert plan.launch.args == ("--add-dir", str(root / "rules"))
+    assert plan.context == root / "rules" / "GEMINI.md"
+    assert context_text(plan) == plan.prompt.text
+    assert "## PRIORITIES" in plan.prompt.text and "Role body." in plan.prompt.text
+    assert "## AVAILABLE SKILLS" not in plan.prompt.text, "agy discovers skills natively"
+    assert plan.env["AI_HATS_SESSION_CACHE_DIR"] == str(root)
+    assert plan.env["AI_HATS_PYTHON"] == str(host.python)
+    assert plan.env["AI_HATS_PROJECT_DIR"] == str(asm.layout.root)
+    apply(plan)
+    assert (root / "rules" / "GEMINI.md").read_text() == plan.prompt.text
+
+
+def test_a_sub_agent_plan_writes_no_context_and_hands_it_in_the_prompt_token(agy_project, tmp_path):
+    asm, composition = agy_project
+    root = tmp_path / "sessions" / "s1"
+
+    plan = _plan(asm, composition, root, RunMode.AUTOMATE)
+
+    assert plan.context is None and plan.launch.args == ()
+    assert not any(e.target.name == "GEMINI.md" for e in plan.entries)
+    launched = AgySurface().automate_launch(
+        plan, _flags(root, brief="# TASK\ndo it"), {}, layout=asm.layout
+    )
+    assert launched.args[-2:-1] == ("-p",) and launched.args[-1].startswith(plan.prompt.text)
+    assert launched.args[-1].endswith("# TASK\ndo it")
+
+
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_skills_mirror_under_the_rules_dir_in_both_modes(agy_project, tmp_path, run_mode):
+    asm, composition = agy_project
+    root = tmp_path / "sessions" / "s1"
+
+    plan = _plan(asm, composition, root, run_mode)
+    apply(plan)
+
+    assert (root / "rules" / ".agents" / "skills" / "s" / "SKILL.md").is_file()
+
+
+def test_two_roots_are_two_rules_dirs(agy_project, tmp_path):
+    asm, composition = agy_project
+
+    a = _plan(asm, composition, tmp_path / "sessions" / "a", RunMode.HITL)
+    b = _plan(asm, composition, tmp_path / "sessions" / "b", RunMode.HITL)
+
+    assert a.launch.args[1] != b.launch.args[1]
+
+
+def test_the_dispatcher_is_registered_in_the_persons_settings_outside_the_root(
+    agy_project, tmp_path
+):
+    asm, composition = agy_project
+    root = tmp_path / "sessions" / "s1"
+
+    plan = _plan(asm, composition, root, RunMode.HITL)
+
+    [entry] = [e for e in plan.entries if e.kind is WriteKind.MERGE_JSON]
+    assert entry.target == agy_user_settings_json() and entry.escape
+    assert entry.target.is_relative_to(tmp_path / "home")
+    validate(plan)
+    stripped = dataclasses.replace(
+        plan,
+        entries=tuple(
+            dataclasses.replace(e, escape=False) if e is entry else e for e in plan.entries
+        ),
+    )
+    with pytest.raises(EscapeUndeclared):
+        validate(stripped)
+
+
+def test_hooks_off_registers_no_dispatcher_and_context_off_writes_no_rules(agy_project, tmp_path):
+    asm, composition = agy_project
+    root = tmp_path / "sessions" / "s1"
+
+    plan = _plan(asm, composition, root, RunMode.HITL, SessionPolicy(context=False, hooks=False))
+
+    assert [e.kind for e in plan.entries] == [
+        WriteKind.MKDIR,
+        WriteKind.MKDIR,
+        WriteKind.COPY_TREE,
+        WriteKind.WRITE_TEXT,
+    ]
+    assert plan.context is None and plan.launch.args == ()
+    assert "AI_HATS_SESSION_CACHE_DIR" not in plan.env
+
+
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_planning_for_one_root_is_the_same_before_and_after_application(
+    agy_project, tmp_path, run_mode
+):
+    asm, composition = agy_project
+    root = tmp_path / "sessions" / "s1"
+
+    before = _plan(asm, composition, root, run_mode)
+    apply(before)
+    after = _plan(asm, composition, root, run_mode)
+
+    assert before == after and before.digest == after.digest
+    assert apply(after).changed is False
+    extra = dataclasses.replace(composition.skills[0], name="skills::extra")
+    more = dataclasses.replace(composition, skills=(*composition.skills, extra))
+    assert _plan(asm, more, root, run_mode) != before, "a changed input must show"
+
+
+# --- hooks -------------------------------------------------------------------
+
+
+_HOOKED_SKILL_MD = (
+    "---\n"
+    "name: s\n"
+    "description: skill with hook\n"
+    "ai_hats:\n"
+    "  runtime_hooks:\n"
+    "    PreToolUse:\n"
+    "      - matcher: Edit\n"
+    "        script: run_hook.sh\n"
+    "---\n"
+    "# body\n"
+)
+
+
+def test_the_maintainer_mirror_carries_the_worktree_gate(tmp_path: Path, monkeypatch) -> None:
+    """The real role's gate script lands in the mirror and the manifest names
+    it there; the project root stays clean of any settings file."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.delenv("GEMINI_CONFIG_DIR", raising=False)
+    project = tmp_path / "project"
+    project.mkdir()
+    asm = Assembler(project)
+    result = compose_to_run(asm, "maintainer")
+    composition = adapt(
+        result,
+        identity="maintainer",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
+    )
+    root = asm.layout.cache.session("sid-wt")
+
+    plan = _plan(asm, composition, root, RunMode.HITL)
+    apply(plan)
+
+    wt_skill_dir = root / "rules" / ".agents" / "skills" / "worktree-isolation"
+    assert (wt_skill_dir / "SKILL.md").is_file()
+    assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
+    data = json.loads((root / "hooks.json").read_text())
+    assert any(
+        str(wt_skill_dir / "hooks" / "wt_gate.py") == h["command"] for h in data["PreToolUse"]
+    )
+    assert not (project / ".gemini" / "settings.json").exists(), "Clean-Root Invariant"
+    assert agy_user_settings_json().is_file(), "the dispatcher lives in the person's settings"
+
+
+def test_a_sub_agent_plan_arms_the_hooks_the_dispatcher_fires(tmp_path: Path, monkeypatch) -> None:
+    """The env the plan carries is the pin the dispatcher reads — the session
+    hook fires from the mirror the plan wrote, not from a value the test invented."""
+    from ai_hats.session_identity import SessionIdentity
+    from ai_hats.surfaces.agy.hook_dispatcher import dispatch_hook
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.delenv("GEMINI_CONFIG_DIR", raising=False)
+    project = tmp_path / "project"
+    project.mkdir()
+    marker = tmp_path / "hook_fired.txt"
+    lib = _library(
+        tmp_path, _HOOKED_SKILL_MD, ("run_hook.sh", f"#!/bin/sh\necho 'FIRED' > '{marker}'\n")
+    )
+    asm, composition = _compose(project, lib)
+    root = asm.layout.cache.session("sid-auto")
+
+    plan = _plan(asm, composition, root, RunMode.AUTOMATE)
+    apply(plan)
+
+    data = json.loads((root / "hooks.json").read_text())
+    assert any("run_hook.sh" in h["command"] for h in data["PreToolUse"])
+    assert "## PRIORITIES" in plan.prompt.text and "Role body." in plan.prompt.text
+    identity = SessionIdentity(
+        id="sid-auto",
+        role="test-role",
+        provider="agy",
+        project_dir=project,
+        session_dir=project / "session",
+    )
+    for key, value in {**plan.env, **identity.to_env()}.items():
+        monkeypatch.setenv(key, value)
+    assert dispatch_hook("PreToolUse", tool_name="Edit") == 0
+    assert marker.read_text().strip() == "FIRED"
+
+
+def test_a_script_missing_from_the_skill_is_a_diagnostic_and_no_row(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.delenv("GEMINI_CONFIG_DIR", raising=False)
+    project = tmp_path / "project"
+    project.mkdir()
+    lib = _library(tmp_path, _HOOKED_SKILL_MD)  # declared, never shipped
+    diagnostics: list = []
+    asm, composition = _compose(project, lib, diagnostics)
+    root = tmp_path / "sessions" / "s1"
+
+    plan = _plan(asm, composition, root, RunMode.HITL)
+
+    [manifest] = [e for e in plan.entries if e.target.name == "hooks.json"]
+    assert json.loads(manifest.content or "") == {}, (
+        "no command may point at a file that is not there"
+    )
+    [notice] = [d.render() for d in diagnostics if "run_hook.sh" in d.render()]
+    assert "skills::s" in notice and "will not run" in notice
+
+
+def test_a_hook_outside_every_composed_skill_refuses_the_plan(tmp_path: Path) -> None:
+    layout = ProjectLayout.at(tmp_path / "proj")
+    elsewhere = tmp_path / "elsewhere" / "guard.sh"
+    composition = CompositionPlan(
+        identity="r",
+        prompt=Prompt((PromptBlock(None, (PromptMember("r::prompt", "# r\n", None),)),)),
+        skills=(Skill(name="skills::s", path=tmp_path / "lib" / "s", content_digest="d"),),
+        hooks=Hooks((RuntimeHook(HookEvent.PRE_TOOL_USE, "Edit", Executable(elsewhere, "e")),), ()),
+        trace=(),
+    )
+
+    with pytest.raises(ValueError, match="outside every composed skill"):
+        AgySurface().plan(
+            composition,
+            run_mode=RunMode.HITL,
+            policy=SessionPolicy(),
+            root=tmp_path / "sessions" / "s",
+            layout=layout,
+            host=probe_host(),
+        )
+
+
+# --- the launch shape --------------------------------------------------------
 
 
 def test_system_prompt_omits_skills_index(agy_project) -> None:
-    _, result = agy_project
+    asm, _composition = agy_project
+    result = compose_to_run(asm, "test-role")
 
     prompt = AgySurface().build_system_prompt(result)
 
     assert "## AVAILABLE SKILLS" not in prompt
 
 
-def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
-    project, result = agy_project
-
-    args, env, prompt = AgySurface().build_session_prompt(
-        ProjectLayout.at(project), result, "sid-4"
-    )
-
-    assert args[0] == "--add-dir"
-    session_md = Path(args[1]) / "GEMINI.md"
-    assert session_md.read_text() == prompt
-    # The only env the prompt channel carries: the dispatcher's cache-dir pin.
-    assert env == {
-        "AI_HATS_SESSION_CACHE_DIR": str(ProjectLayout.at(project).cache.session("sid-4"))
-    }
-
-
-def test_wrap_session_dirs_isolated_per_session(agy_project) -> None:
-    project, result = agy_project
-    provider = AgySurface()
-
-    args_a, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-a")
-    args_b, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-b")
-
-    assert args_a[1] != args_b[1]
-
-
 def test_get_env_carries_no_dead_rules_path(agy_project, tmp_path) -> None:
-    project, _ = agy_project
+    asm, _ = agy_project
 
-    env = AgySurface().get_env(tmp_path / "sess", ProjectLayout.at(project))
+    env = AgySurface().get_env(tmp_path / "sess", asm.layout)
 
     assert "GEMINI_CLI_PROJECT_RULES_PATH" not in env
 
@@ -209,237 +473,7 @@ def test_get_env(tmp_path: Path) -> None:
     assert env["AI_HATS_DIR"] == str(project / ".agent" / "ai-hats")
 
 
-def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-
-    repo_root = Path(__file__).parent.parent.parent.parent.parent
-    asm = Assembler(repo_root)
-    result = asm.composer.compose("maintainer")
-
-    project = tmp_path / "project"
-    project.mkdir()
-    provider = AgySurface()
-    provider.materialize_runtime_skills(ProjectLayout.at(project), result, "sid-wt")
-
-    wt_skill_dir = (
-        ProjectLayout.at(project).cache.session("sid-wt")
-        / "rules"
-        / ".agents"
-        / "skills"
-        / "worktree-isolation"
-    )
-    assert (wt_skill_dir / "SKILL.md").is_file()
-    assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
-
-
-def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_root(
-    tmp_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-
-    repo_root = Path(__file__).parent.parent.parent.parent.parent
-    asm = Assembler(repo_root)
-    result = asm.composer.compose("maintainer")
-
-    project = tmp_path / "project"
-    project.mkdir()
-    provider = AgySurface()
-
-    provider.build_session_prompt(ProjectLayout.at(project), result, "sid-sp-settings")
-
-    # Clean-Root Invariant: project root .gemini/settings.json must NOT be written
-    root_settings = project / ".gemini" / "settings.json"
-    assert not root_settings.exists(), (
-        "Clean-Root Invariant: .gemini/settings.json must not be created in project root"
-    )
-
-    # Session hooks manifest must be in session cache
-    cache_hooks = ProjectLayout.at(project).cache.session("sid-sp-settings") / "hooks.json"
-    assert cache_hooks.is_file()
-    data = json.loads(cache_hooks.read_text())
-    pre_tool_hooks = data.get("PreToolUse", [])
-    assert any("wt_gate.py" in str(h.get("command")) for h in pre_tool_hooks)
-
-
 def test_agy_provider_detected_home_dirs() -> None:
     provider = AgySurface()
     assert ".gemini" in provider.detected_home_dirs()
     assert ".agy" in provider.detected_home_dirs()
-
-
-def test_build_session_artifacts_automate_materializes_hooks_and_fires(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """AUTOMATE mode writes hooks.json and global dispatcher fires session hook."""
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-    from ai_hats.surfaces.agy.hook_dispatcher import dispatch_hook
-
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-
-    project = tmp_path / "project"
-    project.mkdir()
-    lib = tmp_path / "lib"
-
-    marker = tmp_path / "hook_fired.txt"
-    hook_script_name = "run_hook.sh"
-
-    skill_dir = lib / "skills" / "hook-skill"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\n"
-        "name: hook-skill\n"
-        "description: skill with hook\n"
-        "ai_hats:\n"
-        "  runtime_hooks:\n"
-        "    PreToolUse:\n"
-        "      - matcher: Edit\n"
-        f"        script: {hook_script_name}\n"
-        "---\n"
-        "# body\n"
-    )
-    script_file = skill_dir / hook_script_name
-    script_file.write_text(f"#!/bin/sh\necho 'FIRED' > '{marker}'\n")
-    script_file.chmod(0o755)
-
-    role_dir = lib / "roles" / "hook-role"
-    role_dir.mkdir(parents=True)
-    (role_dir / "config.yaml").write_text(
-        "name: hook-role\n"
-        "priorities:\n  - Reliability\n"
-        "composition:\n  skills: [hook-skill]\n"
-        "injection: Hook role body.\n"
-    )
-
-    ProjectConfig(provider="agy", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    result = asm.composer.compose("hook-role")
-
-    provider = AgySurface()
-    artifacts = BuiltArtifacts()
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
-        "sid-auto",
-        run_mode=RunMode.AUTOMATE,
-        artifacts=artifacts,
-    )
-
-    # 1. Manifest written in AUTOMATE session cache
-    cache_hooks = ProjectLayout.at(project).cache.session("sid-auto") / "hooks.json"
-    assert cache_hooks.is_file(), (
-        "hooks.json must be materialized in session cache under AUTOMATE mode"
-    )
-    data = json.loads(cache_hooks.read_text())
-    pre_tool_hooks = data.get("PreToolUse", [])
-    assert any(hook_script_name in str(h.get("command")) for h in pre_tool_hooks)
-
-    # 2. Context contains PRIORITIES and role body
-    assert artifacts.full_content is not None
-    assert "## PRIORITIES" in artifacts.full_content
-    assert "Hook role body." in artifacts.full_content
-
-    # 3. Acceptance proof: agy global dispatcher fires the session hook in AUTOMATE session.
-    #    The env comes from the builder, so the pin the dispatcher reads is the one the
-    #    session actually exports — not a value this test invented.
-    from ai_hats.session_identity import SessionIdentity
-
-    identity = SessionIdentity(
-        id="sid-auto",
-        role="hook-role",
-        provider="agy",
-        project_dir=project,
-        session_dir=project / "session",
-    )
-    for key, value in identity.to_env().items():
-        monkeypatch.setenv(key, value)
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
-    for key, value in artifacts.extra_env.items():
-        monkeypatch.setenv(key, value)
-    res = dispatch_hook("PreToolUse", tool_name="Edit")
-    assert res == 0
-    assert marker.is_file()
-    assert marker.read_text().strip() == "FIRED"
-
-
-# --- a declared hook whose script is not where it should be ---
-
-
-def _hooked_skill(root: Path, name: str = "guard") -> Path:
-    source = root / "sources" / name
-    (source / "hooks").mkdir(parents=True)
-    script = source / "hooks" / "guard.sh"
-    script.write_text("#!/bin/sh\nexit 0\n")
-    script.chmod(0o755)
-    (source / "SKILL.md").write_text(
-        "---\n"
-        f"name: {name}\n"
-        "description: guard\n"
-        "ai_hats:\n"
-        "  runtime_hooks:\n"
-        "    PreToolUse:\n"
-        "      - matcher: Edit\n"
-        "        script: hooks/guard.sh\n"
-        "---\n"
-        "# guard\n"
-    )
-    return source
-
-
-def _result_with(*skills: Path):
-    from types import SimpleNamespace
-
-    return SimpleNamespace(
-        name="r",
-        priorities=[],
-        merged_injection="role",
-        rules=[],
-        user_rules=(),
-        skills=[SimpleNamespace(name=p.name, source_path=p) for p in skills],
-        checks=(),
-    )
-
-
-def test_a_script_missing_from_the_skill_is_a_notice_not_a_dead_command(
-    tmp_path: Path, monkeypatch
-) -> None:
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
-    project = tmp_path / "project"
-    project.mkdir()
-    skill = _hooked_skill(tmp_path)
-    (skill / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
-    artifacts = BuiltArtifacts()
-
-    layout = ProjectLayout.at(project)
-    AgySurface().build_session_artifacts(
-        layout, _result_with(skill), "sid-gone", run_mode=RunMode.HITL, artifacts=artifacts
-    )
-
-    data = json.loads((layout.cache.session("sid-gone") / "hooks.json").read_text())
-    assert data.get("PreToolUse", []) == [], "no command may point at a file that is not there"
-    [notice] = artifacts.notices
-    assert "guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
-
-
-def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path, monkeypatch) -> None:
-    from ai_hats.hook_collection import RuntimeHookMirrorError
-    from ai_hats.session_artifacts import BuiltArtifacts
-
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
-    project = tmp_path / "project"
-    project.mkdir()
-    skill = _hooked_skill(tmp_path)
-
-    with pytest.raises(RuntimeHookMirrorError, match="guard"):  # the mirror was never written
-        AgySurface()._deliver_hooks(
-            ProjectLayout.at(project), _result_with(skill), "sid-unmirrored", BuiltArtifacts()
-        )

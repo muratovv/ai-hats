@@ -885,3 +885,49 @@ def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog(tmp_path: Pa
     assert "[gates] lint" not in combined, (
         f"done-gate must fail at e2e-catalog stage BEFORE reaching lint:\n{combined}"
     )
+
+
+def test_done_gate_sweeps_tmp_before_the_heavy_stages_and_only_done_asks_for_it(
+    tmp_path: Path,
+):
+    """The sweep (and the uv-cache prune it ends with) has no cadence of its own;
+    a closed card is the one it rides. It cannot be red, so it costs the earlier
+    edges nothing to leave it out — and it runs ahead of the stages that need
+    the space it frees."""
+    real = gate_stages("done-gate")
+    assert real.index("tmp-sweep") < real.index("lint"), real
+    for earlier in ("review-gate", "merge-gate"):
+        assert "tmp-sweep" not in gate_stages(earlier), earlier
+
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    init_repo(sandbox, branch="master")
+    (sandbox / "scripts").mkdir()
+    for name in PROJECT_SCRIPTS:
+        shutil.copy(REPO_ROOT / "scripts" / name, sandbox / "scripts" / name)
+    git(sandbox, "add", "-A")
+    git(sandbox, "commit", "-m", "seed")
+    runner = tmp_path / "runner.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "--prepare" ]]; then exit 0; fi\n'
+        'echo "[gates] $1" >&2\n'
+        '[[ "$1" == "lint" ]] && exit 1\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    proc = subprocess.run(
+        ["bash", str(SKILL_SRC / "hooks" / "done-gate.sh"), "--run"],
+        cwd=str(sandbox),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "GATES_STAGE_RUNNER": str(runner)},
+    )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    # The primitive stops at the first red: a stage it reports ran before lint.
+    assert "[gates] tmp-sweep:" in combined, combined
+    assert "[gates] shellcheck" not in combined, combined

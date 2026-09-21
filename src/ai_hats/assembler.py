@@ -507,24 +507,11 @@ class Assembler:
         return HarnessConfig(channel=Channel.LOCAL, path=src) if src else None
 
     def _detect_editable_src(self) -> str | None:
-        """Absolute path of the editable ai-hats source, or None if not editable.
+        """Absolute path of the editable ai-hats source, or None if not editable."""
+        from .channel import detect_editable_source
 
-        Launcher-exported ``AI_HATS_INIT_SRC`` wins (robust to venv-bootstrap
-        ordering); else the running interpreter's PEP 610 ``file://`` editable url.
-        """
-        import os
-
-        from .constants import ENV_AI_HATS_INIT_SRC
-
-        env_src = (os.environ.get(ENV_AI_HATS_INIT_SRC) or "").strip()
-        if env_src:
-            return env_src
-        from .cli.maintenance import _is_editable_install
-
-        editable, url = _is_editable_install()
-        if editable and url and url.startswith("file://"):
-            return url.removeprefix("file://")
-        return None
+        found = detect_editable_source()
+        return None if found is None else found.path
 
     def _get_overlay(self, role_name: str) -> OverlayConfig | None:
         """Get the **project** overlay for a role, or ``None`` if absent/empty.
@@ -752,8 +739,7 @@ class Assembler:
 
         # Single entry-point. install_time=False → skip registry
         # (migrations replay only via init/do_bump). _refresh handles
-        # write_canonical, ensure_runtime_hooks, and the HooksManager
-        # materializers (runtime / worktree / git). Diagnostics are NOT
+        # write_canonical and the HooksManager's git hooks. Diagnostics are NOT
         # called from here — runtime auto-trigger stays silent.
         self._refresh(install_time=False, result=result, warnings_sink=warnings_sink)
 

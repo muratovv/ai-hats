@@ -220,15 +220,12 @@ def _claim_session_cache(cache_dir: Path) -> None:
     death instead of on age, which used to delete a live session's skills and
     ``hooks.json`` mid-flight.
 
-    Two placements it deliberately avoids. NOT the providers' shared
-    ``_cache_dir`` helper — ``--dry-run`` enumerates that dir with ``rglob``
-    (dotfiles included) and would read the anchor as an escaped write and rmtree
-    the tree. NOT before ``build_session_artifacts`` either: creating the dir
-    early makes the builder's own ``mkdir`` a no-op, which drops it from the
-    launch record and breaks its equality with the dry-run plan.
+    One placement it deliberately avoids: before ``apply``. The anchor is no
+    entry of the plan, so a root created for it would make the plan's own
+    ``mkdir`` report ``unchanged`` where a launch record says ``written``.
     The window costs nothing — until the anchor lands, the pid in the session id
     already names the owner.
-    """  # comment-length: allow — both wrong seams fail silently, one per paragraph
+    """
     from .session_liveness import write_session_anchor
 
     write_session_anchor(cache_dir)

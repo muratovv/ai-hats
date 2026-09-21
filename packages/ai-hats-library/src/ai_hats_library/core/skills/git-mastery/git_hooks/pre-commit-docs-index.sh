@@ -13,7 +13,8 @@
 # script is the mechanical safety net.
 #
 # Override (per commit, only after the user has confirmed):
-#   AI_HATS_DOCS_INDEX_ACK=1 git commit ...
+#   AI_HATS_DOCS_INDEX_ACK=1, exported in the shell that runs the commit — never
+#   a prefix on an agent's command line (safety-guard refuses it).
 
 set -uo pipefail
 
@@ -64,10 +65,11 @@ Update docs/INDEX.md to reflect the change (add/remove/rename row in
 the Companion docs catalog, and the per-step section if relevant) and
 re-stage it.
 
-Override for this single commit (only after the user has confirmed
-the catalog is intentionally out of sync):
-
-  AI_HATS_DOCS_INDEX_ACK=1 git commit ...
+Override for this single commit, only after the user has confirmed the
+catalog is intentionally out of sync: AI_HATS_DOCS_INDEX_ACK=1, exported in
+the shell that runs the commit. An agent cannot put it on its own command
+line — safety-guard refuses that as a self-grant — and every honoured use
+is journalled.
 EOF
 ai_hats_journal_catch docs-index block "docs/ drift with INDEX.md unstaged"
 exit 1

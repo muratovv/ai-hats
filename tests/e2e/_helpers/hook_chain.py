@@ -7,7 +7,6 @@ Bash chain from the project's settings.json and returns the composite verdict.
 
 from __future__ import annotations
 
-from ai_hats_core.layout import ProjectLayout
 
 import json
 import os
@@ -225,22 +224,15 @@ def build_session_settings(
     into the per-session cache, so the composed chain only exists once a
     session is built.
     """
-    from ai_hats.assembler import Assembler
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    result = Assembler(project).composer.compose(role)
-    ClaudeSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
-        session_id,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
-    return ProjectLayout.at(project).cache.session(session_id) / "settings.json"
+    from .sessions import build_session, composition_for
+
+    plan = build_session(project, composition_for(project, role), ClaudeSurface(), session_id)
+    return plan.root / "settings.json"
 
 
-def composed_rows(settings: Path, event: str = "PreToolUse") -> list[dict]:
+def event_rows(settings: Path, event: str = "PreToolUse") -> list[dict]:
     """The composed gate rows for ``event``, from the manifest beside ``settings``.
 
     Since HATS-1874 `settings.json` holds one dispatcher entry per event and the

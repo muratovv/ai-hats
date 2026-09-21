@@ -10,6 +10,7 @@ receive the ready payload; they never import the composition layer.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
     from .models import OverlayConfig
     from .role_spec import RoleSpec
+    from .surfaces import CompositionPlan
 
 logger = logging.getLogger(__name__)
 
@@ -300,9 +302,6 @@ def build_composition_payload(
         role_expression=role_expression,
         plan=plan,
         layout=asm.layout,
-        snapshot=_composition_snapshot(
-            asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec
-        ),
         hooks=asm.hooks,
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
@@ -318,32 +317,37 @@ def build_composition_payload(
     )
 
 
-def build_preview_payload(
-    project_dir: Path,
-    *,
-    role: str | None = None,
-    provider: str | None = None,
-) -> CompositionPayload:
-    """Read-only payload for the ``materialize_system_prompt`` preview surface.
+@dataclass(frozen=True)
+class PlanPreview:
+    """A role composed read-only and adapted into its plan — what ``show-prompt``
+    renders and ``list tokens`` prices, before any provider enters."""
 
-    No ``set_role`` side effect, no hooks/analyzer — pure "what would the
-    agent see". Raises ``RuntimeError`` (the no-role case) or its
-    ``MissingProviderError`` subclass, both of which ``config show-prompt``
-    renders as a friendly exit 2.
-    """
-    from .materialize import compose_to_run
-    from .surfaces import adapt
-    from .role_spec import format_role_spec
-    from .surface_registry import get_surface
+    result: CompositionResult
+    plan: CompositionPlan
+    effective_role: str
+    role_expression: str
+    layout: ProjectLayout
+    diagnostics: tuple[Diagnostic, ...]
 
-    asm, cfg, eff_role, runtime_overlay, spec = _project_context(project_dir, role, prefer_cwd=True)
+
+def _preview_context(project_dir: Path, role: str | None, *, prefer_cwd: bool = True):
+    asm, cfg, eff_role, runtime_overlay, spec = _project_context(
+        project_dir, role, prefer_cwd=prefer_cwd
+    )
     if not eff_role:
         raise RuntimeError(
             "materialize_system_prompt: no role to materialize "
             "(no --role override, no active_role/default_role in "
             "ai-hats.yaml). Set one or pass `role=...` to the step."
         )
-    eff_provider = _effective_provider(cfg, provider)
+    return asm, cfg, eff_role, runtime_overlay, spec
+
+
+def _compose_plan(asm, eff_role: str, runtime_overlay, spec) -> PlanPreview:
+    from .materialize import compose_to_run
+    from .surfaces import adapt
+    from .role_spec import format_role_spec
+
     diagnostics: list[Diagnostic] = []
     if runtime_overlay is not None:
         result = compose_to_run(
@@ -362,14 +366,60 @@ def build_preview_payload(
         overlays=_labelled_overlays(asm, eff_role, runtime_overlay),
         diagnostics=diagnostics,
     )
-    return CompositionPayload(
+    return PlanPreview(
         result=result,
-        provider=get_surface(eff_provider),
+        plan=plan,
         effective_role=eff_role,
         role_expression=role_expression,
-        plan=plan,
         layout=asm.layout,
         diagnostics=tuple(diagnostics),
+    )
+
+
+def build_plan_preview(
+    project_dir: Path, *, role: str | None = None, prefer_cwd: bool = True
+) -> PlanPreview:
+    """Compose ``role`` (or the project's active one) through the same overlay
+    pass a session takes, with no provider required — a price needs none.
+
+    ``prefer_cwd`` follows the caller's question: a read-only CLI answers about
+    the checkout the person stands in (the default), while a measurement of a
+    session answers about the project, as that session's own compose did.
+
+    Raises ``RuntimeError`` when no role can be resolved.
+    """
+    asm, _cfg, eff_role, runtime_overlay, spec = _preview_context(
+        project_dir, role, prefer_cwd=prefer_cwd
+    )
+    return _compose_plan(asm, eff_role, runtime_overlay, spec)
+
+
+def build_preview_payload(
+    project_dir: Path,
+    *,
+    role: str | None = None,
+    provider: str | None = None,
+) -> CompositionPayload:
+    """Read-only payload for the ``materialize_system_prompt`` preview surface.
+
+    No ``set_role`` side effect, no hooks/analyzer — pure "what would the
+    agent see". Raises ``RuntimeError`` (the no-role case) or its
+    ``MissingProviderError`` subclass, both of which ``config show-prompt``
+    renders as a friendly exit 2.
+    """
+    from .surface_registry import get_surface
+
+    asm, cfg, eff_role, runtime_overlay, spec = _preview_context(project_dir, role)
+    eff_provider = _effective_provider(cfg, provider)
+    preview = _compose_plan(asm, eff_role, runtime_overlay, spec)
+    return CompositionPayload(
+        result=preview.result,
+        provider=get_surface(eff_provider),
+        effective_role=preview.effective_role,
+        role_expression=preview.role_expression,
+        plan=preview.plan,
+        layout=preview.layout,
+        diagnostics=preview.diagnostics,
     )
 
 
@@ -448,61 +498,18 @@ def compose_for_carry(project_dir: Path, role: str | None = None):
         return None
 
 
-def _composition_snapshot(
-    assembler,
-    role_name: str,
-    result: CompositionResult,
-    *,
-    runtime_overlay: OverlayConfig | None = None,
-    spec: RoleSpec | None = None,
-) -> dict:
-    """Build the composition snapshot dict for ``Session.init_audit``.
-
-    Moved from ``runtime_common``: it walks private Assembler API
-    (overlays + provenance), so it computes at the compose seam and the DICT
-    travels down in the payload — bricks never drive assembler machinery.
-    """
-    try:
-        effective_traits = assembler._effective_traits(role_name, runtime_overlay=runtime_overlay)
-        provenance = assembler._get_overlay_provenance(
-            role_name, result=result, runtime_overlay=runtime_overlay
-        )
-    except Exception as exc:
-        # Defensive: a broken overlay shouldn't kill session start.
-        logger.warning(
-            "composition snapshot failed for role %r: %s — audit.md will "
-            "lack the composition section",
-            role_name,
-            exc,
-        )
-        return {}
-    snap = {
-        "traits": effective_traits,
-        "rules": [r.name for r in result.rules],
-        "skills": [s.name for s in result.skills],
-        "provenance": provenance,
-    }
-    if spec and (spec.adds or spec.removes):
-        snap["runtime"] = {
-            "spec": spec.raw,
-            "add": list(spec.adds),
-            "remove": list(spec.removes),
-        }
-    return snap
-
-
 def _static_cost_analyzer(project_dir: Path):
     """Finalize learns the role only at run time (from
     transcripts), so the static always-on cross-check stays a late-bound
     callable — composed here, threaded runner → finalize initial state."""
 
     def analyze(role: str) -> dict | None:
-        from .assembler import Assembler
-        from .composer import Composer
-        from .costs import analyze_composition
+        from .costs import analyze_plan
 
-        composer = Composer(Assembler(project_dir).resolver)
-        breakdown = analyze_composition(composer, role, exact=False)
+        # The same plan the session was rendered from, so the cross-check prices
+        # the composed role — overlays included — and not its declared tree.
+        preview = build_plan_preview(project_dir, role=role, prefer_cwd=False)
+        breakdown = analyze_plan(preview.plan, exact=False)
         return {
             "role": role,
             "total_tokens": breakdown.total_tokens,

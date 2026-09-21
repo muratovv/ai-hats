@@ -19,13 +19,15 @@ from pathlib import Path
 
 import pytest
 
+from tests._self_grant_recipe import findings
+
 pytestmark = pytest.mark.guards
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh"
 )
 
 
@@ -99,6 +101,25 @@ def _stage_derived_skill(
 
 
 # --- scenarios -------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_the_block_names_no_remedy_the_guard_refuses(repo: Path, tmp_path: Path):
+    """The way out it prints is one its reader can take.
+
+    `ack_prefix_guard.py` denies a Bash line binding the flag for the command
+    after it — the shape this refusal used to advertise. Both refusals carry
+    it: agnix's and the license guard's."""
+    stub = _make_stub(tmp_path / "fail.sh", rc=1, message="AS-001 missing frontmatter")
+    _stage_skill(repo, "library/core/skills/broken/SKILL.md")
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert not findings(res.stderr), res.stderr
+
+    _stage_skill(repo, "library/core/skills/nolicense/SKILL.md", _UNLICENSED_BODY)
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert not findings(res.stderr), res.stderr
 
 
 @pytest.mark.integration

@@ -29,7 +29,7 @@ USER_RULES_SUBDIR = "user-rules"
 # Resolution contract the host launcher must implement. Bump only when
 # the launcher's resolution behaviour changes — never for comments or a release.
 # Paired with the `LAUNCHER_CONTRACT=` literal in scripts/ai-hats-launcher.
-LAUNCHER_CONTRACT = 1
+LAUNCHER_CONTRACT = 3
 LAUNCHER_CONTRACT_FILE = "launcher-contract"
 
 

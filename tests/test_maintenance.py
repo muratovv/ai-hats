@@ -33,7 +33,7 @@ from ai_hats.cli.maintenance import (
     _probe_remote_state,
     update,
 )
-from ai_hats.constants import ENV_REPO_URL
+from ai_hats.constants import ENV_AI_HATS_INIT_SRC, ENV_REPO_URL
 from ai_hats.models import ProjectConfigError
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.update_check.cache import CacheEntry, cache_path, write_cache
@@ -905,6 +905,7 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
     # HATS-648: the .complete sentinel is written on a fully-successful install.
@@ -928,6 +929,7 @@ def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
                 config_unreadable=False,
                 migrate_force=False,
                 check_branches=False,
+                live_prefix=tmp_path / "elsewhere",
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None  # never flipped
@@ -950,6 +952,7 @@ def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
                 config_unreadable=False,
                 migrate_force=False,
                 check_branches=False,
+                live_prefix=tmp_path / "elsewhere",
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None  # never flipped
@@ -972,11 +975,83 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
                 config_unreadable=False,
                 migrate_force=False,
                 check_branches=False,
+                live_prefix=tmp_path / "elsewhere",
             )
     assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) is None
     # The half-written dir exists but is incomplete — no sentinel.
     assert ProjectLayout.at(tmp_path).versions.dir("cafef00d").is_dir()
+    assert not is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
+
+
+def _launcher_recreated_live_venv(tmp_path: Path) -> Path:
+    """versions/<sha> as the launcher's heal leaves it: bin/python present, no
+    .complete sentinel, current pointing at it — and it is the venv we run in."""
+    layout = ProjectLayout.at(tmp_path)
+    vdir = layout.versions.dir("cafef00d")
+    (vdir / "bin").mkdir(parents=True)
+    (vdir / "bin" / "python").write_text("#!/bin/sh\n")
+    _flip_current(layout.versions, "cafef00d")
+    assert read_current_sha(layout.versions) is None  # incomplete → not current, by design
+    return vdir
+
+
+def test_managed_update_adopts_the_live_venv_the_launcher_recreated(tmp_path, monkeypatch):
+    """Review F5: the launcher recreates versions/<sha> without the sentinel; the
+    python side then saw an incomplete target and rmtree'd sys.prefix mid-run.
+    The venv this process runs in is verified and adopted, never rebuilt."""
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    vdir = _launcher_recreated_live_venv(tmp_path)
+    calls: list[list[str]] = []
+
+    def rec_run(args, **kwargs):
+        calls.append(list(args))
+        return _make_completed(list(args), returncode=0, stdout="9.9.9\n")
+
+    with patch("subprocess.run", side_effect=rec_run):
+        _run_managed_versioned_update(
+            ProjectLayout.at(tmp_path),
+            _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
+            old_version="1.0.0",
+            active_role="assistant",
+            config_unreadable=False,
+            migrate_force=False,
+            check_branches=False,
+            live_prefix=vdir,
+        )
+
+    assert (vdir / "bin" / "python").exists(), "the live venv was rebuilt under us"
+    assert not any("venv" in c and "uv" in c for c in calls)
+    assert not any("pip" in c for c in calls)
+    assert any(c[:3] == [sys.executable, "-m", "ai_hats._bootstrap"] for c in calls), calls
+    assert is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
+    assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
+
+
+def test_managed_update_does_not_adopt_a_live_venv_that_fails_verify(tmp_path, monkeypatch):
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    vdir = _launcher_recreated_live_venv(tmp_path)
+
+    def rec_run(args, **kwargs):
+        a = list(args)
+        if any("_bootstrap" in x for x in a):
+            return _make_completed(a, returncode=1, stderr="entry point broken")
+        return _make_completed(a, returncode=0)
+
+    with patch("subprocess.run", side_effect=rec_run), pytest.raises(SystemExit) as exc:
+        _run_managed_versioned_update(
+            ProjectLayout.at(tmp_path),
+            _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
+            old_version="1.0.0",
+            active_role=None,
+            config_unreadable=False,
+            migrate_force=False,
+            check_branches=False,
+            live_prefix=vdir,
+        )
+
+    assert exc.value.code == 1
+    assert (vdir / "bin" / "python").exists(), "a failed verify must not rmtree the live venv"
     assert not is_complete(ProjectLayout.at(tmp_path).versions, "cafef00d")
 
 
@@ -1007,6 +1082,7 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     # No venv create / pip install / verify happened.
     assert not any("venv" in c and "uv" in c for c in calls)
@@ -1060,6 +1136,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     # REBUILT (not reused): a venv create + pip install ran for the target sha.
     assert any("venv" in c and "uv" in c for c in calls)
@@ -1095,6 +1172,7 @@ def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeyp
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert not residue.exists()  # crash residue reclaimed
     assert (
@@ -1132,6 +1210,7 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     # Reused: no rebuild, but current re-flipped to the complete dir.
     assert not any("venv" in c and "uv" in c for c in calls)
@@ -1160,6 +1239,7 @@ def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeyp
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert not legacy.exists()  # legacy .venv reclaimed
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
@@ -1184,6 +1264,7 @@ def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     assert legacy.exists()  # kept — we ran from it
     assert read_current_sha(ProjectLayout.at(tmp_path).versions) == "cafef00d"
@@ -1221,6 +1302,7 @@ def _update_with_launcher(tmp_path, monkeypatch, stamp):
             config_unreadable=False,
             migrate_force=False,
             check_branches=False,
+            live_prefix=tmp_path / "elsewhere",
         )
     return printed
 
@@ -1260,8 +1342,12 @@ from ai_hats.paths import ENV_AI_HATS_DIR  # noqa: E402
 
 
 def _setup_channel_env(tmp_path: Path, channel: str, *, extra: str = "") -> Path:
+    """A project on ``channel``. With ``path: .`` in ``extra`` the root is the
+    local source, so it is made installable (the ai-hats checkout's own shape)."""
     project = tmp_path / "proj"
     project.mkdir()
+    if channel == "local" and "path: ." in extra:
+        (project / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
     (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -1382,7 +1468,8 @@ def test_update_stable_fetch_unreachable_exits_2(tmp_path, monkeypatch):
     ids=["verified", "verify-failed"],
 )
 def test_update_local_editable_in_place(tmp_path, monkeypatch, verify_returncode, expected_exit):
-    """channel: local → `uv pip install -e <path>` in place, no versioned dir."""
+    """channel: local → `uv pip install -e <path>` in place, no versioned dir;
+    a relative ``path`` resolves against the project root, never the cwd."""
     project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
     captured: list[list[str]] = []
 
@@ -1407,9 +1494,9 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch, verify_returncode
         assert "Post-install verify failed" in result.output
         assert "ai_hats.steps entry point is broken" in result.output
         return
-    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2:] == ["-e", "."]]
+    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2] == "-e"]
     assert len(editable) == 1, f"expected one editable install, got {captured}"
-    assert editable[0][-1] == "."
+    assert editable[0][-1] == str(project)
     # No versioned dir is created for a local editable install.
     assert not (project / ".agent" / "ai-hats" / "versions").exists()
 
@@ -1432,6 +1519,130 @@ def test_update_invalidates_update_cache(tmp_path, monkeypatch):
         result = CliRunner().invoke(update, [])
     assert result.exit_code == 0, result.output
     assert not cache_file.exists()
+
+
+def _local_no_source(tmp_path: Path, monkeypatch) -> Path:
+    """`channel: local`, no `path`, a project root that is not a Python project,
+    and no editable install to detect — the shape a git-installed host leaves.
+    The test process IS an editable install, so the dist-metadata read is the
+    one boundary replaced here (test-isolation exit 3, recorded)."""
+    project = _setup_channel_env(tmp_path, "local")
+    _seed_healthy_layers(project)
+    monkeypatch.delenv(ENV_AI_HATS_INIT_SRC, raising=False)
+    monkeypatch.setattr("ai_hats.cli.maintenance._is_editable_install", lambda: (False, None))
+    return project
+
+
+def test_update_local_without_source_installs_edge_and_names_the_fix(tmp_path, monkeypatch):
+    """A local channel whose source cannot install is healed for this run — edge
+    lands, the yaml stays, and the output names the one command that fixes it."""
+    project = _local_no_source(tmp_path, monkeypatch)
+    before = (project / PROJECT_CONFIG).read_text()
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 0, output
+    assert _install_called(captured), captured
+    assert not any("-e" in c[0] for c in captured), f"must not install editable: {captured}"
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "has no pyproject.toml" in flat and "the project root" in flat, flat
+    assert "ai-hats config set --channel local --path" in flat
+    assert "installing edge" in flat
+    assert (project / PROJECT_CONFIG).read_text() == before, "the yaml is the user's — untouched"
+
+
+def test_update_local_detected_editable_wins_over_the_project_root(tmp_path, monkeypatch):
+    """The install this process runs from is never clobbered by an edge fallback."""
+    project = _setup_channel_env(tmp_path, "local")
+    checkout = tmp_path / "dev" / "ai-hats"
+    checkout.mkdir(parents=True)
+    (checkout / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
+    monkeypatch.setenv(ENV_AI_HATS_INIT_SRC, str(checkout))
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 0, output
+    editable = [c[0] for c in captured if c[0][:3] == ("uv", "pip", "install") and "-e" in c[0]]
+    assert [c[-1] for c in editable] == [str(checkout)], captured
+
+
+def test_check_exits_one_with_the_harness_row_for_a_local_source_that_cannot_install(
+    tmp_path, monkeypatch
+):
+    project = _local_no_source(tmp_path, monkeypatch)
+
+    exit_code, output, _ = _invoke_update(
+        ["--check"], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 1, output
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "BROKEN harness" in flat, flat
+    assert "ai-hats config set --channel local --path" in flat
+
+
+def test_update_refuses_to_replace_an_editable_install_it_cannot_resolve(tmp_path, monkeypatch):
+    """Review F3: the edge fallback is only for a non-editable install. Running
+    from an editable checkout whose configured source has a problem, `self update`
+    refuses with the fix instead of installing edge over the developer's tree."""
+    project = _setup_channel_env(tmp_path, "local", extra="  path: /nonexistent/checkout\n")
+    _seed_healthy_layers(project)
+    monkeypatch.delenv(ENV_AI_HATS_INIT_SRC, raising=False)
+    monkeypatch.setattr(
+        "ai_hats.cli.maintenance._is_editable_install",
+        lambda: (True, "file:///Users/dev/ai-hats"),
+    )
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 2, output
+    assert not _install_called(captured) and not any("-e" in c[0] for c in captured), captured
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "does not exist" in flat and "harness.path" in flat, flat
+    assert "editable" in flat and "refus" in flat
+    assert "ai-hats config set --channel local --path" in flat
+
+
+def test_update_local_consumer_root_with_its_own_pyproject_is_healed(tmp_path, monkeypatch):
+    """Review F1/M1: a consumer project that is itself a Python project must not
+    have its own package installed editable into the tool venv."""
+    project = _local_no_source(tmp_path, monkeypatch)
+    (project / "pyproject.toml").write_text('[project]\nname = "consumer"\n')
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 0, output
+    assert _install_called(captured) and not any("-e" in c[0] for c in captured), captured
+    assert "names 'consumer', not ai-hats" in " ".join(output.split())  # rich wraps at 80
+
+
+def test_update_edge_repo_that_is_a_path_without_ai_hats_refuses_before_uv(tmp_path, monkeypatch):
+    """Review F2/S3: an edge repo given as a path is judged by identity before any
+    install; a missing path is named as missing, never as offline."""
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    notpy = tmp_path / "gitrepo-notpy"
+    notpy.mkdir()
+    project = _setup_channel_env(tmp_path, "edge", extra=f"  repo: {notpy}\n")
+    _seed_healthy_layers(project)
+
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path, project=project
+    )
+
+    assert exit_code == 1, output  # the install-failure exit, as uv's refusal was
+    assert not _install_called(captured), captured
+    flat = " ".join(output.split())  # rich wraps at 80 columns
+    assert "has no pyproject.toml" in flat and "harness.repo" in flat, flat
+    assert "offline" not in flat
+    assert "ai-hats config set --channel edge --repo" in flat
 
 
 # ---------- HATS-595: --check layer triage ----------

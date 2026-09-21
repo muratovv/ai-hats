@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
+from ai_hats.library_paths import build_library_paths
 from ai_hats.models import ProjectConfig
 from ai_hats_wt import WorktreeManager
 from ai_hats.paths import PROJECT_CONFIG
@@ -122,6 +123,8 @@ def test_no_git_probe_when_cwd_under_project_dir(tmp_path, monkeypatch):
 
     asm = Assembler(proj)
     assert (proj / "libraries") in asm.library_paths
+    # The configured-root re-point shares the pre-gate — read-only included.
+    assert (proj / "libraries") in Assembler(proj, prefer_cwd=True).library_paths
 
 
 def test_only_the_libraries_layer_repoints_everything_else_stays_main(tmp_path, monkeypatch):
@@ -139,3 +142,127 @@ def test_only_the_libraries_layer_repoints_everything_else_stays_main(tmp_path, 
     assert asm.config_path == proj / PROJECT_CONFIG  # overlay stays MAIN
     assert asm.agent_dir == proj / ".agent"  # tracker/sessions stay MAIN
     assert asm.project_dir == proj  # the hop target is untouched
+
+
+# ---- configured roots re-point to the worktree -----------------------------
+#
+# A standalone library repo attached via ~/.ai-hats/library_paths.yaml (or
+# ai-hats.yaml: library_paths) is listed by its MAIN path. Editing it inside a
+# linked worktree and composing from there must resolve THAT worktree, the way
+# libraries/ already does — reads and writers alike.
+
+
+def _make_library_repo(root: Path) -> None:
+    """A flat standalone library: roles/ at the top, git-tracked."""
+    _init_repo(root)
+    (root / "roles" / "demo").mkdir(parents=True)
+    (root / "roles" / "demo" / "config.yaml").write_text("name: demo\n")
+    _git(root, "add", "roles")
+    _git(root, "commit", "-m", "init", "--no-verify")
+
+
+def _register_user_global(tmp_path: Path, monkeypatch, *roots: Path) -> None:
+    home = tmp_path / "home"
+    (home / ".ai-hats").mkdir(parents=True)
+    listing = "".join(f"  - {r}\n" for r in roots)
+    (home / ".ai-hats" / "library_paths.yaml").write_text(f"paths:\n{listing}")
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
+
+
+def test_user_global_root_repoints_to_worktree_for_read_only(tmp_path, monkeypatch):
+    lib = tmp_path / "custom"
+    _make_library_repo(lib)
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    _register_user_global(tmp_path, monkeypatch, lib)
+
+    paths = build_library_paths(lib, prefer_cwd=True, cwd=wt)
+
+    assert wt in paths
+    assert lib not in paths
+
+
+def test_user_global_root_repoints_for_a_writer_too(tmp_path, monkeypatch):
+    # Same rule as libraries/: a session launched inside the worktree composes
+    # the branch it is editing, prefer_cwd or not.
+    lib = tmp_path / "custom"
+    _make_library_repo(lib)
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    _register_user_global(tmp_path, monkeypatch, lib)
+
+    paths = build_library_paths(lib, cwd=wt)
+
+    assert wt in paths
+    assert lib not in paths
+
+
+def test_user_global_root_stays_main_from_the_main_checkout(tmp_path, monkeypatch):
+    lib = tmp_path / "custom"
+    _make_library_repo(lib)
+    _register_user_global(tmp_path, monkeypatch, lib)
+
+    paths = build_library_paths(lib, prefer_cwd=True, cwd=lib)
+
+    assert lib in paths
+
+
+def test_config_root_repoints_to_worktree_for_read_only(tmp_path, monkeypatch):
+    # ai-hats.yaml: library_paths — the project-config sibling of the user entry.
+    lib = tmp_path / "custom"
+    _make_library_repo(lib)
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    proj = tmp_path / "repo"
+    _make_downstream_project(proj)
+    _register_user_global(tmp_path, monkeypatch)
+
+    paths = build_library_paths(proj, config_paths=[str(lib)], prefer_cwd=True, cwd=wt)
+
+    assert wt in paths
+    assert lib not in paths
+
+
+def test_subdirectory_root_maps_into_the_worktree(tmp_path, monkeypatch):
+    lib = tmp_path / "custom"
+    _make_library_repo(lib)
+    (lib / "lib" / "roles" / "nested").mkdir(parents=True)
+    (lib / "lib" / "roles" / "nested" / "config.yaml").write_text("name: nested\n")
+    _git(lib, "add", "lib")
+    _git(lib, "commit", "-m", "nested root", "--no-verify")
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    _register_user_global(tmp_path, monkeypatch, lib / "lib")
+
+    paths = build_library_paths(lib, prefer_cwd=True, cwd=wt)
+
+    assert wt / "lib" in paths
+    assert lib / "lib" not in paths
+
+
+def test_root_outside_the_worktree_repo_is_untouched(tmp_path, monkeypatch):
+    lib = tmp_path / "custom"
+    _make_library_repo(lib)
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    other = tmp_path / "other"
+    (other / "roles").mkdir(parents=True)
+    _register_user_global(tmp_path, monkeypatch, other)
+
+    paths = build_library_paths(lib, prefer_cwd=True, cwd=wt)
+
+    assert other in paths
+    assert wt not in paths
+
+
+def test_assembler_read_only_sees_the_worktree_root(tmp_path, monkeypatch):
+    # The seam: Assembler(prefer_cwd=True) threads the flag into the builder.
+    lib = tmp_path / "custom"
+    _make_library_repo(lib)
+    ProjectConfig(provider="agy").save(lib / PROJECT_CONFIG)
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    _register_user_global(tmp_path, monkeypatch, lib)
+
+    assert wt in Assembler(lib, prefer_cwd=True, cwd=wt).library_paths
+    assert wt in Assembler(lib, cwd=wt).library_paths

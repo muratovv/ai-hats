@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from ai_hats_core.layout import ProjectLayout
 
+import dataclasses
+import hashlib
 import io
 import json
 import os
@@ -10,36 +12,79 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.fs_digest import dir_digest
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.session_plan import probe_host
+from ai_hats.surfaces import HookEvent, apply
 from ai_hats.surfaces.codex.hook_dispatcher import DISPATCHER_COMMAND, dispatch_hook
 from ai_hats.surfaces.codex.provider import CodexSurface
 from ai_hats.surfaces.codex.runtime_hooks import (
     CODEX_HOOK_EVENTS,
     build_hook_cli_args,
-    materialize_hook_manifest,
+    plan_hooks,
+)
+from ai_hats.surfaces.plan import (
+    CompositionPlan,
+    Executable,
+    Hooks,
+    Host,
+    Prompt,
+    PromptBlock,
+    PromptMember,
+    RuntimeHook,
+    Skill,
 )
 
 
-def _skill(tmp_path: Path, *, matcher: str = "Bash") -> SimpleNamespace:
+def _guard(tmp_path: Path, *, matcher: str = "Bash") -> tuple[Skill, RuntimeHook]:
+    """A skill shipping one PreToolUse script, as the adapter hands it to a plan."""
     root = tmp_path / "source" / "guard"
     (root / "hooks").mkdir(parents=True)
-    (root / "SKILL.md").write_text(
-        "---\n"
-        "name: guard\n"
-        "ai_hats:\n"
-        "  runtime_hooks:\n"
-        "    PreToolUse:\n"
-        f"      - matcher: {matcher}\n"
-        "        script: hooks/guard.sh\n"
-        "---\n"
-        "# Guard\n"
+    document = "---\nname: guard\n---\n# Guard\n"
+    (root / "SKILL.md").write_text(document)
+    script = root / "hooks" / "guard.sh"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    skill = Skill(
+        name="skills::guard",
+        path=root.resolve(),
+        content_digest=dir_digest(root),
+        document=document,
     )
-    (root / "hooks" / "guard.sh").write_text("#!/bin/sh\nexit 0\n")
-    (root / "hooks" / "guard.sh").chmod(0o755)
-    return SimpleNamespace(name="guard", source_path=root)
+    hook = RuntimeHook(
+        at=HookEvent.PRE_TOOL_USE,
+        matcher=matcher,
+        run=Executable(
+            path=script.resolve(), content_digest=hashlib.sha256(script.read_bytes()).hexdigest()
+        ),
+    )
+    return skill, hook
+
+
+def _composition(skill: Skill, *hooks: RuntimeHook) -> CompositionPlan:
+    return CompositionPlan(
+        identity="guarded",
+        prompt=Prompt((PromptBlock(None, (PromptMember("guarded::prompt", "# role\n", None),)),)),
+        skills=(skill,),
+        hooks=Hooks(runtime=tuple(hooks), external=()),
+        trace=(),
+    )
+
+
+def _host() -> Host:
+    return Host(python=Path("/opt/py/bin/python3"), path="/usr/bin", commands={})
+
+
+def _pin_codex_home(tmp_path: Path, monkeypatch) -> Path:
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("AI_HATS_CODEX_BASE_HOME", str(codex_home))
+    monkeypatch.setenv("CODEX_SQLITE_HOME", str(codex_home))
+    return codex_home
 
 
 def _manifest(
@@ -147,120 +192,115 @@ def test_static_dispatcher_fails_closed_when_runtime_identity_is_missing() -> No
     assert "incomplete dispatcher environment" in result.stderr
 
 
-def test_materializes_composed_manifest_only_in_the_session_cache(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_the_manifest_names_the_mirror_and_pins_the_interpreter(tmp_path: Path) -> None:
+    """Planning writes nothing: the manifest is an entry, its command points
+    into the session's own mirror, the pins come from the probed host."""
     project = tmp_path / "project"
-    project.mkdir()
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
-    skill = _skill(tmp_path)
-    result = SimpleNamespace(skills=[skill])
-    skills_dir = tmp_path / "mirror" / "skills"
-    mirrored = skills_dir / "guard" / "hooks" / "guard.sh"
-    mirrored.parent.mkdir(parents=True)
-    mirrored.write_text("#!/bin/sh\nexit 0\n")
-    mirrored.chmod(0o755)  # the mirror is a copy of the source, mode included
-    artifacts = BuiltArtifacts()
+    skill, hook = _guard(tmp_path)
+    root = tmp_path / "cache" / "sessions" / "sid-manifest"
+    skills_root = tmp_path / "codex-home" / "skills"
 
-    path = materialize_hook_manifest(
-        ProjectLayout.at(project),
-        result,
-        "sid-manifest",
-        artifacts,
-        skills_dir=skills_dir,
+    manifest, env = plan_hooks(
+        _composition(skill, hook),
+        root,
+        _host(),
+        layout=ProjectLayout.at(project),
+        skills_root=skills_root,
     )
 
-    data = json.loads(path.read_text())
+    assert manifest.target == root / "hooks.json"
+    data = json.loads(manifest.content or "")
     assert data["session"] == {
         "id": "sid-manifest",
         "ai_hats_dir": str(project / ".agent" / "ai-hats"),
-        "skills_root": str(skills_dir),
+        "skills_root": str(skills_root),
     }
-    assert data["hooks"]["PreToolUse"][0]["command"] == str(mirrored)
-    assert artifacts.extra_env["AI_HATS_SESSION_CACHE_DIR"] == str(path.parent)
-    assert artifacts.extra_env["AI_HATS_PYTHON"]
-    assert path in artifacts.materialized
-    assert not (project / ".codex").exists()
-    assert not (tmp_path / "home" / ".codex").exists()
+    assert data["hooks"] == {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "command": str(skills_root / "guard" / "hooks" / "guard.sh"),
+                "tag": "ai-hats:guard:PreToolUse:Bash:guard",
+            }
+        ]
+    }
+    assert env == {
+        "AI_HATS_SESSION_CACHE_DIR": str(root),
+        "AI_HATS_PYTHON": "/opt/py/bin/python3",
+    }
+    assert not root.exists() and not (tmp_path / "codex-home").exists()
 
 
-def test_a_script_missing_from_the_skill_is_a_notice_not_a_silent_drop(
-    tmp_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
-    skill = _skill(tmp_path)
-    (skill.source_path / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
-    skills_dir = tmp_path / "mirror" / "skills"
-    (skills_dir / "guard" / "hooks").mkdir(parents=True)
-    artifacts = BuiltArtifacts()
-
-    path = materialize_hook_manifest(
-        ProjectLayout.at(tmp_path / "project"),
-        SimpleNamespace(skills=[skill]),
-        "sid-gone",
-        artifacts,
-        skills_dir=skills_dir,
+def test_a_hook_outside_every_composed_skill_is_refused(tmp_path: Path) -> None:
+    skill, hook = _guard(tmp_path)
+    stray = tmp_path / "elsewhere.sh"
+    stray.write_text("#!/bin/sh\n")
+    outside = dataclasses.replace(
+        hook, run=Executable(path=stray.resolve(), content_digest="0" * 64)
     )
 
-    assert json.loads(path.read_text())["hooks"].get("PreToolUse", []) == []
-    [notice] = artifacts.notices
-    assert "guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
-
-
-def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path, monkeypatch) -> None:
-    from ai_hats.hook_collection import RuntimeHookMirrorError
-
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
-    skill = _skill(tmp_path)
-    unwritten_mirror = tmp_path / "mirror" / "skills"
-
-    with pytest.raises(RuntimeHookMirrorError, match="guard"):
-        materialize_hook_manifest(
-            ProjectLayout.at(tmp_path / "project"),
-            SimpleNamespace(skills=[skill]),
-            "sid-unmirrored",
-            BuiltArtifacts(),
-            skills_dir=unwritten_mirror,
+    with pytest.raises(ValueError, match="outside every composed skill"):
+        plan_hooks(
+            _composition(skill, outside),
+            tmp_path / "root",
+            _host(),
+            layout=ProjectLayout.at(tmp_path / "project"),
+            skills_root=tmp_path / "skills",
         )
 
 
-def test_provider_artifact_pipeline_delivers_manifest_and_static_hook_config(
+def _surface_plan(tmp_path: Path, composition: CompositionPlan, session_id: str):
+    layout = ProjectLayout.at(tmp_path / "project")
+    surface = CodexSurface()
+    return surface.plan(
+        composition,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=layout.cache.session(session_id),
+        layout=layout,
+        host=probe_host(surface=surface),
+    )
+
+
+def test_a_hookless_composition_wires_no_dispatcher(tmp_path: Path, monkeypatch) -> None:
+    """Hookless roles are not asked to trust an inert dispatcher, and get no pins."""
+    _pin_codex_home(tmp_path, monkeypatch)
+    skill, _hook = _guard(tmp_path)
+
+    plan = _surface_plan(tmp_path, _composition(skill), "sid-quiet")
+
+    assert not any(e.target.name == "hooks.json" for e in plan.entries)
+    assert not any(a.startswith("hooks.") for a in plan.launch.args)
+    assert "AI_HATS_SESSION_CACHE_DIR" not in plan.env and "AI_HATS_PYTHON" not in plan.env
+
+
+def test_the_plan_delivers_the_manifest_and_the_static_hook_config(
     tmp_path: Path, monkeypatch
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
-    codex_home = tmp_path / "codex-home"
-    codex_home.mkdir()
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("AI_HATS_CODEX_BASE_HOME", str(codex_home))
-    monkeypatch.setenv("CODEX_SQLITE_HOME", str(codex_home))
-    skill = _skill(tmp_path)
-    result = SimpleNamespace(
-        skills=[skill],
-        priorities=[],
-        merged_injection="",
-        rules=[],
-        user_rules=(),
-        consent=(),
-    )
+    _pin_codex_home(tmp_path, monkeypatch)
+    skill, hook = _guard(tmp_path)
 
-    artifacts = CodexSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
-        "sid-pipeline",
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
+    plan = _surface_plan(tmp_path, _composition(skill, hook), "sid-pipeline")
+    apply(plan)
 
     manifest = ProjectLayout.at(project).cache.session("sid-pipeline") / "hooks.json"
-    assert manifest in artifacts.materialized
-    assert json.loads(manifest.read_text())["session"]["id"] == "sid-pipeline"
-    overrides = artifacts.cli_args[1::2]
-    assert {value.split("=", 1)[0] for value in overrides if value.startswith("hooks.")} == {
+    assert manifest in {e.target for e in plan.entries}
+    data = json.loads(manifest.read_text())
+    assert data["session"]["id"] == "sid-pipeline"
+    assert data["hooks"]["PreToolUse"][0]["command"] == str(
+        CodexSurface().session_skills_root(ProjectLayout.at(project), "sid-pipeline")
+        / "guard"
+        / "hooks"
+        / "guard.sh"
+    )
+    assert Path(data["hooks"]["PreToolUse"][0]["command"]).is_file()
+    assert {a.split("=", 1)[0] for a in plan.launch.args if a.startswith("hooks.")} == {
         f"hooks.{event}" for event in CODEX_HOOK_EVENTS
     }
+    assert plan.env["AI_HATS_SESSION_CACHE_DIR"] == str(manifest.parent)
+    assert plan.env["AI_HATS_PYTHON"] == sys.executable
     assert not (project / ".codex").exists()
 
 

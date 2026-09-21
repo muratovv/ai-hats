@@ -149,6 +149,98 @@ def test_analyze_missing_role(composer):
     assert len(breakdown.errors) > 0
 
 
+# --- the plan is what the agent reads: price it, member by member ---
+
+
+_SKILL_DOC = (
+    "---\nname: test_skill\ndescription: Does important work when invoked.\n---\n"
+    "# Skill\nThis skill does important work."
+)
+
+
+@pytest.fixture
+def plan(tmp_path):
+    from ai_hats.surfaces.plan import (
+        CompositionPlan,
+        Hooks,
+        Prompt,
+        PromptBlock,
+        PromptMember,
+        Skill,
+    )
+
+    skill_dir = tmp_path / "skills" / "test_skill"
+    skill_dir.mkdir(parents=True)
+    return CompositionPlan(
+        identity="test-role",
+        prompt=Prompt(
+            (
+                PromptBlock(
+                    "PRIORITIES", (PromptMember("test-role::priorities", "1. Speed", None),)
+                ),
+                PromptBlock(
+                    None,
+                    (
+                        PromptMember("trait-base::prompt", "Base injection text.", None),
+                        PromptMember("test-role::prompt", "Role injection text.", None),
+                        PromptMember("override::project::prompt", "Overlay text.", None),
+                    ),
+                ),
+                PromptBlock(
+                    "RULES",
+                    (PromptMember("rules::test_rule", "# Rule\nDo the right thing.", "test_rule"),),
+                ),
+                PromptBlock(
+                    "USER RULES",
+                    (PromptMember("rules::house", "House style.", "house"),),
+                ),
+            )
+        ),
+        skills=(Skill("skills::test_skill", skill_dir, "d", document=_SKILL_DOC),),
+        hooks=Hooks((), ()),
+        trace=(),
+    )
+
+
+def test_analyze_plan_prices_every_member_and_skill(plan):
+    from ai_hats.costs import analyze_plan
+
+    b = analyze_plan(plan, exact=False)
+    by_name = {c.name: c for c in b.components}
+    assert by_name["test-role::priorities"].category == "priorities"
+    assert by_name["trait-base::prompt"].category == "injection"
+    assert by_name["override::project::prompt"].category == "injection"
+    assert by_name["rules::test_rule"].category == "rule"
+    assert by_name["rules::house"].category == "user-rule"
+    assert by_name["skills::test_skill"].category == "skill"
+    assert b.errors == []
+
+
+def test_analyze_plan_members_are_always_on_and_skill_body_on_demand(plan):
+    from ai_hats.costs import analyze_plan
+
+    b = analyze_plan(plan, exact=False)
+    for c in b.components:
+        if c.category != "skill":
+            assert c.on_demand_tokens == 0 and c.always_on_tokens == c.tokens, c.name
+    skill = next(c for c in b.components if c.category == "skill")
+    assert skill.always_on_tokens == 11  # '<name>: <description>' = 45 chars // 4
+    assert skill.on_demand_tokens == skill.tokens - 11
+    assert b.always_on_tokens + b.on_demand_tokens == b.total_tokens
+
+
+def test_analyze_plan_skill_without_document_is_free(plan):
+    from dataclasses import replace
+
+    from ai_hats.costs import analyze_plan
+    from ai_hats.surfaces.plan import Skill
+
+    bare = Skill("skills::bare", plan.skills[0].path, "d", document=None)
+    b = analyze_plan(replace(plan, skills=(bare,)), exact=False)
+    skill = next(c for c in b.components if c.category == "skill")
+    assert skill.tokens == 0 and skill.always_on_tokens == 0
+
+
 # --- token counting ---
 
 

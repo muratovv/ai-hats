@@ -1,4 +1,4 @@
-"""Disposable Codex session with production hook and wrapper materialization."""
+"""Disposable Codex session on the production plan: surface half, consent layer, env."""
 
 from __future__ import annotations
 
@@ -6,20 +6,22 @@ import os
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
-from ai_hats.consent_wrapper import materialize_consent_wrappers
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from ai_hats.surfaces.codex.provider import CodexSurface
+from ai_hats.surfaces.plan import MaterializationPlan
 from ai_hats_core.layout import ProjectLayout
+from tests._plan_helpers import composition_of
 
 from .env import clean_env
 from .git import git
-from .sessions import stand_in_session
+from .sessions import build_session, stand_in_session
 from .surfaces import write_surface_shims
 
 
-def session(tmp_path: Path, monkeypatch, artifacts=None) -> tuple[Path, dict[str, str]]:
+def planned_session(
+    tmp_path: Path, monkeypatch
+) -> tuple[Path, dict[str, str], MaterializationPlan]:
     project = tmp_path / "project"
     project.mkdir()
     git(project, "init", "-b", "master")
@@ -30,7 +32,7 @@ def session(tmp_path: Path, monkeypatch, artifacts=None) -> tuple[Path, dict[str
     git(project, "commit", "-m", "init")
     ProjectConfig(provider="codex", active_role="assistant").save(project / PROJECT_CONFIG)
     # The surface resolves a session home under it and refuses a base home that
-    # is not an existing directory, so it has to be on disk before the build.
+    # is not an existing directory, so it has to be on disk before the plan.
     codex_base = tmp_path / "codex-base"
     codex_base.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CODEX_HOME", str(codex_base))
@@ -40,19 +42,24 @@ def session(tmp_path: Path, monkeypatch, artifacts=None) -> tuple[Path, dict[str
     monkeypatch.setenv("AI_HATS_LIBRARY_ROOT", str(library))
     assembler = Assembler(project)
     assembler.init()
-    result = assembler.composer.compose("assistant")
-    surface = CodexSurface()
-    artifacts = artifacts if artifacts is not None else BuiltArtifacts()
-    # Built once here and handed to both collaborators, the way the runtime does.
-    layout = ProjectLayout.at(project)
-    surface.build_session_artifacts(
-        layout, result, "consent-test", run_mode=RunMode.HITL, artifacts=artifacts
+    composition = composition_of(
+        assembler.composer.compose("assistant"),
+        layout=ProjectLayout.at(project),
+        resolver=assembler.resolver,
     )
     env = clean_env()
     env["AI_HATS_USER_HOME"] = str(tmp_path / "user-home")
     env["PATH"] = os.pathsep.join((str(write_surface_shims(tmp_path / "bin")), os.defpath))
     stand_in_session(env, project, "consent-test", provider="codex")
     env["AI_HATS_DIR"] = str(project / ".agent" / "ai-hats")
-    materialize_consent_wrappers(layout, result, "consent-test", surface, artifacts, environ=env)
-    env.update(artifacts.extra_env)
+    # One plan, surface half and consent layer together, the way the runner does.
+    plan = build_session(
+        project, composition, CodexSurface(), "consent-test", environ=env, middleware=True
+    )
+    env.update(plan.env)
+    return project, env, plan
+
+
+def session(tmp_path: Path, monkeypatch) -> tuple[Path, dict[str, str]]:
+    project, env, _plan = planned_session(tmp_path, monkeypatch)
     return project, env

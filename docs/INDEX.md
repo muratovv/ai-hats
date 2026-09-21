@@ -36,11 +36,12 @@ tool when a question goes beyond built-in instructions.
 | [how-to.md](how-to.md)                                   | Overlay cookbook — 7 recipes for adjusting a role on the fly                                                                                 | Step 4                           |
 | [how-to-feedback-loop.md](how-to-feedback-loop.md)       | Feedback policies (off / hint / smart / always) + reflection internals                                                                       | Step 6                           |
 | [glossary.md](glossary.md)                               | Core terminology — role, provider, session, trait, skill, rule                                                                               | Any step where a term is unclear |
+| [surfaces.md](surfaces.md)                               | Which harness supports what — hook verdicts, audit source, sub-agents, consent wrappers                                                      | Picking or switching a harness   |
 | [ARCHITECTURE.md](ARCHITECTURE.md)                       | Composition model, session lifecycle, reflection loop, backlog FSMs                                                                          | Curious; debugging composition   |
 | [how-to-orchestration.md](how-to-orchestration.md)       | Multi-role orchestration via sub-agents                                                                                                      | Advanced                         |
 | [how-to-cli-integrations.md](how-to-cli-integrations.md) | Integrating external CLIs (gcloud, gh, gWorkspace) into a role                                                                               | Advanced                         |
 | [how-to-experiments.md](how-to-experiments.md)           | Behavior A/B experiments — prove a component edit changes subagent behavior                                                                  | Maintainers; library curation    |
-| [how-to-advanced.md](how-to-advanced.md)                 | Edge cases, power-user knobs, escape hatches                                                                                                 | Advanced                         |
+| [how-to-advanced.md](how-to-advanced.md)                 | Edge cases, power-user knobs, escape hatches — incl. update banner (§7) and trash-based recovery (§8)                                        | Advanced                         |
 | [how-to-hatrack.md](how-to-hatrack.md)                   | Task / hypothesis / proposal lifecycle on the `rack` CLI                                                                                     | Advanced                         |
 | [reflect.md](reflect.md)                                 | Reflection-mode internals — hypothesis/proposal triage flow                                                                                  | Advanced                         |
 | [wt/README.md](wt/README.md)                             | Worktree (wt) documentation hub & reading guide                                                                                              | Advanced / Worktree maintenance  |
@@ -58,7 +59,7 @@ tool when a question goes beyond built-in instructions.
 
 - [`adr/`](adr/) — architecture decision records (one file per decision).
 - [Codex file credential reconciliation](adr/0032-codex-file-credential-reconciliation.md) — logout, concurrent updates, and session-end synchronization limits.
-- [Flat library model](adr/0033-named-expressions-replace-roles-and-traits.md) (proposed) — a series of four: overview and stages (0033), the DSL today vs under `-re` (0034), processing rules (0035), the materialization plan as the harness interface (0036).
+- [Flat library model](adr/0033-named-expressions-replace-roles-and-traits.md) — a series of four: overview and stages (0033), the DSL today vs under `-re` (0034), processing rules (0035), the materialization plan as the harness interface (0036).
 - [Canonical events are named by what the consumer does](adr/0037-canonical-events-are-named-by-what-the-consumer-does.md) — how a surface's own fact enters the shared `events.jsonl` vocabulary, and the three questions that decide whether a private type merges into a common one.
 - [`adr/attachments/`](adr/attachments/) — material an ADR leans on that is neither the
   decision nor user documentation: working context, measured baselines, corpora

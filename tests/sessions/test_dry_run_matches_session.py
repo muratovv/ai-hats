@@ -90,4 +90,4 @@ def test_dry_run_json_is_machine_readable_and_hides_env_values(project: Path):
     assert payload["provider"] == "claude"
     assert payload["materialized"], "the report must list what would be written"
     assert "env_keys" in payload and "env" not in payload
-    assert payload["escapes"] == []
+    assert "outcome" not in payload["materialized"][0], "a plain dry-run applies nothing"

@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._self_grant_recipe import findings
+
 pytestmark = pytest.mark.guards
 
 
@@ -114,6 +116,27 @@ def test_prepush_block_carries_recovery_guidance(repo_with_two_commits: Path):
     assert res.returncode == 1, res.stderr
     assert "rule_pause_before_shared_state_write" in res.stderr
     assert "Do NOT retry" in res.stderr
+
+
+@pytest.mark.integration
+def test_the_block_names_no_remedy_the_guard_refuses(repo_with_two_commits: Path):
+    """The way out it prints is one its reader can take.
+
+    `ack_prefix_guard.py` denies a Bash line binding the flag for the command
+    after it — the shape this refusal used to advertise."""
+    older = _git(repo_with_two_commits, "rev-parse", "HEAD~1")
+    newer = _git(repo_with_two_commits, "rev-parse", "HEAD")
+    res = subprocess.run(
+        ["bash", str(PREPUSH_HOOK)],
+        input=f"refs/heads/master {older} refs/heads/master {newer}\n",
+        cwd=str(repo_with_two_commits),
+        capture_output=True,
+        text=True,
+        timeout=5,
+        env={**os.environ, "AI_HATS_SHARED_STATE_ACK": ""},
+    )
+    assert res.returncode == 1, res.stderr
+    assert not findings(res.stderr), res.stderr
 
 
 @pytest.mark.integration

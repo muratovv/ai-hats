@@ -145,8 +145,7 @@ def test_e2e_healer_rewrites_settings_and_clean_markdown(installed_launcher, tmp
     assert not (project / ".agent" / "hooks").exists()
 
     # settings.json no longer carries the user-owned hook entry —
-    # cascade-drop emptied the PreToolUse list (the managed entry
-    # provider.ensure_runtime_hooks added is the only remaining one).
+    # cascade-drop emptied the PreToolUse list.
     # settings.json should not carry the user-owned hook entry under
     # any path — both legacy and post-heal forms. Avoid bare substring
     # checks that collide with the ai-hats-managed

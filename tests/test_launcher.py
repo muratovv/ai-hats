@@ -297,6 +297,7 @@ def test_self_update_with_local_path_repo_url(tmp_path):
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     fake_repo = tmp_path / "local-repo"
     fake_repo.mkdir()
+    (fake_repo / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')  # it IS the source
     env = {
         "PATH": f"{stub_dir}:{os.environ['PATH']}",
         ENV_REPO_URL: str(fake_repo),
@@ -318,6 +319,7 @@ def test_self_update_channel_local_heals_editable(tmp_path):
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     src = tmp_path / "src-tree"
     src.mkdir()
+    (src / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
     (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         f"harness:\n  channel: local\n  path: {src}\n"
@@ -334,8 +336,10 @@ def test_self_update_channel_local_heals_editable(tmp_path):
 
 def test_self_update_channel_local_default_path_is_editable(tmp_path):
     """HATS-766: `channel: local` with no explicit `path` → editable install of
-    the project root (the resolve_channel default), still `-e`."""
+    the project root (the resolve_channel default), still `-e` — when that root
+    is an installable project (the ai-hats checkout's own shape)."""
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "ai-hats"\n')
     (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         "harness:\n  channel: local\n"
@@ -346,6 +350,67 @@ def test_self_update_channel_local_default_path_is_editable(tmp_path):
     text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
     assert "-e" in text.splitlines(), f"editable flag missing (default path): {text}"
     assert "ai-hats @" not in text
+
+
+def test_self_update_channel_local_without_source_heals_from_the_pip_target(tmp_path):
+    """`channel: local` whose source is not an installable project (no `path`,
+    a project root without pyproject.toml/setup.py) heals the venv from the
+    PIP_TARGET instead of failing the recreate on uv's refusal, and stderr
+    names the one command that fixes the config."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: local\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
+    assert "-e" not in text.splitlines(), f"an uninstallable source must not be -e'd: {text}"
+    assert "ai-hats @" in text, "the heal falls back to the PIP_TARGET form"
+    assert "is not an ai-hats source" in res.stderr, res.stderr
+    assert f"{tmp_path} is not an ai-hats source" in res.stderr, (
+        f"the resolved dir, not <project>/.: {res.stderr}"
+    )
+    assert "ai-hats config set --channel local --path" in res.stderr, res.stderr
+
+
+def test_self_update_channel_local_consumer_root_with_a_pyproject_is_not_a_source(tmp_path):
+    """Review F1/F4: a consumer project with its own pyproject is installable
+    but is not ai-hats; the heal must not -e it into the tool venv."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "consumer"\n')
+    (tmp_path / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: local\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
+    assert "-e" not in text.splitlines(), f"a consumer root must not be -e'd: {text}"
+    assert "ai-hats @" in text
+    assert "is not an ai-hats source" in res.stderr and "consumer" in res.stderr, res.stderr
+
+
+def test_self_update_edge_pip_target_that_is_a_path_without_ai_hats_fails_loud(tmp_path):
+    """Review F2/M6: a local AI_HATS_REPO_URL that is not the ai-hats source is
+    named before uv is asked, with the fix."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    notpy = tmp_path / "gitrepo-notpy"
+    notpy.mkdir()
+    (tmp_path / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: edge\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}", ENV_REPO_URL: str(notpy)}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 1, res.stderr
+    assert not (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").exists(), (
+        "uv must not be asked to install a dir that is not ai-hats"
+    )
+    assert "is not an ai-hats source" in res.stderr and str(notpy) in res.stderr, res.stderr
+    assert "AI_HATS_REPO_URL" in res.stderr, res.stderr
 
 
 def test_self_update_channel_edge_heals_non_editable(tmp_path):
@@ -597,3 +662,122 @@ def test_launcher_probe_fails_on_missing_first_party_entry_point_attribute(tmp_p
     res = _run(["status"], cwd=tmp_path, env=env)
     assert res.returncode == 1
     assert "failed loading entry point" in res.stderr
+
+
+# ---------- foreign session pin: the envelope leaves with the pin ----------
+
+
+_ENVELOPE = ("AI_HATS_SESSION_IDENTITY", "AI_HATS_SESSION_ID", "AI_HATS_ROLE")
+
+
+def _env_dumping_venv(venv_path: Path) -> None:
+    """A healthy fake venv whose `python -m ai_hats` prints the AI_HATS_* env it
+    was exec'd with — what the python entry would resolve the project from."""
+    bindir = venv_path / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    stub = bindir / "python"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "${1:-}" == "-c" ]]; then exit 0; fi\n'
+        'if [[ "${1:-}" == "-m" && "${2:-}" == "ai_hats" ]]; then\n'
+        "    env | grep '^AI_HATS_' | sort\n"
+        "    exit 0\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    _make_executable(stub)
+
+
+def _run_scrubbed(args, *, cwd: Path, env: dict) -> subprocess.CompletedProcess:
+    """The launcher with NO inherited AI_HATS_* (the test runner may itself be a
+    session) plus exactly ``env``."""
+    base = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    base.update(env)
+    return subprocess.run(
+        [str(LAUNCHER), *args], cwd=str(cwd), env=base, capture_output=True, text=True
+    )
+
+
+def _pinned_session(project: Path, venv: Path) -> dict:
+    return {
+        ENV_AI_HATS_VENV: str(venv),
+        "AI_HATS_PROJECT_DIR": str(project),
+        "AI_HATS_SESSION_IDENTITY": '{"id":"s1","project_dir":"%s","v":1}' % project,
+        "AI_HATS_SESSION_ID": "s1",
+        "AI_HATS_ROLE": "maintainer",
+    }
+
+
+def test_foreign_pin_drops_the_session_envelope_with_it(tmp_path):
+    """A pin the launcher declares foreign carries the session's envelope, and
+    the python entry resolves the project from that envelope — so re-pinning
+    AI_HATS_PROJECT_DIR alone changed nothing. The envelope leaves with the pin."""
+    project_a = tmp_path / "a"
+    project_b = tmp_path / "b"
+    project_b.mkdir()
+    _env_dumping_venv(project_b / ".agent" / "ai-hats" / ".venv")
+
+    res = _run_scrubbed(
+        ["status"],
+        cwd=project_b,
+        env=_pinned_session(project_a, project_a / ".agent" / "ai-hats" / ".venv"),
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "foreign to" in res.stderr, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    assert seen["AI_HATS_PROJECT_DIR"] == str(project_b)
+    assert seen[ENV_AI_HATS_VENV] == str(project_b / ".agent" / "ai-hats" / ".venv")
+    assert not set(_ENVELOPE) & set(seen), f"envelope survived the foreign pin: {seen}"
+
+
+def test_same_project_pin_keeps_the_session_envelope(tmp_path):
+    """The positive control: a pin that matches the project is not foreign, and
+    the launcher touches none of the envelope."""
+    project_b = tmp_path / "b"
+    b_venv = project_b / ".agent" / "ai-hats" / ".venv"
+    _env_dumping_venv(b_venv)
+
+    res = _run_scrubbed(["status"], cwd=project_b, env=_pinned_session(project_b, b_venv))
+
+    assert res.returncode == 0, res.stderr
+    assert "foreign to" not in res.stderr, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    for key in _ENVELOPE:
+        assert seen[key] == _pinned_session(project_b, b_venv)[key]
+
+
+# ---------- the project is the nearest onboarded dir above cwd, not cwd ----------
+
+
+def test_launcher_resolves_the_project_from_a_subdirectory(tmp_path):
+    """HATS-2002: from `<root>/a/b` the launcher must answer for `<root>` — the
+    python side walks up to the nearest `.agent/` or `ai-hats.yaml`; the launcher
+    used `$(pwd)` and bootstrapped a stray project in the subdirectory."""
+    root = tmp_path / "root"
+    sub = root / "a" / "b"
+    sub.mkdir(parents=True)
+    (root / "ai-hats.yaml").write_text("schema_version: 4\nai_hats_dir: .agent/ai-hats\n")
+    _env_dumping_venv(root / ".agent" / "ai-hats" / ".venv")
+
+    res = _run_scrubbed(["status"], cwd=sub, env={})
+
+    assert res.returncode == 0, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    assert seen["AI_HATS_PROJECT_DIR"] == str(root), seen
+    assert seen[ENV_AI_HATS_VENV] == str(root / ".agent" / "ai-hats" / ".venv"), seen
+    assert not (sub / ".agent").exists(), "a stray project was bootstrapped in the subdirectory"
+
+
+def test_launcher_keeps_a_bare_directory_as_the_project(tmp_path):
+    """The walk-up stops at the first marker; a dir with none above it is a fresh
+    project (the `self init` premise), not an error."""
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    _env_dumping_venv(bare / ".agent" / "ai-hats" / ".venv")  # a venv is not a marker; .agent is
+
+    res = _run_scrubbed(["status"], cwd=bare, env={})
+
+    assert res.returncode == 0, res.stderr
+    seen = dict(line.split("=", 1) for line in res.stdout.splitlines())
+    assert seen["AI_HATS_PROJECT_DIR"] == str(bare), seen

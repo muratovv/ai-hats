@@ -13,26 +13,29 @@ touching user-owned directories. The project root is never written: no
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING
 
+from ai_hats.materialization import describe_merge_json, describe_mkdir
 from ai_hats.surfaces import Surface
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import RunMode, SessionPolicy
 
-from .runtime_hooks import materialize_hook_manifest
+from ..mirror import mirror_entries, path_dirs
+from ..plan import CompositionPlan, Host, Launch, MaterializationPlan, Prompt, mirror_name
+from ..skill_index import skill_index_block
+from .home import (
+    ENV_OPENCODE_CONFIG,
+    ENV_XDG_CONFIG_HOME,
+    OpenCodeHome,
+    plan_projection,
+    probe_home,
+)
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
-
-ENV_OPENCODE_CONFIG = "OPENCODE_CONFIG"
-ENV_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
-
-#: Where the user's real opencode config home lives. Points at the BASE
-#: (``~/.config``), not at the ``opencode/`` dir inside it — same shape as
-#: ``XDG_CONFIG_HOME`` itself.
-_ENV_OPENCODE_CONFIG_HOME = "AI_HATS_OPENCODE_CONFIG_HOME"
 
 #: The single session agent opencode is launched with (`--agent`). One stable
 #: name keeps launch argv free of role-derived values that change per project.
@@ -104,173 +107,85 @@ class OpenCodeSurface(Surface):
         # discovery path, so the mirror doubles as real skills.
         return self.session_xdg_config_home(layout, session_id) / "opencode" / "skills"
 
-    def _base_config_home(self) -> Path:
-        """Resolve the user's real config home (the base, not ``opencode/``)."""
-        configured = os.environ.get(_ENV_OPENCODE_CONFIG_HOME) or os.environ.get(
-            ENV_XDG_CONFIG_HOME
-        )
-        candidate = Path(configured).expanduser() if configured else Path.home() / ".config"
-        if not candidate.is_absolute():
-            raise RuntimeError("OpenCode config home must be an absolute directory")
-        return candidate
+    # --- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 
-    def _project_base_home(self, session_config_dir: Path, artifacts) -> None:
-        """Symlink user-owned config entries next to the session-owned ones."""
-        base_config_dir = self._base_config_home() / "opencode"
-        if not base_config_dir.is_dir():
-            return
-        resolved_base = base_config_dir.resolve()
-        resolved_session = session_config_dir.resolve(strict=False)
-        if (
-            resolved_base == resolved_session
-            or resolved_base in resolved_session.parents
-            or resolved_session in resolved_base.parents
-        ):
-            raise RuntimeError("OpenCode base config home must be outside the session XDG root")
-        try:
-            for source in sorted(base_config_dir.iterdir(), key=lambda path: path.name):
-                if source.name == "skills":
-                    continue  # owned by the session mirror
-                artifacts.port.symlink(source, session_config_dir / source.name)
-        except OSError:
-            raise RuntimeError("OpenCode base config projection failed") from None
+    def probe_home(self, environ: Mapping[str, str]) -> OpenCodeHome:
+        return probe_home(environ)
 
-    def _project_base_skills(self, skills_root: Path, role_names: set[str], artifacts) -> None:
-        """Expose the user's own global skills that this composition doesn't shadow."""
-        base_skills = self._base_config_home() / "opencode" / "skills"
-        if not base_skills.is_dir():
-            return
-        try:
-            for source in sorted(base_skills.iterdir(), key=lambda path: path.name):
-                if source.name in role_names:
-                    continue
-                artifacts.port.symlink(source, skills_root / source.name)
-        except OSError:
-            raise RuntimeError("OpenCode base skill projection failed") from None
-
-    def _agent_description(self, result: "CompositionResult") -> str:
-        return f"ai-hats composed role session ({result.name})"
-
-    def _expanded_prompt(self, layout: ProjectLayout, result, session_id: str) -> str:
-        project_dir = layout.root
-        from ai_hats.placeholders import expand_path_placeholders
-        from ai_hats.role_catalog import expand_role_catalog
-
-        prompt = self.build_system_prompt(result)
-        index = self._skill_index(layout, result, session_id)
-        if index:
-            prompt = f"{prompt}\n\n{index}" if prompt else index
-        prompt = expand_path_placeholders(prompt, layout)
-        return expand_role_catalog(prompt, project_dir)
-
-    @staticmethod
-    def _skill_description(skill) -> str:
-        from ai_hats.frontmatter import FrontmatterError, read_frontmatter
-
-        try:
-            metadata = read_frontmatter(skill.source_path / "SKILL.md")
-        except (FrontmatterError, OSError):
-            return skill.name
-        description = metadata.get("description")
-        return description if isinstance(description, str) and description else skill.name
-
-    def _skill_index(self, layout: ProjectLayout, result, session_id: str) -> str:
-        if not result.skills:
-            return ""
-        skills_root = self.session_skills_root(layout, session_id)
-        lines = [
-            "## AVAILABLE SKILLS",
-            "Use a skill when its description matches the task. Before using it, read the exact "
-            "SKILL.md path below; resolve its relative references from that skill directory.",
-        ]
-        for skill in result.skills:
-            skill_md = skills_root / skill.name / "SKILL.md"
-            lines.append(f"- **{skill.name}** — {self._skill_description(skill)} (`{skill_md}`)")
-        return "\n".join(lines)
-
-    # --- session config accumulation -------------------------------------------------
-    #
-    # Category handlers run in enum order (context → skills → hooks) under one
-    # BuiltArtifacts and only accumulate the desired config document on the
-    # artifacts object; build_session_artifacts persists it exactly once after
-    # the loop. One merge_json entry per build, never a torn intermediate file.
-
-    @staticmethod
-    def _config_doc(artifacts: BuiltArtifacts) -> dict:
-        doc = getattr(artifacts, "_ai_hats_opencode_config", None)
-        if doc is None:
-            doc = {"$schema": _SCHEMA}
-            setattr(artifacts, "_ai_hats_opencode_config", doc)
-        return doc
-
-    def build_session_artifacts(
+    def plan(
         self,
-        layout: ProjectLayout,
-        result: "CompositionResult",
-        session_id: str,
+        composition: CompositionPlan,
         *,
-        run_mode: RunMode | str = RunMode.HITL,
-        policy: SessionPolicy | None = None,
-        artifacts: BuiltArtifacts,
-    ) -> BuiltArtifacts:
-        built = super().build_session_artifacts(
-            layout,
-            result,
-            session_id,
-            run_mode=run_mode,
-            policy=policy,
-            artifacts=artifacts,
-        )
-        doc = getattr(built, "_ai_hats_opencode_config", None)
-        if doc is not None:
-            built.port.merge_json(self.session_config_path(layout, session_id), doc)
-            built.materialized.append(self.session_config_path(layout, session_id))
-        return built
+        run_mode: RunMode,
+        policy: SessionPolicy,
+        root: Path,
+        layout: ProjectLayout,
+        host: Host,
+    ) -> MaterializationPlan:
+        from .runtime_hooks import plan_hooks
 
-    # --- context ---------------------------------------------------------------------
-
-    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
-        prompt = self._expanded_prompt(layout, result, session_id)
-        artifacts.full_content = prompt
-        doc = self._config_doc(artifacts)
-        doc.setdefault("agent", {})[AGENT_NAME] = {
-            "description": self._agent_description(result),
-            "mode": "primary",
-            "prompt": prompt,
-        }
-        # No permission keys here — work policy belongs to the role's
-        # manifest-driven plugin, not to the generated config.
-        artifacts.cli_args.extend(["--agent", AGENT_NAME])
-        artifacts.extra_env[ENV_OPENCODE_CONFIG] = str(self.session_config_path(layout, session_id))
-
-    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
-        self._build_context_hitl(layout, result, session_id, artifacts)
-
-    # --- skills ----------------------------------------------------------------------
-
-    def _deliver_skills(self, layout, result, session_id, artifacts) -> None:
-        from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
-
-        if not result.skills:
-            return
-        xdg_root = self.session_xdg_config_home(layout, session_id)
+        home = host.home
+        if not isinstance(home, OpenCodeHome):
+            raise RuntimeError(
+                "opencode plans from its probed home: probe_host(surface=<opencode>) "
+                "before planning"
+            )
+        mode = RunMode(run_mode)
+        xdg_root = root / "opencode-xdg"
         session_config_dir = xdg_root / "opencode"
-        skills_root = self.session_skills_root(layout, session_id)
-        # Wipe-and-copy first: the mirror is the native discovery dir, and base
-        # entries are projected into it afterwards.
-        materialize_skills_dir(skills_root, result.skills, layout, artifacts.port)
-        artifacts.port.mkdir(session_config_dir)
-        self._project_base_home(session_config_dir, artifacts)
-        self._project_base_skills(skills_root, {skill.name for skill in result.skills}, artifacts)
-        inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_root)
-        artifacts.extra_env[ENV_XDG_CONFIG_HOME] = str(xdg_root)
-        artifacts.materialized.append(skills_root)
-
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_skills(layout, result, session_id, artifacts)
-
-    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_skills(layout, result, session_id, artifacts)
+        skills_root = session_config_dir / "skills"
+        config_path = root / "opencode" / "opencode.json"
+        prompt = composition.prompt
+        if index := skill_index_block(composition, skills_root, surface=self.name):
+            prompt = Prompt((*prompt.blocks, index))
+        document: dict[str, object] = {"$schema": _SCHEMA}
+        entries = [describe_mkdir(root)]
+        args: list[str] = []
+        env: dict[str, str] = {}
+        if policy.context:
+            document["agent"] = {
+                AGENT_NAME: {
+                    "description": f"ai-hats composed role session ({composition.identity})",
+                    "mode": "primary",
+                    "prompt": prompt.text,
+                }
+            }
+            args += ["--agent", AGENT_NAME]
+            env[ENV_OPENCODE_CONFIG] = str(config_path)
+        if composition.skills:
+            entries.append(describe_mkdir(skills_root))
+            entries += mirror_entries(composition, skills_root)
+            mirrored = {mirror_name(skill) for skill in composition.skills}
+            entries += plan_projection(home, session_config_dir, mirrored=mirrored)
+            if dirs := path_dirs(composition, skills_root):
+                env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
+            env[ENV_XDG_CONFIG_HOME] = str(xdg_root)
+        if policy.hooks:
+            manifest, plugin, hook_env = plan_hooks(
+                composition,
+                root,
+                host,
+                layout=layout,
+                skills_root=skills_root,
+                permission_rules=self._permission_rules(layout),
+            )
+            entries += [manifest, plugin]
+            env.update(hook_env)
+            document["plugin"] = [f"file://{plugin.target}"]
+        if policy.context or policy.hooks:
+            entries.append(describe_merge_json(config_path, document))
+        env.update(self.get_env(root, layout))
+        return MaterializationPlan(
+            composition=composition,
+            prompt=prompt,
+            surface=self.name,
+            run_mode=mode,
+            policy=policy,
+            root=root,
+            entries=tuple(entries),
+            env=env,
+            launch=Launch(args=tuple(args), sdk_options=None),
+        )
 
     # --- hooks -----------------------------------------------------------------------
 
@@ -291,31 +206,6 @@ class OpenCodeSurface(Surface):
                 "action": "allow",
             },
         ]
-
-    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
-        # The manifest also carries the role's permission rules, so
-        # it materializes for every composition — hookless roles still touch
-        # session-cache paths that external_directory gating would ask about.
-        manifest_path, plugin_path = materialize_hook_manifest(
-            layout,
-            result,
-            session_id,
-            artifacts,
-            skills_dir=self.session_skills_root(layout, session_id),
-            permission_rules=self._permission_rules(layout),
-        )
-        del manifest_path
-        doc = self._config_doc(artifacts)
-        plugins = doc.setdefault("plugin", [])
-        entry = f"file://{plugin_path}"
-        if entry not in plugins:
-            plugins.append(entry)
-
-    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
-
-    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
 
     # --- launch ----------------------------------------------------------------------
 

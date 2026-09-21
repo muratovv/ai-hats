@@ -58,16 +58,10 @@ class HoldfastProvider(ClaudeSurface):
         # SIGKILLed wrapper (HATS-1339 D3). claude's SDK engine would hide it.
         return None
 
-    def describe_automate_launch(self, *args, **kwargs):
-        # ClaudeSurface describes SDK options, not an argv. Take the base
-        # class's CLI description, which is what that legacy path executes.
-        from ai_hats.surfaces import Surface
-
-        return Surface.describe_automate_launch(self, *args, **kwargs)
-
     def automate_launch(self, *args, **kwargs):
-        # The same swap on the plan path: the base class launches a CLI surface
-        # with one argv, which is what the subprocess path executes.
+        # ClaudeSurface launches an SDK option document; the base class
+        # launches a CLI surface with one argv, which is what the subprocess
+        # path executes.
         from ai_hats.surfaces import Surface
 
         return Surface.automate_launch(self, *args, **kwargs)

@@ -6,8 +6,8 @@ the same shape of blindness this card's review was about.
 
 The SDK call is the only thing stubbed, and it is handed in rather than patched
 onto the module under test (``scripts/check_test_isolation.py``, exit 1: INJECT).
-Everything up to it — artifact reuse, option assembly, the first user message —
-runs for real, so a break there is this test's failure too.
+The option document the engine is handed is the launch (ADR-0036 D4), so what
+reaches the SDK is asserted on the launched value, not on a builder.
 """
 
 from __future__ import annotations
@@ -16,8 +16,9 @@ from ai_hats_core.layout import ProjectLayout
 
 from types import SimpleNamespace
 
-from ai_hats.session_artifacts import BuiltArtifacts, CollectedMetrics
+from ai_hats.session_artifacts import CollectedMetrics
 from ai_hats.surfaces.claude.provider import ClaudeSubagentEngine, ClaudeSurface
+from ai_hats.surfaces.plan import Launched
 
 
 def _sdk_result() -> SimpleNamespace:
@@ -34,22 +35,24 @@ def _sdk_result() -> SimpleNamespace:
     )
 
 
-def _run(tmp_path, metrics):
-    engine = ClaudeSubagentEngine(ClaudeSurface(), run_blocking=lambda *a, **k: _sdk_result())
+def _launched(**options) -> Launched:
+    return Launched(args=None, sdk_options=options, env={}, prompt="")
+
+
+def _run(tmp_path, metrics, *, run_blocking=None, launched=None):
+    engine = ClaudeSubagentEngine(
+        ClaudeSurface(), run_blocking=run_blocking or (lambda *a, **k: _sdk_result())
+    )
     return engine.run(
-        result=SimpleNamespace(
-            name="r", priorities=[], merged_injection="", rules=[], skills=[], checks=()
-        ),
         layout=ProjectLayout.at(tmp_path),
         work_dir=tmp_path,
         session_id="20260826-102204-1-27148",
-        task="do the thing",
-        ticket_id="",
         env={},
         model=None,
         timeout_s=60,
         metrics=metrics,
-        artifacts=BuiltArtifacts(),
+        launched=launched or _launched(cwd=str(tmp_path)),
+        brief="# TASK\ndo the thing",
     )
 
 
@@ -66,36 +69,26 @@ def test_the_run_reports_its_cost_into_the_sink(tmp_path):
     }
 
 
-def test_the_minted_session_id_reaches_the_sdk_options(tmp_path):
-    """The runner mints the surface's session id so the record can be followed
-    while the run is on; the engine has to hand it to the SDK as ``session_id``,
-    or the SDK picks its own and the writer follows a file that never appears."""
+def test_the_sdk_is_handed_the_launched_document_and_the_brief(tmp_path):
+    """The runner mints the surface's session id into the launched options so
+    the record can be followed while the run is on; the engine hands that
+    document to the SDK as it is, and the brief as the first turn."""
     handed: list = []
 
     def run_blocking(options, message, *, timeout_s, on_message=None):
-        handed.append(options)
+        handed.append((options, message))
         return _sdk_result()
 
-    engine = ClaudeSubagentEngine(ClaudeSurface(), run_blocking=run_blocking)
-    engine.run(
-        result=SimpleNamespace(
-            name="r", priorities=[], merged_injection="", rules=[], skills=[], checks=()
-        ),
-        layout=ProjectLayout.at(tmp_path),
-        work_dir=tmp_path,
-        session_id="20260826-102204-1-27148",
-        task="do the thing",
-        ticket_id="",
-        env={},
-        model=None,
-        timeout_s=60,
-        metrics=CollectedMetrics(),
-        artifacts=BuiltArtifacts(),
-        provider_session_id="minted-uuid",
+    _run(
+        tmp_path,
+        CollectedMetrics(),
+        run_blocking=run_blocking,
+        launched=_launched(cwd=str(tmp_path), session_id="minted-uuid", model="m"),
     )
 
-    (options,) = handed
-    assert options.session_id == "minted-uuid"
+    ((options, message),) = handed
+    assert options.session_id == "minted-uuid" and options.model == "m"
+    assert message == "# TASK\ndo the thing"
 
 
 def test_the_return_value_carries_the_process_outcome_only(tmp_path):

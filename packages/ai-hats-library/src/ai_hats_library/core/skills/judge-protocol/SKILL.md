@@ -22,12 +22,6 @@ Runs via `ai-hats reflect hypothesis` (after Phase 1 `judge-auditor`
 produces a draft) or `ai-hats execute --role judge` (standalone — see
 Edge Cases).
 
-> **Harness shell prelude.** Before any `ai-hats` invocation:
->
-> ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # no bin/ai-hats console script
-> ```
-
 ## When to Use
 
 You were launched as **judge**. The first user message contains the
@@ -139,7 +133,7 @@ surface the proposed decision (`accept | reject | defer | duplicate`)
 to the supervisor. On ack for the full batch, run **one** bulk commit:
 
 ```bash
-ah reflect commit \
+ai-hats reflect commit \
   --accept PROP-001 --accept PROP-007 \
   --reject PROP-003 \
   --defer PROP-009 \

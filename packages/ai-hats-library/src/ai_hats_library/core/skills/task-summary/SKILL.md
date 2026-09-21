@@ -1,6 +1,6 @@
 ---
 name: task-summary
-description: Focused post-task summary covering architectural decisions, decision forks, pitfalls, and plan deviations. Use after the backlog manager transitions a task to done or failed, when handing off a completed task for review, or when the supervisor asks what happened with a task.
+description: Focused post-task summary covering architectural decisions, decision forks, pitfalls, and plan deviations. Use at `document → review`, before handing the card to the reviewer, on a task that failed, or when the supervisor asks what happened with a task.
 license: MIT
 ---
 
@@ -11,7 +11,9 @@ Produce a focused summary of a completed task, capturing only decision-critical 
 ## When to Use
 
 The backward-looking *factual record* of a finished task — what was decided and
-why. Two siblings to keep distinct:
+why. It is due at `document → review`: `summary.md` is what the reviewer opens,
+so it is attached before the card enters `review`, not after it leaves (see
+**hatrack**'s per-edge table). Two siblings to keep distinct:
 
 - **self-retrospective** is the *improvement* analysis (5-whys, systemic fixes)
   of how the work went — run that when there were failures or backtracks; this
@@ -91,4 +93,4 @@ Result: <done | failed>
 - Writing the summary without reading the task's work_log first — you'll miss context
 - Writing the summary under `tasks/<ID>/` by hand — `summary.md` there, or a
   `summary_file:` key in task.yaml. Both break `rule_backlog_discipline §1`, and no
-  CLI writes either. `attach add` is the door
+  CLI writes either. `rack transition <ID> --attach` is the door

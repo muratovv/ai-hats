@@ -8,15 +8,6 @@ license: MIT
 
 Convert project-level retrospective findings into framework-level improvements.
 
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats self init` (step 5), define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script):
->
-> ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
-> ah self init
-> ```
->
-> If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
-
 ## When to Use
 
 Two entry points, one procedure:
@@ -41,13 +32,13 @@ already exist is **skill-optimization**, not this.
    - NO → project-specific (stays in project CLAUDE.md)
 
 2. **Map to component type — mechanism first:**
-   | Finding type                                        | Framework component               |
-   | --------------------------------------------------- | --------------------------------- |
+   | Finding type                                          | Framework component                 |
+   | ----------------------------------------------------- | ----------------------------------- |
    | Invariant a machine can decide ("never write X to Y") | Hook / gate / CLI check — not prose |
-   | Behavioral constraint ("always do X")               | Rule                              |
-   | Multi-step process ("when X, do Y then Z")          | Skill                             |
-   | Missing check in existing process                   | Skill update                      |
-   | Knowledge gap                                       | Reference doc or injection update |
+   | Behavioral constraint ("always do X")                 | Rule                                |
+   | Multi-step process ("when X, do Y then Z")            | Skill                               |
+   | Missing check in existing process                     | Skill update                        |
+   | Knowledge gap                                         | Reference doc or injection update   |
 
    The first row is first on purpose: prose costs tokens every turn and asks the
    agent to comply, a hook costs nothing and does not ask. Rank the options with
@@ -61,7 +52,6 @@ already exist is **skill-optimization**, not this.
 
 3. **Draft the improvement:**
    Follow **skill-template** for new skills, rule naming convention for rules.
-   Include retrospective ID as provenance (e.g., "Source: GERX-002").
 
 4. **Wire into composition:**
    Determine which trait should include the new component.
@@ -78,7 +68,7 @@ already exist is **skill-optimization**, not this.
 
 6. **Close the loop:**
    Update the original retrospective with a link to the framework change.
-   Create a HATS task if the change is non-trivial.
+   File a backlog card if the change is non-trivial.
 
 ## Completion
 

@@ -1,28 +1,25 @@
 """The guarantee: a dry-run leaves the filesystem byte-identical (HATS-1211 §2).
 
-This is the check that makes escaping the port impossible to do quietly — a
-write that goes around it happens for real during a dry-run and shows up here.
-Run per (surface × run_mode). The AUTOMATE pairs used to be where HATS-1207's
-bypasses lived and were asserted to REPORT an escape; since HATS-1207 routed
-both run-paths through the builder they are asserted to be clean instead.
-
-Files only — read as "a dry-run does nothing" this file overstates itself, which
-is how a socket bind hid inside ``ClineSurface.get_env``. The non-file half is
+The dry-run is a projection of the plan (ADR-0036 D5): it plans for a stub
+root and reaches no write primitive. Run per (surface × run_mode). Files only —
+read as "a dry-run does nothing" this file overstates itself, which is how a
+socket bind hid inside ``ClineSurface.get_env``. The non-file half is
 ``tests/test_dry_run_claims_nothing.py`` (HATS-1554).
 """  # comment-length: allow — what the guarantee does NOT cover is the point
 
 from __future__ import annotations
 
-from ai_hats_core.layout import ProjectLayout
-
 import hashlib
 from pathlib import Path
 
 import pytest
+from ai_hats_core.layout import ProjectLayout
 
-from ai_hats.dry_run import dry_run_automate, dry_run_hitl
+from ai_hats.session_artifacts import RunMode, assemble_brief
+from ai_hats.session_plan import preview, render_record
+from ai_hats.surface_registry import surface_names
 
-SURFACES = ["claude", "agy", "cline"]
+SURFACES = sorted(surface_names())
 
 
 def _fingerprint(project: Path) -> dict[str, str]:
@@ -43,13 +40,16 @@ def _fingerprint(project: Path) -> dict[str, str]:
 
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch) -> Path:
-    """A composable project rooted in tmp_path, isolated from the user's home."""
+    """A composable project rooted in tmp_path, isolated from the user's home;
+    an empty Codex home stands where that surface insists on one."""
     from ai_hats.assembler import Assembler
     from ai_hats.models import ProjectConfig
     from ai_hats.paths import PROJECT_CONFIG
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".codex").mkdir(parents=True)
+    for name in ("AI_HATS_CODEX_BASE_HOME", "CODEX_HOME", "XDG_CONFIG_HOME", "GEMINI_CONFIG_DIR"):
+        monkeypatch.delenv(name, raising=False)
 
     lib = tmp_path / "lib"
     skill = lib / "skills" / "s"
@@ -71,50 +71,63 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     return proj
 
 
-@pytest.mark.parametrize("surface", SURFACES)
-def test_hitl_dry_run_leaves_the_filesystem_byte_identical(project: Path, surface: str):
-    before = _fingerprint(project)
+def _hitl(project: Path, surface: str):
+    return preview(ProjectLayout.at(project), role=None, provider=surface, run_mode=RunMode.HITL)
 
-    report = dry_run_hitl(ProjectLayout.at(project), provider=surface)
+
+def _automate(project: Path, surface: str):
+    layout = ProjectLayout.at(project)
+    return preview(
+        layout,
+        role=None,
+        provider=surface,
+        run_mode=RunMode.AUTOMATE,
+        brief=assemble_brief(layout, task="demo", ticket_id=""),
+    )
+
+
+@pytest.mark.parametrize("surface", SURFACES)
+def test_hitl_dry_run_leaves_the_filesystem_byte_identical(
+    project: Path, writes: list[str], surface: str
+):
+    before = _fingerprint(project)
+    writes.clear()
+
+    shown = _hitl(project, surface)
 
     assert _fingerprint(project) == before
-    assert report.escapes == ()
-    assert report.record.entries, "a dry-run that plans nothing is not a dry-run"
+    assert writes == [], "a dry-run reaches no write primitive"
+    assert shown.record["materialized"], "a dry-run that plans nothing is not a dry-run"
 
 
 @pytest.mark.parametrize("surface", SURFACES)
-def test_automate_dry_run_leaves_the_filesystem_byte_identical(project: Path, surface: str):
-    """Escapes are undone, so the fs is clean either way — that is the promise."""
+def test_automate_dry_run_leaves_the_filesystem_byte_identical(
+    project: Path, writes: list[str], surface: str
+):
     before = _fingerprint(project)
+    writes.clear()
 
-    dry_run_automate(ProjectLayout.at(project), provider=surface, task="demo")
+    _automate(project, surface)
 
     assert _fingerprint(project) == before
+    assert writes == []
 
 
 @pytest.mark.parametrize("surface", ["agy", "cline"])
-def test_automate_no_longer_traverses_the_runner_bypass(project: Path, surface: str):
-    """HATS-1207 S4 closed bypass 2 — this is the promised inversion.
+def test_automate_hands_the_role_to_a_cli_sub_agent_in_its_prompt_token(
+    project: Path, surface: str
+):
+    """The role reaches a CLI sub-agent through the plan's prompt, in the argv."""
+    shown = _automate(project, surface)
 
-    Before: the runner composed the role itself via ``materialize_runtime_skills``,
-    which takes no port and therefore wrote for real. Now the role reaches the
-    sub-agent through the builder, so there is nothing to warn about and nothing
-    escapes: an empty ``escapes`` is the load-bearing half of this assertion.
-    """
-    report = dry_run_automate(ProjectLayout.at(project), provider=surface, task="demo")
-
-    assert not any("bypass 2" in n for n in report.notes)
-    assert report.escapes == ()
-    assert "Role body." in " ".join(report.launch)
+    assert "Role body." in " ".join(shown.record["launch"])
 
 
-def test_claude_automate_delivers_the_builders_own_values(project: Path):
-    """HATS-1207 S3 closed bypass 1 — the SDK now receives what the builder built."""
-    report = dry_run_automate(ProjectLayout.at(project), provider="claude", task="demo")
+def test_claude_automate_delivers_the_plans_own_values(project: Path):
+    """The SDK receives the option document the plan built."""
+    shown = _automate(project, "claude")
 
-    assert not any("bypass 1" in n for n in report.notes)
-    assert report.escapes == ()
-    assert any(arg.startswith("system_prompt=") for arg in report.launch)
+    assert any(arg.startswith("system_prompt=") for arg in shown.record["launch"])
 
 
 @pytest.mark.parametrize("surface", SURFACES)
@@ -129,49 +142,51 @@ def test_the_reported_env_names_what_ai_hats_adds_to_the_child(project: Path, su
     from ai_hats.constants import ENV_ROLE, ENV_ROOT_PID
     from ai_hats_observe.trace import ENV_SESSION_ID
 
-    report = dry_run_hitl(ProjectLayout.at(project), provider=surface)
+    env_keys = _hitl(project, surface).record["env_keys"]
 
-    assert {ENV_SESSION_ID, ENV_ROLE, ENV_ROOT_PID, "TRACE_LOG_PATH"} <= set(report.env)
-    assert report.to_dict()["env_keys"] == sorted(report.env)
-    assert "PATH" not in report.env, "inherited os.environ is not what the launch adds"
+    assert {ENV_SESSION_ID, ENV_ROLE, ENV_ROOT_PID, "TRACE_LOG_PATH"} <= set(env_keys)
+    assert env_keys == sorted(env_keys)
+    assert "PATH" not in env_keys, "inherited os.environ is not what the launch adds"
 
 
 @pytest.mark.parametrize("surface", ["claude", "agy"])
 def test_full_render_shows_the_composed_body(project: Path, surface: str):
-    """The wiring, not the rendering: ``dry_run_hitl`` must hand the body over.
+    """The wiring, not the rendering: ``preview`` must hand the body over.
 
-    Its own render-level test builds the report by hand, so it stayed green with
-    the report field never populated — found by reverting the wiring (HATS-1548).
+    The render-level test builds the record by hand, so it would stay green
+    with the body never handed over — found by reverting the wiring (HATS-1548).
 
     cline is excluded on purpose; see the sibling below.
     """
-    report = dry_run_hitl(ProjectLayout.at(project), provider=surface)
+    shown = _hitl(project, surface)
 
-    assert report.prompt is not None, "this surface writes a prompt file"
-    assert "Role body." in report.render(full=True)
-    assert "(not written)" not in report.render(full=True)
+    assert shown.record["prompt"] is not None, "this surface writes a prompt file"
+    text = render_record(shown.record, full=True, prompt_text=shown.prompt)
+    assert "Role body." in text
+    assert "(not written)" not in text
 
 
 def test_cline_hitl_has_no_prompt_file_to_dump(project: Path):
     """Why cline sits out the case above — and pinned so it cannot rot.
 
-    It materializes no ``.md``, so ``full=True`` renders no body section at all.
+    It writes no context file, so ``full=True`` renders no body section at all.
     Parametrizing it in would have passed on the role text appearing in the
     launch argv instead, which is a different claim entirely.
     """
-    report = dry_run_hitl(ProjectLayout.at(project), provider="cline")
+    shown = _hitl(project, "cline")
 
-    assert report.prompt is None
-    assert "Role body." in " ".join(report.launch), "it rides the argv instead"
+    assert shown.record["prompt"] is None
+    assert "Role body." in " ".join(shown.record["launch"]), "it rides the argv instead"
+    assert "Role body." in shown.prompt, "and the bytes still ride beside the record"
 
 
 def test_the_dry_run_carries_the_composition_half_by_kind(project: Path):
     """What the prompt never shows — hooks by kind and consent ends — is in the
     report (ADR-0036 D5; the blindness that let an unarmed role close a card)."""
-    report = dry_run_hitl(ProjectLayout.at(project), provider="claude")
+    shown = _hitl(project, "claude")
 
-    composition = report.to_dict()["composition"]
+    composition = shown.record["composition"]
     assert composition["identity"] == "test-role"
     assert [s["name"] for s in composition["skills"]] == ["skills::s"]
     assert composition["hooks"] == {"runtime": [], "external": []}
-    assert "\ncomposition  test-role  digest=" in report.render()
+    assert "\ncomposition  test-role  digest=" in render_record(shown.record)

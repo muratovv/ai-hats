@@ -45,8 +45,10 @@ injection: |
   3. Compose minimally — no speculative rules/skills/traits.
   4. Verify the rendered injection (no duplication, no contradictions)
      by composing the affected role and reading the output.
-  5. For deeper audits delegate to the core role `role-auditor`
-     (it owns `role-coherence-protocol` execution).
+  5. For a deeper audit ask the supervisor for `ai-hats reflect role <name>` —
+     the one entry point that materializes the breakdown
+     `role-coherence-protocol` reads; `ai-hats agent role-auditor` has no
+     inputs to audit.
 
   ## Locations
   `$LIB` = `packages/ai-hats-library/src/ai_hats_library`

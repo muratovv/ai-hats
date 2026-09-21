@@ -4,7 +4,7 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
-## [0.12.0]
+## [0.13.0]
 
 Additive to `events/v1`: new `raw_code` values and one more producer of an
 existing kind.
@@ -35,6 +35,32 @@ existing kind.
   split on `str.splitlines`, which breaks on it, and reported both halves as
   `malformed-json` — 94 notices for zero malformed records over the measured
   corpus, and the six records' content lost. Only a newline ends a record.
+
+## [0.12.0]
+
+### Added
+
+- `composition_names(record)` / `CompositionNames`: the one reader of a
+  session's composition record (`metrics.json["composition"]`,
+  `role_materialization.json`) — traits off the trace's remaining terms, rules
+  off the prompt members named `rules::`, skills off the record's skills, each
+  name paired with what brought it (a composite, `overrides::global`,
+  `overrides::project`, or `expression` for a member the trace does not
+  attribute). `audit.md`'s `## Composition` section renders through it, and so
+  does the integrator's session-reviewer prompt: two consumers, one shape.
+- `snapshot_names(snapshot)`: the reader of the older snapshot (`traits` /
+  `rules` / `skills` lists with a `provenance` layer map) that sessions before
+  2026-09-16 hold on disk, kept apart from the record's reader.
+  `stored_composition_names(composition)` picks the reader by shape, for what
+  comes back off disk — an audit rebuild (`session backfill`), a review of an
+  archived session.
+
+### Changed
+
+- `init_audit(composition=…)` takes the plan's record only; a live session has
+  not written the snapshot since 2026-09-16. The snapshot is read, never
+  written: `AuditWriter` re-emits an archived session's section through
+  `stored_composition_names`.
 
 ## [0.11.0]
 

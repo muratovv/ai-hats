@@ -1,0 +1,146 @@
+{
+  "checks": [],
+  "composition": {
+    "digest": "<path-derived>",
+    "hooks": {
+      "external": [],
+      "runtime": []
+    },
+    "identity": "test-role",
+    "prompt": {
+      "blocks": [
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::priorities"
+            }
+          ],
+          "name": "PRIORITIES"
+        },
+        {
+          "members": [
+            {
+              "heading": null,
+              "name": "test-role::prompt"
+            }
+          ],
+          "name": null
+        }
+      ]
+    },
+    "skills": [
+      {
+        "content_digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+        "digest": "<path-derived>",
+        "name": "skills::s",
+        "path": "<tmp>/lib/skills/s"
+      }
+    ],
+    "trace": [
+      {
+        "brought_by": "test-role",
+        "removed_by": null,
+        "term": "skills::s"
+      }
+    ]
+  },
+  "consent": [],
+  "cwd": "<project>",
+  "env_keys": [
+    "AI_HATS_CODEX_BASE_HOME",
+    "AI_HATS_DIR",
+    "AI_HATS_PROJECT_DIR",
+    "AI_HATS_ROLE",
+    "AI_HATS_ROOT_PID",
+    "AI_HATS_SESSION_ID",
+    "AI_HATS_SESSION_IDENTITY",
+    "CODEX_HOME",
+    "CODEX_SQLITE_HOME",
+    "TRACE_LOG_PATH"
+  ],
+  "launch": [
+    "codex",
+    "-c",
+    "developer_instructions=\"## PRIORITIES\\n1. Quality\\n\\nRole body.\\n\\n## AVAILABLE SKILLS\\nUse a skill when its description matches the task. Before using it, read the exact SKILL.md path below; resolve its relative references from that skill directory.\\n- **s** \u2014 x (`<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run/skills/s/SKILL.md`)\"",
+    "--sandbox",
+    "workspace-write",
+    "--ask-for-approval",
+    "on-request"
+  ],
+  "materialized": [
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<cache>/sessions/dry-run"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run"
+    },
+    {
+      "digest": "<path-embedding bytes>",
+      "kind": "write_text",
+      "size": "<path-embedding bytes>",
+      "source": null,
+      "target": "<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run/.ai-hats-session.json"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run/skills"
+    },
+    {
+      "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+      "kind": "copy_tree",
+      "size": null,
+      "source": "<tmp>/lib/skills/s",
+      "target": "<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run/skills/s"
+    },
+    {
+      "digest": "f22b8706a74e9bf1ad6a09952aacf7733ed23b52dc3a7c5e6111fd7c404f9f9a",
+      "kind": "write_text",
+      "size": 38,
+      "source": null,
+      "target": "<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run/skills/s/SKILL.md"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<home>/.codex/sessions"
+    },
+    {
+      "digest": null,
+      "kind": "symlink",
+      "size": null,
+      "source": "<home>/.codex/sessions",
+      "target": "<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run/sessions"
+    },
+    {
+      "digest": null,
+      "kind": "write_text",
+      "size": 16,
+      "source": null,
+      "target": "<home>/.codex/.ai-hats/session-homes/<cache-key>/dry-run/.ai-hats-auth-baseline.json"
+    }
+  ],
+  "notes": [],
+  "policy": {
+    "context": true,
+    "hooks": true,
+    "settings": true
+  },
+  "prompt": null,
+  "provider": "codex",
+  "role": "test-role",
+  "run_mode": "hitl"
+}

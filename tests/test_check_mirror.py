@@ -1,30 +1,47 @@
-"""A bound check resolves from the surface's skill mirror (HATS-1540).
+"""A bound check resolves from the surface's skill mirror (HATS-1540), and the
+launch record says where it runs from (ADR-0036 D6).
 
 Successor of ``test_check_snapshot.py``. ADR-0019 D9 gave the channel a private
 ``<sid>/checks/`` copy so a binding had a session-consistent, surface-independent
-root. That argument expired: every surface now writes an unconditional mirror of
-EVERY composed skill, with the same lifetime, one writer and the same TTL — and
-the private copy held only the BOUND skills, so a session started before a
-binding existed had no root at all and refused every transition until restart.
+root. That argument expired: every surface mirrors EVERY composed skill, with the
+same lifetime, one writer and the same TTL — and the private copy held only the
+BOUND skills, so a session started before a binding existed had no root at all
+and refused every transition until restart.
 
-What is asserted here: the second materialization is gone, the mirror is what a
-check resolves against, and the two leaf-naming conventions are now one.
+What is asserted here: the second materialization is gone, the mirror the plan
+writes is what a check resolves against, the two leaf-naming conventions are
+one, and the record's ``checks`` rows are read off the plan — never off the disk.
 """
 
 from __future__ import annotations
 
-from ai_hats_core.layout import ProjectLayout
-
+import hashlib
 from pathlib import Path
 
 import pytest
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
+from ai_hats_core.layout import ProjectLayout
 
 from ai_hats.check_resolve import CheckResolutionError, resolve_carried_checks
-from ai_hats.check_snapshot import legacy_launch_notices
-from ai_hats.materialization import PlanMaterializer
-from ai_hats.surfaces import Surface
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.fs_digest import dir_digest
+from ai_hats.materialization import describe_mkdir
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.session_plan import preview, probe_host
+from ai_hats.surfaces import Surface, apply, checks_record
+from ai_hats.surfaces.mirror import mirror_entries
+from ai_hats.surfaces.plan import (
+    CompositionPlan,
+    Executable,
+    ExternalHook,
+    Hooks,
+    Launch,
+    MaterializationPlan,
+    OnError,
+    Prompt,
+    PromptBlock,
+    PromptMember,
+    Skill,
+)
 
 SID = "20260801-000000-1-42"
 EDGE = "review->done"
@@ -66,18 +83,48 @@ def _result(*, skills=(), checks=()) -> CompositionResult:
     )
 
 
-def _topology():
-    from ai_hats_rack.fsm import Topology
+def _composition(*, skills=(), checks=()) -> CompositionPlan:
+    """The composition half the adapter would make of ``_result``: each skill
+    a mirrored tree, each binding an external row with the script's bytes named."""
 
-    return Topology(
-        initial="review",
-        states=("review", "done"),
-        edges={"review": ("done",), "done": ()},
+    def executable(path: Path) -> Executable:
+        return Executable(
+            path=path.resolve(), content_digest=hashlib.sha256(path.read_bytes()).hexdigest()
+        )
+
+    return CompositionPlan(
+        identity="tester",
+        prompt=Prompt((PromptBlock(None, (PromptMember("tester::prompt", "body", None),)),)),
+        skills=tuple(
+            Skill(
+                name=f"skills::{s.name}",
+                path=s.source_path.resolve(),
+                content_digest=dir_digest(s.source_path),
+                document=(s.source_path / "SKILL.md").read_text(),
+            )
+            for s in skills
+        ),
+        hooks=Hooks(
+            runtime=(),
+            external=tuple(
+                ExternalHook(
+                    app=c.app,
+                    object=".".join(c.path) or None,
+                    at=at,
+                    run=executable(c.script_path),
+                    on_error=OnError(c.on_error),
+                    declared_by=c.declared_by,
+                )
+                for c in checks
+                for at in c.at
+            ),
+        ),
+        trace=(),
     )
 
 
 class _MirrorSurface(Surface):
-    """A category-aware surface whose skill mirror is a plain named dir."""
+    """A planning surface whose skill mirror is a plain named dir."""
 
     name = "stub"
 
@@ -97,32 +144,52 @@ class _MirrorSurface(Surface):
         return "stub prompt"
 
     def session_skills_root(self, layout, session_id: str) -> Path:
-
         return layout.cache.session(session_id) / "stub-skills"
 
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        from ai_hats.skills_dir import materialize_skills_dir
+    def _mirror(self, composition: CompositionPlan, root: Path) -> list:
+        skills_root = root / "stub-skills"
+        return [describe_mkdir(skills_root), *mirror_entries(composition, skills_root)]
 
-        materialize_skills_dir(
-            self.session_skills_root(layout, session_id),
-            result.skills,
-            layout,
-            artifacts.port,
+    def plan(self, composition, *, run_mode, policy, root, layout, host):
+        return MaterializationPlan(
+            composition=composition,
+            prompt=composition.prompt,
+            surface=self.name,
+            run_mode=RunMode(run_mode),
+            policy=policy,
+            root=root,
+            entries=(describe_mkdir(root), *self._mirror(composition, root)),
+            env={},
+            launch=Launch(args=(), sdk_options=None),
         )
 
-    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
-        artifacts.full_content = self.build_system_prompt(result)
+
+class _SkilllessSurface(_MirrorSurface):
+    """Names a mirror root and delivers no skills into it — so a binding
+    resolves against a tree this launch never writes."""
+
+    def _mirror(self, composition, root):
+        return []
+
+
+def _plan(
+    project: Path, composition: CompositionPlan, surface=None, sid: str = SID, run_mode=RunMode.HITL
+):
+    surface = surface or _MirrorSurface()
+    layout = ProjectLayout.at(project)
+    return surface.plan(
+        composition,
+        run_mode=run_mode,
+        policy=SessionPolicy(),
+        root=layout.cache.session(sid),
+        layout=layout,
+        host=probe_host(surface=surface),
+    )
 
 
 def _mirrored(project: Path, skill: ResolvedComponent, sid: str = SID) -> Path:
-    """Build the session's artifacts and return the mirror's copy of ``skill``."""
-    _MirrorSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        _result(skills=[skill]),
-        sid,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
+    """Apply the session's plan and return the mirror's copy of ``skill``."""
+    apply(_plan(project, _composition(skills=[skill]), sid=sid))
     return _MirrorSurface().session_skills_root(ProjectLayout.at(project), sid) / skill.name
 
 
@@ -182,32 +249,29 @@ def _stub_provider(monkeypatch):
 
 @pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
 def test_no_session_ever_gets_a_checks_dir(tmp_path: Path, run_mode: RunMode):
-    """F: ``<sid>/checks/`` is not created under any condition — the tombstone.
+    """F: ``<sid>/checks/`` is not planned or written under any condition — the tombstone.
 
     Asserted with a binding present and through both run modes, because that is
-    where the retired step used to fire: above the category loop, outside the
-    policy gate. A literal path, not a helper: the helper is gone, and a test
-    that imported one could not fail if the step came back under a new name.
+    where the retired step used to fire. A literal path, not a helper: the helper
+    is gone, and a test that imported one could not fail if the step came back
+    under a new name.
     """
-
     skill = _skill(tmp_path)
-    result = _result(skills=[skill], checks=[_check(skill)])
+    plan = _plan(tmp_path, _composition(skills=[skill], checks=[_check(skill)]), run_mode=run_mode)
 
-    _MirrorSurface().build_session_artifacts(
-        ProjectLayout.at(tmp_path), result, SID, run_mode=run_mode, artifacts=BuiltArtifacts()
-    )
+    apply(plan)
 
+    assert not any("/checks/" in str(e.target) or e.target.name == "checks" for e in plan.entries)
     assert not (ProjectLayout.at(tmp_path).cache.session(SID) / "checks").exists()
 
 
-def test_the_snapshot_writer_is_gone_from_the_module(tmp_path: Path):
+def test_the_snapshot_writer_is_gone_from_the_tree():
     """The step is removed, not merely unwired — an unwired writer re-lands."""
-    import ai_hats.check_snapshot as module
-
-    assert not hasattr(module, "snapshot_checks")
+    import importlib.util
 
     from ai_hats import paths
 
+    assert importlib.util.find_spec("ai_hats.check_snapshot") is None
     assert not hasattr(paths, "session_checks_dir")
 
 
@@ -269,20 +333,14 @@ def test_the_whole_skill_dir_is_there_not_just_the_script(tmp_path: Path):
 def test_a_session_that_predates_the_binding_still_resolves(tmp_path: Path):
     """E: the regression HATS-1538 withdrew the shipped row for.
 
-    The mirror copies EVERY composed skill, so a session built before any
+    The mirror copies EVERY composed skill, so a session planned before any
     ``checks:`` row existed already holds the bytes a binding added later names.
-    Modelled exactly that way: the session's artifacts are built from a
-    composition with NO checks, and the binding appears only afterwards.
+    Modelled exactly that way: the session is applied from a composition with
+    NO checks, and the binding appears only afterwards.
     """
     project = _project(tmp_path)
     skill = _skill(project)
-    _MirrorSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        _result(skills=[skill]),  # no checks at session build time
-        SID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
+    apply(_plan(project, _composition(skills=[skill])))  # no checks at session build time
 
     resolved = _resolve(project, skill)
 
@@ -328,10 +386,9 @@ def test_a_rebuild_within_one_session_re_copies_the_source(tmp_path: Path):
     """Stated consequence of retiring the private copy — not an accident.
 
     The retired snapshot was first-writer-wins, so its bytes were frozen for the
-    session's lifetime. Every surface's mirror is wipe-and-rebuild (HATS-1248),
-    and a rebuild for a live sid is reachable — the claude SDK engine builds
-    artifacts itself when handed none. So a check now runs exactly the bytes the
-    session's OWN runtime hooks run: one mirror, one rebuild, everything moves
+    session's lifetime. A session's mirror is a synced tree (ADR-0036 D3): a plan
+    made against the changed source re-copies it, so a check runs exactly the
+    bytes the session's OWN runtime hooks run — one mirror, everything moves
     together. Asserted rather than assumed, because it is the one property the
     move away from ``<sid>/checks/`` did not preserve.
     """  # comment-length: allow — a deliberately weakened property must say so
@@ -429,249 +486,113 @@ def test_outside_a_session_the_library_copy_runs(tmp_path: Path):
     assert resolved[0].script_path == skill.source_path / "check.sh"
 
 
-# ---------------------------------------------------------------------------
-# Launch-time notice for a surface below the builder
-# ---------------------------------------------------------------------------
-
-
-def test_a_surface_below_the_builder_says_it_mirrors_nothing(tmp_path: Path):
-    """``WrapRunner`` degrades such a provider to ``build_session_prompt``, which
-    is below the wiring — the loss is announced instead of discovered."""
-    skill = _skill(tmp_path)
-    result = _result(skills=[skill], checks=[_check(skill)])
-
-    notices = legacy_launch_notices("legacy", result, SessionPolicy())
-
-    assert len(notices) == 1
-    assert "gate-skill" in notices[0]
-    assert "NOT mirrored" in notices[0]
-
-
-def test_a_legacy_surface_with_no_bindings_is_quiet(tmp_path: Path):
-    """Nothing bound, nothing lost — a warning here would be noise."""
-    assert legacy_launch_notices("legacy", _result(), SessionPolicy()) == []
-
-
-# ---------------------------------------------------------------------------
-# The launch-time skew notice (HATS-1540 review)
-# ---------------------------------------------------------------------------
-
-
-class _StaleSurface(_MirrorSurface):
-    """A surface package older than the accessor: implements the ADR-0018 seam
-    perfectly well, inherits the `Provider` default of ``None`` for the root."""
-
-    def session_skills_root(self, layout, session_id: str):
-        return Surface.session_skills_root(self, layout, session_id)
-
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        # It DOES write a mirror — it just will not say where. That asymmetry IS
-        # the skew, so the fixture must not model it as "mirrors nothing".
-        from ai_hats.skills_dir import materialize_skills_dir
-
-        materialize_skills_dir(
-            layout.cache.session(session_id) / "stub-skills",
-            result.skills,
-            layout,
-            artifacts.port,
-        )
-
-
-def test_a_surface_that_cannot_root_a_bound_check_says_so_at_launch(tmp_path: Path):
-    """The notice `legacy_launch_notices` does NOT give, and the ADR claimed it did.
-
-    An out-of-date agy/cline handles the artifact-builder seam, so it never
-    reaches the legacy notice — and then EVERY transition in its sessions is
-    refused with a message about a missing file. Measured: the real e2e tier
-    caught exactly this against a published surface package.
-    """
-    from ai_hats.check_snapshot import surface_skew_notice
-
-    skill = _skill(tmp_path)
-    result = _result(skills=[skill], checks=[_check(skill)])
-
-    notice = surface_skew_notice("agy", _StaleSurface(), ProjectLayout.at(tmp_path), result)
-
-    assert notice is not None
-    assert "gate-skill" in notice
-    assert "session_skills_root" in notice, "the notice must name the fix"
-
-
-def test_a_surface_that_roots_checks_is_quiet(tmp_path: Path):
-    """No skew, no noise — the notice must not fire on every ordinary launch."""
-    from ai_hats.check_snapshot import surface_skew_notice
-
-    skill = _skill(tmp_path)
-    result = _result(skills=[skill], checks=[_check(skill)])
-
-    assert surface_skew_notice("stub", _MirrorSurface(), ProjectLayout.at(tmp_path), result) is None
-
-
-def test_a_stale_surface_with_no_bindings_is_quiet(tmp_path: Path):
-    """Nothing bound, nothing to root — the skew is harmless and stays silent."""
-    from ai_hats.check_snapshot import surface_skew_notice
-
-    assert (
-        surface_skew_notice("agy", _StaleSurface(), ProjectLayout.at(tmp_path), _result()) is None
-    )
-
-
-# --- what the launch report says about the bindings (HATS-1548) ---
-
-
-def _preview(provider, result):
-    """The read-only payload ``dry_run_hitl`` composes through."""
-    from ai_hats.composition_seam import CompositionPayload
-
-    return CompositionPayload(result=result, provider=provider, effective_role="tester")
-
-
-class _SkilllessSurface(_MirrorSurface):
-    """Names a mirror root and delivers no skills into it — so a binding
-    resolves against a tree this launch never writes."""
-
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        return None
-
-
-def _described(project: Path, result, provider=None, sid: str = SID):
-    """Build this session's artifacts, then describe its checks off that plan."""
-    from ai_hats.check_snapshot import describe_checks
-
-    surface = provider or _MirrorSurface()
-    artifacts = BuiltArtifacts(port=PlanMaterializer())
-    surface.build_session_artifacts(
-        ProjectLayout.at(project), result, sid, run_mode=RunMode.HITL, artifacts=artifacts
-    )
-    return describe_checks(surface, ProjectLayout.at(project), result, sid, artifacts.port.record)
+# --- what the launch record says about the bindings (HATS-1548, ADR-0036 D6) ---
 
 
 def test_a_planned_gate_is_reported_as_armed(tmp_path: Path):
-    """The happy case, stated once: resolved into the mirror the launch writes."""
+    """The happy case, stated once: resolved into the mirror the plan writes."""
     project = _project(tmp_path)
     skill = _skill(project)
-    result = _result(skills=[skill], checks=[_check(skill)])
+    plan = _plan(project, _composition(skills=[skill], checks=[_check(skill)]))
 
-    reported, notes = _described(project, result)
+    (check,) = checks_record(plan)
 
-    (check,) = reported
-    assert (
-        check.runs_from
-        == _MirrorSurface().session_skills_root(ProjectLayout.at(project), SID)
+    assert check["runs_from"] == str(
+        _MirrorSurface().session_skills_root(ProjectLayout.at(project), SID)
         / skill.name
         / "check.sh"
     )
-    assert check.planned is True
-    assert notes == ()
-
-
-def test_a_surface_that_mirrors_nothing_leaves_every_gate_unresolved(tmp_path: Path):
-    """``session_skills_root`` is None — no root, so no bytes, so no gate.
-
-    Silent by design: ``surface_skew_notice`` already says this once at launch,
-    and repeating it per binding would bury the rows it annotates.
-    """
-    project = _project(tmp_path)
-    skill = _skill(project)
-    result = _result(skills=[skill], checks=[_check(skill)])
-
-    reported, notes = _described(project, result, provider=_StaleSurface())
-
-    (check,) = reported
-    assert check.runs_from is None
-    assert check.planned is False
-    assert notes == ()
-
-
-def test_a_binding_over_an_uncomposed_skill_is_named_not_raised(tmp_path: Path):
-    """A report that dies on a broken gate tells the operator less than one
-    that names it — so the resolution error becomes a note, not an exception."""
-    project = _project(tmp_path)
-    composed = _skill(project)
-    absent = _skill(project, name="ghost-skill")
-    result = _result(skills=[composed], checks=[_check(absent)])
-
-    reported, notes = _described(project, result)
-
-    (check,) = reported
-    assert check.runs_from is None
-    assert check.planned is False
-    assert len(notes) == 1
-    assert "ghost-skill" in notes[0]
+    assert check["planned"] is True
+    assert (check["skill"], check["script"], check["app"], check["at"]) == (
+        skill.name,
+        "check.sh",
+        "rack",
+        EDGE,
+    )
 
 
 def test_a_gate_the_launch_does_not_write_is_reported_unplanned(tmp_path: Path):
-    """Resolution settling is not the same as the bytes being there.
-
-    The skill is composed, so it resolves — but this launch delivers no skills
-    (the surface has no SKILLS handler), so nothing writes the tree the script
-    would be read out of. That gap is exactly what ``planned`` exists to show.
-    """
+    """The skill is composed, so the script has a home — but this launch writes
+    no mirror, so nothing holds the bytes the gate would be read out of. That
+    gap is exactly what ``planned`` exists to show, and it is read off the
+    plan's entries, never off the disk."""
     project = _project(tmp_path)
     skill = _skill(project)
-    result = _result(skills=[skill], checks=[_check(skill)])
+    composition = _composition(skills=[skill], checks=[_check(skill)])
 
-    reported, notes = _described(project, result, provider=_SkilllessSurface())
+    (check,) = checks_record(_plan(project, composition, surface=_SkilllessSurface()))
 
-    (check,) = reported
-    assert check.runs_from is not None, "it resolves — the skill IS composed"
-    assert check.planned is False
-    assert notes == ()
+    assert check["skill"] == skill.name, "it has a home — the skill IS composed"
+    assert check["runs_from"] is None
+    assert check["planned"] is False
 
 
-def test_a_dry_run_under_a_stale_surface_warns_before_the_session_starts(
-    tmp_path: Path, monkeypatch
-):
-    """The launch says the gate cannot root; the dry-run has to say it too.
+def test_a_binding_over_an_uncomposed_skill_is_named_not_raised(tmp_path: Path):
+    """A record that dies on a broken gate tells the operator less than one
+    that names it: the row keeps the script's own path and no mirror."""
+    project = _project(tmp_path)
+    composed = _skill(project)
+    absent = _skill(project, name="ghost-skill")
+    plan = _plan(project, _composition(skills=[composed], checks=[_check(absent)]))
 
-    Staying quiet here is the same silence the notice exists to remove — the
-    operator would learn it one session too late, which is the HATS-1538 shape.
-    """
-    from ai_hats import surface_registry as providers
-    from ai_hats.dry_run import dry_run_hitl
+    (check,) = checks_record(plan)
+
+    assert check["skill"] is None
+    assert check["script"] == str((absent.source_path / "check.sh").resolve())
+    assert check["runs_from"] is None
+    assert check["planned"] is False
+
+
+def test_the_dry_run_reports_the_gate_the_launch_cannot_root(tmp_path: Path, monkeypatch):
+    """The launch record and the dry-run are one projection (ADR-0036 D5): a
+    gate no mirror will hold is unplanned in the report before the session
+    starts — the HATS-1538 shape, said one session earlier."""
+    from types import SimpleNamespace
 
     project = _project(tmp_path)
     skill = _skill(project)
-    result = _result(skills=[skill], checks=[_check(skill)])
-    monkeypatch.setattr(providers, "get_surface", lambda name: _StaleSurface())
-    monkeypatch.setattr(
-        "ai_hats.composition_seam.build_preview_payload",
-        lambda *a, **kw: _preview(_StaleSurface(), result),
+    surface = _SkilllessSurface()
+    payload = SimpleNamespace(
+        provider=surface,
+        layout=ProjectLayout.at(project),
+        plan=_composition(skills=[skill], checks=[_check(skill)]),
+        effective_role="tester",
+        diagnostics=(),
+    )
+    monkeypatch.setattr("ai_hats.composition_seam.build_preview_payload", lambda *a, **kw: payload)
+    monkeypatch.setattr("ai_hats.surface_registry.get_surface", lambda name: surface)
+
+    shown = preview(
+        ProjectLayout.at(project), role="tester", provider="stub", run_mode=RunMode.HITL
     )
 
-    report = dry_run_hitl(ProjectLayout.at(project))
-
-    assert any("session_skills_root" in note for note in report.notes), report.notes
-    assert [c.runs_from for c in report.checks] == [None]
+    assert [c["planned"] for c in shown.record["checks"]] == [False]
+    assert "UNRESOLVED" in _render(shown.record), "the human rendering says it too"
 
 
-def test_a_gate_under_a_symlinked_root_is_still_reported_as_armed(tmp_path: Path):
-    """`_plan_covers` compares a plan target against a RESOLVED `runs_from`.
+def _render(record: dict) -> str:
+    from ai_hats.session_plan import render_record
 
-    The plan records its target as the writer spelled it; `rebase_onto_mirror`
-    returns a resolved path. Where the cache root contains a symlink — the macOS
-    default, where /tmp is a link to /private/tmp — the unresolved parent never
-    matched the resolved child, so EVERY armed gate was reported "NOT written by
-    this launch". A false alarm in the one report whose job is to say otherwise.
+    return render_record(record)
 
-    Asserted on the predicate, not through a session build: the surfaces under
-    test resolve their own roots, so a session-level test passes either way and
-    proves nothing (measured — the first version of this test did exactly that).
-    """
-    from ai_hats.check_snapshot import _plan_covers
-    from ai_hats.materialization import MaterializationRecord, describe_copy_tree
 
+def test_runs_from_is_the_plans_spelling_of_the_mirror_not_a_resolved_path(tmp_path: Path):
+    """The row is read off the ``copy_tree`` entry whose source is the skill, so
+    a cache root spelled through a symlink stays spelled that way: no
+    resolution on disk, hence none of the macOS ``/tmp`` → ``/private/tmp``
+    asymmetry that once reported every armed gate as unwritten."""
     real = tmp_path / "real"
-    (real / "skills" / "gate-skill").mkdir(parents=True)
+    real.mkdir()
     link = tmp_path / "link"
     link.symlink_to(real, target_is_directory=True)
+    project = _project(link)
+    skill = _skill(real)
+    plan = _plan(project, _composition(skills=[skill], checks=[_check(skill)]))
 
-    record = MaterializationRecord(
-        entries=[describe_copy_tree(real, link / "skills" / "gate-skill")]
-    )
-    runs_from = (real / "skills" / "gate-skill" / "check.sh").resolve()
+    (check,) = checks_record(plan)
 
-    assert _plan_covers(record, runs_from) is True
+    assert check["planned"] is True
+    assert check["runs_from"].startswith(str(ProjectLayout.at(project).cache.session(SID)))
 
 
 def test_resolve_checks_at_filters_by_app_as_well_as_point(tmp_path):

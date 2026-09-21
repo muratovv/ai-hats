@@ -20,12 +20,14 @@ from pathlib import Path
 
 import pytest
 
+from tests._self_grant_recipe import findings
+
 pytestmark = pytest.mark.guards
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh"
 )
 
 
@@ -91,6 +93,19 @@ def test_blocks_when_checker_fails(repo: Path, tmp_path: Path):
     assert res.returncode == 1, res.stderr
     assert "[rule-delivery] BLOCKED" in res.stderr
     assert "rule_nope" in res.stderr
+
+
+@pytest.mark.integration
+def test_the_block_names_no_remedy_the_guard_refuses(repo: Path, tmp_path: Path):
+    """The way out it prints is one its reader can take.
+
+    `ack_prefix_guard.py` denies a Bash line binding the flag for the command
+    after it — the shape this refusal used to advertise."""
+    stub = _make_stub(tmp_path / "fail.sh", rc=1, message="see rule `rule_nope`")
+    _stage_cfg(repo, "library/core/traits/trait-new/config.yaml", _NEW_CFG)
+    res = _run_hook(repo, env={"AI_HATS_RULE_DELIVERY_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert not findings(res.stderr), res.stderr
 
 
 @pytest.mark.integration

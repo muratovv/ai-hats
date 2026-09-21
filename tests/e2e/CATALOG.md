@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**324 of 324 files catalogued — 332 flows.**
+**327 of 327 files catalogued — 335 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -201,26 +201,6 @@ as a claim to check, not as evidence.
 
 - **expect** — worktree gate hook denies destructive writes in main checkout
 - **why** — without worktree gate hooks materialized for agy, agents make unauthorized direct edits to main checkout
-
-## `test_approaching_limit_from_claude_statusline.py`
-
-*pins HATS-1992*
-
-- **flow** — a HITL claude session nears its quota window, and the session's events.jsonl says so — from the status line, the one place a PTY session sees its rate limits — while the person's own bar keeps rendering
-- **cmds**
-
-  ```console
-  sh -c "$STATUSLINE_COMMAND"   # the string the session's settings.json
-                                # holds under statusLine: the hook
-                                # dispatcher, then the person's own bar,
-                                # run with the payload claude 2.1.273 was
-                                # measured to send
-  cat <session_dir>/events.jsonl
-  cat <session_dir>/quota_warnings.json
-  ```
-
-- **expect** — one approaching_limit line, source claude/statusline, at 82% of the five-hour window; nothing more on the next render of the same window, nothing at 17%, nothing at 82% under AI_HATS_APPROACHING_LIMIT_PERCENT=90; the inner bar's output on stdout and exit 0 every time — with the dispatcher's environment incomplete too, because a bar is not a gate
-- **why** — the notice is appended from inside a process claude spawns per render, not from the session process, and --settings replaces the person's statusLine slot — so only a real run of the settings string proves both that the line lands beside the session's artifacts and that the person's bar survives
 
 ## `test_arrow_consent_chain.py`
 
@@ -584,7 +564,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ClaudeSurface().build_session_artifacts(...)   # what `ai-hats session` runs
+  apply(ClaudeSurface().plan(...))   # what `ai-hats session` runs
   ```
 
 - **expect** — the developer's file is byte-identical afterwards, and the session file handed over with `--settings` carries only ai-hats entries
@@ -629,8 +609,8 @@ as a claim to check, not as evidence.
   bash scripts/clean-tmp-cruft.sh [--dry-run|--force]
   ```
 
-- **expect** — reaps only what it can prove dead — an unregistered worktree shell, a pytest run dir whose .lock names an exited pid — and keeps live worktrees, live runs, and anything it cannot judge
-- **why** — the sweeper ran on every gate and deleted nothing (dry-run only), while 145 GB of killed-run residue accumulated in TMPDIR
+- **expect** — reaps only what it can prove dead — an unregistered worktree shell, a pytest run dir whose .lock names an exited pid — and keeps live worktrees, live runs, and anything it cannot judge; then prunes the uv cache (never on --dry-run), a failed prune being a warning, not the exit status
+- **why** — the sweeper ran on every gate and deleted nothing (dry-run only), while 145 GB of killed-run residue accumulated in TMPDIR — and 317 GB of the builds those runs left in ~/.cache/uv
 
 ## `test_cli_unknown_subcommand_refused.py`
 
@@ -1188,7 +1168,7 @@ as a claim to check, not as evidence.
   ai-hats agent test-role --task "e2e task" --json --dry-run --materialize
   ```
 
-- **expect** — a plain dry-run leaves both sid dirs absent; --materialize writes the tree under the fixed `dry-run-materialize` sid, reports its path in `notes`, and still shows no escapes; the AUTOMATE path writes the same tree.
+- **expect** — a plain dry-run leaves both sid dirs absent and reports no outcome; --materialize writes the tree under the fixed `dry-run-materialize` sid, reports its path in `notes` and every row as written; the AUTOMATE path writes the same tree.
 - **why** — the flag can regress in either direction — --materialize silently writing nothing, leaving the operator inspecting an empty tree, or a plain --dry-run starting to write, so a read-only inspection mutates the cache a real launch then reads.
 
 ## `test_e2e_catalog_gate.py`
@@ -1894,9 +1874,10 @@ as a claim to check, not as evidence.
 
   ```console
   ai-hats --version
+  ai-hats config status
   ```
 
-- **expect** — launcher detects mismatched project directory, ignores foreign venv pin with warning, and uses local project venv
+- **expect** — launcher detects mismatched project directory, ignores foreign venv pin with warning, drops the session envelope that came with it, and uses local project venv
 - **why** — without foreign venv isolation, sub-agents operating across projects execute tools inside the wrong project venv
 
 ## `test_launcher_refuses_venv_missing_workspace_member.py`
@@ -2024,6 +2005,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the rule is listed by name and nothing from the sidecar reaches stdout
 - **why** — rules are catalogued by name alone since HATS-1836 — a sidecar description was a second copy of the rule's meaning that drifted (5 of 14 had), and an external library's leftover sidecar must now be inert rather than half-read
+
+## `test_list_tokens_prices_overlays.py`
+
+*pins HATS-2004*
+
+- **flow** — a project shapes a shipped role through `customizations:` in ai-hats.yaml and asks what that role costs
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r assistant
+  ai-hats list tokens assistant --approx
+  ```
+
+- **expect** — the table carries the trait the overlay added (its injection and its skill) and the overlay's own injection_append, with an Always-on footer
+- **why** — `list tokens` walked the role's declared tree, so everything a project or a user-global customizations.yaml added was missing from the figure the skill-engineer injection tells the agent to quote; show-prompt composed with overlays and list tokens without, two answers to one question
 
 ## `test_master_ci_gate.py`
 
@@ -2532,6 +2528,21 @@ as a claim to check, not as evidence.
 - **expect** — the command executes successfully with exit code 0 and displays all core rack subcommands
 - **why** — python -m ai_hats_rack provides a direct execution entry point required when console scripts are unavailable or isolated
 
+## `test_rack_execute_carry_follows_session_role.py`
+
+*pins HATS-2003*
+
+- **flow** — a session of one role takes a card filed under another role into execute, and the new worktree must be provisioned for the role that is actually entering it
+- **cmds**
+
+  ```console
+  AI_HATS_PLAN_ACK=1 rack transition T-1 execute
+  ai-hats wt create task/probe
+  ```
+
+- **expect** — the wt_in hook the SESSION's role composes runs (its marker lands on disk) and the card's work log names that role; a hook only the CARD's role composes does not run; with both roles equal the marker lands — the positive control on the fixture
+- **why** — a card filed under behaviorist by a role-curator session got a worktree provisioned for behaviorist: no worktree-venv, no .venv, and nothing said which role it had been provisioned for
+
 ## `test_rack_grep_field_e2e.py`
 
 *pins HATS-1324*
@@ -2674,8 +2685,8 @@ as a claim to check, not as evidence.
   ai-hats reflect role maintainer
   ```
 
-- **expect** — pre-flight composes and serializes target role manifest and launches role-judge session
-- **why** — without composition materialization, role-judge auditor lacks structured role breakdown to audit
+- **expect** — pre-flight composes the target with overlays, serializes its manifest with the plan's trace and every rule body, then launches the role-judge session
+- **why** — without composition materialization, role-judge auditor lacks structured role breakdown to audit; with empty rule files it audits rules it never saw
 
 ## `test_refresh_unification.py`
 
@@ -2852,19 +2863,21 @@ as a claim to check, not as evidence.
 
 ## `test_runner_spelling_consent_chain.py`
 
-*pins HATS-1754*
+*pins HATS-1754, HATS-1999*
 
-- **flow** — an agent typing a gated move through a language runner — `uv run`, `uvx`, or `python -m <module>` — instead of the console script
+- **flow** — an agent typing a gated move through a language runner — `uv run`, `uvx`, or `python -m <module>` — or inside a shell's `-c` payload, instead of the console script
 - **cmds**
 
   ```console
   uv run rack transition HATS-1 execute
   python3 -m ai_hats_rack transition HATS-1 execute
   uv run ai-hats wt merge task/x
+  bash -c 'ai-hats wt merge task/x'
+  timeout 600 bash -c 'rack transition HATS-1 execute; rc=$?; exit $rc'
   ```
 
 - **expect** — the composed chain raises the supervisor's question on every spelling, exactly as it does for the bare one
-- **why** — measured 2026-08-20 — the chain returned NOTHING for these. `WRAPPERS` knew `sudo`/`env`/`timeout` but no language runner, so `slice_for` read the head binary as `uv` or `python3` and never found the guarded call. Both roads into master and the `plan -> execute` arrow were reachable by re-spelling the command, in silence. Revert the runner half and the parametrized assertions below go quiet rather than red elsewhere.
+- **why** — measured 2026-08-20 — the chain returned NOTHING for these. `WRAPPERS` knew `sudo`/`env`/`timeout` but no language runner, so `slice_for` read the head binary as `uv` or `python3` and never found the guarded call. Both roads into master and the `plan -> execute` arrow were reachable by re-spelling the command, in silence. Measured again 2026-09-18: a shell's `-c` payload was one token to the consent readers, so a merge wrapped the way the hygiene hook advises for runners raised nothing and the engine refused with a verb only a human can type. Revert either half and the parametrized assertions below go quiet rather than red elsewhere.
 
 ## `test_runs_retention.py`
 
@@ -3056,6 +3069,20 @@ as a claim to check, not as evidence.
 
 - **expect** — project config is created with local harness channel pointing at repository path
 - **why** — without local channel seeding, initialised projects default to remote git repositories for updates
+
+## `test_self_update_adopts_launcher_recreated_venv.py`
+
+*pins HATS-1998*
+
+- **flow** — a project on the versioned layout whose live versions/<sha> venv broke (its ai_hats package deleted — a host python upgrade or a torn-down checkout leaves the same shape) and is already at the edge repo's HEAD
+- **cmds**
+
+  ```console
+  ai-hats self update --force-downgrade
+  ```
+
+- **expect** — the launcher recreates versions/<sha>; the python side verifies and adopts that venv (sentinel written, current kept) and exits 0
+- **why** — the launcher's recreate carries no .complete sentinel, so the managed update read the target as crash residue and rmtree'd the very venv it was running in, dying with a ModuleNotFoundError traceback
 
 ## `test_self_update_auto_bump_fresh_code.py`
 
@@ -3252,6 +3279,21 @@ as a claim to check, not as evidence.
 
 - **expect** — self update reinstalls local source as editable without pulling remote packages
 - **why** — without local editable update handling, channel:local projects overwrite local edits with remote packages
+
+## `test_self_update_local_without_source.py`
+
+*pins HATS-1998*
+
+- **flow** — a project whose ai-hats.yaml says `channel: local` with no `path`, in a directory that is not a Python project — the wizard's `local` on a host whose ai-hats was a git install
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ai-hats self update --check
+  ```
+
+- **expect** — self update installs edge for that run, names the config fix, and leaves the yaml alone; --check exits 1 with a BROKEN harness row; with a path set the same commands reinstall editable and report OK; a project root with its own pyproject is named as not ai-hats, never -e'd; an edge repo given as a path without the ai-hats pyproject is refused before uv with the fix
+- **why** — without this heal, self update ran `uv pip install -e <project root>` and handed the user uv's refusal with every triage row green — and with an installability check instead of identity it installed the consumer's own package into the tool venv and called it an update
 
 ## `test_self_update_orphan_version_gc.py`
 
@@ -3850,7 +3892,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
+  bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
   python -m ai_hats.cli.githooks_hook pre-commit --project-dir . --githooks-dir .githooks
   ```
 

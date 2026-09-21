@@ -1,22 +1,17 @@
-"""Artifact-builder core: categorised session artifact assembly (ADR-0018)."""
+"""What a session is launched with, beside the plan: its policy, its run mode,
+the sub-agent's first turn, and what a child may not inherit."""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
-from typing import TYPE_CHECKING, Mapping
-
-from .materialization import ApplyMaterializer, Materializer
-
-if TYPE_CHECKING:
-    from .session_run import SessionRun
+from typing import Mapping
 
 #: Stands in for a value only the launch can produce (pid, uuid, trace path, a
-#: bound port). Lives here so a provider can spell it without importing dry_run.
+#: bound port). Lives here so a provider can spell it without importing the dry-run.
 AT_LAUNCH = "<assigned at launch>"
 
 
@@ -25,13 +20,6 @@ class ArtifactCategory(str, Enum):
     SKILLS = "skills"
     HOOKS = "hooks"
     SETTINGS = "settings"
-
-
-class DeliveryMode(str, Enum):
-    CACHE_FLAG = "cache_flag"
-    SDK_OPTION = "sdk_option"
-    NATIVE_ROOT = "native_root"
-    INLINE = "inline"
 
 
 class RunMode(str, Enum):
@@ -55,25 +43,6 @@ class SessionPolicy:
         return True
 
 
-def assemble_launch_command(
-    provider,
-    *,
-    extra_args: list[str] | None,
-    session_args: list[str],
-    provider_session_id: str,
-) -> list[str]:
-    """The one place a HITL launch argv is assembled.
-
-    Shared by ``WrapRunner`` and ``--dry-run`` so the reported command cannot be
-    a reconstruction of the launched one.
-    """
-    extra = list(extra_args or [])
-    cmd = provider.get_cli_command(extra)
-    cmd.extend(session_args)
-    is_resume = any(f in extra for f in ("--resume", "--continue", "-c"))
-    return provider.get_cli_launch_args(cmd, provider_session_id, is_resume)
-
-
 def withheld_from_child() -> dict[str, str]:
     """The approvals a sub-agent does not inherit from the session that spawned it.
 
@@ -93,112 +62,6 @@ def withheld_from_child() -> dict[str, str]:
 
     ambient = (name for name in os.environ if withheld_from_subagent(name))
     return {name: "" for name in (*BYPASS_FLAGS_NOT_INHERITED, *ambient)}
-
-
-def assemble_launch_env(
-    provider,
-    layout: ProjectLayout,
-    session_dir: Path,
-    *,
-    session_id: str,
-    trace_path: str,
-    role: str,
-    root_pid: str,
-    extra_env: dict[str, str],
-    run_mode: RunMode,
-    claim: bool = True,
-) -> dict[str, str]:
-    """Everything ai-hats ADDS to the child's environment.
-
-    Sibling of :func:`assemble_launch_command`, and for the same reason: the
-    launch merged six sources inline while the report merged two of them, so
-    ``--dry-run`` and ``role_materialization.json`` both under-reported the
-    session — including ``AI_HATS_SESSION_ID``, the variable that decides how a
-    bound check resolves. Inherited ``os.environ`` stays out: the child gets it
-    whatever ai-hats does, and listing it would bury what the launch contributes.
-    """  # comment-length: allow — the omission it fixes was invisible for a reason
-    project_dir = layout.root
-    from ai_hats_observe.session import session_env
-
-    from .constants import ENV_ROOT_PID
-    from .session_identity import SessionIdentity
-
-    # The ONE place a session's identity is produced. Gates running in
-    # the processes this launches used to re-derive it from ai-hats.yaml, which
-    # does not hold it whenever --role/-p override.
-    identity = SessionIdentity(
-        id=session_id,
-        role=role,
-        provider=provider.name,
-        project_dir=project_dir,
-        session_dir=session_dir,
-        # Resolved where the provider object is in hand, so no consumer takes a
-        # second surface lookup that could answer differently.
-        skills_root=str(provider.session_skills_root(layout, session_id) or ""),
-        # The consent store's home, published so a stdlib hook never
-        # has to re-derive a hashed path.
-        session_cache_dir=str(layout.cache.session(session_id)),
-    )
-    # ``claim`` separates a report from a launch: only the launch may take a
-    # resource (cline binds a hub port). Same keys either way — a key set that
-    # depended on the mode would be the reporting defect, moved.
-    withheld = withheld_from_child() if run_mode is RunMode.AUTOMATE else {}
-    return {
-        **withheld,
-        **session_env(session_id, trace_path),
-        **provider.get_env(session_dir, layout),
-        **(provider.claim_launch_env(session_dir, layout) if claim else {}),
-        **extra_env,
-        # Last on purpose: the scalars are projections of the envelope, so the
-        # identity overrides anything upstream spelled differently.
-        **identity.to_env(),
-        ENV_ROOT_PID: root_pid,
-    }
-
-
-@dataclass(frozen=True)
-class AutomateLaunch:
-    """What a sub-agent run consists of: the argv, and the prompt bytes inside it.
-
-    The two are returned together because for a CLI surface they are the same
-    thing — the whole prompt is one argv token — and deriving one separately
-    from the other is exactly how they drifted.
-    """
-
-    launch: list[str]
-    prompt: str
-
-
-def assemble_meta_prompt(
-    layout: ProjectLayout,
-    *,
-    role_context: str,
-    task: str,
-    ticket_id: str,
-) -> str:
-    """The prompt bytes a CLI sub-agent is launched with.
-
-    Sibling of :func:`assemble_launch_command`. The dry-run held a second,
-    tidier version of this that dropped ``WORKING_DIRECTORY`` and both ticket
-    sections — and since agy and cline take the whole prompt as one argv token,
-    the reported command was not the command.
-    """
-    from .linked_context import ticket_sections
-
-    ticket_context, linked_context = ticket_sections(
-        tasks_root=layout.tracker.tasks_dir, ticket_id=ticket_id
-    )
-    sections = []
-    if role_context:
-        sections.append(role_context)
-    sections.append(working_directory_section(layout))
-    if ticket_context:
-        sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
-    if linked_context:
-        sections.append(f"# LINKED_CONTEXT\n{linked_context}")
-    if task:
-        sections.append(f"# TASK\n{task}")
-    return "\n\n".join(sections)
 
 
 def assemble_brief(layout: ProjectLayout, *, task: str, ticket_id: str) -> str:
@@ -255,24 +118,3 @@ class CollectedMetrics:
 
     def record(self, values: Mapping[str, object]) -> None:
         self.values.update(values)
-
-
-@dataclass
-class BuiltArtifacts:
-    cli_args: list[str] = field(
-        default_factory=list
-    )  # HITL: --system-prompt-file/--plugin-dir/--settings
-    extra_env: dict[str, str] = field(default_factory=dict)
-    sdk_options: dict = field(
-        default_factory=dict
-    )  # Automate: {"settings":..., "setting_sources":[]}
-    materialized: list[Path] = field(default_factory=list)  # for tests/audit
-    full_content: str | None = None  # composed prompt bytes (meta_prompt.txt)
-    # Every session write goes through here; a PlanMaterializer turns
-    # the whole build into a dry-run. Appended last — positional ctor stays safe.
-    port: Materializer = field(default_factory=ApplyMaterializer)
-    # Policy rides here so per-category handlers read it without a
-    # published signature change (ADR-0018 §1). Same rule — append last.
-    policy: SessionPolicy = field(default_factory=SessionPolicy)
-    resources: SessionRun | None = None
-    notices: list[str] = field(default_factory=list)

@@ -5,19 +5,19 @@
 <h1 align="center">ai-hats</h1>
 
 <p align="center">
-  <strong>Do. Reflect. Repeat.</strong>
+  <strong>Role-based multi-harness framework with behavior feedback.</strong>
 </p>
 
 <p align="center">
-  <em>Compose AI agents from reusable roles, then run an automatic retrospective after every session.</em><br>
-  <em>One role set works for both Claude and Gemini.</em>
+  <em>Configure any agent CLI for a job once, run as many agents as the work needs, and let every session leave evidence behind.</em><br>
+  <sub>Do. Reflect. Repeat.</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/muratovv/ai-hats/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/muratovv/ai-hats/actions/workflows/ci.yml/badge.svg?branch=master"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
   <a href="https://docs.astral.sh/uv/"><img alt="uv" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json"></a>
-  <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-orange.svg">
+  <a href="#project-status"><img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-orange.svg"></a>
   <a href="https://github.com/muratovv/ai-hats/commits/master"><img alt="Last commit" src="https://img.shields.io/github/last-commit/muratovv/ai-hats"></a>
   <a href="https://github.com/muratovv/ai-hats/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/muratovv/ai-hats"></a>
 </p>
@@ -32,235 +32,109 @@
 
 ## Why ai-hats?
 
-Have you ever watched the same AI agent step on the same rakes across projects? Forgetting your conventions, skipping the planning step, falling back to the same anti-pattern. Copy-pasting `CLAUDE.md` doesn't scale: edits drift across projects, and a fix in one rarely makes it back to the others.
+Have you ever watched the same AI agent step on the same rakes across projects? Forgetting your conventions, skipping the planning step, falling back to the same anti-pattern. Copy-pasting `CLAUDE.md` doesn't scale: edits drift across projects, and a fix in one rarely makes it back to the others. And when a lesson *is* learned, nothing decides whether it was worth keeping — memory files grow until nobody reads them.
 
-ai-hats answers this with two things:
+ai-hats answers this in four parts.
 
-- **Roles as compositions of reusable components** — `traits`, `rules`, `skills`, and `hooks` are assembled into a role once and injected into the system prompt of any provider (Gemini / Claude). A fix to one component reaches every role that includes it on the next session.
-- **Deep reflection after every session** — a structured retrospective with a factual layer (metrics, files, commits) plus an LLM narrative that delivers verdicts on active hypotheses and votes on improvement proposals. Patterns observed across 3–5 sessions become new rules and skills, and the loop closes.
+- **Role-based.** A role is one uniform way to configure a harness for a job — an SRE, a technical writer, a Go developer. It sets more than the opening context: the runtime comes with it. Hooks that fire on the agent's tool calls, consent gates that turn a destructive command into a question, the skills it may reach for. Terms and the composition model — [glossary](docs/glossary.md), [architecture](docs/ARCHITECTURE.md).
+- **Multi-harness.** ai-hats levels the role systems of different agent CLIs into a single set. You stop asking how a job is expressed in harness X: describe it once, and it is delivered in each harness's own dialect. See [harnesses](#harnesses) below.
+- **Framework, multi-scale out of the box.** Want five Claude developers, two SREs and a technical writer running at once? No problem — the agents don't collide, they compound. Each works in an isolated git worktree, they share context through the `rack` backlog instead of over each other's heads, and the feedback below improves the roles all of them run on. Worktree workflow — [how-to-advanced §2](docs/how-to-advanced.md); backlog — [how-to-hatrack](docs/how-to-hatrack.md).
+- **Behavior feedback.** A session is not a black box: it is scored, measured, and can be behavior-tested. An edit to a role is settled by an A/B experiment rather than by argument, and what the agent learns reaches the next prompt only after it is proven — not when it is guessed. The loop — [how-to-feedback-loop](docs/how-to-feedback-loop.md); experiments — [how-to-experiments](docs/how-to-experiments.md).
 
-```
-roles/dev-python ── trait-base + trait-agent + dev::python + dev::shell
-                    ├── rules: git_workflow, tdd
-                    ├── skills: hatrack, git-mastery
-                    └── injection → composed per session, delivered per surface
-```
+<p align="center">
+  <img src="docs/assets/diagrams/runtime-and-loop.svg" alt="Runtime and the behavior-feedback loop" width="460">
+</p>
 
-> Names and core terms (role, session, reflect, backlog, …) — see [1].
+<p align="center">
+  <sub>The loop closes on the runtime: what one session proves, the next session starts from.</sub>
+</p>
+
+<!-- Source: docs/assets/diagrams/runtime-and-loop.d2 — render: docs/assets/diagrams/render.sh -->
 
 ## Quick start
 
-A bash launcher in `~/.local/bin/ai-hats` (one-time per host) plus a per-project venv in `<ai_hats_dir>/.venv/`. Get help for any command with `ai-hats --help`. View the full CLI tree with `ai-hats --tree`.
-
-ai-hats is a **host tool**: it is driven by that launcher (which exec's `python -m ai_hats`), never installed as a dependency of your project's own venv. There is no `<venv>/bin/ai-hats` console script — the only `bin/ai-hats` is the host launcher. If `self update` ever can't repair a broken install in-band, recover out-of-band with `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- --repair` (see [3] §10).
-
-**Prerequisite:** [uv](https://docs.astral.sh/uv/) is the single host requirement — the env engine that also provisions Python (no separate Python install). The one-command install below auto-installs uv if it is absent; the step-by-step path assumes it is present (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
-
-### One command (recommended)
+**Prerequisite:** [uv](https://docs.astral.sh/uv/) is the single host requirement — the env engine that also provisions Python. The one-command install auto-installs it if absent.
 
 ```bash
-curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r <role> -p <provider>
+cd ~/dev/my-project     # run this from the project you want to wire
+
+# installs the launcher into ~/.local/bin/ and creates the managed venv
+curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash
+
+ai-hats self init       # wizard: detects your stack, picks a role and a harness
+ai-hats                 # start a session with the composed role
 ```
 
-On a fresh host this installs the launcher, auto-installs uv if absent, creates the venv, and initializes the project — nothing pre-installed required.
+The wizard is its own step on purpose: a piped installer owns stdin, so it cannot ask you anything. Run it from your terminal and it detects the stack, recommends a role, and sets the feedback policy. If bootstrap warns that `~/.local/bin` is not on your `$PATH`, add it and reopen the shell — otherwise `ai-hats` won't resolve.
 
-### Zero-install first touch
+Scripted or CI instead of a wizard? Pass the answers and skip it: `ai-hats self init -p claude -r go-dev --no-wizard`. Bootstrap takes `-r`/`-p` too, and then runs init for you.
 
-Already have uv? Wire a single project with the latest published ai-hats, no host launcher required:
+No uv yet and just want a look? `uvx ai-hats self init` wires a single project from the published release without installing anything permanent. Other install paths, overlay recipes, and out-of-band repair — [how-to](docs/how-to.md); the full setup walkthrough — [how-to-configure](docs/how-to-configure.md).
 
-```bash
-uvx ai-hats self init                          # runs the stable PyPI release ephemerally
-```
+## Harnesses
 
-`uvx` fetches and runs ai-hats from the `stable` channel (PyPI) in a throwaway environment — handy to try it or bootstrap one project. For day-to-day use, install the launcher below so `ai-hats` is a persistent command on `$PATH`.
+Harnesses are discovered through the `ai_hats.providers` entry point — an open registry, so a package outside this repo can add one. These ship in-tree:
 
-### 1. Install the launcher (once per host)
+| Harness    | Agent CLI            |
+| ---------- | -------------------- |
+| `claude`   | Claude Code          |
+| `agy`      | Antigravity / Gemini |
+| `cline`    | Cline                |
+| `codex`    | Codex                |
+| `opencode` | opencode             |
 
-> Requires uv on the host (see prerequisite above). The launcher heals/creates venvs via uv and fails loud with the install one-liner if uv is missing.
+`gemini` is an accepted alias for `agy`. Support is not uniform — what a hook gate may do, whether the audit is parsed from a real session log, how sub-agents run, whether consent wrappers work. The per-capability matrix is [surfaces](docs/surfaces.md); read it before committing to a harness.
 
-```bash
-curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
-```
+Ask your own host what it has: `ai-hats list providers`.
 
-Drops a ~30-line bash launcher into `~/.local/bin/ai-hats`. If `~/.local/bin/` isn't on `$PATH`, the installer prompts you to add it.
+## Roles
 
-### 2. Wire ai-hats into a project
+A role is picked at init and switched any time with `ai-hats config set -r <role>`. The ones you are most likely to start from:
 
-```bash
-cd ~/dev/my-project
-ai-hats self init                              # interactive wizard (recommended)
-```
+| Role                                | Takes the job of                      |
+| ----------------------------------- | ------------------------------------- |
+| `assistant`                         | a general-purpose default             |
+| `dev-python` · `go-dev` · `dev-web` | development in one language           |
+| `architect`                         | design and interface decisions        |
+| `sre`                               | operations, incidents, infrastructure |
+| `tech-writer`                       | documentation and prose               |
 
-`ai-hats self init` is the human-friendly bootstrap. It:
+`ai-hats list roles` prints the full set, including the ones the engine runs for itself — the session reviewer and the judges behind the feedback loop.
 
-1. Installs the latest ai-hats from the default `stable` channel (a published release on PyPI). Other channels — `edge` (a repo branch HEAD via `git+https`) and `local` (an editable working tree) — are selectable later; see [2].
-2. Asks for a provider (smart default by `~/.claude` / `~/.gemini` presence) and writes a minimal `ai-hats.yaml`.
-3. Hands off to the `initial-wizard` LLM session, which detects your stack, recommends a base role, helps with customizations, and configures the feedback (session-retro) policy — all via `ai-hats config …` commands.
-
-**Scripted / CI variant** — pass both flags to skip the wizard:
-
-```bash
-ai-hats self init -p claude -r go-dev --no-wizard          # writes ai-hats.yaml directly
-```
-
-Bootstrap-time flags that are tedious to change later (the wizard also
-asks about these in an opt-in "advanced setup" branch):
-
-```bash
-ai-hats self init -p claude -r go-dev --no-wizard \
-  --ai-hats-dir .ai \                  # framework directory (default: .agent/ai-hats)
-  --venv ~/.venvs/myproj \             # point at an existing venv instead of the managed one
-  --no-manage-gitignore                # do not auto-add ai-hats entries to .gitignore
-```
-
-### 3. Use it
-
-```bash
-ai-hats                       # start a session with current settings
-ai-hats --resume              # flags pass through to the provider (claude / gemini)
-ai-hats config status         # health-check the composition
-ai-hats self init             # initialize project or re-configure via setup wizard
-ai-hats self update           # update ai-hats package (self-healing)
-```
-
-`ai-hats self update` is self-healing: if a system Python upgrade breaks the venv, it is rebuilt automatically (default venvs only; override venvs are user-owned).
-
-Full configuration walkthrough (wizard, role pick, customization, feedback policy, venv) → [2].
-
-Alternative install paths (bash bootstrap from a clone, override venv, developing ai-hats itself) live in [3].
+**Read `maintainer` before writing your own.** It is not a role to pick for your project — it maintains *this* repo, and ships in the `ai-hats-dev` library layer rather than `usage/` for that reason. It is the reference: ten traits, each with an author-facing note on why it is there, plus a full injection. That is what a finished role looks like. Composing your own, or overriding a shipped one — [how-to-extend](docs/how-to-extend.md).
 
 ## CLI
 
-> **The full command reference with descriptions and options — `ai-hats --tree`**
-> (equivalent to `ai-hats --help --tree`).
->
-> Subtrees: `ai-hats --tree <group>` (e.g. `ai-hats --tree wt`)
-> or deeper: `ai-hats --tree config feedback`.
-
-Nine top-level groups:
-
-| Group     | What it does                                                          |
-| --------- | --------------------------------------------------------------------- |
-| `agent`   | Run a role as a sub-agent inside an isolated worktree                 |
-| `config`  | Read / edit `ai-hats.yaml` (provider, role, customizations, feedback) |
-| `execute` | Launch a provider session with a composed role + optional prompt      |
-| `list`    | Discovery: roles / skills / rules / traits / providers / tokens       |
-| `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP        |
-| `self`    | Tool lifecycle: init / update                                         |
-| `session` | Observability: list / show / audit / retro for sessions               |
-| `wait`    | Block until an event happens, then continue in the same session       |
-| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in [5] §2 |
-
-The backlog is not an `ai-hats` group: cards live behind the `rack` CLI — recipes in [4].
-
-Common scenarios:
-
 ```bash
-# Interactive session with role injection
-ai-hats                                    # current settings
-ai-hats -p agy "your prompt text"          # pass prompt directly as positional argument
-ai-hats -p claude -r architect             # override provider and role
-ai-hats -p codex -r maintainer             # launch Codex with the maintainer role
-ai-hats --tag client=acme                  # custom tags in metrics.json
-
-# Sub-agent in an isolated worktree
-ai-hats agent sre --task "investigate alert XYZ"
-
-# Lifecycle
-ai-hats self init                          # initialize project or re-configure via setup wizard
-ai-hats config set -r <role> -p <provider> # change role / provider in an existing project
-ai-hats self update                        # update ai-hats package (self-healing)
-ai-hats config status                      # health-check the composition
+ai-hats self init                  # wire a project — interactive wizard
+ai-hats self update                # update the tool, self-healing
+ai-hats                            # session with current settings
+ai-hats -p claude -r sre           # override harness and role for one run
 ```
 
-Full reference — `ai-hats --tree`.
+Everything else is discoverable from the tool itself: `ai-hats --tree` prints the whole command tree, `ai-hats --tree wt` one subtree of it. The backlog is a separate CLI — `rack`.
 
 ## Customization
 
-The shipped library splits into `core/` (engine fundament) and `usage/` (curated content). Role definitions live under `packages/ai-hats-library/src/ai_hats_library/core/roles/` and `packages/ai-hats-library/src/ai_hats_library/usage/roles/`; you change behaviour by composing or replacing them rather than editing core code.
+The shipped library splits into `core/` (engine fundament) and `usage/` (curated content). You change behavior by composing or replacing roles rather than editing core code — add your own role, override a built-in like `session-reviewer`, point ai-hats at an external library repo, or ship a role as a one-liner shell alias. Recipes and the override-precedence chain — [how-to-extend](docs/how-to-extend.md).
 
-Reference for role changes — [`docs/how-to-extend.md`](docs/how-to-extend.md):
+## Documentation
 
-- [Worked example: add your own role](docs/how-to-extend.md#worked-example-add-your-own-role) — minimal recipe for a new role from scratch.
-- [Replacing a system role](docs/how-to-extend.md#replacing-a-system-role-eg-your-own-auditor) — override a built-in like `session-reviewer`.
-- [Pointing ai-hats at extra library paths](docs/how-to-extend.md#pointing-ai-hats-at-extra-library-paths) — keep roles in an external repo and consume them globally.
-- [Custom verbs via shell aliases](docs/how-to-extend.md#custom-verbs-via-shell-aliases) — ship a role + initial-injection prompt as a one-liner shell alias.
+| I want to…                                     | Read                                                 |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| Set up ai-hats on a project for the first time | [how-to-configure](docs/how-to-configure.md)         |
+| Look up what a term means                      | [glossary](docs/glossary.md)                         |
+| Write my own role, trait, rule or skill        | [how-to-extend](docs/how-to-extend.md)               |
+| Drive the backlog day to day                   | [how-to-hatrack](docs/how-to-hatrack.md)             |
+| Understand how a lesson becomes a rule         | [how-to-feedback-loop](docs/how-to-feedback-loop.md) |
+| Understand the internals                       | [architecture](docs/ARCHITECTURE.md)                 |
 
-Same doc covers the override-precedence chain ([6]) for traits, rules, and skills. Documentation entry-point: [`docs/INDEX.md`](docs/INDEX.md) ([8]).
+Every document in the repo is cataloged in [docs/INDEX.md](docs/INDEX.md).
 
-Advanced flows — custom pipeline steps, isolated worktrees, parallel sub-agents — live in [5].
+## Project status
 
-## Update notification
+**Beta.** Until `v1.0.0` the version reads `0.MAJOR.MINOR`: a breaking change lands on a MAJOR bump and ships with a migration guide; MINOR is additive or fix-only. See [Releases](https://github.com/muratovv/ai-hats/releases) and [CHANGELOG.md](CHANGELOG.md).
 
-When the installed `ai-hats` SHA lags upstream `master`, a three-line **Update banner** appears under the **Session summary** at the end of each interactive session. It tells you the current and latest short SHAs, suggests `ai-hats self update`, and prints the opt-out env var on the dim third line.
+## Contributing
 
-The probe is non-blocking: a detached background subprocess fires at session start and caches the result for 24h under `<cache_root>/update-check.json` — outside the project, default `~/.cache/ai-hats/<project-key>/`. The banner reads whatever's currently in the cache (stale-while-revalidate) — first probe results land in the next session, not the current one.
-
-Suppress both probe and banner with `AI_HATS_NO_UPDATE_CHECK=1` (useful for CI / scripted invocations). Term definitions — see [1].
-
-## Recovery from accidental change
-
-Every destructive op inside `ai-hats self update` / `self init` (migrations, scaffold rewrites, `.gitignore` edits, `.claude/settings.json` writes, `heal_*` rewrites) snapshots the original content to a per-process **trash session** before touching disk:
-
-```text
-$TMPDIR/ai-hats/trash-<utc-ts>-<pid>-XXXXXX/<project-relative-path>
-```
-
-The session also writes a `MANIFEST.md` next to the moved files listing every op (timestamp, kind, reason, original → trash path). Recover a single file:
-
-```bash
-ls $TMPDIR/ai-hats/                                # list all trash sessions
-cat $TMPDIR/ai-hats/trash-<id>/MANIFEST.md         # see what's in this one
-cp -r $TMPDIR/ai-hats/trash-<id>/<rel> ./<rel>     # restore
-```
-
-Sessions are NOT auto-cleaned — `/tmp` retention is enough in practice (macOS / Linux clean on reboot). To override the trash location, set `AI_HATS_TRASH_DIR=<path>`. To opt out entirely in CI / ephemeral environments, set `AI_HATS_TRASH_DIR=-` (hard-delete mode, no snapshots, WARN per op). On `ENOSPC` / read-only filesystem the destructive op aborts loudly (`TrashFullError`) rather than silently losing data. Term definitions — see [1].
-
-## Architecture
-
-Roles compose from traits + rules + skills, a flat model, a task state machine, multi-provider injection. The full tour of the internal model, directory layout, skill format, and a sample `config.yaml` — see [7].
-
-<table>
-<tr>
-  <td align="center" width="33%">
-    <a href="docs/ARCHITECTURE.md#session-lifecycle"><img src="docs/assets/diagrams/session-lifecycle.svg" alt="Session lifecycle" height="160"></a><br>
-    <sub><a href="docs/ARCHITECTURE.md#session-lifecycle"><b>Session lifecycle</b></a><br>launch → trace → finalize → retro</sub>
-  </td>
-  <td align="center" width="33%">
-    <a href="docs/ARCHITECTURE.md#reflection-loop"><img src="docs/assets/diagrams/auto-reflect-session.svg" alt="Reflection loop" height="160"></a><br>
-    <sub><a href="docs/ARCHITECTURE.md#reflection-loop"><b>Reflection loop</b></a><br>verdicts on HYP, votes on PROP</sub>
-  </td>
-  <td align="center" width="33%">
-    <a href="docs/ARCHITECTURE.md#composition-flow"><img src="docs/assets/diagrams/composition-flow.svg" alt="Composition flow" height="160"></a><br>
-    <sub><a href="docs/ARCHITECTURE.md#composition-flow"><b>Composition flow</b></a><br>role → traits → materialize</sub>
-  </td>
-</tr>
-<tr>
-  <td align="center" colspan="2">
-    <a href="docs/ARCHITECTURE.md#backlog-state-machines"><img src="docs/assets/diagrams/backlog-task-fsm.svg" alt="Backlog state machines" height="120"></a><br>
-    <sub><a href="docs/ARCHITECTURE.md#backlog-state-machines"><b>Backlog state machines</b></a> · task / HYP / PROP lifecycles</sub>
-  </td>
-  <td align="center">
-    <a href="docs/ARCHITECTURE.md#reflection-loop"><img src="docs/assets/diagrams/manual-reflect-all.svg" alt="Manual reflect-all" height="160"></a><br>
-    <sub><a href="docs/ARCHITECTURE.md#reflection-loop"><b>Manual reflect-all</b></a><br>periodic backlog triage</sub>
-  </td>
-</tr>
-</table>
-
-## References
-
-**[1]** — [`docs/glossary.md`](docs/glossary.md) — naming source-of-truth for ai-hats core terms (role, session, reflect, backlog, …).
-
-**[2]** — [`docs/how-to-configure.md`](docs/how-to-configure.md) — narrative walkthrough for first-time setup (wizard, role pick, customization, feedback policy, venv).
-
-**[3]** — [`docs/how-to.md`](docs/how-to.md) — `ai-hats.yaml` overlay recipes and alternative install paths.
-
-**[4]** — [`docs/how-to-hatrack.md`](docs/how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.
-
-**[5]** — [`docs/how-to-advanced.md`](docs/how-to-advanced.md) — advanced flows: custom pipeline steps (§1), worktree workflow (§2).
-
-**[6]** — [`docs/how-to-extend.md`](docs/how-to-extend.md) — shipped library layout, override precedence, recipes for your own roles / traits / rules / skills.
-
-**[7]** — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — internal model, directory layout, skill format, sample `config.yaml`.
-
-**[8]** — [`docs/INDEX.md`](docs/INDEX.md) — documentation catalog and entry-point: per-step wizard references plus the full list of `how-to-*.md` files with topic / when-to-read tags.
+See [CONTRIBUTING.md](CONTRIBUTING.md) — development setup, library layout, diagram house style. Security policy: [SECURITY.md](SECURITY.md). License: [MIT](LICENSE).

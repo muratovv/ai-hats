@@ -18,30 +18,41 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Mapping
 
-from ai_hats_core.layout import ProjectLayout, cache_home
+from ai_hats_core.layout import ProjectLayout
 
+from ai_hats.materialization import describe_mkdir
 from ai_hats.surfaces import Surface
 from ai_hats.surfaces.mcp import StdioMCPServer
-from ai_hats.session_artifacts import (
-    AutomateLaunch,
-    BuiltArtifacts,
-    RunMode,
-    SessionPolicy,
-)
+from ai_hats.session_artifacts import RunMode, SessionPolicy, working_directory_section
 
 from ..hook_channel import HookEvent, HookRow
+from ..mirror import path_dirs
+from ..plan import CompositionPlan, Host, Launch, Launched, LaunchFlags, MaterializationPlan, Prompt
+from ..skill_index import skill_index_block
+from .home import (
+    ENV_CODEX_BASE_HOME,
+    ENV_CODEX_HOME,
+    ENV_CODEX_SQLITE_HOME,
+    CodexHome,
+    configured_base_home,
+    managed_root,
+    plan_session_home,
+    probe_home,
+    session_home_env,
+    session_home_of,
+    validate_sqlite_home,
+)
 from .session_home import (
-    SESSION_HOME_MANIFEST,
     SessionHomeMetadata,
     normalize_session_rollout_paths,
     read_session_home_metadata,
-    render_session_home_metadata,
 )
-from .session_auth import reconcile_auth, stage_auth
+from .session_auth import reconcile_auth
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
 
+    from ai_hats.session_run import SessionRun
     from ai_hats.surfaces import SurfaceHint
 
 
@@ -59,13 +70,6 @@ _HOOK_POLICY_KEYS = {
     "features.hooks",
 }
 _HOOK_FEATURE_NAMES = {"codex_hooks", "hooks"}
-_ENV_CODEX_BASE_HOME = "AI_HATS_CODEX_BASE_HOME"
-# Codex's own two names: honoured on the way in, rewritten on the way out.
-_ENV_CODEX_HOME = "CODEX_HOME"
-_ENV_CODEX_SQLITE_HOME = "CODEX_SQLITE_HOME"
-_AI_HATS_HOME_DIR = ".ai-hats"
-_SESSION_HOMES_DIR = "session-homes"
-_SQLITE_ARTIFACT_SUFFIXES = (".sqlite", ".sqlite-shm", ".sqlite-wal", ".sqlite-journal")
 
 logger = logging.getLogger(__name__)
 
@@ -213,185 +217,139 @@ class CodexSurface(Surface):
         return self.session_codex_home(layout, session_id) / "skills"
 
     def session_codex_home(self, layout: ProjectLayout, session_id: str) -> Path:
-
-        base_home = self._configured_base_home()
-        return (
-            base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR / layout.cache.root.name / session_id
-        )
+        return session_home_of(self._configured_base_home(), layout.cache.root.name, session_id)
 
     @staticmethod
     def _configured_base_home() -> Path:
-
-        configured = os.environ.get(_ENV_CODEX_BASE_HOME) or os.environ.get(_ENV_CODEX_HOME)
-        candidate = Path(configured).expanduser() if configured else Path.home() / ".codex"
-        if not candidate.is_absolute() or not candidate.is_dir():
-            raise RuntimeError("Codex base home must be an existing absolute directory")
-        base_home = candidate.resolve()
-        resolved_cache_home = cache_home(os.environ).resolve()
-        if (
-            base_home == resolved_cache_home
-            or base_home in resolved_cache_home.parents
-            or resolved_cache_home in base_home.parents
-        ):
-            raise RuntimeError("Codex base home must be disjoint from the ai-hats cache home")
-        return base_home
+        return configured_base_home(os.environ)
 
     def _base_codex_home(self, session_home: Path) -> Path:
         base_home = self._configured_base_home()
         resolved_session_home = session_home.resolve(strict=False)
-        managed_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR
-        if managed_root not in resolved_session_home.parents:
+        if managed_root(base_home) not in resolved_session_home.parents:
             raise RuntimeError("Codex session home must be inside the managed durable root")
         return base_home
 
     @staticmethod
     def _validate_sqlite_home(sqlite_home: Path, base_home: Path) -> Path:
+        return validate_sqlite_home(sqlite_home, base_home, os.environ)
 
-        resolved_cache_home = cache_home(os.environ).resolve()
-        if sqlite_home == resolved_cache_home or resolved_cache_home in sqlite_home.parents:
-            raise RuntimeError("Codex SQLite home must be outside the ai-hats cache home")
-        managed_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR
-        if sqlite_home == managed_root or managed_root in sqlite_home.parents:
-            raise RuntimeError("Codex SQLite home must be outside managed session homes")
-        return sqlite_home
+    # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 
-    @classmethod
-    def _configured_sqlite_home(cls, base_home: Path) -> Path:
-        configured = os.environ.get(_ENV_CODEX_SQLITE_HOME)
-        sqlite_home = Path(configured).expanduser() if configured else base_home
-        if not sqlite_home.is_absolute():
-            raise RuntimeError("Codex SQLite home must be an absolute directory")
-        return cls._validate_sqlite_home(sqlite_home.resolve(strict=False), base_home)
+    def probe_home(self, environ: Mapping[str, str]) -> CodexHome:
+        return probe_home(environ)
 
-    @staticmethod
-    def _project_base_home(base_home: Path, session_home: Path, artifacts) -> None:
+    def plan(
+        self,
+        composition: CompositionPlan,
+        *,
+        run_mode: RunMode,
+        policy: SessionPolicy,
+        root: Path,
+        layout: ProjectLayout,
+        host: Host,
+    ) -> MaterializationPlan:
+        from .runtime_hooks import build_hook_cli_args, plan_hooks
+
+        home = host.home
+        if not isinstance(home, CodexHome):
+            raise RuntimeError(
+                "codex plans from its probed home: probe_host(surface=<codex>) before planning"
+            )
+        mode = RunMode(run_mode)
+        session_home = session_home_of(home.base_home, layout.cache.root.name, root.name)
+        skills_root = session_home / "skills"
+        prompt = composition.prompt
+        if index := skill_index_block(composition, skills_root, surface=self.name):
+            prompt = Prompt((*prompt.blocks, index))
+        entries = [describe_mkdir(root)]
+        args: list[str] = []
+        env: dict[str, str] = {}
+        if policy.context:
+            args += ["-c", self._developer_override(prompt.text)]
+        # No skills, no session home: the child runs against the person's own
+        # home, as it always has.
+        if composition.skills:
+            entries += plan_session_home(
+                composition, home, session_home, project_key=layout.cache.root.name
+            )
+            if dirs := path_dirs(composition, skills_root):
+                env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
+            env.update(session_home_env(home, session_home))
+        if policy.hooks and composition.hooks.runtime:
+            manifest, hook_env = plan_hooks(
+                composition, root, host, layout=layout, skills_root=skills_root
+            )
+            entries.append(manifest)
+            env.update(hook_env)
+            args += build_hook_cli_args()
+        if policy.settings:
+            approval = "on-request" if mode is RunMode.HITL else "never"
+            args += ["--sandbox", "workspace-write", "--ask-for-approval", approval]
+        env.update(self.get_env(root, layout))
+        return MaterializationPlan(
+            composition=composition,
+            prompt=prompt,
+            surface=self.name,
+            run_mode=mode,
+            policy=policy,
+            root=root,
+            entries=tuple(entries),
+            env=env,
+            launch=Launch(args=tuple(args), sdk_options=None),
+        )
+
+    def automate_launch(
+        self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        env: Mapping[str, str],
+        *,
+        layout: ProjectLayout,
+    ) -> Launched:
+        """The role rides ``developer_instructions``; the prompt token carries
+        only the working directory and the brief."""
+        prompt = "\n\n".join(s for s in (working_directory_section(layout), flags.brief or "") if s)
+        model = self.model_flags(flags.model) if flags.model else []
+        cmd = self.get_cli_command() + list(plan.launch.args or ()) + model
+        return Launched(
+            args=tuple(self.get_run_command(cmd, prompt)), sdk_options=None, env=env, prompt=prompt
+        )
+
+    def claim_resources(
+        self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        *,
+        layout: ProjectLayout,
+        run: SessionRun,
+    ) -> None:
+        """Stale homes of earlier sessions are reconciled on the way in; this
+        session's home is reconciled and removed when the run closes."""
         try:
-            for source in sorted(base_home.iterdir(), key=lambda path: path.name):
-                if source.name not in {
-                    "skills",
-                    "auth.json",
-                    _AI_HATS_HOME_DIR,
-                } and not source.name.endswith(_SQLITE_ARTIFACT_SUFFIXES):
-                    artifacts.port.symlink(source, session_home / source.name)
-        except OSError:
-            raise RuntimeError("Codex session home projection failed") from None
-
-    @staticmethod
-    def _project_base_skills(base_home: Path, skills_root: Path, role_names, artifacts) -> None:
-        base_skills = base_home / "skills"
-        if not base_skills.is_dir():
+            for warning in self._recover_session_homes(layout, flags.session_id):
+                run.warn(warning)
+        except Exception as exc:
+            logger.warning("Codex session-home recovery failed", exc_info=True)
+            run.warn(f"Codex session-home recovery failed: {type(exc).__name__}: {exc}")
+        if ENV_CODEX_HOME not in plan.env:
             return
-        try:
-            for source in sorted(base_skills.iterdir(), key=lambda path: path.name):
-                if source.name not in role_names:
-                    artifacts.port.symlink(source, skills_root / source.name)
-        except OSError:
-            raise RuntimeError("Codex base skill projection failed") from None
+        session_home = Path(plan.env[ENV_CODEX_HOME])
+        base_home = Path(plan.env[ENV_CODEX_BASE_HOME])
+        sqlite_home = Path(plan.env[ENV_CODEX_SQLITE_HOME])
 
-    @staticmethod
-    def _skill_description(skill) -> str:
-        from ai_hats.frontmatter import FrontmatterError, read_frontmatter
+        def finalize() -> None:
+            warning = self._finalize_session_home(session_home, base_home, sqlite_home)
+            if warning:
+                run.warn(warning)
 
-        try:
-            metadata = read_frontmatter(skill.source_path / "SKILL.md")
-        except (FrontmatterError, OSError):
-            return skill.name
-        description = metadata.get("description")
-        return description if isinstance(description, str) and description else skill.name
-
-    def _skill_index(self, layout: ProjectLayout, result, session_id: str) -> str:
-        if not result.skills:
-            return ""
-        skills_root = self.session_skills_root(layout, session_id)
-        lines = [
-            "## AVAILABLE SKILLS",
-            "Use a skill when its description matches the task. Before using it, read the exact "
-            "SKILL.md path below; resolve its relative references from that skill directory.",
-        ]
-        for skill in result.skills:
-            skill_md = skills_root / skill.name / "SKILL.md"
-            lines.append(f"- **{skill.name}** — {self._skill_description(skill)} (`{skill_md}`)")
-        return "\n".join(lines)
-
-    def _expanded_prompt(self, layout: ProjectLayout, result, session_id: str) -> str:
-        project_dir = layout.root
-        from ai_hats.placeholders import expand_path_placeholders
-        from ai_hats.role_catalog import expand_role_catalog
-
-        prompt = self.build_system_prompt(result)
-        index = self._skill_index(layout, result, session_id)
-        if index:
-            prompt = f"{prompt}\n\n{index}" if prompt else index
-        prompt = expand_path_placeholders(prompt, layout)
-        return expand_role_catalog(prompt, project_dir)
+        run.defer("Codex session home", finalize)
 
     @staticmethod
     def _developer_override(prompt: str) -> str:
         # A JSON string literal is also a TOML basic string literal. Keep the
         # whole key=value expression as one argv token for `codex -c`.
         return f"developer_instructions={json.dumps(prompt, ensure_ascii=False)}"
-
-    def _build_context_hitl(self, layout, result, session_id, artifacts) -> None:
-        prompt = self._expanded_prompt(layout, result, session_id)
-        artifacts.full_content = prompt
-        artifacts.cli_args.extend(["-c", self._developer_override(prompt)])
-
-    def _build_context_automate(self, layout, result, session_id, artifacts) -> None:
-        prompt = self._expanded_prompt(layout, result, session_id)
-        artifacts.full_content = prompt
-        artifacts.cli_args.extend(["-c", self._developer_override(prompt)])
-
-    def _deliver_skills(self, layout, result, session_id, artifacts) -> None:
-        from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
-
-        if not result.skills:
-            return
-        cache_dir = layout.cache.session(session_id)
-        session_home = self.session_codex_home(layout, session_id)
-        base_home = self._base_codex_home(session_home)
-        sqlite_home = self._configured_sqlite_home(base_home)
-        resources = artifacts.resources
-        if resources is not None:
-
-            def finalize_session_home() -> None:
-                warning = self._finalize_session_home(session_home, base_home, sqlite_home)
-                if warning:
-                    resources.warn(warning)
-
-            resources.defer("Codex session home", finalize_session_home)
-        artifacts.port.mkdir(cache_dir)
-        artifacts.port.mkdir(session_home)
-        artifacts.port.write_text(
-            session_home / SESSION_HOME_MANIFEST,
-            render_session_home_metadata(
-                SessionHomeMetadata(
-                    base_home=base_home,
-                    sqlite_home=sqlite_home,
-                    project_key=session_home.parent.name,
-                    session_id=session_id,
-                )
-            ),
-        )
-        skills_root = self.session_skills_root(layout, session_id)
-        materialize_skills_dir(skills_root, result.skills, layout, artifacts.port)
-        artifacts.port.mkdir(base_home / "sessions")
-        self._project_base_home(base_home, session_home, artifacts)
-        stage_auth(base_home, session_home, artifacts.port)
-        self._project_base_skills(
-            base_home,
-            skills_root,
-            {skill.name for skill in result.skills},
-            artifacts,
-        )
-        inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_root)
-        artifacts.extra_env.update(
-            {
-                _ENV_CODEX_HOME: str(session_home),
-                _ENV_CODEX_SQLITE_HOME: str(sqlite_home),
-                _ENV_CODEX_BASE_HOME: str(base_home),
-            }
-        )
-        artifacts.materialized.append(skills_root)
 
     def _finalize_session_home(
         self,
@@ -443,7 +401,7 @@ class CodexSurface(Surface):
 
         base_home = self._configured_base_home()
         project_key_value = layout.cache.root.name
-        project_root = base_home / _AI_HATS_HOME_DIR / _SESSION_HOMES_DIR / project_key_value
+        project_root = managed_root(base_home) / project_key_value
         if not project_root.is_dir():
             return []
 
@@ -477,59 +435,6 @@ class CodexSurface(Surface):
                 warnings.append(warning)
         return warnings
 
-    def build_session_artifacts(
-        self,
-        layout: ProjectLayout,
-        result: "CompositionResult",
-        session_id: str,
-        *,
-        run_mode: RunMode | str = RunMode.HITL,
-        policy: SessionPolicy | None = None,
-        artifacts: BuiltArtifacts,
-    ) -> BuiltArtifacts:
-        if artifacts.resources is not None:
-            try:
-                artifacts.notices.extend(self._recover_session_homes(layout, session_id))
-            except Exception as exc:
-                logger.warning("Codex session-home recovery failed", exc_info=True)
-                artifacts.notices.append(
-                    f"Codex session-home recovery failed: {type(exc).__name__}: {exc}"
-                )
-        return super().build_session_artifacts(
-            layout,
-            result,
-            session_id,
-            run_mode=run_mode,
-            policy=policy,
-            artifacts=artifacts,
-        )
-
-    def _build_skills_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_skills(layout, result, session_id, artifacts)
-
-    def _build_skills_automate(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_skills(layout, result, session_id, artifacts)
-
-    def _deliver_hooks(self, layout, result, session_id, artifacts) -> None:
-        from ai_hats.hook_collection import collect_runtime_hooks
-
-        from .runtime_hooks import build_hook_cli_args, materialize_hook_manifest
-
-        # Hookless roles should not be asked to trust an inert dispatcher.
-        if not collect_runtime_hooks(result):
-            return
-        materialize_hook_manifest(
-            layout,
-            result,
-            session_id,
-            artifacts,
-            skills_dir=self.session_skills_root(layout, session_id),
-        )
-        artifacts.cli_args.extend(build_hook_cli_args())
-
-    def _build_hooks_hitl(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
-
     def mcp_form_cli_args(self, server: StdioMCPServer) -> list[str]:
         settings = {
             "command": server.command,
@@ -550,34 +455,6 @@ class CodexSurface(Surface):
         from .hook_dispatcher import _load_manifest, _rows
 
         return _rows(_load_manifest(environ), HookEvent.PRE_TOOL_USE)
-
-    def _build_hooks_automate(self, layout, result, session_id, artifacts) -> None:
-        self._deliver_hooks(layout, result, session_id, artifacts)
-
-    def _build_settings_hitl(self, layout, result, session_id, artifacts) -> None:
-        del layout, result, session_id
-        artifacts.cli_args.extend(
-            ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"]
-        )
-
-    def _build_settings_automate(self, layout, result, session_id, artifacts) -> None:
-        del layout, result, session_id
-        artifacts.cli_args.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
-
-    def build_session_prompt(
-        self,
-        layout: ProjectLayout,
-        result: "CompositionResult",
-        session_id: str,
-    ) -> tuple[list[str], dict[str, str], str]:
-        artifacts = self.build_session_artifacts(
-            layout,
-            result,
-            session_id,
-            run_mode=RunMode.HITL,
-            artifacts=BuiltArtifacts(),
-        )
-        return artifacts.cli_args, artifacts.extra_env, artifacts.full_content or ""
 
     @staticmethod
     def _validate_passthrough(args: list[str]) -> None:
@@ -641,32 +518,6 @@ class CodexSurface(Surface):
             if token.startswith("--ask-for-approval="):
                 globals_[index] = "--ask-for-approval=never"
         return [*globals_, "exec", "--json", "--ephemeral", meta_prompt]
-
-    def describe_automate_launch(
-        self,
-        layout: ProjectLayout,
-        result: "CompositionResult",
-        session_id: str,
-        artifacts: BuiltArtifacts,
-        *,
-        task: str,
-        ticket_id: str,
-        model: str,
-        env: dict[str, str],
-    ) -> AutomateLaunch:
-        """Keep role in developer instructions, never duplicate it as user text."""
-        from ai_hats.session_artifacts import assemble_meta_prompt
-
-        del result, session_id, env
-        prompt = assemble_meta_prompt(
-            layout,
-            role_context="",
-            task=task,
-            ticket_id=ticket_id,
-        )
-        model_args = self.model_flags(model) if model else []
-        command = self.get_cli_command() + artifacts.cli_args + model_args
-        return AutomateLaunch(launch=self.get_run_command(command, prompt), prompt=prompt)
 
     def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
         project_dir = layout.root

@@ -1,4 +1,4 @@
-"""Session-scoped runtime-hook materialization for the Codex surface.
+"""Session-scoped runtime-hook planning for the Codex surface.
 
 Codex only discovers hooks from config layers.  The provider therefore passes
 one stable dispatcher definition through ``-c`` while the composed hook list
@@ -9,7 +9,6 @@ is what makes Codex's reviewed hook hash reusable by concurrent sessions.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
@@ -19,10 +18,11 @@ from ai_hats.env import (
     ENV_SESSION_CACHE_DIR,
 )
 from .profile import PROFILE
-from ai_hats.hook_collection import composed_rows
-from ai_hats.session_artifacts import BuiltArtifacts
+from ai_hats.materialization import MaterializationEntry, describe_write_text
 
 from ..hook_channel import surface_timeout
+from ..mirror import manifest_rows
+from ..plan import CompositionPlan, Host
 from .hook_dispatcher import DISPATCHER_COMMAND
 
 #: Every bindable event, plus the arrival only this surface has. Derived, so a
@@ -59,63 +59,40 @@ def build_hook_cli_args() -> list[str]:
     return args
 
 
-def _manifest(
-    layout: ProjectLayout,
-    result,
-    session_id: str,
+def plan_hooks(
+    composition: CompositionPlan,
+    root: Path,
+    host: Host,
     *,
-    skills_dir: Path,
-    artifacts: BuiltArtifacts,
-) -> dict:
-    hooks, notices = composed_rows(result, skills_dir, port=artifacts.port)
-    artifacts.notices.extend(notices)
-    return {
-        "version": MANIFEST_VERSION,
-        "session": {
-            "id": session_id,
-            "ai_hats_dir": str(layout.base),
-            "skills_root": str(skills_dir),
-        },
-        "hooks": hooks,
-    }
-
-
-def materialize_hook_manifest(
     layout: ProjectLayout,
-    result,
-    session_id: str,
-    artifacts: BuiltArtifacts,
-    *,
-    skills_dir: Path,
-) -> Path:
-    """Write this composition's hook manifest and publish its runtime pins.
-
-    Surface integration is intentionally a two-line surface-local call::
-
-        path = materialize_hook_manifest(..., skills_dir=self.session_skills_root(...))
-        artifacts.cli_args.extend(build_hook_cli_args())
-
-    ``skills_dir`` must be the already-materialized session mirror.  Commands
-    never point back at library sources or into the project root.
-    """
-    cache_dir = layout.cache.session(session_id)
-    artifacts.port.mkdir(cache_dir)
-    path = cache_dir / "hooks.json"
-    content = json.dumps(
-        _manifest(layout, result, session_id, skills_dir=skills_dir, artifacts=artifacts),
-        indent=2,
-        sort_keys=True,
+    skills_root: Path,
+) -> tuple[MaterializationEntry, dict[str, str]]:
+    """The manifest entry and the pins, from the plan's runtime rows; what
+    makes codex read it is ``build_hook_cli_args``, the same for every session."""
+    manifest = describe_write_text(
+        root / "hooks.json",
+        json.dumps(
+            {
+                "version": MANIFEST_VERSION,
+                "session": {
+                    "id": root.name,
+                    "ai_hats_dir": str(layout.base),
+                    "skills_root": str(skills_root),
+                },
+                "hooks": manifest_rows(composition, skills_root),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
     )
-    artifacts.port.write_text(path, content + "\n")
-    artifacts.materialized.append(path)
-    artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
-    artifacts.extra_env[ENV_AI_HATS_PYTHON] = sys.executable
-    return path
+    env = {ENV_SESSION_CACHE_DIR: str(root), ENV_AI_HATS_PYTHON: str(host.python)}
+    return manifest, env
 
 
 __all__ = [
     "CODEX_HOOK_EVENTS",
     "MANIFEST_VERSION",
     "build_hook_cli_args",
-    "materialize_hook_manifest",
+    "plan_hooks",
 ]

@@ -333,17 +333,21 @@ component that says "ai-hats" in prose but fires on any project is `usage`; one
 that never says it but only ever fires here is `ai-hats-dev`. Step 4 is `yes`
 when the component names `src/ai_hats/…`, `packages/ai-hats-library/…`, this
 repo's `CONTRIBUTING.md`, `docs/adr/…` or `scripts/gates.sh` **as a
-dependency rather than as an example**. A guarded fast path is not a dependency:
-`rule-delivery-gate` hard-codes the library path and still lives in `usage`,
-because the hard-code is an `if [[ -d … ]]` branch with a package-resolve
-fallback, so it works in any project.
+dependency rather than as an example**. A guarded fast path (an `if [[ -d … ]]`
+branch with a fallback) is not a dependency — but neither is the path the whole
+signal. What decides is **whose invariant the component holds**:
+`ticket-id-gate` names no repo path and runs in any project, yet what it refuses
+is "an id that is a dead link in the projects this library installs into" — a
+property of the SHIPPED library, false for a consumer's `libraries/`, where the
+id is a live link into that project's own tracker. It is `ai-hats-dev`, and so
+are `rule-delivery-gate` and `skill-lint-gate` beside it, for the same reason.
 
 | Component                                                    | Layer         | Why                                          |
 | ------------------------------------------------------------ | ------------- | -------------------------------------------- |
 | `trait-base`, `hatrack`, reflect pipelines                   | `core`        | the engine stops without them                |
 | `skill-template`, `skill-optimization`, `retro-to-framework` | `usage`       | any consumer authoring components wants them |
-| `rule-delivery-gate`, `skill-lint-gate`                      | `usage`       | repo path is a guarded fast path             |
 | `quality-gate`, `doc-protocol`, `worktree-venv`              | `ai-hats-dev` | wired to this repo's gates and docs          |
+| `rule-delivery-gate`, `skill-lint-gate`, `ticket-id-gate`    | `ai-hats-dev` | hold the shipped library's publishing rules  |
 | `rule_composition_value_contract`                            | `ai-hats-dev` | names `CompositionResult` / `WrapRunner`     |
 | `skill-engineer` trait, `behaviorist` role                   | `usage`       | component-authoring craft, no repo path      |
 | `ai-hats-dev` trait                                          | `ai-hats-dev` | repo discipline shared by both roles here    |
@@ -653,7 +657,7 @@ under the [MIT License](LICENSE).
 
 ## Documentation references
 
-User-facing docs (`README.md`, `docs/*.md`, `CONTRIBUTING.md`) use one of three link styles depending on the kind of target. Pick by **what** is being linked, not by **where** the link appears.
+Reference docs (`docs/*.md`, `CONTRIBUTING.md`) use one of three link styles depending on the kind of target. Pick by **what** is being linked, not by **where** the link appears. `README.md` is the exception — see below.
 
 | Link kind                                 | Style                                                                                   |
 | ----------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -662,6 +666,14 @@ User-facing docs (`README.md`, `docs/*.md`, `CONTRIBUTING.md`) use one of three 
 | CLI command, env var, file path-as-string | **inline code** — `` `rack transition ...` ``, `` `<ai_hats_dir>/...` ``                |
 
 **Rationale.** Cross-doc links earn a citation slot at the bottom because they survive doc reshuffles, declutter the body, and form a quick "what does this doc depend on" index. Anchors and CLI strings stay inline because they're navigation / identifiers, not citations.
+
+### `README.md` is exempt
+
+**The README links inline, and carries no `## References` section.** Numbered references answer a research-register question — *what does this claim rest on* — and a reader who audits sources accepts a jump to the bottom as the price. The README answers a different one: *what is this, and where do I click next*. Same words, different job; the citation apparatus is dead weight on a pitch.
+
+Evidence, not taste: a survey of 22 well-regarded OSS READMEs (ripgrep, fd, bat, starship, zoxide, uv, ruff, deno, bun, helix, neovim, lazygit, gh, mise, atuin, k9s, jq, fzf, hyperfine, click, tokio, mdBook) found **none** using numbered references, and none carrying a `References` heading. Eight use reference-style `[text][ref]` — which keeps the link clickable and self-describing while moving the URL out of the prose. Numbers keep neither.
+
+So in `README.md`: inline `[text](path)` everywhere, plus one curated `## Documentation` table as the index the numbered block used to provide. The exemption stops at the README — every doc under `docs/` keeps the numbered convention above.
 
 **Numbered-refs format**:
 

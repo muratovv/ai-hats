@@ -1,8 +1,8 @@
 """A non-default SessionPolicy is honoured at the delivery boundary (HATS-1207).
 
 Acceptance (b): for every (surface, run_mode) pair, a policy passed into the
-build is observable in what the session would actually receive — no path
-recomputes or re-materializes a suppressed category behind the builder's back.
+plan is observable in what the session would actually receive — no path
+recomputes or re-materializes a suppressed category behind the planner's back.
 
 Asserted at the boundary, never on the policy object: ``SessionPolicy() ==
 SessionPolicy()`` is a tautology, and it was the failure mode called out in the
@@ -12,17 +12,16 @@ HATS-1167 plan review. Tokens are compared exactly rather than by substring —
 
 from __future__ import annotations
 
-from ai_hats_core.layout import ProjectLayout
-
 from pathlib import Path
 
 import pytest
+from ai_hats_core.layout import ProjectLayout
 
 from ai_hats.assembler import Assembler
-from ai_hats.dry_run import dry_run_automate, dry_run_hitl
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.session_artifacts import SessionPolicy
+from ai_hats.session_artifacts import RunMode, SessionPolicy, assemble_brief
+from ai_hats.session_plan import preview
 
 SURFACES = ["claude", "agy", "cline"]
 
@@ -52,6 +51,28 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     return proj
 
 
+def _hitl(project: Path, surface: str, policy: SessionPolicy) -> dict:
+    return preview(
+        ProjectLayout.at(project),
+        role="test-role",
+        provider=surface,
+        run_mode=RunMode.HITL,
+        policy=policy,
+    ).record
+
+
+def _automate(project: Path, surface: str, policy: SessionPolicy) -> dict:
+    layout = ProjectLayout.at(project)
+    return preview(
+        layout,
+        role="test-role",
+        provider=surface,
+        run_mode=RunMode.AUTOMATE,
+        brief=assemble_brief(layout, task="demo", ticket_id=""),
+        policy=policy,
+    ).record
+
+
 # HITL: the role must leave the launch command, per surface's own delivery flag.
 _HITL_CONTEXT_FLAG = {
     "claude": "--system-prompt-file",
@@ -62,84 +83,44 @@ _HITL_CONTEXT_FLAG = {
 
 @pytest.mark.parametrize("surface", SURFACES)
 def test_hitl_context_false_drops_the_role_flag(project: Path, surface: str):
-    on = dry_run_hitl(
-        ProjectLayout.at(project), role="test-role", provider=surface, policy=SessionPolicy()
-    )
-    off = dry_run_hitl(
-        ProjectLayout.at(project),
-        role="test-role",
-        provider=surface,
-        policy=SessionPolicy(context=False),
-    )
+    on = _hitl(project, surface, SessionPolicy())
+    off = _hitl(project, surface, SessionPolicy(context=False))
 
     flag = _HITL_CONTEXT_FLAG[surface]
-    assert flag in on.launch, "baseline: the flag is there under the default policy"
-    assert flag not in off.launch
+    assert flag in on["launch"], "baseline: the flag is there under the default policy"
+    assert flag not in off["launch"]
 
 
 def test_hitl_context_false_keeps_cline_interactive(project: Path):
     """M5 regression: -i is launch mode, not context — suppressing one must not drop the other."""
-    off = dry_run_hitl(
-        ProjectLayout.at(project),
-        role="test-role",
-        provider="cline",
-        policy=SessionPolicy(context=False),
-    )
+    off = _hitl(project, "cline", SessionPolicy(context=False))
 
-    assert "-i" in off.launch
+    assert "-i" in off["launch"]
 
 
 def test_hitl_context_false_writes_no_gemini_md(project: Path):
-    off = dry_run_hitl(
-        ProjectLayout.at(project),
-        role="test-role",
-        provider="agy",
-        policy=SessionPolicy(context=False),
-    )
+    off = _hitl(project, "agy", SessionPolicy(context=False))
 
-    assert not any(e.target.name == "GEMINI.md" for e in off.record.entries)
+    assert not any(Path(e["target"]).name == "GEMINI.md" for e in off["materialized"])
+    assert off["prompt"] is None, "no context file, so the record names none"
 
 
 @pytest.mark.parametrize("surface", ["agy", "cline"])
 def test_automate_context_false_drops_the_role_sections(project: Path, surface: str):
-    on = dry_run_automate(
-        ProjectLayout.at(project),
-        role="test-role",
-        provider=surface,
-        task="demo",
-        policy=SessionPolicy(),
-    )
-    off = dry_run_automate(
-        ProjectLayout.at(project),
-        role="test-role",
-        provider=surface,
-        task="demo",
-        policy=SessionPolicy(context=False),
-    )
+    on = _automate(project, surface, SessionPolicy())
+    off = _automate(project, surface, SessionPolicy(context=False))
 
-    assert any("Role body." in arg for arg in on.launch), "baseline"
-    assert not any("Role body." in arg for arg in off.launch)
+    assert any("Role body." in arg for arg in on["launch"]), "baseline"
+    assert not any("Role body." in arg for arg in off["launch"])
 
 
 def test_claude_automate_context_false_carries_no_role_text(project: Path):
-    off = dry_run_automate(
-        ProjectLayout.at(project),
-        role="test-role",
-        provider="claude",
-        task="demo",
-        policy=SessionPolicy(context=False),
-    )
+    off = _automate(project, "claude", SessionPolicy(context=False))
 
-    assert not any(arg.startswith("system_prompt=") for arg in off.launch)
+    assert not any(arg.startswith("system_prompt=") for arg in off["launch"])
 
 
 def test_claude_automate_hooks_false_passes_no_settings(project: Path):
-    off = dry_run_automate(
-        ProjectLayout.at(project),
-        role="test-role",
-        provider="claude",
-        task="demo",
-        policy=SessionPolicy(hooks=False),
-    )
+    off = _automate(project, "claude", SessionPolicy(hooks=False))
 
-    assert not any(arg.startswith("settings=") for arg in off.launch)
+    assert not any(arg.startswith("settings=") for arg in off["launch"])

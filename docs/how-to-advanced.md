@@ -10,6 +10,8 @@ Umbrella for advanced ai-hats workflows beyond first-time setup. Each section is
 | 4 | **CLI integrations** — wire external services (Google, GitHub, BQ) as a regular skill                          | TODO — see [5] |
 | 5 | **Escape a wedged session** — force-exit an unresponsive interactive session with triple Ctrl-C                | live           |
 | 6 | **Channel & install-source knobs** — pick local / edge / stable, point edge at a fork, override the repo       | live           |
+| 7 | **Update notification** — the end-of-session banner when your install lags upstream, and how to silence it     | live           |
+| 8 | **Recovery from accidental change** — the trash session every destructive op writes before touching disk       | live           |
 
 > Full CLI reference — `ai-hats --tree`. First-time setup → [1]. Day-to-day backlog CLI → [2]. Pipeline contract reference (`Step` / `StepIO`) → [3].
 
@@ -292,7 +294,7 @@ Branch naming convention: `<type>/<TICKET-ID>` (e.g. `feat/HATS-NNN`, `fix/HATS-
 ### 2.5 Pitfalls
 
 - **Uncommitted work in a worktree is NOT protected.** A worktree is a filesystem directory; parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy it without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task).
-- **Don't `cp` skill files manually.** At runtime ai-hats materializes the role's skills into the per-session cache (`<cache_root>/sessions/<sid>/`, outside the project — default `~/.cache/ai-hats/`) and hands them to the surface by flag — the exact subpath is provider-specific, see [`docs/ARCHITECTURE.md#materialization`](ARCHITECTURE.md#materialization). Edits take effect on the next session without running any command. There is no permanent skill-mirror to maintain at `.claude/skills/` (retired) or `<ai_hats_dir>/library/skills/` (that one holds components **you** author locally). **Never** `cp -r .claude/skills/ ~/.claude/skills/`: ai-hats does not manage user-level Claude skill catalogs, the copy will drift from source-of-truth, and `self init` will print a WARN about the orphan `.ai-hats-managed` marker on every run.
+- **Don't `cp` skill files manually.** At runtime ai-hats materializes the role's skills into the per-session cache (`<cache_root>/sessions/<sid>/`, outside the project — default `~/.cache/ai-hats/`) and hands them to the surface by flag — the exact subpath is provider-specific, see [`docs/ARCHITECTURE.md#materialization`](ARCHITECTURE.md#materialization). Edits take effect on the next session without running any command. There is no permanent skill-mirror to maintain at `.claude/skills/` (retired) or `<ai_hats_dir>/library/skills/` (the landing spot for a legacy `.agent/skills/`; the resolver never reads it — your own components live in `<project>/libraries/` or `~/.ai-hats/`). **Never** `cp -r .claude/skills/ ~/.claude/skills/`: ai-hats does not manage user-level Claude skill catalogs, the copy will drift from source-of-truth, and `self init` will print a WARN about the orphan `.ai-hats-managed` marker on every run.
 - **Don't create a worktree from inside a worktree.** `ai-hats wt create` from a linked worktree is blocked. Always `cd` back to the main repo first.
 - **Pre-existing `task/<id>` branches are handled, with one caveat.** Three cases: (1) you ran `git branch task/hats-NNN` ahead of time and the branch isn't checked out anywhere — `rack transition <id> execute` attaches the existing branch to a fresh linked worktree, no error; (2) a linked worktree for that branch already exists but its ai-hats state JSON was lost — the transition adopts the existing path and re-persists state; (3) you're **currently on** `task/hats-NNN` (or any non-base branch) in the main repo — the transition refuses, because adopting the main worktree would silently disable auto-merge on `transition done`. Case 3 is intercepted earlier by the canonical-base guard (`WorktreeBaseBranchError`); recovery is `git checkout master` in the main repo, then retry — or `rack transition <id> --state done --force --reason "shipped on main"` if the work already landed.
 - **Don't let the main-repo HEAD wander between `wt create` and `wt merge`.** The merge target is captured at create-time as `_original_branch`, and `wt merge` / `rack transition <id> done` invoke `git merge` from the main-repo cwd. If anything moves the main-repo HEAD off `_original_branch` in the window between create and merge — manual `git checkout` to look at another task, an IDE branch-switch, a peer agent that commits directly in the main repo without using a linked worktree — the merge would otherwise land on the **current** branch, not on the merge target. The merge-time guard (`WorktreeBaseBranchMismatchError`) refuses before any mutation; the CLI emits a copy-pasteable recipe (`cd <main-repo>; git checkout <expected>; ai-hats wt merge` — or `… rack transition <id> done` on the transition surface). The worktree branch is preserved across the refusal; no work lost, no commits dropped. `--force` (dirty-worktree consent) and `--accept-drift` (stale-baseline consent) do **not** bypass this guard — they address different safety contracts. Symmetric peer of the create-time guard, which closes the same wrong-branch class.
@@ -402,6 +404,38 @@ AI_HATS_REPO_URL=https://github.com/<you>/ai-hats.git ai-hats self update
 ```
 
 The env var wins over `harness.repo` for that run only; the persisted config is untouched.
+
+---
+
+---
+
+## 7. Update notification
+
+When the installed `ai-hats` SHA lags upstream `master`, a three-line **Update banner** appears under the **Session summary** at the end of each interactive session. It tells you the current and latest short SHAs, suggests `ai-hats self update`, and prints the opt-out env var on the dim third line.
+
+The probe is non-blocking: a detached background subprocess fires at session start and caches the result for 24h under `<cache_root>/update-check.json` — outside the project, default `~/.cache/ai-hats/<project-key>/`. The banner reads whatever's currently in the cache (stale-while-revalidate) — first probe results land in the next session, not the current one.
+
+Suppress both probe and banner with `AI_HATS_NO_UPDATE_CHECK=1` (useful for CI / scripted invocations). Term definitions — see [10].
+
+---
+
+## 8. Recovery from accidental change
+
+Every destructive op inside `ai-hats self update` / `self init` (migrations, scaffold rewrites, `.gitignore` edits, `.claude/settings.json` writes, `heal_*` rewrites) snapshots the original content to a per-process **trash session** before touching disk:
+
+```text
+$TMPDIR/ai-hats/trash-<utc-ts>-<pid>-XXXXXX/<project-relative-path>
+```
+
+The session also writes a `MANIFEST.md` next to the moved files listing every op (timestamp, kind, reason, original → trash path). Recover a single file:
+
+```bash
+ls $TMPDIR/ai-hats/                                # list all trash sessions
+cat $TMPDIR/ai-hats/trash-<id>/MANIFEST.md         # see what's in this one
+cp -r $TMPDIR/ai-hats/trash-<id>/<rel> ./<rel>     # restore
+```
+
+Sessions are NOT auto-cleaned — `/tmp` retention is enough in practice (macOS / Linux clean on reboot). To override the trash location, set `AI_HATS_TRASH_DIR=<path>`. To opt out entirely in CI / ephemeral environments, set `AI_HATS_TRASH_DIR=-` (hard-delete mode, no snapshots, WARN per op). On `ENOSPC` / read-only filesystem the destructive op aborts loudly (`TrashFullError`) rather than silently losing data. Term definitions — see [10].
 
 ---
 

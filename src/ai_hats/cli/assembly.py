@@ -363,7 +363,7 @@ def init(
     # init anchors HERE when nothing resolves: a bare directory has no markers,
     # and the silent cwd fallback lives nowhere else any more.
     try:
-        project_dir = resolve_project().layout.root
+        project_dir = resolve_project(writes=True).layout.root
     except ProjectNotFoundError:
         project_dir = Path.cwd()
     except ProjectConfigError as exc:  # a re-init on an unreadable yaml refuses, never resets
@@ -475,7 +475,9 @@ def init(
     "--path",
     "harness_path",
     default=None,
-    help="Local-only: editable source path for the local channel (default: project root).",
+    help="Local-only: editable source path for the local channel "
+    "(default: detected editable source, else project root; a dir whose pyproject "
+    "does not name ai-hats makes `self update` heal from edge and name this flag).",
 )
 def set_role(
     provider: str | None,
@@ -525,7 +527,7 @@ def set_role(
 
     # Auto-init anchors at cwd when nothing resolves — same form as init.
     try:
-        project_dir = resolve_project().layout.root
+        project_dir = resolve_project(writes=True).layout.root
     except ProjectNotFoundError:
         project_dir = Path.cwd()
     asm = _assembler(project_dir)
@@ -655,7 +657,7 @@ def set_role(
         if result.errors:
             for err in result.errors:
                 console.print(f"  [yellow]Warning[/]: {err}")
-        console.print(f"[green]Default role[/]: [bold]{result.name}[/]")
+        console.print(f"[green]Default role[/]: [bold]{result.name}[/] ({asm.config_path})")
         console.print(f"  Rules: {len(result.rules)}")
         console.print(f"  Skills: {len(result.skills)}")
         console.print(f"  Injections: {len(result.injections)}")
@@ -808,7 +810,7 @@ def customize(
 
     # The global layer works OUTSIDE a project; only the project layer needs one.
     try:
-        project_path = resolve_project().layout.root / PROJECT_CONFIG
+        project_path = resolve_project(writes=True).layout.root / PROJECT_CONFIG
     except ProjectNotFoundError:
         project_path = None
     user_path = UserConfig.default_path()
@@ -1114,7 +1116,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     from ..migration_assert import assert_runtime_hooks_resolve
     from ..migration_backup import BackupError, snapshot_pre_bump
 
-    asm = _assembler(resolve_project_lenient().layout.root)
+    asm = _assembler(resolve_project_lenient(writes=True).layout.root)
     backup_path = None
     try:
         # 0. Pre-bump snapshot BEFORE any destructive step.

@@ -402,10 +402,15 @@ def test_retirement_keeps_a_script_the_user_dropped_in(project_with_hook_skill):
     assert theirs.read_text() == "#!/usr/bin/env bash\necho mine\n"
 
 
-# ----- HATS-617: skill-lint-gate is scoped to skill-authoring roles -----
+# ----- the library gates are scoped to the roles that author the SHIPPED library -----
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _LIBRARY = _REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+
+#: Pre-commit gates holding this repository's publishing discipline — an id
+#: that is a dead link once the library installs elsewhere, the shipped pack's
+#: license/provenance, a pointer into the shipped rule tree.
+_LIBRARY_GATES = ("rule-delivery-gate", "skill-lint-gate", "ticket-id-gate")
 
 
 def _composed_skill_names(role: str) -> set[str]:
@@ -416,19 +421,26 @@ def _composed_skill_names(role: str) -> set[str]:
     return {s.name for s in result.skills}
 
 
-def test_skill_lint_gate_present_for_skill_authoring_roles():
+def test_library_gates_present_for_shipped_library_authors():
     for role in ("maintainer", "role-curator"):
         names = _composed_skill_names(role)
-        assert "skill-lint-gate" in names, f"{role} missing skill-lint-gate"
-        # Positive control: a False above means "absent", not "compose failed".
+        missing = set(_LIBRARY_GATES) - names
+        assert not missing, f"{role} missing {sorted(missing)}"
+        # Positive control: a miss above means "absent", not "compose failed".
         assert "skill-template" in names, f"{role} pos-control skill-template missing"
 
 
-def test_skill_lint_gate_absent_from_non_authoring_roles():
-    for role in ("assistant", "architect"):
-        assert "skill-lint-gate" not in _composed_skill_names(role), (
-            f"{role} unexpectedly received skill-lint-gate"
-        )
+def test_library_gates_absent_from_consumer_roles():
+    """A consumer's `libraries/` is not the shipped library: a gate there either
+    stays silent or refuses on an invariant that does not hold (an id in prose
+    IS a live link into that project's own tracker)."""
+    for role in ("behaviorist", "assistant", "architect"):
+        names = _composed_skill_names(role)
+        leaked = set(_LIBRARY_GATES) & names
+        assert not leaked, f"{role} unexpectedly received {sorted(leaked)}"
+    # Positive control on the negative side: behaviorist still carries the
+    # craft, so an empty intersection above is a real absence.
+    assert "skill-template" in _composed_skill_names("behaviorist")
 
 
 # ----- a lossy composition may not justify ABSENCE -----

@@ -109,7 +109,7 @@ def test_the_wrapper_is_three_entries_and_a_path_that_leads_with_them(tmp_path: 
         (WriteKind.WRITE_EXECUTABLE, home / "bin" / "rack"),
     ]
     assert json.loads(added[0].content) == {
-        "project_dir": str(LAYOUT_ROOT.resolve()),
+        "project_dir": str(LAYOUT_ROOT),
         "originals": {"rack": str(tmp_path / "bin" / "rack")},
         "policy": {"rack.transition": ["plan->execute"]},
     }

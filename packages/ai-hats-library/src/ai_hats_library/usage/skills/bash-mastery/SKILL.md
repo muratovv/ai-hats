@@ -63,9 +63,12 @@ parametrize over every bash on the host, so 3.2 is actually executed.
 - Use variables for tools: `GO ?= go`, `DOCKER ?= docker`.
 - ANSI colors for status messages (green=success, yellow=warning, red=error).
 
-## Modern CLI Tooling
+## Tools to use inside the scripts you write
 
-Prefer modern tools when available:
+This is about the code you author. It does **not** license calling these from
+Bash for your own searching or reading, which stays under
+`dev_rule_tool_call_hygiene` — that rule names `bat`, `fd` and `eza -R` as the
+same violation as the classics they replace.
 
 | Task        | Use   | Instead of     |
 | ----------- | ----- | -------------- |
@@ -76,7 +79,8 @@ Prefer modern tools when available:
 | JSON        | `jq`  | manual parsing |
 | YAML        | `yq`  | manual parsing |
 
-Fall back to traditional tools if modern ones are unavailable, but note the preference.
+A script that ships needs each one guarded — `command -v rg >/dev/null` — or
+declared as a dependency in its help text.
 
 ## Anti-Patterns
 

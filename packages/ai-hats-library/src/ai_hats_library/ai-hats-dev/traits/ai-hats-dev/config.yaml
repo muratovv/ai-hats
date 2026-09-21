@@ -13,6 +13,15 @@ composition:
     - doc-protocol
     # wt_in hook that mints a .venv in each new worktree.
     - worktree-venv
+    # Three pre-commit gates over the SHIPPED library, hook carriers only. They
+    # hold this repo's publishing discipline, which a consumer's libraries/
+    # does not share (an id there is a live link into its own tracker).
+    # staged SKILL.md: agnix spec, license/provenance of the shipped pack.
+    - skill-lint-gate
+    # staged injection pointing `see rule X` at a rule the shipped tree lacks.
+    - rule-delivery-gate
+    # staged prose carrying a tracker id, dead once the library installs elsewhere.
+    - ticket-id-gate
 injection: |
   ## AI-HATS REPOSITORY DISCIPLINE
 
@@ -56,7 +65,8 @@ injection: |
   - Absolute paths with your username (`/Users/<name>/...`, `/home/<name>/...`).
   - `ai-hats.yaml` exports with personal customizations.
   - API keys, bearer tokens, `.env` files — the privacy pre-commit hook
-    blocks these; use `AI_HATS_PRIVACY_ACK=1` only with explicit justification.
+    blocks these; the supervisor's `AI_HATS_PRIVACY_ACK=1` is the only way past
+    it, and only with explicit justification.
   - Binary fixtures larger than ~5 KB under `tests/fixtures/`.
 
   ### Documentation discipline (see skill `doc-protocol`)

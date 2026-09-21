@@ -12,6 +12,14 @@ import urllib.error
 import pytest
 
 from ai_hats.channel import (
+    EdgeSource,
+    EditableSource,
+    LocalSource,
+    detect_editable_source,
+    editable_source_from_url,
+    resolve_edge_source,
+    resolve_local_source,
+    source_problem,
     ChannelResolution,
     ChannelResolveError,
     fetch_edge_head_sha,
@@ -20,7 +28,7 @@ from ai_hats.channel import (
     resolve_edge_probe_url,
     resolve_edge_repo,
 )
-from ai_hats.constants import ENV_REPO_URL
+from ai_hats.constants import ENV_AI_HATS_INIT_SRC, ENV_REPO_URL
 from ai_hats.models import Channel
 
 
@@ -216,3 +224,186 @@ def test_fetch_latest_stable_version_no_version_field(monkeypatch):
     )
     with pytest.raises(ChannelResolveError):
         fetch_latest_stable_version()
+
+
+# ---------- source identity ----------
+
+
+def _ai_hats_source(root, name="ai-hats"):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "pyproject.toml").write_text(f'[project]\nname = "{name}"\nversion = "0"\n')
+    return root
+
+
+def test_source_problem_is_none_for_a_pyproject_naming_ai_hats(tmp_path):
+    assert source_problem(_ai_hats_source(tmp_path / "src")) is None
+
+
+@pytest.mark.parametrize(
+    ("build", "reason"),
+    [
+        (lambda p: p, "does not exist"),
+        (lambda p: (p.write_text(""), p)[1], "is not a directory"),
+        (lambda p: (p.mkdir(), p)[1], "has no pyproject.toml"),
+        (lambda p: _ai_hats_source(p, name="consumer"), "names 'consumer', not ai-hats"),
+        (
+            lambda p: (p.mkdir(), (p / "pyproject.toml").write_text("= broken"), p)[2],
+            "pyproject.toml is unreadable",
+        ),
+        (
+            lambda p: (p.mkdir(), (p / "pyproject.toml").write_text("[tool.x]\n"), p)[2],
+            "names nothing",
+        ),
+    ],
+    ids=["missing", "file", "no-pyproject", "other-project", "unreadable", "nameless"],
+)
+def test_source_problem_names_why_a_dir_is_not_ai_hats(tmp_path, build, reason):
+    path = build(tmp_path / "x")
+    problem = source_problem(path)
+    assert problem is not None and str(path) in problem and reason in problem, problem
+
+
+def test_setup_py_alone_is_not_an_ai_hats_source(tmp_path):
+    """An installable dir is not the same thing as the ai-hats source (review F1)."""
+    root = tmp_path / "x"
+    root.mkdir()
+    (root / "setup.py").write_text("")
+    assert source_problem(root) is not None
+
+
+# ---------- editable-source detection ----------
+
+
+def test_detect_editable_source_prefers_the_launcher_export(monkeypatch, tmp_path):
+    monkeypatch.setenv(ENV_AI_HATS_INIT_SRC, str(tmp_path))
+    assert detect_editable_source() == EditableSource(
+        path=str(tmp_path), origin=ENV_AI_HATS_INIT_SRC
+    )
+
+
+def test_editable_source_from_url_decodes_the_pep610_url():
+    """uv percent-encodes the file url; an undecoded path never exists (review F3)."""
+    found = editable_source_from_url("file:///Users/dev/ai-hats%20with%20space")
+    assert found == EditableSource(
+        path="/Users/dev/ai-hats with space", origin="the editable install this process runs from"
+    )
+
+
+def test_editable_source_from_url_is_none_for_a_non_file_url():
+    assert editable_source_from_url("https://github.com/x/ai-hats.git") is None
+    assert editable_source_from_url(None) is None
+
+
+# ---------- local source resolution ----------
+
+
+def _detected(path, origin="the editable install this process runs from"):
+    return EditableSource(path=str(path), origin=origin)
+
+
+def test_local_source_explicit_absolute_path_wins(tmp_path):
+    checkout = _ai_hats_source(tmp_path / "checkout")
+    src = resolve_local_source(tmp_path / "proj", str(checkout), detected=_detected(tmp_path / "o"))
+    assert src == LocalSource(path=checkout, origin="harness.path", problem=None)
+
+
+def test_local_source_relative_path_is_against_the_project_root(tmp_path):
+    project = tmp_path / "proj"
+    _ai_hats_source(project / "vendor" / "ai-hats")
+    src = resolve_local_source(project, "vendor/ai-hats", detected=None)
+    assert src.path == project / "vendor" / "ai-hats"
+    assert src.problem is None
+
+
+def test_local_source_expands_tilde(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _ai_hats_source(tmp_path / "ai-hats")
+    src = resolve_local_source(tmp_path / "proj", "~/ai-hats", detected=None)
+    assert src.path == tmp_path / "ai-hats"
+
+
+def test_local_source_detected_editable_beats_the_project_root(tmp_path):
+    detected = _ai_hats_source(tmp_path / "dev" / "ai-hats")
+    project = _ai_hats_source(tmp_path / "proj")  # even an ai-hats root loses to detection
+    src = resolve_local_source(project, None, detected=_detected(detected))
+    assert src == LocalSource(
+        path=detected, origin="the editable install this process runs from", problem=None
+    )
+
+
+def test_local_source_defaults_to_an_ai_hats_project_root(tmp_path):
+    project = _ai_hats_source(tmp_path / "proj")
+    src = resolve_local_source(project, None, detected=None)
+    assert src == LocalSource(path=project, origin="the project root", problem=None)
+
+
+def test_local_source_names_the_problem_and_origin_for_a_bare_root(tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    src = resolve_local_source(project, None, detected=None)
+    assert src.path == project and src.origin == "the project root"
+    assert src.problem is not None and str(project) in src.problem
+    assert src.fix == "ai-hats config set --channel local --path <checkout>"
+
+
+def test_local_source_a_consumer_project_root_is_a_problem(tmp_path):
+    """The root has a pyproject — of the consumer, not ai-hats (review F1/M1)."""
+    project = _ai_hats_source(tmp_path / "proj", name="consumer")
+    src = resolve_local_source(project, None, detected=None)
+    assert src.problem is not None and "names 'consumer'" in src.problem
+
+
+def test_local_source_explicit_path_that_is_missing_is_a_problem(tmp_path):
+    missing = tmp_path / "gone"
+    src = resolve_local_source(tmp_path / "proj", str(missing), detected=None)
+    assert src.path == missing and src.origin == "harness.path"
+    assert src.problem is not None and "does not exist" in src.problem
+
+
+def test_local_source_fix_names_the_env_var_when_it_chose_the_path(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    src = resolve_local_source(
+        tmp_path / "proj", None, detected=_detected(empty, ENV_AI_HATS_INIT_SRC)
+    )
+    assert src.origin == ENV_AI_HATS_INIT_SRC
+    assert src.problem is not None
+    assert ENV_AI_HATS_INIT_SRC in src.fix and "config set" not in src.fix
+
+
+# ---------- edge source resolution ----------
+
+
+def test_edge_source_git_url_has_no_offline_problem(monkeypatch):
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    src = resolve_edge_source("https://example.test/ai-hats.git")
+    assert src == EdgeSource(
+        spec="git+https://example.test/ai-hats.git", origin="harness.repo", problem=None
+    )
+
+
+def test_edge_source_local_path_is_judged_by_identity(tmp_path, monkeypatch):
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    ok = _ai_hats_source(tmp_path / "checkout")
+    assert resolve_edge_source(str(ok)).problem is None
+    notpy = tmp_path / "gitrepo-notpy"
+    notpy.mkdir()
+    bad = resolve_edge_source(str(notpy))
+    assert bad.problem is not None and "has no pyproject.toml" in bad.problem
+    assert bad.fix == "ai-hats config set --channel edge --repo <git-url-or-checkout>"
+
+
+def test_edge_source_missing_path_is_not_offline(monkeypatch):
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    src = resolve_edge_source("/nonexistent/ai-hats-repo")
+    assert src.problem is not None and "does not exist" in src.problem
+
+
+def test_edge_source_env_override_names_itself_in_the_fix(tmp_path, monkeypatch):
+    notpy = tmp_path / "notpy"
+    notpy.mkdir()
+    monkeypatch.setenv(ENV_REPO_URL, str(notpy))
+    src = resolve_edge_source("https://example.test/ai-hats.git")
+    assert src.origin == ENV_REPO_URL
+    assert src.problem is not None
+    assert ENV_REPO_URL in src.fix

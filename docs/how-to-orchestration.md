@@ -55,11 +55,10 @@ ai-hats agent <role> --task "..." --ticket HATS-123 --dry-run
 cat .agent/ai-hats/sessions/runs/session_<id>/meta_prompt.txt
 ```
 
-Both come from the same assembly the runner uses, so the report is about the
-launch that actually happened. On a surface that plans its session (claude
-today), `--dry-run-experimental` prints the same report read off the
-materialization plan itself — the value the launch applies — and takes the
-same `--json` and `--materialize` modifiers.
+Both are read off the same materialization plan the runner applies — the
+value, not a second assembly — so the report is about the launch that
+actually happens. `--dry-run` takes the `--json` and `--materialize`
+modifiers.
 
 **Two engines, one contract.** On claude the turn runs in-process through the
 Agent SDK and ends when the SDK reports the turn complete; on the CLI surfaces

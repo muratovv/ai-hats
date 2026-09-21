@@ -7,9 +7,9 @@ answered by ``ai_hats.surface_registry`` off the entry-point group.
 Signatures and defaults, not the work behind them: what a default *does* when it
 is more than a couple of lines lives beside this module (``system_prompt``,
 ``managed_tags``), so implementing a surface does not mean inheriting how ai-hats
-reads a rule's metadata or writes a marker block. Six members are abstract; the
-24 public ones carrying a default are overridden only when a harness differs, and
-``opencode`` needed six of them.
+reads a rule's metadata or writes a marker block. The abstract members are what
+no default can answer for a harness — its name, its command, its planner; the
+defaulted ones are overridden only where a harness differs.
 """  # comment-length: allow — the reviewed contract has to say what it is and is not
 
 from __future__ import annotations
@@ -27,15 +27,7 @@ from typing import TYPE_CHECKING, Callable, Mapping, Protocol
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.trace import TraceParser
 
-from ai_hats.session_artifacts import (
-    ArtifactCategory,
-    AutomateLaunch,
-    BuiltArtifacts,
-    RunMode,
-    SessionPolicy,
-    assemble_meta_prompt,
-    working_directory_section,
-)
+from ai_hats.session_artifacts import RunMode, SessionPolicy, working_directory_section
 
 from ..debt import SessionId
 from .system_prompt import compose_sections, write_managed_block
@@ -47,7 +39,9 @@ if TYPE_CHECKING:
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
-    from .plan import CompositionPlan, Host, Launched, LaunchFlags, MaterializationPlan
+    from ai_hats.session_run import SessionRun
+
+    from .plan import CompositionPlan, Digested, Host, Launched, LaunchFlags, MaterializationPlan
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +67,7 @@ class SurfaceRunResult:
 class MetricsSink(Protocol):
     """Where a surface reports what its run cost; ai-hats decides where that lands.
 
-    The surface names its own keys and never learns the on-disk layout — the same
-    inversion ``BuiltArtifacts.port`` performs for session artifacts.
+    The surface names its own keys and never learns the on-disk layout.
     """
 
     def record(self, values: Mapping[str, object]) -> None: ...
@@ -125,17 +118,17 @@ class SubagentEngine(abc.ABC):
     def run(
         self,
         *,
-        result: "CompositionResult",
         layout: ProjectLayout,
         work_dir: Path,
         session_id: SessionId,
-        task: str,
-        ticket_id: str,
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
         metrics: MetricsSink,
-        artifacts: BuiltArtifacts | None = None,
+        # The pair the plan was launched into (ADR-0036 D4): the option
+        # document for this run, and the sub-agent's first turn.
+        launched: Launched,
+        brief: str | None,
         # The id the runner minted for the surface's own record, so the record
         # can be followed while the run is on; an engine that cannot pass one
         # on ignores it and reports the id the surface chose in ``metrics``.
@@ -143,17 +136,12 @@ class SubagentEngine(abc.ABC):
         # The session's live log, for what only the surface's own stream
         # carries (a quota pre-warning); ``None`` when the session writes none.
         event_log: Path | None = None,
-        # On the plan path (ADR-0036 D4): the option document already launched
-        # for this run, and the first turn; ``result`` and ``artifacts`` are
-        # then the old path's and unread.
-        launched: Launched | None = None,
-        brief: str | None = None,
     ) -> SurfaceRunResult:
         pass
 
 
 class Surface(abc.ABC):
-    """What every surface answers. Six members abstract, the rest defaulted."""
+    """What every surface answers: a few members abstract, the rest defaulted."""
 
     @property
     @abc.abstractmethod
@@ -183,9 +171,9 @@ class Surface(abc.ABC):
 
         The root a bound check resolves its script from in-session, one level
         above the per-skill directory. ``None`` means this surface mirrors no
-        skills, so a binding has nothing to resolve against and refuses —
-        ``legacy_launch_notices`` announces that at launch rather than leaving it
-        to be discovered when a gate does not fire. Concrete, not abstract: an
+        skills, so a binding has nothing to resolve against and refuses — the
+        record's ``checks`` rows say so at launch rather than leaving it to be
+        discovered when a gate does not fire. Concrete, not abstract: an
         out-of-tree surface behind ``ai_hats.surface_registry`` predates this accessor
         and must keep importing (ADR-0019 D9).
         """  # comment-length: allow — the None branch IS the contract
@@ -203,42 +191,14 @@ class Surface(abc.ABC):
     def build_system_prompt(self, result: CompositionResult) -> str:
         """Build the complete system prompt from composition result."""
 
-    def build_category_artifact(
-        self,
-        category: ArtifactCategory,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: SessionId,
-        *,
-        run_mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
-        """Materialize one category of session artifacts for this surface (ADR-0018).
-
-        Dispatches to a ``_build_<category>_<run_mode>`` method so a surface never
-        branches on the run mode: HITL delivery (launch flags) and AUTOMATE
-        delivery (inline / SDK) are different jobs that happen to share a name.
-        A combination a surface does not deliver is simply an absent method —
-        visible, unlike an ``else`` that falls through in silence.
+    def probe_home(self, environ: Mapping[str, str]) -> Digested | None:
+        """The person's configuration home as this surface projects it into a
+        session, enumerated before planning and handed in as ``Host.home``
+        (ADR-0036 D2) — the one read of the home a plan is built on. ``None``:
+        this surface projects no home.
         """
-        handler = getattr(self, f"_build_{category.value}_{RunMode(run_mode).value}", None)
-        if handler is None:
-            logger.debug("Surface %s delivers no %s in %s", self.name, category, run_mode)
-            return
-        handler(layout, result, session_id, artifacts)
-
-    def handles_artifact_categories(self) -> bool:
-        """Whether this surface implements the ADR-0018 per-category seam.
-
-        False for a pre-ADR-0018 out-of-tree surface that overrides only
-        ``build_session_prompt``: routing it through the builder would deliver an
-        empty session rather than fail, since the dispatch above finds no handler.
-        """
-        if type(self).build_category_artifact is not Surface.build_category_artifact:
-            return True  # overrides the seam wholesale — its own dispatch
-        return any(
-            hasattr(self, f"_build_{c.value}_{m.value}") for c in ArtifactCategory for m in RunMode
-        )
+        del environ
+        return None
 
     def plan(
         self,
@@ -253,10 +213,10 @@ class Surface(abc.ABC):
         """This surface's entries, environment and launch for one session root
         (ADR-0036 D2): a function of its inputs that reads no disk.
 
-        No default: a surface that has not written its planner is built the old
-        way, through ``build_session_artifacts``, until it does.
+        No default: every road into a session passes ``plan_session``, which
+        refuses a surface that has not written its planner.
         """
-        raise NotImplementedError(f"{self.name} does not plan a session yet")
+        raise NotImplementedError(f"{self.name} does not plan a session")
 
     def automate_launch(
         self,
@@ -270,16 +230,11 @@ class Surface(abc.ABC):
         plus the model, and one prompt token — context, working directory, brief.
         An SDK surface overrides with its option document.
         """
-        from .plan import Launched, context_entry
+        from .plan import Launched, context_text
 
-        context = context_entry(plan)
         prompt = "\n\n".join(
             s
-            for s in (
-                context.content if context and context.content else "",
-                working_directory_section(layout),
-                flags.brief or "",
-            )
+            for s in (context_text(plan), working_directory_section(layout), flags.brief or "")
             if s
         )
         model = self.model_flags(flags.model) if flags.model else []
@@ -291,39 +246,6 @@ class Surface(abc.ABC):
     def describe_launch(self, launched: Launched) -> list[str]:
         """How a record names the launch: the argv; an SDK surface says ``k=v``."""
         return list(launched.args or ())
-
-    def build_session_artifacts(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: SessionId,
-        *,
-        run_mode: RunMode | str = RunMode.HITL,
-        policy: SessionPolicy | None = None,
-        artifacts: BuiltArtifacts,
-    ) -> BuiltArtifacts:
-        """Build and materialize session artifacts per category and delivery mode.
-
-        The caller owns ``artifacts`` and therefore its ``port``: hand one carrying
-        a ``PlanMaterializer`` and the whole build becomes a dry-run.
-        """
-        mode = RunMode(run_mode)
-        policy = policy or SessionPolicy()
-        artifacts.policy = policy
-        # No second copy here. The SKILLS category already writes an
-        # unconditional mirror of every composed skill (SessionPolicy has no
-        # skills field), and `session_skills_root` is what a check resolves off.
-        for category in ArtifactCategory:
-            if policy.is_enabled(category):
-                self.build_category_artifact(
-                    category,
-                    layout,
-                    result,
-                    session_id,
-                    run_mode=mode,
-                    artifacts=artifacts,
-                )
-        return artifacts
 
     def transcript_parser(self) -> TranscriptParser:
         """The parser ``AuditWriter`` uses for this surface's session record.
@@ -438,10 +360,6 @@ class Surface(abc.ABC):
         """Convert a model name into surface-specific CLI flags."""
         return ["--model", model]
 
-    def supports_sdk_engine(self) -> bool:
-        """Whether this surface provides a native SDK SubagentEngine."""
-        return False
-
     def mcp_form_cli_args(self, server: StdioMCPServer) -> list[str] | None:
         """Return form-server launch arguments, or None when this surface cannot deliver forms."""
         return None
@@ -469,35 +387,6 @@ class Surface(abc.ABC):
         to their CLI (e.g. Claude needs ``--print -p``, Agy needs ``-p``).
         """
         return cmd
-
-    def describe_automate_launch(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: SessionId,
-        artifacts: BuiltArtifacts,
-        *,
-        task: str,
-        ticket_id: str,
-        model: str,
-        env: dict[str, str],
-    ) -> AutomateLaunch:
-        """The sub-agent launch this surface performs — argv and prompt together.
-
-        One expression for ``SubAgentRunner`` and for ``--dry-run``: a report
-        assembled by a second function is a report about a different launch.
-        Default covers every CLI surface; an SDK surface overrides.
-        """
-        del result, session_id, env
-        prompt = assemble_meta_prompt(
-            layout,
-            role_context=artifacts.full_content or "",
-            task=task,
-            ticket_id=ticket_id,
-        )
-        flags = self.model_flags(model) if model else []
-        cmd = self.get_cli_command() + artifacts.cli_args + flags
-        return AutomateLaunch(launch=self.get_run_command(cmd, prompt), prompt=prompt)
 
     @abc.abstractmethod
     def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
@@ -528,80 +417,20 @@ class Surface(abc.ABC):
         del session_dir, layout
         return {}
 
-    def build_session_prompt(
+    def claim_resources(
         self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        *,
         layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: SessionId,
-    ) -> tuple[list[str], dict[str, str], str]:
-        """Build CLI args and env vars for a per-session composed prompt.
-
-        Called for EVERY session (default role and explicit ``--role`` alike).
-        ``session_id`` keys the per-session cache dir
-        ``<cache_root>/sessions/<session_id>/`` — outside the project — where
-        the surface writes the prompt file and plugin-dir. Caller owns dir
-        cleanup at session_end (``_cleanup_session_cache`` in runtime.py).
-
-        Returns ``(extra_args, extra_env, meta_prompt)``. ``meta_prompt`` is
-        the EXACT bytes that the surface will see as system-prompt override
-        (persisted to ``<session_dir>/meta_prompt.txt`` by
-        ``WrapRunner.run`` for post-hoc audit / regression detection,
-        symmetric with ``SubAgentRunner.run``). Empty string when the
-        surface has no system-prompt channel.
-
-        Default: no-op (subclasses override).
-        """
-        return [], {}, ""
-
-    def materialize_runtime_skills(
-        self,
-        layout: ProjectLayout,
-        result: CompositionResult,
-        session_id: SessionId,
-    ) -> list[str]:
-        """Materialize the composed role's skills for runtime discovery.
-
-        Returns extra CLI args (e.g. ``["--plugin-dir", <path>]``)
-        that make the spawned surface session see the role's skills via its
-        own Skill registry. ``session_id`` keys the cache dir; plugin lives
-        at ``<cache_dir>/plugin/`` and is cleaned with the whole cache dir
-        at session_end.
-
-        Default: no-op — the surface has no per-spawn skill materialization
-        mechanism (Agy case).
-        """
-        del layout, result, session_id
-        return []
-
-    def ensure_runtime_hooks(
-        self, layout: ProjectLayout, result: CompositionResult | None = None, **kwargs
+        run: SessionRun,
     ) -> None:
-        """Install surface-specific runtime hooks (e.g. Claude Code PreToolUse).
-
-        Called by ``Assembler._refresh`` after the surface scaffold is
-        ensured. Idempotent — safe to invoke on every role apply.
-
-        ``result`` is the active role's composition (``None`` on the legacy
-        bare-bump path with no active role); ``ClaudeSurface`` reads the
-        skills' ``runtime_hooks:`` declarations from it.
-
-        Default: no-op. Providers without a runtime-hook channel (Agy)
-        rely on the rule layer plus skill-contributed git hooks.
-
-        ``ClaudeSurface`` overrides to write a PreToolUse entry
-        for ``library/hooks/pre_bash_shared_state_guard.sh`` into
-        ``.claude/settings.json``, plus any skill-declared runtime hooks.
+        """What a real session takes beyond the plan and gives back at its end:
+        finalizers registered on ``run``, warnings about what was recovered on
+        the way in. The runners call it once the plan is applied; a preview
+        never does. Default: nothing to take.
         """
-        del layout, result
-        return None
-
-    def runtime_wiring_changes(
-        self, layout: ProjectLayout, result: CompositionResult | None = None
-    ) -> list[tuple[str, str]]:
-        """Managed runtime-hook wiring drift as ``[(name, "wiring")]``. Default:
-        none (no settings.json channel); ``ClaudeSurface`` overrides."""
-        del layout, result
-        return []
+        del plan, flags, layout, run
 
     def update_system_prompt(self, layout: ProjectLayout, content: str) -> Path | None:
         """Write or update the inline system prompt block.

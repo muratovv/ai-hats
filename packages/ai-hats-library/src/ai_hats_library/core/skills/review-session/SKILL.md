@@ -18,12 +18,6 @@ Single-pass review of one `<ai_hats_dir>/sessions/runs/session_<sid>/` — produ
 verdict per active HYP) + **review-proposal** (vote/create on improvement
 opportunities) + a free-form summary and observations.
 
-> **Harness shell prelude.** Before any `ai-hats` invocation:
->
-> ```bash
-> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # no bin/ai-hats console script
-> ```
-
 ## When to Use
 
 You are running as `reflect-session` or `session-reviewer`, with a

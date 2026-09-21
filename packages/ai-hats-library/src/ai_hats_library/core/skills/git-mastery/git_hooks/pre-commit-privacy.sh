@@ -11,7 +11,9 @@
 #                               false-positive line — only that line is skipped.
 #   Allowlist (whole file):     .privacy-allowlist (project root or .githooks/),
 #                               one path-glob per line, '#' for comments.
-#   Override (whole commit):    AI_HATS_PRIVACY_ACK=1 git commit ...
+#   Override (whole commit):    AI_HATS_PRIVACY_ACK=1, exported in the shell
+#                               that runs the commit — never a prefix on an
+#                               agent's command line (safety-guard refuses it).
 set -uo pipefail
 
 # HATS-633 — the inline allow-marker string, matched literally (grep -F).
@@ -191,8 +193,10 @@ Resolve in this order — do NOT reflexively bypass; a real secret must never la
   2. Confirmed false-positive on ONE line? Append an inline marker to that line
      so only it is skipped:   # ai-hats: allow-secret
   3. A whole known-safe file? Add a glob to .privacy-allowlist.
-  4. Last resort — whole commit, and only after telling the user what was flagged:
-       AI_HATS_PRIVACY_ACK=1 git commit ...
+  4. Last resort, and only after telling the user what was flagged:
+     AI_HATS_PRIVACY_ACK=1, exported in the shell that runs the commit. An agent
+     cannot put it on its own command line — safety-guard refuses that as a
+     self-grant — and every honoured use is journalled.
 EOF
     ai_hats_journal_catch privacy block "hard hit(s) in staged content"
     exit 1

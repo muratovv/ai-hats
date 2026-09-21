@@ -252,9 +252,8 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
 # --------------------------------------------------------------------- #
 # HATS-1435 — one session start composes ONCE, measured on a REAL project
 #
-# The mocked tests above cannot see this: with a MagicMock assembler,
-# `_composition_snapshot` never reaches the real `_get_overlay_provenance`,
-# so its second compose is invisible. These use a real Assembler.
+# The mocked tests above cannot see this: with a MagicMock assembler a second
+# compose pass is invisible. These use a real Assembler.
 # --------------------------------------------------------------------- #
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -300,8 +299,8 @@ def _compose_spy():
 
 
 def test_session_start_composes_exactly_once(tmp_path: Path):
-    """HATS-1435: the seam already holds the result `_composition_snapshot`
-    needs; recomposing re-reads the whole library and doubles every load-time
+    """HATS-1435: the seam already holds the one result the plan is adapted
+    from; recomposing re-reads the whole library and doubles every load-time
     diagnostic, so one WARN reads as two."""
     project = _real_project(tmp_path, active_role="maintainer")
     with _compose_spy() as calls:
@@ -319,10 +318,17 @@ def test_first_run_session_start_composes_exactly_once(tmp_path: Path):
     assert calls == ["maintainer"], f"expected ONE compose pass, got {len(calls)}: {calls}"
 
 
-def test_snapshot_and_provenance_agree_on_effective_traits(tmp_path: Path):
-    """HATS-1435: `_composition_snapshot` and `_get_overlay_provenance` each
-    walked base+overlays to the same effective-trait list. Two copies that must
-    agree and nothing pinned that they did — so drift would land silently."""
+def _traits(plan) -> dict[str, str | None]:
+    """Trait terms of the plan's trace, present and removed, by ``removed_by``."""
+    return {
+        t.term: t.removed_by for t in plan.trace if not t.term.startswith(("rules::", "skills::"))
+    }
+
+
+def test_an_overlay_remove_shows_in_the_trace_and_the_trait_leaves(tmp_path: Path):
+    """The plan's trace is the one walk of base+overlays (ADR-0036 D6): a
+    trait an overlay removes is attributed to the layer that removed it and is
+    absent from what the session composed."""
     from ai_hats.assembler import Assembler
     from ai_hats.models import OverlayConfig, ProjectConfig
     from ai_hats.paths import PROJECT_CONFIG
@@ -344,30 +350,27 @@ def test_snapshot_and_provenance_agree_on_effective_traits(tmp_path: Path):
     ).save(project / PROJECT_CONFIG)
     Assembler(project, library_paths=[LIBRARY_DIR]).init()
 
-    snapshot = build_composition_payload(project, interactive=False).snapshot
+    payload = build_composition_payload(project, interactive=False)
 
-    assert "dev::shell" not in snapshot["traits"], "overlay remove not applied"
-    assert set(snapshot["traits"]) == set(snapshot["provenance"]["traits"]), (
-        "the two effective-trait walks disagree: "
-        f"snapshot={sorted(snapshot['traits'])} "
-        f"provenance={sorted(snapshot['provenance']['traits'])}"
-    )
+    traits = _traits(payload.plan)
+    assert traits["dev::shell"] == "overrides::project", "overlay remove not attributed"
+    assert traits["trait-researcher-mindset"] is None, "a no-op add keeps the trait present"
+    assert "dev::shell" not in {t.term for t in payload.plan.trace if t.removed_by is None}
 
 
-def test_runtime_role_composition_overlay_and_snapshot(tmp_path: Path):
-    """HATS-1456: runtime role composition adds overlay, updates snapshot and provenance."""
+def test_runtime_role_composition_shows_in_the_trace(tmp_path: Path):
+    """HATS-1456: a trait the expression adds is attributed to the expression
+    itself, and the expression is the plan's identity. ``leader`` is one the
+    ``maintainer`` role does not declare, so the attribution is the runtime's."""
     project = _real_project(tmp_path, active_role="maintainer")
     payload = build_composition_payload(
-        project, role_override="maintainer + ai-hats-framework", interactive=False
+        project, role_override="maintainer + leader", interactive=False
     )
 
-    assert "ai-hats-framework" in payload.snapshot["traits"]
-    assert payload.snapshot["provenance"]["traits"]["ai-hats-framework"] == "runtime"
-    assert payload.snapshot["runtime"] == {
-        "spec": "maintainer + ai-hats-framework",
-        "add": ["ai-hats-framework"],
-        "remove": [],
-    }
+    assert payload.plan.identity == "maintainer + leader"
+    brought = {t.term: t.brought_by for t in payload.plan.trace if t.removed_by is None}
+    assert brought["leader"] == "maintainer + leader"
+    assert brought["ai-hats-framework"] == "maintainer", "the role's own traits stay the role's"
 
 
 def test_runtime_role_composition_role_in_second_position(tmp_path: Path):
@@ -413,3 +416,39 @@ def test_runtime_role_composition_ambiguous_component(tmp_path: Path):
         RoleSpecError, match="'shared-name' is ambiguous — it is both a trait and a skill"
     ):
         _runtime_overlay(resolver, spec)
+
+
+# --- the static cross-check prices the composed role, not the declared one ---
+
+OVERLAY_TRAIT = "dev::go-grpc"  # not in assistant's declared tree
+
+
+def _project_with_project_overlay(tmp_path: Path) -> Path:
+    import yaml
+
+    project = tmp_path / "proj-static"
+    project.mkdir()
+    (project / "ai-hats.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "provider": "claude",
+                "active_role": "assistant",
+                "customizations": {"assistant": {"add": {"traits": [OVERLAY_TRAIT]}}},
+            }
+        )
+    )
+    return project
+
+
+def test_static_cost_analyzer_sees_the_project_overlay(tmp_path: Path):
+    """The session's always-on cross-check must price what the session composed."""
+    from ai_hats.composition_seam import _static_cost_analyzer
+
+    static = _static_cost_analyzer(_project_with_project_overlay(tmp_path))("assistant")
+
+    assert static is not None
+    names = {c["name"] for c in static["components"]}
+    assert f"{OVERLAY_TRAIT}::prompt" in names, sorted(names)
+    # the aggregate keys `session show` reads stay intact
+    assert isinstance(static["always_on_tokens"], int)
+    assert static["always_on_tokens"] + static["on_demand_tokens"] == static["total_tokens"]

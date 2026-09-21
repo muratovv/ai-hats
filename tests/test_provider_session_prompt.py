@@ -1,8 +1,8 @@
 """Phase 1 unit tests for the per-session compose path (HATS-294).
 
 Coverage:
-- Fork E: ``ClaudeSurface.build_session_prompt`` is byte-stable across
-  consecutive calls for the same role and session_id.
+- Fork E: the claude session context is byte-stable across consecutive
+  plannings for the same role and session root.
 - Fork F: composed default-role prompt content-equivalent to the v0.6
   canonical baseline captured in
   ``tests/fixtures/role_baselines/v06_compose_assistant.md``.
@@ -28,6 +28,7 @@ from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 from ai_hats.paths import PROJECT_CONFIG
+from tests._plan_helpers import composition_of, materialized, planned
 
 
 @pytest.fixture
@@ -62,49 +63,52 @@ def project_with_library(tmp_path):
     return project, lib
 
 
+def _composed(project: Path, lib: Path):
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role", provider_name="claude")
+    result = asm.composer.compose("test-role")
+    return asm, composition_of(result, layout=asm.layout, resolver=asm.resolver)
+
+
 # --------------------------------------------------------------------- #
 # Fork E — determinism
 # --------------------------------------------------------------------- #
 
 
-def test_build_session_prompt_byte_stable_across_two_calls(project_with_library):
-    """Same role + same session_id → byte-identical prompt.md contents.
+def test_the_context_is_byte_stable_across_two_plannings(project_with_library):
+    """Same role + same session root → the same plan, byte-identical prompt.md.
 
     Required for Anthropic prompt cache hit rate. If this fails, suspect a
     timestamp / uuid / cwd embedding sneaking into the composition pipeline.
     """
     project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeSurface()
-    result = asm.composer.compose("test-role")
+    asm, composition = _composed(project, lib)
+    root = asm.layout.cache.session("stable-sid")
 
-    args1, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "stable-sid")
-    bytes1 = Path(args1[1]).read_bytes()
+    first = materialized(ClaudeSurface(), composition, layout=asm.layout, root=root)
+    bytes1 = Path(first.context).read_bytes()
+    second = materialized(ClaudeSurface(), composition, layout=asm.layout, root=root)
+    bytes2 = Path(second.context).read_bytes()
 
-    args2, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "stable-sid")
-    bytes2 = Path(args2[1]).read_bytes()
-
-    assert bytes1 == bytes2, "prompt.md must be byte-stable across two calls"
+    assert first == second
+    assert bytes1 == bytes2, "prompt.md must be byte-stable across two plannings"
 
 
-def test_build_session_prompt_byte_stable_distinct_session_ids(project_with_library):
-    """Same role, two different session_ids → byte-identical CONTENTS (different paths)."""
+def test_the_context_is_byte_stable_across_distinct_session_roots(project_with_library):
+    """Same role, two different session roots → byte-identical CONTENTS (different paths)."""
     project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeSurface()
-    result = asm.composer.compose("test-role")
+    asm, composition = _composed(project, lib)
 
-    args_a, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-a")
-    args_b, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "sid-b")
+    plan_a = materialized(
+        ClaudeSurface(), composition, layout=asm.layout, root=asm.layout.cache.session("sid-a")
+    )
+    plan_b = materialized(
+        ClaudeSurface(), composition, layout=asm.layout, root=asm.layout.cache.session("sid-b")
+    )
 
-    path_a = Path(args_a[1])
-    path_b = Path(args_b[1])
-    assert path_a != path_b
-    assert path_a.read_bytes() == path_b.read_bytes()
+    assert plan_a.context != plan_b.context
+    assert Path(plan_a.context).read_bytes() == Path(plan_b.context).read_bytes()
 
 
 # --------------------------------------------------------------------- #
@@ -160,24 +164,19 @@ def test_composed_default_role_covers_canonical_baseline_content(tmp_path):
 # --------------------------------------------------------------------- #
 
 
-def test_build_session_prompt_writes_under_cache_dir(project_with_library):
+def test_the_plan_writes_under_the_session_root(project_with_library):
     """prompt.md and plugin/ live under <cache_root>/sessions/<sid>/."""
     project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeSurface()
-    result = asm.composer.compose("test-role")
+    asm, composition = _composed(project, lib)
+    cache_dir = asm.layout.cache.session("my-sid")
 
-    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "my-sid")
-    prompt_path = Path(args[1])
-    plugin_idx = args.index("--plugin-dir")
-    plugin_path = Path(args[plugin_idx + 1])
+    plan = materialized(ClaudeSurface(), composition, layout=asm.layout, root=cache_dir)
+    args = list(plan.launch.args)
+    plugin_path = Path(args[args.index("--plugin-dir") + 1])
 
-    cache_dir = ProjectLayout.at(project).cache.session("my-sid")
-    assert prompt_path == cache_dir / "prompt.md"
+    assert plan.context == cache_dir / "prompt.md"
     assert plugin_path == cache_dir / "plugin"
-    assert prompt_path.is_file()
+    assert plan.context.is_file()
     assert plugin_path.is_dir()
 
 
@@ -253,39 +252,6 @@ def test_cleanup_session_cache_is_idempotent(tmp_path):
 
 
 # --------------------------------------------------------------------- #
-# Materialize overwrites existing target (Fork E parity for plugin/)
-# --------------------------------------------------------------------- #
-
-
-def test_build_session_prompt_recovers_from_stale_cache_dir(project_with_library):
-    """If <sid>/plugin/ already has stale content from a previous run with
-    the same sid (orphan SIGKILL case), build_session_prompt wipes and
-    rebuilds it cleanly.
-    """
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role", provider_name="claude")
-    provider = ClaudeSurface()
-    result = asm.composer.compose("test-role")
-
-    # Plant a stale file in the would-be cache dir.
-    cache_dir = ProjectLayout.at(project).cache.session("stale-sid")
-    cache_dir.mkdir(parents=True)
-    plugin_dir = cache_dir / "plugin"
-    plugin_dir.mkdir()
-    (plugin_dir / "leftover.txt").write_text("stale")
-
-    args, _, _ = provider.build_session_prompt(ProjectLayout.at(project), result, "stale-sid")
-    plugin_idx = args.index("--plugin-dir")
-    plugin_path = Path(args[plugin_idx + 1])
-
-    assert plugin_path == plugin_dir
-    assert not (plugin_path / "leftover.txt").exists()
-    assert (plugin_path / ".claude-plugin" / "plugin.json").exists()
-
-
-# --------------------------------------------------------------------- #
 # HATS-701 — AVAILABLE SKILLS index is provider-specific: Claude omits it
 # (skills reach the agent via the native --plugin-dir registry), Agy
 # keeps it (no native registry — the index is the only discovery channel).
@@ -354,9 +320,12 @@ def test_native_registry_providers_omit_skills_index(tmp_path):
         assert "Tool-Call Hygiene" in prompt
 
 
-def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
+def test_the_plan_puts_the_mirrored_skill_scripts_on_path(tmp_path):
+    """The agent calls a skill's scripts by name from the session's own mirror
+    — never from the library it was composed from."""
     project = tmp_path / "project"
     project.mkdir()
+    layout = ProjectLayout.at(project)
     skill_dir = tmp_path / "skills" / "with-script"
     (skill_dir / "scripts").mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("---\nname: with-script\n---\n")
@@ -373,17 +342,11 @@ def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
         skills=[skill],
         injections=[],
     )
+    composition = composition_of(result, layout=layout)
 
-    # ClaudeSurface
-    claude_p = ClaudeSurface()
-    _, claude_env, _ = claude_p.build_session_prompt(
-        ProjectLayout.at(project), result, "sid-claude"
-    )
-    assert "PATH" in claude_env
-    assert str(skill_dir / "scripts") in claude_env["PATH"]
-
-    # AgySurface
-    agy_p = AgySurface()
-    _, agy_env, _ = agy_p.build_session_prompt(ProjectLayout.at(project), result, "sid-agy")
-    assert "PATH" in agy_env
-    assert str(skill_dir / "scripts") in agy_env["PATH"]
+    for surface in (ClaudeSurface(), AgySurface()):
+        root = layout.cache.session(f"sid-{surface.name}")
+        plan = planned(surface, composition, layout=layout, root=root)
+        mirror = surface.session_skills_root(layout, root.name) / "with-script" / "scripts"
+        assert plan.env["PATH"].split(os.pathsep)[0] == str(mirror), surface.name
+        assert str(skill_dir / "scripts") not in plan.env["PATH"], surface.name

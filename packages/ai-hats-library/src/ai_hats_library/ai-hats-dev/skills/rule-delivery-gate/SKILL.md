@@ -1,6 +1,6 @@
 ---
 name: rule-delivery-gate
-description: Pre-commit gate over staged trait and role injections. Use when composing a role that carries the `skill-engineer` trait, or when diagnosing why the rule-delivery hook blocked a commit.
+description: Pre-commit gate over staged trait and role injections. Use when composing a role that carries the `ai-hats-dev` trait, or when diagnosing why the rule-delivery hook blocked a commit.
 ai_hats:
   # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. On a staged
@@ -13,6 +13,7 @@ ai_hats:
       - git_hooks/pre-commit-rule-delivery.sh
 license: MIT
 ---
+
 # Rule Delivery Gate
 
 Pure-infrastructure hook-carrier skill. It contributes one git pre-commit hook
@@ -46,11 +47,9 @@ it never sees the gate. The server-side counterpart is the G2 unit test, run by 
 ## How to bypass
 
 Fix the pointer — create the missing rule in the library or drop the pointer — or, after
-confirming the pointer is intentional, skip the gate for a single commit:
-
-```bash
-AI_HATS_RULE_DELIVERY_ACK=1 git commit ...
-```
+confirming the pointer is intentional, ask the supervisor to skip the gate for a
+single commit: `AI_HATS_RULE_DELIVERY_ACK=1`, exported in the shell that runs the
+commit. Writing it onto your own command line is refused — see **safety-guard**.
 
 If `python` / the `ai_hats` package is unavailable the hook is a loud no-op
 (fail-open): it prints a SKIPPED notice and allows the commit, so a missing dev

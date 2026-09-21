@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.hook_chain import composed_rows
+from _helpers.hook_chain import event_rows
 
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
@@ -94,26 +94,19 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     project = tmp_path / "proj_rthook_wire"
     _init_with_fixture_role(launcher, env, project)
 
-    from ai_hats.assembler import Assembler
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from _helpers.sessions import build_session, composition_for
+
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    provider = ClaudeSurface()
-    asm = Assembler(project)
-    result = asm.composer.compose("e2e-rthook-role")
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
-        result,
-        SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
+    plan = build_session(
+        project, composition_for(project, "e2e-rthook-role"), ClaudeSurface(), SESSION_ID
     )
-    cache_settings = ProjectLayout.at(project).cache.session(SESSION_ID) / "settings.json"
+    cache_settings = plan.root / "settings.json"
 
     # A. The composed row for the skill, tagged with the matcher it was declared
     # under. Since HATS-1874 the rows live in the manifest and settings.json
     # holds the dispatcher entry that runs them.
-    pre = composed_rows(cache_settings, HOOK_PRE_TOOL_USE)
+    pre = event_rows(cache_settings, HOOK_PRE_TOOL_USE)
     assert [row for row in pre if row["tag"] == "ai-hats:e2e-rthook:PreToolUse:Bash:probe"] == [
         {
             "matcher": "Bash",
@@ -127,7 +120,7 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     assert not [row for row in pre if str(row.get("tag", "")).startswith("ai-hats:safety-guard")]
 
     # A. PostToolUse row under its own event.
-    post = composed_rows(cache_settings, HOOK_POST_TOOL_USE)
+    post = event_rows(cache_settings, HOOK_POST_TOOL_USE)
     assert [
         row for row in post if row["tag"] == "ai-hats:e2e-rthook:PostToolUse:Edit|Write:probe"
     ] == [
@@ -156,17 +149,11 @@ def test_e2e_materialized_runtime_hook_is_live(installed_launcher, tmp_path):
     project = tmp_path / "proj_rthook_live"
     _init_with_fixture_role(launcher, env, project)
 
-    from ai_hats.assembler import Assembler
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from _helpers.sessions import build_session, composition_for
+
     from ai_hats.surfaces.claude.provider import ClaudeSurface
 
-    ClaudeSurface().build_session_artifacts(
-        ProjectLayout.at(project),
-        Assembler(project).composer.compose("e2e-rthook-role"),
-        SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
+    build_session(project, composition_for(project, "e2e-rthook-role"), ClaudeSurface(), SESSION_ID)
     script = Path(_expected_command(project))
     assert script.is_file(), "precondition: the session mirror must have been built"
 

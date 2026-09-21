@@ -1,6 +1,6 @@
 ---
 name: skill-lint-gate
-description: Pre-commit gate over staged library `SKILL.md`. Use when composing a role that carries the `skill-engineer` trait, or when diagnosing why the skill-lint hook blocked a commit.
+description: Pre-commit gate over staged library `SKILL.md`. Use when composing a role that carries the `ai-hats-dev` trait, or when diagnosing why the skill-lint hook blocked a commit.
 ai_hats:
   # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. Over STAGED
@@ -48,11 +48,9 @@ it never sees the gate. The server-side counterpart is the CI `lint-skills` job.
 ## How to bypass
 
 Fix the flagged issue, or — after confirming the skill is intentionally
-non-conforming — skip the gate for a single commit:
-
-```bash
-AI_HATS_SKILL_LINT_ACK=1 git commit ...
-```
+non-conforming — ask the supervisor to skip the gate for a single commit:
+`AI_HATS_SKILL_LINT_ACK=1`, exported in the shell that runs the commit. Writing
+it onto your own command line is refused — see **safety-guard**.
 
 If `agnix` / `node` is not installed, only the **agnix** check is a loud no-op
 (fail-open): it prints a SKIPPED notice and allows the commit, so a missing

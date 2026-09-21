@@ -3,7 +3,7 @@
 flow:   a library author commits prose that still carries a tracker id, and the
         pre-commit gate has to refuse it before the id ships to other projects
 cmds:
-    bash packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
+    bash packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/ticket-id-gate/git_hooks/pre-commit-ticket-ids.sh
     python -m ai_hats.cli.githooks_hook pre-commit --project-dir . --githooks-dir .githooks
 expect: the hook blocks on a staged `<PREFIX>-<digits>`, spares the `<PREFIX>-NNN`
         placeholder beside it, honours the same-line allow marker, learns the
@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from tests._self_grant_recipe import findings
 from _helpers.git import commit_file, git, init_repo
 
 pytestmark = [pytest.mark.integration, pytest.mark.guards]
@@ -32,7 +34,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.guards]
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = (
     REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/ticket-id-gate"
+    / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/ticket-id-gate"
     / "git_hooks/pre-commit-ticket-ids.sh"
 )
 PROSE = "packages/ai-hats-library/src/ai_hats_library/core/skills/demo/SKILL.md"
@@ -95,6 +97,18 @@ def test_the_prefix_is_learned_from_the_project_not_carried_by_the_hook(tmp_path
     combined = done.stdout + done.stderr
     assert done.returncode == 1, combined
     assert "ACME-1430" in combined, combined
+
+
+def test_the_block_names_no_remedy_the_guard_refuses(tmp_path: Path):
+    """The way out it prints is one its reader can take.
+
+    `ack_prefix_guard.py` denies a Bash line binding the flag for the command
+    after it — the shape this refusal used to advertise."""
+    root = _repo(tmp_path, "history lives in ACME-1430.\n")
+    done = _run(root)
+    combined = done.stdout + done.stderr
+    assert done.returncode == 1, combined
+    assert not findings(combined), combined
 
 
 def test_a_project_with_no_cards_is_a_loud_no_op(tmp_path: Path):

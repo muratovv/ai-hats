@@ -50,30 +50,24 @@ def _project(tmp_path: Path) -> Path:
 def _session(project: Path, home: Path) -> Path:
     """Compose a role onto agy and build its session, the way launch does.
 
-    ``HOME`` is redirected because the build registers agy's global dispatcher in
-    the user's own settings — hermetic here, not a write into whoever runs this.
+    ``HOME`` is redirected because the plan registers agy's global dispatcher in
+    the home the host was probed with — hermetic here, not a write into whoever
+    runs this.
     """
+    from _helpers.sessions import build_session
+    from tests._plan_helpers import composition_of
+
     from ai_hats.assembler import Assembler
-    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
     from ai_hats.surfaces.agy.provider import AgySurface
 
-    result = Assembler(REPO_ROOT).composer.compose("maintainer")
-    before = os.environ.get("HOME")
-    os.environ["HOME"] = str(home)
-    try:
-        AgySurface().build_session_artifacts(
-            ProjectLayout.at(project),
-            result,
-            SESSION_ID,
-            run_mode=RunMode.HITL,
-            artifacts=BuiltArtifacts(),
-        )
-    finally:
-        if before is None:
-            os.environ.pop("HOME", None)
-        else:
-            os.environ["HOME"] = before
-    return ProjectLayout.at(project).cache.session(SESSION_ID)
+    asm = Assembler(REPO_ROOT)
+    composition = composition_of(
+        asm.composer.compose("maintainer"), layout=ProjectLayout.at(project), resolver=asm.resolver
+    )
+    plan = build_session(
+        project, composition, AgySurface(), SESSION_ID, environ={**os.environ, "HOME": str(home)}
+    )
+    return plan.root
 
 
 def _agy_call(command: str) -> str:

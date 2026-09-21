@@ -1,185 +1,168 @@
-"""Runtime-hook materialization tests for the OpenCode surface."""
+"""Runtime-hook planning tests for the OpenCode surface."""
 
 from __future__ import annotations
 
-from ai_hats_core.layout import ProjectLayout
-
+import hashlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+from ai_hats_core.layout import ProjectLayout
 
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.fs_digest import dir_digest
+from ai_hats.materialization import WriteKind
+from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.session_plan import probe_host
+from ai_hats.surfaces.hook_channel import HookEvent
 from ai_hats.surfaces.opencode import OpenCodeSurface
 from ai_hats.surfaces.opencode.runtime_hooks import MANIFEST_VERSION, plugin_source
-
-
-def _make_hooked_skill(tmp_path: Path, name: str = "safety-guard") -> Path:
-    source = tmp_path / "skill-sources" / name
-    (source / "hooks").mkdir(parents=True)
-    script = source / "hooks" / "guard.sh"
-    script.write_text("#!/bin/sh\nexit 2\n")
-    script.chmod(0o700)
-    (source / "SKILL.md").write_text(
-        "---\n"
-        f"name: {name}\n"
-        "description: Guard skill\n"
-        "ai_hats:\n"
-        "  runtime_hooks:\n"
-        "    PreToolUse:\n"
-        "      - matcher: Bash|run_command\n"
-        "        script: hooks/guard.sh\n"
-        "---\n"
-        f"# {name}\n"
-    )
-    return source
-
-
-def _fake_result(skills: list[Path]) -> SimpleNamespace:
-    return SimpleNamespace(
-        name="maintainer",
-        priorities=[],
-        merged_injection="role",
-        rules=[],
-        user_rules=(),
-        skills=[SimpleNamespace(name=path.name, source_path=path) for path in skills],
-        checks=(),
-    )
-
-
-@pytest.fixture(autouse=True)
-def _isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
-
-
-def _project(tmp_path: Path) -> Path:
-    project = tmp_path / "project"
-    project.mkdir()
-    return project
-
+from ai_hats.surfaces.plan import (
+    CompositionPlan,
+    Executable,
+    Hooks,
+    Prompt,
+    PromptBlock,
+    PromptMember,
+    RuntimeHook,
+    Skill,
+)
 
 SESSION_ID = "20260822-000000-1-00000"
 
 
-def _config(project: Path, provider: OpenCodeSurface) -> dict:
-    path = provider.session_config_path(ProjectLayout.at(project), SESSION_ID)
-    assert path.is_file()
-    return json.loads(path.read_text())
+@pytest.fixture(autouse=True)
+def _isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    monkeypatch.setenv("AI_HATS_OPENCODE_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+
+def _skill(tmp_path: Path, name: str) -> Skill:
+    source = tmp_path / "skill-sources" / name
+    source.mkdir(parents=True)
+    document = f"---\nname: {name}\ndescription: Guard skill\n---\n# {name}\n"
+    (source / "SKILL.md").write_text(document)
+    return Skill(
+        name=f"skills::{name}",
+        path=source.resolve(),
+        content_digest=dir_digest(source),
+        document=document,
+    )
+
+
+def _guard(skill: Skill) -> RuntimeHook:
+    script = skill.path / "hooks" / "guard.sh"
+    script.parent.mkdir()
+    script.write_text("#!/bin/sh\nexit 2\n")
+    script.chmod(0o700)
+    run = Executable(path=script, content_digest=hashlib.sha256(script.read_bytes()).hexdigest())
+    return RuntimeHook(at=HookEvent.PRE_TOOL_USE, matcher="Bash|run_command", run=run)
+
+
+def _composition(*skills: Skill, runtime: tuple[RuntimeHook, ...] = ()) -> CompositionPlan:
+    return CompositionPlan(
+        identity="maintainer",
+        prompt=Prompt((PromptBlock(None, (PromptMember("test::prompt", "role", None),)),)),
+        skills=skills,
+        hooks=Hooks(runtime=runtime, external=()),
+        trace=(),
+    )
+
+
+def _plan(tmp_path: Path, composition: CompositionPlan, *, policy=SessionPolicy()):
+    project = tmp_path / "project"
+    project.mkdir(exist_ok=True)
+    layout = ProjectLayout.at(project)
+    surface = OpenCodeSurface()
+    return layout, surface.plan(
+        composition,
+        run_mode=RunMode.HITL,
+        policy=policy,
+        root=layout.cache.session(SESSION_ID),
+        layout=layout,
+        host=probe_host(surface=surface),
+    )
+
+
+def _entry(plan, name: str):
+    return next(e for e in plan.entries if e.target.name == name)
+
+
+def _config(plan) -> dict:
+    entry = next(e for e in plan.entries if e.kind is WriteKind.MERGE_JSON)
+    return json.loads(entry.bytes or b"{}")
 
 
 def test_hooked_composition_registers_plugin_and_manifest(tmp_path: Path) -> None:
-    provider = OpenCodeSurface()
-    project = _project(tmp_path)
-    result = _fake_result([_make_hooked_skill(tmp_path)])
-    artifacts = BuiltArtifacts()
+    skill = _skill(tmp_path, "safety-guard")
+    layout, plan = _plan(tmp_path, _composition(skill, runtime=(_guard(skill),)))
 
-    provider.build_session_artifacts(
-        ProjectLayout.at(project), result, SESSION_ID, run_mode=RunMode.HITL, artifacts=artifacts
-    )
+    root = layout.cache.session(SESSION_ID)
+    manifest_entry = _entry(plan, "hooks.json")
+    plugin_entry = _entry(plan, "ai-hats-hooks.mjs")
+    assert manifest_entry.target == root / "opencode" / "hooks.json"
+    assert plugin_entry.target == root / "opencode" / "plugin" / "ai-hats-hooks.mjs"
+    assert plugin_entry.content == plugin_source()
 
-    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
-    manifest_path = cache_dir / "opencode" / "hooks.json"
-    plugin_path = cache_dir / "opencode" / "plugin" / "ai-hats-hooks.mjs"
-    assert manifest_path.is_file()
-    assert plugin_path.is_file()
-
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_entry.content or "")
     assert manifest["version"] == MANIFEST_VERSION
-    assert manifest["session"] == {
-        "id": SESSION_ID,
-        "ai_hats_dir": str(project / ".agent" / "ai-hats"),
-    }
-    pre = manifest["hooks"]["PreToolUse"]
-    assert pre[0]["matcher"] == "Bash|run_command"
-    assert pre[0]["command"].endswith("safety-guard/hooks/guard.sh")
-    assert pre[0]["tag"].startswith("ai-hats:safety-guard:PreToolUse:")
-
+    assert manifest["session"] == {"id": SESSION_ID, "ai_hats_dir": str(layout.base)}
+    [pre] = manifest["hooks"]["PreToolUse"]
+    assert pre["matcher"] == "Bash|run_command"
+    assert pre["command"].endswith("safety-guard/hooks/guard.sh")
+    assert pre["tag"] == "ai-hats:safety-guard:PreToolUse:Bash|run_command:guard"
     assert manifest["permissions"] == [
-        {
-            "permission": "external_directory",
-            "prefix": f"{ProjectLayout.at(project).cache.root}/",
-            "action": "allow",
-        }
+        {"permission": "external_directory", "prefix": f"{layout.cache.root}/", "action": "allow"}
     ]
 
-    config = _config(project, provider)
-    assert f"file://{plugin_path}" in config["plugin"]
+    assert _config(plan)["plugin"] == [f"file://{plugin_entry.target}"]
+    assert plan.env["AI_HATS_SESSION_CACHE_DIR"] == str(root)
+    assert plan.env["AI_HATS_PYTHON"] == str(probe_host().python)
+    assert plan.env["AI_HATS_HOOK_SURFACE_TIMEOUT_MS"].isdigit()
 
-    assert artifacts.extra_env["AI_HATS_SESSION_CACHE_DIR"] == str(cache_dir)
+
+def test_the_manifest_command_points_into_the_mirror_the_plan_writes(tmp_path: Path) -> None:
+    skill = _skill(tmp_path, "safety-guard")
+    _layout, plan = _plan(tmp_path, _composition(skill, runtime=(_guard(skill),)))
+
+    mirror = next(
+        e for e in plan.entries if e.kind is WriteKind.COPY_TREE and e.source == skill.path
+    )
+    [pre] = json.loads(_entry(plan, "hooks.json").content or "")["hooks"]["PreToolUse"]
+    assert pre["command"] == str(mirror.target / "hooks" / "guard.sh")
 
 
 def test_hookless_composition_still_ships_permission_rules(tmp_path: Path) -> None:
     """The manifest carries role permission policy even without hooks."""
-    provider = OpenCodeSurface()
-    plain = tmp_path / "skill-sources" / "hatrack"
-    plain.mkdir(parents=True)
-    (plain / "SKILL.md").write_text("---\nname: hatrack\ndescription: x\n---\nbody\n")
+    layout, plan = _plan(tmp_path, _composition(_skill(tmp_path, "hatrack")))
 
-    project = _project(tmp_path)
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
-        _fake_result([plain]),
-        SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=BuiltArtifacts(),
-    )
-
-    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
-    manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
+    manifest = json.loads(_entry(plan, "hooks.json").content or "")
     assert manifest["hooks"] == {}
-
     assert manifest["permissions"] == [
-        {
-            "permission": "external_directory",
-            "prefix": f"{ProjectLayout.at(project).cache.root}/",
-            "action": "allow",
-        }
+        {"permission": "external_directory", "prefix": f"{layout.cache.root}/", "action": "allow"}
     ]
-    config = _config(project, provider)
-    assert config.get("plugin"), "permission dispatcher must stay registered"
+    assert _config(plan).get("plugin"), "permission dispatcher must stay registered"
 
 
-def test_a_script_missing_from_the_skill_is_a_notice_not_a_silent_drop(tmp_path: Path) -> None:
-    source = _make_hooked_skill(tmp_path)
-    (source / "hooks" / "guard.sh").unlink()  # safe-delete: ok tmp-fixture
-
-    provider = OpenCodeSurface()
-    project = _project(tmp_path)
-    artifacts = BuiltArtifacts()
-    provider.build_session_artifacts(
-        ProjectLayout.at(project),
-        _fake_result([source]),
-        SESSION_ID,
-        run_mode=RunMode.HITL,
-        artifacts=artifacts,
+def test_hooks_off_leaves_the_config_without_a_dispatcher(tmp_path: Path) -> None:
+    skill = _skill(tmp_path, "safety-guard")
+    _layout, plan = _plan(
+        tmp_path,
+        _composition(skill, runtime=(_guard(skill),)),
+        policy=SessionPolicy(hooks=False),
     )
 
-    cache_dir = ProjectLayout.at(project).cache.session(SESSION_ID)
-    manifest = json.loads((cache_dir / "opencode" / "hooks.json").read_text())
-    assert manifest["hooks"].get("PreToolUse", []) == []
-    [notice] = artifacts.notices
-    assert "safety-guard" in notice and "hooks/guard.sh" in notice and "will not run" in notice
-    config = _config(project, provider)
-    assert "plugin" in config, "dispatcher stays registered; empty lists dispatch nothing"
+    assert not [e for e in plan.entries if e.target.name in ("hooks.json", "ai-hats-hooks.mjs")]
+    assert "plugin" not in _config(plan)
+    assert "AI_HATS_SESSION_CACHE_DIR" not in plan.env
 
 
-def test_a_script_absent_from_the_mirror_refuses_the_build(tmp_path: Path) -> None:
-    from ai_hats.hook_collection import RuntimeHookMirrorError
-    from ai_hats.surfaces.opencode.runtime_hooks import materialize_hook_manifest
+def test_a_hook_outside_every_composed_skill_refuses_the_plan(tmp_path: Path) -> None:
+    skill = _skill(tmp_path, "safety-guard")
+    stray = _guard(_skill(tmp_path, "not-composed"))
 
-    source = _make_hooked_skill(tmp_path)
-    unwritten_mirror = tmp_path / "session" / "skills"
-
-    with pytest.raises(RuntimeHookMirrorError, match="safety-guard"):
-        materialize_hook_manifest(
-            ProjectLayout.at(_project(tmp_path)),
-            _fake_result([source]),
-            SESSION_ID,
-            BuiltArtifacts(),
-            skills_dir=unwritten_mirror,
-            permission_rules=[],
-        )
+    with pytest.raises(ValueError, match="outside every composed skill"):
+        _plan(tmp_path, _composition(skill, runtime=(stray,)))
 
 
 def test_plugin_asset_is_fail_open_on_missing_pin_and_maps_tools() -> None:

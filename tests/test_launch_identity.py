@@ -15,43 +15,66 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.session_artifacts import assemble_launch_command, consumed_session_id
+from ai_hats.session_artifacts import RunMode, SessionPolicy, consumed_session_id
+from ai_hats.session_plan import launch
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.surfaces.cline.provider import ClineSurface
+from ai_hats.surfaces.plan import Launch, MaterializationPlan
+from ai_hats_core.layout import ProjectLayout
 from ai_hats_observe.session import Session
+from tests._plan_helpers import composition_with, flags
 
 SID = "11111111-2222-3333-4444-555555555555"
 
 
-def _cmd(provider, *, resume: bool = False) -> list[str]:
-    return assemble_launch_command(
-        provider,
-        extra_args=["--resume"] if resume else [],
-        session_args=[],
-        provider_session_id=SID,
+def _cmd(provider, *, resume: bool = False, tmp_path: Path) -> list[str]:
+    """The argv the launch pair yields for a plan with no session args of its own."""
+    composition = composition_with("r")
+    root = tmp_path / "sessions" / "s"
+    plan = MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface=provider.name,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        entries=(),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
     )
+    launched = launch(
+        plan,
+        flags(
+            root,
+            provider_session_id=SID,
+            extra_args=("--resume",) if resume else (),
+            claim=False,
+        ),
+        layout=ProjectLayout.at(tmp_path / "proj"),
+    )
+    return list(launched.args)
 
 
-def test_claude_consumes_the_session_id() -> None:
-    cmd = _cmd(ClaudeSurface())
+def test_claude_consumes_the_session_id(tmp_path: Path) -> None:
+    cmd = _cmd(ClaudeSurface(), tmp_path=tmp_path)
 
     assert SID in cmd
     assert consumed_session_id(cmd, SID) == SID
 
 
-def test_claude_resume_does_not_consume_it() -> None:
+def test_claude_resume_does_not_consume_it(tmp_path: Path) -> None:
     """``--resume`` reattaches claude's own prior session, so our id never reaches it."""
-    cmd = _cmd(ClaudeSurface(), resume=True)
+    cmd = _cmd(ClaudeSurface(), resume=True, tmp_path=tmp_path)
 
     assert SID not in cmd
     assert consumed_session_id(cmd, SID) == ""
 
 
 @pytest.mark.parametrize("provider", [AgySurface(), ClineSurface()], ids=["agy", "cline"])
-def test_surfaces_that_drop_the_session_id_claim_no_identity(provider) -> None:
+def test_surfaces_that_drop_the_session_id_claim_no_identity(provider, tmp_path: Path) -> None:
     """The F12 shape: a uuid4 was minted and persisted for surfaces that never saw it."""
-    cmd = _cmd(provider)
+    cmd = _cmd(provider, tmp_path=tmp_path)
 
     assert SID not in cmd
     assert consumed_session_id(cmd, SID) == ""

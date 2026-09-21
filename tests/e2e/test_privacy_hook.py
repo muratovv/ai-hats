@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._self_grant_recipe import findings
+
 pytestmark = pytest.mark.guards
 
 
@@ -159,6 +161,17 @@ def test_block_message_advertises_marker_and_remove_first(privacy_repo: Path):
     assert "ai-hats: allow-secret" in res.stderr
     # Marker must not be the reflex — "remove a real secret" leads.
     assert "remove it" in res.stderr
+
+
+@pytest.mark.integration
+def test_the_block_names_no_remedy_the_guard_refuses(privacy_repo: Path):
+    """The way out it prints is one its reader can take.
+
+    `ack_prefix_guard.py` denies a Bash line binding the flag for the command
+    after it — the shape this refusal used to advertise."""
+    res = _stage_and_run(privacy_repo, PRIVATE_KEY)
+    assert res.returncode == 1, res.stderr
+    assert not findings(res.stderr), res.stderr
 
 
 # --- HATS-940: Python decorators must not false-positive as email ------------
