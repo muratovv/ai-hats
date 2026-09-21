@@ -399,6 +399,7 @@ def build_preview_payload(
     *,
     role: str | None = None,
     provider: str | None = None,
+    experimental: bool = False,
 ) -> CompositionPayload:
     """Read-only payload for the ``materialize_system_prompt`` preview surface.
 
@@ -406,9 +407,15 @@ def build_preview_payload(
     agent see". Raises ``RuntimeError`` (the no-role case) or its
     ``MissingProviderError`` subclass, both of which ``config show-prompt``
     renders as a friendly exit 2.
+
+    ``experimental`` is the ``-re`` dispatch (ADR-0033 D4): ``role`` is then an
+    expression over the candidate library, planned by processing instead of
+    the composer and the adapter; the payload carries no ``result``.
     """
     from .surface_registry import get_surface
 
+    if experimental:
+        return _candidate_preview(project_dir, role, provider)
     asm, cfg, eff_role, runtime_overlay, spec = _preview_context(project_dir, role)
     eff_provider = _effective_provider(cfg, provider)
     preview = _compose_plan(asm, eff_role, runtime_overlay, spec)
@@ -420,6 +427,41 @@ def build_preview_payload(
         plan=preview.plan,
         layout=preview.layout,
         diagnostics=preview.diagnostics,
+    )
+
+
+def _candidate_preview(
+    project_dir: Path, expression: str | None, provider: str | None
+) -> CompositionPayload:
+    """The candidate half of the dispatch: processing over ``experimental/``
+    (ADR-0036 D8). Reads the project the same way the reference preview does."""
+    from .assembler import Assembler
+    from .paths import builtin_library_root
+    from .processing import ProcessingError, candidate_roots, compose
+    from .surface_registry import get_surface
+
+    if not expression:
+        raise ProcessingError('-re needs an expression: ai-hats -re dry-run "<expr>"')
+    asm = Assembler(project_dir, prefer_cwd=True)
+    eff_provider = _effective_provider(asm.project_config, provider)
+    roots = candidate_roots(
+        asm.library_paths, builtin_root=builtin_library_root(project_dir, prefer_cwd=True)
+    )
+    if not roots:
+        raise ProcessingError(
+            "no experimental/ under any library root — the candidate library is produced by "
+            "scripts/migrate_experimental.py"
+        )
+    diagnostics: list[Diagnostic] = []
+    plan = compose(expression, roots, layout=asm.layout, diagnostics=diagnostics)
+    return CompositionPayload(
+        result=None,
+        provider=get_surface(eff_provider),
+        effective_role=plan.identity,
+        role_expression=plan.identity,
+        plan=plan,
+        layout=asm.layout,
+        diagnostics=tuple(diagnostics),
     )
 
 

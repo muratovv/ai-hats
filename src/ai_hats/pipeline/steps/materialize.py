@@ -58,16 +58,24 @@ class MaterializeSystemPrompt(Step):
                 "compose it at the seam (build_preview_payload)"
             )
         prompt_text = _surface_prompt_text(composition)
-        return {
-            "system_prompt_text": prompt_text,
-            "composition_stats": {
-                "role": composition.effective_role,
-                "provider": composition.provider.name,
-                "trait_count": len(result.trait_injections),
-                "trait_names": list(result.trait_injections.keys()),
-                "rule_count": len(result.rules),
-                "skill_count": len(result.skills),
-                "injection_chars": len(result.merged_injection),
-                "prompt_chars": len(prompt_text),
-            },
+        stats: dict[str, Any] = {
+            "role": composition.effective_role,
+            "provider": composition.provider.name,
+            "prompt_chars": len(prompt_text),
         }
+        if result is not None:
+            stats.update(
+                trait_count=len(result.trait_injections),
+                trait_names=list(result.trait_injections.keys()),
+                rule_count=len(result.rules),
+                skill_count=len(result.skills),
+                injection_chars=len(result.merged_injection),
+            )
+        else:
+            # The candidate has no composer value: the plan is what there is.
+            plan = composition.plan
+            stats.update(
+                prompt_members=[m.name for b in plan.prompt.blocks for m in b.members],
+                skill_count=len(plan.skills),
+            )
+        return {"system_prompt_text": prompt_text, "composition_stats": stats}
