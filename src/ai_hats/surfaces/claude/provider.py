@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from .. import SurfaceHint
     from ai_hats_observe.canonical.reader import EventReader
+    from ai_hats_observe.canonical.signals import Signal
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
@@ -502,6 +503,11 @@ class ClaudeSurface(Surface):
                     if any(m in command for m in self._LEAKED_PROJECT_HOOK_MARKERS):
                         leaked.append(command)
         return leaked
+
+    def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
+        from .readiness import readiness_findings
+
+        return readiness_findings(environ)
 
     def settings_lint_warnings(self, layout: ProjectLayout) -> list[str]:
         """One warning per deprecated permission rule in the Claude settings

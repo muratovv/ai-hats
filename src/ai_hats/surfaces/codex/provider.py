@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Mapping
 
 from ai_hats_core.layout import ProjectLayout
+from ai_hats_observe.canonical.signals import (
+    Notice,
+    PersonActionRequired,
+    PersonMustAct,
+    WorthRecording,
+)
+from ai_hats_observe.canonical.types import now
 
 from ai_hats.materialization import describe_mkdir
 from ai_hats.surfaces import Surface
@@ -51,6 +58,7 @@ from .session_auth import reconcile_auth
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
+    from ai_hats_observe.canonical.signals import Signal
 
     from ai_hats.session_run import SessionRun
     from ai_hats.surfaces import SurfaceHint
@@ -109,11 +117,19 @@ def _sets_config_key(expression: str, config_key: str) -> bool:
     return any(path == config_key for path, _value in _config_paths(expression))
 
 
-def _readiness_warnings(*, which=shutil.which, run=subprocess.run) -> list[str]:
-    binary = which("codex")
+READINESS_SOURCE = "codex/readiness"
+
+
+def _readiness_findings(
+    environ: Mapping[str, str], *, which=shutil.which, run=subprocess.run
+) -> "list[Signal]":
+    binary = which("codex", path=environ.get("PATH"))
     if not binary:
         return [
-            "Codex CLI is not on PATH. Install it, then run `codex --version` and `codex login`."
+            _person_must(
+                PersonMustAct.INSTALL,
+                "Codex CLI is not on PATH. Install it, then run `codex --version` and `codex login`.",
+            )
         ]
     try:
         version = run(
@@ -123,18 +139,46 @@ def _readiness_warnings(*, which=shutil.which, run=subprocess.run) -> list[str]:
             timeout=10,
         )
         if version.returncode != 0:
-            return ["`codex --version` failed; repair the Codex CLI before launch."]
+            return [
+                _person_must(
+                    PersonMustAct.INSTALL,
+                    "`codex --version` failed; repair the Codex CLI before launch.",
+                    raw_code=str(version.returncode),
+                )
+            ]
         auth = run(
             [binary, "login", "status"],
             capture_output=True,
             text=True,
             timeout=10,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return ["Codex readiness probe failed; run `codex --version` manually."]
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return [
+            Notice(
+                reason=WorthRecording.SURFACE_WARNING,
+                detail=f"Codex readiness probe did not run ({type(exc).__name__}); "
+                "run `codex --version` manually.",
+                source=READINESS_SOURCE,
+                ts=now(),
+            )
+        ]
     if auth.returncode != 0:
-        return ["Codex is not authenticated. Run `codex login`, then retry ai-hats."]
+        return [
+            _person_must(
+                PersonMustAct.REAUTHENTICATE,
+                "Codex is not authenticated. Run `codex login`, then retry ai-hats.",
+                raw_code=str(auth.returncode),
+            )
+        ]
     return []
+
+
+def _person_must(
+    reason: PersonMustAct, detail: str, *, raw_code: str | None = None
+) -> PersonActionRequired:
+    return PersonActionRequired(
+        reason=reason, detail=detail, raw_code=raw_code, source=READINESS_SOURCE, ts=now()
+    )
 
 
 def _reconcile_policy_default(
@@ -195,10 +239,9 @@ class CodexSurface(Surface):
             ),
         ]
 
-    def settings_lint_warnings(self, layout: ProjectLayout) -> list[str]:
+    def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
         """Probe CLI/auth readiness without reading or changing Codex config."""
-        del layout
-        return _readiness_warnings()
+        return _readiness_findings(environ)
 
     def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
         """Codex receives ai-hats context inline; no project file is managed."""

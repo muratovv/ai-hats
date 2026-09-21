@@ -233,3 +233,24 @@ def test_human_mode_prints_summary(cli, monkeypatch, project_dir):
     assert result.exit_code == 0
     assert "Sub-agent completed" in result.stdout
     assert "stub-session" in result.stdout
+
+
+def test_human_mode_names_the_error_of_a_failed_run(cli, monkeypatch, project_dir):
+    """A run that ended with ``error`` in its metrics — a readiness refusal,
+    an SDK failure — is not "completed"; the line says what went wrong."""
+    _install_stub_runner(
+        monkeypatch,
+        project_dir,
+        {
+            "exit_code": 1,
+            "role": "test-agent",
+            "error": "Claude is not authenticated. Run `claude auth login`, then retry ai-hats.",
+        },
+    )
+
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t"])
+    assert result.exit_code == 1
+    assert "Sub-agent completed" not in result.stdout
+    assert "Sub-agent failed" in result.stdout
+    assert "claude auth login" in result.stdout
+    assert "stub-session" in result.stdout

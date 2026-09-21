@@ -44,6 +44,7 @@ each fail-open — a broken check must never block session start:
 | `_payload_startup_notices`       | one notice per composition `Diagnostic`, at the level its producer set (below) |
 | finalize-hitl preload            | WARN when the finalize pipeline fails to eager-load                            |
 | `_lint_provider_settings`        | WARN per provider-reported settings pitfall (below)                            |
+| `_probe_readiness`               | WARN per readiness finding — not logged in, CLI missing, probe unavailable (below) |
 | `_lint_env_drift`                | WARN when the editable dev env is stale — needs `uv sync` (below)              |
 | `_check_broken_hook_refs`        | WARN per settings hook ref pointing at a missing file (below)                  |
 
@@ -79,6 +80,27 @@ rewrites them (contrast: managed-hook surfaces, which ARE ai-hats-owned and
 auto-heal). Per-file fail-open: a missing or malformed settings file
 contributes nothing — a broken settings file is the provider CLI's own loud
 failure.
+
+## Readiness probe
+
+The surface may be unable to serve a session at all — not logged in, CLI
+missing — and only say so after launch, where an unattended run has already
+taken a worktree. `Surface.readiness_findings(environ)` asks first; the answer
+is canonical signals (`PersonActionRequired(reauthenticate | install)`, or a
+`Notice(surface_warning)` when the probe itself could not run). Here every
+finding is one WARN and the session launches — the TUI runs its own login flow.
+The same seam refuses an Automate run (`SubAgentRunner`) after the session is
+minted and before anything is taken, and that session says why in
+`events.jsonl` and a finalized `metrics.json`; glossary, *Readiness probe*.
+
+Claude probes `claude auth status` (offline JSON, `loggedIn`); codex probes
+`codex --version` and `codex login status`. Fail-open both ways: a probe that
+cannot run, or a CLI without the verb, is a notice, never a refusal.
+
+```
+⚠ 1 startup warning(s):
+  • Claude is not authenticated. Run `claude auth login`, then retry ai-hats.
+```
 
 ## Editable env-drift lint
 

@@ -25,6 +25,10 @@ class PersonMustAct(StrEnum):
     PAY = "pay"
     RAISE_LIMIT = "raise_limit"
 
+    # The surface's CLI is missing or broken — said by the readiness probe,
+    # before a run, never by a record.
+    INSTALL = "install"
+
 
 class HarnessMustAct(StrEnum):
     """The harness can decide what to do without a person."""
