@@ -55,3 +55,6 @@ packages = ["src/ai_hats_library"]
 # then picks it up on its own, which is why only the sdist declares it.
 [tool.hatch.build.targets.sdist.force-include]
 "src/ai_hats_library/hooks/consent_gate" = "src/ai_hats_library/hooks/consent_gate"
+# The flat-form copy (ADR-0034 D6) carries the same symlink one level down,
+# pointing at experimental/hooks/consent_gate — the same drop, the same cure.
+"src/ai_hats_library/experimental/hooks/consent_gate" = "src/ai_hats_library/experimental/hooks/consent_gate"
