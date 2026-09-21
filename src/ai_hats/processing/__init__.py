@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from ai_hats_core.layout import ProjectLayout
 
 from ..diagnostics import Diagnostic
-from ..surfaces.plan import CompositionPlan
+from ..surfaces import CompositionPlan
 from .errors import ProcessingError
 from .expr import canonical, parse_expr
 from .roots import Library, Root, candidate_roots, read_roots

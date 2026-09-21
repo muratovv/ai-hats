@@ -41,6 +41,7 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
         ContextUnwritten,  # noqa: F401
         Digested,  # noqa: F401
         ExternalHook,  # noqa: F401
+        Hooks,  # noqa: F401
         Host,  # noqa: F401
         Launch,  # noqa: F401
         Launched,  # noqa: F401
@@ -51,6 +52,7 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
         Prompt,  # noqa: F401
         PromptBlock,  # noqa: F401
         PromptMember,  # noqa: F401
+        Skill,  # noqa: F401
         TraceEntry,  # noqa: F401
         apply,  # noqa: F401
         checks_record,  # noqa: F401
@@ -103,6 +105,7 @@ _HOMES = {
     "ContextUnwritten": ".plan",
     "Digested": ".plan",
     "ExternalHook": ".plan",
+    "Hooks": ".plan",
     "Host": ".plan",
     "Launch": ".plan",
     "LaunchFlags": ".plan",
@@ -113,6 +116,7 @@ _HOMES = {
     "Prompt": ".plan",
     "PromptBlock": ".plan",
     "PromptMember": ".plan",
+    "Skill": ".plan",
     "TraceEntry": ".plan",
     "adapt": ".plan_adapter",
     "apply": ".plan",

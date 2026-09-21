@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..diagnostics import Diagnostic, Level
-from ..surfaces.plan import TraceEntry
+from ..surfaces import TraceEntry
 from .errors import ProcessingError
 from .expr import Expr
 from .names import resolve_term

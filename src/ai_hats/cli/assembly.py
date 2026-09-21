@@ -1049,26 +1049,10 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
     ai-hats config show-prompt | grep "E2E gate"  # marker presence
     """
     from ..composition_seam import build_preview_payload
-    from ..pipeline.pipeline import build as build_pipeline
-    from ..pipeline.steps.emit import EmitStdout
-    from ..pipeline.steps.materialize import MaterializeSystemPrompt
     from ._entry import resolve_project as _resolve_project
 
     project_dir = _resolve_project().layout.root
-
-    # Build the preview pipeline in-process — same shape as
-    # library/core/pipelines/preview.yaml (which is shipped as a
-    # canonical reference). YAML loader resolves pipelines via the
-    # installed package's bundled library and is therefore opaque to
-    # the project's library_paths; the programmatic build keeps the
-    # CLI runnable from any project layout.
-    emit_key = "composition_stats" if stats else "system_prompt_text"
-    emit_fmt = "json" if stats else "text"
-    pipeline = build_pipeline(
-        MaterializeSystemPrompt(),
-        EmitStdout({"key": emit_key, "format": emit_fmt}),
-        name="preview",
-    )
+    pipeline = preview_pipeline(stats=stats)
     from ..diagnostics import emit_to_stderr
 
     try:
@@ -1079,6 +1063,29 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
     except RuntimeError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(2)
+
+
+def preview_pipeline(*, stats: bool):
+    """The two steps that print a preview payload — one printer for
+    ``config show-prompt`` and ``-re show-prompt`` alike.
+
+    Built in-process, the same shape as ``core/pipelines/preview.yaml`` (shipped
+    as the canonical reference): the YAML loader resolves pipelines through the
+    installed package's bundled library and is opaque to the project's
+    ``library_paths``, so the programmatic build keeps the CLI runnable from any
+    project layout.
+    """
+    from ..pipeline.pipeline import build as build_pipeline
+    from ..pipeline.steps.emit import EmitStdout
+    from ..pipeline.steps.materialize import MaterializeSystemPrompt
+
+    emit_key = "composition_stats" if stats else "system_prompt_text"
+    emit_fmt = "json" if stats else "text"
+    return build_pipeline(
+        MaterializeSystemPrompt(),
+        EmitStdout({"key": emit_key, "format": emit_fmt}),
+        name="preview",
+    )
 
 
 def do_bump(*, migrate_force: bool, check_branches: bool) -> int:

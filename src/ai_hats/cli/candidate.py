@@ -73,18 +73,11 @@ def show_prompt(ctx: click.Context, expr: str) -> None:
     from ..composition_seam import build_preview_payload
     from ..diagnostics import emit_to_stderr
     from ..processing import ProcessingError
-    from ..pipeline.pipeline import build as build_pipeline
-    from ..pipeline.steps.emit import EmitStdout
-    from ..pipeline.steps.materialize import MaterializeSystemPrompt
     from ._entry import resolve_project
+    from .assembly import preview_pipeline
 
     _under_re(ctx, "show-prompt", "ai-hats config show-prompt --role <role>")
-    # The same two steps `config show-prompt` runs: one printer for both paths.
-    pipeline = build_pipeline(
-        MaterializeSystemPrompt(),
-        EmitStdout({"key": "system_prompt_text", "format": "text"}),
-        name="preview",
-    )
+    pipeline = preview_pipeline(stats=False)
     try:
         payload = build_preview_payload(
             resolve_project().layout.root,

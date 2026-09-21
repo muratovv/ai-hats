@@ -9,7 +9,7 @@ from __future__ import annotations
 from ai_hats_core.layout import ProjectLayout
 
 from ..diagnostics import Diagnostic
-from ..surfaces.plan import CompositionPlan, Hooks, Skill
+from ..surfaces import CompositionPlan, Hooks, Skill
 from .errors import ProcessingError
 from .fold import Folded
 from .names import Tree

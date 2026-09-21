@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ..diagnostics import Diagnostic, Level
-from ..surfaces.plan import Prompt, PromptBlock, PromptMember
+from ..surfaces import Prompt, PromptBlock, PromptMember
 from .fold import Folded
 from .names import Tree
 from .parse import PromptEntity
