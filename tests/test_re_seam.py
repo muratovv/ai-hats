@@ -18,13 +18,12 @@ from tests._flat_library import write_root
 
 
 @pytest.fixture
-def project(tmp_path: Path, monkeypatch) -> Path:
+def project(tmp_path: Path) -> Path:
     """A project whose local ``libraries/experimental/`` is the sample root."""
     proj = tmp_path / "proj"
     proj.mkdir()
     ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
     write_root(proj / "libraries" / "experimental")
-    monkeypatch.chdir(proj)
     return proj
 
 
@@ -57,7 +56,6 @@ def test_a_project_without_a_candidate_library_says_where_it_comes_from(
     proj = tmp_path / "bare"
     proj.mkdir()
     ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
-    monkeypatch.chdir(proj)
     # A builtin root that serves the manifest but no experimental/ copy.
     builtin = tmp_path / "builtin"
     (builtin / "core" / "pipelines").mkdir(parents=True)
@@ -73,11 +71,10 @@ def test_a_processing_refusal_surfaces_as_is(project: Path):
 
 
 def test_the_preview_projects_the_candidate_plan(project: Path):
-    from ai_hats.cli._entry import resolve_project
+    from ai_hats.assembler import Assembler
 
-    layout = resolve_project().layout
     shown = preview(
-        layout,
+        Assembler(project).layout,
         role="alpha + bare",
         provider="claude",
         run_mode=RunMode.HITL,

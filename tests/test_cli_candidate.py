@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -89,18 +88,23 @@ def test_the_projections_refuse_without_the_flag():
     assert "ai-hats config show-prompt --role <role>" in result.output
 
 
-def test_a_bare_flag_names_the_projections_until_a_session_exists():
-    with patch("ai_hats.cli._launch_session") as mock_launch:
-        result = CliRunner().invoke(main, ["-re", "alpha + bare"])
+def test_a_bare_flag_names_the_projections_until_a_session_exists(project: Path):
+    result = CliRunner().invoke(main, ["-re", "alpha + bare"])
     assert result.exit_code == 2
     assert 'ai-hats -re dry-run "<expr>"' in result.output
-    mock_launch.assert_not_called()
+    assert "role_materialization" not in result.output and "launch" not in result.output
 
 
-def test_the_reference_role_flag_is_untouched():
-    with patch("ai_hats.cli._launch_session") as mock_launch:
-        for argv in (["-r", "maintainer"], ["-rmaintainer"], ["--role", "maintainer"]):
-            result = CliRunner().invoke(main, argv)
-            assert result.exit_code == 0, result.output
-            assert mock_launch.call_args.kwargs["role"] == "maintainer"
+def test_the_reference_role_flag_is_untouched(project: Path):
+    """``-r`` still reads a role name, and only the exact ``-re`` is the flag:
+    ``-repo`` is ``-r epo``, refused as a role by the reference path."""
+    for argv, role in (
+        (["-r", "nope", "--dry-run"], "nope"),
+        (["-rnope", "--dry-run"], "nope"),
+        (["--role", "nope", "--dry-run"], "nope"),
+        (["-repo", "--dry-run"], "epo"),
+    ):
+        result = CliRunner().invoke(main, argv)
+        assert result.exit_code == 2, result.output
+        assert f"Role '{role}' not found" in result.output, result.output
     assert "-re" in CliRunner().invoke(main, ["--help"]).output
