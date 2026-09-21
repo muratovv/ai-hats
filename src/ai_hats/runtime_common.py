@@ -519,7 +519,7 @@ def _print_session_end(
     """Render the green ``✨ Session <id> complete!`` summary.
 
     The **retro reminder banner** lines (cyan
-    "Reflect through N sessions" + wrap-up nudge) used to print inline
+    "Reflect through N sessions") used to print inline
     here. They now print at the tail of ``RunSessionEnd`` (in the
     ``finalize-hitl`` sub-pipeline), AFTER ``SESSION_END`` hooks fire.
     The ``retro`` parameter is retained for the one-line
