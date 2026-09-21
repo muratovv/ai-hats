@@ -74,7 +74,7 @@ class Recorder:
     def emit(self, verdict, arrival):
         self.said.append(verdict)
 
-    def observe(self, payload, arrival):
+    def observe(self, payload, arrival, environ):
         return None
 
 

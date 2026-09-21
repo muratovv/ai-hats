@@ -11,11 +11,20 @@ import pytest
 from ai_hats_core.layout import ProjectLayout
 
 from ai_hats.constants import INJECTION_END, INJECTION_START
-from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_HOOK_SOCKET, ENV_SESSION_CACHE_DIR
+from ai_hats.env import (
+    ENV_AI_HATS_PYTHON,
+    ENV_HOOK_SOCKET,
+    ENV_SESSION_CACHE_DIR,
+    ENV_STATUSLINE_INNER,
+)
 from ai_hats.materialization import WriteKind
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ai_hats.surfaces import HookEvent
-from ai_hats.surfaces.claude.channel import DISPATCHER_COMMAND, DISPATCHER_TAG
+from ai_hats.surfaces.claude.channel import (
+    DISPATCHER_COMMAND,
+    DISPATCHER_TAG,
+    STATUSLINE_COMMAND,
+)
 from ai_hats.surfaces.claude.hook_server import socket_path
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.hook_dispatch import MANIFEST_VERSION
@@ -44,14 +53,16 @@ def _composition(skills=(), hooks=Hooks((), ())) -> CompositionPlan:
     )
 
 
-def _plan(tmp_path: Path, composition: CompositionPlan, run_mode=RunMode.HITL, policy=None):
+def _plan(
+    tmp_path: Path, composition: CompositionPlan, run_mode=RunMode.HITL, policy=None, host=HOST
+):
     return ClaudeSurface().plan(
         composition,
         run_mode=run_mode,
         policy=policy or SessionPolicy(),
         root=tmp_path / "sessions" / "s1",
         layout=ProjectLayout.at(tmp_path / "proj"),
-        host=HOST,
+        host=host,
     )
 
 
@@ -180,7 +191,7 @@ def test_hooks_are_wired_to_the_mirrored_script_through_the_dispatcher(tmp_path:
     # The wiring is built from the manifest's rows — the same pass, so neither
     # can name a gate the other does not; the entry's shape is the dispatcher's.
     wired = _content(plan, "settings.json")
-    assert wired == {"hooks": ClaudeSurface()._desired_runtime_entries(rows)}
+    assert wired["hooks"] == ClaudeSurface()._desired_runtime_entries(rows)
     entry = wired["hooks"]["PreToolUse"][0]
     assert (
         entry["matcher"] == "Bash" and entry["_ai_hats_managed"] == f"{DISPATCHER_TAG}:PreToolUse"
@@ -197,6 +208,53 @@ def test_automate_hands_the_settings_to_the_sdk_and_no_other_source(tmp_path: Pa
     assert plan.launch.sdk_options["settings"] == str(plan.root / "settings.json")
     assert plan.launch.sdk_options["setting_sources"] == []
     assert _content(plan, "hooks.json")["hooks"] == {}, "an empty manifest is still written"
+
+
+# ── the status line ─────────────────────────────────────────────────────────
+
+
+def _with_bar(entry: dict | None) -> Host:
+    """The person's status line is a fact of the machine, probed onto Host
+    before planning — the planner reads no settings file itself."""
+    return dataclasses.replace(HOST, status_line=entry)
+
+
+def test_hitl_wires_the_status_line_and_hands_the_persons_own_bar_down(tmp_path):
+    """`--settings` replaces the `statusLine` slot, so ours records the quota
+    state and then runs theirs — whose command rides the env, and whose
+    padding and refresh cadence stay on the entry."""
+    bar = {"type": "command", "command": "bash ~/bar.sh", "padding": 0, "refreshInterval": 1}
+    plan = _plan(tmp_path, _composition(), host=_with_bar(bar))
+
+    wired = _content(plan, "settings.json")
+    assert wired["statusLine"] == {
+        "type": "command",
+        "command": STATUSLINE_COMMAND,
+        "padding": 0,
+        "refreshInterval": 1,
+    }
+    assert plan.env[ENV_STATUSLINE_INNER] == "bash ~/bar.sh"
+
+
+def test_hitl_with_no_bar_of_the_persons_wires_the_recorder_alone(tmp_path):
+    """The env key is still set, empty: a nested session must not inherit an
+    outer session's bar as its own."""
+    plan = _plan(tmp_path, _composition(), host=_with_bar(None))
+
+    assert _content(plan, "settings.json")["statusLine"] == {
+        "type": "command",
+        "command": STATUSLINE_COMMAND,
+    }
+    assert plan.env[ENV_STATUSLINE_INNER] == ""
+
+
+def test_automate_wires_no_status_line(tmp_path):
+    """The SDK stream carries the quota state itself, and no TUI renders a bar."""
+    bar = {"type": "command", "command": "bash ~/bar.sh"}
+    plan = _plan(tmp_path, _composition(), run_mode=RunMode.AUTOMATE, host=_with_bar(bar))
+
+    assert "statusLine" not in _content(plan, "settings.json")
+    assert ENV_STATUSLINE_INNER not in plan.env
 
 
 def test_a_policy_without_hooks_wires_none(tmp_path: Path):

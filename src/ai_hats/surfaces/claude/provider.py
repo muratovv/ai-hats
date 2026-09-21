@@ -34,16 +34,24 @@ from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ..plan import CompositionPlan, Host, Launch, Launched, LaunchFlags, MaterializationPlan
 from .sdk_options import describe_options, render_sdk_audit
 from . import sdk_runner
-from .channel import DISPATCHER_COMMAND, DISPATCHER_TAG, HOOK_NOTIFICATION, OBSERVED_NOTIFICATION
+from .channel import (
+    DISPATCHER_COMMAND,
+    DISPATCHER_TAG,
+    HOOK_NOTIFICATION,
+    OBSERVED_NOTIFICATION,
+    STATUSLINE_COMMAND,
+)
+from ai_hats.env import ENV_STATUSLINE_INNER
+
 from .runtime_hooks import plan_hooks
 
 from ai_hats.paths import (
     AI_HATS_PROJECT_DIR_ENV,
+    CLAUDE_STATUS_LINE_KEY,
     ENV_AI_HATS_DIR,
     claude_plugin_skills_dir,
+    claude_settings_chain,
     claude_settings_json,
-    claude_settings_local_json,
-    claude_user_settings_json,
 )
 from ai_hats.constants import (
     INJECTION_START,
@@ -275,15 +283,12 @@ class ClaudeSurface(Surface):
             manifest, rows, hook_env = plan_hooks(composition, root, host)
             settings = root / "settings.json"
             entries.append(manifest)
-            entries.append(
-                describe_write_text(
-                    settings,
-                    json.dumps(
-                        {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}, indent=2
-                    ),
-                )
+            document, settings_env = self._session_settings(
+                rows, hitl=hitl, person=host.status_line
             )
+            entries.append(describe_write_text(settings, json.dumps(document, indent=2)))
             env.update(hook_env)
+            env.update(settings_env)
             if hitl:
                 args += ["--settings", str(settings)]
             else:
@@ -434,6 +439,36 @@ class ClaudeSurface(Surface):
             self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": DISPATCHER_COMMAND}],
         }
 
+    def _session_settings(
+        self,
+        rows: dict[str, list[dict[str, str]]],
+        *,
+        hitl: bool,
+        person: Mapping[str, object] | None,
+    ) -> tuple[dict, dict[str, str]]:
+        """The session's ``settings.json`` and the env it needs: the dispatcher
+        entries, and on the HITL path the status line — ours records the quota
+        state a PTY session sees nowhere else, then runs the person's own, whose
+        command travels in the env because ``--settings`` replaces that slot.
+        The env key is always set: an empty one is "no bar", not "inherit"."""
+        document: dict = {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(rows)}
+        env: dict[str, str] = {}
+        if hitl:
+            document[CLAUDE_STATUS_LINE_KEY] = self._status_line_entry(person)
+            env[ENV_STATUSLINE_INNER] = str(person["command"]) if person else ""
+        return document, env
+
+    @staticmethod
+    def _status_line_entry(person: Mapping[str, object] | None) -> dict:
+        """The session's ``statusLine`` value: our command, with the person's
+        own ``padding`` and ``refreshInterval`` carried over — where the bar
+        sits and how often it re-renders are theirs."""
+        entry: dict = {"type": "command", "command": STATUSLINE_COMMAND}
+        for key in ("padding", "refreshInterval"):
+            if person is not None and key in person:
+                entry[key] = person[key]
+        return entry
+
     def leaked_user_global_project_hooks(self, home: "Path") -> list[str]:
         """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.
 
@@ -472,14 +507,8 @@ class ClaudeSurface(Surface):
         """One warning per deprecated permission rule in the Claude settings
         chain (user-global + project + local). Warn-only — the settings files
         are user-owned and never mutated."""
-        project_dir = layout.root
-        findings = lint_settings_files(
-            [
-                claude_user_settings_json(),
-                claude_settings_json(project_dir),
-                claude_settings_local_json(project_dir),
-            ]
-        )
+        # the root, not the run cwd: this lints what the person edits, not what a worktree run reads
+        findings = lint_settings_files(claude_settings_chain(os.environ, layout.root))
         return [
             f"{f.source}: {f.array} rule {f.rule} is ignored by Claude Code "
             f"≥2.1.210 — replace with {f.replacement}"

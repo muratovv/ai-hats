@@ -31,7 +31,7 @@ def _surface_prompt_text(composition: Any) -> str:
         policy=SessionPolicy(),
         root=composition.layout.cache.session(DRY_RUN_SESSION_ID),
         layout=composition.layout,
-        host=probe_host(surface=surface),
+        host=probe_host(surface=surface, cwd=composition.layout.cwd),
     )
     return plan.prompt.text
 

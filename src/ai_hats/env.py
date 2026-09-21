@@ -45,6 +45,15 @@ ENV_AI_HATS_PYTHON = "AI_HATS_PYTHON"
 #: Where this session's resident hook dispatcher listens.
 ENV_HOOK_SOCKET = "AI_HATS_HOOK_SOCK"
 
+#: The person's own status-line command, run by ours after it records: the
+#: session's `--settings` replaces the `statusLine` slot, so theirs rides here.
+ENV_STATUSLINE_INNER = "AI_HATS_STATUSLINE_INNER"
+
+#: Claude Code's own home override, and the platform's home it falls back to —
+#: named here so a reader of a probed env spells neither.
+ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
+ENV_HOME = "HOME"
+
 # Hook-point vocabulary, owned by ADR-0020 D2; named here so it has one home.
 ENV_HOOK_POINT = "AI_HATS_HOOK_POINT"
 ENV_IN_HOOK = "AI_HATS_IN_HOOK"
@@ -81,6 +90,7 @@ ENV_PTY_GRACE_S = "AI_HATS_PTY_GRACE_S"
 ENV_PTY_TERM_S = "AI_HATS_PTY_TERM_S"
 ENV_PIPELINE_KEEP_N = "AI_HATS_PIPELINE_KEEP_N"
 ENV_STARTUP_HOLD = "AI_HATS_STARTUP_HOLD"
+ENV_APPROACHING_LIMIT_PERCENT = "AI_HATS_APPROACHING_LIMIT_PERCENT"
 
 
 def _read(name: str) -> str | None:
@@ -165,6 +175,12 @@ BUDGETS: tuple[Budget, ...] = (
         10.0,
         "Seconds a startup warning is held on screen; 0 disables the hold.",
     ),
+    Budget(
+        ENV_APPROACHING_LIMIT_PERCENT,
+        80.0,
+        "Percent of a quota window used at which a Claude HITL session's log says "
+        "the limit is near, once per window per reset; above 100 it never says so.",
+    ),
 )
 
 (
@@ -175,6 +191,7 @@ BUDGETS: tuple[Budget, ...] = (
     PTY_TERM,
     PIPELINE_KEEP_N,
     STARTUP_HOLD,
+    APPROACHING_LIMIT_PERCENT,
 ) = BUDGETS
 
 
@@ -281,7 +298,7 @@ OVERRIDES: tuple[dict, ...] = (
         "foreign": True,
     },
     {
-        "name": "CLAUDE_CONFIG_DIR",
+        "name": ENV_CLAUDE_CONFIG_DIR,
         "default": "",
         "doc": (
             "Claude Code's own home, where its settings and transcripts are read from. Unset, "
@@ -402,6 +419,9 @@ __all__ = [
     "ENV_ROOT_PID",
     "ENV_AI_HATS_PYTHON",
     "ENV_HOOK_SOCKET",
+    "ENV_STATUSLINE_INNER",
+    "ENV_CLAUDE_CONFIG_DIR",
+    "ENV_HOME",
     "ENV_HOOK_POINT",
     "ENV_IN_HOOK",
     "ENV_FORCE",
@@ -417,6 +437,7 @@ __all__ = [
     "ENV_HOOK_EVENT",
     "ENV_HOOK_SURFACE_TIMEOUT_MS",
     "ENV_RETIRED_AGY_HOOK_TIMEOUT_S",
+    "ENV_APPROACHING_LIMIT_PERCENT",
     "Budget",
     "read_budget",
     "OVERRIDES",

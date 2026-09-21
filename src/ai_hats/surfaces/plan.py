@@ -315,6 +315,10 @@ class Host(Digested):
     #: The person's configuration home as the surface projects it into a session
     #: (``Surface.probe_home``); ``None`` for a surface that projects none.
     home: Digested | None = None
+    #: The status line the person configured for claude (their settings chain,
+    #: last file naming a command wins); ``None`` when none. A settings fact the
+    #: claude HITL plan needs, probed here so the planner never reads a file.
+    status_line: Mapping[str, object] | None = None
 
 
 # ── effect half ──────────────────────────────────────────────── ADR-0036 D1

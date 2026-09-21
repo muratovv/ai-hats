@@ -4,6 +4,38 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.13.0]
+
+Additive to `events/v1`: new `raw_code` values and one more producer of an
+existing kind.
+
+### Added
+
+- The Claude transcript reader reads `attachment` records: a hook that exited
+  non-zero (`hook_non_blocking_error`) or timed out (`hook_cancelled`) is a
+  `Notice(surface_warning)` naming the hook, the command and the exit code or
+  timeout — a gate that ran and delivered no verdict, recorded nowhere before.
+  The other 29 measured subtypes are named silent with their reason; an
+  unmeasured one is `Notice(unsupported_record, raw_code: attachment/<subtype>)`
+  instead of the silence `attachment` as a whole used to get.
+- A `fallback` content block — the API rerouting one call — is
+  `Notice(model_switched)` naming the model that took over, no longer drift.
+
+### Changed
+
+- The top-level record types the reader keeps silent are a named set with the
+  reason per group (`_SILENT_RECORD_TYPES`); `KNOWN_RECORD_TYPES` is unchanged
+  as a name and as a set.
+- `APPROACHING_LIMIT` no longer claims a live stream is its only producer: a
+  surface's own status line reports it too (claude, HITL, in `ai-hats`).
+
+### Fixed
+
+- A record carrying a raw U+2028 inside a string was cut in two: the reader
+  split on `str.splitlines`, which breaks on it, and reported both halves as
+  `malformed-json` — 94 notices for zero malformed records over the measured
+  corpus, and the six records' content lost. Only a newline ends a record.
+
 ## [0.12.0]
 
 ### Added

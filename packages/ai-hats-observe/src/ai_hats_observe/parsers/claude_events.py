@@ -57,36 +57,43 @@ from ..canonical.types import (
 #: SDK reader sees different fields off the same run, so the two are told apart.
 SOURCE = "claude/jsonl"
 
-#: Every top-level ``type`` the corpus produces; anything else is reported as
-#: ``UNSUPPORTED_RECORD`` (R5). ``summary`` is deliberately absent — the legacy
-#: ``usage._KNOWN_TYPES`` lists it and it occurs zero times.
-KNOWN_RECORD_TYPES = frozenset(
+# The top-level ``type`` values read for what happened in the run.
+_READ_RECORD_TYPES = frozenset({"assistant", "attachment", "system", "user"})
+
+# Measured top-level types that say nothing about the run, by group.
+_SILENT_RECORD_TYPES = frozenset(
     {
+        # the session's own identity, title and UI state
         "agent-name",
         "agent-setting",
         "ai-title",
         "artifact-autoreact-ledger",
         "artifact-comment-monitor",
-        "assistant",
         "atis-latch",
-        "attachment",
         "bridge-session",
-        "cost-state",
-        "file-history-delta",
-        "file-history-snapshot",
         "fork-context-ref",
         "frame-link",
         "last-prompt",
+        "pr-link",
+        "relocated",
+        "worktree-state",
+        # file backups behind /rewind
+        "file-history-delta",
+        "file-history-snapshot",
+        # the permission mode, repeated per prompt and never seen to change mid-session
         "mode",
         "permission-mode",
-        "pr-link",
+        # a prompt announced before it lands as a `user` record
         "queue-operation",
-        "relocated",
-        "system",
-        "user",
-        "worktree-state",
+        # the one USD figure; per-response usage already sums the run
+        "cost-state",
     }
 )
+
+#: Every top-level ``type`` the corpus produces; anything else is reported as
+#: ``UNSUPPORTED_RECORD`` (R5). ``summary`` is deliberately absent — the legacy
+#: ``usage._KNOWN_TYPES`` lists it and it occurs zero times.
+KNOWN_RECORD_TYPES = _READ_RECORD_TYPES | _SILENT_RECORD_TYPES
 
 # --- mappings --------------------------------------------------------------
 
@@ -119,6 +126,46 @@ _SILENT_SYSTEM_SUBTYPES = frozenset(
         "local_command",
         "scheduled_task_fire",
         "turn_duration",
+    }
+)
+
+# `attachment` subtypes that say a gate of ours ran and delivered no verdict.
+_HOOK_FAILURES = frozenset({"hook_cancelled", "hook_non_blocking_error"})
+
+# Measured `attachment` subtypes that say nothing about the run: context the
+# harness injects, advice to the model, or a fact another event already carries
+# (the triage per subtype: docs/adr/attachments/live-log-surface-survey.md).
+_SILENT_ATTACHMENTS = frozenset(
+    {
+        "agent_listing_delta",
+        "auto_mode",
+        "auto_mode_exit",
+        "bash_output_audience_note",
+        "batching_reminder_sent",
+        "command_permissions",
+        "compact_file_reference",
+        "date",
+        "date_change",
+        "deferred_tools_delta",
+        "deferred_tools_record",
+        "edited_text_file",
+        "environment",
+        "file",
+        "hook_additional_context",  # the chain's own GateVerdict.nudges
+        "hook_success",  # the chain's own GateVerdict; a Stop is stop_hook_summary
+        "instructions",
+        "invoked_skills",
+        "model",  # ResponseStarted.model, per call
+        "plan_mode_exit",
+        "prompt_snapshot",
+        "queued_command",  # lands as a `user` record → PromptReceived
+        "read_truncation_notice",
+        "remote_session_change",
+        "session_context",
+        "silent_turn_reminder",
+        "skill_listing",
+        "task_reminder",
+        "total_tokens_reminder",  # the per-turn cap, reset at every prompt; not quota
     }
 )
 
@@ -254,7 +301,9 @@ class ClaudeTranscriptReader:
                 return
             data = data[: cut + 1]
         self._offset += len(data)
-        for raw in data.decode("utf-8", errors="replace").splitlines():
+        # Only a newline ends a record: the surface writes U+2028 raw inside
+        # strings, and `splitlines` would cut the record there.
+        for raw in data.decode("utf-8", errors="replace").split("\n"):
             if raw.strip():
                 yield raw
 
@@ -274,6 +323,8 @@ class ClaudeTranscriptReader:
         if rtype not in KNOWN_RECORD_TYPES:
             yield self._notice(str(rtype), ts=_ts(record))
             return
+        if rtype in _SILENT_RECORD_TYPES:
+            return
 
         match rtype:
             case "assistant":
@@ -282,6 +333,8 @@ class ClaudeTranscriptReader:
                 yield from self._user_events(record)
             case "system":
                 yield from self._system_events(record)
+            case "attachment":
+                yield from self._attachment_events(record)
 
     def _assistant_events(self, record: dict[str, Any]) -> Iterator[Event]:
         message = record.get("message")
@@ -380,6 +433,16 @@ class ClaudeTranscriptReader:
                         source=SOURCE,
                         ts=ts,
                     )
+            case "fallback":
+                # The API rerouted this one call: the block names both models.
+                yield Notice(
+                    ts=ts,
+                    detail=_fallback_detail(block),
+                    raw_code="block:fallback",
+                    source=SOURCE,
+                    reason=WorthRecording.MODEL_SWITCHED,
+                    model=_model(block.get("to")),
+                )
             case _ if btype in _IGNORED_BLOCKS:
                 return
             case _:
@@ -562,6 +625,27 @@ class ClaudeTranscriptReader:
                 reason=WorthRecording.SURFACE_WARNING,
             )
 
+    def _attachment_events(self, record: dict[str, Any]) -> Iterator[Event]:
+        """What the harness attached to a turn: read for the one thing in it
+        that happened to the run — a hook of ours that failed — and classified
+        for the rest, so a subtype nobody measured is drift, not silence."""
+        attachment = record.get("attachment")
+        ts = _ts(record)
+        if not isinstance(attachment, dict):
+            yield self._notice("attachment/non-object", ts=ts)
+            return
+        subtype = attachment.get("type")
+        if subtype in _HOOK_FAILURES:
+            yield Notice(
+                ts=ts,
+                detail=_hook_failure(attachment),
+                raw_code=f"attachment/{subtype}",
+                source=SOURCE,
+                reason=WorthRecording.SURFACE_WARNING,
+            )
+        elif subtype not in _SILENT_ATTACHMENTS:
+            yield self._notice(f"attachment/{subtype}", ts=ts)
+
     # -- helpers -----------------------------------------------------------
 
     def _end_open(self) -> Iterator[Event]:
@@ -626,9 +710,34 @@ def _entry_text(entry: Any) -> str:
     return entry if isinstance(entry, str) else json.dumps(entry, ensure_ascii=False, default=str)
 
 
-def _model(message: dict[str, Any]) -> ModelName | None:
-    value = message.get("model")
+def _hook_failure(attachment: dict[str, Any]) -> str:
+    """One line: which hook, how it failed, which command."""
+    hook = attachment.get("hookName") or attachment.get("hookEvent") or "hook"
+    command = attachment.get("command")
+    where = f" ({command})" if isinstance(command, str) and command else ""
+    if attachment.get("type") == "hook_cancelled":
+        timeout = attachment.get("timeoutMs")
+        timed_out = attachment.get("timedOut") is True
+        how = "cancelled"
+        if timed_out and isinstance(timeout, int) and not isinstance(timeout, bool):
+            how = f"timed out after {timeout} ms"
+        elif timed_out:
+            how = "timed out"
+        return f"{hook} {how}{where}"
+    code = attachment.get("exitCode")
+    head = f"{hook} exit {code}{where}" if code is not None else f"{hook} failed{where}"
+    said = attachment.get("stderr") or attachment.get("stdout")
+    return f"{head}: {said}" if isinstance(said, str) and said.strip() else head
+
+
+def _model(message: Any) -> ModelName | None:
+    value = message.get("model") if isinstance(message, dict) else None
     return ModelName(value) if isinstance(value, str) and value else None
+
+
+def _fallback_detail(block: dict[str, Any]) -> str | None:
+    switched = [_model(block.get("from")), _model(block.get("to"))]
+    return " → ".join(m or "?" for m in switched) if any(switched) else None
 
 
 def _response_id(record: dict[str, Any], message: dict[str, Any]) -> ResponseId:

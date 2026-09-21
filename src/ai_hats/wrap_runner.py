@@ -673,7 +673,7 @@ class WrapRunner:
                 policy=payload.policy,
                 root=root,
                 layout=self.layout,
-                host=probe_host(surface=provider),
+                host=probe_host(surface=provider, cwd=self.layout.cwd),
             )
             applied = apply(plan)
             provider.claim_resources(plan, flags, layout=self.layout, run=run)

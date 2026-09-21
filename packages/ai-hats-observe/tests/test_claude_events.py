@@ -363,8 +363,15 @@ def test_an_unmodelled_record_type_is_reported_once_with_its_raw_type(tmp_path: 
     known: list[dict[str, Any]] = [
         {"type": t, "uuid": f"k-{t}"} for t in sorted(KNOWN_RECORD_TYPES)
     ]
-    # `system` is classified by subtype, so the control feeds it a real one
+    # `system` and `attachment` are classified by subtype, so the control feeds
+    # each a real one
     known = [r | {"subtype": "turn_duration"} if r["type"] == "system" else r for r in known]
+    known = [
+        r | {"attachment": {"type": "date", "date": "2026-09-16"}}
+        if r["type"] == "attachment"
+        else r
+        for r in known
+    ]
     events = events_of(tmp_path, [*known, {"type": "not-a-real-type", "uuid": "x"}])
 
     drift = [
@@ -375,6 +382,41 @@ def test_an_unmodelled_record_type_is_reported_once_with_its_raw_type(tmp_path: 
     assert len(drift) == 1
     assert drift[0].raw_code == "not-a-real-type"
     assert drift[0].source == "claude/jsonl"
+
+
+# The measured top-level types that are not `assistant`, `user`, `system` or
+# `attachment`: harness bookkeeping, silent by decision.
+QUIET_RECORD_TYPES = [
+    "agent-name",
+    "agent-setting",
+    "ai-title",
+    "artifact-autoreact-ledger",
+    "artifact-comment-monitor",
+    "atis-latch",
+    "bridge-session",
+    "cost-state",
+    "file-history-delta",
+    "file-history-snapshot",
+    "fork-context-ref",
+    "frame-link",
+    "last-prompt",
+    "mode",
+    "permission-mode",
+    "pr-link",
+    "queue-operation",
+    "relocated",
+    "worktree-state",
+]
+
+
+@pytest.mark.parametrize("rtype", QUIET_RECORD_TYPES)
+def test_a_measured_bookkeeping_record_type_yields_nothing_at_all(
+    tmp_path: Path, rtype: str
+) -> None:
+    """Not merely no signal: no event of any kind. The drift test above is the
+    positive control — one type outside this list is reported."""
+    record = {"type": rtype, "uuid": f"q-{rtype}", "sessionId": "s", "content": "# TASK"}
+    assert events_of(tmp_path, [record]) == []
 
 
 def test_summary_is_not_carried_over_from_the_legacy_known_set(tmp_path: Path) -> None:
@@ -554,6 +596,37 @@ def test_a_model_refusal_fallback_reads_the_model_out_of_prose_when_unnamed(
     assert signals(events)[0].model == "Opus 4.8"
 
 
+def test_a_fallback_block_is_a_model_switch_naming_the_model_that_took_over(
+    tmp_path: Path,
+) -> None:
+    """The API rerouting one call mid-response arrives as a content block,
+    ``{"type": "fallback", "from": {"model": …}, "to": {"model": …}}`` — 14 in
+    the measured corpus, every one of them reported as drift until now."""
+    events = events_of(
+        tmp_path,
+        [
+            assistant(
+                "req-a",
+                [
+                    {
+                        "type": "fallback",
+                        "from": {"model": "claude-fable-5-1"},
+                        "to": {"model": "claude-opus-5"},
+                    },
+                    {"type": "text", "text": "kept"},
+                ],
+            )
+        ],
+    )
+    raised = signals(events)
+    assert [s.reason for s in raised] == [WorthRecording.MODEL_SWITCHED]
+    assert raised[0].model == "claude-opus-5"
+    assert raised[0].raw_code == "block:fallback"
+    assert raised[0].detail == "claude-fable-5-1 → claude-opus-5"
+    # POSITIVE CONTROL: the block is read, not skipped — the text beside it survives
+    assert [i.text for i in items(events, ItemKind.TEXT)] == ["kept"]
+
+
 def test_a_compact_boundary_is_recorded(tmp_path: Path) -> None:
     """Context overflow never arrives as an error — Claude compacts instead."""
     events = events_of(
@@ -685,6 +758,144 @@ def test_a_stop_hook_that_failed_is_a_surface_warning(tmp_path: Path) -> None:
     assert [w.detail for w in warnings] == ["notify-stop.sh: exit 1"]
     assert warnings[0].raw_code == "system/stop_hook_summary"
     assert len([e for e in events if isinstance(e, GateVerdict)]) == 1
+
+
+# --- attachments -------------------------------------------------------------
+
+# The measured attachment subtypes minus the two hook failures: context the
+# harness injects, advice to the model, or a fact another event already carries.
+# The triage per subtype is in the live-log surface survey.
+QUIET_ATTACHMENTS = [
+    "agent_listing_delta",
+    "auto_mode",
+    "auto_mode_exit",
+    "bash_output_audience_note",
+    "batching_reminder_sent",
+    "command_permissions",
+    "compact_file_reference",
+    "date",
+    "date_change",
+    "deferred_tools_delta",
+    "deferred_tools_record",
+    "edited_text_file",
+    "environment",
+    "file",
+    "hook_additional_context",
+    "hook_success",
+    "instructions",
+    "invoked_skills",
+    "model",
+    "plan_mode_exit",
+    "prompt_snapshot",
+    "queued_command",
+    "read_truncation_notice",
+    "remote_session_change",
+    "session_context",
+    "silent_turn_reminder",
+    "skill_listing",
+    "task_reminder",
+    "total_tokens_reminder",
+]
+
+
+def attachment(subtype: str, **fields: Any) -> dict[str, Any]:
+    return {
+        "type": "attachment",
+        "uuid": f"a-{subtype}",
+        "timestamp": "2026-09-16T09:00:00.000Z",
+        "attachment": {"type": subtype, **fields},
+    }
+
+
+@pytest.mark.parametrize("subtype", QUIET_ATTACHMENTS)
+def test_a_measured_attachment_subtype_is_read_and_says_nothing(
+    tmp_path: Path, subtype: str
+) -> None:
+    """Silence by decision: each of these is named, so a new subtype is drift
+    (the test below) rather than one more thing that happens to be quiet."""
+    assert events_of(tmp_path, [attachment(subtype)]) == []
+
+
+def test_an_unmeasured_attachment_subtype_is_reported(tmp_path: Path) -> None:
+    """Positive control for the quiet set: a decision, not a blanket ignore of
+    ``attachment`` — and a record with no attachment object at all is drift too."""
+    unmeasured = events_of(tmp_path, [attachment("brand-new")])
+    shapeless = events_of(tmp_path, [{"type": "attachment", "uuid": "a-none"}])
+
+    assert [s.raw_code for s in signals(unmeasured)] == ["attachment/brand-new"]
+    assert unmeasured[0].reason is WorthRecording.UNSUPPORTED_RECORD
+    assert unmeasured[0].ts == "2026-09-16T09:00:00.000Z"
+    assert [s.raw_code for s in signals(shapeless)] == ["attachment/non-object"]
+
+
+def test_a_hook_that_failed_or_timed_out_is_a_surface_warning(tmp_path: Path) -> None:
+    """A gate that ran and delivered no verdict: the run went on ungated. 131
+    non-blocking errors and one timeout in the measured corpus, recorded
+    nowhere until now — same reading as a Stop hook that errored."""
+    events = events_of(
+        tmp_path,
+        [
+            attachment(
+                "hook_non_blocking_error",
+                hookName="PreToolUse:Bash",
+                hookEvent="PreToolUse",
+                toolUseID="toolu_01",
+                command="$CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh",
+                exitCode=127,
+                stdout="",
+                stderr="Failed with non-blocking status code: /bin/sh: guard.sh: No such file",
+                durationMs=14,
+            ),
+            attachment(
+                "hook_cancelled",
+                hookName="PreToolUse:Bash",
+                hookEvent="PreToolUse",
+                toolUseID="toolu_02",
+                command="/tmp/hooks/slow.sh",
+                durationMs=2016,
+                timedOut=True,
+                timeoutMs=2000,
+            ),
+        ],
+    )
+
+    warnings = [s for s in signals(events) if s.reason is WorthRecording.SURFACE_WARNING]
+    assert [w.raw_code for w in warnings] == [
+        "attachment/hook_non_blocking_error",
+        "attachment/hook_cancelled",
+    ]
+    assert warnings[0].detail == (
+        "PreToolUse:Bash exit 127 ($CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh): "
+        "Failed with non-blocking status code: /bin/sh: guard.sh: No such file"
+    )
+    assert warnings[1].detail == "PreToolUse:Bash timed out after 2000 ms (/tmp/hooks/slow.sh)"
+    assert all(w.source == "claude/jsonl" and w.ts == "2026-09-16T09:00:00.000Z" for w in warnings)
+    # POSITIVE CONTROL: a failure is not a decision — no verdict, and no drift
+    assert len(events) == 2
+    assert not [e for e in events if isinstance(e, GateVerdict)]
+
+
+def test_a_hook_failure_with_bare_fields_still_reads(tmp_path: Path) -> None:
+    """Never raise, never drop: whatever the record carries is the detail — and
+    a cancel that did not time out (``timedOut: false``, a person's Esc) says
+    so, whatever ``timeoutMs`` the record also carries."""
+    events = events_of(
+        tmp_path,
+        [
+            attachment("hook_non_blocking_error"),
+            attachment("hook_cancelled", hookName="Stop"),
+            attachment(
+                "hook_cancelled", hookName="PreToolUse:Bash", timedOut=False, timeoutMs=60000
+            ),
+            attachment("hook_cancelled", hookName="PreToolUse:Bash", timedOut=True, timeoutMs=True),
+        ],
+    )
+    assert [s.detail for s in signals(events)] == [
+        "hook failed",
+        "Stop cancelled",
+        "PreToolUse:Bash cancelled",
+        "PreToolUse:Bash timed out",
+    ]
 
 
 # --- prompts ---------------------------------------------------------------
@@ -969,18 +1180,36 @@ def test_a_malformed_line_is_reported_and_the_parse_continues(tmp_path: Path) ->
     assert sorted(s.raw_code for s in signals(events)) == ["malformed-json", "non-object-line"]
 
 
+def test_a_record_holding_a_line_separator_is_one_record(tmp_path: Path) -> None:
+    """Only a newline ends a record. Six records in the measured corpus carry a
+    raw U+2028 inside a text block; ``str.splitlines`` cut them into 94 pieces
+    and reported every piece as malformed — for zero malformed records.
+
+    Positive control: the test above still sees a genuinely malformed line.
+    """
+    text = "first line second line third\x0cfourth"
+    record = assistant("req-a", [{"type": "text", "text": text}], stop_reason="end_turn")
+    path = tmp_path / "sep.jsonl"
+    # Claude writes the separator raw, not as   — so must the fixture
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    events = list(ClaudeTranscriptReader(path).read())
+
+    assert [i.text for i in items(events, ItemKind.TEXT)] == [text]
+    assert signals(events) == []
+
+
 def test_an_unknown_content_block_is_reported_not_dropped(tmp_path: Path) -> None:
-    """``fallback`` blocks occur 5 times in the corpus and nothing models them."""
+    """A block type outside the measured set is drift, and drift is said."""
     events = events_of(
         tmp_path,
         [
             assistant(
                 "req-a",
-                [{"type": "fallback", "from": "a", "to": "b"}, {"type": "text", "text": "kept"}],
+                [{"type": "hologram", "data": "?"}, {"type": "text", "text": "kept"}],
             )
         ],
     )
-    assert [s.raw_code for s in signals(events)] == ["block:fallback"]
+    assert [s.raw_code for s in signals(events)] == ["block:hologram"]
     assert [i.text for i in items(events, ItemKind.TEXT)] == ["kept"]
 
 
