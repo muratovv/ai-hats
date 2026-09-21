@@ -2910,7 +2910,7 @@ as a claim to check, not as evidence.
   ai-hats -r maintainer
   ```
 
-- **expect** — bulk artifacts past the age bound are dropped and the drop is logged with counts and bytes, while every facts-tier file and every run dir stay
+- **expect** — bulk artifacts past the age bound are dropped and the drop is a startup note with counts and bytes — on the banner and in the new session's diagnostics.json — while every facts-tier file and every run dir stay
 - **why** — runs/ grew 27 MB/day with no GC, and trimming audit.md would blind every retro that links to it
 
 ## `test_runtime_hook_fires.py`
