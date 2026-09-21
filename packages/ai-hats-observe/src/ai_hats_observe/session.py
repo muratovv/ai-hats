@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from ai_hats_core import atomic_write_text
+from ai_hats_core.diagnostics import Diagnostic
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol
 
 from .artifacts import (
@@ -76,7 +77,7 @@ class SessionManager:
         """
         # HATS-649: converge crash-recovery (ref write + cache/version sweeps +
         # orphan-version reclaim) on every run, before allocating the session.
-        self._recovery.run()
+        startup_diagnostics = tuple(self._recovery.run())
         now = datetime.now(timezone.utc)
         base_id = now.strftime("%Y%m%d-%H%M%S")
         # HATS-1248: the counter alone is not cross-process unique (it restarts
@@ -90,7 +91,11 @@ class SessionManager:
 
         session_dir = self.gitlog_dir / session_dirname(session_id)
         session_dir.mkdir(parents=True, exist_ok=True, mode=SESSION_DIR_MODE)
-        return Session(session_id=session_id, session_dir=session_dir)
+        return Session(
+            session_id=session_id,
+            session_dir=session_dir,
+            startup_diagnostics=startup_diagnostics,
+        )
 
     def get_session(self, session_id: str) -> Session | None:
         """Load an existing session."""
@@ -172,9 +177,18 @@ def _load_metrics_safe(session: "Session") -> dict | None:
 class Session:
     """A single session with its artifacts."""
 
-    def __init__(self, session_id: str, session_dir: Path) -> None:
+    #: What recovery did before this session existed; the runner picks the channel.
+    startup_diagnostics: tuple[Diagnostic, ...]
+
+    def __init__(
+        self,
+        session_id: str,
+        session_dir: Path,
+        startup_diagnostics: tuple[Diagnostic, ...] = (),
+    ) -> None:
         self.session_id = session_id
         self.session_dir = session_dir
+        self.startup_diagnostics = startup_diagnostics
         self.trace_path = session_dir / TRACE_LOG
         self.audit_path = session_dir / AUDIT_MD
         self.reasoning_path = session_dir / REASONING_LOG

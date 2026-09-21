@@ -22,6 +22,9 @@ never blocks or breaks ``create_session``. Steps 1, 2 and 5 stay outside it.
 Recovery is injected into ``SessionManager`` as a mockable collaborator
 (:class:`EnvironmentRecovery` by default, :class:`NoOpRecovery` for unit tests
 that must not touch the filesystem) — per the supervisor's DI decision.
+``run()`` returns what it did as diagnostics, one line per sweep kind; the
+session carries them and the runner puts them on the banner and in the record.
+Nothing here prints — a log line is a trace, not a report.
 
 Leaf module by design: it imports only ``paths`` / ``version_recovery`` /
 ``version_refs`` / ``runs_retention`` / ``session_liveness`` (all leaves), so
@@ -39,8 +42,9 @@ from pathlib import Path
 # consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
+from ai_hats_core.diagnostics import Diagnostic, Level
 from ai_hats_core.layout import ProjectLayout
-from .runs_retention import sweep_runs
+from .runs_retention import RetentionReport, sweep_runs
 from .session_liveness import LazyLiveness as _LazyLiveness
 from .session_liveness import session_owners
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
@@ -62,8 +66,8 @@ def _sweep_orphan_session_caches(
     ttl_hours: int = SESSION_CACHE_TTL_HOURS,
     *,
     liveness: _LazyLiveness | None = None,
-) -> None:
-    """Reap session cache dirs whose owner is gone.
+) -> list[Diagnostic]:
+    """Reap session cache dirs whose owner is gone; report the count as one note.
 
     Idempotent. Called once per run at the ``create_session`` chokepoint. Cheap
     when the cache root is empty or every owner is alive. (Moved here from
@@ -72,11 +76,23 @@ def _sweep_orphan_session_caches(
     """
     cutoff = time.time() - ttl_hours * 3600
     liveness = liveness or _LazyLiveness()
-    _expire_session_dirs(layout.cache.sessions, cutoff, liveness)
-    _drain_workspace_cache(layout.base / ".cache", cutoff, liveness)
+    reclaimed = _expire_session_dirs(layout.cache.sessions, cutoff, liveness)
+    legacy_sessions, stale = _drain_workspace_cache(layout.base / ".cache", cutoff, liveness)
+    return [
+        *_reclaimed_note(reclaimed + legacy_sessions, "orphaned session cache dir"),
+        *_reclaimed_note(stale, "stale in-tree cache entry", plural="stale in-tree cache entries"),
+    ]
 
 
-def _expire_session_dirs(root: Path, cutoff: float, liveness: _LazyLiveness) -> None:
+def _reclaimed_note(count: int, what: str, *, plural: str | None = None) -> list[Diagnostic]:
+    """The one line a sweep contributes, or nothing when it reclaimed nothing."""
+    if not count:
+        return []
+    noun = what if count == 1 else (plural or f"{what}s")
+    return [Diagnostic(Level.NOTE, f"reclaimed {count} {noun}")]
+
+
+def _expire_session_dirs(root: Path, cutoff: float, liveness: _LazyLiveness) -> int:
     """Drop each session dir whose owner is certainly dead; age only decides the
     ownerless ones.
 
@@ -87,18 +103,21 @@ def _expire_session_dirs(root: Path, cutoff: float, liveness: _LazyLiveness) -> 
     is gone, which is why the reclaim no longer waits out the TTL.
     """
     if not root.is_dir():
-        return
+        return 0
     try:
         candidates = sorted(entry for entry in root.iterdir() if entry.is_dir())
     except OSError as exc:
         logger.warning("session-cache sweep skipped, %s unreadable: %s", root, exc)
-        return
+        return 0
+    reclaimed = 0
     for entry in candidates:
         reason = _reap_reason(entry, cutoff, liveness)
         if reason is None:
             continue
         shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok session-cache (dead owner/TTL)
-        logger.warning("reclaimed session cache %s: %s", entry.name, reason)
+        logger.info("reclaimed session cache %s: %s", entry.name, reason)
+        reclaimed += 1
+    return reclaimed
 
 
 def _reap_reason(entry: Path, cutoff: float, liveness: _LazyLiveness) -> str | None:
@@ -125,7 +144,7 @@ def _reap_reason(entry: Path, cutoff: float, liveness: _LazyLiveness) -> str | N
     return None
 
 
-def _drain_workspace_cache(legacy: Path, cutoff: float, liveness: _LazyLiveness) -> None:
+def _drain_workspace_cache(legacy: Path, cutoff: float, liveness: _LazyLiveness) -> tuple[int, int]:
     """Delete the legacy in-tree cache; nothing writes there any more.
 
     The cache is regenerable, so it is dropped rather than migrated. Only session
@@ -133,13 +152,14 @@ def _drain_workspace_cache(legacy: Path, cutoff: float, liveness: _LazyLiveness)
     is still reading it.
     """
     if not legacy.is_dir():
-        return
+        return 0, 0
+    sessions = stale = 0
     for entry in legacy.iterdir():
         if entry.name == "sessions":
-            _expire_session_dirs(entry, cutoff, liveness)
+            sessions += _expire_session_dirs(entry, cutoff, liveness)
             _rmdir_quiet(entry)
             continue
-        logger.warning("dropping stale in-tree cache %s", entry)
+        logger.info("dropping stale in-tree cache %s", entry)
         try:
             if entry.is_dir():
                 shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok regenerable cache
@@ -147,7 +167,9 @@ def _drain_workspace_cache(legacy: Path, cutoff: float, liveness: _LazyLiveness)
                 entry.unlink()  # safe-delete: ok regenerable cache
         except OSError:
             pass
+        stale += 1
     _rmdir_quiet(legacy)
+    return sessions, stale
 
 
 def _key_last_touched(key_dir: Path) -> float:
@@ -168,8 +190,8 @@ def _sweep_orphan_project_keys(
     ttl_days: int = PROJECT_KEY_TTL_DAYS,
     *,
     liveness: _LazyLiveness | None = None,
-) -> None:
-    """Remove sibling project-key dirs untouched for ``ttl_days``.
+) -> list[Diagnostic]:
+    """Remove sibling project-key dirs untouched for ``ttl_days``; one note with the count.
 
     ``_sweep_orphan_session_caches`` only walks the CURRENT project's key, so a
     key left by a renamed or one-off project was unreachable for every mechanism
@@ -186,10 +208,11 @@ def _sweep_orphan_project_keys(
     try:
         entries = list(layout.cache.root.parent.iterdir())
     except FileNotFoundError:
-        return  # silent-ok: no cache home yet — a first run has nothing to sweep
+        return []  # silent-ok: no cache home yet — a first run has nothing to sweep
     except OSError as exc:
         logger.warning("project-key sweep skipped, cache home unreadable: %s", exc)
-        return
+        return []
+    reclaimed = 0
     for entry in entries:
         if entry.name == own_key or not entry.is_dir():
             continue
@@ -204,9 +227,11 @@ def _sweep_orphan_project_keys(
                 logger.info("project cache key %s kept: session %s is running", entry.name, live)
                 continue
             shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok regenerable cache
-            logger.warning("reclaimed orphaned project cache key: %s", entry.name)
+            logger.info("reclaimed orphaned project cache key: %s", entry.name)
+            reclaimed += 1
         except OSError as exc:
             logger.warning("project-key sweep skipped %s: %s", entry.name, exc)
+    return _reclaimed_note(reclaimed, "orphaned project cache key")
 
 
 def _holds_worktrees(key_dir: Path) -> bool:
@@ -262,7 +287,7 @@ class EnvironmentRecovery:
     def __init__(self, layout: ProjectLayout) -> None:
         self.layout = layout
 
-    def run(self) -> None:
+    def run(self) -> list[Diagnostic]:
         # Order matters: write THIS run's ref before any reclaim can observe the
         # version we are pinned to as orphaned. A run started before a `self
         # update` flipped `current` is pinned to a now-non-current sha; its ref
@@ -273,9 +298,10 @@ class EnvironmentRecovery:
         write_current_run_ref(self.layout.versions)
         # One process table for both sweeps, read only if one of them needs it.
         liveness = _LazyLiveness()
-        _sweep_orphan_session_caches(self.layout, liveness=liveness)
-        _sweep_orphan_project_keys(self.layout, liveness=liveness)
-        sweep_runs(self.layout, liveness=liveness)
+        diagnostics: list[Diagnostic] = []
+        diagnostics += _sweep_orphan_session_caches(self.layout, liveness=liveness)
+        diagnostics += _sweep_orphan_project_keys(self.layout, liveness=liveness)
+        diagnostics += _retention_diagnostics(sweep_runs(self.layout, liveness=liveness))
 
         # The version GC mutates versions/ — serialize it against a concurrent
         # `self update` (acquire) or a peer GC pass under the crash-safe lock.
@@ -292,16 +318,24 @@ class EnvironmentRecovery:
             try:
                 with versions_lock(self.layout.versions, timeout=GC_LOCK_TIMEOUT):
                     for residue in sweep_incomplete_versions(self.layout):
-                        logger.warning("reclaimed incomplete version residue: %s", residue.name)
+                        diagnostics.append(
+                            Diagnostic(
+                                Level.NOTE, f"reclaimed incomplete version residue: {residue.name}"
+                            )
+                        )
                     for orphan in reclaim_orphan_versions(self.layout):
-                        logger.warning("reclaimed orphaned version: %s", orphan.name)
+                        diagnostics.append(
+                            Diagnostic(Level.NOTE, f"reclaimed orphaned version: {orphan.name}")
+                        )
             except VersionLockError:
                 logger.info(
                     "version GC skipped: lock held by another ai-hats process "
                     "(install or concurrent GC); next invocation will retry"
                 )
             except OSError as exc:
-                logger.warning("version GC skipped on I/O error: %s", exc)
+                diagnostics.append(
+                    Diagnostic(Level.WARN, f"version GC skipped on I/O error: {exc}")
+                )
 
         # Once we run from a complete versioned venv, the
         # orphaned pre-versioning legacy .venv is dead weight — reclaim it.
@@ -310,4 +344,13 @@ class EnvironmentRecovery:
         # legacy/override/editable run, so it is safe at this universal seam.
         reclaimed_venv = reclaim_legacy_venv(self.layout)
         if reclaimed_venv is not None:
-            logger.warning("reclaimed legacy .venv: %s", reclaimed_venv)
+            diagnostics.append(Diagnostic(Level.NOTE, f"reclaimed legacy .venv: {reclaimed_venv}"))
+        return diagnostics
+
+
+def _retention_diagnostics(report: RetentionReport) -> list[Diagnostic]:
+    """One line per sweep; a sweep that dropped nothing and failed nowhere says nothing."""
+    if not (report.files_removed or report.errors):
+        return []
+    level = Level.WARN if report.errors else Level.NOTE
+    return [Diagnostic(level, report.summary())]

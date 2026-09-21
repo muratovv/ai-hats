@@ -31,6 +31,9 @@ touched again, so its mtime is the session's age and any bound is eventually
 crossed while running. :func:`_session_is_live` is the guard; the bound only
 decides how long a FINISHED session's bulk survives.
 
+The sweep returns its :class:`RetentionReport`; the caller (``environment_recovery``)
+turns it into a startup diagnostic, so nothing here prints.
+
 Leaf module: imports ``paths`` and observe's artifact-name schema and nothing
 else, so both ``environment_recovery`` and ``observe`` can call it.
 """  # comment-length: allow
@@ -159,7 +162,7 @@ def sweep_runs(
 
     _touch(stamp, report)
     if report.files_removed or report.errors:
-        logger.warning("%s", report.summary())
+        logger.info("%s", report.summary())  # the caller reports it as a diagnostic
     return report
 
 

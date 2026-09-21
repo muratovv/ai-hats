@@ -16,9 +16,12 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
+
+from ai_hats_core.diagnostics import Diagnostic
 
 from .env import ENV_STARTUP_HOLD, STARTUP_HOLD
 
@@ -181,6 +184,21 @@ def show_fatal_notice_and_exit(
         )
     _print_startup_notices([StartupNotice("fatal", text)])
     sys.exit(exit_code)
+
+
+def notices_from_diagnostics(diagnostics: Sequence[Diagnostic]) -> list[StartupNotice]:
+    """Typed diagnostics onto the banner channel, at the level their producer chose."""
+    return [StartupNotice(diag.level.value, diag.render()) for diag in diagnostics]
+
+
+def startup_record(notices: list[StartupNotice], hold_seconds: float) -> dict:
+    """The ``diagnostics.json["startup"]`` shape both runners persist."""
+    return {
+        "hold_seconds": hold_seconds,
+        "notices": [
+            {"level": n.level, "text": strip_ansi_and_control_codes(n.text)} for n in notices
+        ],
+    }
 
 
 def save_session_diagnostics(
