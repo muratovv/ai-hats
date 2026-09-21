@@ -177,6 +177,9 @@ def _load_metrics_safe(session: "Session") -> dict | None:
 class Session:
     """A single session with its artifacts."""
 
+    #: What recovery did before this session existed; the runner picks the channel.
+    startup_diagnostics: tuple[Diagnostic, ...]
+
     def __init__(
         self,
         session_id: str,
@@ -185,7 +188,6 @@ class Session:
     ) -> None:
         self.session_id = session_id
         self.session_dir = session_dir
-        # What recovery did before this session existed; the runner picks the channel.
         self.startup_diagnostics = startup_diagnostics
         self.trace_path = session_dir / TRACE_LOG
         self.audit_path = session_dir / AUDIT_MD
