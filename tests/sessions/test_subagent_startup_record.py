@@ -4,6 +4,7 @@ reaches ``diagnostics.json["startup"]`` — the same record the HITL path keeps.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -32,7 +33,6 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
     asm.set_role("maintainer", provider_name="claude")
-    monkeypatch.chdir(project)
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     return project
 
@@ -42,16 +42,19 @@ class _Reporting:
         return (Diagnostic(Level.NOTE, "runs retention: dropped 2 files / 140 bytes"),)
 
 
-def test_automate_session_persists_recovery_diagnostics(project: Path, monkeypatch):
+def test_automate_session_persists_recovery_diagnostics(project: Path):
     from ai_hats.composition_seam import build_composition_payload
     from ai_hats.runtime import SubAgentRunner
+    from ai_hats.surfaces.claude.provider import ClaudeSubagentEngine, ClaudeSurface
     from ai_hats_observe import SessionManager
 
-    monkeypatch.setattr(
-        "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking",
-        lambda *args, **kwargs: None,
+    class _NoSdk(ClaudeSurface):
+        def engine(self):
+            return ClaudeSubagentEngine(self, run_blocking=lambda *args, **kwargs: None)
+
+    payload = replace(
+        build_composition_payload(project, role_override="maintainer"), provider=_NoSdk()
     )
-    payload = build_composition_payload(project, role_override="maintainer")
     session_mgr = SessionManager(
         project, runs_dir=ProjectLayout.at(project).sessions.runs, recovery=_Reporting()
     )
