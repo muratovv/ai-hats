@@ -1,18 +1,19 @@
-"""The readiness probe on the Automate path: a blocking finding ends the run
-after the session is minted and before anything is taken, and the session
-says why — ``events.jsonl`` and a finalized ``metrics.json``.
+"""The pre-launch half of an Automate session: what start-up found is recorded,
+and a blocking readiness finding ends the run before anything is taken — the
+session says why in ``events.jsonl`` and a finalized ``metrics.json``.
 
-``refuse_unready`` is the whole decision; ``SubAgentRunner._run_attempt``
-returns the session when it says ``True`` (the e2e proves no worktree and no
-cache are taken on that road)."""
+``preflight`` is the whole decision; ``SubAgentRunner._run_attempt`` returns the
+session when it says ``True`` (the e2e proves the attempt never started)."""
 
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from ai_hats_core.diagnostics import Diagnostic, Level
 from ai_hats_core.layout import ProjectLayout
 from ai_hats_observe import SessionManager
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
@@ -26,7 +27,7 @@ from ai_hats_observe.canonical.signals import (
 from ai_hats_observe.event_log import read_events
 
 from ai_hats.runtime import SUBAGENT_EXIT_ERROR
-from ai_hats.runtime_common import refuse_unready
+from ai_hats.runtime_common import preflight
 from ai_hats.session_run import SessionRun
 
 _REFUSAL = PersonActionRequired(
@@ -49,11 +50,17 @@ class _Provider:
         return list(self.findings)
 
 
+class _Recovered:
+    def run(self):
+        return (Diagnostic(Level.NOTE, "runs retention: dropped 2 files / 140 bytes"),)
+
+
 def _refuse(tmp_path: Path, provider: _Provider) -> tuple[bool, SessionRun]:
     layout = ProjectLayout.at(tmp_path)
-    run = SessionRun.create(SessionManager(tmp_path, runs_dir=layout.sessions.runs))
+    manager = SessionManager(tmp_path, runs_dir=layout.sessions.runs, recovery=_Recovered())
+    run = SessionRun.create(manager)
     with run:
-        refused = refuse_unready(
+        refused = preflight(
             run,
             provider,
             {"PATH": "/usr/bin"},
@@ -93,8 +100,8 @@ def test_the_refusal_is_the_whole_event_log(tmp_path):
     )
 
 
-def test_a_ready_surface_is_not_refused_and_leaves_no_record(tmp_path):
-    """Positive control: the same road, no finding → ``False``, nothing written."""
+def test_a_ready_surface_is_not_refused_and_leaves_no_refusal(tmp_path):
+    """Positive control: the same road, no finding → ``False``, no refusal written."""
     provider = _Provider(findings=[])
 
     refused, run = _refuse(tmp_path, provider)
@@ -103,6 +110,45 @@ def test_a_ready_surface_is_not_refused_and_leaves_no_record(tmp_path):
     assert provider.asked_with == [{"PATH": "/usr/bin"}]
     assert not (run.session.session_dir / EVENT_LOG_JSONL).exists()
     assert not run.session.metrics_path.exists()
+
+
+def _startup(run: SessionRun) -> dict:
+    return json.loads((run.session.session_dir / "diagnostics.json").read_text())["startup"]
+
+
+def test_a_refused_run_keeps_what_start_up_found(tmp_path):
+    """No banner on this path: the record is the only place recovery's report
+    and the probe's findings land — a refusal must not skip it."""
+    _refused, run = _refuse(tmp_path, _Provider(findings=[_NOTICE, _REFUSAL]))
+
+    assert _startup(run) == {
+        "hold_seconds": 0.0,
+        "notices": [
+            {"level": "note", "text": "runs retention: dropped 2 files / 140 bytes"},
+            {"level": "warn", "text": "probe unavailable"},
+            {"level": "warn", "text": _REFUSAL.detail},
+        ],
+    }
+
+
+def test_a_ready_run_keeps_what_start_up_found_too(tmp_path):
+    _refused, run = _refuse(tmp_path, _Provider(findings=[]))
+
+    assert _startup(run)["notices"] == [
+        {"level": "note", "text": "runs retention: dropped 2 files / 140 bytes"}
+    ]
+
+
+def test_findings_go_to_the_trace_not_to_stderr(tmp_path, caplog):
+    """The CLI configures no logging: a warning would reach stderr through
+    ``logging.lastResort``, beside the line that already says it."""
+    with caplog.at_level(logging.WARNING):
+        _refused, run = _refuse(tmp_path, _Provider(findings=[_NOTICE, _REFUSAL]))
+
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+    trace = run.session.trace_path.read_text()
+    assert "probe unavailable" in trace
+    assert _REFUSAL.detail in trace
 
 
 def test_a_notice_is_logged_and_does_not_refuse(tmp_path):

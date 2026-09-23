@@ -650,7 +650,7 @@ def blocking_findings(findings: "list[Signal]") -> "list[Blocking]":
     return [finding for finding in findings if isinstance(finding, Blocking)]
 
 
-def refuse_unready(
+def preflight(
     run: "SessionRun",
     provider,
     environ: "Mapping[str, str]",
@@ -660,9 +660,21 @@ def refuse_unready(
     isolation_mode: str,
     tags: dict[str, str] | None = None,
 ) -> bool:
-    """Ask the surface once the session exists and before anything is taken;
-    ``True`` means the run is over and the session says why."""
-    refusals = blocking_findings(readiness_findings(provider, environ, report=run.warn))
+    """The pre-launch half of an Automate session, once it exists and before
+    anything is taken: record what start-up found — recovery's report and the
+    readiness probe's — then refuse on a blocking finding. ``True`` means the
+    run is over and the session says why."""
+    from .startup_notices import notices_from_diagnostics, startup_record
+
+    session = run.session
+    # To the trace, not a logger: the CLI configures no logging, so a warning
+    # would reach stderr through lastResort beside the line that says it anyway.
+    findings = readiness_findings(provider, environ, report=session.log_sys)
+    notices = notices_from_diagnostics(session.startup_diagnostics)
+    notices += [StartupNotice("warn", f.detail or str(f.reason)) for f in findings]
+    # No banner on this path: the record is the only place these land.
+    save_session_diagnostics(session.session_dir, "startup", startup_record(notices, 0.0))
+    refusals = blocking_findings(findings)
     if not refusals:
         return False
     record_refused_run(

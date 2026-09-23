@@ -94,8 +94,11 @@ minted and before anything is taken, and that session says why in
 `events.jsonl` and a finalized `metrics.json`; glossary, *Readiness probe*.
 
 Claude probes `claude auth status` (offline JSON, `loggedIn`); codex probes
-`codex --version` and `codex login status`. Fail-open both ways: a probe that
-cannot run, or a CLI without the verb, is a notice, never a refusal.
+`codex --version` and `codex login status`. Fail-open: a probe that cannot run,
+a CLI without the verb, or an answer that is not authoritative is a notice,
+never a refusal — codex's `login status` is one, blind to `CODEX_API_KEY`,
+which `codex exec` honours. On the Automate path, where no banner prints,
+every finding lands in `diagnostics.json["startup"]` and the trace.
 
 ```
 ⚠ 1 startup warning(s):
