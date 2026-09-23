@@ -7,7 +7,7 @@ license: MIT
 # Article Outline
 
 Settle what the text is, whom it serves and how it will be styled before
-drafting. The outline is the plan; the draft follows it.
+drafting. The outline is the text's plan; the draft follows it.
 
 ## When to Use
 
