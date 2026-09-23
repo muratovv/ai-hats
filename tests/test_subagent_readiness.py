@@ -7,6 +7,7 @@ session when it says ``True`` (the e2e proves the attempt never started)."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from dataclasses import dataclass, field
@@ -172,3 +173,25 @@ def test_a_notice_beside_a_blocking_finding_still_refuses(tmp_path, findings):
     assert refused is True
     events = list(read_events(run.session.session_dir / EVENT_LOG_JSONL))
     assert [type(e) for e in events] == [RunStarted, PersonActionRequired, RunEnded]
+
+
+@dataclass
+class _SlowProbe(_Provider):
+    """Stamps its finding when it answers, the way a real probe does."""
+
+    def readiness_findings(self, environ):
+        import time
+
+        from ai_hats_observe.canonical.types import now
+
+        time.sleep(0.005)
+        return [dataclasses.replace(_REFUSAL, ts=now())]
+
+
+def test_the_run_starts_before_the_probe_answers(tmp_path):
+    """Seen live: ``run_started`` stamped at write time came after the signal
+    the probe had stamped — a reader sorting by ``ts`` put the signal first."""
+    _refused, run = _refuse(tmp_path, _SlowProbe())
+
+    started, signal, ended = read_events(run.session.session_dir / EVENT_LOG_JSONL)
+    assert started.ts < signal.ts <= ended.ts

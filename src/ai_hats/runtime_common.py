@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 
     from ai_hats_observe import Session
     from ai_hats_observe.canonical.signals import Blocking, Signal
+    from ai_hats_observe.canonical.types import Timestamp
     from ai_hats_observe.event_log_writer import EventLogWriter
 
     from .session_run import SessionRun
@@ -664,9 +665,13 @@ def preflight(
     anything is taken: record what start-up found — recovery's report and the
     readiness probe's — then refuse on a blocking finding. ``True`` means the
     run is over and the session says why."""
+    from ai_hats_observe.canonical.types import now
+
     from .startup_notices import notices_from_diagnostics, startup_record
 
     session = run.session
+    # Taken before asking: the probe stamps its findings when it answers.
+    started = now()
     # To the trace, not a logger: the CLI configures no logging, so a warning
     # would reach stderr through lastResort beside the line that says it anyway.
     findings = readiness_findings(provider, environ, report=session.log_sys)
@@ -680,6 +685,7 @@ def preflight(
     record_refused_run(
         run.session,
         refusals,
+        started=started,
         role=role,
         provider=provider.name,
         model=model,
@@ -693,6 +699,7 @@ def record_refused_run(
     session: "Session",
     refusals: "list[Blocking]",
     *,
+    started: "Timestamp | None" = None,
     role: str,
     provider: str,
     model: str,
@@ -711,7 +718,7 @@ def record_refused_run(
     stamped = [dataclasses.replace(finding, ts=finding.ts or now()) for finding in refusals]
     write_events(
         [
-            RunStarted(ts=now()),
+            RunStarted(ts=started or now()),
             *stamped,
             RunEnded(ok=False, raw_code=str(SUBAGENT_EXIT_ERROR), detail=detail, ts=now()),
         ],
