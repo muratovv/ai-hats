@@ -17,7 +17,7 @@ different thing entirely: it pins the install channel.
 | `claude`   | ask · cancel-after · nudge           | parsed              | native SDK engine | yes              | auth            |
 | `agy`      | ask · cancel-after · nudge           | parsed              | subprocess        | **no**           | **none**        |
 | `cline`    | nudge only                           | parsed              | subprocess        | yes              | **none**        |
-| `codex`    | cancel-after · nudge                 | **trace-log only**  | subprocess        | yes              | CLI · auth      |
+| `codex`    | cancel-after · nudge                 | **trace-log only**  | subprocess        | yes              | CLI             |
 | `opencode` | nudge only                           | **trace-log only**  | subprocess        | yes              | **none**        |
 
 Every harness receives the composed role — that column would read `yes` five
@@ -53,12 +53,13 @@ own trace log — non-empty, but coarser: no per-turn tool detail, no token usag
 native SDK engine, multi-turn in-process (`supports_sdk_engine`). Elsewhere it
 is a real subprocess whose stdout is captured — see [3].
 
-**Readiness probe.** What the surface is asked before a run takes anything
-(`readiness_findings`): `auth` — is it logged in; `CLI` — is the binary there
-and working. A finding refuses an unattended `ai-hats agent` before the worktree
-and says why in the session's `events.jsonl`; a HITL session warns and launches.
-`none` means an unattended run on that harness still fails after launch, the
-way every harness did before the seam — see [5] §Readiness probe.
+**Readiness probe.** What refuses an unattended `ai-hats agent` before it
+takes a worktree (`readiness_findings`): `auth` — the surface is not logged in;
+`CLI` — the binary is missing or broken. The refusal says why in the session's
+`events.jsonl`; a HITL session warns and launches. Codex's login check only
+warns: `codex login status` cannot see `CODEX_API_KEY`, which `codex exec`
+honours. `none` means an unattended run on that harness fails after launch
+instead — see [5] §Readiness probe.
 
 **Consent wrappers.** Whether a HITL child inherits an authoritative session
 `PATH`, which is what session-local command wrappers ride on

@@ -184,8 +184,10 @@ def test_readiness_reports_logged_out_without_exposing_command_output() -> None:
         run=lambda *args, **kwargs: next(results),
     )
 
-    assert isinstance(finding, PersonActionRequired)
-    assert finding.reason is PersonMustAct.REAUTHENTICATE
+    # A notice, never a refusal: `login status` is blind to CODEX_API_KEY, which
+    # `codex exec` honours — refusing here would stop a run that can authenticate.
+    assert isinstance(finding, Notice)
+    assert finding.reason is WorthRecording.SURFACE_WARNING
     assert finding.detail == "Codex is not authenticated. Run `codex login`, then retry ai-hats."
     assert "private auth detail" not in finding.detail
 

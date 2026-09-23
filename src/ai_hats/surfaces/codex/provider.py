@@ -155,23 +155,31 @@ def _readiness_findings(
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return [
-            Notice(
-                reason=WorthRecording.SURFACE_WARNING,
-                detail=f"Codex readiness probe did not run ({type(exc).__name__}); "
-                "run `codex --version` manually.",
-                source=READINESS_SOURCE,
-                ts=now(),
+            _notice(
+                f"Codex readiness probe did not run ({type(exc).__name__}); "
+                "run `codex --version` manually."
             )
         ]
     if auth.returncode != 0:
+        # A notice, not a refusal: `login status` reads auth.json only, while
+        # `codex exec` also authenticates through CODEX_API_KEY or a custom provider.
         return [
-            _person_must(
-                PersonMustAct.REAUTHENTICATE,
+            _notice(
                 "Codex is not authenticated. Run `codex login`, then retry ai-hats.",
                 raw_code=str(auth.returncode),
             )
         ]
     return []
+
+
+def _notice(detail: str, *, raw_code: str | None = None) -> Notice:
+    return Notice(
+        reason=WorthRecording.SURFACE_WARNING,
+        detail=detail,
+        raw_code=raw_code,
+        source=READINESS_SOURCE,
+        ts=now(),
+    )
 
 
 def _person_must(
