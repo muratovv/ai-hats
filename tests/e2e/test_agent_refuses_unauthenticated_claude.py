@@ -4,9 +4,9 @@ flow:   an operator launching an unattended claude sub-agent on a machine where
         claude is not logged in
 cmds:
     ai-hats agent assistant --task ping --json
-expect: the run is refused before a worktree or a session cache is taken; the
-        envelope carries exit_code 1 and an error naming `claude auth login`;
-        the session's events.jsonl says run_started → reauthenticate → run_ended
+expect: the run is refused before the launch attempt starts; the envelope
+        carries exit_code 1 and an error naming `claude auth login`; the
+        session's events.jsonl says run_started → reauthenticate → run_ended
 why:    without the pre-flight probe an unauthenticated run takes a worktree,
         a cache and a role materialization, then dies on the first message with
         the reason buried in an SDK error string
@@ -19,8 +19,13 @@ import os
 from pathlib import Path
 
 import pytest
-from ai_hats_core.layout import ProjectLayout
-from ai_hats_observe.artifacts import EVENT_LOG_JSONL, METRICS_JSON
+from ai_hats_observe.artifacts import (
+    EVENT_LOG_JSONL,
+    META_PROMPT_TXT,
+    METRICS_JSON,
+    ROLE_MATERIALIZATION_JSON,
+    TRACE_LOG,
+)
 from ai_hats_observe.canonical.events import RunEnded, RunStarted
 from ai_hats_observe.canonical.signals import PersonActionRequired, PersonMustAct
 from ai_hats_observe.event_log import read_events
@@ -83,14 +88,15 @@ def test_e2e_agent_refuses_before_taking_a_worktree(tmp_project, tmp_path) -> No
     assert events[1].source == "claude/readiness"
     assert events[2].ok is False
 
-    # Nothing was taken. Scope: the project's worktree metadata and the cache
-    # root every session dir hangs off; the known-present sample that the
-    # scope is the right one is the session dir this very run wrote.
-    layout = ProjectLayout.at(tmp_project.path)
-    assert session_dir.is_relative_to(layout.sessions.runs)
-    assert not layout.sessions.worktrees.exists() or not any(layout.sessions.worktrees.iterdir())
-    cache_home = Path(tmp_project.env["AI_HATS_CACHE_HOME"])
-    taken = [p for p in cache_home.rglob("*") if p.is_dir() and p.name.startswith("session_")]
-    assert taken == [], f"session cache taken before the refusal: {taken}"
-    checkouts = [p for p in cache_home.rglob("worktrees") if p.is_dir() and any(p.iterdir())]
-    assert checkouts == [], f"worktree checkouts taken before the refusal: {checkouts}"
+    # The launch attempt never started. A worktree or a session cache it took is
+    # released at run end either way, so their absence afterwards proves
+    # nothing; what the attempt writes before taking them stays. Scope: this
+    # session's dir; known-present sample: the refusal line in the same trace.
+    trace = (session_dir / TRACE_LOG).read_text(encoding="utf-8")
+    assert "refused before launch" in trace
+    for line in ("Sub-agent started", "Isolation:", "Working directory:"):
+        assert line not in trace, f"the launch attempt ran: {line!r} in the trace"
+    for artefact in (ROLE_MATERIALIZATION_JSON, META_PROMPT_TXT):
+        assert not (session_dir / artefact).exists(), f"the launch attempt wrote {artefact}"
+    startup = json.loads((session_dir / "diagnostics.json").read_text(encoding="utf-8"))["startup"]
+    assert any("claude auth login" in n["text"] for n in startup["notices"])
