@@ -73,6 +73,8 @@ def test_every_other_line_leaves_the_turn_open(line: dict) -> None:
         (["--permission-prompt-tool", "stdio"], ["--permission-prompt-tool"]),
         (["--resume", "abc", "-c"], ["--resume", "-c"]),
         (["-p", "hi"], ["-p"]),
+        (["--session-id", "x"], ["--session-id"]),
+        (["--no-session-persistence"], ["--no-session-persistence"]),
     ],
 )
 def test_the_flags_that_make_the_wire_are_the_holders(args: list[str], owned: list[str]) -> None:

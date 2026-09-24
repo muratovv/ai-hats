@@ -8,8 +8,8 @@ from typing import Any, Mapping
 from ai_hats_observe.canonical import TurnEnded
 from ai_hats_observe.canonical.types import now
 
-# Each makes the wire or picks a different session; `-p` and `-r`/`-c` are claude's
-# own short forms here, since they only reach the binary after ai-hats' options.
+# Each makes the wire, picks a different session, or leaves no record to read; `-p` and
+# `-r`/`-c` are claude's own short forms here, since they reach the binary after ai-hats'.
 _OWNED = (
     "--input-format",
     "--output-format",
@@ -20,6 +20,8 @@ _OWNED = (
     "-r",
     "--continue",
     "-c",
+    "--session-id",
+    "--no-session-persistence",
 )
 
 

@@ -69,6 +69,7 @@ def test_e2e_the_parameters_of_a_bare_session_mean_the_same_here(tmp_project, tm
         (("-p", "claude", "--resume", "abc"), "--resume"),
         (("-p", "claude", "--permission-prompt-tool", "stdio"), "--permission-prompt-tool"),
         (("-p", "claude", "--output-format=text"), "--output-format"),
+        (("-p", "claude", "--no-session-persistence"), "--no-session-persistence"),
         (
             (
                 "-p",
