@@ -1622,7 +1622,7 @@ as a claim to check, not as evidence.
   ai-hats headless -p claude -r assistant
   ```
 
-- **expect** — exit 143 on SIGTERM and 130 on SIGINT; the log still ends with run_ended and the session is finalized; a turn still queued is refused in the log before run_ended; no claude process outlives the holder
+- **expect** — exit 143 on SIGTERM and 130 on SIGINT; the log still ends with run_ended and the session is finalized; no claude process outlives the holder
 - **why** — a script must learn the outcome from the exit code and never leave an orphaned claude behind — the child runs in its own process group, so only the holder can take it down
 
 ## `test_headless_client.py`

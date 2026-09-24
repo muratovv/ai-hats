@@ -74,10 +74,12 @@ def test_e2e_a_file_of_turns_becomes_a_file_of_events(tmp_project, tmp_path) -> 
     assert events == log.read_bytes(), "stdout after line 1 must be the log, byte for byte"
     kinds = [json.loads(line)["event"] for line in events.splitlines()]
     assert kinds[0] == "run_started" and kinds[-1] == "run_ended"
-    # Both turns were queued up front, yet the log closes each before the next
-    # begins: a reader can cut it into turns at every turn_ended.
-    turns = [k for k in kinds if k in ("prompt_received", "response_ended", "turn_ended")]
-    assert turns == ["prompt_received", "response_ended", "turn_ended"] * 2, turns
+    # Every turn ends after its own answer. Sent ahead, the next turn's prompt
+    # may land before that end: the binary keeps the queue (ADR-0038 D3).
+    ends = [i for i, k in enumerate(kinds) if k == "turn_ended"]
+    assert len(ends) == 2
+    for n, at in enumerate(ends, start=1):
+        assert kinds[:at].count("response_ended") >= n, kinds
 
     session_dir = Path(header["session_dir"])
     assert json.loads((session_dir / "metrics.json").read_text())["finalized"] is True

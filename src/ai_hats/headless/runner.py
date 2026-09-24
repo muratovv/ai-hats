@@ -16,7 +16,6 @@ import subprocess
 import sys
 import threading
 import time
-from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
 
@@ -157,7 +156,7 @@ class HeadlessRunner(WrapRunner):
         code = self._wait(child)
         # Every `result` the child printed has reached the log before run_ended.
         follower.join(GRACE_S)
-        relay.abandon()
+        relay.ended.set()
         return code
 
     def _wait(self, child: subprocess.Popen[bytes]) -> int:
@@ -182,10 +181,10 @@ class HeadlessRunner(WrapRunner):
 class _Relay:
     """The two pumps between the holder's pipes and the child's.
 
-    The holder, not the binary, keeps the queue of turns: the next prompt goes
-    to the wire only once the previous turn's end is in the log. With the
-    binary queueing, turn N+1's prompt reached the record before turn N's
-    ``result`` reached the holder, so the log said turn N+1 began inside turn N.
+    A prompt goes to the wire the moment it is read; queueing a turn behind the
+    running one is the surface's own behaviour, and a holder that queued in its
+    stead would change it for a surface that folds a sent turn into the running
+    one (ADR-0038 D3).
     """
 
     def __init__(
@@ -202,18 +201,14 @@ class _Relay:
         self._event_log = event_log
         self._log = log
         self._report = report
-        self._lock = threading.Lock()
-        self._queue: deque[tuple[bytes, str]] = deque()
-        self._running = False  # a turn this holder sent has no end yet
-        self._no_more = False  # stdin reached EOF
         # Set once the child is gone: a command after that would land behind run_ended.
         self.ended = threading.Event()
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
-        """Holder stdin → commands → the queue of turns; EOF ends the input."""
+        """Holder stdin → commands → child stdin; EOF closes the child's stdin."""
         try:
             if first_prompt:
-                self._submit(self._wire.prompt_line(first_prompt), "the positional prompt")
+                self._send(self._wire.prompt_line(first_prompt), "the positional prompt")
             for number, raw in enumerate(_lines(stdin_fd), start=1):
                 command = parse_command(raw)
                 if command is None:
@@ -222,31 +217,11 @@ class _Relay:
                 if isinstance(command, Rejected):
                     self._reject(where, command.cmd, command.why)
                 else:
-                    self._submit(self._wire.prompt_line(command.text), where)
+                    self._send(self._wire.prompt_line(command.text), where)
         finally:
-            with self._lock:
-                self._no_more = True
-                if not self._queue:
-                    self._close_input()
-
-    def _submit(self, line: bytes, where: str) -> None:
-        with self._lock:
-            if self._running or self._queue:
-                self._queue.append((line, where))
-                return
-            self._running = True
-            self._send(line, where)
-
-    def _turn_over(self) -> None:
-        """A turn ended in the log: start the next queued one, or finish the input."""
-        with self._lock:
-            if not self._queue:
-                self._running = False
-                return
-            line, where = self._queue.popleft()
-            self._send(line, where)
-            if self._no_more and not self._queue:
-                self._close_input()
+            # EOF for the child: it finishes the turns it has and exits.
+            with contextlib.suppress(OSError, ValueError):
+                self._child.stdin.close()
 
     def _send(self, line: bytes, where: str) -> None:
         try:
@@ -254,19 +229,6 @@ class _Relay:
             self._child.stdin.flush()
         except (OSError, ValueError):
             self._reject(where, "prompt", "the session is ending")
-
-    def _close_input(self) -> None:
-        """EOF for the child: it finishes the turn it has and exits."""
-        with contextlib.suppress(OSError, ValueError):
-            self._child.stdin.close()
-
-    def abandon(self) -> None:
-        """The child is gone: every turn still queued is refused, before run_ended."""
-        with self._lock:
-            while self._queue:
-                _line, where = self._queue.popleft()
-                self._reject(where, "prompt", "the session ended before this turn ran")
-        self.ended.set()
 
     def _reject(self, where: str, cmd: str | None, why: str) -> None:
         detail = f"{where}: {why}"
@@ -285,7 +247,7 @@ class _Relay:
         )
 
     def follow(self) -> None:
-        """Child stdout → the turn boundary in the log, then the next turn."""
+        """Child stdout → the turn boundary in the log."""
         for raw in iter(self._child.stdout.readline, b""):
             try:
                 message = json.loads(raw)
@@ -295,11 +257,8 @@ class _Relay:
             if not isinstance(message, dict):
                 continue
             ended = self._wire.turn_end(message)
-            if ended is None:
-                continue
-            if self._event_log is not None:
+            if ended is not None and self._event_log is not None:
                 self._event_log.end_turn(ended)
-            self._turn_over()
 
 
 def _lines(fd: int) -> Iterator[bytes]:

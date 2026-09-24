@@ -5,8 +5,8 @@ flow:   an operator aborts a running headless session — kill -TERM on the
 cmds:
     ai-hats headless -p claude -r assistant
 expect: exit 143 on SIGTERM and 130 on SIGINT; the log still ends with
-        run_ended and the session is finalized; a turn still queued is refused
-        in the log before run_ended; no claude process outlives the holder
+        run_ended and the session is finalized; no claude process outlives the
+        holder
 why:    a script must learn the outcome from the exit code and never leave an
         orphaned claude behind — the child runs in its own process group, so
         only the holder can take it down
@@ -46,7 +46,6 @@ def test_e2e_an_aborted_session_is_recorded_and_leaves_no_claude(
         env=stub.session_env(tmp_project),
     )
     session.prompt("@sleep 30 a long turn")
-    session.prompt("queued behind it")
     # Positive control for the orphan check below: the same probe sees the stub
     # while the turn runs.
     assert _wait_for(lambda: stub.running()), "the stub never showed up to pgrep"
@@ -55,10 +54,6 @@ def test_e2e_an_aborted_session_is_recorded_and_leaves_no_claude(
 
     assert end.code == code
     assert end.events[-1]["event"] == "run_ended"
-    refused = end.signals("command_rejected")
-    assert [e["detail"] for e in refused] == [
-        "stdin line 2: the session ended before this turn ran"
-    ]
     assert _wait_for(lambda: not stub.running(), 5.0), f"orphans: {stub.running()}"
     metrics = json.loads((session.header.session_dir / "metrics.json").read_text())
     assert metrics["finalized"] is True
