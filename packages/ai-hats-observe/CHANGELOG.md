@@ -4,6 +4,14 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.14.1]
+
+### Removed
+
+- `session show` no longer renders the `🧹 Wrap Up` line: the integrator stopped
+  computing the wrap-up nudge. A `diagnostics.json` that still carries
+  `retro_reminder.wrap_up` renders as before, minus that line.
+
 ## [0.14.0]
 
 ### Added
