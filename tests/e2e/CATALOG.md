@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**336 of 336 files catalogued — 344 flows.**
+**337 of 337 files catalogued — 345 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1709,6 +1709,20 @@ as a claim to check, not as evidence.
 
 - **expect** — every event of a turn is on stdout before that turn's turn_ended, even when the surface's record lands after the wire's result; a prompt sent ahead is received after the previous turn_ended; each prompt is received once
 - **why** — the main agent's events come from the wire alone, so the log's order is the wire's by construction — a client that cuts the log at turn_ended never loses an answer to the next turn
+
+## `test_headless_wire_record_diff.py`
+
+*pins HATS-2028*
+
+- **flow** — a headless session's log, taken off the wire, is compared with the surface's own record of the same session read after it ended
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the main agent's events are the same in both, up to the declared differences — on the stub (free) and on the live claude binary (live_headless, run with `-m live_headless`)
+- **why** — claude has two inputs for one reader, the wire in headless and the record in a PTY session; this is what keeps them one reading
 
 ## `test_hermetic_unit_gate.py`
 
