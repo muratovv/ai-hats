@@ -32,6 +32,7 @@ from .canonical.events import (
     RunEnded,
     RunStarted,
     ToolResultReceived,
+    TurnEnded,
 )
 from .canonical.signals import (
     HarnessActionRequired,
@@ -192,6 +193,14 @@ def encode(event: Event) -> dict[str, Any]:
                 "detail": event.detail,
                 "ts": event.ts,
             }
+        case TurnEnded():
+            body = {
+                "event": "turn_ended",
+                "ok": event.ok,
+                "raw_code": event.raw_code,
+                "detail": event.detail,
+                "ts": event.ts,
+            }
         case PromptReceived():
             body = {
                 "event": "prompt_received",
@@ -315,6 +324,14 @@ def _decode(record: dict[str, Any]) -> Event | None:
         case "run_ended":
             raw_code, detail = record.get("raw_code"), record.get("detail")
             return RunEnded(
+                ok=bool(record.get("ok")),
+                raw_code=raw_code if isinstance(raw_code, str) else None,
+                detail=detail if isinstance(detail, str) else None,
+                ts=ts,
+            )
+        case "turn_ended":
+            raw_code, detail = record.get("raw_code"), record.get("detail")
+            return TurnEnded(
                 ok=bool(record.get("ok")),
                 raw_code=raw_code if isinstance(raw_code, str) else None,
                 detail=detail if isinstance(detail, str) else None,

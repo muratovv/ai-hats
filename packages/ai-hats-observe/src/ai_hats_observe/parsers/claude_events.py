@@ -279,6 +279,13 @@ class ClaudeTranscriptReader:
         self._closed = True
         self._drained = False
 
+    # -- TurnAwareReader -----------------------------------------------------
+
+    def end_responses(self) -> Iterator[Event]:
+        """End the response held open because nothing later has proved it over:
+        the surface said its turn ended, and by then the record is on disk."""
+        yield from self._end_open()
+
     # -- lines -------------------------------------------------------------
 
     @property

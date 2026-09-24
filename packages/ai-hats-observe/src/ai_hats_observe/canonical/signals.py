@@ -63,6 +63,10 @@ class WorthRecording(StrEnum):
     # CANCELLED; this says the run went on afterwards because someone chose to.
     INTERRUPTED = "interrupted"
 
+    # A headless holder could not read or execute a command on its stdin; the
+    # session goes on, and the client learns it here rather than by silence.
+    COMMAND_REJECTED = "command_rejected"
+
     # A record shape we do not model. Reported rather than dropped so schema drift is
     # visible the first time it appears, instead of silently changing what our numbers
     # mean.
