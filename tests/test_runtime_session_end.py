@@ -203,7 +203,7 @@ def test_print_session_end_without_retro(tmp_path, capsys):
 )
 def test_print_session_end_with_retro_one_line(tmp_path, capsys, action, expected_fragment):
     """``retro=<decision>`` → one ``📝 Retro:`` line per action; the
-    reminder/wrap-up banner LINES no longer print here (moved to
+    reminder banner LINES no longer print here (moved to
     ``RunSessionEnd`` step in HATS-535)."""
     session = make_session(tmp_path)
     decision = {

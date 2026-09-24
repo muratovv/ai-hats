@@ -72,12 +72,7 @@ class RunSessionEnd(Step):
 
 
 def _print_retro_banner(retro: dict) -> None:
-    """Render the cyan retro reminder.
-
-    The decision's ``wrap_up`` payload is deliberately not rendered here: it
-    is advice for a live session, shown after the session has already exited.
-    It stays in ``diagnostics.json`` for ``session show``.
-    """
+    """Render the cyan retro reminder."""
     rem = retro.get("reminder")
     if rem:
         print(f"\033[33m  Reflect the project through {rem['count']} sessions:\033[0m")

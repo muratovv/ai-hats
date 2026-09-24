@@ -1,9 +1,4 @@
-"""Shared session-window helpers used by builder and reminder.
-
-The [start_ts, end_ts] window was introduced for retro artifacts, and
-the wrap-up nudge reuses the same logic — keep both consumers
-in lockstep by living in one place.
-"""
+"""Session-window helpers: the time bounds session review scopes its facts and candidates to."""
 
 from __future__ import annotations
 
@@ -59,8 +54,7 @@ def tasks_closed_in_window(layout: ProjectLayout, since: datetime, until: dateti
     """Return IDs of tasks whose `completed_at` falls in [since, until], state=done.
 
     Loud by design: a read that cannot be performed raises rather than
-    reporting "nothing closed". The wrap-up nudge tolerates that at the UX boundary
-    (``auto_retro.make_decision``); ``session retro`` should not.
+    reporting "nothing closed".
     """
     from ..rack_workspace import closed_tasks
 

@@ -127,20 +127,10 @@ def make_decision(
             "background": None,
             "retro_path": None,
             "log_path": _safe_log_path(layout, session_id),
-            "wrap_up": None,
             "reminder": None,
         }
 
     retro_path = layout.sessions.retros / "sessions" / f"{session_id}.md"
-
-    # Wrap-up nudge — pure side-effect-free; any error collapses to None.
-    wrap_up_info = None
-    try:
-        from . import reminder as reminder_mod
-
-        wrap_up_info = reminder_mod.evaluate_wrap_up(layout, session_id)
-    except Exception:  # silent-ok: the nudge is side-effect-free; any error collapses to None
-        wrap_up_info = None
 
     reminder_info = None
     if action == "hint":
@@ -155,7 +145,6 @@ def make_decision(
         "background": background,
         "retro_path": str(retro_path),
         "log_path": str(_retro_log_path(layout, session_id)),
-        "wrap_up": wrap_up_info,
         "reminder": reminder_info,
     }
 

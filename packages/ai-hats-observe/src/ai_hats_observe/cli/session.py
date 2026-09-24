@@ -443,11 +443,6 @@ def _render_diagnostics(session) -> None:
                 _host.host().console.print(
                     f"  📝 [cyan]Retro Reminder[/]: Reflect through {rem.get('count')} sessions (`{rem.get('command')}`)"
                 )
-            wrap = retro.get("wrap_up")
-            if isinstance(wrap, dict):
-                _host.host().console.print(
-                    f"  🧹 [cyan]Wrap Up[/]: {wrap.get('tasks_closed')} tasks closed in {wrap.get('duration_min')}m"
-                )
 
         if isinstance(update, dict):
             inst = update.get("installed_label") or update.get("installed_sha", "?")
