@@ -16,13 +16,11 @@ import subprocess
 import sys
 import threading
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
 from ai_hats_observe.canonical import Notice, WorthRecording
 from ai_hats_observe.canonical.types import now
-from ai_hats_observe.event_log import append_event
 
 from ..pipeline_catalog import FINALIZE_HEADLESS
 from ..wrap_runner import WrapRunner
@@ -143,7 +141,7 @@ class HeadlessRunner(WrapRunner):
         sys.stderr.flush()
         self._copier = LogCopier(log, self._stdout_fd, report=session.log_sys).start()
 
-        relay = _Relay(child, self._wire(), event_log=event_log, log=log, report=session.log_sys)
+        relay = _Relay(child, self._wire(), event_log=event_log, report=session.log_sys)
         follower = threading.Thread(target=relay.follow, name="headless-follow", daemon=True)
         feeder = threading.Thread(
             target=relay.feed,
@@ -154,9 +152,9 @@ class HeadlessRunner(WrapRunner):
         follower.start()
         feeder.start()
         code = self._wait(child)
-        # Every `result` the child printed has reached the log before run_ended.
+        # Every `result` the child printed has reached the log before run_ended;
+        # a pump still alive after the grace is refused by the closed writer.
         follower.join(GRACE_S)
-        relay.ended.set()
         return code
 
     def _wait(self, child: subprocess.Popen[bytes]) -> int:
@@ -192,16 +190,12 @@ class _Relay:
         wire: Wire,
         *,
         event_log: EventLogWriter | None,
-        log: Path,
         report: Callable[[str], None],
     ) -> None:
         self._child = child
         self._wire = wire
         self._event_log = event_log
-        self._log = log
         self._report = report
-        # Set once the child is gone: a command after that would land behind run_ended.
-        self.ended = threading.Event()
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
         """Holder stdin → commands → child stdin; EOF closes the child's stdin."""
@@ -231,18 +225,19 @@ class _Relay:
 
     def _reject(self, where: str, cmd: str | None, why: str) -> None:
         detail = f"{where}: {why}"
-        if self.ended.is_set():
-            self._report(f"headless: dropped after the session ended — {detail}")
+        if self._event_log is None:
+            self._report(f"headless: no log to record a refused command — {detail}")
             return
-        append_event(
-            Notice(
-                reason=WorthRecording.COMMAND_REJECTED,
-                raw_code=cmd,
-                detail=detail,
-                source=_SOURCE,
-                ts=now(),
-            ),
-            self._log,
+        self._event_log.emit(
+            [
+                Notice(
+                    reason=WorthRecording.COMMAND_REJECTED,
+                    raw_code=cmd,
+                    detail=detail,
+                    source=_SOURCE,
+                    ts=now(),
+                )
+            ]
         )
 
     def follow(self) -> None:
