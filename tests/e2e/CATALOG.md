@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**328 of 328 files catalogued — 336 flows.**
+**329 of 329 files catalogued — 337 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -57,6 +57,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the process outputs a JSON envelope containing exit_code, session_id, session_dir, and total_cost_usd
 - **why** — without structured json output, orchestration pipelines cannot parse session metadata or propagate shell exit codes
+
+## `test_agent_refuses_unauthenticated_claude.py`
+
+*pins HATS-2023*
+
+- **flow** — an operator launching an unattended claude sub-agent on a machine where claude is not logged in
+- **cmds**
+
+  ```console
+  ai-hats agent assistant --task ping --json
+  ```
+
+- **expect** — the run is refused before the launch attempt starts; the envelope carries exit_code 1 and an error naming `claude auth login`; the session's events.jsonl says run_started → reauthenticate → run_ended
+- **why** — without the pre-flight probe an unauthenticated run takes a worktree and a role materialization, launches claude, and reports a green "Sub-agent completed" with exit 1, the reason only in transcript.txt
 
 ## `test_agy_bypass.py`
 

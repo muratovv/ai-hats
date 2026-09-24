@@ -12,13 +12,13 @@ different thing entirely: it pins the install channel.
 
 ## The matrix
 
-| Harness    | Hook verdicts beyond a plain refusal | Session log → audit | Sub-agents        | Consent wrappers |
-| ---------- | ------------------------------------ | ------------------- | ----------------- | ---------------- |
-| `claude`   | ask · cancel-after · nudge           | parsed              | native SDK engine | yes              |
-| `agy`      | ask · cancel-after · nudge           | parsed              | subprocess        | **no**           |
-| `cline`    | nudge only                           | parsed              | subprocess        | yes              |
-| `codex`    | cancel-after · nudge                 | **trace-log only**  | subprocess        | yes              |
-| `opencode` | nudge only                           | **trace-log only**  | subprocess        | yes              |
+| Harness    | Hook verdicts beyond a plain refusal | Session log → audit | Sub-agents        | Consent wrappers | Readiness probe |
+| ---------- | ------------------------------------ | ------------------- | ----------------- | ---------------- | --------------- |
+| `claude`   | ask · cancel-after · nudge           | parsed              | native SDK engine | yes              | auth            |
+| `agy`      | ask · cancel-after · nudge           | parsed              | subprocess        | **no**           | **none**        |
+| `cline`    | nudge only                           | parsed              | subprocess        | yes              | **none**        |
+| `codex`    | cancel-after · nudge                 | **trace-log only**  | subprocess        | yes              | CLI             |
+| `opencode` | nudge only                           | **trace-log only**  | subprocess        | yes              | **none**        |
 
 Every harness receives the composed role — that column would read `yes` five
 times and is left out. *How* it is delivered differs per harness (a system-prompt
@@ -53,6 +53,14 @@ own trace log — non-empty, but coarser: no per-turn tool detail, no token usag
 native SDK engine, multi-turn in-process (`supports_sdk_engine`). Elsewhere it
 is a real subprocess whose stdout is captured — see [3].
 
+**Readiness probe.** What refuses an unattended `ai-hats agent` before it
+takes a worktree (`readiness_findings`): `auth` — the surface is not logged in;
+`CLI` — the binary is missing or broken. The refusal says why in the session's
+`events.jsonl`; a HITL session warns and launches. Codex's login check only
+warns: `codex login status` cannot see `CODEX_API_KEY`, which `codex exec`
+honours. `none` means an unattended run on that harness fails after launch
+instead — see [5] §Readiness probe.
+
 **Consent wrappers.** Whether a HITL child inherits an authoritative session
 `PATH`, which is what session-local command wrappers ride on
 (`supports_session_command_wrappers`). Where it is `no`, a role that declares
@@ -86,3 +94,5 @@ Ask your own installation rather than trusting a page: `ai-hats list providers`.
 **[3]** — [`docs/how-to-orchestration.md`](how-to-orchestration.md) — sub-agent orchestration, session tags, JSON output.
 
 **[4]** — [`docs/how-to-extend.md`](how-to-extend.md) — skill frontmatter, including the `requires` block a skill declares its CLI and MCP dependencies in.
+
+**[5]** — [`docs/session-start-notices.md`](session-start-notices.md) — the readiness probe as a HITL warn producer, and the seam it shares with the Automate refusal.

@@ -104,6 +104,10 @@ def _report(result: SessionOutcome, *, as_json: bool) -> NoReturn:
             "session_dir": str(session_dir),
         }
         click.echo(json.dumps(payload, sort_keys=True))
+    elif metrics.get("error"):
+        console.print(f"[red]Sub-agent failed[/]: {session_id}")
+        console.print(f"  {metrics['error']}", soft_wrap=True)
+        console.print(f"  Session dir: {session_dir}")
     else:
         console.print(f"[green]Sub-agent completed[/]: {session_id}")
         console.print(f"  Session dir: {session_dir}")

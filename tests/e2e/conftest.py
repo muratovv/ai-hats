@@ -1,8 +1,8 @@
 """e2e fixtures — shared across the directory.
 
 * ``requires_claude_auth`` — skip-marker: ``claude`` binary on PATH +
-  ``claude --version`` exits 0. Mirrors the probe used by other e2e
-  files (test_role_isolation.py, test_subagent_sdk_smoke.py).
+  ``claude --version`` exits 0 + the surface's own readiness probe
+  (``claude auth status``, offline) finds nothing blocking.
 * ``requires_agy_auth`` — skip-marker: ``agy`` binary on PATH +
   ``agy --version`` and a bounded live turn exit 0.
 * ``repo_root`` — single source of truth for repo path math.
@@ -297,11 +297,11 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ANN001, ANN201
 
 @pytest.fixture
 def requires_claude_auth() -> None:
-    """Skip if ``claude`` binary missing or unauthenticated.
+    """Skip if ``claude`` binary missing, broken, or not logged in.
 
-    Probe: ``claude --version`` exits 0. Full auth check would itself
-    need network — tests that hit auth-gated paths surface their own
-    'Not logged in' detection inside the SDK error envelope.
+    ``claude --version`` for the binary, then the surface's own readiness
+    probe (``claude auth status`` — offline JSON) for the login: a blocking
+    finding skips, a notice (older CLI, no verb) lets the test decide.
     """
     if not shutil.which("claude"):
         pytest.skip("claude binary not found in PATH")
@@ -316,6 +316,13 @@ def requires_claude_auth() -> None:
         pytest.skip(f"claude --version probe failed: {exc}")
     if cp.returncode != 0:
         pytest.skip(f"claude --version exit {cp.returncode}: {cp.stderr[:200]}")
+    from ai_hats_observe.canonical.signals import Blocking
+
+    from ai_hats.surfaces.claude.readiness import readiness_findings
+
+    for finding in readiness_findings(os.environ):
+        if isinstance(finding, Blocking):
+            pytest.skip(f"claude not ready: {finding.detail}")
 
 
 @pytest.fixture

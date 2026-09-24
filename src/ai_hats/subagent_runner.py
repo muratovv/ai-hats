@@ -34,7 +34,6 @@ from ai_hats_wt import IsolationMode, WorktreeManager
 from .session_artifacts import AT_LAUNCH, CollectedMetrics, RunMode, assemble_brief
 from .session_plan import launch, plan_session, probe_host, session_record
 from .session_run import SessionRun
-from .startup_notices import notices_from_diagnostics, save_session_diagnostics, startup_record
 from .surfaces import LaunchFlags, Prompt, PromptBlock, PromptMember, apply
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
@@ -45,6 +44,7 @@ from .runtime_common import (
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
+    preflight,
     start_event_log,
 )
 
@@ -234,6 +234,16 @@ class SubAgentRunner:
             self.session_mgr,
             parent_session=parent_session,
         ) as run:
+            if preflight(
+                run,
+                self.payload.provider,
+                os.environ,
+                role=self.payload.effective_role,
+                model=model,
+                isolation_mode=isolation_mode,
+                tags=tags,
+            ):
+                return run.session
             session, work_dir = self._run_session_attempt(
                 run,
                 task=task,
@@ -269,13 +279,6 @@ class SubAgentRunner:
             "session cache",
             lambda: _cleanup_session_cache(self.layout.cache.session(session.session_id)),
         )
-        # No banner on this path: the record is the only place recovery's report lands.
-        save_session_diagnostics(
-            session.session_dir,
-            "startup",
-            startup_record(notices_from_diagnostics(session.startup_diagnostics), 0.0),
-        )
-
         # The ONE composition arrived in the payload (compose seam).
         role_name = self.payload.effective_role
         provider = self.payload.provider

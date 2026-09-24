@@ -36,6 +36,7 @@ from .hook_channel import HookRow
 
 if TYPE_CHECKING:
     from ai_hats_observe.canonical.reader import EventReader
+    from ai_hats_observe.canonical.signals import Signal
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
@@ -331,6 +332,15 @@ class Surface(abc.ABC):
         Base surfaces lint nothing; ClaudeSurface overrides to check the Claude
         settings chain for permission rules the CLI has deprecated.
         """
+        return []
+
+    def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
+        """What stops this surface from serving a session at all, asked before a
+        run takes anything: a ``Blocking`` signal refuses an Automate run, a
+        ``Notice`` is logged; HITL warns on both (docs/glossary.md, *Readiness
+        probe*). Base surfaces are always ready.
+        """
+        del environ
         return []
 
     def _compose_sections(self, result: CompositionResult) -> str:

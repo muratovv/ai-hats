@@ -4,6 +4,7 @@ session-cache cleanup. Extracted from runtime.py."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import shutil
@@ -47,8 +48,14 @@ from .startup_notices import (  # noqa: F401
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
     from ai_hats_observe import Session
+    from ai_hats_observe.canonical.signals import Blocking, Signal
+    from ai_hats_observe.canonical.types import Timestamp
     from ai_hats_observe.event_log_writer import EventLogWriter
+
+    from .session_run import SessionRun
 
 logger = logging.getLogger(__name__)
 
@@ -619,6 +626,117 @@ def start_event_log(
     except Exception as exc:
         session.log_sys(f"events.jsonl writer did not start: {exc!r}")
         return None
+
+
+def readiness_findings(
+    provider, environ: "Mapping[str, str]", *, report: "Callable[[str], None]"
+) -> "list[Signal]":
+    """The surface's readiness probe, fail-open: a probe that raises is reported
+    and finds nothing. Which findings block is the caller's reading
+    (``Blocking``); every finding is reported here so the trace has it."""
+    try:
+        findings = list(provider.readiness_findings(environ))
+    except Exception as exc:
+        logger.warning("readiness probe failed", exc_info=True)
+        report(f"readiness probe FAILED — {type(exc).__name__}: {exc}")
+        return []
+    for finding in findings:
+        report(f"readiness ({finding.reason}): {finding.detail}")
+    return findings
+
+
+def blocking_findings(findings: "list[Signal]") -> "list[Blocking]":
+    from ai_hats_observe.canonical.signals import Blocking
+
+    return [finding for finding in findings if isinstance(finding, Blocking)]
+
+
+def preflight(
+    run: "SessionRun",
+    provider,
+    environ: "Mapping[str, str]",
+    *,
+    role: str,
+    model: str,
+    isolation_mode: str,
+    tags: dict[str, str] | None = None,
+) -> bool:
+    """The pre-launch half of an Automate session, once it exists and before
+    anything is taken: record what start-up found — recovery's report and the
+    readiness probe's — then refuse on a blocking finding. ``True`` means the
+    run is over and the session says why."""
+    from ai_hats_observe.canonical.types import now
+
+    from .startup_notices import notices_from_diagnostics, startup_record
+
+    session = run.session
+    # Taken before asking: the probe stamps its findings when it answers.
+    started = now()
+    # To the trace, not a logger: the CLI configures no logging, so a warning
+    # would reach stderr through lastResort beside the line that says it anyway.
+    findings = readiness_findings(provider, environ, report=session.log_sys)
+    notices = notices_from_diagnostics(session.startup_diagnostics)
+    notices += [StartupNotice("warn", f.detail or str(f.reason)) for f in findings]
+    # No banner on this path: the record is the only place these land.
+    save_session_diagnostics(session.session_dir, "startup", startup_record(notices, 0.0))
+    refusals = blocking_findings(findings)
+    if not refusals:
+        return False
+    record_refused_run(
+        run.session,
+        refusals,
+        started=started,
+        role=role,
+        provider=provider.name,
+        model=model,
+        isolation_mode=isolation_mode,
+        tags=tags,
+    )
+    return True
+
+
+def record_refused_run(
+    session: "Session",
+    refusals: "list[Blocking]",
+    *,
+    started: "Timestamp | None" = None,
+    role: str,
+    provider: str,
+    model: str,
+    isolation_mode: str,
+    tags: dict[str, str] | None = None,
+) -> None:
+    """A run that never launched still says why: ``events.jsonl`` holds the
+    lifecycle around the signals, ``metrics.json`` is finalized with the
+    first refusal as ``error``."""
+    from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+    from ai_hats_observe.canonical.events import RunEnded, RunStarted
+    from ai_hats_observe.canonical.types import now
+    from ai_hats_observe.event_log import write_events
+
+    detail = refusals[0].detail or str(refusals[0].reason)
+    stamped = [dataclasses.replace(finding, ts=finding.ts or now()) for finding in refusals]
+    write_events(
+        [
+            RunStarted(ts=started or now()),
+            *stamped,
+            RunEnded(ok=False, raw_code=str(SUBAGENT_EXIT_ERROR), detail=detail, ts=now()),
+        ],
+        session.session_dir / EVENT_LOG_JSONL,
+    )
+    session.init_audit(role=role, provider=provider, model=model)
+    metrics: dict = {
+        "exit_code": SUBAGENT_EXIT_ERROR,
+        "role": role,
+        "provider": provider,
+        "model": model,
+        "isolation_mode": isolation_mode,
+        "error": detail,
+    }
+    if tags:
+        metrics["tags"] = tags
+    session.finalize_audit(metrics)
+    session.log_sys(f"Sub-agent refused before launch: {detail}")
 
 
 def _close_event_log(event_log: "EventLogWriter", session: "Session", *, exit_code: int) -> None:

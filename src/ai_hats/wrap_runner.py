@@ -49,6 +49,7 @@ from .runtime_common import (
     _flag_sensor_error,
     _run_finalize_hitl,
     FinalizeAborted,
+    readiness_findings,
     sigint_shield,
     start_event_log,
 )
@@ -361,6 +362,17 @@ class WrapRunner:
         if findings:
             session.log_sys(f"provider settings lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
+
+    def _probe_readiness(self, session: "Session") -> list[StartupNotice]:
+        """WARN per readiness finding — not logged in, CLI missing, probe
+        unavailable. HITL launches anyway: the surface's own TUI runs its
+        login flow (docs/glossary.md, *Readiness probe*).
+        """
+        provider = self.payload.provider
+        if provider is None:
+            return []
+        findings = readiness_findings(provider, os.environ, report=session.log_sys)
+        return [StartupNotice("warn", f.detail or str(f.reason)) for f in findings]
 
     def _lint_env_drift(self, session: "Session") -> list[StartupNotice]:
         """WARN when the editable dev env is stale — uv freezes
@@ -718,6 +730,7 @@ class WrapRunner:
         startup_notices.extend(self._payload_startup_notices())
         startup_notices.extend(notices_from_diagnostics(session.startup_diagnostics))
         startup_notices.extend(self._lint_provider_settings(session))
+        startup_notices.extend(self._probe_readiness(session))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))
         startup_notices.extend(self._check_interpreter_pin())

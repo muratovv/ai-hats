@@ -14,6 +14,12 @@ from types import SimpleNamespace
 
 import pytest
 from ai_hats_core.layout import ProjectLayout
+from ai_hats_observe.canonical.signals import (
+    Notice,
+    PersonActionRequired,
+    PersonMustAct,
+    WorthRecording,
+)
 
 from ai_hats.fs_digest import dir_digest
 from ai_hats.session_artifacts import RunMode, SessionPolicy, assemble_brief
@@ -22,7 +28,7 @@ from ai_hats.session_run import SessionRun
 from ai_hats.surfaces import apply, context_text, validate
 from ai_hats.surfaces.codex import CodexSurface
 from ai_hats.surfaces.codex.home import CodexHome
-from ai_hats.surfaces.codex.provider import _readiness_warnings
+from ai_hats.surfaces.codex.provider import _readiness_findings
 from ai_hats.surfaces.plan import (
     CompositionPlan,
     EscapeUndeclared,
@@ -154,12 +160,15 @@ def test_get_cli_command_preserves_safe_passthrough() -> None:
 
 
 def test_readiness_reports_missing_cli_without_running_a_command() -> None:
-    warnings = _readiness_warnings(
-        which=lambda name: None,
+    (finding,) = _readiness_findings(
+        {},
+        which=lambda name, path=None: None,
         run=lambda *args, **kwargs: pytest.fail("missing CLI must not be executed"),
     )
 
-    assert "not on PATH" in warnings[0]
+    assert isinstance(finding, PersonActionRequired)
+    assert finding.reason is PersonMustAct.INSTALL
+    assert "not on PATH" in (finding.detail or "")
 
 
 def test_readiness_reports_logged_out_without_exposing_command_output() -> None:
@@ -169,13 +178,18 @@ def test_readiness_reports_logged_out_without_exposing_command_output() -> None:
             CompletedProcess(["codex", "login", "status"], 1, "private auth detail", ""),
         ]
     )
-    warnings = _readiness_warnings(
-        which=lambda name: "/bin/codex",
+    (finding,) = _readiness_findings(
+        {},
+        which=lambda name, path=None: "/bin/codex",
         run=lambda *args, **kwargs: next(results),
     )
 
-    assert warnings == ["Codex is not authenticated. Run `codex login`, then retry ai-hats."]
-    assert "private auth detail" not in warnings[0]
+    # A notice, never a refusal: `login status` is blind to CODEX_API_KEY, which
+    # `codex exec` honours — refusing here would stop a run that can authenticate.
+    assert isinstance(finding, Notice)
+    assert finding.reason is WorthRecording.SURFACE_WARNING
+    assert finding.detail == "Codex is not authenticated. Run `codex login`, then retry ai-hats."
+    assert "private auth detail" not in finding.detail
 
 
 def test_readiness_is_silent_when_version_and_login_status_succeed() -> None:
@@ -185,8 +199,23 @@ def test_readiness_is_silent_when_version_and_login_status_succeed() -> None:
         commands.append(command)
         return CompletedProcess(command, 0, "ready", "")
 
-    assert _readiness_warnings(which=lambda name: "/bin/codex", run=run) == []
+    assert _readiness_findings({}, which=lambda name, path=None: "/bin/codex", run=run) == []
     assert commands == [["/bin/codex", "--version"], ["/bin/codex", "login", "status"]]
+
+
+def test_readiness_probe_that_cannot_run_is_a_notice() -> None:
+    def run(command, **kwargs):
+        raise OSError("exec format error")
+
+    (finding,) = _readiness_findings({}, which=lambda name, path=None: "/bin/codex", run=run)
+
+    assert isinstance(finding, Notice)
+    assert finding.reason is WorthRecording.SURFACE_WARNING
+
+
+def test_settings_lint_no_longer_carries_the_readiness_probe() -> None:
+    """Settings lint means settings; the probe moved to ``readiness_findings``."""
+    assert CodexSurface().settings_lint_warnings(ProjectLayout.at(Path("/nonexistent"))) == []
 
 
 @pytest.mark.parametrize(
