@@ -70,6 +70,16 @@ class Hitl(HarnessParams):
 
 
 @dataclass(frozen=True)
+class Headless(Hitl):
+    """HITL whose channel is this process's own stdin/stdout, not a terminal
+    (ADR-0038): the holder of ``ai-hats headless``. ``prompt`` is its first turn."""
+
+    # Where the header and the log copy go: fd 1 as it was before fd 1 was
+    # pointed at stderr, so no printer can reach the machine stream.
+    stdout_fd: int = 1
+
+
+@dataclass(frozen=True)
 class Automate(HarnessParams):
     """Non-interactive: a captured subprocess, reported when it exits.
 
@@ -157,6 +167,8 @@ class SessionRunParams:
         }
         if isinstance(harness, Hitl):
             state["extra_args"] = list(harness.extra_args)
+        if isinstance(harness, Headless):
+            state["headless_stdout_fd"] = harness.stdout_fd
         if isinstance(harness, Automate):
             state["model"] = harness.model
             state["isolation"] = harness.isolation.value

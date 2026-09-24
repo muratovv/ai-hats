@@ -97,6 +97,23 @@ class RunEnded:
 
 
 @dataclass(frozen=True)
+class TurnEnded:
+    """The surface finished a turn and is ready for the next one.
+
+    What a client that drives a session waits on before its next prompt. It
+    cannot wait on ``ResponseEnded``: a turn that failed before the model
+    answered has none. Shaped like ``RunEnded``; ``detail`` carries the error
+    text when ``ok`` is false, never the answer — that is already an item.
+    """
+
+    ok: bool
+    raw_code: str | None = None
+    detail: str | None = None
+    ts: Timestamp | None = None
+    agent: AgentId | None = None
+
+
+@dataclass(frozen=True)
 class PromptReceived:
     """Input addressed to the model, from a person or from the harness.
 
@@ -239,6 +256,7 @@ class PersonAsked:
 Event = (
     RunStarted
     | RunEnded
+    | TurnEnded
     | PromptReceived
     | PersonAsked
     | ResponseStarted

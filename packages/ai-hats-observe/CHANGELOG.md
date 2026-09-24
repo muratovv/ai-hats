@@ -4,6 +4,23 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.15.0]
+
+Additive to `events/v1`: one more event kind and one more signal reason.
+
+### Added
+
+- `TurnEnded` (`turn_ended`) — the surface finished a turn: `ok`, `raw_code`,
+  `detail`, `ts`, shaped like `RunEnded`. What a headless client waits on before
+  its next prompt, since a turn that failed before the model answered has no
+  `ResponseEnded`.
+- `EventLogWriter.end_turn(ended)` — drain the record, end the main agent's
+  response a live reader still holds open, then append `ended`.
+- `TurnAwareReader` — the protocol a live reader implements to be told its turn
+  is over; `ClaudeTranscriptReader.end_responses()` implements it.
+- `WorthRecording.COMMAND_REJECTED` — a headless holder could not read or
+  execute a command on its stdin.
+
 ## [0.14.1]
 
 ### Removed

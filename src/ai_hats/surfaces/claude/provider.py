@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
 
+    from .wire import ClaudeWire
+
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
@@ -379,6 +381,11 @@ class ClaudeSurface(Surface):
     ) -> list[str]:
         extra = ["--model", model] if model else []
         return cmd + extra + ["--print", "-p", meta_prompt]
+
+    def wire(self) -> ClaudeWire:
+        from .wire import ClaudeWire
+
+        return ClaudeWire()
 
     def serve_hooks(self, layout: ProjectLayout, session_id: str, environ: dict[str, str]):
         """One warm dispatcher for the session instead of one per tool call.

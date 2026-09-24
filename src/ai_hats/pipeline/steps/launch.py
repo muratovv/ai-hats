@@ -74,6 +74,9 @@ class Provider(Step):
                     # An optional PtyTap factory seeded upstream (the
                     # pty_tee step); forwarded to the HITL PTY seam.
                     "pty_tap_factory",
+                    # Present only for `ai-hats headless`: the holder's machine
+                    # stdout. Its presence is what picks the headless runner.
+                    "headless_stdout_fd",
                 }
             ),
             produces=frozenset(
@@ -101,6 +104,7 @@ class Provider(Step):
         tags: dict[str, str] | None = None,
         extra_args: list[str] | None = None,
         pty_tap_factory: Any = None,
+        headless_stdout_fd: int | None = None,
         **_: Any,
     ) -> dict[str, Any]:
         from ...harness.guard import apply_post_run_guard
@@ -113,6 +117,27 @@ class Provider(Step):
                 from ...pty_tap import load_pty_tap_factory
 
                 pty_tap_factory = load_pty_tap_factory()
+
+        if interactive and headless_stdout_fd is not None:
+            from ...headless.runner import HeadlessRunner
+
+            # The first prompt is a turn on the wire, never argv.
+            holder = HeadlessRunner(
+                layout,
+                composition,
+                session_mgr=session_mgr,
+                tracer_factory=tracer_factory,
+                stdout_fd=headless_stdout_fd,
+                first_prompt=prompt_text,
+            )
+            exit_code, session = holder.run(extra_args=list(extra_args or []), tags=tags)
+            apply_post_run_guard(session, self.harness_policy)
+            return {
+                "session_id": session.session_id,
+                "session_dir": session.session_dir,
+                "transcript_path": session.trace_path,
+                "exit_code": int(exit_code),
+            }
 
         if interactive:
             eff_extra = list(extra_args or [])

@@ -208,3 +208,86 @@ out at 600 s anyway.
 When two agents hand work back and forth through one card, name **every** state
 that should wake you. A worker parked on `--until execute` (expecting rework)
 never wakes when the leader accepts the card straight to `done`.
+
+## Driving a session over stdin/stdout
+
+`ai-hats headless` runs the same HITL session a bare `ai-hats` does. The role,
+its hooks and gates, the log and the finalize are unchanged. Only the channel is
+different: instead of a terminal it takes commands on its stdin and writes the
+session's log to its stdout. It takes the same parameters as a bare `ai-hats`
+(`-p`, `-r`, `-m`, `--tag`, provider flags), and a positional prompt becomes the
+first turn. Only claude can be driven this way for now. The design is
+[ADR-0038](adr/0038-headless-session-is-a-holder-and-one-log.md).
+
+```bash
+# all turns known up front: a file in, a file out, the outcome in $?
+ai-hats headless -p claude -r maintainer < turns.ndjson > events.ndjson
+
+# one turn, no input after it
+ai-hats headless -r maintainer "summarise README.md" </dev/null > events.ndjson
+```
+
+**stdin** takes one command per line. Today there is one command:
+
+```json
+{"v":"commands/v1","cmd":"prompt","text":"read docs/INDEX.md"}
+```
+
+`answer` and `interrupt` are part of the format but not built yet. A line the
+holder cannot run is not dropped silently. It becomes a `command_rejected`
+signal in the log, whose `detail` starts with `stdin line N:`, and the session
+carries on. A prompt sent while a turn is still running goes to claude at once,
+and claude decides what to do with it: measured on 2.1.281, one that arrives
+before a tool call finishes joins the running turn, and a single `turn_ended`
+closes both prompts. Closing stdin means "finish what you have and exit".
+
+**stdout** is all machine-readable. Line 1 is the session header:
+
+```json
+{"v":"headless/v1","session_id":"…","session_dir":"/abs/…","log":"/abs/…/events.jsonl","holder_pid":4242,"provider_session_id":"…","started_at":"…"}
+```
+
+Every line after it is a byte-for-byte copy of the session's `events.jsonl`,
+from `run_started` to `run_ended`. Each turn ends with one `turn_ended`
+(`ok`, `raw_code`, `detail`), after that turn's last answer. To cut the log into
+turns at every `turn_ended`, send the next prompt only after it. A prompt sent
+ahead can join the running turn or put its `prompt_received` before the previous
+`turn_ended`. Wait on `turn_ended`, not on `response_ended`: a turn that failed
+before the model answered has no `response_ended` at all.
+
+**stderr** carries everything meant for a person: the start banner, the
+session's four header lines, startup notices, the end summary.
+
+**The end** is stdout reaching EOF. Then read the exit code:
+
+| Exit code | Meaning                                                                                                                                                                                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0         | stdin closed and every turn ran. A turn that failed is `turn_ended.ok: false`, not the session's exit code.                                                                                                                                                        |
+| 130 / 143 | aborted by Ctrl-C / `kill -TERM <holder_pid>`. The log is still closed and the session finalized; a turn claude had not started does not run.                                                                                                                      |
+| N         | claude itself exited with N.                                                                                                                                                                                                                                       |
+| 2         | refused before the start, with no header. The cause is a flag the holder sets itself (`--input-format`, `--output-format`, `--print`, `--permission-prompt-tool`, `--resume`, `--continue`, `--session-id`, `--no-session-persistence`) or a surface with no wire. |
+
+The same loop by hand, from bash:
+
+```bash
+coproc H { ai-hats headless -p claude -r maintainer 2>holder.err; }
+pid=$H_PID
+read -r header <&"${H[0]}"
+echo '{"v":"commands/v1","cmd":"prompt","text":"read docs/INDEX.md"}' >&"${H[1]}"
+while read -r ev <&"${H[0]}"; do
+  [ "$(jq -r .event <<<"$ev")" = turn_ended ] && break
+done
+exec {H[1]}>&-; cat <&"${H[0]}" >/dev/null; wait "$pid"; echo "exit=$?"
+```
+
+From Python, `tests/e2e/_helpers/headless_client.py` is a reference client. It
+uses the stdlib only and does not import `ai_hats`: `HeadlessSession.start`,
+`turn(text)`, `next_turn()`, `close()` and `terminate()`, with every wait
+bounded.
+
+Not there yet:
+
+- questions: without a permission channel, claude and the role's gates refuse
+  what they would have asked about, and the log says why;
+- a turn record's `origin`: a turn sent on stdin is recorded as `harness`;
+- a retro: a headless session spawns no session reviewer.

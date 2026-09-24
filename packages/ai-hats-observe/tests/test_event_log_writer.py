@@ -355,3 +355,109 @@ def test_a_reader_fault_stops_the_writer_and_is_said_once(tmp_path: Path) -> Non
         "1",
         "RuntimeError: boom",
     )
+
+
+# --- the turn boundary a headless holder reports ---------------------------
+
+
+def _stream_turn(n: int, prompt: str, answer: str) -> str:
+    """One turn as claude writes it in stream-json mode: the prompt stamped
+    ``promptSource: sdk``, then the whole answer, ``stop_reason`` already set —
+    and no record that says the turn is over."""
+    import json
+
+    user = {
+        "type": "user",
+        "promptSource": "sdk",
+        "uuid": f"u{n}",
+        "timestamp": f"2026-09-24T12:00:0{2 * n}Z",
+        "message": {"role": "user", "content": prompt},
+    }
+    assistant = {
+        "type": "assistant",
+        "requestId": f"req_{n}",
+        "uuid": f"a{n}",
+        "timestamp": f"2026-09-24T12:00:0{2 * n + 1}Z",
+        "message": {
+            "id": f"msg_{n}",
+            "model": "claude-x",
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 2},
+            "content": [{"type": "text", "text": answer}],
+        },
+    }
+    return json.dumps(user) + "\n" + json.dumps(assistant) + "\n"
+
+
+def _positions(log: Path) -> dict[str, int]:
+    """Where the boundary-relevant events of a two-turn record landed."""
+    from ai_hats_observe.canonical import ResponseEnded, TurnEnded
+
+    found: dict[str, int] = {}
+    for i, event in enumerate(read_events(log)):
+        if isinstance(event, ResponseEnded):
+            found.setdefault(f"ended:{event.response_id}", i)
+        elif isinstance(event, TurnEnded):
+            found.setdefault("turn_ended", i)
+        elif isinstance(event, PromptReceived):
+            found.setdefault(f"prompt:{event.text}", i)
+    return found
+
+
+def test_end_turn_closes_the_answer_before_the_next_prompt(tmp_path: Path) -> None:
+    """Told the turn is over, the writer drains the record, ends the answer the
+    live reader was holding open and says so — all before the next prompt is
+    even written, which is what lets a client wait on it."""
+    from ai_hats_observe.canonical import TurnEnded
+
+    transcript = tmp_path / "t.jsonl"
+    log = tmp_path / EVENT_LOG_JSONL
+    writer = _writer(tmp_path, transcript)
+
+    transcript.write_text(_stream_turn(1, "one", "first"), encoding="utf-8")
+    writer.end_turn(TurnEnded(ok=True, raw_code="success"))
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write(_stream_turn(2, "two", "second"))
+    writer.tick()
+    writer.close(exit_code=0)
+
+    at = _positions(log)
+    assert at["ended:req_1"] < at["turn_ended"] < at["prompt:two"]
+    assert "ended:req_2" in at, "the next turn's answer is still closed at close()"
+
+
+def test_without_end_turn_the_answer_waits_for_the_next_turn(tmp_path: Path) -> None:
+    """Negative control: the same record with no boundary reported. The live
+    reader holds turn 1's answer open until turn 2's answer proves it over, so
+    it lands after turn 2's prompt — the wait a client could never finish."""
+    transcript = tmp_path / "t.jsonl"
+    log = tmp_path / EVENT_LOG_JSONL
+    writer = _writer(tmp_path, transcript)
+
+    transcript.write_text(_stream_turn(1, "one", "first"), encoding="utf-8")
+    writer.tick()
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write(_stream_turn(2, "two", "second"))
+    writer.tick()
+    writer.close(exit_code=0)
+
+    at = _positions(log)
+    assert at["prompt:two"] < at["ended:req_1"]
+    assert "turn_ended" not in at
+
+
+def test_end_turn_with_nothing_open_still_marks_the_turn(tmp_path: Path) -> None:
+    """A turn that failed before the model answered leaves no response to end;
+    the boundary is written all the same, since it is the only one there is."""
+    from ai_hats_observe.canonical import ResponseEnded, TurnEnded
+
+    transcript = tmp_path / "t.jsonl"
+    log = tmp_path / EVENT_LOG_JSONL
+    writer = _writer(tmp_path, transcript)
+    transcript.write_text(RECORDS[0], encoding="utf-8")
+
+    writer.end_turn(TurnEnded(ok=False, raw_code="success", detail="API Error: 529"))
+
+    events = list(read_events(log))
+    assert not any(isinstance(e, ResponseEnded) for e in events)
+    assert events[-1] == TurnEnded(ok=False, raw_code="success", detail="API Error: 529")

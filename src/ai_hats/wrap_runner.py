@@ -26,7 +26,7 @@ from .constants import PINNED_PYTHON
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .pipeline import warm
+from .pipeline import PipelineConfig, warm
 from .pipeline_catalog import FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
@@ -68,6 +68,7 @@ if TYPE_CHECKING:
 
     from ai_hats_core import CompositionResult
     from ai_hats_observe import Session, SessionManager, SidecarTracer
+    from ai_hats_observe.event_log_writer import EventLogWriter
 
     from .pty_tap import PtyTapFactory
 
@@ -224,6 +225,9 @@ class WrapRunner:
     The observe writer handles (``session_mgr``, ``tracer_factory``)
     are injected too — the runner never imports observe at runtime.
     """
+
+    #: The epilogue this runner's sessions end with.
+    finalize: PipelineConfig = FINALIZE_HITL
 
     def __init__(
         self,
@@ -498,13 +502,18 @@ class WrapRunner:
         try:
             show_and_hold_startup_notices(
                 startup_notices,
-                is_tty=sys.stdin.isatty(),
+                is_tty=self._stdin_is_terminal(),
                 sleep=lambda d: self._sleep_countdown(d, announce=bool(startup_notices)),
                 env=env,
             )
         except KeyboardInterrupt:
             print("\n\033[1;31m  launch aborted\033[0m")
             raise
+
+    def _stdin_is_terminal(self) -> bool:
+        """Whether stdin is a person at a keyboard — the pre-launch hold waits
+        on it and reads the Enter that skips the wait."""
+        return sys.stdin.isatty()
 
     @staticmethod
     def _poll_enter(timeout: float) -> bool:
@@ -765,11 +774,11 @@ class WrapRunner:
         # the file. Fail-open — a session does not end because its epilogue could
         # not be prepared, and the notice says so.
         try:
-            warm(FINALIZE_HITL)
+            warm(self.finalize)
         except Exception as exc:
-            logger.warning("finalize-hitl preload failed", exc_info=True)
-            summary = f"finalize-hitl preload failed: {type(exc).__name__}: {exc}"
-            session.log_sys(f"finalize-hitl preload FAILED — {summary}")
+            logger.warning("%s preload failed", self.finalize.name, exc_info=True)
+            summary = f"{self.finalize.name} preload failed: {type(exc).__name__}: {exc}"
+            session.log_sys(f"{self.finalize.name} preload FAILED — {summary}")
             startup_notices.append(StartupNotice("warn", summary))
 
         from . import __version__
@@ -815,7 +824,7 @@ class WrapRunner:
                     startup_notices,
                     _startup_hold_seconds(
                         bool(startup_notices),
-                        is_tty=sys.stdin.isatty(),
+                        is_tty=self._stdin_is_terminal(),
                         env=env,
                     ),
                 ),
@@ -831,10 +840,13 @@ class WrapRunner:
                 # The anchor names the cache's real READER. Redundant
                 # here (the pty hangup already ties the child to us), but it makes
                 # "keep while EITHER owner lives" hold on every runner.
-                exit_code = self._pty_spawn(
+                exit_code = self._spawn_surface(
                     cmd,
                     env,
                     tracer,
+                    session=session,
+                    event_log=event_log,
+                    provider_session_id=claude_session_id,
                     pty_tap_factory=pty_tap_factory,
                     on_spawn=lambda pid: _claim_surface_child(
                         self.layout.cache.session(session.session_id), pid
@@ -863,6 +875,7 @@ class WrapRunner:
                         try:
                             _run_finalize_hitl(
                                 session,
+                                config=self.finalize,
                                 claude_session_id=claude_session_id,
                                 layout=self.layout,
                                 exit_code=exit_code,
@@ -920,6 +933,23 @@ class WrapRunner:
                 session.log_sys(f"CLI restart gap: {gap_str}")
         except (ValueError, IndexError, OSError):
             logger.debug("CLI restart-gap detection failed", exc_info=True)
+
+    def _spawn_surface(
+        self,
+        cmd: list[str],
+        env: dict[str, str],
+        tracer: SidecarTracer,
+        *,
+        session: Session,
+        event_log: EventLogWriter | None,
+        provider_session_id: str,
+        pty_tap_factory: PtyTapFactory | None,
+        on_spawn: Callable[[int], None],
+    ) -> int:
+        """Run the surface to its exit and return the session's exit code — on a
+        PTY here; the headless holder drives it over pipes instead."""
+        del session, event_log, provider_session_id
+        return self._pty_spawn(cmd, env, tracer, pty_tap_factory=pty_tap_factory, on_spawn=on_spawn)
 
     def _pty_spawn(
         self,

@@ -40,6 +40,16 @@ class EventReader(Protocol):
 
 
 @runtime_checkable
+class TurnAwareReader(Protocol):
+    """A live reader that holds a response open until something later proves
+    it ended, and so can be told when the surface says its turn is over."""
+
+    def end_responses(self) -> Iterator[Event]:
+        """End every response still held open; the run goes on."""
+        ...
+
+
+@runtime_checkable
 class AsyncEventReader(Protocol):
     """A surface delivered as an awaitable stream.
 

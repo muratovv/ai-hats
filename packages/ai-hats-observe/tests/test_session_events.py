@@ -35,6 +35,8 @@ from ai_hats_observe.canonical import (
     RunEnded,
     RunStarted,
     ToolResultReceived,
+    TurnEnded,
+    WorthRecording,
     collect,
     select,
 )
@@ -219,6 +221,47 @@ def test_a_gate_verdict_round_trips(tmp_path: Path, session_events: list) -> Non
     write_events(events, path)
 
     assert list(read_events(path)) == events
+
+
+@pytest.mark.parametrize(
+    "ended",
+    [
+        TurnEnded(ok=True, raw_code="success", ts="2026-09-24T12:00:03Z"),
+        TurnEnded(
+            ok=False,
+            raw_code="success",
+            detail="API Error: 529 overloaded",
+            ts="2026-09-24T12:00:04Z",
+        ),
+        TurnEnded(ok=True),
+    ],
+)
+def test_a_turn_end_round_trips(tmp_path: Path, ended: TurnEnded) -> None:
+    """The headless client's turn boundary is read back exactly as written — an
+    error turn's text included, since it is the one place that text lives."""
+    path = tmp_path / EVENT_LOG_JSONL
+    events = [RunStarted(ts="2026-09-24T12:00:00Z"), ended]
+
+    write_events(events, path)
+
+    assert list(read_events(path)) == events
+
+
+def test_a_rejected_command_round_trips(tmp_path: Path) -> None:
+    """A headless client finds its refused command by the ``raw_code`` and the
+    line number the detail opens with, so both survive the file."""
+    path = tmp_path / EVENT_LOG_JSONL
+    rejected = Notice(
+        reason=WorthRecording.COMMAND_REJECTED,
+        raw_code="answer",
+        detail="stdin line 3: answer is not implemented yet",
+        source="headless",
+        ts="2026-09-24T12:00:05Z",
+    )
+
+    write_events([rejected], path)
+
+    assert list(read_events(path)) == [rejected]
 
 
 def test_a_gate_verdict_is_carried_by_a_projection_and_folded_by_none(
