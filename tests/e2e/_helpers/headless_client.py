@@ -194,7 +194,7 @@ class HeadlessSession:
     # -- commands ---------------------------------------------------------------
 
     def prompt(self, text: str) -> None:
-        """Send one turn. It runs after the turn in progress, if there is one."""
+        """Send one prompt; sent mid-turn, claude may fold it into the running turn."""
         self.send_raw(json.dumps({"v": COMMANDS_V1, "cmd": "prompt", "text": text}))
 
     def send_raw(self, line: str) -> None:

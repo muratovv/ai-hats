@@ -181,10 +181,9 @@ class HeadlessRunner(WrapRunner):
 class _Relay:
     """The two pumps between the holder's pipes and the child's.
 
-    A prompt goes to the wire the moment it is read; queueing a turn behind the
-    running one is the surface's own behaviour, and a holder that queued in its
-    stead would change it for a surface that folds a sent turn into the running
-    one (ADR-0038 D3).
+    A prompt goes to the wire the moment it is read: whether it waits for the
+    running turn or joins it is the surface's call — claude folds it in — and a
+    holder that queued in its stead would change that (ADR-0038 D3).
     """
 
     def __init__(

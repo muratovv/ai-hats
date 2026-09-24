@@ -236,8 +236,10 @@ ai-hats headless -r maintainer "summarise README.md" </dev/null > events.ndjson
 `answer` and `interrupt` are part of the format but not built yet. A line the
 holder cannot run is not dropped silently. It becomes a `command_rejected`
 signal in the log, whose `detail` starts with `stdin line N:`, and the session
-carries on. A prompt sent while a turn is still running waits its turn in claude's own queue.
-Closing stdin means "finish what you have and exit".
+carries on. A prompt sent while a turn is still running goes to claude at once,
+and claude decides what to do with it: measured on 2.1.281, one that arrives
+before a tool call finishes joins the running turn, and a single `turn_ended`
+closes both prompts. Closing stdin means "finish what you have and exit".
 
 **stdout** is all machine-readable. Line 1 is the session header:
 
@@ -249,7 +251,8 @@ Every line after it is a byte-for-byte copy of the session's `events.jsonl`,
 from `run_started` to `run_ended`. Each turn ends with one `turn_ended`
 (`ok`, `raw_code`, `detail`), after that turn's last answer. To cut the log into
 turns at every `turn_ended`, send the next prompt only after it. A prompt sent
-ahead can put its `prompt_received` before the previous `turn_ended`. Wait on `turn_ended`, not on `response_ended`: a turn that failed
+ahead can join the running turn or put its `prompt_received` before the previous
+`turn_ended`. Wait on `turn_ended`, not on `response_ended`: a turn that failed
 before the model answered has no `response_ended` at all.
 
 **stderr** carries everything meant for a person: the start banner, the
@@ -257,12 +260,12 @@ session's four header lines, startup notices, the end summary.
 
 **The end** is stdout reaching EOF. Then read the exit code:
 
-| Exit code | Meaning                                                                                                                                                                                                                |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0         | stdin closed and every turn ran. A turn that failed is `turn_ended.ok: false`, not the session's exit code.                                                                                                            |
-| 130 / 143 | aborted by Ctrl-C / `kill -TERM <holder_pid>`. The log is still closed and the session finalized; a turn claude had not started does not run.                                                                          |
-| N         | claude itself exited with N.                                                                                                                                                                                           |
-| 2         | refused before the start, with no header. The cause is a flag the holder sets itself (`--input-format`, `--output-format`, `--print`, `--permission-prompt-tool`, `--resume`, `--continue`) or a surface with no wire. |
+| Exit code | Meaning                                                                                                                                                                                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0         | stdin closed and every turn ran. A turn that failed is `turn_ended.ok: false`, not the session's exit code.                                                                                                                                                        |
+| 130 / 143 | aborted by Ctrl-C / `kill -TERM <holder_pid>`. The log is still closed and the session finalized; a turn claude had not started does not run.                                                                                                                      |
+| N         | claude itself exited with N.                                                                                                                                                                                                                                       |
+| 2         | refused before the start, with no header. The cause is a flag the holder sets itself (`--input-format`, `--output-format`, `--print`, `--permission-prompt-tool`, `--resume`, `--continue`, `--session-id`, `--no-session-persistence`) or a surface with no wire. |
 
 The same loop by hand, from bash:
 
