@@ -113,6 +113,13 @@ reader ничего не роняет молча, форма без дома п�
   `ProviderRespondToRequestInput`), транспорт которого surface-специфичен.
   Событие готовит для него адрес (`call_id`, `tool`), но сам контракт —
   HATS-1968.
+- `TurnEnded` вошёл в словарь по D4, через живой consumer: клиент
+  headless-сессии ждёт на нём конец хода, прежде чем слать следующий. Producer
+  один — holder, по `result` провода (ADR-0038 D10). Имя — по обязательству
+  consumer'а («ход окончен, можно дальше»), а не по слову surface'а `result`.
+  Прецедент по D6 есть: у t3code `turn.completed` / `turn.aborted`. Той же дорогой
+  пришла причина `WorthRecording.COMMAND_REJECTED` — её consumer тоже клиент
+  headless.
 
 ## Не входит в решение
 

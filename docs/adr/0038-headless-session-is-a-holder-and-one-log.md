@@ -155,11 +155,25 @@ stdout ребёнка. Если `PersonAsked` с этим `call_id` в журн�
 stream-json с другим конвертом, у codex — `app-server`, у gemini и cline — ACP),
 словарь команд не меняется.
 
+**Флаги провода принадлежат holder'у** (поправка HATS-2020). В остальном holder
+принимает те же параметры, что голый `ai-hats`. Флаги, из которых складывается
+провод, holder ставит сам и принимать от вызывающего отказывается: выход 2 до
+старта, заголовка нет. Это `--input-format`, `--output-format`, `--print`,
+`--permission-prompt-tool`, `--resume` и `--continue`.
+
+- `--permission-prompt-tool stdio` — это то, как вопросы бинаря попадают к
+  holder'у, а не настройка пользователя. Без команды `answer` ход с этим флагом
+  висел бы вечно, поэтому первый трассер его не ставит, а ставит всегда задача с
+  `answer`.
+- Настройка пользователя — политика «какие вопросы доходят до владельца»
+  (HATS-2021).
+
 ### D4 — журнал один, `events.jsonl`, формат общий для всех трёх режимов и не меняется
 
 У сессии один журнал — `<session_dir>/events.jsonl` (`events/v1`, 0600,
-append-only), тот же, что у `ai-hats` и `ai-hats agent`. Headless не добавляет в
-него нового вида записи: оба направления в нём уже есть — ход, отправленный
+append-only), тот же, что у `ai-hats` и `ai-hats agent`. Headless добавляет в
+него один вид записи — `TurnEnded`, конец хода (D10; поправка HATS-2020). Оба
+направления в нём уже есть — ход, отправленный
 командой `prompt`, запись surface'а приносит как `PromptReceived` с
 `origin` из `promptSource`, ответ на вопрос виден как `ToolResultReceived`.
 Потребителю журнала не нужно знать, каким режимом сессия была запущена.
@@ -176,7 +190,9 @@ Holder — producer ровно того, чего в записи surface'а н�
 - отказ инструмента: `system/permission_denied` и непустой `permission_denials`
   в `result` — сегодня это только строка текста, из-за чего заблокированное
   действие читается как удачный ход;
-- `Notice(command_rejected)` из D3.
+- `Notice(command_rejected)` из D3;
+- `TurnEnded` — на каждом `result` провода, сразу после того, как писатель журнала
+  закрыл открытые ответы хода (D10).
 
 `PromptReceived` holder не пишет — запись surface'а её уже несёт. Один факт —
 один producer.
@@ -201,14 +217,19 @@ producer остаётся один.
 Holder — третий раннер рядом с `WrapRunner` и `SubAgentRunner`. Под политикой
 HITL он наследует обязанности первого, которые `RunMode` сам по себе не даёт:
 `serve_hooks` (резидентный `HookServer`), `start_event_log`,
-`_claim_surface_child`, `_run_finalize_hitl`. Пайплайн у него свой —
+`_claim_surface_child`, finalize. Пайплайн у него свой —
 `headless.yaml` с тем же шагом `provider`: сегодняшний шов различает раннеры
-одним флагом `interactive`, и третий в него не помещается.
+одним флагом `interactive`, и третий в него не помещается. Раннер поэтому
+выбирается типом параметров запуска (`Headless` — подтип `Hitl`), а шаг
+`provider` ветвится по нему.
 
 Порядок конца — ради которого процесс вообще можно считать сигналом: ребёнок
 выходит → EventLogWriter дренирует запись и пишет `run_ended` → holder
-копирует хвост журнала в stdout → `finalize-hitl` (`make_audit`,
-`compute_usage`, спавн ретро) → holder закрывает stdout → `exit`. **Holder
+копирует хвост журнала в stdout → `finalize-headless` (`make_audit`,
+`compute_usage`, `run_session_end`) → holder закрывает stdout → `exit`.
+Спавна ретро в headless пока нет (решение супервизора, HATS-2020): это
+`finalize-hitl` без `maybe_spawn_session_reviewer` и `quorum_autoclose`, а
+вопрос, когда headless-сессии нужно ретро, решает HATS-2027. **Holder
 уходит последним**, поэтому следить надо за ним, а не за бинарём: бинарь
 выходит первым, когда запись ещё не собрана.
 
@@ -256,7 +277,7 @@ finalize-пайплайн решает **раннер**, поэтому holder �
 | Ack-флаги ребёнку        | наследуются             | наследуются                                    | гасятся                                                             |
 | Worktree автоматически   | нет (`rack transition`) | нет                                            | да (`IsolationMode` раннера)                                        |
 | Резидентный `HookServer` | да                      | да (holder поднимает сам)                      | нет (гейты спавнятся на вызов)                                      |
-| Finalize                 | `finalize-hitl`         | `finalize-hitl`                                | `finalize-subagent`                                                 |
+| Finalize                 | `finalize-hitl`         | `finalize-headless` (без ретро, HATS-2027)     | `finalize-subagent`                                                 |
 | Журнал                   | `events.jsonl`          | `events.jsonl`                                 | `events.jsonl`                                                      |
 
 Наследование ack-флагов у headless — следствие того же тезиса: по политике
@@ -358,25 +379,35 @@ stop     close stdin (finish and exit) · Ctrl-C or kill -TERM 12345 (abort)
   станет строкой записи;
 - **ответ на вопрос** — `answer` по `call_id` из `PersonAsked`.
 
-Граница хода для клиента — `ResponseEnded`, который закрывает ход: его
-`stop_reason` не `tool_use` **или** его `completion` — `cancelled`. Промежуточные
-ответы хода тоже кончаются `ResponseEnded`, но со `stop_reason: tool_use`. Второе
-условие нужно из-за interrupt посреди инструмента: такой ответ закрывается со
-`stop_reason: tool_use` ([1], §10), и ридер обязан пометить его `cancelled` —
-сегодня он этого не делает. Ридер выпускает это событие, когда holder на `result`
-провода просит закрыть открытые ответы (D4). «Моя команда дошла» — это событие,
-которое она произвела, а не таймаут. Не каждый ход отвечает на `prompt`: когда
-завершается фоновая задача, которую запустила модель, бинарь начинает ход сам
-([1], §10).
+Граница хода для клиента — **`TurnEnded`** (поправка HATS-2020). Holder пишет его на
+каждом `result` провода, после того как писатель журнала закрыл открытые ответы
+хода (D4). Поэтому он стоит после последнего `ResponseEnded` своего хода и раньше
+первого события следующего. Форма — как у `RunEnded`:
 
-Не замерен ход, который кончился ошибкой (сбой API, отказ по квоте) раньше
-первого ответа модели. Если у такого хода нет `ResponseEnded`, правило выше его не
-видит, и клиент ждёт вечно. HATS-2020 проверяет правило на стабе для четырёх
-концовок: обычный ход, interrupt генерации, interrupt инструмента, ошибка. Если
-ход без ответа возможен, граница хода получает своё событие. Его consumer живой —
-клиент headless (правило D4 ADR-0037), producer — holder по `result` провода;
-PTY-ридер мог бы давать его по `system/turn_duration`, которое сегодня молча
-пропускает. Тогда строка «Следствий» о видах записей получает поправку.
+```json
+{"event":"turn_ended","ok":false,"raw_code":"success","detail":"API Error: 529 …","ts":"…"}
+```
+
+- `ok` — `not result.is_error`;
+- `raw_code` — слово surface'а, для claude `terminal_reason`, если он есть, иначе
+  `subtype`;
+- `detail` — текст ошибки при `ok: false`, иначе `null`. Ответ модели уже лежит в
+  `ItemEmitted`, и сюда он не копируется.
+
+Своё событие понадобилось, потому что ход без ответа модели возможен, и это видно
+по коду ридера. Запись claude `isApiErrorMessage` (сбой API, отказ по квоте) даёт
+сигнал, а не ответ, то есть ни `ResponseStarted`, ни `ResponseEnded`
+(`claude_events.py`, `_assistant_events`). Правило «`ResponseEnded` со
+`stop_reason ≠ tool_use` или `completion = cancelled`», которое стояло здесь раньше,
+такой ход не видит, и клиент ждал бы вечно. `result` на проводе заканчивает каждый
+ход, так что `TurnEnded` полон по построению. Правило по `ResponseEnded` остаётся
+верным описанием *ответа*, но клиенту больше не нужно. Consumer живой — клиент
+headless (правило D4 ADR-0037), producer один — holder. PTY-ридер мог бы давать то же
+событие по `system/turn_duration`; пока его нет, триггер — потребитель в PTY-режиме.
+
+«Моя команда дошла» — это событие, которое она произвела, а не таймаут. Не каждый
+ход отвечает на `prompt`: когда завершается фоновая задача, которую запустила
+модель, бинарь начинает ход сам ([1], §10), и этот ход тоже кончается `TurnEnded`.
 
 ### D11 — конец сессии — это выход holder'а, и у каждого пути свой код
 
@@ -447,7 +478,8 @@ PTY-ридер мог бы давать его по `system/turn_duration`, ко
 | `human.yaml`                                 | голый `ai-hats`                | сама сессия (`WrapRunner`)                                 | ничего                                          |
 | **`headless.yaml`**                          | `ai-hats headless`             | сама сессия (holder)                                       | **новый**: тот же шаг `provider`, третий раннер |
 | `execute.yaml`                               | `ai-hats agent` / `execute`    | сама сессия (`SubAgentRunner`)                             | ничего; движок под ним меняет HATS-2022         |
-| `finalize-hitl`                              | `WrapRunner` и holder          | `maybe_spawn_session_reviewer` — ретро отдельным процессом | ничего: holder зовёт тот же пайплайн            |
+| `finalize-hitl`                              | `WrapRunner`                   | `maybe_spawn_session_reviewer` — ретро отдельным процессом | ничего                                          |
+| **`finalize-headless`**                      | holder                         | ничего: ретро нет до HATS-2027                             | **новый**: `finalize-hitl` без ретро            |
 | `finalize-subagent`                          | `SubAgentRunner`               | то же                                                      | ничего                                          |
 | `reflect-session`                            | фоновый `reflect_session_main` | `session-reviewer` через `SubAgentRunner`                  | ничего; см. ниже                                |
 | `reflect-hypothesis-phase1`, `reflect-issue` | `ai-hats reflect …`            | шаг `provider` → `SubAgentRunner`                          | ничего                                          |
@@ -589,8 +621,9 @@ Automate + канал, движок тот же, что у holder'а.
   уходит ветка AUTOMATE в `launch()`, `Launch` сужается до argv — ADR-0036 D4
   сужается. Ретро, judge-фаза-1 и intake переезжают без правок пайплайнов.
   Сигналы квоты переезжают из SDK-потока в holder (D4).
-- `events.jsonl` не меняется ни по формату, ни по видам записей; в
-  `WorthRecording` появляется одна причина — `command_rejected`.
+- `events.jsonl` не меняется по формату. Видов записей становится на один больше —
+  `turn_ended` (D10), и это аддитивно, `events/v1` не бампится. В `WorthRecording`
+  появляется одна причина — `command_rejected`.
 - Сабагент с диалогом (строка 8 матрицы) — отдельная карточка после HATS-2022;
   её контракт — раздел «Сценарий» выше.
 - `RunMode` не растёт; ADR-0005 не меняется.
