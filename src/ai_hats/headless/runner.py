@@ -16,15 +16,17 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
+from dataclasses import replace
 from typing import TYPE_CHECKING, Callable, Iterator
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
 from ai_hats_observe.canonical import Notice, WorthRecording
-from ai_hats_observe.canonical.types import now
+from ai_hats_observe.canonical.types import PromptId, now
+from ai_hats_observe.commands import Prompt, Rejected, decode_command
 
 from ..pipeline_catalog import FINALIZE_HEADLESS
 from ..wrap_runner import WrapRunner
-from .commands import Rejected, parse_command
 from .copier import LogCopier
 from .header import SessionHeader
 
@@ -202,25 +204,36 @@ class _Relay:
         self._wire = wire
         self._event_log = event_log
         self._report = report
+        self._ids: set[PromptId] = set()
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
         """Holder stdin → commands → child stdin; EOF closes the child's stdin."""
         try:
             if first_prompt:
-                self._send(self._wire.prompt_line(first_prompt), "the positional prompt")
+                self._prompt(Prompt(first_prompt), "the positional prompt")
             for number, raw in enumerate(_lines(stdin_fd), start=1):
-                command = parse_command(raw)
+                command = decode_command(raw)
                 if command is None:
                     continue
                 where = f"stdin line {number}"
                 if isinstance(command, Rejected):
                     self._reject(where, command.cmd, command.why)
                 else:
-                    self._send(self._wire.prompt_line(command.text), where)
+                    self._prompt(command, where)
         finally:
             # EOF for the child: it finishes the turns it has and exits.
             with contextlib.suppress(OSError, ValueError):
                 self._child.stdin.close()
+
+    def _prompt(self, prompt: Prompt, where: str) -> None:
+        if prompt.id is None:
+            prompt = replace(prompt, id=PromptId(str(uuid.uuid4())))
+        elif prompt.id in self._ids:
+            # claude drops a repeated uuid silently yet echoes it: its turn would never end
+            self._reject(where, "prompt", f'"id" {prompt.id} is already used in this session')
+            return
+        self._ids.add(prompt.id)
+        self._send(self._wire.encode(prompt), where)
 
     def _send(self, line: bytes, where: str) -> None:
         try:

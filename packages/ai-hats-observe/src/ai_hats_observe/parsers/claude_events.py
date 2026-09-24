@@ -44,6 +44,7 @@ from ..canonical.types import (
     GateDecision,
     GatePoint,
     ModelName,
+    PromptId,
     PromptOrigin,
     ResponseId,
     TextItem,
@@ -409,10 +410,14 @@ class ClaudeTranscriptReader:
         failed = bool(record.get("is_error"))
         word = record.get("terminal_reason") or record.get("subtype")
         text = record.get("result")
+        ids = record.get("user_message_uuids")
         yield TurnEnded(
             ok=not failed,
             raw_code=word if isinstance(word, str) else None,
             detail=text if failed and isinstance(text, str) else None,
+            prompt_ids=tuple(
+                PromptId(i) for i in (ids if isinstance(ids, list) else []) if isinstance(i, str)
+            ),
             ts=_ts(record),
         )
 
@@ -594,8 +599,9 @@ class ClaudeTranscriptReader:
         ts = _ts(record)
 
         origin = _prompt_origin(record)
+        prompt_id = _prompt_id(record)
         if isinstance(content, str):
-            yield from self._prompt(content, ts, origin)
+            yield from self._prompt(content, ts, origin, prompt_id)
             return
         if not isinstance(content, list):
             return
@@ -615,7 +621,7 @@ class ClaudeTranscriptReader:
         if text.strip() in INTERRUPT_MARKERS:
             yield from self._interrupted(text.strip(), ts)
             return
-        yield from self._prompt(text, ts, origin)
+        yield from self._prompt(text, ts, origin, prompt_id)
 
     def _interrupted(self, marker: str, ts: Timestamp | None) -> Iterator[Event]:
         """A person stopped the turn. The model's own stop reason wins; only a
@@ -672,13 +678,17 @@ class ClaudeTranscriptReader:
         )
 
     def _prompt(
-        self, text: str, ts: Timestamp | None, origin: PromptOrigin | None
+        self,
+        text: str,
+        ts: Timestamp | None,
+        origin: PromptOrigin | None,
+        prompt_id: PromptId | None,
     ) -> Iterator[Event]:
         # A prompt does not end the call in flight: queued input lands between
         # fragments 103 times in the measured corpus, and closing there would
         # re-open the call and bill it twice.
         if text.strip():
-            yield PromptReceived(text=text, ts=ts, origin=origin)
+            yield PromptReceived(text=text, ts=ts, origin=origin, prompt_id=prompt_id)
 
     def _system_events(self, record: dict[str, Any]) -> Iterator[Event]:
         subtype = record.get("subtype")
@@ -845,6 +855,12 @@ def _overlay_usage(usage: Usage, raw: dict[str, Any]) -> Usage:
 def _ts(record: dict[str, Any]) -> Timestamp | None:
     value = record.get("timestamp")
     return Timestamp(value) if isinstance(value, str) and value else None
+
+
+def _prompt_id(record: dict[str, Any]) -> PromptId | None:
+    """The record's own uuid: on the wire, the id the harness sent the prompt with."""
+    value = record.get("uuid")
+    return PromptId(value) if isinstance(value, str) and value else None
 
 
 def _prompt_origin(record: dict[str, Any]) -> PromptOrigin | None:

@@ -13,6 +13,12 @@ prompt text:
     @die <code>     exit with <code> in the middle of the turn
     @sleep <s> ...  wait <s> seconds, then run the rest of the text as the turn
     @late <s> ...   write the turn's record <s> seconds after its ``result``
+    @fold           a Bash ``tool_use``; a prompt already waiting at the tool
+                    boundary joins this turn, as claude 2.1.281 folds one in
+    @bg             answer, then start a turn of the binary's own (a finished
+                    background task): no prompt, ``user_message_uuids`` empty
+
+A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 
 With ``--replay-user-messages`` a turn opens with the prompt's echo, and with
 ``--include-partial-messages`` each response is framed by ``message_start`` /
@@ -28,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import signal
 import subprocess
@@ -56,6 +63,11 @@ def _flag(argv: list[str], name: str) -> str | None:
     return None
 
 
+def _content(msg: dict) -> str:
+    content = msg.get("message", {}).get("content", "")
+    return content if isinstance(content, str) else json.dumps(content)
+
+
 class Stub:
     def __init__(self, argv: list[str]) -> None:
         self.argv = argv
@@ -73,6 +85,9 @@ class Stub:
         self.partial = "--include-partial-messages" in argv
         self.deferred: list[dict] | None = None  # a @late turn's record, held back
         self.writers: list[threading.Thread] = []
+        self.inbox: queue.Queue[dict | None] = queue.Queue()
+        self.seen: set[str] = set()
+        self.turn_ids: list[str] = []  # the prompts the running turn answers
 
     # -- wire and record ---------------------------------------------------
 
@@ -201,6 +216,7 @@ class Stub:
                 "permission_denials": [],
                 "total_cost_usd": round(self.cost, 6),
                 "session_id": self.session_id,
+                "user_message_uuids": list(self.turn_ids),
             }
         )
         self.results += 1
@@ -226,22 +242,69 @@ class Stub:
             "message": {"role": "user", "content": text},
         }
         self.record(prompt)
+        self.echo(text, prompt_uuid, prompt["timestamp"])
+        self.turn_ids = [prompt_uuid]
+        self.run(body, text)
+        if late is not None:
+            records, self.deferred = self.deferred, None
+            self.write_late(records, late, time.time())
+
+    def echo(self, text: str, prompt_uuid: str, ts: str) -> None:
         if self.replay:
             self.emit(
                 {
                     "type": "user",
-                    "message": prompt["message"],
+                    "message": {"role": "user", "content": text},
                     "uuid": prompt_uuid,
-                    "timestamp": prompt["timestamp"],
+                    "timestamp": ts,
                     "isReplay": True,
                     "parent_tool_use_id": None,
                     "session_id": self.session_id,
                 }
             )
-        self.run(body, text)
-        if late is not None:
-            records, self.deferred = self.deferred, None
-            self.write_late(records, late, time.time())
+
+    def fold_waiting(self, timeout: float = 5.0) -> None:
+        """Take a prompt already waiting into the running turn: its echo, its id
+        in the turn's result, and in the record only a queued_command."""
+        try:
+            msg = self.inbox.get(timeout=timeout)
+        except queue.Empty:
+            return
+        if msg is None:
+            self.inbox.put(None)  # EOF stays last for serve()
+            return
+        text, prompt_uuid = _content(msg), msg.get("uuid") or str(uuid.uuid4())
+        self.seen.add(prompt_uuid)
+        self.record(
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "prompt": text,
+                    "source_uuid": prompt_uuid,
+                },
+            }
+        )
+        self.echo(text, prompt_uuid, _now())
+        self.turn_ids.append(prompt_uuid)
+
+    def own_turn(self) -> None:
+        """A turn the binary starts itself: the record has its notification, the wire no echo."""
+        self.init()
+        self.turn_ids = []
+        self.record(
+            {
+                "type": "user",
+                "promptSource": "system",
+                "message": {
+                    "role": "user",
+                    "content": "<task-notification>done</task-notification>",
+                },
+            }
+        )
+        request = uuid.uuid4().hex[:12]
+        self.respond(request, [{"type": "text", "text": "background done"}], "end_turn")
+        self.result("background done")
 
     def run(self, body: str, text: str) -> None:
         request = uuid.uuid4().hex[:12]
@@ -288,13 +351,28 @@ class Stub:
             self.tool_result(call, "hi")
             self.respond(f"{request}b", [{"type": "text", "text": "done"}], "end_turn")
             self.result("done")
+        elif body == "@fold":
+            call = f"toolu_{request}"
+            self.respond(
+                f"{request}a",
+                [{"type": "tool_use", "id": call, "name": "Bash", "input": {"command": "echo hi"}}],
+                "tool_use",
+            )
+            self.tool_result(call, "hi")
+            self.fold_waiting()
+            self.respond(f"{request}b", [{"type": "text", "text": "folded"}], "end_turn")
+            self.result("folded")
+        elif body == "@bg":
+            self.respond(request, [{"type": "text", "text": "started"}], "end_turn")
+            self.result("started")
+            self.own_turn()
         else:
             answer = self.previous if body == "@recall" else f"ok: {body}"
             self.respond(request, [{"type": "text", "text": answer}], "end_turn")
             self.result(answer)
         self.previous = text
 
-    def serve(self) -> int:
+    def read_stdin(self) -> None:
         for line in sys.stdin:
             if not line.strip():
                 continue
@@ -303,11 +381,19 @@ class Stub:
             except json.JSONDecodeError:
                 print(f"stub claude: not JSON: {line[:80]!r}", file=sys.stderr)
                 continue
-            if msg.get("type") != "user":
+            if msg.get("type") == "user":
+                self.inbox.put(msg)
+        self.inbox.put(None)
+
+    def serve(self) -> int:
+        threading.Thread(target=self.read_stdin, daemon=True).start()
+        while (msg := self.inbox.get()) is not None:
+            prompt_uuid = msg.get("uuid") or str(uuid.uuid4())
+            if prompt_uuid in self.seen:
+                self.echo(_content(msg), prompt_uuid, _now())  # dropped, yet echoed
                 continue
-            content = msg.get("message", {}).get("content", "")
-            text = content if isinstance(content, str) else json.dumps(content)
-            self.turn(text, msg.get("uuid") or str(uuid.uuid4()))
+            self.seen.add(prompt_uuid)
+            self.turn(_content(msg), prompt_uuid)
         for writer in self.writers:
             writer.join()
         self.record({"type": "last-prompt", "lastPrompt": self.previous})

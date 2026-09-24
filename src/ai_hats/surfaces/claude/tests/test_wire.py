@@ -6,18 +6,21 @@ import json
 
 import pytest
 
-from ai_hats_observe.canonical import ResponseEnded, TurnEnded
+from ai_hats_observe.canonical import PromptId, ResponseEnded, TurnEnded
+from ai_hats_observe.commands import Prompt
 
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.claude.wire import ClaudeWire
+
+U1 = "3f0e2d9c-0000-4000-8000-000000000001"
 
 
 def test_the_claude_surface_offers_its_wire() -> None:
     assert isinstance(ClaudeSurface().wire(), ClaudeWire)
 
 
-def test_a_prompt_is_one_user_line_the_binary_reads() -> None:
-    line = ClaudeWire().prompt_line("прочитай README")
+def test_a_prompt_is_one_user_line_the_binary_reads_with_its_id_as_uuid() -> None:
+    line = ClaudeWire().encode(Prompt("прочитай README", PromptId(U1)))
 
     assert line.endswith(b"\n") and line.count(b"\n") == 1
     assert json.loads(line) == {
@@ -25,6 +28,7 @@ def test_a_prompt_is_one_user_line_the_binary_reads() -> None:
         "message": {"role": "user", "content": "прочитай README"},
         "parent_tool_use_id": None,
         "session_id": "default",
+        "uuid": U1,
     }
 
 

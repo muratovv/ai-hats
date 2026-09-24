@@ -292,3 +292,43 @@ def test_the_wire_gives_a_stop_verdict_per_hook_and_the_record_one_per_stop() ->
 
     assert stops(_wire_events("p1")) == [GateDecision.ALLOW] * 6
     assert stops(_record_events("p1")) == [GateDecision.ALLOW] * 3
+
+
+# --- the prompt's id, from its receipt to its turn's end -------------------
+
+
+def test_the_echo_carries_the_prompts_id_and_the_result_the_ids_it_answered() -> None:
+    u1, u2 = "3f0e2d9c-0000-4000-8000-000000000001", "3f0e2d9c-0000-4000-8000-000000000002"
+    echo = {
+        "type": "user",
+        "isReplay": True,
+        "uuid": u1,
+        "parent_tool_use_id": None,
+        "message": {"role": "user", "content": "one"},
+    }
+
+    prompt, ended = _feed(echo, _result(user_message_uuids=[u1, u2]))
+
+    assert prompt.prompt_id == u1
+    assert ended.prompt_ids == (u1, u2), "a folded prompt ends with the one it joined"
+
+
+def test_a_turn_the_surface_started_answers_no_prompt() -> None:
+    (ended,) = _feed(_result(user_message_uuids=[]))
+
+    assert ended.prompt_ids == ()
+
+
+def test_a_record_prompt_has_its_records_uuid_as_its_id() -> None:
+    """Parity of the modes: in a PTY session the prompt's id is its record's uuid."""
+    record = {
+        "type": "user",
+        "uuid": "3f0e2d9c-0000-4000-8000-000000000003",
+        "promptSource": "sdk",
+        "message": {"role": "user", "content": "typed"},
+    }
+    reader = ClaudeTranscriptReader(None)
+
+    (prompt,) = list(reader._record(record))
+
+    assert prompt.prompt_id == "3f0e2d9c-0000-4000-8000-000000000003"

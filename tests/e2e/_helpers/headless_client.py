@@ -23,6 +23,7 @@ import signal
 import subprocess
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -73,6 +74,8 @@ class Header:
     holder_pid: int
     provider_session_id: str
     started_at: str
+    events: str
+    commands: tuple[str, ...]
 
     @classmethod
     def parse(cls, line: bytes) -> Header:
@@ -89,6 +92,8 @@ class Header:
             holder_pid=int(body["holder_pid"]),
             provider_session_id=body["provider_session_id"],
             started_at=body["started_at"],
+            events=body["events"],
+            commands=tuple(body["commands"]),
         )
 
 
@@ -119,6 +124,11 @@ class Turn(_Events):
         return bool(self.ended.get("ok"))
 
     @property
+    def prompt_ids(self) -> tuple[str, ...]:
+        """The prompts this turn answered — none for a turn the surface began itself."""
+        return tuple(self.ended.get("prompt_ids") or ())
+
+    @property
     def text(self) -> str:
         """What the model said this turn: its text items, in order."""
         return "\n".join(
@@ -146,6 +156,7 @@ class HeadlessSession:
         self._stderr: list[bytes] = []
         self._read: list[Event] = []  # every event read, in order
         self._pending: list[Event] = []  # read, not yet handed out in a Turn
+        self._turns: dict[str, Turn] = {}  # every turn read, by the prompt ids it answered
         self._exit: Exit | None = None
         self._header: Header | None = None
         self._stdout_closed = False
@@ -193,9 +204,12 @@ class HeadlessSession:
 
     # -- commands ---------------------------------------------------------------
 
-    def prompt(self, text: str) -> None:
-        """Send one prompt; sent mid-turn, claude may fold it into the running turn."""
-        self.send_raw(json.dumps({"v": COMMANDS_V1, "cmd": "prompt", "text": text}))
+    def prompt(self, text: str, id: str | None = None) -> str:
+        """Send one prompt and return its id; sent mid-turn, claude may fold it
+        into the running turn, whose ``turn_ended`` then lists both ids."""
+        id = id or str(uuid.uuid4())
+        self.send_raw(prompt_line(text, id))
+        return id
 
     def send_raw(self, line: str) -> None:
         """Write one line to the holder's stdin as it is — for testing its refusals."""
@@ -217,12 +231,21 @@ class HeadlessSession:
             self._pending.append(event)
             if event.get("event") == "turn_ended":
                 turn, self._pending = Turn(tuple(self._pending)), []
+                for answered in turn.prompt_ids:
+                    self._turns[answered] = turn
                 return turn
+
+    def turn_for(self, id: str, timeout: float = 60.0) -> Turn:
+        """Wait for the turn that answered prompt ``id`` — already read, when a
+        fold ended it together with an earlier prompt."""
+        deadline = time.monotonic() + timeout
+        while id not in self._turns:
+            self.next_turn(deadline - time.monotonic())
+        return self._turns[id]
 
     def turn(self, text: str, timeout: float = 60.0) -> Turn:
         """Send one turn and wait for it to end."""
-        self.prompt(text)
-        return self.next_turn(timeout)
+        return self.turn_for(self.prompt(text), timeout)
 
     # -- the end ------------------------------------------------------------------
 
@@ -322,6 +345,14 @@ class HeadlessSession:
         return self._exit
 
 
+def prompt_line(text: str, id: str | None = None) -> str:
+    """One ``prompt`` command, as this client writes it on the holder's stdin."""
+    body = {"v": COMMANDS_V1, "cmd": "prompt", "text": text}
+    if id is not None:
+        body["id"] = id
+    return json.dumps(body)
+
+
 __all__ = [
     "Event",
     "Exit",
@@ -332,4 +363,5 @@ __all__ = [
     "ProtocolError",
     "SessionEnded",
     "Turn",
+    "prompt_line",
 ]

@@ -34,6 +34,9 @@ ResponseId = NewType("ResponseId", str)
 # Joins a tool invocation to its outcome.
 ToolCallId = NewType("ToolCallId", str)
 
+# Joins a prompt to the turn that answered it: a canonical UUID, the client's or the harness's.
+PromptId = NewType("PromptId", str)
+
 # Which model produced a response, so a switch mid-run is attributable.
 ModelName = NewType("ModelName", str)
 

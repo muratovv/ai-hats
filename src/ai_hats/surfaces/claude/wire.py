@@ -6,6 +6,7 @@ import json
 from typing import Any, Mapping
 
 from ai_hats_observe.canonical import Event
+from ai_hats_observe.commands import Prompt
 from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
 # Each makes the wire, picks a different session, or leaves no record to read; `-p` and
@@ -45,13 +46,16 @@ class ClaudeWire:
         names = (a.split("=", 1)[0] for a in args)
         return [name for name in names if name in _OWNED]
 
-    def prompt_line(self, text: str) -> bytes:
-        line = {
+    def encode(self, command: Prompt) -> bytes:
+        line: dict[str, Any] = {
             "type": "user",
-            "message": {"role": "user", "content": text},
+            "message": {"role": "user", "content": command.text},
             "parent_tool_use_id": None,
             "session_id": "default",
         }
+        if command.id is not None:
+            # kept as the record's uuid, echoed, and listed in result.user_message_uuids
+            line["uuid"] = command.id
         return (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8")
 
     def decoder(self) -> _Decoder:

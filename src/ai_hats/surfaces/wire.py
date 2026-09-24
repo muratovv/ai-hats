@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Protocol
 
 from ai_hats_observe.canonical import Event
+from ai_hats_observe.commands import Prompt
 
 
 class WireDecoder(Protocol):
@@ -34,8 +35,10 @@ class Wire(Protocol):
         """The flags among ``args`` the holder sets or forbids itself, in order."""
         ...
 
-    def prompt_line(self, text: str) -> bytes:
-        """One turn, as the binary reads it from its stdin: a single line."""
+    def encode(self, command: Prompt) -> bytes:
+        """One command as the binary reads it from its stdin: a single line.
+        The prompt's id becomes the surface's own id for it, so the wire says
+        it back when the turn starts and ends."""
         ...
 
     def decoder(self) -> WireDecoder:
