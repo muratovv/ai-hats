@@ -208,7 +208,7 @@ class HeadlessSession:
         """Send one prompt and return its id; sent mid-turn, claude may fold it
         into the running turn, whose ``turn_ended`` then lists both ids."""
         id = id or str(uuid.uuid4())
-        self.send_raw(prompt_line(text, id))
+        self.send_raw(prompt_command(text, id))
         return id
 
     def send_raw(self, line: str) -> None:
@@ -345,7 +345,7 @@ class HeadlessSession:
         return self._exit
 
 
-def prompt_line(text: str, id: str | None = None) -> str:
+def prompt_command(text: str, id: str | None = None) -> str:
     """One ``prompt`` command, as this client writes it on the holder's stdin."""
     body = {"v": COMMANDS_V1, "cmd": "prompt", "text": text}
     if id is not None:
@@ -363,5 +363,5 @@ __all__ = [
     "ProtocolError",
     "SessionEnded",
     "Turn",
-    "prompt_line",
+    "prompt_command",
 ]

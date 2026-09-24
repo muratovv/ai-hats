@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession, prompt_line
+from _helpers.headless_client import HeadlessSession, prompt_command
 from _helpers.stub_claude import install
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
@@ -66,7 +66,7 @@ def test_e2e_a_repeated_or_malformed_id_is_refused(session_on_stub) -> None:
         used = session.prompt("one")
         session.turn_for(used)
         session.prompt("two", id=used)
-        session.send_raw(prompt_line("three", "NOT-A-UUID"))
+        session.send_raw(prompt_command("three", "NOT-A-UUID"))
         after = session.turn("four")
         session.close()
 
