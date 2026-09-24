@@ -281,3 +281,45 @@ boundary, and the record is complete by then.
   own, from `system/init` to `result`. The count of `result`s is not the count of prompts.
 - `can_use_tool` fields: `display_name`, `description`, `blocked_path`, `decision_reason`,
   `decision_reason_type`, `permission_suggestions` (`addRules`, `addDirectories`, `setMode`).
+
+### 10.1 Second round: gates that ask, interrupt with a question open, EOF and SIGTERM, modes
+
+**The role's real gates over the wire.** The dispatcher was armed with a `SessionIdentity` env
+and the manifest pointed at the copied tree. `git push --force` and `git push` to a
+throwaway local remote got the shared-state gate's `ask`, which arrived as `can_use_tool` with
+`decision_reason_type: "hook"` and the gate's full text as `decision_reason`. `answer` allow
+**ran the push**. `sed -i` got the destructive gate's `deny`: no question, the gate's text in
+an error `tool_result`, the call in `permission_denials`. The dispatcher writes
+`GateVerdict(before_tool)` for every call, and for an `ask` also `PersonAsked(call_id=<tool_use_id>)`,
+to the session's `events.jsonl` before the question reaches stdout.
+
+**Precedence.** A hook's `ask` still reaches the wire under `--permission-mode bypassPermissions`
+and next to `permissions.allow: ["Bash"]`. A hook's `allow` runs `Write` under `manual` with no
+handler and no question. A JSON `deny` from a hook comes back as
+`PreToolUse:<Tool> hook error: <reason>`; the whole hook command was echoed only when a hook
+exited 2 (the dispatcher left without its env). An
+`answer` allow with an edited `updatedInput` runs the edited call, and neither the model nor
+the `tool_result` shows the edit.
+
+**`interrupt` with a question open.** The binary withdraws its own question first —
+`{"type":"control_cancel_request","request_id":<the can_use_tool's id>}` — then closes the turn
+as for a running tool (`aborted_tools`). A late `control_response` to the withdrawn
+`request_id` is ignored without a line in reply. Turns already queued run after the
+interrupted one; `still_queued` came back empty although a prompt was waiting.
+
+**EOF and SIGTERM.**
+
+- A deny sent right before EOF ("the session is ending, do not retry") cut the retries to 0
+  and the time from EOF to exit to 1.8–2.4 s, against 2–3 retries and 5.9–9.0 s with the
+  question left open (two runs each).
+- EOF while a foreground tool runs waits for the tool and finishes the turn, then exits 0.
+- SIGTERM to the binary exits 143 within a second with no `result` line. The binary kills a
+  running tool first (`tool_result` "Exit code 137"), and a partial answer is not written to
+  the transcript.
+
+**Modes with no handler and no TTY.** Under the user's `auto` with `stdio`, none of `Write` in
+the cwd, `Write` outside it (another temp dir), `rm -rf ./dir`, `curl -sI` or `chmod -R 777 .`
+reached the wire; all ran. `acceptEdits` and `bypassPermissions` ran `Write` and `mkdir`.
+`dontAsk` refused what no allow rule covered (`system/permission_denied`,
+`decision_reason_type: "mode"`). `plan` wrote a plan file and refused the rest, with
+`ExitPlanMode` unavailable, so leaving it takes `set_permission_mode` from outside.
