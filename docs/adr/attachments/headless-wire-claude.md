@@ -323,3 +323,58 @@ reached the wire; all ran. `acceptEdits` and `bypassPermissions` ran `Write` and
 `dontAsk` refused what no allow rule covered (`system/permission_denied`,
 `decision_reason_type: "mode"`). `plan` wrote a plan file and refused the rest, with
 `ExitPlanMode` unavailable, so leaving it takes `set_permission_mode` from outside.
+
+## 11. The wire as the main agent's record (2.1.281, three probes)
+
+Measured to make the wire the only source of the main agent's events in headless (ADR-0038
+D4), with the holder's three flags `--replay-user-messages`, `--include-partial-messages` and
+`--include-hook-events`. A scrubbed copy of one session, seen from both the wire and its
+transcript, is the fixture `packages/ai-hats-observe/tests/fixtures/wire/`.
+
+**Who a turn answered.**
+
+- The binary keeps the `uuid` of an input line: it is the transcript record's `uuid`, the
+  wire's echo (`isReplay: true`) and an entry of `result.user_message_uuids`.
+- It takes any string there, including a non-UUID. A repeated `uuid` is dropped with no turn,
+  no `command_lifecycle` and no record, but the echo still comes.
+- A prompt that arrives before a tool boundary joins the running turn: one `result`, both ids
+  in `user_message_uuids`. The joined prompt has no `user` record of its own in the transcript,
+  only an `attachment/queued_command`.
+- A prompt that arrives while the model writes without a tool call waits. Its echo comes after
+  the running turn's `result`.
+- A turn the binary starts on its own (a background task finished) has no echo, and its
+  `user_message_uuids` is `[]`. Its notification is in the transcript only.
+- `command_lifecycle` (`queued` → `started` → `completed`, by `command_uuid`) tells the same
+  story line by line.
+
+**The same `message`, other field names.** Every content line of the wire has a transcript
+record with the same `uuid`: 6 of 6, 35 of 35 and 14 of 14 in the three probes. Some fields
+are spelled differently on the wire:
+
+| Wire                         | Transcript                  |
+| ---------------------------- | --------------------------- |
+| `request_id`                 | `requestId` (equal, 9 of 9) |
+| `is_api_error_message: true` | `isApiErrorMessage: true`   |
+| `isSynthetic: true`          | `isMeta: true`              |
+| echo: no `promptSource`      | `promptSource: "sdk"`       |
+
+`timestamp` is on every `assistant` and `user` line of the wire, and on nothing else.
+`apiErrorStatus` is only in `result.api_error_status`.
+
+**A response's end.** An `assistant` line's `stop_reason` is null, and its `usage` is the one
+of `message_start` (`output_tokens` 1–4). The final `usage` — all four counters, equal to the
+transcript in 4 responses of 4 — and `stop_reason` come in `stream_event` `message_delta`. That
+event comes after every fragment of the response and before its `message_stop`. It is on the
+wire only with `--include-partial-messages`. A turn that failed on the API has no
+`message_start` or `message_delta`.
+
+**Hooks.** With `--include-hook-events` each hook run gives `system/hook_started` and
+`system/hook_response`: `hook_name`, `hook_event`, `exit_code`, `outcome`, `stdout`, `stderr`,
+and no command. A Stop hook's `hook_name` is `"Stop"`. The transcript records all Stop hooks of
+one stop in one `stop_hook_summary`. A hook that exited 2 is `outcome: error`, and the
+transcript puts its text in `hookErrors` with `preventedContinuation: false`. After a Stop hook
+that blocked, the wire carries a `system/notification` for the UI.
+
+**Sub-agents.** A sub-agent's lines carry `parent_tool_use_id`. The wire misses the sub-agent's
+first thinking and its whole final answer, so the sub-agent's own record stays the source. Its
+hooks' lines carry no `parent_tool_use_id`.

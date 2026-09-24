@@ -48,12 +48,12 @@ from .startup_notices import (  # noqa: F401
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Mapping, Sequence
 
     from ai_hats_observe import Session
     from ai_hats_observe.canonical.signals import Blocking, Signal
     from ai_hats_observe.canonical.types import Timestamp
-    from ai_hats_observe.event_log_writer import EventLogWriter
+    from ai_hats_observe.event_log_writer import EventLogWriter, EventSource
 
     from .session_run import SessionRun
 
@@ -580,12 +580,20 @@ def _print_session_end(
     print("━" * 52 + "\n")
 
 
+def sub_agent_sources(sources: "Sequence[Path | EventSource]") -> "list[EventSource]":
+    """The sources a sub-agent owns; a bare path, or one with no agent, is the main record."""
+    from ai_hats_observe.event_log_writer import EventSource
+
+    return [s for s in sources if isinstance(s, EventSource) and s.agent is not None]
+
+
 def start_event_log(
     provider,
     session: "Session",
     *,
     cwd: Path,
     provider_session_id: str | None,
+    main_record: bool = True,
 ) -> "EventLogWriter | None":
     """The session-time writer of ``events.jsonl``, started; ``None`` when this
     session writes none.
@@ -596,7 +604,9 @@ def start_event_log(
     session the surface gave no id — claude on ``--resume`` — cannot be told
     apart from a neighbour's by time alone, so its record is not followed
     rather than risk following someone else's. A writer that cannot start is
-    logged too; the session runs on without it.
+    logged too; the session runs on without it. ``main_record=False`` leaves
+    the main agent's record unfollowed — its events come from elsewhere (the
+    headless wire) — and follows the sub-agents' records alone.
     """  # comment-length: allow — when a session has no live log IS the contract
     reader_factory = provider.event_reader()
     if reader_factory is None:
@@ -612,9 +622,10 @@ def start_event_log(
     root = Path(cwd).resolve()
 
     def locate():
-        return provider.event_sources(
+        sources = provider.event_sources(
             root, session.session_id, provider_session_id=provider_session_id
         )
+        return sources if main_record else sub_agent_sources(sources)
 
     try:
         return EventLogWriter(

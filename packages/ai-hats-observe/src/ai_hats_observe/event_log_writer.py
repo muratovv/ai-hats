@@ -21,10 +21,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
-from .canonical.events import RunEnded, RunStarted, TurnEnded
-from .canonical.reader import EventReader, TurnAwareReader
+from .canonical.events import Event, RunEnded, RunStarted
+from .canonical.reader import EventReader
 from .canonical.types import AgentId, now
-from .event_log import append_event, write_events
+from .event_log import append_event, encode, write_events
 
 
 @dataclass(frozen=True)
@@ -78,8 +78,9 @@ class EventLogWriter:
         self._error: str | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        # A tick from the thread and the drain from close() must not overlap.
+        # One lock for every line: a tick, an emit and the ending never interleave.
         self._lock = threading.Lock()
+        self._closed = False
 
     @property
     def path(self) -> Path:
@@ -99,7 +100,36 @@ class EventLogWriter:
         """Adopt any source that has appeared, append what each has produced
         since the last pass; return how many events were written."""
         with self._lock:
+            if self._closed:
+                return 0
             return self._tick()
+
+    def emit(self, events: Sequence[Event]) -> int:
+        """Append events a producer other than the followed records hands in;
+        return how many landed. After ``RunEnded`` nothing does: the refusal is
+        reported, never raised, and a fault in writing is reported the same way."""
+        events = list(events)
+        if not events:
+            return 0
+        with self._lock:
+            if self._refused(events):
+                return 0
+            try:
+                written = write_events(events, self._path, append=True)
+            except Exception as exc:  # the session must outlive its observer
+                self._fault(f"{type(exc).__name__}: {exc}")
+                return 0
+            self._written += written
+            return written
+
+    def _refused(self, events: Sequence[Event]) -> bool:
+        """Whether the writer is closed; if so, say what was dropped. Called under the lock."""
+        if not self._closed:
+            return False
+        if self._report is not None:
+            kinds = ", ".join(_kind(encode(e)) for e in events)
+            self._report(f"events.jsonl writer closed: dropped after run_ended: {kinds}")
+        return True
 
     def _tick(self) -> int:
         for located in self._locate():
@@ -118,31 +148,6 @@ class EventLogWriter:
                 written += write_events(events, self._path, append=True)
         self._written += written
         return written
-
-    def end_turn(self, ended: TurnEnded) -> None:
-        """The surface says its turn is over: drain what the record already
-        holds, end the main agent's response its reader still holds open, then
-        append ``ended`` — so the boundary follows the turn's last response.
-
-        The boundary is written even when the follow faulted, like the run's
-        ending; a fault here is reported, never raised into the caller.
-        """
-        with self._lock:
-            if self._error is None:
-                try:
-                    self._tick()
-                    for reader, agent in self._readers.values():
-                        if agent is None and isinstance(reader, TurnAwareReader):
-                            closed = list(reader.end_responses())
-                            if closed:
-                                self._written += write_events(closed, self._path, append=True)
-                except Exception as exc:  # the session must outlive its observer
-                    self._fault(f"{type(exc).__name__}: {exc}")
-            try:
-                append_event(ended, self._path)
-                self._written += 1
-            except Exception as exc:  # same contract as the run's ending
-                self._fault(f"{type(exc).__name__}: {exc}")
 
     # -- the thread ----------------------------------------------------------
 
@@ -192,22 +197,30 @@ class EventLogWriter:
                     self._tick()
             except Exception as exc:  # same contract as the thread: report, never raise
                 self._fault(f"{type(exc).__name__}: {exc}")
-        try:
-            append_event(
-                RunEnded(
-                    ok=exit_code == 0,
-                    raw_code=None if exit_code is None else str(exit_code),
-                    detail=self._error,
-                    ts=now(),
-                ),
-                self._path,
-            )
-            self._written += 1
-        except Exception as exc:  # the ending is the last thing that may fail; still reported
-            self._fault(f"{type(exc).__name__}: {exc}")
+        with self._lock:
+            # Closed with the ending under one lock: no emit can land between them.
+            self._closed = True
+            try:
+                append_event(
+                    RunEnded(
+                        ok=exit_code == 0,
+                        raw_code=None if exit_code is None else str(exit_code),
+                        detail=self._error,
+                        ts=now(),
+                    ),
+                    self._path,
+                )
+                self._written += 1
+            except Exception as exc:  # the ending is the last thing that may fail; still reported
+                self._fault(f"{type(exc).__name__}: {exc}")
         return EventLogOutcome(
             events_written=self._written, error=self._error, sources=len(self._readers)
         )
+
+
+def _kind(record: dict) -> str:
+    kind = record.get("kind")  # a signal's reason, as its line spells it
+    return f"{record['event']}:{kind}" if kind else str(record["event"])
 
 
 __all__ = ["EventLogOutcome", "EventLogWriter", "EventSource"]

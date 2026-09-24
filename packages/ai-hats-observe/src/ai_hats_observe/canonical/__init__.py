@@ -23,7 +23,7 @@ from .events import (
     ToolResultReceived,
     TurnEnded,
 )
-from .reader import AsyncEventReader, EventReader, TurnAwareReader
+from .reader import AsyncEventReader, EventReader
 from .signals import (
     Blocking,
     HarnessActionRequired,
@@ -49,6 +49,7 @@ from .types import (
     TextItem,
     ThinkingItem,
     Timestamp,
+    PromptId,
     ToolCallId,
     ToolCallItem,
     Usage,
@@ -103,10 +104,10 @@ __all__ = [
     "TextItem",
     "ThinkingItem",
     "Timestamp",
+    "PromptId",
     "ToolCallId",
     "ToolCallItem",
     "ToolResultReceived",
-    "TurnAwareReader",
     "TurnEnded",
     "Usage",
     "WITH_REASONING",

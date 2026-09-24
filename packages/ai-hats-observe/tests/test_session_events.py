@@ -333,3 +333,32 @@ def test_a_projection_never_hides_that_the_run_was_blocked(tmp_path: Path) -> No
     assert isinstance(judged.blocked_by, Blocking)
     assert judged.api_calls == 1
     assert any(isinstance(e, ResponseStarted) for e in select(read_events(path), ANSWER_ONLY))
+
+
+def test_a_prompts_id_survives_from_its_receipt_to_its_turns_end(tmp_path: Path) -> None:
+    """A headless client finds its own turn by id: the id a prompt was received
+    under, and the ids a turn ended (two when a prompt was folded in, none for
+    a turn the surface started), are read back exactly."""
+    from ai_hats_observe.canonical import PromptId, PromptReceived
+
+    path = tmp_path / EVENT_LOG_JSONL
+    u1 = PromptId("3f0e2d9c-0000-4000-8000-000000000001")
+    u2 = PromptId("3f0e2d9c-0000-4000-8000-000000000002")
+    events = [
+        PromptReceived(text="one", prompt_id=u1),
+        TurnEnded(ok=True, prompt_ids=(u1, u2)),
+        TurnEnded(ok=True, prompt_ids=()),
+    ]
+
+    write_events(events, path)
+
+    assert list(read_events(path)) == events
+
+
+def test_a_turn_end_written_before_prompt_ids_reads_as_answering_none(tmp_path: Path) -> None:
+    path = tmp_path / EVENT_LOG_JSONL
+    path.write_text('{"v": "events/v1", "event": "turn_ended", "ok": true}\n', encoding="utf-8")
+
+    (ended,) = read_events(path)
+
+    assert ended == TurnEnded(ok=True, prompt_ids=())

@@ -6,6 +6,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from ai_hats_observe.commands import COMMANDS
+from ai_hats_observe.event_log import EVENT_SCHEMA_VERSION
+
 HEADLESS_V1 = "headless/v1"
 
 
@@ -20,6 +23,8 @@ class SessionHeader:
     holder_pid: int
     provider_session_id: str
     started_at: str
+    events: str = EVENT_SCHEMA_VERSION
+    commands: tuple[str, ...] = COMMANDS
 
     def line(self) -> bytes:
         body = {
@@ -30,6 +35,8 @@ class SessionHeader:
             "holder_pid": self.holder_pid,
             "provider_session_id": self.provider_session_id,
             "started_at": self.started_at,
+            "events": self.events,
+            "commands": list(self.commands),
         }
         return (json.dumps(body) + "\n").encode("utf-8")
 

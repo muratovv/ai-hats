@@ -4,6 +4,41 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.16.0]
+
+A headless session's main agent is read off the wire, and a prompt is known by
+its id from the command to the end of its turn. `events/v1` is not bumped: both
+new fields are additive, and a `turn_ended` line without `prompt_ids` reads as
+answering none.
+
+### Added
+
+- `PromptId`, `PromptReceived.prompt_id` and `TurnEnded.prompt_ids` — the prompts
+  a turn answered: several when the surface folded one into the running turn,
+  none for a turn the surface started itself. The claude reader takes the id
+  from the prompt record's `uuid`, in both inputs.
+- `ai_hats_observe.commands` — the `commands/v1` vocabulary beside the events:
+  `Prompt(text, id)`, `Rejected`, `encode_command`, `decode_command`, `COMMANDS`.
+  `decode_command` refuses an `id` that is not a UUID in canonical form.
+- `ClaudeTranscriptReader.feed(line)` — one line of claude's stream-json stdout
+  read as the main agent's record, with `WIRE_SOURCE` (`claude/wire`) on what it
+  says. `message_delta` ends a response with its final usage, `result` ends the
+  turn, `hook_response` is read as the record reads hooks, and a sub-agent's line
+  is skipped. A reader built with `path=None` reads only what it is fed.
+- `EventLogWriter.emit(events)` — append events a producer other than the
+  followed records hands in.
+
+### Changed
+
+- `EventLogWriter.close()` closes the writer: after `run_ended` an `emit` or a
+  late `tick` writes nothing, and the dropped events are reported.
+
+### Removed
+
+- `EventLogWriter.end_turn`, `TurnAwareReader` and
+  `ClaudeTranscriptReader.end_responses`: the wire ends a response and a turn
+  itself, so nothing is left for a holder to tell the writer.
+
 ## [0.15.0]
 
 Additive to `events/v1`: one more event kind and one more signal reason.

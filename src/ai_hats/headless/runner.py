@@ -16,17 +16,17 @@ import subprocess
 import sys
 import threading
 import time
-from pathlib import Path
+import uuid
+from dataclasses import replace
 from typing import TYPE_CHECKING, Callable, Iterator
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
 from ai_hats_observe.canonical import Notice, WorthRecording
-from ai_hats_observe.canonical.types import now
-from ai_hats_observe.event_log import append_event
+from ai_hats_observe.canonical.types import PromptId, now
+from ai_hats_observe.commands import Prompt, Rejected, decode_command
 
 from ..pipeline_catalog import FINALIZE_HEADLESS
 from ..wrap_runner import WrapRunner
-from .commands import Rejected, parse_command
 from .copier import LogCopier
 from .header import SessionHeader
 
@@ -46,6 +46,7 @@ class HeadlessRunner(WrapRunner):
     """``ai-hats headless`` — a HITL session driven over this process's stdin/stdout."""
 
     finalize = FINALIZE_HEADLESS
+    follows_main_record = False  # the wire is the main agent's record here (ADR-0038 D4)
 
     def __init__(
         self,
@@ -117,6 +118,11 @@ class HeadlessRunner(WrapRunner):
         del tracer, pty_tap_factory
         if self._signal is not None:
             return 128 + self._signal  # stopped before there was anything to stop
+        if event_log is None:
+            # The wire is the log's only source here: without a writer, stdout would be empty.
+            session.log_sys("headless: the session has no event log; the surface is not started")
+            sys.stderr.write("ai-hats headless: this session has no event log — not starting\n")
+            return 1
         log = session.session_dir / EVENT_LOG_JSONL
         child = subprocess.Popen(
             cmd,
@@ -143,7 +149,7 @@ class HeadlessRunner(WrapRunner):
         sys.stderr.flush()
         self._copier = LogCopier(log, self._stdout_fd, report=session.log_sys).start()
 
-        relay = _Relay(child, self._wire(), event_log=event_log, log=log, report=session.log_sys)
+        relay = _Relay(child, self._wire(), event_log=event_log, report=session.log_sys)
         follower = threading.Thread(target=relay.follow, name="headless-follow", daemon=True)
         feeder = threading.Thread(
             target=relay.feed,
@@ -154,9 +160,9 @@ class HeadlessRunner(WrapRunner):
         follower.start()
         feeder.start()
         code = self._wait(child)
-        # Every `result` the child printed has reached the log before run_ended.
+        # Every `result` the child printed has reached the log before run_ended;
+        # a pump still alive after the grace is refused by the closed writer.
         follower.join(GRACE_S)
-        relay.ended.set()
         return code
 
     def _wait(self, child: subprocess.Popen[bytes]) -> int:
@@ -191,36 +197,43 @@ class _Relay:
         child: subprocess.Popen[bytes],
         wire: Wire,
         *,
-        event_log: EventLogWriter | None,
-        log: Path,
+        event_log: EventLogWriter,
         report: Callable[[str], None],
     ) -> None:
         self._child = child
         self._wire = wire
         self._event_log = event_log
-        self._log = log
         self._report = report
-        # Set once the child is gone: a command after that would land behind run_ended.
-        self.ended = threading.Event()
+        self._ids: set[PromptId] = set()
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
         """Holder stdin → commands → child stdin; EOF closes the child's stdin."""
         try:
             if first_prompt:
-                self._send(self._wire.prompt_line(first_prompt), "the positional prompt")
+                self._prompt(Prompt(first_prompt), "the positional prompt")
             for number, raw in enumerate(_lines(stdin_fd), start=1):
-                command = parse_command(raw)
+                command = decode_command(raw)
                 if command is None:
                     continue
                 where = f"stdin line {number}"
                 if isinstance(command, Rejected):
                     self._reject(where, command.cmd, command.why)
                 else:
-                    self._send(self._wire.prompt_line(command.text), where)
+                    self._prompt(command, where)
         finally:
             # EOF for the child: it finishes the turns it has and exits.
             with contextlib.suppress(OSError, ValueError):
                 self._child.stdin.close()
+
+    def _prompt(self, prompt: Prompt, where: str) -> None:
+        if prompt.id is None:
+            prompt = replace(prompt, id=PromptId(str(uuid.uuid4())))
+        elif prompt.id in self._ids:
+            # claude drops a repeated uuid silently yet echoes it: its turn would never end
+            self._reject(where, "prompt", f'"id" {prompt.id} is already used in this session')
+            return
+        self._ids.add(prompt.id)
+        self._send(self._wire.encode(prompt), where)
 
     def _send(self, line: bytes, where: str) -> None:
         try:
@@ -231,22 +244,21 @@ class _Relay:
 
     def _reject(self, where: str, cmd: str | None, why: str) -> None:
         detail = f"{where}: {why}"
-        if self.ended.is_set():
-            self._report(f"headless: dropped after the session ended — {detail}")
-            return
-        append_event(
-            Notice(
-                reason=WorthRecording.COMMAND_REJECTED,
-                raw_code=cmd,
-                detail=detail,
-                source=_SOURCE,
-                ts=now(),
-            ),
-            self._log,
+        self._event_log.emit(
+            [
+                Notice(
+                    reason=WorthRecording.COMMAND_REJECTED,
+                    raw_code=cmd,
+                    detail=detail,
+                    source=_SOURCE,
+                    ts=now(),
+                )
+            ]
         )
 
     def follow(self) -> None:
-        """Child stdout → the turn boundary in the log."""
+        """Child stdout → the main agent's events, in the wire's order (ADR-0038 D4)."""
+        decoder = self._wire.decoder()
         for raw in iter(self._child.stdout.readline, b""):
             try:
                 message = json.loads(raw)
@@ -255,9 +267,17 @@ class _Relay:
                 continue
             if not isinstance(message, dict):
                 continue
-            ended = self._wire.turn_end(message)
-            if ended is not None and self._event_log is not None:
-                self._event_log.end_turn(ended)
+            self._emit(lambda: decoder.decode(message), f"{raw[:120]!r}")
+        self._emit(decoder.close, "the end of the surface's stdout")
+
+    def _emit(self, decode: Callable[[], list], what: str) -> None:
+        # One bad line must not end the pump: every later event, turn ends included, rides it.
+        try:
+            events = decode()
+        except Exception as exc:
+            self._report(f"headless: could not read {what}: {type(exc).__name__}: {exc}")
+            return
+        self._event_log.emit(events)
 
 
 def _lines(fd: int) -> Iterator[bytes]:

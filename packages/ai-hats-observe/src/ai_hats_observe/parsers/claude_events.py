@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Mapping
 
 from ..canonical.events import (
     Event,
@@ -26,6 +26,7 @@ from ..canonical.events import (
     ResponseEnded,
     ResponseStarted,
     ToolResultReceived,
+    TurnEnded,
 )
 from ..canonical.signals import (
     HarnessActionRequired,
@@ -43,6 +44,7 @@ from ..canonical.types import (
     GateDecision,
     GatePoint,
     ModelName,
+    PromptId,
     PromptOrigin,
     ResponseId,
     TextItem,
@@ -51,11 +53,14 @@ from ..canonical.types import (
     ToolCallId,
     ToolCallItem,
     Usage,
+    now,
 )
 
 #: What ``Signal.source`` says when this reader is the one that spoke. The live
 #: SDK reader sees different fields off the same run, so the two are told apart.
 SOURCE = "claude/jsonl"
+#: The same, for what this reader read off the stream-json wire (``feed``).
+WIRE_SOURCE = "claude/wire"
 
 # The top-level ``type`` values read for what happened in the run.
 _READ_RECORD_TYPES = frozenset({"assistant", "attachment", "system", "user"})
@@ -172,6 +177,39 @@ _SILENT_ATTACHMENTS = frozenset(
 # Content blocks that are known but carry nothing the canonical items model.
 _IGNORED_BLOCKS = frozenset({"image"})
 
+# --- the stream-json wire (``feed``), measured on 2.1.281 -------------------
+
+# Fields the wire spells its own way, renamed before the record reading runs.
+_WIRE_RENAMES = {
+    "request_id": "requestId",
+    "is_api_error_message": "isApiErrorMessage",
+    "isSynthetic": "isMeta",
+}
+# Wire lines that say nothing the log records: the per-command queue (the turn's
+# prompts ride its `result`) and the quota, which is a later reader's to take.
+_SILENT_WIRE_TYPES = frozenset({"command_lifecycle", "rate_limit_event"})
+# `system` subtypes only the wire has: the binary's bookkeeping and UI lines.
+_SILENT_WIRE_SUBTYPES = frozenset(
+    {
+        "background_tasks_changed",
+        "hook_started",
+        "init",
+        "notification",
+        "status",
+        "task_notification",
+        "task_progress",
+        "task_started",
+        "task_updated",
+        "thinking_tokens",
+    }
+)
+_USAGE_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
 #: What the harness writes as user text when a person stops the turn — a
 #: marker, not input. Verbatim, no variants in the measured corpus. Shared with
 #: the SDK reader: one marker set, one reading, whichever source carried it.
@@ -235,11 +273,11 @@ class ClaudeTranscriptReader:
     input runs out — the latter can leave a call with no reported outcome, hence
     ``UNKNOWN``. ``live`` says whether the run is still being written: a finished
     record (the default) closes its tail at EOF, a live one holds it open until
-    ``close()``.
+    ``close()``. A reader with no ``path`` reads only what ``feed`` hands it.
     """  # comment-length: allow — when a response ends IS the contract
 
-    def __init__(self, path: Path | str, *, live: bool = False) -> None:
-        self._path = Path(path)
+    def __init__(self, path: Path | str | None, *, live: bool = False) -> None:
+        self._path = None if path is None else Path(path)
         self._live = live
         self._offset = 0
         self._closed = False
@@ -279,12 +317,109 @@ class ClaudeTranscriptReader:
         self._closed = True
         self._drained = False
 
-    # -- TurnAwareReader -----------------------------------------------------
+    # -- the wire ------------------------------------------------------------
 
-    def end_responses(self) -> Iterator[Event]:
-        """End the response held open because nothing later has proved it over:
-        the surface said its turn ended, and by then the record is on disk."""
+    def feed(self, line: Mapping[str, Any]) -> Iterator[Event]:
+        """Read one line of claude's stream-json stdout as the main agent's record.
+
+        A record line gets the record reading; the wire alone ends a response
+        (``message_delta``) and a turn (``result``). A sub-agent's line is
+        skipped: its own record is followed, and one fact has one producer.
+        """
+        for event in self._wire_events(line):
+            if getattr(event, "source", None) == SOURCE:
+                event = replace(event, source=WIRE_SOURCE)  # type: ignore[call-arg]
+            yield event
+
+    def _wire_events(self, line: Mapping[str, Any]) -> Iterator[Event]:
+        if not isinstance(line, Mapping):
+            yield self._notice("non-object-line")
+            return
+        if line.get("parent_tool_use_id"):
+            return
+        record = _from_wire(line)
+        rtype, subtype = record.get("type"), record.get("subtype")
+        if rtype in _SILENT_WIRE_TYPES or (rtype == "system" and subtype in _SILENT_WIRE_SUBTYPES):
+            return
+        match rtype:
+            case "stream_event":
+                yield from self._stream_event(record)
+            case "result":
+                yield from self._result(record)
+            case "system" if subtype == "hook_response":
+                yield from self._hook_response(record)
+            case _:
+                yield from self._record(record)
+
+    def _hook_response(self, record: dict[str, Any]) -> Iterator[Event]:
+        """One hook the surface ran. A Stop hook is read as the record reads
+        its ``stop_hook_summary`` — one verdict per hook here, one for all
+        there; any other hook speaks only when it failed without blocking."""
+        ts = _ts(record)
+        code = record.get("exit_code")
+        name = str(record.get("hook_name") or record.get("hook_event") or "")
+        stderr = str(record.get("stderr") or "").strip()
+        if record.get("hook_event") == "Stop":
+            ended, reason = _ends_the_run(record.get("stdout"))
+            yield GateVerdict(
+                point=GatePoint.AT_STOP,
+                decision=GateDecision.DENY if ended else GateDecision.ALLOW,
+                reason=reason,
+                source=SOURCE,
+                ts=ts,
+            )
+            if code != 0:
+                yield self._warning(stderr or f"{name} exit {code}", ts)
+        elif isinstance(code, int) and code not in (0, 2):
+            yield self._warning(f"{name} exit {code}: {stderr}", ts)
+
+    @staticmethod
+    def _warning(detail: str, ts: Timestamp | None) -> Notice:
+        return Notice(
+            ts=ts,
+            detail=detail,
+            raw_code="system/hook_response",
+            source=SOURCE,
+            reason=WorthRecording.SURFACE_WARNING,
+        )
+
+    def _stream_event(self, record: dict[str, Any]) -> Iterator[Event]:
+        """``message_delta`` carries the response's final usage and stop reason,
+        after its last fragment; every other stream event is a partial message."""
+        event = record.get("event")
+        if not isinstance(event, dict) or event.get("type") != "message_delta":
+            return
+        state = self._open
+        if state is None:
+            yield self._notice("stream_event/message_delta-without-response", ts=_ts(record))
+            return
+        usage = event.get("usage")
+        if isinstance(usage, dict):
+            state.usage = _overlay_usage(state.usage, usage)
+        delta = event.get("delta")
+        stop_reason = delta.get("stop_reason") if isinstance(delta, dict) else None
+        if isinstance(stop_reason, str) and stop_reason:
+            state.stop_reason = stop_reason
+            state.completion = _STOP_REASONS.get(stop_reason, Completion.UNKNOWN)
         yield from self._end_open()
+
+    def _result(self, record: dict[str, Any]) -> Iterator[Event]:
+        """The turn is over. A response still open ends first, so every event of
+        the turn precedes its ``TurnEnded`` even when no ``message_delta`` came."""
+        yield from self._end_open()
+        failed = bool(record.get("is_error"))
+        word = record.get("terminal_reason") or record.get("subtype")
+        text = record.get("result")
+        ids = record.get("user_message_uuids")
+        yield TurnEnded(
+            ok=not failed,
+            raw_code=word if isinstance(word, str) else None,
+            detail=text if failed and isinstance(text, str) else None,
+            prompt_ids=tuple(
+                PromptId(i) for i in (ids if isinstance(ids, list) else []) if isinstance(i, str)
+            ),
+            ts=_ts(record),
+        )
 
     # -- lines -------------------------------------------------------------
 
@@ -294,7 +429,7 @@ class ClaudeTranscriptReader:
         return self._closed or not self._live
 
     def _pending_lines(self) -> Iterator[str]:
-        if not self._path.exists():
+        if self._path is None or not self._path.exists():
             return
         with self._path.open("rb") as handle:
             handle.seek(self._offset)
@@ -325,7 +460,9 @@ class ClaudeTranscriptReader:
         if not isinstance(record, dict):
             yield self._notice("non-object-line")
             return
+        yield from self._record(record)
 
+    def _record(self, record: dict[str, Any]) -> Iterator[Event]:
         rtype = record.get("type")
         if rtype not in KNOWN_RECORD_TYPES:
             yield self._notice(str(rtype), ts=_ts(record))
@@ -462,8 +599,9 @@ class ClaudeTranscriptReader:
         ts = _ts(record)
 
         origin = _prompt_origin(record)
+        prompt_id = _prompt_id(record)
         if isinstance(content, str):
-            yield from self._prompt(content, ts, origin)
+            yield from self._prompt(content, ts, origin, prompt_id)
             return
         if not isinstance(content, list):
             return
@@ -483,7 +621,7 @@ class ClaudeTranscriptReader:
         if text.strip() in INTERRUPT_MARKERS:
             yield from self._interrupted(text.strip(), ts)
             return
-        yield from self._prompt(text, ts, origin)
+        yield from self._prompt(text, ts, origin, prompt_id)
 
     def _interrupted(self, marker: str, ts: Timestamp | None) -> Iterator[Event]:
         """A person stopped the turn. The model's own stop reason wins; only a
@@ -540,13 +678,17 @@ class ClaudeTranscriptReader:
         )
 
     def _prompt(
-        self, text: str, ts: Timestamp | None, origin: PromptOrigin | None
+        self,
+        text: str,
+        ts: Timestamp | None,
+        origin: PromptOrigin | None,
+        prompt_id: PromptId | None,
     ) -> Iterator[Event]:
         # A prompt does not end the call in flight: queued input lands between
         # fragments 103 times in the measured corpus, and closing there would
         # re-open the call and bill it twice.
         if text.strip():
-            yield PromptReceived(text=text, ts=ts, origin=origin)
+            yield PromptReceived(text=text, ts=ts, origin=origin, prompt_id=prompt_id)
 
     def _system_events(self, record: dict[str, Any]) -> Iterator[Event]:
         subtype = record.get("subtype")
@@ -683,9 +825,42 @@ class ClaudeTranscriptReader:
 # --- record-level readers --------------------------------------------------
 
 
+def _from_wire(line: Mapping[str, Any]) -> dict[str, Any]:
+    """A wire line in the record's spelling, so one reading serves both."""
+    record = {_WIRE_RENAMES.get(key, key): value for key, value in line.items()}
+    if record.get("isReplay") and "promptSource" not in record:
+        record["promptSource"] = "sdk"  # the echo of a prompt the harness sent
+    record.setdefault("timestamp", now())  # most wire lines carry no time of their own
+    return record
+
+
+def _ends_the_run(stdout: Any) -> tuple[bool, str]:
+    """Whether a hook's JSON answer says ``continue: false`` — what the record
+    calls ``preventedContinuation`` — and the ``stopReason`` it gave."""
+    try:
+        answer = json.loads(stdout) if isinstance(stdout, str) and stdout.strip() else None
+    except ValueError:
+        return False, ""  # plain text on stdout is output, not an answer
+    if not isinstance(answer, dict) or answer.get("continue") is not False:
+        return False, ""
+    reason = answer.get("stopReason")
+    return True, reason if isinstance(reason, str) else ""
+
+
+def _overlay_usage(usage: Usage, raw: dict[str, Any]) -> Usage:
+    counts = {k: raw[k] for k in _USAGE_FIELDS if isinstance(raw.get(k), int)}
+    return replace(usage, **counts)
+
+
 def _ts(record: dict[str, Any]) -> Timestamp | None:
     value = record.get("timestamp")
     return Timestamp(value) if isinstance(value, str) and value else None
+
+
+def _prompt_id(record: dict[str, Any]) -> PromptId | None:
+    """The record's own uuid: on the wire, the id the harness sent the prompt with."""
+    value = record.get("uuid")
+    return PromptId(value) if isinstance(value, str) and value else None
 
 
 def _prompt_origin(record: dict[str, Any]) -> PromptOrigin | None:

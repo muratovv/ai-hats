@@ -58,6 +58,7 @@ from .types import (
     PromptOrigin,
     ResponseId,
     Timestamp,
+    PromptId,
     ToolCallId,
     Usage,
 )
@@ -109,6 +110,9 @@ class TurnEnded:
     ok: bool
     raw_code: str | None = None
     detail: str | None = None
+    # the prompts this turn answered: several when the surface folded one in,
+    # none when the surface started the turn itself
+    prompt_ids: tuple[PromptId, ...] = ()
     ts: Timestamp | None = None
     agent: AgentId | None = None
 
@@ -124,6 +128,7 @@ class PromptReceived:
     text: str
     ts: Timestamp | None = None
     origin: PromptOrigin | None = None
+    prompt_id: PromptId | None = None
     agent: AgentId | None = None
 
 

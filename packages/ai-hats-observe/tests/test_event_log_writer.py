@@ -357,107 +357,70 @@ def test_a_reader_fault_stops_the_writer_and_is_said_once(tmp_path: Path) -> Non
     )
 
 
-# --- the turn boundary a headless holder reports ---------------------------
+# --- the holder's own lines: emit, and nothing after run_ended --------------
 
 
-def _stream_turn(n: int, prompt: str, answer: str) -> str:
-    """One turn as claude writes it in stream-json mode: the prompt stamped
-    ``promptSource: sdk``, then the whole answer, ``stop_reason`` already set —
-    and no record that says the turn is over."""
-    import json
+def test_nothing_lands_after_run_ended_and_the_refusal_is_reported(tmp_path: Path) -> None:
+    """A producer that outlives close() — a pump thread the holder stopped
+    waiting for — is refused, said once in the trace, and ``run_ended`` stays
+    the last line. Positive control: the same emit before close() lands."""
+    from ai_hats_observe.canonical import Notice, TurnEnded, WorthRecording
 
-    user = {
-        "type": "user",
-        "promptSource": "sdk",
-        "uuid": f"u{n}",
-        "timestamp": f"2026-09-24T12:00:0{2 * n}Z",
-        "message": {"role": "user", "content": prompt},
-    }
-    assistant = {
-        "type": "assistant",
-        "requestId": f"req_{n}",
-        "uuid": f"a{n}",
-        "timestamp": f"2026-09-24T12:00:0{2 * n + 1}Z",
-        "message": {
-            "id": f"msg_{n}",
-            "model": "claude-x",
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 10, "output_tokens": 2},
-            "content": [{"type": "text", "text": answer}],
-        },
-    }
-    return json.dumps(user) + "\n" + json.dumps(assistant) + "\n"
+    said: list[str] = []
+    log = tmp_path / EVENT_LOG_JSONL
+    writer = _writer(tmp_path, report=said.append).start()
+
+    assert writer.emit([TurnEnded(ok=True, raw_code="completed")]) == 1
+    writer.close(exit_code=0)
+    late = Notice(reason=WorthRecording.COMMAND_REJECTED, raw_code="prompt", detail="late")
+    assert writer.emit([TurnEnded(ok=True, raw_code="completed"), late]) == 0
+
+    events = list(read_events(log))
+    assert [type(e) for e in events] == [RunStarted, TurnEnded, RunEnded]
+    assert len(said) == 1 and "after run_ended" in said[0]
+    assert "turn_ended" in said[0] and "command_rejected" in said[0]
 
 
-def _positions(log: Path) -> dict[str, int]:
-    """Where the boundary-relevant events of a two-turn record landed."""
-    from ai_hats_observe.canonical import ResponseEnded, TurnEnded
+def test_emits_from_many_threads_never_tear_a_line(tmp_path: Path) -> None:
+    """The wire pump, the stdin pump and the follow thread write concurrently;
+    every line still decodes and every event lands once."""
+    import threading
 
-    found: dict[str, int] = {}
-    for i, event in enumerate(read_events(log)):
-        if isinstance(event, ResponseEnded):
-            found.setdefault(f"ended:{event.response_id}", i)
-        elif isinstance(event, TurnEnded):
-            found.setdefault("turn_ended", i)
-        elif isinstance(event, PromptReceived):
-            found.setdefault(f"prompt:{event.text}", i)
-    return found
-
-
-def test_end_turn_closes_the_answer_before_the_next_prompt(tmp_path: Path) -> None:
-    """Told the turn is over, the writer drains the record, ends the answer the
-    live reader was holding open and says so — all before the next prompt is
-    even written, which is what lets a client wait on it."""
     from ai_hats_observe.canonical import TurnEnded
 
     transcript = tmp_path / "t.jsonl"
-    log = tmp_path / EVENT_LOG_JSONL
-    writer = _writer(tmp_path, transcript)
+    transcript.write_text("".join(RECORDS), encoding="utf-8")
+    writer = _writer(tmp_path, transcript, interval_s=0.001).start()
+    per_thread, threads = 200, 4
 
-    transcript.write_text(_stream_turn(1, "one", "first"), encoding="utf-8")
-    writer.end_turn(TurnEnded(ok=True, raw_code="success"))
-    with transcript.open("a", encoding="utf-8") as handle:
-        handle.write(_stream_turn(2, "two", "second"))
-    writer.tick()
+    def pump(n: int) -> None:
+        for i in range(per_thread):
+            writer.emit([TurnEnded(ok=True, raw_code=f"t{n}-{i}", detail="x" * 2000)])
+
+    workers = [threading.Thread(target=pump, args=(n,)) for n in range(threads)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
     writer.close(exit_code=0)
 
-    at = _positions(log)
-    assert at["ended:req_1"] < at["turn_ended"] < at["prompt:two"]
-    assert "ended:req_2" in at, "the next turn's answer is still closed at close()"
+    lines = (tmp_path / EVENT_LOG_JSONL).read_text(encoding="utf-8").splitlines()
+    events = list(read_events(tmp_path / EVENT_LOG_JSONL))
+    assert len(events) == len(lines), "a torn line does not decode"
+    assert sum(isinstance(e, TurnEnded) for e in events) == per_thread * threads
 
 
-def test_without_end_turn_the_answer_waits_for_the_next_turn(tmp_path: Path) -> None:
-    """Negative control: the same record with no boundary reported. The live
-    reader holds turn 1's answer open until turn 2's answer proves it over, so
-    it lands after turn 2's prompt — the wait a client could never finish."""
+def test_a_tick_after_close_writes_nothing(tmp_path: Path) -> None:
+    """close() waits for the follow thread only so long; a tick that runs
+    after it must not put the record's new lines behind ``run_ended``."""
     transcript = tmp_path / "t.jsonl"
-    log = tmp_path / EVENT_LOG_JSONL
-    writer = _writer(tmp_path, transcript)
-
-    transcript.write_text(_stream_turn(1, "one", "first"), encoding="utf-8")
-    writer.tick()
-    with transcript.open("a", encoding="utf-8") as handle:
-        handle.write(_stream_turn(2, "two", "second"))
-    writer.tick()
-    writer.close(exit_code=0)
-
-    at = _positions(log)
-    assert at["prompt:two"] < at["ended:req_1"]
-    assert "turn_ended" not in at
-
-
-def test_end_turn_with_nothing_open_still_marks_the_turn(tmp_path: Path) -> None:
-    """A turn that failed before the model answered leaves no response to end;
-    the boundary is written all the same, since it is the only one there is."""
-    from ai_hats_observe.canonical import ResponseEnded, TurnEnded
-
-    transcript = tmp_path / "t.jsonl"
-    log = tmp_path / EVENT_LOG_JSONL
-    writer = _writer(tmp_path, transcript)
     transcript.write_text(RECORDS[0], encoding="utf-8")
+    writer = _writer(tmp_path, transcript)
+    writer.tick()
+    writer.close(exit_code=0)
 
-    writer.end_turn(TurnEnded(ok=False, raw_code="success", detail="API Error: 529"))
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write("".join(RECORDS[1:]))
 
-    events = list(read_events(log))
-    assert not any(isinstance(e, ResponseEnded) for e in events)
-    assert events[-1] == TurnEnded(ok=False, raw_code="success", detail="API Error: 529")
+    assert writer.tick() == 0
+    assert isinstance(list(read_events(tmp_path / EVENT_LOG_JSONL))[-1], RunEnded)

@@ -53,6 +53,7 @@ from .canonical.types import (
     Item,
     ItemKind,
     ModelName,
+    PromptId,
     PromptOrigin,
     ResponseId,
     TextItem,
@@ -199,6 +200,7 @@ def encode(event: Event) -> dict[str, Any]:
                 "ok": event.ok,
                 "raw_code": event.raw_code,
                 "detail": event.detail,
+                "prompt_ids": list(event.prompt_ids),
                 "ts": event.ts,
             }
         case PromptReceived():
@@ -206,6 +208,7 @@ def encode(event: Event) -> dict[str, Any]:
                 "event": "prompt_received",
                 "text": event.text,
                 "origin": None if event.origin is None else str(event.origin),
+                "prompt_id": event.prompt_id,
                 "ts": event.ts,
             }
         case PersonAsked():
@@ -331,18 +334,25 @@ def _decode(record: dict[str, Any]) -> Event | None:
             )
         case "turn_ended":
             raw_code, detail = record.get("raw_code"), record.get("detail")
+            ids = record.get("prompt_ids")
             return TurnEnded(
                 ok=bool(record.get("ok")),
                 raw_code=raw_code if isinstance(raw_code, str) else None,
                 detail=detail if isinstance(detail, str) else None,
+                prompt_ids=tuple(
+                    PromptId(i)
+                    for i in (ids if isinstance(ids, list) else [])
+                    if isinstance(i, str)
+                ),
                 ts=ts,
             )
         case "prompt_received":
-            origin = record.get("origin")
+            origin, prompt_id = record.get("origin"), record.get("prompt_id")
             return PromptReceived(
                 text=str(record.get("text", "")),
                 ts=ts,
                 origin=PromptOrigin(origin) if origin in set(PromptOrigin) else None,
+                prompt_id=PromptId(prompt_id) if isinstance(prompt_id, str) else None,
             )
         case "person_asked":
             kind = record.get("kind")

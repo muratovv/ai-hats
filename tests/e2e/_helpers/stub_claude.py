@@ -12,6 +12,18 @@ prompt text:
     @error <msg>    an API-error record and a ``result`` with ``is_error``
     @die <code>     exit with <code> in the middle of the turn
     @sleep <s> ...  wait <s> seconds, then run the rest of the text as the turn
+    @late <s> ...   write the turn's record <s> seconds after its ``result``
+    @fold           a Bash ``tool_use``; a prompt already waiting at the tool
+                    boundary joins this turn, as claude 2.1.281 folds one in
+    @bg             answer, then start a turn of the binary's own (a finished
+                    background task): no prompt, ``user_message_uuids`` empty
+
+A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
+
+With ``--replay-user-messages`` a turn opens with the prompt's echo, and with
+``--include-partial-messages`` each response is framed by ``message_start`` /
+``message_delta`` / ``message_stop`` — the final usage rides the delta, as on
+the live wire.
 
 Usage: ``stub_claude.py <tag> <claude argv...>``. The tag is the stub's own
 argv[1], so a test can find the process with ``pgrep -f`` and nothing else;
@@ -22,10 +34,12 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -33,6 +47,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 ARGV_LOG_ENV = "STUB_CLAUDE_ARGV"
+TIMING_ENV = "STUB_CLAUDE_TIMING"
 
 
 def _now() -> str:
@@ -48,6 +63,11 @@ def _flag(argv: list[str], name: str) -> str | None:
     return None
 
 
+def _content(msg: dict) -> str:
+    content = msg.get("message", {}).get("content", "")
+    return content if isinstance(content, str) else json.dumps(content)
+
+
 class Stub:
     def __init__(self, argv: list[str]) -> None:
         self.argv = argv
@@ -61,6 +81,13 @@ class Stub:
         self.previous = ""
         self.results = 0
         self.cost = 0.0
+        self.replay = "--replay-user-messages" in argv
+        self.partial = "--include-partial-messages" in argv
+        self.deferred: list[dict] | None = None  # a @late turn's record, held back
+        self.writers: list[threading.Thread] = []
+        self.inbox: queue.Queue[dict | None] = queue.Queue()
+        self.seen: set[str] = set()
+        self.turn_ids: list[str] = []  # the prompts the running turn answers
 
     # -- wire and record ---------------------------------------------------
 
@@ -72,10 +99,34 @@ class Stub:
         obj.setdefault("sessionId", self.session_id)
         obj.setdefault("uuid", str(uuid.uuid4()))
         obj.setdefault("timestamp", _now())
+        if self.deferred is not None:
+            self.deferred.append(obj)
+            return
+        self._append(obj)
+
+    def _append(self, obj: dict) -> None:
         with self.transcript.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(obj) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+
+    def write_late(self, records: list[dict], delay: float, result_at: float) -> None:
+        """A @late turn's record lands ``delay`` after its result; the timing is
+        logged so a test can prove the record really trailed the wire."""
+
+        def later() -> None:
+            time.sleep(delay)
+            for obj in records:
+                self._append(obj)
+            log = os.environ.get(TIMING_ENV)
+            if log:
+                with open(log, "a", encoding="utf-8") as handle:
+                    line = {"result": result_at, "record": time.time()}
+                    handle.write(json.dumps(line) + "\n")
+
+        writer = threading.Thread(target=later)
+        writer.start()
+        self.writers.append(writer)
 
     def init(self) -> None:
         plugins, skills = [], []
@@ -96,17 +147,60 @@ class Stub:
         )
 
     def respond(self, request: str, blocks: list[dict], stop_reason: str) -> None:
-        """One API response: in the record first, then on the wire."""
+        """One API response: in the record first, then on the wire, where the
+        fragment's usage is mid-stream and the final one rides message_delta."""
+        final = {"input_tokens": 10, "output_tokens": 5}
         message = {
             "id": f"msg_{request}",
             "role": "assistant",
             "model": self.model,
             "stop_reason": stop_reason,
-            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "usage": final,
             "content": blocks,
         }
-        self.record({"type": "assistant", "requestId": request, "message": message})
-        self.emit({"type": "assistant", "message": {**message, "stop_reason": None}})
+        mid = {**message, "stop_reason": None, "usage": {**final, "output_tokens": 1}}
+        record = {"type": "assistant", "requestId": request, "message": message}
+        self.record(record)
+        if self.partial:
+            self.stream({"type": "message_start", "message": {**mid, "content": []}})
+        self.emit(
+            {
+                "type": "assistant",
+                "message": mid,
+                "request_id": request,
+                "uuid": record["uuid"],
+                "timestamp": record["timestamp"],
+                "parent_tool_use_id": None,
+                "session_id": self.session_id,
+            }
+        )
+        if self.partial:
+            self.stream(
+                {"type": "message_delta", "delta": {"stop_reason": stop_reason}, "usage": final}
+            )
+            self.stream({"type": "message_stop"})
+
+    def stream(self, event: dict) -> None:
+        self.emit(
+            {
+                "type": "stream_event",
+                "event": event,
+                "parent_tool_use_id": None,
+                "session_id": self.session_id,
+                "uuid": str(uuid.uuid4()),
+            }
+        )
+
+    def tool_result(self, call: str, content: str) -> None:
+        record = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": call, "content": content}],
+            },
+        }
+        self.record(record)
+        self.emit({**record, "parent_tool_use_id": None, "session_id": self.session_id})
 
     def result(self, text: str, *, is_error: bool = False, stop_reason: str = "end_turn") -> None:
         self.cost += 0.001
@@ -122,41 +216,128 @@ class Stub:
                 "permission_denials": [],
                 "total_cost_usd": round(self.cost, 6),
                 "session_id": self.session_id,
+                "user_message_uuids": list(self.turn_ids),
             }
         )
         self.results += 1
 
     # -- a turn --------------------------------------------------------------
 
-    def turn(self, text: str) -> None:
+    def turn(self, text: str, prompt_uuid: str) -> None:
         self.init()
+        body, late = text, None
+        while body.startswith(("@sleep ", "@late ")):
+            word, seconds, *rest = body.split(" ", 2)
+            if word == "@sleep":
+                time.sleep(float(seconds))
+            else:
+                late = float(seconds)
+            body = rest[0] if rest else ""
+        if late is not None:
+            self.deferred = []
+        prompt = {
+            "type": "user",
+            "promptSource": "sdk",
+            "uuid": prompt_uuid,
+            "message": {"role": "user", "content": text},
+        }
+        self.record(prompt)
+        self.echo(text, prompt_uuid, prompt["timestamp"])
+        self.turn_ids = [prompt_uuid]
+        self.run(body, text)
+        if late is not None:
+            records, self.deferred = self.deferred, None
+            self.write_late(records, late, time.time())
+
+    def echo(self, text: str, prompt_uuid: str, ts: str) -> None:
+        if self.replay:
+            self.emit(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": text},
+                    "uuid": prompt_uuid,
+                    "timestamp": ts,
+                    "isReplay": True,
+                    "parent_tool_use_id": None,
+                    "session_id": self.session_id,
+                }
+            )
+
+    def fold_waiting(self, timeout: float = 5.0) -> None:
+        """Take a prompt already waiting into the running turn: its echo, its id
+        in the turn's result, and in the record only a queued_command."""
+        try:
+            msg = self.inbox.get(timeout=timeout)
+        except queue.Empty:
+            return
+        if msg is None:
+            self.inbox.put(None)  # EOF stays last for serve()
+            return
+        text, prompt_uuid = _content(msg), msg.get("uuid") or str(uuid.uuid4())
+        self.seen.add(prompt_uuid)
+        self.record(
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "prompt": text,
+                    "source_uuid": prompt_uuid,
+                },
+            }
+        )
+        self.echo(text, prompt_uuid, _now())
+        self.turn_ids.append(prompt_uuid)
+
+    def own_turn(self) -> None:
+        """A turn the binary starts itself: the record has its notification, the wire no echo."""
+        self.init()
+        self.turn_ids = []
         self.record(
             {
                 "type": "user",
-                "promptSource": "sdk",
-                "message": {"role": "user", "content": text},
+                "promptSource": "system",
+                "message": {
+                    "role": "user",
+                    "content": "<task-notification>done</task-notification>",
+                },
             }
         )
-        body = text
-        while body.startswith("@sleep "):
-            _, seconds, *rest = body.split(" ", 2)
-            time.sleep(float(seconds))
-            body = rest[0] if rest else ""
+        request = uuid.uuid4().hex[:12]
+        self.respond(request, [{"type": "text", "text": "background done"}], "end_turn")
+        self.result("background done")
+
+    def run(self, body: str, text: str) -> None:
         request = uuid.uuid4().hex[:12]
         if body.startswith("@die "):
             sys.stdout.flush()
             os._exit(int(body.split()[1]))
         if body.startswith("@error"):
             detail = f"API Error: {body[len('@error') :].strip() or '529 overloaded'}"
-            self.record(
+            message = {
+                "id": str(uuid.uuid4()),
+                "role": "assistant",
+                "model": "<synthetic>",
+                "content": [{"type": "text", "text": detail}],
+            }
+            record = {
+                "type": "assistant",
+                "isApiErrorMessage": True,
+                "error": "server_error",
+                "requestId": request,
+                "message": message,
+            }
+            self.record(record)
+            self.emit(
                 {
                     "type": "assistant",
-                    "isApiErrorMessage": True,
-                    "message": {
-                        "role": "assistant",
-                        "model": "<synthetic>",
-                        "content": [{"type": "text", "text": detail}],
-                    },
+                    "is_api_error_message": True,
+                    "error": "server_error",
+                    "request_id": request,
+                    "uuid": record["uuid"],
+                    "timestamp": record["timestamp"],
+                    "message": message,
+                    "parent_tool_use_id": None,
+                    "session_id": self.session_id,
                 }
             )
             self.result(detail, is_error=True, stop_reason="stop_sequence")
@@ -167,24 +348,31 @@ class Stub:
                 [{"type": "tool_use", "id": call, "name": "Bash", "input": {"command": "echo hi"}}],
                 "tool_use",
             )
-            self.record(
-                {
-                    "type": "user",
-                    "message": {
-                        "role": "user",
-                        "content": [{"type": "tool_result", "tool_use_id": call, "content": "hi"}],
-                    },
-                }
-            )
+            self.tool_result(call, "hi")
             self.respond(f"{request}b", [{"type": "text", "text": "done"}], "end_turn")
             self.result("done")
+        elif body == "@fold":
+            call = f"toolu_{request}"
+            self.respond(
+                f"{request}a",
+                [{"type": "tool_use", "id": call, "name": "Bash", "input": {"command": "echo hi"}}],
+                "tool_use",
+            )
+            self.tool_result(call, "hi")
+            self.fold_waiting()
+            self.respond(f"{request}b", [{"type": "text", "text": "folded"}], "end_turn")
+            self.result("folded")
+        elif body == "@bg":
+            self.respond(request, [{"type": "text", "text": "started"}], "end_turn")
+            self.result("started")
+            self.own_turn()
         else:
             answer = self.previous if body == "@recall" else f"ok: {body}"
             self.respond(request, [{"type": "text", "text": answer}], "end_turn")
             self.result(answer)
         self.previous = text
 
-    def serve(self) -> int:
+    def read_stdin(self) -> None:
         for line in sys.stdin:
             if not line.strip():
                 continue
@@ -193,10 +381,21 @@ class Stub:
             except json.JSONDecodeError:
                 print(f"stub claude: not JSON: {line[:80]!r}", file=sys.stderr)
                 continue
-            if msg.get("type") != "user":
+            if msg.get("type") == "user":
+                self.inbox.put(msg)
+        self.inbox.put(None)
+
+    def serve(self) -> int:
+        threading.Thread(target=self.read_stdin, daemon=True).start()
+        while (msg := self.inbox.get()) is not None:
+            prompt_uuid = msg.get("uuid") or str(uuid.uuid4())
+            if prompt_uuid in self.seen:
+                self.echo(_content(msg), prompt_uuid, _now())  # dropped, yet echoed
                 continue
-            content = msg.get("message", {}).get("content", "")
-            self.turn(content if isinstance(content, str) else json.dumps(content))
+            self.seen.add(prompt_uuid)
+            self.turn(_content(msg), prompt_uuid)
+        for writer in self.writers:
+            writer.join()
         self.record({"type": "last-prompt", "lastPrompt": self.previous})
         return 0
 
@@ -210,12 +409,23 @@ class StubClaude:
     config_dir: Path
     argv_log: Path
 
+    @property
+    def timing_log(self) -> Path:
+        return self.argv_log.with_name("stub-timing.ndjson")
+
     def env(self, path: str) -> dict[str, str]:
         return {
             "PATH": os.pathsep.join([str(self.bin_dir), path]),
             "CLAUDE_CONFIG_DIR": str(self.config_dir),
             ARGV_LOG_ENV: str(self.argv_log),
+            TIMING_ENV: str(self.timing_log),
         }
+
+    def timings(self) -> list[dict[str, float]]:
+        """When each @late turn's result went out and when its record landed."""
+        if not self.timing_log.exists():
+            return []
+        return [json.loads(line) for line in self.timing_log.read_text().splitlines() if line]
 
     def session_env(self, project) -> dict[str, str]:
         """The env an e2e test launches ``ai-hats headless`` with: the scrubbed

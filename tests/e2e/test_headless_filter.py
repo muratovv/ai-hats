@@ -33,6 +33,8 @@ HEADER_KEYS = {
     "holder_pid": int,
     "provider_session_id": str,
     "started_at": str,
+    "events": str,
+    "commands": list,
 }
 
 
