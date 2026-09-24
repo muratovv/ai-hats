@@ -319,6 +319,15 @@ class TestMakeDecision:
         assert d["background"] is True
         assert d["retro_path"].endswith("/sessions/SID.md")
 
+    def test_decision_carries_no_wrap_up(self, tmp_path):
+        from ai_hats.retro.auto_retro import make_decision
+
+        metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10)
+        metrics.write_text(json.dumps({"turns": 20, "tool_calls": 50, "duration_s": 7200}))
+
+        d = make_decision(ProjectLayout.at(tmp_path), "20260101-000000-1-1")
+        assert "wrap_up" not in d
+
     def test_hint_populates_reminder(self, tmp_path):
         from ai_hats.retro.auto_retro import make_decision
 
@@ -344,7 +353,7 @@ class TestMakeDecision:
         assert d["action"] == "skip"
         assert "internal error" in d["reason"]
         assert "boom" in d["reason"]
-        assert d["wrap_up"] is None
+        assert "wrap_up" not in d
 
     def test_keyboard_interrupt_returns_skip(self, tmp_path, monkeypatch):
         """HATS-1426: 'never raises' excluded KeyboardInterrupt — the one thing

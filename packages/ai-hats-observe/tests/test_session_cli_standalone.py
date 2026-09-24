@@ -164,6 +164,7 @@ def test_session_show_renders_diagnostics(tmp_path: Path, monkeypatch, wt_free_h
     assert "skills mirror drift detected" in shown.output
     assert "Post-Session Diagnostics & Banners" in shown.output
     assert "Retro Reminder" in shown.output
+    assert "Wrap Up" not in shown.output
     assert "Update Available" in shown.output
     assert "diagnostics.json" in shown.output
 
