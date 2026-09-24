@@ -80,7 +80,10 @@ Always prefer free over venv over live.
    needed) to tests gating on `requires_claude_auth` and
    `requires_agy_auth`, respectively. The canonical full e2e gate excludes
    `live_agy`; run that cohort explicitly with
-   `pytest -m live_agy tests/e2e/`.
+   `pytest -m live_agy tests/e2e/`. `live_headless` is declared, not
+   auto-applied: it marks the live `ai-hats headless` session test, which the
+   full gate excludes as well, because it spends real turns — run it with
+   `pytest -m live_headless tests/e2e/`.
 
 ## Fixtures (`conftest.py`)
 

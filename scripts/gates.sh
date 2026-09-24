@@ -416,7 +416,7 @@ _zone_expr() {
 # defect that already cost this repo once — the tier's selection lived in two
 # copies with no test holding them equal — so `tests/test_e2e_zone_partition.py`
 # holds the parts equal to the whole.
-E2E_SELECT='(integration or smoke) and not quarantine and not live_agy'
+E2E_SELECT='(integration or smoke) and not quarantine and not live_agy and not live_headless'
 E2E_PATHS='tests/e2e/ tests/smoke/'
 
 # The full maintainer tier (the slow one). Excluded from `all`; what CI runs and
