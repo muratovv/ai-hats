@@ -70,7 +70,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — the run is refused before the launch attempt starts; the envelope carries exit_code 1 and an error naming `claude auth login`; the session's events.jsonl says run_started → reauthenticate → run_ended
-- **why** — without the pre-flight probe an unauthenticated run takes a worktree, a cache and a role materialization, then dies on the first message with the reason buried in an SDK error string
+- **why** — without the pre-flight probe an unauthenticated run takes a worktree and a role materialization, launches claude, and reports a green "Sub-agent completed" with exit 1, the reason only in transcript.txt
 
 ## `test_agy_bypass.py`
 
