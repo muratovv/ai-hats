@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**335 of 335 files catalogued — 343 flows.**
+**336 of 336 files catalogued — 344 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1681,6 +1681,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker
 - **why** — e2e could not drive the claude TUI, so a real role's HITL session — composition, hooks, log, finalize — was checked by hand only; this is the first automated proof. Kept out of the mandatory gate (live_headless) because it spends real turns: run it with `-m live_headless`
+
+## `test_headless_prompt_ids.py`
+
+*pins HATS-2028*
+
+- **flow** — a program sends prompts with its own ids and finds each turn's end by id — while the surface folds a prompt into the running turn, or starts a turn of its own
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — a folded prompt ends with the one it joined, in one turn_ended listing both ids; a turn the surface began lists none; a repeated id or one not in canonical UUID form is refused as command_rejected; the header names the log's format and the commands it takes
+- **why** — counting turn_ended lines breaks on a fold and on a turn with no prompt; an id cannot, and a repeated one would wait forever on claude
 
 ## `test_headless_wire_order.py`
 
