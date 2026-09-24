@@ -7,15 +7,17 @@ license: MIT
 # Article Outline
 
 Settle what the text is, whom it serves and how it will be styled before
-drafting. The outline is the plan; the draft follows it.
+drafting. The outline is the text's plan; the draft follows it.
 
 ## When to Use
 
 - A text is being planned, or a draft is about to start and nobody has said
   what type it is and who reads it. A draft that already exists is
   `prose-review`'s job.
-- With a task card, the outline fills `plan.md` — Requirements carry the
-  purpose, type, audience and style forks; Steps carry the section list.
+- With a task card, the outline is its own `## Outline` section in the plan,
+  written and agreed before the draft starts. It ADDS that section — it never
+  fills one that already has an owner (Requirements, Steps): an outline is the
+  text's own shape, not the task's requirements or its work breakdown.
   Without a card it goes to chat and is agreed there before the draft.
 
 ## Procedure
@@ -47,7 +49,7 @@ drafting. The outline is the plan; the draft follows it.
 ## Completion
 
 - Purpose sentence, one quadrant, audience line, style forks and sections
-  with gains are written into the plan (or chat) and agreed.
+  with gains are written into the plan's `## Outline` (or chat) and agreed.
 - Validation — RED: asked for "an article about worktrees", the agent starts
   drafting a tutorial-explanation hybrid for an unnamed reader. GREEN: it
   returns the outline first and asks for one decision — the quadrant.
