@@ -1,15 +1,12 @@
 # Headless wire — claude, measured on the live binary
 
-Attachment of ADR-0038. Measured by the PoC HATS-2014 (its `session.py` / `drive.py` /
+Attachment of ADR-0038. §1–9 were measured by the PoC HATS-2014 (its `session.py` /
+`drive.py` / `probe_thinking.py` live on that card), §10 by the PoC HATS-2025 (its probes
+live on that card). This file is the observation the ADR cites and may be re-measured when
+the CLI moves. No session recordings here — schema and redacted fragments only.
 
-`probe_thinking.py` live on that card); this file is the observation the ADR cites and may be
-
-re-measured when the CLI moves. No session recordings here — schema and redacted fragments only.
-
-
-
-
-Pinned to: `claude` **2.1.278**, `claude-agent-sdk` **0.2.126** (oracle), macOS, 2026-09-21.
+§1–9 pinned to: `claude` **2.1.278**, `claude-agent-sdk` **0.2.126** (oracle), macOS, 2026-09-21.
+§10 pinned to: `claude` **2.1.281**, macOS, 2026-09-24.
 The wire is undocumented; everything below is observed on live runs (`drive.py`,
 `probe.py`, `oracle_sdk.py`). Raw captures are NOT attached (session recordings).
 
@@ -46,14 +43,14 @@ in every event.
 
 **Out (stdout, one JSON per line), per turn, without partial messages:**
 
-| order | `type/subtype`             | notes                                                                                                                                                                                                                                                     |
-| ----- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | `system/init`              | **re-emitted on every turn** (new `uuid`, same `session_id`); carries `model`, `permissionMode`, `tools`, `session_id`, `claude_code_version`, `apiKeySource` (`none` on a subscription login — the binary is authenticated by `HOME`, not by a key in the env) …                                                                                           |
-| 2..n  | `assistant`                | one per model message; `message.content` blocks: `text` / `tool_use` (with **full** `input` — no delta assembly needed at this level)                                                                                                                     |
-|       | `user`                     | tool result fed back (`message.content[].type == "tool_result"`, plus a top-level `tool_use_result`)                                                                                                                                                      |
-|       | `control_request`          | inbound question to the writer; only seen `subtype: can_use_tool` (see §3)                                                                                                                                                                                |
-|       | `rate_limit_event`         | first turn only; `rate_limit_info.unifiedWindows.{five_hour,seven_day}.utilization`                                                                                                                                                                       |
-|       | `system/permission_denied` | when `--permission-prompts none` denies a tool (see §3)                                                                                                                                                                                                   |
+| order | `type/subtype`             | notes                                                                                                                                                                                                                                                                          |
+| ----- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | `system/init`              | **re-emitted on every turn** (new `uuid`, same `session_id`); carries `model`, `permissionMode`, `tools`, `session_id`, `claude_code_version`, `apiKeySource` (`none` on a subscription login — the binary is authenticated by `HOME`, not by a key in the env) …              |
+| 2..n  | `assistant`                | one per model message; `message.content` blocks: `text` / `tool_use` (with **full** `input` — no delta assembly needed at this level)                                                                                                                                          |
+|       | `user`                     | tool result fed back (`message.content[].type == "tool_result"`, plus a top-level `tool_use_result`)                                                                                                                                                                           |
+|       | `control_request`          | inbound question to the writer; only seen `subtype: can_use_tool` (see §3)                                                                                                                                                                                                     |
+|       | `rate_limit_event`         | first turn only; `rate_limit_info.unifiedWindows.{five_hour,seven_day}.utilization`                                                                                                                                                                                            |
+|       | `system/permission_denied` | when `--permission-prompts none` denies a tool (see §3)                                                                                                                                                                                                                        |
 | last  | `result/success`           | **the turn boundary**. Fields: `is_error`, `stop_reason`, `terminal_reason`, `result` (final text), `num_turns`, `duration_ms`, `duration_api_ms`, `total_cost_usd`, `usage`, `modelUsage`, `permission_denials`, `result_index`, `queued_turn_count`, `ttft_ms`, `session_id` |
 
 Semantics that bite:
@@ -195,3 +192,92 @@ present but its text is empty while `thinking_tokens` > 0; `summarized` fills th
 (`subprocess_cli.py:627-644`). ai-hats already types this distinction
 (`ThinkingBlock` in `sdk_runner.format_reasoning`, `ThinkingItem` in
 `ai_hats_observe.canonical`) — the raw wire gives the holder the same split.
+
+## 10. The HITL argv of a real role, interrupt, EOF, hooks, the record (2.1.281)
+
+Measured with the argv `session_plan.launch` builds for a HITL session of the role `maintainer`
+(`ai-hats -r maintainer --dry-run-json --materialize`, tree copied out), with the wire flags in
+front of it, the way `LaunchFlags.extra_args` is placed:
+`claude --input-format stream-json --output-format stream-json --verbose --permission-prompt-tool stdio --system-prompt-file <root>/prompt.md --plugin-dir <root>/plugin --settings <root>/settings.json --session-id <uuid>`.
+The child env is the §1 allowlist only — no `AI_HATS_*` — and user settings are NOT cut: this
+argv passes no `--setting-sources`. Mechanics probes (interrupt, EOF, permissions) ran on the §1
+argv with `--model sonnet`.
+
+**The role's argv works over the wire.** The session keeps three turns in one pid under the
+`session_id` passed in `--session-id`. The model quotes the role prompt's `# ROLE:` heading and
+recalls turn 1 in turn 3; `system/init` lists the role plugin (`source: "<name>@inline"`) and
+all of its skills (`<plugin>:<skill>`). Negative control: without `--system-prompt-file` and
+`--plugin-dir` the heading is `NONE` and no role skill is listed. `permissionMode` is the
+user's `defaultMode` (`auto` here), inherited through the user settings.
+
+**Hooks fire.** Hooks from `--settings` and from the user settings run in stream-json mode. A raw `command` hook on `PreToolUse`/`PostToolUse` wrote its marker; the
+ai-hats dispatcher, left without its env, refused Bash and `Write` with exit 2. The refusal
+reached the model as a `tool_result` with `is_error: true`, text
+`PreToolUse:<Tool> hook error: [<the whole hook command>]: <stderr>`, and put the call into
+`result.permission_denials[]`. `--include-hook-events` adds `system/hook_started` and
+`system/hook_response` (`hook_name`, `exit_code`, `outcome`, `stdout`, `stderr`) to stdout.
+
+**A hook that answers `ask` becomes a wire question.** With `--permission-prompt-tool stdio`, a
+`PreToolUse` hook printing `permissionDecision: "ask"` yields a `control_request`
+`can_use_tool` with `decision_reason: <the hook's reason>` and `decision_reason_type: "hook"`,
+answered by the same `control_response` as any other question: allow runs the tool, deny
+returns the message as an error `tool_result`. `auto` mode does not swallow the hook's
+question. Without a handler it turns into `system/permission_denied` with
+`decision_reason_type: "hook"`.
+
+**`interrupt`.** `{"type":"control_request","request_id":<new>,"request":{"subtype":"interrupt"}}`
+is answered at once with
+`{"type":"control_response","response":{"subtype":"success","request_id":<same>,"response":{"still_queued":[]}}}`.
+Then:
+
+| When                    | What follows on stdout                                                                                                                                                                               | `result`                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| the model is generating | `assistant` with the partial text, `user` `[Request interrupted by user]`                                                                                                                            | `subtype: error_during_execution`, `is_error: true`, `stop_reason: null`, `terminal_reason: aborted_streaming` |
+| a tool is running       | `tool_result` "The user doesn't want to proceed with this tool use…", `user` `[Request interrupted by user for tool use]`, `system/task_notification` `status: stopped` — the tool process is killed | `subtype: error_during_execution`, `is_error: true`, `stop_reason: tool_use`, `terminal_reason: aborted_tools` |
+| no turn is running      | nothing                                                                                                                                                                                              | none                                                                                                           |
+
+The next `prompt` is accepted in every case; `result_index` keeps counting. `interrupt` does
+not stop background tasks (`run_in_background`).
+
+**EOF on stdin.** Accepted turns run to the end, and the process exits 0. A question open at EOF
+fails as a `tool_result` error
+"Tool permission request failed: AbortError: Tool permission stream closed before response received";
+every later question fails at once with "AbortError: Stream closed" and never reaches stdout. The
+model retried each refused call one to three times before it ended the turn, so the failure
+costs API calls, not a hang. Background tasks are stopped about 5 s after EOF; the turn their
+completion would have started never runs.
+
+**No handler, no TTY** (`--permission-prompts host`, no `--permission-prompt-tool`). Under the
+user's `auto`, `Write` in the cwd ran without a question. Under `--permission-mode manual`
+(reported as `default` in `system/init`) it was refused as with `--permission-prompts none`
+(§3). Neither hung.
+
+**The record.** The transcript lands at `~/.claude/projects/<key(realpath cwd)>/<session_id>.jsonl`
+— exactly the path `resolve_transcript` returns. Per prompt it holds `queue-operation`
+(`enqueue`, `dequeue`) and a `user` record with `promptSource: "sdk"`. Per model message it
+holds one `assistant` record per content block, each already carrying the final
+`message.stop_reason`, then `user` records with `tool_result`s. It holds no turn-end record:
+`system/turn_duration` is absent in this mode, and `system/stop_hook_summary` appears only
+when a Stop hook is configured. The turn's last `assistant` record is on disk when `result`
+reaches stdout (7 of 7 turns, read synchronously on `result`). An `EventLogWriter` following
+it lags `result` by at most one tick (median 0.13 s, max 0.26 s, 28 turns). `PromptReceived`
+comes about 1 s after the prompt is written, when the binary starts the turn, with
+`origin: harness`.
+
+**The turn boundary is missing from the live log.** The live claude reader closes a response
+only when a response with another `requestId` starts, on an interrupt marker, or on `close()`.
+So the `ResponseEnded` of a turn's last response reaches `events.jsonl` only when the next
+turn's first response does, or at `close()` after EOF — in 24 of 25 turns measured. The one
+exception was a turn cut by `interrupt`, whose marker closes it. A client that waits for
+`response_ended` before sending the next `prompt` waits forever. The wire `result` is the
+boundary, and the record is complete by then.
+
+**New on the wire since 2.1.278.**
+
+- `system/thinking_tokens`.
+- `system/hook_started` / `hook_response`, with `--include-hook-events`.
+- `system/task_started` / `task_updated` / `task_notification` / `background_tasks_changed`.
+- A turn with no `prompt`: when a background task completes, the binary starts a turn of its
+  own, from `system/init` to `result`. The count of `result`s is not the count of prompts.
+- `can_use_tool` fields: `display_name`, `description`, `blocked_path`, `decision_reason`,
+  `decision_reason_type`, `permission_suggestions` (`addRules`, `addDirectories`, `setMode`).
