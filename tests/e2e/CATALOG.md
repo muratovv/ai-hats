@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**334 of 334 files catalogued — 342 flows.**
+**335 of 335 files catalogued — 343 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1681,6 +1681,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker
 - **why** — e2e could not drive the claude TUI, so a real role's HITL session — composition, hooks, log, finalize — was checked by hand only; this is the first automated proof. Kept out of the mandatory gate (live_headless) because it spends real turns: run it with `-m live_headless`
+
+## `test_headless_wire_order.py`
+
+*pins HATS-2028*
+
+- **flow** — a program drives a headless session whose surface writes its record late, or is sent the next prompt before the running turn ends
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — every event of a turn is on stdout before that turn's turn_ended, even when the surface's record lands after the wire's result; a prompt sent ahead is received after the previous turn_ended; each prompt is received once
+- **why** — the main agent's events come from the wire alone, so the log's order is the wire's by construction — a client that cuts the log at turn_ended never loses an answer to the next turn
 
 ## `test_hermetic_unit_gate.py`
 
