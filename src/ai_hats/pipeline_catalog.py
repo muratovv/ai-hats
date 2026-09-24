@@ -16,10 +16,12 @@ from .pipeline import PipelineConfig
 # role and a prompt. Out of scope by supervisor's call.
 EXECUTE = PipelineConfig(name="execute")
 HUMAN = PipelineConfig(name="human")
+HEADLESS = PipelineConfig(name="headless")
 INIT = PipelineConfig(name="init")
 PREVIEW = PipelineConfig(name="preview")
 FINALIZE_HITL = PipelineConfig(name="finalize-hitl")
 FINALIZE_SUBAGENT = PipelineConfig(name="finalize-subagent")
+FINALIZE_HEADLESS = PipelineConfig(name="finalize-headless")
 REFLECT_SESSION = PipelineConfig(name="reflect-session")
 REFLECT_ALL = PipelineConfig(name="reflect-all")
 REFLECT_HYPOTHESIS_PHASE1 = PipelineConfig(name="reflect-hypothesis-phase1")
@@ -30,10 +32,12 @@ REFLECT_ISSUE = PipelineConfig(name="reflect-issue")
 ALL: tuple[PipelineConfig, ...] = (
     EXECUTE,
     HUMAN,
+    HEADLESS,
     INIT,
     PREVIEW,
     FINALIZE_HITL,
     FINALIZE_SUBAGENT,
+    FINALIZE_HEADLESS,
     REFLECT_SESSION,
     REFLECT_ALL,
     REFLECT_HYPOTHESIS_PHASE1,

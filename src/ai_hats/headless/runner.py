@@ -1,0 +1,311 @@
+"""The holder: a ``WrapRunner`` whose surface talks over pipes, not a PTY (ADR-0038 D5).
+
+Planning, start-up checks, the resident hook server, the event log and the
+finalize are ``WrapRunner``'s, unchanged. What differs is the spawn — pipes, the
+child in its own process group — and that nothing reads the person's keyboard:
+stdin carries commands, stdout the header and a copy of the log.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+from collections import deque
+from pathlib import Path
+from typing import TYPE_CHECKING, BinaryIO, Callable
+
+from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+from ai_hats_observe.canonical import Notice, WorthRecording
+from ai_hats_observe.canonical.types import now
+from ai_hats_observe.event_log import append_event
+
+from ..pipeline_catalog import FINALIZE_HEADLESS
+from ..wrap_runner import WrapRunner
+from .commands import Rejected, parse_command
+from .copier import LogCopier
+from .header import SessionHeader
+
+if TYPE_CHECKING:
+    from ai_hats_observe import Session
+    from ai_hats_observe.event_log_writer import EventLogWriter
+
+    from ..surfaces import Wire
+
+#: How long the child's group gets after SIGTERM before SIGKILL. Measured claude
+#: leaves in under a second; this only bounds a stuck one.
+GRACE_S = 5.0
+_SOURCE = "headless"
+
+
+class HeadlessRunner(WrapRunner):
+    """``ai-hats headless`` — a HITL session driven over this process's stdin/stdout."""
+
+    finalize = FINALIZE_HEADLESS
+
+    def __init__(
+        self,
+        *args,
+        stdout_fd: int,
+        first_prompt: str = "",
+        stdin: BinaryIO | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._stdout_fd = stdout_fd
+        self._first_prompt = first_prompt
+        self._stdin = stdin if stdin is not None else sys.stdin.buffer
+        self._copier: LogCopier | None = None
+        self._child: subprocess.Popen[bytes] | None = None
+        self._signal: int | None = None
+
+    def _wire(self) -> Wire:
+        wire = self.payload.provider.wire()
+        if wire is None:
+            raise RuntimeError(f"ai-hats headless cannot drive {self.payload.provider.name}")
+        return wire
+
+    def run(self, extra_args=None, tags=None, pty_tap_factory=None):
+        del pty_tap_factory
+        args = [*self._wire().launch_args, *(extra_args or ())]
+        previous = {
+            sig: signal.signal(sig, self._on_signal) for sig in (signal.SIGINT, signal.SIGTERM)
+        }
+        try:
+            return super().run(extra_args=args, tags=tags)
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+            # Holder leaves last: stdout closes only after the finalize, so the
+            # client's EOF means the session is over and recorded.
+            if self._copier is not None:
+                self._copier.finish()
+            else:
+                with contextlib.suppress(OSError):
+                    os.close(self._stdout_fd)
+
+    def _stdin_is_terminal(self) -> bool:
+        return False  # stdin carries commands; the hold must never read it
+
+    def _on_signal(self, signum: int, _frame) -> None:
+        if self._signal is None:
+            self._signal = signum
+        self._terminate_child()
+
+    def _terminate_child(self, sig: int = signal.SIGTERM) -> None:
+        child = self._child
+        if child is not None and child.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(child.pid, sig)
+
+    def _spawn_surface(
+        self,
+        cmd: list[str],
+        env: dict[str, str],
+        tracer,
+        *,
+        session: Session,
+        event_log: EventLogWriter | None,
+        provider_session_id: str,
+        pty_tap_factory=None,
+        on_spawn: Callable[[int], None],
+    ) -> int:
+        del tracer, pty_tap_factory
+        if self._signal is not None:
+            return 128 + self._signal  # stopped before there was anything to stop
+        log = session.session_dir / EVENT_LOG_JSONL
+        child = subprocess.Popen(
+            cmd,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            start_new_session=True,
+        )
+        self._child = child
+        on_spawn(child.pid)
+        header = SessionHeader(
+            session_id=session.session_id,
+            session_dir=session.session_dir,
+            log=log,
+            holder_pid=os.getpid(),
+            provider_session_id=provider_session_id,
+            started_at=now(),
+        )
+        try:
+            _write_all(self._stdout_fd, header.line())
+        except BrokenPipeError:
+            session.log_sys("headless stdout reader went away before the header")
+        sys.stderr.write(header.human())
+        sys.stderr.flush()
+        self._copier = LogCopier(log, self._stdout_fd, report=session.log_sys).start()
+
+        relay = _Relay(child, self._wire(), event_log=event_log, log=log, report=session.log_sys)
+        follower = threading.Thread(target=relay.follow, name="headless-follow", daemon=True)
+        feeder = threading.Thread(
+            target=relay.feed,
+            args=(self._stdin, self._first_prompt),
+            name="headless-feed",
+            daemon=True,
+        )
+        follower.start()
+        feeder.start()
+        code = self._wait(child)
+        # Every `result` the child printed has reached the log before run_ended.
+        follower.join(GRACE_S)
+        relay.abandon()
+        return code
+
+    def _wait(self, child: subprocess.Popen[bytes]) -> int:
+        deadline: float | None = None
+        while True:
+            try:
+                code = child.wait(timeout=0.1)
+                break
+            except subprocess.TimeoutExpired:
+                if self._signal is None:
+                    continue
+                if deadline is None:
+                    self._terminate_child()  # the signal may have beaten the spawn
+                    deadline = time.monotonic() + GRACE_S
+                elif time.monotonic() >= deadline:
+                    self._terminate_child(signal.SIGKILL)
+        if self._signal is not None:
+            return 128 + self._signal
+        return code if code >= 0 else 128 - code
+
+
+class _Relay:
+    """The two pumps between the holder's pipes and the child's.
+
+    The holder, not the binary, keeps the queue of turns: the next prompt goes
+    to the wire only once the previous turn's end is in the log. With the
+    binary queueing, turn N+1's prompt reached the record before turn N's
+    ``result`` reached the holder, so the log said turn N+1 began inside turn N.
+    """
+
+    def __init__(
+        self,
+        child: subprocess.Popen[bytes],
+        wire: Wire,
+        *,
+        event_log: EventLogWriter | None,
+        log: Path,
+        report: Callable[[str], None],
+    ) -> None:
+        self._child = child
+        self._wire = wire
+        self._event_log = event_log
+        self._log = log
+        self._report = report
+        self._lock = threading.Lock()
+        self._queue: deque[tuple[bytes, str]] = deque()
+        self._running = False  # a turn this holder sent has no end yet
+        self._no_more = False  # stdin reached EOF
+        # Set once the child is gone: a command after that would land behind run_ended.
+        self.ended = threading.Event()
+
+    def feed(self, stdin: BinaryIO, first_prompt: str) -> None:
+        """Holder stdin → commands → the queue of turns; EOF ends the input."""
+        try:
+            if first_prompt:
+                self._submit(self._wire.prompt_line(first_prompt), "the positional prompt")
+            for number, raw in enumerate(iter(stdin.readline, b""), start=1):
+                command = parse_command(raw)
+                if command is None:
+                    continue
+                where = f"stdin line {number}"
+                if isinstance(command, Rejected):
+                    self._reject(where, command.cmd, command.why)
+                else:
+                    self._submit(self._wire.prompt_line(command.text), where)
+        finally:
+            with self._lock:
+                self._no_more = True
+                if not self._queue:
+                    self._close_input()
+
+    def _submit(self, line: bytes, where: str) -> None:
+        with self._lock:
+            if self._running or self._queue:
+                self._queue.append((line, where))
+                return
+            self._running = True
+            self._send(line, where)
+
+    def _turn_over(self) -> None:
+        """A turn ended in the log: start the next queued one, or finish the input."""
+        with self._lock:
+            if not self._queue:
+                self._running = False
+                return
+            line, where = self._queue.popleft()
+            self._send(line, where)
+            if self._no_more and not self._queue:
+                self._close_input()
+
+    def _send(self, line: bytes, where: str) -> None:
+        try:
+            self._child.stdin.write(line)
+            self._child.stdin.flush()
+        except (OSError, ValueError):
+            self._reject(where, "prompt", "the session is ending")
+
+    def _close_input(self) -> None:
+        """EOF for the child: it finishes the turn it has and exits."""
+        with contextlib.suppress(OSError, ValueError):
+            self._child.stdin.close()
+
+    def abandon(self) -> None:
+        """The child is gone: every turn still queued is refused, before run_ended."""
+        with self._lock:
+            while self._queue:
+                _line, where = self._queue.popleft()
+                self._reject(where, "prompt", "the session ended before this turn ran")
+        self.ended.set()
+
+    def _reject(self, where: str, cmd: str | None, why: str) -> None:
+        detail = f"{where}: {why}"
+        if self.ended.is_set():
+            self._report(f"headless: dropped after the session ended — {detail}")
+            return
+        append_event(
+            Notice(
+                reason=WorthRecording.COMMAND_REJECTED,
+                raw_code=cmd,
+                detail=detail,
+                source=_SOURCE,
+                ts=now(),
+            ),
+            self._log,
+        )
+
+    def follow(self) -> None:
+        """Child stdout → the turn boundary in the log, then the next turn."""
+        for raw in iter(self._child.stdout.readline, b""):
+            try:
+                message = json.loads(raw)
+            except ValueError:
+                self._report(f"headless: a non-JSON line from the surface: {raw[:120]!r}")
+                continue
+            if not isinstance(message, dict):
+                continue
+            ended = self._wire.turn_end(message)
+            if ended is None:
+                continue
+            if self._event_log is not None:
+                self._event_log.end_turn(ended)
+            self._turn_over()
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view) :]
+
+
+__all__ = ["GRACE_S", "HeadlessRunner"]

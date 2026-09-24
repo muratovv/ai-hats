@@ -31,6 +31,35 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 
+_SESSION_OPTIONS = (
+    click.option(
+        "--provider", "-p", default=None, help="Provider override (see `ai-hats list providers`)"
+    ),
+    click.option("--role", "-r", default=None, help="Role override"),
+    click.option(
+        "--model",
+        "-m",
+        default=None,
+        help="Model override, forwarded to the provider as --model.",
+    ),
+    click.option(
+        "--tag",
+        "tags_raw",
+        multiple=True,
+        help="Custom tag k=v for this session (repeatable, max 20). "
+        "Stored in metrics.json under 'tags' for later query.",
+    ),
+)
+
+
+def session_options(command):
+    """The options every session launcher takes the same way — bare ``ai-hats``
+    and ``ai-hats headless`` — so the two cannot drift apart."""
+    for option in reversed(_SESSION_OPTIONS):
+        command = option(command)
+    return command
+
+
 def with_model_flag(model: str | None, args: "Sequence[str]") -> list[str]:
     """Put the model override at the head of a provider's argv.
 

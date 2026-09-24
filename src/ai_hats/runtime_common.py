@@ -873,6 +873,7 @@ def _finalize_params(
 def _run_finalize_hitl(
     session: "Session",
     *,
+    config: PipelineConfig = FINALIZE_HITL,
     claude_session_id: str,
     layout: ProjectLayout,
     exit_code: int,
@@ -881,7 +882,8 @@ def _run_finalize_hitl(
     audit_writer_factory=None,
     transcript_resolver=None,
 ) -> None:
-    """Invoke the ``finalize-hitl`` sub-pipeline.
+    """Invoke a HITL runner's finalize sub-pipeline — ``finalize-hitl`` unless the
+    runner names its own.
 
     The pipeline runs ``make_audit`` then ``run_session_end`` (retro banner).
     Caller (WrapRunner.run's finally) wraps this in its own try/except so a
@@ -890,9 +892,9 @@ def _run_finalize_hitl(
     ``compute_usage`` can cross-check always-on cost without composing.
     """
     _log_pipeline_errors(
-        FINALIZE_HITL,
+        config,
         run_subpipeline(
-            FINALIZE_HITL,
+            config,
             _finalize_params(
                 session,
                 claude_session_id=claude_session_id,

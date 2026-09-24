@@ -59,6 +59,7 @@ if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
         trace_record,  # noqa: F401
         validate,  # noqa: F401
     )
+    from .wire import Wire  # noqa: F401
 
     # ``adapt`` is bound lazily alone: the adapter reaches the composition layer,
     # which reaches this facade — a static import here would close that cycle.
@@ -120,6 +121,7 @@ _HOMES = {
     "sweep_stale_managed_tags": ".managed_tags",
     "trace_record": ".plan",
     "validate": ".plan",
+    "Wire": ".wire",
 }
 
 

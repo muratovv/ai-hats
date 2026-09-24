@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from ai_hats.session_run import SessionRun
 
     from .plan import CompositionPlan, Digested, Host, Launched, LaunchFlags, MaterializationPlan
+    from .wire import Wire
 
 logger = logging.getLogger(__name__)
 
@@ -406,6 +407,11 @@ class Surface(abc.ABC):
         a lease) belongs in :meth:`claim_launch_env`, or ``--dry-run`` performs
         the side effect while reporting a value the launch will not use.
         """
+
+    def wire(self) -> "Wire | None":
+        """This surface's structured stream for a headless session, or ``None``
+        for a surface ``ai-hats headless`` cannot drive yet."""
+        return None
 
     def serve_hooks(self, layout: ProjectLayout, session_id: str, environ: dict[str, str]):
         """A dispatcher held open for the whole session, or ``None`` for a

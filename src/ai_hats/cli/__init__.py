@@ -18,7 +18,7 @@ import sys
 import click
 
 from .. import __version__
-from ._helpers import console, with_model_flag
+from ._helpers import console, session_options, with_model_flag
 
 
 class _PassthroughGroup(click.Group):
@@ -165,23 +165,7 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     },
 )
 @click.version_option(version=__version__)
-@click.option(
-    "--provider", "-p", default=None, help="Provider override (see `ai-hats list providers`)"
-)
-@click.option("--role", "-r", default=None, help="Role override")
-@click.option(
-    "--model",
-    "-m",
-    default=None,
-    help="Model override, forwarded to the provider as --model.",
-)
-@click.option(
-    "--tag",
-    "tags_raw",
-    multiple=True,
-    help="Custom tag k=v for this session (repeatable, max 20). "
-    "Stored in metrics.json under 'tags' for later query.",
-)
+@session_options
 @click.option(
     "--dry-run",
     "dry_run",
@@ -371,6 +355,7 @@ from . import (  # noqa: E402
     assembly,
     config as config_mod,
     execute as execute_mod,
+    headless as headless_mod,
     list_cmd,
     maintenance,
     reflect as reflect_mod,
@@ -421,6 +406,9 @@ main.add_command(execute_mod.execute_cmd)
 
 # Agent — sub-agent launcher (was 'run'). Now a thin wrapper over execute.
 main.add_command(agent_mod.run_subagent)
+
+# Headless — a role's session driven over stdin/stdout (ADR-0038).
+main.add_command(headless_mod.headless_cmd)
 
 # Worktree
 main.add_command(worktree.wt)
