@@ -230,30 +230,59 @@ ai-hats headless -r maintainer "summarise README.md" </dev/null > events.ndjson
 **stdin** takes one command per line. Today there is one command:
 
 ```json
-{"v":"commands/v1","cmd":"prompt","text":"read docs/INDEX.md"}
+{"v":"commands/v1","cmd":"prompt","id":"3f0e2d9c-5b1a-4c2e-9d7f-0a1b2c3d4e5f","text":"read docs/INDEX.md"}
 ```
 
-`answer` and `interrupt` are part of the format but not built yet. A line the
-holder cannot run is not dropped silently. It becomes a `command_rejected`
-signal in the log, whose `detail` starts with `stdin line N:`, and the session
-carries on. A prompt sent while a turn is still running goes to claude at once,
-and claude decides what to do with it: measured on 2.1.281, one that arrives
-before a tool call finishes joins the running turn, and a single `turn_ended`
-closes both prompts. Closing stdin means "finish what you have and exit".
+`id` is optional. It is a UUID in canonical form — lowercase, hyphenated — that
+the session has not seen yet. It is how you find this prompt's turn later.
+Without it the holder picks one, and so it does for the positional prompt.
+`answer` and `interrupt` are part of the format but not built yet.
+
+A line the holder cannot run is not dropped silently. It becomes a
+`command_rejected` signal in the log, whose `detail` starts with `stdin line N:`,
+and the session carries on. A repeated or malformed `id` is refused the same way:
+claude would take any string, and it drops a repeated one without a turn, so the
+wait for it would never end.
+
+A prompt sent while a turn is still running goes to claude at once, and claude
+decides what to do with it. Measured on 2.1.281, one that arrives before a tool
+call finishes joins the running turn. One that arrives while the model is
+writing waits for the next turn. Closing stdin means "finish what you have and
+exit".
+
+From Python, `ai_hats_observe.commands` builds and reads these lines:
+`encode_command(Prompt(text, id))` and `decode_command(line)`.
 
 **stdout** is all machine-readable. Line 1 is the session header:
 
 ```json
-{"v":"headless/v1","session_id":"…","session_dir":"/abs/…","log":"/abs/…/events.jsonl","holder_pid":4242,"provider_session_id":"…","started_at":"…"}
+{"v":"headless/v1","session_id":"…","session_dir":"/abs/…","log":"/abs/…/events.jsonl","holder_pid":4242,"provider_session_id":"…","started_at":"…","events":"events/v1","commands":["prompt"]}
 ```
 
+`events` is the log's format, `commands` the commands this holder runs.
+
 Every line after it is a byte-for-byte copy of the session's `events.jsonl`,
-from `run_started` to `run_ended`. Each turn ends with one `turn_ended`
-(`ok`, `raw_code`, `detail`), after that turn's last answer. To cut the log into
-turns at every `turn_ended`, send the next prompt only after it. A prompt sent
-ahead can join the running turn or put its `prompt_received` before the previous
-`turn_ended`. Wait on `turn_ended`, not on `response_ended`: a turn that failed
-before the model answered has no `response_ended` at all.
+from `run_started` to `run_ended`. The main agent's events come from claude's
+stdout alone, so the log is in the order claude said things. Every event of a
+turn comes before that turn's `turn_ended`. A prompt's `prompt_received`
+(with its `prompt_id`) comes after the previous `turn_ended` whenever claude
+started it after that turn.
+
+Each turn ends with one `turn_ended`: `ok`, `raw_code`, `detail` and
+`prompt_ids`, the ids of the prompts it answered. Find your turn by id: wait for
+the `turn_ended` whose `prompt_ids` holds the id you sent. Do not count
+`turn_ended` lines:
+
+- a prompt that joined a running turn is answered by that turn, so one line
+  lists two ids;
+- claude starts turns of its own, for instance when a background task finishes,
+  and those list none.
+
+Wait on `turn_ended`, not on `response_ended`: a turn that failed before the
+model answered has no `response_ended` at all.
+
+A sub-agent's events come from its own record, as in a terminal session. Nothing
+orders them against the main agent's events or against each other.
 
 **stderr** carries everything meant for a person: the start banner, the
 session's four header lines, startup notices, the end summary.
@@ -273,17 +302,19 @@ The same loop by hand, from bash:
 coproc H { ai-hats headless -p claude -r maintainer 2>holder.err; }
 pid=$H_PID
 read -r header <&"${H[0]}"
-echo '{"v":"commands/v1","cmd":"prompt","text":"read docs/INDEX.md"}' >&"${H[1]}"
+id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+echo "{\"v\":\"commands/v1\",\"cmd\":\"prompt\",\"id\":\"$id\",\"text\":\"read docs/INDEX.md\"}" >&"${H[1]}"
 while read -r ev <&"${H[0]}"; do
-  [ "$(jq -r .event <<<"$ev")" = turn_ended ] && break
+  jq -e --arg id "$id" 'select(.event == "turn_ended") | .prompt_ids | index($id)' \
+    <<<"$ev" >/dev/null && break
 done
 exec {H[1]}>&-; cat <&"${H[0]}" >/dev/null; wait "$pid"; echo "exit=$?"
 ```
 
 From Python, `tests/e2e/_helpers/headless_client.py` is a reference client. It
 uses the stdlib only and does not import `ai_hats`: `HeadlessSession.start`,
-`turn(text)`, `next_turn()`, `close()` and `terminate()`, with every wait
-bounded.
+`prompt(text)` (returns the id), `turn_for(id)`, `turn(text)`, `next_turn()`,
+`close()` and `terminate()`, with every wait bounded.
 
 Not there yet:
 
