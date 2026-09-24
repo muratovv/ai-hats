@@ -20,6 +20,12 @@ tests/fixtures/transcripts/*.jsonl
 # its usage-parser tests are self-contained (usage/v1 moved behind the adapter).
 packages/ai-hats-observe/tests/fixtures/transcripts/*.jsonl
 
+# One claude session seen from the wire and from its transcript, for the wire
+# reader's differential test. Cut from a live run by a field whitelist: session
+# ids zeroed, request/message/tool ids renumbered, no prompt but the test's own,
+# no path, account or rendered context.
+packages/ai-hats-observe/tests/fixtures/wire/*.jsonl
+
 # HATS-960: hand-authored cline transcript fixture for ClineParser. Same
 # transcript-shaped false-positive class (a fake `sessionId` + tool blocks) —
 # fabricated content, no real session id / cwd / prompts.

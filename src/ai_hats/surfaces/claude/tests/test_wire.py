@@ -6,6 +6,8 @@ import json
 
 import pytest
 
+from ai_hats_observe.canonical import ResponseEnded, TurnEnded
+
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.claude.wire import ClaudeWire
 
@@ -26,42 +28,50 @@ def test_a_prompt_is_one_user_line_the_binary_reads() -> None:
     }
 
 
-def test_a_successful_result_ends_the_turn_with_its_terminal_reason() -> None:
-    ended = ClaudeWire().turn_end(
+def test_a_result_line_decodes_to_the_turns_end() -> None:
+    events = (
+        ClaudeWire()
+        .decoder()
+        .decode(
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": True,
+                "result": "API Error: 529",
+                "parent_tool_use_id": None,
+            }
+        )
+    )
+
+    assert [type(e) for e in events] == [TurnEnded]
+    assert (events[0].ok, events[0].raw_code, events[0].detail) == (
+        False,
+        "success",
+        "API Error: 529",
+    )
+    assert events[0].ts, "the moment the result arrived"
+
+
+def test_a_response_cut_by_the_end_of_stdout_is_ended_at_close() -> None:
+    decoder = ClaudeWire().decoder()
+    decoder.decode(
         {
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "terminal_reason": "completed",
-            "result": "the answer",
+            "type": "assistant",
+            "request_id": "req_1",
+            "parent_tool_use_id": None,
+            "message": {"id": "m", "content": [{"type": "text", "text": "half"}]},
         }
     )
 
-    assert ended is not None
-    assert (ended.ok, ended.raw_code, ended.detail) == (True, "completed", None)
-    assert ended.ts, "the moment the result arrived"
+    assert [type(e) for e in decoder.close()] == [ResponseEnded]
 
 
-def test_an_error_result_carries_its_text_and_falls_back_to_the_subtype() -> None:
-    ended = ClaudeWire().turn_end(
-        {"type": "result", "subtype": "success", "is_error": True, "result": "API Error: 529"}
-    )
+def test_the_wire_asks_for_the_echo_the_final_usage_and_the_hooks() -> None:
+    args = ClaudeWire().launch_args
 
-    assert ended is not None
-    assert (ended.ok, ended.raw_code, ended.detail) == (False, "success", "API Error: 529")
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        {"type": "system", "subtype": "init"},
-        {"type": "assistant", "message": {}},
-        {"type": "control_response", "response": {}},
-        {},
-    ],
-)
-def test_every_other_line_leaves_the_turn_open(line: dict) -> None:
-    assert ClaudeWire().turn_end(line) is None
+    for flag in ("--replay-user-messages", "--include-partial-messages", "--include-hook-events"):
+        assert flag in args
+    assert ClaudeWire().owned_in(list(args[-3:])) == [], "a caller repeating them is harmless"
 
 
 @pytest.mark.parametrize(

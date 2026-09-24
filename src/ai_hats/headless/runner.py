@@ -44,6 +44,7 @@ class HeadlessRunner(WrapRunner):
     """``ai-hats headless`` — a HITL session driven over this process's stdin/stdout."""
 
     finalize = FINALIZE_HEADLESS
+    follows_main_record = False  # the wire is the main agent's record here (ADR-0038 D4)
 
     def __init__(
         self,
@@ -115,6 +116,11 @@ class HeadlessRunner(WrapRunner):
         del tracer, pty_tap_factory
         if self._signal is not None:
             return 128 + self._signal  # stopped before there was anything to stop
+        if event_log is None:
+            # The wire is the log's only source here: without a writer, stdout would be empty.
+            session.log_sys("headless: the session has no event log; the surface is not started")
+            sys.stderr.write("ai-hats headless: this session has no event log — not starting\n")
+            return 1
         log = session.session_dir / EVENT_LOG_JSONL
         child = subprocess.Popen(
             cmd,
@@ -189,7 +195,7 @@ class _Relay:
         child: subprocess.Popen[bytes],
         wire: Wire,
         *,
-        event_log: EventLogWriter | None,
+        event_log: EventLogWriter,
         report: Callable[[str], None],
     ) -> None:
         self._child = child
@@ -225,9 +231,6 @@ class _Relay:
 
     def _reject(self, where: str, cmd: str | None, why: str) -> None:
         detail = f"{where}: {why}"
-        if self._event_log is None:
-            self._report(f"headless: no log to record a refused command — {detail}")
-            return
         self._event_log.emit(
             [
                 Notice(
@@ -241,7 +244,8 @@ class _Relay:
         )
 
     def follow(self) -> None:
-        """Child stdout → the turn boundary in the log."""
+        """Child stdout → the main agent's events, in the wire's order (ADR-0038 D4)."""
+        decoder = self._wire.decoder()
         for raw in iter(self._child.stdout.readline, b""):
             try:
                 message = json.loads(raw)
@@ -250,9 +254,17 @@ class _Relay:
                 continue
             if not isinstance(message, dict):
                 continue
-            ended = self._wire.turn_end(message)
-            if ended is not None and self._event_log is not None:
-                self._event_log.end_turn(ended)
+            self._emit(lambda: decoder.decode(message), f"{raw[:120]!r}")
+        self._emit(decoder.close, "the end of the surface's stdout")
+
+    def _emit(self, decode: Callable[[], list], what: str) -> None:
+        # One bad line must not end the pump: every later event, turn ends included, rides it.
+        try:
+            events = decode()
+        except Exception as exc:
+            self._report(f"headless: could not read {what}: {type(exc).__name__}: {exc}")
+            return
+        self._event_log.emit(events)
 
 
 def _lines(fd: int) -> Iterator[bytes]:

@@ -228,6 +228,9 @@ class WrapRunner:
 
     #: The epilogue this runner's sessions end with.
     finalize: PipelineConfig = FINALIZE_HITL
+    #: Whether the log follows the main agent's own record; a runner that reads
+    #: the main agent off another stream says False.
+    follows_main_record: bool = True
 
     def __init__(
         self,
@@ -812,6 +815,7 @@ class WrapRunner:
             session,
             cwd=self.layout.cwd,
             provider_session_id=claude_session_id,
+            main_record=self.follows_main_record,
         )
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         t0 = time.monotonic()

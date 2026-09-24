@@ -1,0 +1,20 @@
+{"type":"queue-operation","timestamp":"2026-09-24T15:52:16.525Z","sessionId":"00000000-0000-4000-8000-000000000002","operation":"enqueue","content":"Reply with the single word: hi"}
+{"type":"queue-operation","timestamp":"2026-09-24T15:52:16.526Z","sessionId":"00000000-0000-4000-8000-000000000002","operation":"dequeue"}
+{"type":"user","uuid":"62a3891f-1a11-4fd6-84de-d0a8fcfa820a","timestamp":"2026-09-24T15:52:16.537Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"promptSource":"sdk","message":{"role":"user","content":"Reply with the single word: hi"}}
+{"type":"attachment","uuid":"1ba9373f-9e4c-43f0-a970-f76bc6b034e5","timestamp":"2026-09-24T15:52:16.537Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"environment"}}
+{"type":"attachment","uuid":"79b1f9f3-a55d-4ca2-91b9-2a9592a02d38","timestamp":"2026-09-24T15:52:16.537Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"model"}}
+{"type":"attachment","uuid":"4c987aec-ab8f-4ed1-990c-467f5e5d3f14","timestamp":"2026-09-24T15:52:16.537Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"deferred_tools_delta"}}
+{"type":"attachment","uuid":"f633a43d-0345-4bb9-8431-bdea94d4cc16","timestamp":"2026-09-24T15:52:16.537Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"agent_listing_delta"}}
+{"type":"attachment","uuid":"641d88af-f753-44fc-9639-190d53a78402","timestamp":"2026-09-24T15:52:16.537Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"skill_listing"}}
+{"type":"attachment","uuid":"79d3a5d7-7b2b-42be-ae8d-d89aa3b4f699","timestamp":"2026-09-24T15:52:16.537Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"total_tokens_reminder"}}
+{"type":"atis-latch","sessionId":"00000000-0000-4000-8000-000000000002"}
+{"type":"attachment","uuid":"8af3260e-5d36-43f4-b9ab-7cf9f6dcf875","timestamp":"2026-09-24T15:52:16.544Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"session_context"}}
+{"type":"attachment","uuid":"07781b66-5aa2-4976-98d0-2e8220019817","timestamp":"2026-09-24T15:52:16.545Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"date"}}
+{"type":"attachment","uuid":"16fb65af-ff36-46a9-83f3-f1a1923a9569","timestamp":"2026-09-24T15:52:16.545Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"credential_org"}}
+{"type":"attachment","uuid":"5c1f70a2-551e-4791-a845-d0469aa71030","timestamp":"2026-09-24T15:52:16.545Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"remote_session_change"}}
+{"type":"attachment","uuid":"14e08933-454e-4c5d-8bca-471e29509fff","timestamp":"2026-09-24T15:52:16.546Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"attachment":{"type":"prompt_snapshot"}}
+{"type":"last-prompt","sessionId":"00000000-0000-4000-8000-000000000002"}
+{"type":"atis-latch","sessionId":"00000000-0000-4000-8000-000000000002"}
+{"type":"assistant","uuid":"f554fc1d-ee0a-48e1-8c69-067b98dcc53e","timestamp":"2026-09-24T15:52:17.503Z","sessionId":"00000000-0000-4000-8000-000000000002","isSidechain":false,"requestId":"req_p201","isApiErrorMessage":true,"error":"model_not_found","apiErrorStatus":404,"message":{"id":"aaacce7b-26c9-4a0f-920c-a82c9c374507","type":"message","role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"There's an issue with the selected model (claude-nonexistent-model-9). It may not exist or you may not have access to it. Run --model to pick a different model."}],"stop_reason":"stop_sequence","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"type":"last-prompt","sessionId":"00000000-0000-4000-8000-000000000002"}
+{"type":"cost-state","sessionId":"00000000-0000-4000-8000-000000000002"}
