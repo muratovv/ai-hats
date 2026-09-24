@@ -5,7 +5,7 @@ flow:   a user starts a headless session with the parameters they already use
         flags — and with one of the flags the holder keeps for itself
 cmds:
     ai-hats headless -p claude -r assistant -m claude-haiku-4-5 --tag k=v "first turn"
-    ai-hats headless -p claude -r assistant --resume abc
+    ai-hats headless -p claude -r assistant --resume abc  # no-resolve: refused by design, the holder owns --resume
 expect: the model and the provider flags reach the binary, the tag lands in
         metrics.json, and the positional prompt is the first turn; a flag
         that makes the wire (--resume, --permission-prompt-tool, …) or a

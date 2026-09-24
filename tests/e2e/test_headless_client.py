@@ -34,7 +34,6 @@ def session_on_stub(tmp_project, tmp_path):
             env=stub.session_env(tmp_project),
         )
 
-    start.stub = stub  # type: ignore[attr-defined]
     return start
 
 
