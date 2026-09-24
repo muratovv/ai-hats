@@ -18,7 +18,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Callable
+from typing import TYPE_CHECKING, Callable, Iterator
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
 from ai_hats_observe.canonical import Notice, WorthRecording
@@ -53,13 +53,13 @@ class HeadlessRunner(WrapRunner):
         *args,
         stdout_fd: int,
         first_prompt: str = "",
-        stdin: BinaryIO | None = None,
+        stdin_fd: int = 0,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._stdout_fd = stdout_fd
         self._first_prompt = first_prompt
-        self._stdin = stdin if stdin is not None else sys.stdin.buffer
+        self._stdin_fd = stdin_fd
         self._copier: LogCopier | None = None
         self._child: subprocess.Popen[bytes] | None = None
         self._signal: int | None = None
@@ -148,7 +148,7 @@ class HeadlessRunner(WrapRunner):
         follower = threading.Thread(target=relay.follow, name="headless-follow", daemon=True)
         feeder = threading.Thread(
             target=relay.feed,
-            args=(self._stdin, self._first_prompt),
+            args=(self._stdin_fd, self._first_prompt),
             name="headless-feed",
             daemon=True,
         )
@@ -209,12 +209,12 @@ class _Relay:
         # Set once the child is gone: a command after that would land behind run_ended.
         self.ended = threading.Event()
 
-    def feed(self, stdin: BinaryIO, first_prompt: str) -> None:
+    def feed(self, stdin_fd: int, first_prompt: str) -> None:
         """Holder stdin → commands → the queue of turns; EOF ends the input."""
         try:
             if first_prompt:
                 self._submit(self._wire.prompt_line(first_prompt), "the positional prompt")
-            for number, raw in enumerate(iter(stdin.readline, b""), start=1):
+            for number, raw in enumerate(_lines(stdin_fd), start=1):
                 command = parse_command(raw)
                 if command is None:
                     continue
@@ -300,6 +300,19 @@ class _Relay:
             if self._event_log is not None:
                 self._event_log.end_turn(ended)
             self._turn_over()
+
+
+def _lines(fd: int) -> Iterator[bytes]:
+    """Lines from a raw fd. Not ``sys.stdin``: a daemon thread blocked in its
+    buffered read holds a lock the interpreter needs at exit, and aborts it."""
+    pending = b""
+    while chunk := os.read(fd, 65536):
+        pending += chunk
+        *whole, pending = pending.split(b"\n")
+        for line in whole:
+            yield line + b"\n"
+    if pending:
+        yield pending
 
 
 def _write_all(fd: int, data: bytes) -> None:

@@ -16,13 +16,11 @@ why:    this is the whole contract of the filter — stdin in, the log out, the
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from _helpers.env import clean_env
 from _helpers.stub_claude import install
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
@@ -44,11 +42,7 @@ def _prompt(text: str) -> str:
 
 def _filter(project, tmp_path: Path, turns: str, *args: str) -> tuple[int, bytes, str]:
     """Run the filter the way a script would: a file in, a file out, $? back."""
-    stub = install(tmp_path)
-    env = clean_env(os.environ)
-    env.update(project.env)
-    env.update(stub.env(env.get("PATH", "")))
-    env["AI_HATS_NO_UPDATE_CHECK"] = "1"
+    env = install(tmp_path).session_env(project)
     (tmp_path / "turns.ndjson").write_text(turns)
     with (
         (tmp_path / "turns.ndjson").open("rb") as stdin,

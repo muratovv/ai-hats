@@ -217,6 +217,17 @@ class StubClaude:
             ARGV_LOG_ENV: str(self.argv_log),
         }
 
+    def session_env(self, project) -> dict[str, str]:
+        """The env an e2e test launches ``ai-hats headless`` with: the scrubbed
+        parent env, the project's pins, and this stub first on PATH."""
+        from _helpers.env import clean_env  # lazy: this file also runs as the stub
+
+        env = clean_env(os.environ)
+        env.update(project.env)
+        env.update(self.env(env.get("PATH", "")))
+        env["AI_HATS_NO_UPDATE_CHECK"] = "1"
+        return env
+
     def argvs(self) -> list[list[str]]:
         """Every argv the stub was launched with for a session (not ``auth status``)."""
         if not self.argv_log.exists():
