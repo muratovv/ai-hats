@@ -1707,7 +1707,7 @@ as a claim to check, not as evidence.
   ai-hats headless -p claude -r assistant
   ```
 
-- **expect** — retro.log holds the finalize's decision to run the reviewer and, with HATS_SKIP_RETRO=1 standing in for it, a suppressed-by-guard outcome
+- **expect** — retro.log holds the finalize's decision to run the reviewer and, under the e2e default HATS_SKIP_RETRO=1, a suppressed-by-guard outcome
 - **why** — a session the reviewer never sees is invisible to the reflect loop
 
 ## `test_headless_wire_order.py`

@@ -4,8 +4,8 @@ flow:   a script runs a role's session headless under policy=always, and the
         session reaches the session reviewer as a TUI one does
 cmds:
     ai-hats headless -p claude -r assistant
-expect: retro.log holds the finalize's decision to run the reviewer and, with
-        HATS_SKIP_RETRO=1 standing in for it, a suppressed-by-guard outcome
+expect: retro.log holds the finalize's decision to run the reviewer and, under
+        the e2e default HATS_SKIP_RETRO=1, a suppressed-by-guard outcome
 why:    a session the reviewer never sees is invisible to the reflect loop
 """
 
@@ -16,7 +16,6 @@ import yaml
 
 from _helpers.headless_client import HeadlessSession
 from _helpers.stub_claude import install
-from ai_hats.constants import ENV_SKIP_RETRO
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -33,7 +32,6 @@ def test_e2e_a_headless_session_reaches_the_session_reviewer(tmp_project, tmp_pa
     config.setdefault("feedback", {})["session_retro"] = {"policy": "always"}
     tmp_project.yaml.write_text(yaml.safe_dump(config))
     env = install(tmp_path).session_env(tmp_project)
-    env[ENV_SKIP_RETRO] = "1"
 
     session = HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant"],

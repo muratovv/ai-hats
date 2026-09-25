@@ -25,7 +25,7 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
-from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL, ENV_SKIP_RETRO
 from ai_hats.retired_dists import ENV_SKIP_PRUNE
 
 # Redirect vars that must not leak into a real-install e2e subprocess. PYTHONPATH
@@ -111,11 +111,13 @@ def clean_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     """Return a copy of ``base`` (default ``os.environ``) minus ``ENV_DENYLIST``.
 
     Pure: never mutates ``base``. Use when building a subprocess env that must
-    run against the installed package rather than the source tree.
+    run against the installed package rather than the source tree. A session it
+    starts spawns no session reviewer unless ``base`` sets ``HATS_SKIP_RETRO``.
     """
     src = os.environ if base is None else base
     env = {k: v for k, v in src.items() if k not in ENV_DENYLIST}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env.setdefault(ENV_SKIP_RETRO, "1")
     return env
 
 

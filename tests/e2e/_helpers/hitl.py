@@ -40,6 +40,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ai_hats.constants import ENV_SKIP_RETRO
+
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from .project import Project
 
@@ -76,6 +78,7 @@ DEFAULT_EXIT_PAYLOAD = "/exit\n\x03\x03"
 #: rendering correctly so banner assertions hit. ``AI_HATS_USER_HOME`` is the
 #: pinned test home the out-of-tree cache root bottoms out on — without it the
 #: child writes to the developer's real ``~/.cache/ai-hats`` (HATS-1398).
+#: ``HATS_SKIP_RETRO`` carries the e2e default of no session reviewer.
 DEFAULT_ENV_ALLOWLIST: tuple[str, ...] = (
     "PATH",
     "HOME",
@@ -84,6 +87,7 @@ DEFAULT_ENV_ALLOWLIST: tuple[str, ...] = (
     "LC_ALL",
     "LC_CTYPE",
     "AI_HATS_USER_HOME",
+    ENV_SKIP_RETRO,
 )
 
 

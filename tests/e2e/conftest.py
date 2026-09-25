@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
-from ai_hats.constants import ENV_REPO_URL
+from ai_hats.constants import ENV_REPO_URL, ENV_SKIP_RETRO
 
 # Make ``_helpers`` importable as a flat package, rooted at tests/e2e/.
 # pytest doesn't treat tests/e2e/ as a package (no ``__init__.py`` at
@@ -73,6 +73,15 @@ def _scrub_redirect_env(monkeypatch):
 
     for key in ENV_DENYLIST:
         monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_session_reviewer(monkeypatch):
+    """Every session an e2e test starts finalizes without spawning a real session
+    reviewer; a test that wants one passes ``HATS_SKIP_RETRO=""`` in its own env.
+    Per test, not per session: a session-scoped setenv outlives the e2e tests
+    and reaches the unit tests that share the worker."""
+    monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
 
 _trace_lock = threading.Lock()

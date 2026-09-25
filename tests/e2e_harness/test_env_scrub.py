@@ -13,7 +13,7 @@ import os
 from _helpers.env import ENV_DENYLIST, clean_env, launcher_subprocess_env
 from _helpers.hitl import DEFAULT_ENV_ALLOWLIST, _build_env
 from ai_hats.paths import ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
-from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL, ENV_SKIP_RETRO
 
 
 def test_clean_env_strips_denylist_keeps_rest():
@@ -42,6 +42,16 @@ def test_clean_env_strips_denylist_keeps_rest():
     assert out[ENV_REPO_URL] == "/repo"
     # The input dict is not mutated.
     assert "PYTHONPATH" in base
+
+
+def test_clean_env_starts_sessions_with_no_session_reviewer():
+    assert clean_env({"PATH": "/usr/bin"})[ENV_SKIP_RETRO] == "1"
+    # A test that wants the reviewer says so, and clean_env keeps its word.
+    assert clean_env({ENV_SKIP_RETRO: ""})[ENV_SKIP_RETRO] == ""
+
+
+def test_hitl_env_lets_the_retro_guard_through():
+    assert ENV_SKIP_RETRO in DEFAULT_ENV_ALLOWLIST
 
 
 def test_hitl_env_disables_source_bytecode():
