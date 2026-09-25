@@ -23,7 +23,8 @@ Post-session retrospective flow (single LLM call under `session-reviewer`). Fact
 session end
   └─ pipeline step `maybe_spawn_session_reviewer`     # NOT a shell hook
        (MaybeSpawnSessionReviewer, wired in finalize-hitl.yaml
-        and finalize-subagent.yaml; imports make_decision +
+        (bare ai-hats and ai-hats headless) and finalize-subagent.yaml;
+        imports make_decision +
         _spawn_session_reviewer_background from retro/auto_retro.py)
        └─ if decision=run:
             ├─ background=false → run_session_review(...) in-process

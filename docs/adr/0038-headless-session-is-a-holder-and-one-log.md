@@ -4,7 +4,8 @@
 
 Принят (HATS-2019, 2026-09-21). Поправки: HATS-2020 — граница хода `TurnEnded`,
 флаги провода у holder'а; HATS-2028 — провод как единственный источник событий
-основного агента, кодек surface'а в обе стороны, id промпта.
+основного агента, кодек surface'а в обе стороны, id промпта; HATS-2027 — finalize
+headless-сессии — `finalize-hitl`, с ретро.
 
 Пишущая половина того, что ADR-0037 оставил открытым: «ответить на вопрос,
 разрешить вызов, прервать ход — это *команды*, отдельный контракт». Читающая
@@ -288,11 +289,11 @@ HITL он наследует обязанности первого, которы
 
 Порядок конца — ради которого процесс вообще можно считать сигналом: ребёнок
 выходит → EventLogWriter дренирует запись и пишет `run_ended` → holder
-копирует хвост журнала в stdout → `finalize-headless` (`make_audit`,
-`compute_usage`, `run_session_end`) → holder закрывает stdout → `exit`.
-Спавна ретро в headless пока нет (решение супервизора, HATS-2020): это
-`finalize-hitl` без `maybe_spawn_session_reviewer` и `quorum_autoclose`, а
-вопрос, когда headless-сессии нужно ретро, решает HATS-2027. **Holder
+копирует хвост журнала в stdout → `finalize-hitl` → holder закрывает stdout →
+`exit`. Finalize тот же, что у TUI-сессии (поправка HATS-2027): ревьюер сессии
+запускается по проектной политике `feedback.session_retro`, как у TUI и у
+`ai-hats agent`, отдельной политики у headless нет. Ревьюер работает в фоне,
+поэтому EOF stdout значит «сессия записана», а не «ретро написано». **Holder
 уходит последним**, поэтому следить надо за ним, а не за бинарём: бинарь
 выходит первым, когда запись ещё не собрана.
 
@@ -340,7 +341,7 @@ finalize-пайплайн решает **раннер**, поэтому holder �
 | Ack-флаги ребёнку        | наследуются             | наследуются                                    | гасятся                                                             |
 | Worktree автоматически   | нет (`rack transition`) | нет                                            | да (`IsolationMode` раннера)                                        |
 | Резидентный `HookServer` | да                      | да (holder поднимает сам)                      | нет (гейты спавнятся на вызов)                                      |
-| Finalize                 | `finalize-hitl`         | `finalize-headless` (без ретро, HATS-2027)     | `finalize-subagent`                                                 |
+| Finalize                 | `finalize-hitl`         | `finalize-hitl` (поправка HATS-2027)           | `finalize-subagent`                                                 |
 | Журнал                   | `events.jsonl`          | `events.jsonl`                                 | `events.jsonl`                                                      |
 
 Наследование ack-флагов у headless — следствие того же тезиса: по политике
@@ -548,8 +549,7 @@ headless (правило D4 ADR-0037), producer один — holder. PTY-рид�
 | `human.yaml`                                 | голый `ai-hats`                | сама сессия (`WrapRunner`)                                 | ничего                                          |
 | **`headless.yaml`**                          | `ai-hats headless`             | сама сессия (holder)                                       | **новый**: тот же шаг `provider`, третий раннер |
 | `execute.yaml`                               | `ai-hats agent` / `execute`    | сама сессия (`SubAgentRunner`)                             | ничего; движок под ним меняет HATS-2022         |
-| `finalize-hitl`                              | `WrapRunner`                   | `maybe_spawn_session_reviewer` — ретро отдельным процессом | ничего                                          |
-| **`finalize-headless`**                      | holder                         | ничего: ретро нет до HATS-2027                             | **новый**: `finalize-hitl` без ретро            |
+| `finalize-hitl`                              | `WrapRunner`, holder           | `maybe_spawn_session_reviewer` — ретро отдельным процессом | его запускает и holder (поправка HATS-2027)     |
 | `finalize-subagent`                          | `SubAgentRunner`               | то же                                                      | ничего                                          |
 | `reflect-session`                            | фоновый `reflect_session_main` | `session-reviewer` через `SubAgentRunner`                  | ничего; см. ниже                                |
 | `reflect-hypothesis-phase1`, `reflect-issue` | `ai-hats reflect …`            | шаг `provider` → `SubAgentRunner`                          | ничего                                          |
