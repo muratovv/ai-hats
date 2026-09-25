@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -31,7 +33,7 @@ def session_on_stub(tmp_project, tmp_path):
         return HeadlessSession.start(
             [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant", *args],
             cwd=tmp_project.path,
-            env=stub.session_env(tmp_project),
+            env=session_env(stub, tmp_project),
         )
 
     return start

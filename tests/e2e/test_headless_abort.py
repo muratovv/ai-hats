@@ -20,8 +20,10 @@ import time
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -43,7 +45,7 @@ def test_e2e_an_aborted_session_is_recorded_and_leaves_no_claude(
     session = HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant"],
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
     )
     session.prompt("@sleep 30 a long turn")
     # Positive control for the orphan check below: the same probe sees the stub

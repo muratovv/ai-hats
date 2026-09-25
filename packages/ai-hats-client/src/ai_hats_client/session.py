@@ -151,7 +151,10 @@ class HeadlessSession:
     """One running ``ai-hats headless``, driven through its pipes."""
 
     def __init__(self, proc: subprocess.Popen[bytes]) -> None:
+        if proc.stdin is None or proc.stdout is None or proc.stderr is None:
+            raise ValueError("the holder's stdin, stdout and stderr must all be pipes")
         self._proc = proc
+        self._stdin, self._stdout, self._stderr_pipe = proc.stdin, proc.stdout, proc.stderr
         self._lines: queue.Queue[object] = queue.Queue()
         self._stderr: list[bytes] = []
         self._read: list[Event] = []  # every event read, in order
@@ -194,7 +197,8 @@ class HeadlessSession:
 
     @property
     def header(self) -> Header:
-        assert self._header is not None
+        if self._header is None:
+            raise HeadlessError("the session header has not been read")
         return self._header
 
     @property
@@ -213,9 +217,8 @@ class HeadlessSession:
 
     def send_raw(self, line: str) -> None:
         """Write one line to the holder's stdin as it is — for testing its refusals."""
-        assert self._proc.stdin is not None
-        self._proc.stdin.write(line.encode("utf-8") + b"\n")
-        self._proc.stdin.flush()
+        self._stdin.write(line.encode("utf-8") + b"\n")
+        self._stdin.flush()
 
     # -- turns ------------------------------------------------------------------
 
@@ -251,10 +254,8 @@ class HeadlessSession:
 
     def close(self, timeout: float = 60.0) -> Exit:
         """Say "no more input": the session finishes its turns, records, and exits."""
-        if self._exit is None:
-            assert self._proc.stdin is not None
-            if not self._proc.stdin.closed:
-                self._proc.stdin.close()
+        if self._exit is None and not self._stdin.closed:
+            self._stdin.close()
         return self._reap(timeout)
 
     def terminate(self, signum: int = signal.SIGTERM, timeout: float = 30.0) -> Exit:
@@ -281,14 +282,12 @@ class HeadlessSession:
     # -- plumbing -------------------------------------------------------------------
 
     def _pump_stdout(self) -> None:
-        assert self._proc.stdout is not None
-        for line in iter(self._proc.stdout.readline, b""):
+        for line in iter(self._stdout.readline, b""):
             self._lines.put(line)
         self._lines.put(_EOF)
 
     def _pump_stderr(self) -> None:
-        assert self._proc.stderr is not None
-        for chunk in iter(self._proc.stderr.readline, b""):
+        for chunk in iter(self._stderr_pipe.readline, b""):
             self._stderr.append(chunk)
 
     def _stderr_text(self) -> str:
@@ -339,8 +338,8 @@ class HeadlessSession:
                 stderr=self._stderr_text(),
             ) from None
         self._stderr_pump.join(5.0)
-        if self._proc.stdin is not None and not self._proc.stdin.closed:
-            self._proc.stdin.close()
+        if not self._stdin.closed:
+            self._stdin.close()
         self._exit = Exit(code=code, events=tuple(self._read), stderr=self._stderr_text())
         return self._exit
 

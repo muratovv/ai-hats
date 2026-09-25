@@ -21,7 +21,9 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.stub_claude import install
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -44,7 +46,7 @@ def _prompt(text: str) -> str:
 
 def _filter(project, tmp_path: Path, turns: str, *args: str) -> tuple[int, bytes, str]:
     """Run the filter the way a script would: a file in, a file out, $? back."""
-    env = install(tmp_path).session_env(project)
+    env = session_env(install(tmp_path), project)
     (tmp_path / "turns.ndjson").write_text(turns)
     with (
         (tmp_path / "turns.ndjson").open("rb") as stdin,

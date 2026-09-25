@@ -112,6 +112,7 @@ def test_workspace_versions_finds_every_package():
     # packages/ is flat — one member per directory, enforced by
     # tests/test_packages_flat_layout.py — so every member is named here.
     assert set(found) == {
+        "ai-hats-client",
         "ai-hats-core",
         "ai-hats-library",
         "ai-hats-observe",

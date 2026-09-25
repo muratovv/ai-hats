@@ -1,7 +1,6 @@
-"""A claude stand-in that speaks the stream-json wire, for headless e2e.
+"""A claude stand-in that speaks the stream-json wire, for tests of a headless client.
 
-It follows the contract measured on claude 2.1.281 (HATS-2025 findings, "stub
-contract"): NDJSON on stdin, one line per event on stdout, and a transcript in
+It follows the wire measured on claude 2.1.281: NDJSON on stdin, one line per event on stdout, and a transcript in
 ``$CLAUDE_CONFIG_DIR/projects/<key(cwd)>/<session-id>.jsonl`` whose turn is on
 disk before that turn's ``result`` line. What each turn does is chosen by its
 prompt text:
@@ -476,17 +475,6 @@ class StubClaude:
         if not self.timing_log.exists():
             return []
         return [json.loads(line) for line in self.timing_log.read_text().splitlines() if line]
-
-    def session_env(self, project) -> dict[str, str]:
-        """The env an e2e test launches ``ai-hats headless`` with: the scrubbed
-        parent env, the project's pins, and this stub first on PATH."""
-        from _helpers.env import clean_env  # lazy: this file also runs as the stub
-
-        env = clean_env(os.environ)
-        env.update(project.env)
-        env.update(self.env(env.get("PATH", "")))
-        env["AI_HATS_NO_UPDATE_CHECK"] = "1"
-        return env
 
     def argvs(self) -> list[list[str]]:
         """Every argv the stub was launched with for a session (not ``auth status``)."""

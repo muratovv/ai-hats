@@ -23,7 +23,7 @@ import os
 import pytest
 
 from _helpers.env import clean_env
-from _helpers.headless_client import HeadlessSession
+from ai_hats_client import HeadlessSession
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces, pytest.mark.live_headless]
 

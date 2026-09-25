@@ -214,6 +214,7 @@ testpaths = [
     "packages/ai-hats-rack/tests",
     "packages/ai-hats-observe/tests",
     "packages/ai-hats-library/tests",
+    "packages/ai-hats-client/tests",
     "src/ai_hats/surfaces/tests",
     "src/ai_hats/surfaces/agy/tests",
     "src/ai_hats/surfaces/claude/tests",
@@ -239,6 +240,7 @@ pythonpath = [
     "packages/ai-hats-rack/src",
     "packages/ai-hats-observe/src",
     "packages/ai-hats-library/src",
+    "packages/ai-hats-client/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.

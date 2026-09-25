@@ -332,10 +332,11 @@ done
 exec {H[1]}>&-; cat <&"${H[0]}" >/dev/null; wait "$pid"; echo "exit=$?"
 ```
 
-From Python, `tests/e2e/_helpers/headless_client.py` is a reference client. It
-uses the stdlib only and does not import `ai_hats`: `HeadlessSession.start`,
+From Python, the `ai-hats-client` package is the client. It uses the stdlib only
+and does not import `ai_hats`. It offers `HeadlessSession.start`,
 `prompt(text)` (returns the id), `turn_for(id)`, `turn(text)`, `next_turn()`,
-`close()` and `terminate()`, with every wait bounded.
+`close()` and `terminate()`, and every wait is bounded. `ai_hats_client.testing`
+is a stand-in `claude` for tests that run with no model.
 
 From the side, `ai-hats session list` shows each session's state, and `--json`
 has it as `state`: `live`, `ended`, `dead` (its owner is gone and its finalize
