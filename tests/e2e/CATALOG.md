@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**338 of 338 files catalogued — 346 flows.**
+**344 of 344 files catalogued — 352 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1639,6 +1639,36 @@ as a claim to check, not as evidence.
 - **expect** — each turn ends with turn_ended, and the next prompt goes only after it; a turn that failed before the model answered still ends (ok false) where it has no response_ended at all; a line the holder cannot run is refused in the log and the session goes on
 - **why** — the client learns "my turn is done" from the log alone — a turn with no answer, or a typo in a command, must not leave it waiting forever
 
+## `test_headless_drift.py`
+
+*pins HATS-2029*
+
+- **flow** — the surface binary starts saying something the holder was never taught — a new kind of wire line, or a line that is not JSON at all
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — each such line is a notice in the log (unsupported_record, naming what came), the turn still ends with turn_ended, the next turn runs, and the session exits 0
+- **why** — the wire is undocumented and drifts between binary versions; a client must see the drift in the log and never hang on it
+
+## `test_headless_end_paths.py`
+
+*pins HATS-2029*
+
+- **flow** — a headless session ends every way but the plain one — the holder is killed outright, its stdout reader goes away, claude ignores the holder's SIGTERM, or claude dies from a signal
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  kill -KILL <holder_pid>
+  kill -TERM <holder_pid>
+  ```
+
+- **expect** — SIGKILL to the holder exits 137 and leaves the log without run_ended; a gone reader still lets the session finish and exit 0, recorded; a claude that ignores SIGTERM is killed after the grace, exit 143; a claude killed by signal 6 makes it exit 134; no claude process outlives any of them
+- **why** — a script, CI or HAI learns the outcome from the exit code alone, and must never be left with an orphaned claude
+
 ## `test_headless_filter.py`
 
 *pins HATS-2020*
@@ -1682,6 +1712,21 @@ as a claim to check, not as evidence.
 - **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker
 - **why** — e2e could not drive the claude TUI, so a real role's HITL session — composition, hooks, log, finalize — was checked by hand only; this is the first automated proof. Kept out of the mandatory gate (live_headless) because it spends real turns: run it with `-m live_headless`
 
+## `test_headless_live_kill.py`
+
+*pins HATS-2029*
+
+- **flow** — the holder of a live claude session is killed outright while claude runs a tool
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant -m claude-haiku-4-5
+  kill -KILL <holder_pid>
+  ```
+
+- **expect** — the real claude leaves by itself once its turn is over — no claude process of that session is left behind
+- **why** — the holder cannot take its child down when it is SIGKILLed; ADR-0038 D5 rests on claude reading EOF and leaving, which only the real binary can confirm. Kept out of the gate (live_headless): it spends a turn
+
 ## `test_headless_prompt_ids.py`
 
 *pins HATS-2028*
@@ -1695,6 +1740,34 @@ as a claim to check, not as evidence.
 
 - **expect** — a folded prompt ends with the one it joined, in one turn_ended listing both ids; a turn the surface began lists none; a repeated id or one not in canonical UUID form is refused as command_rejected; the header names the log's format and the commands it takes
 - **why** — counting turn_ended lines breaks on a fold and on a turn with no prompt; an id cannot, and a repeated one would wait forever on claude
+
+## `test_headless_quota.py`
+
+*pins HATS-2029*
+
+- **flow** — a headless session runs close to its quota, then into the wall
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the warning is one approaching_limit notice in the log; the wall is one wait signal on the refused turn, carrying when the quota lifts, and the turn ends with ok false; the session exits 0
+- **why** — only the wire says the quota is close, and a harness that sees the wall must know when to retry; each is said once, by one producer
+
+## `test_headless_readiness.py`
+
+*pins HATS-2029*
+
+- **flow** — a script starts a headless session on a machine where claude is not logged in
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — exit 1 and nothing on stdout (no header); stderr says to log in; the session directory stays, its log holds run_started, the reauthenticate signal and run_ended ok false, and metrics.json is finalized with exit 1; claude never started a session
+- **why** — headless has no terminal to run claude's login flow, so the refusal must come at the start and be recorded, as an interactive session's directory would be
 
 ## `test_headless_retro.py`
 
@@ -3596,6 +3669,23 @@ as a claim to check, not as evidence.
 
 - **expect** — the session dir holds events.jsonl beside the audit.md / usage.json it already wrote, every line stamped events/v1 and decoding to a canonical event, with the assistant's call reported once and carrying its usage
 - **why** — the artifact is written while the session runs, by a writer that follows the surface's own record from inside the session process, so an in-process test of the writer says nothing about what a finished session leaves on disk — and a session that quietly stops writing it looks exactly like a session that had nothing to record
+
+## `test_session_liveness_backfill.py`
+
+*pins HATS-2029*
+
+- **flow** — a headless session is killed outright; someone who did not start it looks at the session list, then collects what the session left
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  kill -KILL <holder_pid>
+  ai-hats session list --json
+  ai-hats session backfill <session_id>
+  ```
+
+- **expect** — the list says live while the holder runs and dead after the kill; backfill collects the dead session's audit and counters from the claude record and leaves events.jsonl byte for byte as the run left it; it still refuses a session that is running
+- **why** — a session killed by kill -9 or a reboot never runs its finalize; the liveness anchor, not the finalized flag, tells a reader it is over
 
 ## `test_session_usage_signals.py`
 
