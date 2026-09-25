@@ -4,6 +4,44 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.17.0]
+
+Each fact a session records has one producer, in every mode, and the session
+browser tells a live session from a dead one. `Host` gains a required field, so a
+host built with the four it had before no longer constructs.
+
+### Added
+
+- `Host.liveness(session_id)` — whether a session still runs, by its liveness
+  anchor; `None` when it cannot say, which is all the standalone host says.
+- `SessionState` and `session_state(session_id, metrics)` — `ended`, `live`,
+  `dead` or `unknown`. `ended` once `metrics.json` is finalized, or carries no
+  `finalized` at all (written before its stub existed); otherwise the host's
+  liveness decides.
+- `session list` shows the state (a `State` column, `state` in `--json`).
+- `approaching_limit(info)` — the quota's `rate_limit_info` as a
+  `Notice(approaching_limit)` when its status is `allowed_warning`, else `None`.
+- `ClaudeTranscriptReader.feed` reads `rate_limit_event`: `allowed_warning` is a
+  `Notice(approaching_limit)`, and a refused turn's `wait` takes its reset from
+  the quota as last reported, when that says `rejected`. The wall's one producer
+  stays that turn's API error, whose wire line carries no quota of its own.
+
+### Changed
+
+- `session backfill` collects a session whose owner is dead instead of refusing
+  every unfinalized one. It leaves `events.jsonl` as the run left it and
+  `finalized: false`; a live or unknown session it still leaves alone.
+
+### Fixed
+
+- A fork's record no longer replays its parent's spawning call as the fork's own
+  response and result, and its task is a `PromptReceived` instead of being
+  dropped beside that result.
+- `attachment/credential_org` and `attachment/mcp_instructions_delta` are read as
+  silent, not reported as drift.
+- `system/permission_denied` on the wire is silent: the refused call's `is_error`
+  result says it, as the record does.
+
 ## [0.16.0]
 
 A headless session's main agent is read off the wire, and a prompt is known by

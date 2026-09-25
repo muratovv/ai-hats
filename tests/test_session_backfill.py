@@ -29,9 +29,14 @@ SESSION_ID = "20260730-120000-1"
 PROVIDER_SESSION_ID = "5c639a19-5b64-4a91-8813-2937b47e9126"
 
 
+#: What the host's liveness anchor says of the session, per test.
+ALIVE: dict[str, bool | None] = {}
+
+
 @pytest.fixture
 def project(tmp_path):
     """A project with one unmeasured session whose transcript is on disk."""
+    ALIVE.clear()
     runs = tmp_path / ".agent" / "sessions" / "runs"
     session_dir = runs / f"session_{SESSION_ID}"
     session_dir.mkdir(parents=True)
@@ -58,6 +63,7 @@ def project(tmp_path):
             tag_filter_parser=STANDALONE.tag_filter_parser,
             provider_adapter=_adapter(tmp_path),
             console=Console(width=200),
+            liveness=lambda sid: ALIVE.get(sid, True),
         )
     )
     yield tmp_path, session_dir, transcript
@@ -247,6 +253,68 @@ def test_backfill_refuses_a_live_session(project):
     assert "not finalized" in result.output
     assert "## Events" in (session_dir / "audit.md").read_text()
     assert "turns" not in read_metrics(session_dir)
+
+
+def _never_finalized(session_dir) -> bytes:
+    """What a SIGKILLed holder leaves: the stub metrics and a log with no run_ended."""
+    metrics = read_metrics(session_dir)
+    metrics["finalized"] = False
+    (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
+    log = b'{"v": "events/v1", "event": "run_started", "ts": "2026-07-30T12:00:00.000Z"}\n'
+    (session_dir / "events.jsonl").write_bytes(log)
+    return log
+
+
+def test_backfill_collects_a_session_whose_owner_is_dead(project):
+    """Killed with no finalize: the record is collected from what the binary left,
+    and the log stays exactly as the run left it — no run_ended after the fact."""
+    tmp_path, session_dir, transcript = project
+    log = _never_finalized(session_dir)
+    ALIVE[SESSION_ID] = False
+
+    result = CliRunner().invoke(session, ["backfill", SESSION_ID])
+
+    assert result.exit_code == 0, result.output
+    m = read_metrics(session_dir)
+    assert (m["measured"], m["turns"]) == (True, 2)
+    assert m["finalized"] is False, "the finalize never ran"
+    assert (session_dir / "events.jsonl").read_bytes() == log
+    assert "owner dead" in result.output
+
+
+def test_backfill_leaves_a_session_it_cannot_tell_alive_or_dead(project):
+    tmp_path, session_dir, transcript = project
+    _never_finalized(session_dir)
+    ALIVE[SESSION_ID] = None
+
+    result = CliRunner().invoke(session, ["backfill", SESSION_ID])
+
+    assert "not finalized" in result.output and "unknown" in result.output
+    assert "turns" not in read_metrics(session_dir)
+
+
+def test_list_says_whether_each_session_runs(project):
+    tmp_path, session_dir, transcript = project
+    _never_finalized(session_dir)
+    ended = session_dir.parent / "session_20260730-110000-1"
+    ended.mkdir()
+    (ended / METRICS_JSON).write_text(json.dumps({"role": "x", "finalized": True}))
+    legacy = session_dir.parent / "session_20260730-100000-1"
+    legacy.mkdir()
+    (legacy / METRICS_JSON).write_text(json.dumps({"role": "x"}))  # before the stub existed
+    ALIVE[SESSION_ID] = False
+
+    listed = CliRunner().invoke(session, ["list", "--json"])
+
+    states = {item["session_id"]: item["state"] for item in json.loads(listed.output)}
+    assert states == {
+        SESSION_ID: "dead",
+        "20260730-110000-1": "ended",
+        "20260730-100000-1": "ended",
+    }
+    ALIVE[SESSION_ID] = True
+    table = CliRunner().invoke(session, ["list"])
+    assert "live" in table.output and "State" in table.output
 
 
 def test_backfill_keeps_trace_log(project):

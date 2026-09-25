@@ -12,6 +12,7 @@ this file.
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 
@@ -436,6 +437,19 @@ def _integrator_layout() -> ProjectLayout:
     return resolve_project().layout
 
 
+def _integrator_liveness(session_id: str) -> bool | None:
+    from ai_hats.session_liveness import session_alive
+
+    return session_alive(_integrator_layout().cache.session(session_id), _process_table())
+
+
+@functools.cache
+def _process_table():
+    from ai_hats.session_liveness import LazyLiveness
+
+    return LazyLiveness()  # one `ps` per CLI run, and only if a session needs it
+
+
 def _observe_provider_adapter(provider: str):
     """Transcript discovery + parser of the surface that recorded the session.
 
@@ -458,6 +472,7 @@ attach(
         tag_filter_parser=parse_tag_filters,
         provider_adapter=_observe_provider_adapter,
         console=console,
+        liveness=_integrator_liveness,
     )
 )
 

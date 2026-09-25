@@ -23,6 +23,7 @@ from ai_hats_observe.canonical import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    ToolResultReceived,
     TurnEnded,
     WorthRecording,
 )
@@ -146,6 +147,72 @@ def test_an_api_error_line_is_a_signal_and_no_response() -> None:
     assert (events[-1].ok, events[-1].detail) == (False, "429")
 
 
+def _quota(status: str, resets_at: int = 1790340000) -> dict[str, Any]:
+    """Shaped as measured on 2.1.282: utilization lives per window, not on top."""
+    return {
+        "type": "rate_limit_event",
+        "rate_limit_info": {
+            "status": status,
+            "resetsAt": resets_at,
+            "rateLimitType": "five_hour",
+            "unifiedWindows": {"five_hour": {"utilization": 0.91, "resetsAt": resets_at}},
+        },
+    }
+
+
+def test_a_warning_from_the_quota_is_said_before_the_wall() -> None:
+    """Only the wire says the quota is close: the record never does, and a PTY
+    session hears it from its status line instead."""
+    (notice,) = _feed(_quota("allowed_warning"))
+
+    assert (notice.reason, notice.raw_code) == (WorthRecording.APPROACHING_LIMIT, "allowed_warning")
+    assert notice.source == WIRE_SOURCE and notice.ts
+    assert "five_hour" in notice.detail and "91%" in notice.detail
+
+
+def _wall(request: str = "req_e") -> dict[str, Any]:
+    """The refused turn's API error as the wire sends it: no quota of its own."""
+    return {
+        "type": "assistant",
+        "error": "rate_limit",
+        "is_api_error_message": True,
+        "request_id": request,
+        "parent_tool_use_id": None,
+        "message": {
+            "id": request,
+            "model": "<synthetic>",
+            "content": [{"type": "text", "text": "429"}],
+        },
+    }
+
+
+def test_the_wall_is_the_api_error_and_takes_its_reset_from_the_quota_line() -> None:
+    """One wall, one producer: the refused turn's API error, in both inputs. Its
+    reset rides the message in the record and the quota line on the wire."""
+    wall = _wall()
+
+    events = _feed(_quota("rejected"), wall, _result(is_error=True, result="429"))
+    waits = [e for e in events if isinstance(e, HarnessActionRequired)]
+
+    assert [(w.reason, w.retry_after) for w in waits] == [(HarnessMustAct.WAIT, 1790340000)]
+    # POSITIVE CONTROL: without the quota line the wall still stands, with no reset
+    (alone,) = [e for e in _feed(wall) if isinstance(e, HarnessActionRequired)]
+    assert alone.retry_after is None
+
+
+def test_a_wall_reads_the_quota_as_last_reported_not_an_old_rejection() -> None:
+    """The quota recovered in between: the next wall inherits no stale reset."""
+    refused = _result(is_error=True, result="429")
+    events = _feed(
+        *(_quota("rejected", 111), _wall("req_a"), refused),
+        *(_quota("allowed", 222), _wall("req_b"), refused),
+        *(_quota("rejected", 333), _wall("req_c"), refused),
+    )
+
+    waits = [e.retry_after for e in events if isinstance(e, HarnessActionRequired)]
+    assert waits == [111, None, 333]
+
+
 @pytest.mark.parametrize(
     "line",
     [
@@ -246,9 +313,6 @@ def _comparable(events: list) -> Counter:
             continue
         if isinstance(event, GateVerdict) and event.point == GatePoint.AT_STOP:
             continue
-        if isinstance(event, Notice) and event.reason == WorthRecording.UNSUPPORTED_RECORD:
-            if event.raw_code == "attachment/credential_org":
-                continue
         record = encode(event)
         record.pop("ts", None)
         if record.get("source") == WIRE_SOURCE:
@@ -332,3 +396,57 @@ def test_a_record_prompt_has_its_records_uuid_as_its_id() -> None:
     (prompt,) = list(reader._record(record))
 
     assert prompt.prompt_id == "3f0e2d9c-0000-4000-8000-000000000003"
+
+
+def test_a_tool_the_mode_refused_is_its_error_result_said_once() -> None:
+    """Measured on 2.1.282 under ``dontAsk``: ``system/permission_denied`` and
+    the result's ``permission_denials`` repeat the ``is_error`` result — the one
+    thing the record has, so the one producer in both modes (ADR-0038 D4)."""
+    text = (
+        "Permission to use Bash has been denied because Claude Code is running in don't ask mode."
+    )
+    call = {"type": "tool_use", "id": "toolu_d", "name": "Bash", "input": {"command": "touch x"}}
+    events = _feed(
+        {
+            **_assistant("req_d", "x"),
+            "message": {**_assistant("req_d", "x")["message"], "content": [call]},
+        },
+        {
+            "type": "system",
+            "subtype": "permission_denied",
+            "tool_name": "Bash",
+            "tool_use_id": "toolu_d",
+            "decision_reason_type": "mode",
+            "message": text,
+        },
+        {
+            "type": "user",
+            "parent_tool_use_id": None,
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_d",
+                        "content": text,
+                        "is_error": True,
+                    }
+                ],
+            },
+        },
+        _result(
+            terminal_reason="completed",
+            permission_denials=[
+                {
+                    "tool_name": "Bash",
+                    "tool_use_id": "toolu_d",
+                    "tool_input": {"command": "touch x"},
+                }
+            ],
+        ),
+    )
+
+    assert not [e for e in events if isinstance(e, Notice)], "no drift, no second producer"
+    (refused,) = [e for e in events if isinstance(e, ToolResultReceived)]
+    assert (refused.call_id, refused.ok) == ("toolu_d", False)
+    assert isinstance(events[-1], TurnEnded)

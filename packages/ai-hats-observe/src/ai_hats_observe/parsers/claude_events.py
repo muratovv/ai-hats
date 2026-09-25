@@ -149,6 +149,7 @@ _SILENT_ATTACHMENTS = frozenset(
         "batching_reminder_sent",
         "command_permissions",
         "compact_file_reference",
+        "credential_org",  # which organization the credential belongs to
         "date",
         "date_change",
         "deferred_tools_delta",
@@ -160,6 +161,7 @@ _SILENT_ATTACHMENTS = frozenset(
         "hook_success",  # the chain's own GateVerdict; a Stop is stop_hook_summary
         "instructions",
         "invoked_skills",
+        "mcp_instructions_delta",
         "model",  # ResponseStarted.model, per call
         "plan_mode_exit",
         "prompt_snapshot",
@@ -186,8 +188,8 @@ _WIRE_RENAMES = {
     "isSynthetic": "isMeta",
 }
 # Wire lines that say nothing the log records: the per-command queue (the turn's
-# prompts ride its `result`) and the quota, which is a later reader's to take.
-_SILENT_WIRE_TYPES = frozenset({"command_lifecycle", "rate_limit_event"})
+# prompts ride its `result`).
+_SILENT_WIRE_TYPES = frozenset({"command_lifecycle"})
 # `system` subtypes only the wire has: the binary's bookkeeping and UI lines.
 _SILENT_WIRE_SUBTYPES = frozenset(
     {
@@ -195,6 +197,7 @@ _SILENT_WIRE_SUBTYPES = frozenset(
         "hook_started",
         "init",
         "notification",
+        "permission_denied",  # the refused call's is_error result says it, in both modes
         "status",
         "task_notification",
         "task_progress",
@@ -290,6 +293,12 @@ class ClaudeTranscriptReader:
         # every call announced, with its tool name: a result whose call we never
         # saw is a gap worth reporting, and a refusal names the tool refused
         self._seen_calls: dict[ToolCallId, str] = {}
+        # a fork's record opens with the parent's spawning call replayed; the
+        # parent's record is that call's producer, so the replay is skipped
+        self._in_fork_head = False
+        self._replayed_calls: set[str] = set()
+        # the quota as the wire last reported it; each quota line replaces it
+        self._quota: dict[str, Any] = {}
 
     # -- EventReader -------------------------------------------------------
 
@@ -329,7 +338,17 @@ class ClaudeTranscriptReader:
         for event in self._wire_events(line):
             if getattr(event, "source", None) == SOURCE:
                 event = replace(event, source=WIRE_SOURCE)  # type: ignore[call-arg]
-            yield event
+            yield self._with_quota_reset(event)
+
+    def _with_quota_reset(self, event: Event) -> Event:
+        """A wall with no reset takes it from the quota: the wire's API error
+        carries none, and the quota line says when a rejection lifts."""
+        if not isinstance(event, HarnessActionRequired) or event.retry_after is not None:
+            return event
+        resets = self._quota.get("resetsAt")
+        if self._quota.get("status") != "rejected" or not isinstance(resets, int):
+            return event
+        return replace(event, retry_after=EpochSeconds(resets))
 
     def _wire_events(self, line: Mapping[str, Any]) -> Iterator[Event]:
         if not isinstance(line, Mapping):
@@ -342,6 +361,8 @@ class ClaudeTranscriptReader:
         if rtype in _SILENT_WIRE_TYPES or (rtype == "system" and subtype in _SILENT_WIRE_SUBTYPES):
             return
         match rtype:
+            case "rate_limit_event":
+                yield from self._quota_line(record)
             case "stream_event":
                 yield from self._stream_event(record)
             case "result":
@@ -350,6 +371,17 @@ class ClaudeTranscriptReader:
                 yield from self._hook_response(record)
             case _:
                 yield from self._record(record)
+
+    def _quota_line(self, record: dict[str, Any]) -> Iterator[Event]:
+        """The quota's state. ``rejected`` says nothing itself: the wall's producer
+        is the refused turn's API error, which reads its reset from here."""
+        info = record.get("rate_limit_info")
+        if not isinstance(info, dict):
+            return
+        self._quota = info
+        notice = approaching_limit(info)
+        if notice is not None:
+            yield replace(notice, source=SOURCE, ts=_ts(record))
 
     def _hook_response(self, record: dict[str, Any]) -> Iterator[Event]:
         """One hook the surface ran. A Stop hook is read as the record reads
@@ -467,12 +499,19 @@ class ClaudeTranscriptReader:
         if rtype not in KNOWN_RECORD_TYPES:
             yield self._notice(str(rtype), ts=_ts(record))
             return
+        if rtype == "fork-context-ref":
+            self._in_fork_head = True
         if rtype in _SILENT_RECORD_TYPES:
             return
 
         match rtype:
+            case "assistant" if self._in_fork_head:
+                self._replayed_calls.update(_tool_use_ids(record))
             case "assistant":
                 yield from self._assistant_events(record)
+            case "user" if self._in_fork_head:
+                self._in_fork_head = False
+                yield from self._user_events(self._without_replayed_results(record))
             case "user":
                 yield from self._user_events(record)
             case "system":
@@ -622,6 +661,24 @@ class ClaudeTranscriptReader:
             yield from self._interrupted(text.strip(), ts)
             return
         yield from self._prompt(text, ts, origin, prompt_id)
+
+    def _without_replayed_results(self, record: dict[str, Any]) -> dict[str, Any]:
+        """``record`` less the results of calls replayed from the parent: what is
+        left of a fork's first user record is its task."""
+        message = record.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            return record
+        kept = [
+            block
+            for block in content
+            if not (
+                isinstance(block, dict)
+                and block.get("type") == "tool_result"
+                and block.get("tool_use_id") in self._replayed_calls
+            )
+        ]
+        return {**record, "message": {**message, "content": kept}}
 
     def _interrupted(self, marker: str, ts: Timestamp | None) -> Iterator[Event]:
         """A person stopped the turn. The model's own stop reason wins; only a
@@ -861,6 +918,46 @@ def _prompt_id(record: dict[str, Any]) -> PromptId | None:
     """The record's own uuid: on the wire, the id the harness sent the prompt with."""
     value = record.get("uuid")
     return PromptId(value) if isinstance(value, str) and value else None
+
+
+def approaching_limit(info: Mapping[str, Any]) -> Notice | None:
+    """A ``Notice`` when the quota ``info`` (the wire's ``rate_limit_info``) says
+    the limit is close; ``None`` for any other state, the wall included."""
+    if info.get("status") != "allowed_warning":
+        return None
+    window = info.get("rateLimitType")
+    parts = [f"{window or 'rate limit'} allowed_warning"]
+    windows = info.get("unifiedWindows")
+    per_window = windows.get(window) if isinstance(windows, dict) else None
+    utilization = info.get("utilization")
+    if utilization is None and isinstance(per_window, dict):
+        utilization = per_window.get("utilization")
+    if isinstance(utilization, (int, float)):
+        parts.append(f"utilization {utilization:.0%}")
+    if info.get("resetsAt"):
+        parts.append(f"resets at {info['resetsAt']}")
+    if info.get("overageDisabledReason"):
+        parts.append(f"overage unavailable: {info['overageDisabledReason']}")
+    return Notice(
+        reason=WorthRecording.APPROACHING_LIMIT,
+        detail="; ".join(parts),
+        raw_code="allowed_warning",
+        source=SOURCE,
+    )
+
+
+def _tool_use_ids(record: dict[str, Any]) -> set[str]:
+    message = record.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return set()
+    return {
+        block["id"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and isinstance(block.get("id"), str)
+    }
 
 
 def _prompt_origin(record: dict[str, Any]) -> PromptOrigin | None:

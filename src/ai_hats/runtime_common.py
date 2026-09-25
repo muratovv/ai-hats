@@ -656,6 +656,11 @@ def readiness_findings(
     return findings
 
 
+def readiness_notices(findings: "list[Signal]") -> "list[StartupNotice]":
+    """Every finding as a WARN startup notice — blocking or not, the person reads it."""
+    return [StartupNotice("warn", f.detail or str(f.reason)) for f in findings]
+
+
 def blocking_findings(findings: "list[Signal]") -> "list[Blocking]":
     from ai_hats_observe.canonical.signals import Blocking
 
@@ -687,7 +692,7 @@ def preflight(
     # would reach stderr through lastResort beside the line that says it anyway.
     findings = readiness_findings(provider, environ, report=session.log_sys)
     notices = notices_from_diagnostics(session.startup_diagnostics)
-    notices += [StartupNotice("warn", f.detail or str(f.reason)) for f in findings]
+    notices += readiness_notices(findings)
     # No banner on this path: the record is the only place these land.
     save_session_diagnostics(session.session_dir, "startup", startup_record(notices, 0.0))
     refusals = blocking_findings(findings)
@@ -735,7 +740,8 @@ def record_refused_run(
         ],
         session.session_dir / EVENT_LOG_JSONL,
     )
-    session.init_audit(role=role, provider=provider, model=model)
+    if not session.audit_path.exists():  # an Automate run is refused before its audit opens
+        session.init_audit(role=role, provider=provider, model=model)
     metrics: dict = {
         "exit_code": SUBAGENT_EXIT_ERROR,
         "role": role,
@@ -747,7 +753,7 @@ def record_refused_run(
     if tags:
         metrics["tags"] = tags
     session.finalize_audit(metrics)
-    session.log_sys(f"Sub-agent refused before launch: {detail}")
+    session.log_sys(f"Session refused before launch: {detail}")
 
 
 def _close_event_log(event_log: "EventLogWriter", session: "Session", *, exit_code: int) -> None:

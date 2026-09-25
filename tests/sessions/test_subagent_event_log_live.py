@@ -174,14 +174,14 @@ def test_a_quota_warning_the_stream_alone_carries_reaches_the_log_as_it_happens(
 
     events = list(read_events(session.session_dir / EVENT_LOG_JSONL))
     signals = [e for e in events if isinstance(e, (Notice, HarnessActionRequired))]
+    # `rejected` is left out: the wall's producer is the refused turn's API error
+    # in the transcript, so the stream saying it too would record it twice
     assert [(type(e).__name__, str(e.reason), e.source) for e in signals] == [
         ("Notice", "approaching_limit", "claude/sdk"),
-        ("HarnessActionRequired", "wait", "claude/sdk"),
     ]
     assert signals[0].reason is WorthRecording.APPROACHING_LIMIT
-    assert signals[1].retry_after == 1767225600
     # stamped at receipt: the stream itself carries no time
     assert all(e.ts is not None for e in signals)
     # POSITIVE CONTROL: the transcript's own content is in the file once, from
-    # the transcript — the seam added nothing but the two signals
+    # the transcript — the seam added nothing but the warning
     assert len([e for e in events if isinstance(e, PromptReceived)]) == 1

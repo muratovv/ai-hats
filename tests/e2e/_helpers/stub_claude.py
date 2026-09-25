@@ -17,6 +17,12 @@ prompt text:
                     boundary joins this turn, as claude 2.1.281 folds one in
     @bg             answer, then start a turn of the binary's own (a finished
                     background task): no prompt, ``user_message_uuids`` empty
+    @drift          a wire line of an unknown type and one that is not JSON,
+                    then answer
+    @quota <status> a ``rate_limit_event`` with that status; ``rejected`` is
+                    the wall: then an API-error record (429) ends the turn
+    @ignore-term    ignore SIGTERM from here on, then hang in the turn
+    @kill <sig>     kill itself with signal <sig> in the middle of the turn
 
 A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 
@@ -27,7 +33,8 @@ the live wire.
 
 Usage: ``stub_claude.py <tag> <claude argv...>``. The tag is the stub's own
 argv[1], so a test can find the process with ``pgrep -f`` and nothing else;
-``auth status`` answers logged-in, as the readiness probe asks it to.
+``auth status`` answers logged-in, as the readiness probe asks it to — or
+logged-out when ``STUB_CLAUDE_LOGGED_OUT`` is set.
 """  # comment-length: allow — the directive table is the stub's contract with its tests
 
 from __future__ import annotations
@@ -48,6 +55,9 @@ from pathlib import Path
 
 ARGV_LOG_ENV = "STUB_CLAUDE_ARGV"
 TIMING_ENV = "STUB_CLAUDE_TIMING"
+LOGGED_OUT_ENV = "STUB_CLAUDE_LOGGED_OUT"
+#: When a quota window lifts, as epoch seconds — the one a @quota turn reports.
+QUOTA_RESETS_AT = 1790340000
 
 
 def _now() -> str:
@@ -311,36 +321,43 @@ class Stub:
         if body.startswith("@die "):
             sys.stdout.flush()
             os._exit(int(body.split()[1]))
-        if body.startswith("@error"):
-            detail = f"API Error: {body[len('@error') :].strip() or '529 overloaded'}"
-            message = {
-                "id": str(uuid.uuid4()),
-                "role": "assistant",
-                "model": "<synthetic>",
-                "content": [{"type": "text", "text": detail}],
-            }
-            record = {
-                "type": "assistant",
-                "isApiErrorMessage": True,
-                "error": "server_error",
-                "requestId": request,
-                "message": message,
-            }
-            self.record(record)
+        if body.startswith("@kill "):
+            sys.stdout.flush()
+            os.kill(os.getpid(), int(body.split()[1]))
+            time.sleep(60)
+        if body == "@ignore-term":
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            time.sleep(120)
+        if body.startswith("@quota "):
+            status = body.split()[1]
             self.emit(
                 {
-                    "type": "assistant",
-                    "is_api_error_message": True,
-                    "error": "server_error",
-                    "request_id": request,
-                    "uuid": record["uuid"],
-                    "timestamp": record["timestamp"],
-                    "message": message,
-                    "parent_tool_use_id": None,
+                    "type": "rate_limit_event",
+                    "rate_limit_info": {
+                        "status": status,
+                        "resetsAt": QUOTA_RESETS_AT,
+                        "rateLimitType": "five_hour",
+                        "unifiedWindows": {
+                            "five_hour": {"utilization": 0.91, "resetsAt": QUOTA_RESETS_AT}
+                        },
+                    },
+                    "uuid": str(uuid.uuid4()),
                     "session_id": self.session_id,
                 }
             )
-            self.result(detail, is_error=True, stop_reason="stop_sequence")
+            if status == "rejected":
+                self.api_error(request, "You've hit your session limit", "rate_limit", 429)
+                self.previous = text
+                return
+            body = "quota"
+        if body.startswith("@error"):
+            detail = f"API Error: {body[len('@error') :].strip() or '529 overloaded'}"
+            self.api_error(request, detail, "server_error")
+        elif body == "@drift":
+            self.emit({"type": "future_line", "session_id": self.session_id})
+            sys.stdout.write("Warning: not a JSON line\n")
+            self.respond(request, [{"type": "text", "text": "ok: drift"}], "end_turn")
+            self.result("ok: drift")
         elif body == "@tool":
             call = f"toolu_{request}"
             self.respond(
@@ -371,6 +388,39 @@ class Stub:
             self.respond(request, [{"type": "text", "text": answer}], "end_turn")
             self.result(answer)
         self.previous = text
+
+    def api_error(self, request: str, detail: str, error: str, status: int | None = None) -> None:
+        """A turn the API refused: a synthetic message, in the record and on the wire."""
+        message = {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "model": "<synthetic>",
+            "content": [{"type": "text", "text": detail}],
+        }
+        record = {
+            "type": "assistant",
+            "isApiErrorMessage": True,
+            "error": error,
+            "requestId": request,
+            "message": message,
+        }
+        if status is not None:
+            record["apiErrorStatus"] = status
+            record["quotaLimits"] = {"status": "rejected", "resetsAt": QUOTA_RESETS_AT}
+        self.record(record)
+        wire = {
+            "type": "assistant",
+            "is_api_error_message": True,
+            "error": error,
+            "request_id": request,
+            "uuid": record["uuid"],
+            "timestamp": record["timestamp"],
+            "message": message,
+            "parent_tool_use_id": None,
+            "session_id": self.session_id,
+        }
+        self.emit(wire)
+        self.result(detail, is_error=True, stop_reason="stop_sequence")
 
     def read_stdin(self) -> None:
         for line in sys.stdin:
@@ -468,10 +518,13 @@ def install(root: Path) -> StubClaude:
 def main(argv: list[str]) -> int:
     claude_argv = argv[2:]  # argv[1] is the tag
     if claude_argv[:2] == ["auth", "status"]:
+        logged_in = not os.environ.get(LOGGED_OUT_ENV)
         print(
-            json.dumps({"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"})
+            json.dumps(
+                {"loggedIn": logged_in, "authMethod": "claude.ai", "apiProvider": "firstParty"}
+            )
         )
-        return 0
+        return 0 if logged_in else 1
     log = os.environ.get(ARGV_LOG_ENV)
     if log:
         with open(log, "a", encoding="utf-8") as handle:

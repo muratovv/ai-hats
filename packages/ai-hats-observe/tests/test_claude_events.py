@@ -773,6 +773,7 @@ QUIET_ATTACHMENTS = [
     "batching_reminder_sent",
     "command_permissions",
     "compact_file_reference",
+    "credential_org",
     "date",
     "date_change",
     "deferred_tools_delta",
@@ -784,6 +785,7 @@ QUIET_ATTACHMENTS = [
     "hook_success",
     "instructions",
     "invoked_skills",
+    "mcp_instructions_delta",
     "model",
     "plan_mode_exit",
     "prompt_snapshot",
@@ -1295,3 +1297,51 @@ def test_no_item_ever_arrives_after_its_response_has_ended(tmp_path: Path) -> No
     # POSITIVE CONTROL: items really were emitted, so the loop above had work
     assert emitted_per_response["req-a"] == 3
     assert ended == {"req-a", "req-b"}
+
+
+# --- a fork's record -------------------------------------------------------
+
+
+def fork_head(task: str = "Fork directive: build slice 3") -> list[dict[str, Any]]:
+    """How every measured fork record opens: the marker, the parent's response
+    that spawned the fork replayed, then the parent's result for that call with
+    the fork's own task beside it."""
+    spawn = assistant(
+        "req-parent",
+        [{"type": "tool_use", "id": "c-spawn", "name": "Agent", "input": {"prompt": task}}],
+    )
+    task_record = user(
+        [
+            {"type": "tool_result", "tool_use_id": "c-spawn", "content": "Fork started"},
+            {"type": "text", "text": task},
+        ]
+    )
+    task_record["uuid"] = "u-fork-task"
+    return [{"type": "fork-context-ref", "agentId": "a-fork"}, spawn, task_record]
+
+
+def test_a_fork_does_not_replay_the_parents_call_and_keeps_its_task(tmp_path: Path) -> None:
+    """The parent's record already holds the spawning call and its result; the
+    fork's copy is a second producer of both. Its task is the fork's own prompt,
+    which a result beside it must not swallow."""
+    own_work = [
+        assistant("req-fork", [{"type": "text", "text": "working"}], stop_reason="end_turn"),
+    ]
+    events = events_of(tmp_path, [*fork_head(), *own_work])
+
+    assert [e.response_id for e in events if isinstance(e, ResponseStarted)] == ["req-fork"]
+    assert [e for e in events if isinstance(e, ToolResultReceived)] == []
+    (prompt,) = [e for e in events if isinstance(e, PromptReceived)]
+    assert (prompt.text, prompt.prompt_id) == ("Fork directive: build slice 3", "u-fork-task")
+    # POSITIVE CONTROL: the fork's own response is read in full
+    assert [i.text for i in items(events, ItemKind.TEXT)] == ["working"]
+
+
+def test_only_the_fork_marker_skips_a_replay(tmp_path: Path) -> None:
+    """Negative control: without ``fork-context-ref`` the same records are a
+    sub-agent's own call and result, read as always."""
+    _marker, spawn, task_record = fork_head()
+    events = events_of(tmp_path, [spawn, task_record])
+
+    assert [e.response_id for e in events if isinstance(e, ResponseStarted)] == ["req-parent"]
+    assert [e.call_id for e in events if isinstance(e, ToolResultReceived)] == ["c-spawn"]

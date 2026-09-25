@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from ai_hats_observe.canonical import AgentId, ResponseEnded, TurnEnded
+from ai_hats_observe.canonical import AgentId, ResponseEnded, TurnEnded, WorthRecording
 from ai_hats_observe.event_log_writer import EventSource
 
 from ai_hats.headless.runner import HeadlessRunner, _Relay
@@ -72,8 +72,35 @@ def test_a_line_the_decoder_chokes_on_is_reported_and_the_pump_goes_on() -> None
     )
     relay.follow()
 
-    assert [type(e) for e in log.events] == [TurnEnded], "the turn after the bad line still ends"
+    notice, ended = log.events
+    assert (notice.reason, notice.raw_code) == (WorthRecording.UNSUPPORTED_RECORD, "decoder-error")
+    assert "RuntimeError: bad line" in (notice.detail or ""), (
+        "the client sees why, not only the trace"
+    )
+    assert type(ended) is TurnEnded, "the turn after the bad line still ends"
     assert len(said) == 1 and "RuntimeError: bad line" in said[0]
+
+
+def test_a_line_that_is_not_a_json_object_is_drift_in_the_log() -> None:
+    log = _Log()
+    relay = _Relay(
+        _child(
+            b"Warning: not json",
+            [1, 2],
+            {"type": "result", "is_error": False, "subtype": "success"},
+        ),
+        ClaudeWire(),
+        event_log=log,
+        report=lambda _: None,
+    )
+    relay.follow()
+
+    assert [(type(e).__name__, getattr(e, "raw_code", None)) for e in log.events] == [
+        ("Notice", "malformed-json"),
+        ("Notice", "non-object-line"),
+        ("TurnEnded", "success"),
+    ]
+    assert all(e.reason is WorthRecording.UNSUPPORTED_RECORD for e in log.events[:2])
 
 
 def test_a_response_cut_by_the_surface_dying_is_ended_before_the_log_closes() -> None:
