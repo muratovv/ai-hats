@@ -175,7 +175,7 @@ jobs:
     # HATS-937 crashed on. Fails a skewed release loudly instead of DOA installs.
     # Retries tolerate PyPI CDN propagation lag right after upload.
     name: verify remote-channel install (post-publish)
-    needs: [publish-wt, publish-observe, publish-library]
+    needs: [publish-wt, publish-observe, publish-library, publish-client]
     runs-on: ubuntu-latest
     steps:
       - name: Install uv
@@ -196,4 +196,4 @@ jobs:
           done
           test -n "$ok" || { echo "remote install never succeeded" >&2; exit 1; }
           /tmp/verify-venv/bin/python -c \
-            "import ai_hats_core.migrations; import ai_hats_observe; import ai_hats_library; import ai_hats; print('remote-channel OK')"
+            "import ai_hats_core.migrations; import ai_hats_observe; import ai_hats_library; import ai_hats_client; import ai_hats; print('remote-channel OK')"
