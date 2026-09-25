@@ -237,6 +237,7 @@ class _Relay:
         # the flag says whether the answer is the client's or the holder's own deny
         self._early: dict[ToolCallId, tuple[Answer, str, bool]] = {}
         self._arrived = threading.Condition(self._lock)
+        self._replying = 0  # held answers taken off _early and not yet written
         self._asked: set[ToolCallId] = set()  # a PersonAsked this relay passed on
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
@@ -299,9 +300,8 @@ class _Relay:
                 self._closed.discard(question.call_id)
                 self._open[question.call_id] = question
             return
-        self._send(self._wire.reply(question, answer), where, "answer")
         if by_person and answer.decision == "deny":
-            # the person's refusal reaches no record: the wire shows claude only the words
+            # the wire carries only the words; logged before the reply, so it precedes the result
             refusal = GateVerdict(
                 point=GatePoint.BEFORE_TOOL,
                 decision=GateDecision.DENY,
@@ -313,6 +313,7 @@ class _Relay:
                 ts=now(),
             )
             self._emit(lambda: [refusal], f"the refusal of {question.call_id}")
+        self._send(self._wire.reply(question, answer), where, "answer")
 
     def _deny_open(self) -> None:
         with self._lock:
@@ -330,8 +331,10 @@ class _Relay:
                 deny = Answer(call_id, "deny", _ENDING)
                 self._early[call_id] = (deny, "the end of stdin", False)
                 self._closed.add(call_id)
-            if self._early:
-                self._arrived.wait_for(lambda: not self._early, timeout=self._eof_wait)
+            if self._early or self._replying:
+                self._arrived.wait_for(
+                    lambda: not self._early and not self._replying, timeout=self._eof_wait
+                )
             left, self._early = dict(self._early), {}
         for call_id, (_, where, from_client) in left.items():
             if from_client:
@@ -390,10 +393,16 @@ class _Relay:
             held = self._early.pop(control.call_id, None)
             if held is None:
                 self._open[control.call_id] = control
-            self._arrived.notify_all()
+            else:
+                self._replying += 1
         if held is not None:
             answer, where, from_client = held
-            self._decide(control, answer, where, by_person=from_client)
+            try:
+                self._decide(control, answer, where, by_person=from_client)
+            finally:
+                with self._lock:
+                    self._replying -= 1
+                    self._arrived.notify_all()  # EOF waits for the write, not for the pop
             return
         if control.call_id in self._asked or self._in_log(control.call_id)[0]:
             return  # one fact, one producer: a gate records its own question

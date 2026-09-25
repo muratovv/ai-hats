@@ -374,6 +374,25 @@ def test_a_persons_deny_is_recorded_as_their_verdict(tmp_path: Path) -> None:
     assert verdict.reason == "not today" and verdict.tool == "Bash"
 
 
+def test_a_persons_refusal_is_in_the_log_before_the_binary_hears_it(tmp_path: Path) -> None:
+    """The call's result can only follow the reply, so a verdict written first
+    stands before that result in the log, whichever thread gets there first."""
+    relay, log, stdin = _relay(tmp_path, _question())
+    relay.follow()
+    seen: list[bool] = []
+    write = stdin.write
+
+    def recording(data: bytes) -> None:
+        seen.append(any(isinstance(e, GateVerdict) for e in log.events))
+        write(data)
+
+    stdin.write = recording
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "deny"})
+
+    assert seen == [True], "the deny went to the binary before its verdict reached the log"
+
+
 def _feeding(relay: _Relay, *lines: bytes) -> tuple[threading.Thread, int, int]:
     read, write = os.pipe()
     for line in lines:
@@ -407,6 +426,36 @@ def test_a_question_the_gate_announced_before_eof_is_denied_when_it_arrives(
     assert "session is ending" in reply["response"]["message"]
     assert stdin.closed
     assert not [e for e in log.events if isinstance(e, GateVerdict)], "nobody refused it"
+
+
+class _SlowReplies(ClaudeWire):
+    def reply(self, question, answer) -> bytes:
+        time.sleep(0.2)  # the reader thread is still building the deny when EOF looks
+        return super().reply(question, answer)
+
+
+def test_eof_closes_the_binarys_stdin_only_after_the_held_deny_is_written(tmp_path: Path) -> None:
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    child = _child(_question())
+    child.stdin = _Stdin()
+    log = _Log()
+    relay = _Relay(
+        child, _SlowReplies(), event_log=log, report=print, log=tmp_path / "events.jsonl"
+    )
+    feeder, read, write = _feeding(relay)
+    os.close(write)
+    time.sleep(0.2)
+
+    relay.follow()
+    feeder.join(5)
+    os.close(read)
+
+    [reply] = _replies(child.stdin)
+    assert reply["response"]["behavior"] == "deny"
+    assert not _rejections(log), "the deny met a closed stdin"
 
 
 def test_an_early_answer_whose_question_never_came_is_reported_at_eof(tmp_path: Path) -> None:
