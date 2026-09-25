@@ -21,7 +21,6 @@ INIT = PipelineConfig(name="init")
 PREVIEW = PipelineConfig(name="preview")
 FINALIZE_HITL = PipelineConfig(name="finalize-hitl")
 FINALIZE_SUBAGENT = PipelineConfig(name="finalize-subagent")
-FINALIZE_HEADLESS = PipelineConfig(name="finalize-headless")
 REFLECT_SESSION = PipelineConfig(name="reflect-session")
 REFLECT_ALL = PipelineConfig(name="reflect-all")
 REFLECT_HYPOTHESIS_PHASE1 = PipelineConfig(name="reflect-hypothesis-phase1")
@@ -37,7 +36,6 @@ ALL: tuple[PipelineConfig, ...] = (
     PREVIEW,
     FINALIZE_HITL,
     FINALIZE_SUBAGENT,
-    FINALIZE_HEADLESS,
     REFLECT_SESSION,
     REFLECT_ALL,
     REFLECT_HYPOTHESIS_PHASE1,

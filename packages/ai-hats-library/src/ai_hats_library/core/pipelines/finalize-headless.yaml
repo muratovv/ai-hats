@@ -1,8 +1,0 @@
-name: finalize-headless
-# The holder's finalize: `finalize-hitl` without the retro loop. No session
-# reviewer is spawned and no HYP quorum is closed: whether a headless session
-# gets a retro, and under which policy, is still an open decision.
-steps:
-  - id: make_audit
-  - id: compute_usage
-  - id: run_session_end

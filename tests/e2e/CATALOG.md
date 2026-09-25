@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**337 of 337 files catalogued — 345 flows.**
+**338 of 338 files catalogued — 346 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1650,7 +1650,7 @@ as a claim to check, not as evidence.
   ai-hats headless -p claude -r assistant < turns.ndjson > events.ndjson
   ```
 
-- **expect** — exit 0; line 1 of events.ndjson is the headless/v1 header; every line after it is byte-for-byte the session's events.jsonl, run_started to run_ended, one turn_ended per turn; the session is finalized with its audit and without a retro; a surface that dies mid-turn with 3 makes it exit 3, still recorded
+- **expect** — exit 0; line 1 of events.ndjson is the headless/v1 header; every line after it is byte-for-byte the session's events.jsonl, run_started to run_ended, one turn_ended per turn; the session is finalized with its audit, and two turns stay below the retro threshold; a surface that dies mid-turn with 3 makes it exit 3, still recorded
 - **why** — this is the whole contract of the filter — stdin in, the log out, the exit code as the outcome — so a script needs nothing but files and $?
 
 ## `test_headless_launch.py`
@@ -1695,6 +1695,20 @@ as a claim to check, not as evidence.
 
 - **expect** — a folded prompt ends with the one it joined, in one turn_ended listing both ids; a turn the surface began lists none; a repeated id or one not in canonical UUID form is refused as command_rejected; the header names the log's format and the commands it takes
 - **why** — counting turn_ended lines breaks on a fold and on a turn with no prompt; an id cannot, and a repeated one would wait forever on claude
+
+## `test_headless_retro.py`
+
+*pins HATS-2027*
+
+- **flow** — a script runs a role's session headless under policy=always, and the session reaches the session reviewer as a TUI one does
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — retro.log holds the finalize's decision to run the reviewer and, under the e2e default HATS_SKIP_RETRO=1, a suppressed-by-guard outcome
+- **why** — a session the reviewer never sees is invisible to the reflect loop
 
 ## `test_headless_wire_order.py`
 

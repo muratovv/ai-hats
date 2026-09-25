@@ -359,7 +359,6 @@ def install(tmp_project, tmp_path: Path, repo_root: Path) -> FakeSurface:
         [checkout_pythonpath(repo_root), str(plugin), str(log_sink)]
     )
     env["FAKE_SURFACE_HOLD_SCRIPT"] = str(hold_script)
-    env["HATS_SKIP_RETRO"] = "1"
 
     return FakeSurface(
         project=tmp_project.path,

@@ -7,8 +7,8 @@ cmds:
 expect: exit 0; line 1 of events.ndjson is the headless/v1 header; every line
         after it is byte-for-byte the session's events.jsonl, run_started to
         run_ended, one turn_ended per turn; the session is finalized with its
-        audit and without a retro; a surface that dies mid-turn with 3 makes it
-        exit 3, still recorded
+        audit, and two turns stay below the retro threshold; a surface that
+        dies mid-turn with 3 makes it exit 3, still recorded
 why:    this is the whole contract of the filter — stdin in, the log out, the
         exit code as the outcome — so a script needs nothing but files and $?
 """
@@ -86,7 +86,9 @@ def test_e2e_a_file_of_turns_becomes_a_file_of_events(tmp_project, tmp_path) -> 
     session_dir = Path(header["session_dir"])
     assert json.loads((session_dir / "metrics.json").read_text())["finalized"] is True
     assert (session_dir / "audit.md").exists()
-    assert not (session_dir / "retro.log").exists(), "headless decides no retro yet"
+    retro = (session_dir / "retro.log").read_text()
+    assert "\tdecision\tskip: below threshold (turns=2<" in retro, retro
+    assert "\toutcome\t" not in retro, retro
 
 
 def test_e2e_a_surface_that_dies_mid_turn_is_the_exit_code(tmp_project, tmp_path) -> None:

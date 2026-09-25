@@ -25,7 +25,6 @@ from ai_hats_observe.canonical import Notice, WorthRecording
 from ai_hats_observe.canonical.types import PromptId, now
 from ai_hats_observe.commands import Prompt, Rejected, decode_command
 
-from ..pipeline_catalog import FINALIZE_HEADLESS
 from ..wrap_runner import WrapRunner
 from .copier import LogCopier
 from .header import SessionHeader
@@ -45,7 +44,6 @@ _SOURCE = "headless"
 class HeadlessRunner(WrapRunner):
     """``ai-hats headless`` — a HITL session driven over this process's stdin/stdout."""
 
-    finalize = FINALIZE_HEADLESS
     follows_main_record = False  # the wire is the main agent's record here (ADR-0038 D4)
 
     def __init__(
