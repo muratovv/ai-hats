@@ -22,9 +22,9 @@ host built with the four it had before no longer constructs.
 - `approaching_limit(info)` — the quota's `rate_limit_info` as a
   `Notice(approaching_limit)` when its status is `allowed_warning`, else `None`.
 - `ClaudeTranscriptReader.feed` reads `rate_limit_event`: `allowed_warning` is a
-  `Notice(approaching_limit)`, and `rejected` lends its `resetsAt` to the refused
-  turn's `wait`. The wall's one producer stays that turn's API error, whose wire
-  line carries no quota of its own.
+  `Notice(approaching_limit)`, and a refused turn's `wait` takes its reset from
+  the quota as last reported, when that says `rejected`. The wall's one producer
+  stays that turn's API error, whose wire line carries no quota of its own.
 
 ### Changed
 

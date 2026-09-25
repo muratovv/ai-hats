@@ -170,21 +170,26 @@ def test_a_warning_from_the_quota_is_said_before_the_wall() -> None:
     assert "five_hour" in notice.detail and "91%" in notice.detail
 
 
-def test_the_wall_is_the_api_error_and_takes_its_reset_from_the_quota_line() -> None:
-    """One wall, one producer: the refused turn's API error, in both inputs. Its
-    reset rides the message in the record and the quota line on the wire."""
-    wall = {
+def _wall(request: str = "req_e") -> dict[str, Any]:
+    """The refused turn's API error as the wire sends it: no quota of its own."""
+    return {
         "type": "assistant",
         "error": "rate_limit",
         "is_api_error_message": True,
-        "request_id": "req_e",
+        "request_id": request,
         "parent_tool_use_id": None,
         "message": {
-            "id": "e",
+            "id": request,
             "model": "<synthetic>",
             "content": [{"type": "text", "text": "429"}],
         },
     }
+
+
+def test_the_wall_is_the_api_error_and_takes_its_reset_from_the_quota_line() -> None:
+    """One wall, one producer: the refused turn's API error, in both inputs. Its
+    reset rides the message in the record and the quota line on the wire."""
+    wall = _wall()
 
     events = _feed(_quota("rejected"), wall, _result(is_error=True, result="429"))
     waits = [e for e in events if isinstance(e, HarnessActionRequired)]
@@ -193,6 +198,19 @@ def test_the_wall_is_the_api_error_and_takes_its_reset_from_the_quota_line() -> 
     # POSITIVE CONTROL: without the quota line the wall still stands, with no reset
     (alone,) = [e for e in _feed(wall) if isinstance(e, HarnessActionRequired)]
     assert alone.retry_after is None
+
+
+def test_a_wall_reads_the_quota_as_last_reported_not_an_old_rejection() -> None:
+    """The quota recovered in between: the next wall inherits no stale reset."""
+    refused = _result(is_error=True, result="429")
+    events = _feed(
+        *(_quota("rejected", 111), _wall("req_a"), refused),
+        *(_quota("allowed", 222), _wall("req_b"), refused),
+        *(_quota("rejected", 333), _wall("req_c"), refused),
+    )
+
+    waits = [e.retry_after for e in events if isinstance(e, HarnessActionRequired)]
+    assert waits == [111, None, 333]
 
 
 @pytest.mark.parametrize(

@@ -297,8 +297,8 @@ class ClaudeTranscriptReader:
         # parent's record is that call's producer, so the replay is skipped
         self._in_fork_head = False
         self._replayed_calls: set[str] = set()
-        # when the quota wall lifts: the wire says it on the quota line, not on the error
-        self._wall_resets_at: int | None = None
+        # the quota as the wire last reported it; each quota line replaces it
+        self._quota: dict[str, Any] = {}
 
     # -- EventReader -------------------------------------------------------
 
@@ -338,7 +338,17 @@ class ClaudeTranscriptReader:
         for event in self._wire_events(line):
             if getattr(event, "source", None) == SOURCE:
                 event = replace(event, source=WIRE_SOURCE)  # type: ignore[call-arg]
-            yield event
+            yield self._with_quota_reset(event)
+
+    def _with_quota_reset(self, event: Event) -> Event:
+        """A wall with no reset takes it from the quota: the wire's API error
+        carries none, and the quota line says when a rejection lifts."""
+        if not isinstance(event, HarnessActionRequired) or event.retry_after is not None:
+            return event
+        resets = self._quota.get("resetsAt")
+        if self._quota.get("status") != "rejected" or not isinstance(resets, int):
+            return event
+        return replace(event, retry_after=EpochSeconds(resets))
 
     def _wire_events(self, line: Mapping[str, Any]) -> Iterator[Event]:
         if not isinstance(line, Mapping):
@@ -352,29 +362,23 @@ class ClaudeTranscriptReader:
             return
         match rtype:
             case "rate_limit_event":
-                yield from self._quota(record)
+                yield from self._quota_line(record)
             case "stream_event":
                 yield from self._stream_event(record)
             case "result":
                 yield from self._result(record)
-            case "assistant" if _is_wall(record) and "quotaLimits" not in record:
-                if self._wall_resets_at is not None:
-                    record["quotaLimits"] = {"status": "rejected", "resetsAt": self._wall_resets_at}
-                yield from self._record(record)
             case "system" if subtype == "hook_response":
                 yield from self._hook_response(record)
             case _:
                 yield from self._record(record)
 
-    def _quota(self, record: dict[str, Any]) -> Iterator[Event]:
-        """The quota's state. ``rejected`` is the wall, whose producer is the
-        refused turn's API error — here it only lends that error its reset."""
+    def _quota_line(self, record: dict[str, Any]) -> Iterator[Event]:
+        """The quota's state. ``rejected`` says nothing itself: the wall's producer
+        is the refused turn's API error, which reads its reset from here."""
         info = record.get("rate_limit_info")
         if not isinstance(info, dict):
             return
-        if info.get("status") == "rejected":
-            resets = info.get("resetsAt")
-            self._wall_resets_at = resets if isinstance(resets, int) else None
+        self._quota = info
         notice = approaching_limit(info)
         if notice is not None:
             yield replace(notice, source=SOURCE, ts=_ts(record))
@@ -940,10 +944,6 @@ def approaching_limit(info: Mapping[str, Any]) -> Notice | None:
         raw_code="allowed_warning",
         source=SOURCE,
     )
-
-
-def _is_wall(record: dict[str, Any]) -> bool:
-    return bool(record.get("isApiErrorMessage")) and record.get("error") == "rate_limit"
 
 
 def _tool_use_ids(record: dict[str, Any]) -> set[str]:
