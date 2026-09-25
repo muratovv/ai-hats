@@ -290,6 +290,10 @@ class ClaudeTranscriptReader:
         # every call announced, with its tool name: a result whose call we never
         # saw is a gap worth reporting, and a refusal names the tool refused
         self._seen_calls: dict[ToolCallId, str] = {}
+        # a fork's record opens with the parent's spawning call replayed; the
+        # parent's record is that call's producer, so the replay is skipped
+        self._in_fork_head = False
+        self._replayed_calls: set[str] = set()
 
     # -- EventReader -------------------------------------------------------
 
@@ -467,12 +471,19 @@ class ClaudeTranscriptReader:
         if rtype not in KNOWN_RECORD_TYPES:
             yield self._notice(str(rtype), ts=_ts(record))
             return
+        if rtype == "fork-context-ref":
+            self._in_fork_head = True
         if rtype in _SILENT_RECORD_TYPES:
             return
 
         match rtype:
+            case "assistant" if self._in_fork_head:
+                self._replayed_calls.update(_tool_use_ids(record))
             case "assistant":
                 yield from self._assistant_events(record)
+            case "user" if self._in_fork_head:
+                self._in_fork_head = False
+                yield from self._user_events(self._without_replayed_results(record))
             case "user":
                 yield from self._user_events(record)
             case "system":
@@ -622,6 +633,24 @@ class ClaudeTranscriptReader:
             yield from self._interrupted(text.strip(), ts)
             return
         yield from self._prompt(text, ts, origin, prompt_id)
+
+    def _without_replayed_results(self, record: dict[str, Any]) -> dict[str, Any]:
+        """``record`` less the results of calls replayed from the parent: what is
+        left of a fork's first user record is its task."""
+        message = record.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            return record
+        kept = [
+            block
+            for block in content
+            if not (
+                isinstance(block, dict)
+                and block.get("type") == "tool_result"
+                and block.get("tool_use_id") in self._replayed_calls
+            )
+        ]
+        return {**record, "message": {**message, "content": kept}}
 
     def _interrupted(self, marker: str, ts: Timestamp | None) -> Iterator[Event]:
         """A person stopped the turn. The model's own stop reason wins; only a
@@ -861,6 +890,20 @@ def _prompt_id(record: dict[str, Any]) -> PromptId | None:
     """The record's own uuid: on the wire, the id the harness sent the prompt with."""
     value = record.get("uuid")
     return PromptId(value) if isinstance(value, str) and value else None
+
+
+def _tool_use_ids(record: dict[str, Any]) -> set[str]:
+    message = record.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return set()
+    return {
+        block["id"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and isinstance(block.get("id"), str)
+    }
 
 
 def _prompt_origin(record: dict[str, Any]) -> PromptOrigin | None:
