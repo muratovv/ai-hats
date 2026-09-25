@@ -59,7 +59,7 @@ def decide(question):
 turn = s.turn("push the branch", on_question=decide)
 ```
 
-- A turn wait calls `on_question` once for each call id. Without a handler it
+- A turn wait hands each question to `on_question`. Without a handler it
   raises `QuestionPending` instead of waiting out its bound. Answer
   `pending.question["call_id"]` and wait again: nothing read so far is lost.
 - `answer(call_id, "allow", answers={"<question>": "<answer>"})` answers a

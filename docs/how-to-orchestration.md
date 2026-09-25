@@ -315,7 +315,8 @@ while a role gate's `ask` still reaches you.
 
 - `answer` with `decision` `allow` runs the call as it was asked, including
   whatever a gate put on it, such as a consent ticket. `deny` refuses it, and
-  `message` tells the model why.
+  `message` tells the model why; the log records your refusal as a
+  `gate_verdict` with `hook: person`.
 - For `AskUserQuestion`, `answers` maps each question's text to your answer.
   The question and its options are in the `tool_call` item with the same
   `call_id`. An `allow` without `answers` leaves the model to ask again in
@@ -327,7 +328,9 @@ while a role gate's `ask` still reaches you.
   then.
 - The holder has no timeout of its own. If you will not wait, answer `deny`.
 - Closing stdin while a question is open answers it `deny` with "the session is
-  ending", so the model stops instead of retrying.
+  ending", so the model stops instead of retrying. That includes a gate's
+  question already in the log that claude has not yet sent: the holder waits a
+  moment for it before closing claude's stdin.
 - What happened is in the log, not in what the model says: the call's
   `tool_result_received` has `ok: false` when it was refused. A model can reply
   "done" to a call that was denied.
