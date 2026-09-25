@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**342 of 342 files catalogued — 350 flows.**
+**343 of 343 files catalogued — 351 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1711,6 +1711,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker
 - **why** — e2e could not drive the claude TUI, so a real role's HITL session — composition, hooks, log, finalize — was checked by hand only; this is the first automated proof. Kept out of the mandatory gate (live_headless) because it spends real turns: run it with `-m live_headless`
+
+## `test_headless_live_kill.py`
+
+*pins HATS-2029*
+
+- **flow** — the holder of a live claude session is killed outright while claude runs a tool
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant -m claude-haiku-4-5
+  kill -KILL <holder_pid>
+  ```
+
+- **expect** — the real claude leaves by itself once its turn is over — no claude process of that session is left behind
+- **why** — the holder cannot take its child down when it is SIGKILLed; ADR-0038 D5 rests on claude reading EOF and leaving, which only the real binary can confirm. Kept out of the gate (live_headless): it spends a turn
 
 ## `test_headless_prompt_ids.py`
 
