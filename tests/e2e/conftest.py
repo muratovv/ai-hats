@@ -84,6 +84,30 @@ def _no_session_reviewer(monkeypatch):
     monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
 
+@pytest.fixture(autouse=True)
+def _no_session_reviewer_spawned(request, tmp_path):
+    """Fail a test whose session really started a session reviewer without asking to.
+
+    The guard above holds only on the env doors we know of; this turns a door
+    that drops it into a red test instead of a silent paid claude run."""
+    yield
+    if request.node.get_closest_marker("spawns_reviewer"):
+        return
+    from _helpers.retro_tripwire import reviewer_spawns
+
+    spawned = reviewer_spawns(tmp_path)
+    if spawned:
+        pytest.fail(
+            "a session this test started spawned a real session reviewer, a paid claude "
+            "run that outlives the test:\n  "
+            + "\n  ".join(spawned)
+            + f"\nIts env lost {ENV_SKIP_RETRO}=1: build it from os.environ, clean_env() or "
+            "the HITL allowlist (see _no_session_reviewer in tests/e2e/conftest.py). "
+            "A test that means to run the reviewer carries @pytest.mark.spawns_reviewer.",
+            pytrace=False,
+        )
+
+
 _trace_lock = threading.Lock()
 _in_traced_run = threading.local()
 
