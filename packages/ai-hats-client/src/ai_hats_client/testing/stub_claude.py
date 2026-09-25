@@ -26,6 +26,11 @@ prompt text:
                     under ``--permission-prompt-tool stdio``): on allow the call
                     runs and writes ``stub-ran`` in the cwd, on deny or no
                     answer it fails with the reply's message
+    @askq           the model asks "Which color?" with ``AskUserQuestion``: an
+                    allow with ``answers`` writes them to ``stub-answers`` and
+                    the turn says the answer; without them, it asks in words
+    @plan           the model asks to leave plan mode with ``ExitPlanMode``: the
+                    turn says ``planned`` on allow, ``still planning`` on deny
 
 A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 
@@ -430,6 +435,34 @@ class Stub:
                 Path("stub-ran").write_text(ran)
                 self.tool_result(allowed["call"], f"ran: {ran}")
             text = "allowed" if allowed is not None else "denied"
+            self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
+            self.result(text)
+        elif body == "@askq":
+            options = [
+                {"label": "Red", "description": "red"},
+                {"label": "Blue", "description": "blue"},
+            ]
+            ask = {"question": "Which color?", "header": "Color", "options": options}
+            allowed = self.asked_call(
+                request, "AskUserQuestion", {"questions": [{**ask, "multiSelect": False}]}
+            )
+            answers = ((allowed or {}).get("updatedInput") or {}).get("answers")
+            if allowed is not None and answers:
+                Path("stub-answers").write_text(json.dumps(answers))
+                said = ", ".join(f'"{q}"="{a}"' for q, a in answers.items())
+                self.tool_result(allowed["call"], f"The user answered: {said}.")
+                text = next(iter(answers.values()))
+            else:
+                if allowed is not None:
+                    self.tool_result(allowed["call"], "The user did not answer the questions.")
+                text = "Which color do you prefer, red or blue?"
+            self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
+            self.result(text)
+        elif body == "@plan":
+            allowed = self.asked_call(request, "ExitPlanMode", {"plan": "write the file"})
+            if allowed is not None:
+                self.tool_result(allowed["call"], "User has approved your plan.")
+            text = "planned" if allowed is not None else "still planning"
             self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
             self.result(text)
         elif body == "@bg":
