@@ -149,6 +149,7 @@ _SILENT_ATTACHMENTS = frozenset(
         "batching_reminder_sent",
         "command_permissions",
         "compact_file_reference",
+        "credential_org",  # which organization the credential belongs to
         "date",
         "date_change",
         "deferred_tools_delta",
@@ -160,6 +161,7 @@ _SILENT_ATTACHMENTS = frozenset(
         "hook_success",  # the chain's own GateVerdict; a Stop is stop_hook_summary
         "instructions",
         "invoked_skills",
+        "mcp_instructions_delta",
         "model",  # ResponseStarted.model, per call
         "plan_mode_exit",
         "prompt_snapshot",

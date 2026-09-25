@@ -246,9 +246,6 @@ def _comparable(events: list) -> Counter:
             continue
         if isinstance(event, GateVerdict) and event.point == GatePoint.AT_STOP:
             continue
-        if isinstance(event, Notice) and event.reason == WorthRecording.UNSUPPORTED_RECORD:
-            if event.raw_code == "attachment/credential_org":
-                continue
         record = encode(event)
         record.pop("ts", None)
         if record.get("source") == WIRE_SOURCE:
