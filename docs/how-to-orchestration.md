@@ -284,16 +284,33 @@ model answered has no `response_ended` at all.
 A sub-agent's events come from its own record, as in a terminal session. Nothing
 orders them against the main agent's events or against each other.
 
+Signals worth acting on, each said once:
+
+- `approaching_limit` — the quota is close, from claude's `rate_limit_event`;
+- `wait` — the turn ran into the quota wall. `retry_after` is the epoch second
+  the quota lifts, when claude said it;
+- `unsupported_record` — a line from claude the holder cannot read or does not
+  know yet. The session carries on.
+
+A tool call claude refused without asking, for instance under
+`--permission-mode dontAsk`, is a `tool_result_received` with `ok: false`, as in
+a terminal session. The turn around it still ends `ok: true`, so read the call's
+result, not the turn's.
+
 **stderr** carries everything meant for a person: the start banner, the
 session's four header lines, startup notices, the end summary.
 
-**The end** is stdout reaching EOF. Then read the exit code:
+**The end** is stdout reaching EOF. Stopping reading stdout does not end the
+session: it runs on and its log on disk stays complete. Then read the exit code:
 
 | Exit code | Meaning                                                                                                                                                                                                                                                            |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 0         | stdin closed and every turn ran. A turn that failed is `turn_ended.ok: false`, not the session's exit code.                                                                                                                                                        |
 | 130 / 143 | aborted by Ctrl-C / `kill -TERM <holder_pid>`. The log is still closed and the session finalized; a turn claude had not started does not run.                                                                                                                      |
-| N         | claude itself exited with N.                                                                                                                                                                                                                                       |
+| N         | claude itself exited with N; 128+N when a signal N killed it.                                                                                                                                                                                                      |
+| 137       | the holder itself was killed (`kill -9`). Its log has no `run_ended` and the session is not finalized; see below.                                                                                                                                                  |
+| 1         | refused before the start, with no header: claude is not logged in (`claude auth login`). The session directory stays; its log is `run_started`, the `reauthenticate` signal and `run_ended`.                                                                       |
+| 3         | refused before the start, with no header: a startup gate refused the session.                                                                                                                                                                                      |
 | 2         | refused before the start, with no header. The cause is a flag the holder sets itself (`--input-format`, `--output-format`, `--print`, `--permission-prompt-tool`, `--resume`, `--continue`, `--session-id`, `--no-session-persistence`) or a surface with no wire. |
 
 The same loop by hand, from bash:
@@ -315,6 +332,13 @@ From Python, `tests/e2e/_helpers/headless_client.py` is a reference client. It
 uses the stdlib only and does not import `ai_hats`: `HeadlessSession.start`,
 `prompt(text)` (returns the id), `turn_for(id)`, `turn(text)`, `next_turn()`,
 `close()` and `terminate()`, with every wait bounded.
+
+From the side, `ai-hats session list` shows each session's state, and `--json`
+has it as `state`: `live`, `ended`, `dead` (its owner is gone and its finalize
+never ran) or `unknown`. `ai-hats session backfill <id>` collects a dead
+session's audit and counters from claude's record. It leaves `events.jsonl` as
+the run left it, and it does not touch a live session. A claude killed by
+SIGKILL also makes the holder exit 137, but that log does end with `run_ended`.
 
 Not there yet:
 
