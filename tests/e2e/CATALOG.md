@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**345 of 345 files catalogued — 353 flows.**
+**346 of 346 files catalogued — 354 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1696,6 +1696,20 @@ as a claim to check, not as evidence.
 
 - **expect** — exit 0; line 1 of events.ndjson is the headless/v1 header; every line after it is byte-for-byte the session's events.jsonl, run_started to run_ended, one turn_ended per turn; the session is finalized with its audit, and two turns stay below the retro threshold; a surface that dies mid-turn with 3 makes it exit 3, still recorded
 - **why** — this is the whole contract of the filter — stdin in, the log out, the exit code as the outcome — so a script needs nothing but files and $?
+
+## `test_headless_interrupt.py`
+
+*pins HATS-2021*
+
+- **flow** — a program stops a turn that runs too long — mid-answer, mid-tool, or while the session waits on its question — and goes on with the same session
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the cut turn still ends with its turn_ended, soon; a cut tool is not recorded as a person's refusal; an open question is closed and a late answer to it is refused; the next turn runs as usual
+- **why** — a looping turn used to cost the whole session; the client waits on turn_ended, so an interrupt that left no turn end would hang it
 
 ## `test_headless_launch.py`
 
