@@ -221,12 +221,14 @@ class _Relay:
         event_log: EventLogWriter,
         report: Callable[[str], None],
         log: Path,
+        eof_wait: float = EOF_WAIT_S,
     ) -> None:
         self._child = child
         self._wire = wire
         self._event_log = event_log
         self._report = report
         self._log = log
+        self._eof_wait = eof_wait
         self._ids: set[PromptId] = set()
         self._lock = threading.Lock()  # the questions, shared by both pumps
         self._open: dict[ToolCallId, Question] = {}
@@ -329,7 +331,7 @@ class _Relay:
                 self._early[call_id] = (deny, "the end of stdin", False)
                 self._closed.add(call_id)
             if self._early:
-                self._arrived.wait_for(lambda: not self._early, timeout=EOF_WAIT_S)
+                self._arrived.wait_for(lambda: not self._early, timeout=self._eof_wait)
             left, self._early = dict(self._early), {}
         for call_id, (_, where, from_client) in left.items():
             if from_client:

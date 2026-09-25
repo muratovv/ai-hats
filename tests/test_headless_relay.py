@@ -26,7 +26,6 @@ from ai_hats_observe.canonical import (
 from ai_hats_observe.event_log import append_event
 from ai_hats_observe.event_log_writer import EventSource
 
-from ai_hats.headless import runner
 from ai_hats.headless.runner import HeadlessRunner, _Relay
 from ai_hats.runtime_common import sub_agent_sources
 from ai_hats.surfaces.claude.wire import ClaudeWire
@@ -193,11 +192,20 @@ def _question(call: str = "toolu_1", request: str = "req-1", reason: str | None 
     }
 
 
-def _relay(tmp_path: Path, *wire_lines: object) -> tuple[_Relay, _Log, _Stdin]:
+def _relay(
+    tmp_path: Path, *wire_lines: object, eof_wait: float = 2.0
+) -> tuple[_Relay, _Log, _Stdin]:
     child = _child(*wire_lines)
     child.stdin = _Stdin()
     log = _Log()
-    relay = _Relay(child, ClaudeWire(), event_log=log, report=print, log=tmp_path / "events.jsonl")
+    relay = _Relay(
+        child,
+        ClaudeWire(),
+        event_log=log,
+        report=print,
+        log=tmp_path / "events.jsonl",
+        eof_wait=eof_wait,
+    )
     return relay, log, child.stdin
 
 
@@ -401,15 +409,12 @@ def test_a_question_the_gate_announced_before_eof_is_denied_when_it_arrives(
     assert not [e for e in log.events if isinstance(e, GateVerdict)], "nobody refused it"
 
 
-def test_an_early_answer_whose_question_never_came_is_reported_at_eof(
-    tmp_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setattr(runner, "EOF_WAIT_S", 0.3)
+def test_an_early_answer_whose_question_never_came_is_reported_at_eof(tmp_path: Path) -> None:
     append_event(
         PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
         tmp_path / "events.jsonl",
     )
-    relay, log, stdin = _relay(tmp_path)
+    relay, log, stdin = _relay(tmp_path, eof_wait=0.3)
 
     _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
 
