@@ -300,8 +300,12 @@ result, not the turn's.
 **stderr** carries everything meant for a person: the start banner, the
 session's four header lines, startup notices, the end summary.
 
-**The end** is stdout reaching EOF. Stopping reading stdout does not end the
-session: it runs on and its log on disk stays complete. Then read the exit code:
+**The end** is stdout reaching EOF: the session is recorded and finalized as a
+terminal session is. That includes the session reviewer, which the project's
+`feedback.session_retro` policy starts in the background, so its retro may still
+be on the way ([how-to-feedback-loop](how-to-feedback-loop.md)). Stopping reading
+stdout does not end the session: it runs on and its log on disk stays complete.
+Then read the exit code:
 
 | Exit code | Meaning                                                                                                                                                                                                                                                            |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -344,5 +348,4 @@ Not there yet:
 
 - questions: without a permission channel, claude and the role's gates refuse
   what they would have asked about, and the log says why;
-- a turn record's `origin`: a turn sent on stdin is recorded as `harness`;
-- a retro: a headless session spawns no session reviewer.
+- a turn record's `origin`: a turn sent on stdin is recorded as `harness`.

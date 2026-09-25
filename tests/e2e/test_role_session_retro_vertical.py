@@ -51,7 +51,7 @@ from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.rack_workspace import ensure_backlog
 
 
-pytestmark = [pytest.mark.integration, pytest.mark.observe]
+pytestmark = [pytest.mark.integration, pytest.mark.observe, pytest.mark.spawns_reviewer]
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ class SetupContext:
 
     ``env`` carries env-var overrides threaded into every subsequent
     ``Project.run()`` invocation — currently just
-    ``HATS_SKIP_RETRO=""`` to defuse the auto-retro recursion guard.
+    ``HATS_SKIP_RETRO=""``, which lifts the e2e default of ``1``.
 
     NOTE: The test uses the developer's REAL ``HOME`` rather than an
     isolated ``tmp_home``. Reason: claude credentials live in macOS
@@ -245,13 +245,7 @@ def phase_setup(project: Project) -> SetupContext:
         The fixture handle threaded through Phases 2-5.
     """
     env = {
-        # Explicit recursion-guard reset: if the dev runs the test inside
-        # a session that itself spawned ai-hats with HATS_SKIP_RETRO=1
-        # (auto-retro recursion guard from auto_retro.py:283), the var
-        # would leak into our subprocesses and silently disable Phase 5's
-        # session-reviewer spawn. Force-unset by passing an empty string,
-        # which the production code treats as "not set" via the
-        # ``os.environ.get("HATS_SKIP_RETRO") != "1"`` check.
+        # e2e defaults to HATS_SKIP_RETRO=1 (conftest); "" opts this test back in.
         ENV_SKIP_RETRO: "",
     }
 

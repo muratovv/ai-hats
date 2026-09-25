@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
-from ai_hats.constants import ENV_REPO_URL
+from ai_hats.constants import ENV_REPO_URL, ENV_SKIP_RETRO
 
 # Make ``_helpers`` importable as a flat package, rooted at tests/e2e/.
 # pytest doesn't treat tests/e2e/ as a package (no ``__init__.py`` at
@@ -98,6 +98,39 @@ def _one_fact_one_event(request):
         if (dups := journal_duplicates(path))
     }
     assert not found, f"a fact recorded twice: {found}"
+
+
+@pytest.fixture(autouse=True)
+def _no_session_reviewer(monkeypatch):
+    """Every session an e2e test starts finalizes without spawning a real session
+    reviewer; a test that wants one passes ``HATS_SKIP_RETRO=""`` in its own env.
+    Per test, not per session: a session-scoped setenv outlives the e2e tests
+    and reaches the unit tests that share the worker."""
+    monkeypatch.setenv(ENV_SKIP_RETRO, "1")
+
+
+@pytest.fixture(autouse=True)
+def _no_session_reviewer_spawned(request, tmp_path):
+    """Fail a test whose session really started a session reviewer without asking to.
+
+    The guard above holds only on the env doors we know of; this turns a door
+    that drops it into a red test instead of a silent paid claude run."""
+    yield
+    if request.node.get_closest_marker("spawns_reviewer"):
+        return
+    from _helpers.retro_tripwire import reviewer_spawns
+
+    spawned = reviewer_spawns(tmp_path)
+    if spawned:
+        pytest.fail(
+            "a session this test started spawned a real session reviewer, a paid claude "
+            "run that outlives the test:\n  "
+            + "\n  ".join(spawned)
+            + f"\nIts env lost {ENV_SKIP_RETRO}=1: build it from os.environ, clean_env() or "
+            "the HITL allowlist (see _no_session_reviewer in tests/e2e/conftest.py). "
+            "A test that means to run the reviewer carries @pytest.mark.spawns_reviewer.",
+            pytrace=False,
+        )
 
 
 _trace_lock = threading.Lock()

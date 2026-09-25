@@ -2,7 +2,7 @@ name: headless
 # `ai-hats headless` — the holder (ADR-0038 D5). The same HITL session as `human`,
 # with its channel on the process's own stdin/stdout instead of a PTY; the
 # positional prompt, if any, becomes the first turn. Finalization runs from the
-# runner as `finalize-headless`.
+# runner as `finalize-hitl`, the same as a TUI session's.
 steps:
   - id: check_update_async
   - id: compose_role
