@@ -1728,16 +1728,16 @@ as a claim to check, not as evidence.
 
 ## `test_headless_live.py`
 
-*pins HATS-2020*
+*pins HATS-2020, HATS-2021*
 
-- **flow** — a test framework drives a live maintainer session on the real claude binary through ai-hats headless — S-AGENT-01, a HITL session of a real role checked without a terminal
+- **flow** — a test framework drives a live maintainer session on the real claude binary through ai-hats headless — S-AGENT-01, a HITL session of a real role checked without a terminal — and answers what the session asks
 - **cmds**
 
   ```console
   ai-hats headless -p claude -r maintainer -m claude-haiku-4-5
   ```
 
-- **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker
+- **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker. The role's push guard asks once, and the push lands only on allow; leaving plan mode and the model's own question are answered through the same channel
 - **why** — e2e could not drive the claude TUI, so a real role's HITL session — composition, hooks, log, finalize — was checked by hand only; this is the first automated proof. Kept out of the mandatory gate (live_headless) because it spends real turns: run it with `-m live_headless`
 
 ## `test_headless_live_kill.py`
