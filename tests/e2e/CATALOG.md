@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**344 of 344 files catalogued — 352 flows.**
+**346 of 346 files catalogued — 354 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1625,6 +1625,20 @@ as a claim to check, not as evidence.
 - **expect** — exit 143 on SIGTERM and 130 on SIGINT; the log still ends with run_ended and the session is finalized; no claude process outlives the holder
 - **why** — a script must learn the outcome from the exit code and never leave an orphaned claude behind — the child runs in its own process group, so only the holder can take it down
 
+## `test_headless_answer.py`
+
+*pins HATS-2021*
+
+- **flow** — a program answers the questions a headless session puts to its stdin owner — allow runs the call, deny refuses it — the way a person would in the terminal
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the binary's question reaches the client as person_asked with a call_id; answer allow runs the call, answer deny leaves it unrun with the deny's message; the turn ends either way
+- **why** — the call a guard or the binary asks about is exactly the one worth asking: without an answer a headless session could never run it
+
 ## `test_headless_client.py`
 
 *pins HATS-2020*
@@ -1683,6 +1697,20 @@ as a claim to check, not as evidence.
 - **expect** — exit 0; line 1 of events.ndjson is the headless/v1 header; every line after it is byte-for-byte the session's events.jsonl, run_started to run_ended, one turn_ended per turn; the session is finalized with its audit, and two turns stay below the retro threshold; a surface that dies mid-turn with 3 makes it exit 3, still recorded
 - **why** — this is the whole contract of the filter — stdin in, the log out, the exit code as the outcome — so a script needs nothing but files and $?
 
+## `test_headless_interrupt.py`
+
+*pins HATS-2021*
+
+- **flow** — a program stops a turn that runs too long — mid-answer, mid-tool, or while the session waits on its question — and goes on with the same session
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the cut turn still ends with its turn_ended, soon; a cut tool is not recorded as a person's refusal; an open question is closed and a late answer to it is refused; the next turn runs as usual
+- **why** — a looping turn used to cost the whole session; the client waits on turn_ended, so an interrupt that left no turn end would hang it
+
 ## `test_headless_launch.py`
 
 *pins HATS-2020*
@@ -1700,16 +1728,16 @@ as a claim to check, not as evidence.
 
 ## `test_headless_live.py`
 
-*pins HATS-2020*
+*pins HATS-2020, HATS-2021*
 
-- **flow** — a test framework drives a live maintainer session on the real claude binary through ai-hats headless — S-AGENT-01, a HITL session of a real role checked without a terminal
+- **flow** — a test framework drives a live maintainer session on the real claude binary through ai-hats headless — S-AGENT-01, a HITL session of a real role checked without a terminal — and answers what the session asks
 - **cmds**
 
   ```console
   ai-hats headless -p claude -r maintainer -m claude-haiku-4-5
   ```
 
-- **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker
+- **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker. The role's push guard asks once, and the push lands only on allow; leaving plan mode and the model's own question are answered through the same channel
 - **why** — e2e could not drive the claude TUI, so a real role's HITL session — composition, hooks, log, finalize — was checked by hand only; this is the first automated proof. Kept out of the mandatory gate (live_headless) because it spends real turns: run it with `-m live_headless`
 
 ## `test_headless_live_kill.py`

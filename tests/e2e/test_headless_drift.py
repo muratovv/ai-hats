@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -28,7 +30,7 @@ def test_e2e_a_line_the_holder_cannot_read_is_a_notice_and_the_session_goes_on(
     with HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant"],
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
     ) as session:
         drifted = session.turn("@drift")
         after = session.turn("still here")

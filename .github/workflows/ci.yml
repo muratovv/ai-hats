@@ -48,7 +48,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/ai-hats-client -e ".[dev]"
       - name: Run unit suite across versions
         run: bash scripts/gates.sh unit
 
@@ -67,7 +67,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/ai-hats-client -e ".[dev]"
       - name: Configure git identity (integration tests commit/merge)
         run: |
           git config --global user.email "ci@ai-hats.test"
@@ -93,7 +93,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + security tools
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/ai-hats-client -e ".[dev]"
       - name: pip-audit (known CVEs in the installed environment)
         run: bash scripts/gates.sh security
 
@@ -136,7 +136,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/ai-hats-client -e ".[dev]"
       - name: Configure git identity (e2e tests create/commit projects)
         run: |
           git config --global user.email "ci@ai-hats.test" # ai-hats: allow-secret
@@ -157,7 +157,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package + dev deps
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/ai-hats-client -e ".[dev]"
       - name: Configure git identity (e2e tests create/commit projects)
         run: |
           git config --global user.email "ci@ai-hats.test" # ai-hats: allow-secret
@@ -191,7 +191,7 @@ jobs:
       # dependencies and had never run — each exited `ModuleNotFoundError`
       # while the job reported the stage as its failure.
       - name: Install the checkers' dependencies
-        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e ".[dev]"
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/ai-hats-client -e ".[dev]"
       - name: Resolve diff base
         id: base
         run: |

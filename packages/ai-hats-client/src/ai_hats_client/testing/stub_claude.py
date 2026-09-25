@@ -1,7 +1,6 @@
-"""A claude stand-in that speaks the stream-json wire, for headless e2e.
+"""A claude stand-in that speaks the stream-json wire, for tests of a headless client.
 
-It follows the contract measured on claude 2.1.281 (HATS-2025 findings, "stub
-contract"): NDJSON on stdin, one line per event on stdout, and a transcript in
+It follows the wire measured on claude 2.1.281: NDJSON on stdin, one line per event on stdout, and a transcript in
 ``$CLAUDE_CONFIG_DIR/projects/<key(cwd)>/<session-id>.jsonl`` whose turn is on
 disk before that turn's ``result`` line. What each turn does is chosen by its
 prompt text:
@@ -23,6 +22,21 @@ prompt text:
                     the wall: then an API-error record (429) ends the turn
     @ignore-term    ignore SIGTERM from here on, then hang in the turn
     @kill <sig>     kill itself with signal <sig> in the middle of the turn
+    @ask            a Bash ``tool_use`` the binary asks about (``can_use_tool``
+                    under ``--permission-prompt-tool stdio``): on allow the call
+                    runs and writes ``stub-ran`` in the cwd, on deny or no
+                    answer it fails with the reply's message
+    @askq           the model asks "Which color?" with ``AskUserQuestion``: an
+                    allow with ``answers`` writes them to ``stub-answers`` and
+                    the turn says the answer; without them, it asks in words
+    @plan           the model asks to leave plan mode with ``ExitPlanMode``: the
+                    turn says ``planned`` on allow, ``still planning`` on deny
+    @slow <s>       a response that takes <s> seconds to write
+    @slowtool <s>   a Bash call that runs <s> seconds
+
+An ``interrupt`` control request cuts the running response or tool the way
+claude does — and takes back a question still open — and the next prompt is
+served as usual.
 
 A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 
@@ -58,6 +72,17 @@ TIMING_ENV = "STUB_CLAUDE_TIMING"
 LOGGED_OUT_ENV = "STUB_CLAUDE_LOGGED_OUT"
 #: When a quota window lifts, as epoch seconds — the one a @quota turn reports.
 QUOTA_RESETS_AT = 1790340000
+
+# What claude writes when a person stops a tool, measured on 2.1.281.
+PERSON_STOP = (
+    "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it "
+    "was a file edit, the new_string was NOT written to the file). STOP what you are doing and "
+    "wait for the user to tell you how to proceed."
+)
+
+
+class _Interrupted(Exception):
+    """The running turn was cut; it has already said so on the wire."""
 
 
 def _now() -> str:
@@ -98,12 +123,20 @@ class Stub:
         self.inbox: queue.Queue[dict | None] = queue.Queue()
         self.seen: set[str] = set()
         self.turn_ids: list[str] = []  # the prompts the running turn answers
+        self.asks = _flag(argv, "--permission-prompt-tool") == "stdio"
+        self.replies: dict[str, dict] = {}  # control_response bodies, by request id
+        self.stdin_closed = False
+        self.cv = threading.Condition()
+        self.denials: list[dict] = []  # the running turn's refused calls
+        self.interrupt = threading.Event()
+        self.out_lock = threading.Lock()
 
     # -- wire and record ---------------------------------------------------
 
     def emit(self, obj: dict) -> None:
-        sys.stdout.write(json.dumps(obj) + "\n")
-        sys.stdout.flush()
+        with self.out_lock:  # the stdin reader answers interrupts from its own thread
+            sys.stdout.write(json.dumps(obj) + "\n")
+            sys.stdout.flush()
 
     def record(self, obj: dict) -> None:
         obj.setdefault("sessionId", self.session_id)
@@ -201,39 +234,155 @@ class Stub:
             }
         )
 
-    def tool_result(self, call: str, content: str) -> None:
-        record = {
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": call, "content": content}],
-            },
-        }
+    def tool_result(self, call: str, content: str, *, is_error: bool = False) -> None:
+        block = {"type": "tool_result", "tool_use_id": call, "content": content}
+        if is_error:
+            block["is_error"] = True
+        record = {"type": "user", "message": {"role": "user", "content": [block]}}
         self.record(record)
         self.emit({**record, "parent_tool_use_id": None, "session_id": self.session_id})
 
-    def result(self, text: str, *, is_error: bool = False, stop_reason: str = "end_turn") -> None:
+    def result(
+        self,
+        text: str,
+        *,
+        is_error: bool = False,
+        stop_reason: str | None = "end_turn",
+        subtype: str = "success",
+        terminal_reason: str = "completed",
+    ) -> None:
         self.cost += 0.001
         self.emit(
             {
                 "type": "result",
-                "subtype": "success",
+                "subtype": subtype,
                 "is_error": is_error,
                 "stop_reason": stop_reason,
-                "terminal_reason": "completed",
+                "terminal_reason": terminal_reason,
                 "result": text,
                 "result_index": self.results,
-                "permission_denials": [],
+                "permission_denials": list(self.denials),
                 "total_cost_usd": round(self.cost, 6),
                 "session_id": self.session_id,
                 "user_message_uuids": list(self.turn_ids),
             }
         )
         self.results += 1
+        self.denials = []
+
+    def permission(self, call: str, tool: str, tool_input: dict) -> dict | None:
+        """Ask on the wire and wait for the reply; ``None`` when stdin closed first."""
+        if not self.asks:
+            return None
+        request = str(uuid.uuid4())
+        self.emit(
+            {
+                "type": "control_request",
+                "request_id": request,
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": tool,
+                    "display_name": tool,
+                    "input": tool_input,
+                    "tool_use_id": call,
+                },
+            }
+        )
+        with self.cv:
+            self.cv.wait_for(
+                lambda: request in self.replies or self.stdin_closed or self.interrupt.is_set(),
+                timeout=120,
+            )
+            reply = self.replies.pop(request, None)
+        if reply is None and self.interrupt.is_set():
+            self.emit({"type": "control_cancel_request", "request_id": request})
+            self.cut_tool(call, tool, tool_input)
+        return reply
+
+    def marker(self, text: str) -> None:
+        record = {
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "text", "text": text}]},
+        }
+        self.record(record)
+        self.emit({**record, "parent_tool_use_id": None, "session_id": self.session_id})
+
+    def cut_tool(self, call: str, tool: str, tool_input: dict) -> None:
+        """An interrupt during a tool: refused result, marker, an aborted turn."""
+        self.tool_result(call, PERSON_STOP, is_error=True)
+        self.denials.append({"tool_name": tool, "tool_use_id": call, "tool_input": tool_input})
+        self.marker("[Request interrupted by user for tool use]")
+        self.result(
+            "",
+            is_error=True,
+            stop_reason="tool_use",
+            subtype="error_during_execution",
+            terminal_reason="aborted_tools",
+        )
+        raise _Interrupted
+
+    def slow_response(self, request: str, seconds: float) -> None:
+        """A response still being written; an interrupt cuts it mid-stream."""
+        mid = {
+            "id": f"msg_{request}",
+            "role": "assistant",
+            "model": self.model,
+            "stop_reason": None,
+            "usage": {"input_tokens": 10, "output_tokens": 1},
+            "content": [{"type": "text", "text": "partial"}],
+        }
+        self.record({"type": "assistant", "requestId": request, "message": mid})
+        if self.partial:
+            self.stream({"type": "message_start", "message": {**mid, "content": []}})
+        self.emit(
+            {
+                "type": "assistant",
+                "message": mid,
+                "request_id": request,
+                "uuid": str(uuid.uuid4()),
+                "timestamp": _now(),
+                "parent_tool_use_id": None,
+                "session_id": self.session_id,
+            }
+        )
+        if self.interrupt.wait(seconds):
+            self.marker("[Request interrupted by user]")
+            self.result(
+                "",
+                is_error=True,
+                stop_reason=None,
+                subtype="error_during_execution",
+                terminal_reason="aborted_streaming",
+            )
+            raise _Interrupted
+        if self.partial:
+            final = {"input_tokens": 10, "output_tokens": 5}
+            self.stream(
+                {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": final}
+            )
+            self.stream({"type": "message_stop"})
+        self.result("finished")
+
+    def asked_call(self, request: str, tool: str, tool_input: dict) -> dict | None:
+        """A tool call the binary asks about; the reply that let it run, or ``None``."""
+        call = f"toolu_{request}"
+        self.respond(
+            f"{request}a",
+            [{"type": "tool_use", "id": call, "name": tool, "input": tool_input}],
+            "tool_use",
+        )
+        reply = self.permission(call, tool, tool_input)
+        if reply is not None and reply.get("behavior") == "allow":
+            return {"call": call, **reply}
+        why = (reply or {}).get("message") or "Tool permission request failed: stream closed"
+        self.tool_result(call, why, is_error=True)
+        self.denials.append({"tool_name": tool, "tool_use_id": call, "tool_input": tool_input})
+        return None
 
     # -- a turn --------------------------------------------------------------
 
     def turn(self, text: str, prompt_uuid: str) -> None:
+        self.interrupt.clear()  # an interrupt between turns stops nothing
         self.init()
         body, late = text, None
         while body.startswith(("@sleep ", "@late ")):
@@ -254,7 +403,10 @@ class Stub:
         self.record(prompt)
         self.echo(text, prompt_uuid, prompt["timestamp"])
         self.turn_ids = [prompt_uuid]
-        self.run(body, text)
+        try:
+            self.run(body, text)
+        except _Interrupted:
+            self.previous = text
         if late is not None:
             records, self.deferred = self.deferred, None
             self.write_late(records, late, time.time())
@@ -379,6 +531,58 @@ class Stub:
             self.fold_waiting()
             self.respond(f"{request}b", [{"type": "text", "text": "folded"}], "end_turn")
             self.result("folded")
+        elif body == "@ask":
+            allowed = self.asked_call(request, "Bash", {"command": "echo hi"})
+            if allowed is not None:
+                ran = (allowed.get("updatedInput") or {}).get("command", "")
+                Path("stub-ran").write_text(ran)
+                self.tool_result(allowed["call"], f"ran: {ran}")
+            text = "allowed" if allowed is not None else "denied"
+            self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
+            self.result(text)
+        elif body == "@askq":
+            options = [
+                {"label": "Red", "description": "red"},
+                {"label": "Blue", "description": "blue"},
+            ]
+            ask = {"question": "Which color?", "header": "Color", "options": options}
+            allowed = self.asked_call(
+                request, "AskUserQuestion", {"questions": [{**ask, "multiSelect": False}]}
+            )
+            answers = ((allowed or {}).get("updatedInput") or {}).get("answers")
+            if allowed is not None and answers:
+                Path("stub-answers").write_text(json.dumps(answers))
+                said = ", ".join(f'"{q}"="{a}"' for q, a in answers.items())
+                self.tool_result(allowed["call"], f"The user answered: {said}.")
+                text = next(iter(answers.values()))
+            else:
+                if allowed is not None:
+                    self.tool_result(allowed["call"], "The user did not answer the questions.")
+                text = "Which color do you prefer, red or blue?"
+            self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
+            self.result(text)
+        elif body == "@plan":
+            allowed = self.asked_call(request, "ExitPlanMode", {"plan": "write the file"})
+            if allowed is not None:
+                self.tool_result(allowed["call"], "User has approved your plan.")
+            text = "planned" if allowed is not None else "still planning"
+            self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
+            self.result(text)
+        elif body.startswith("@slow "):
+            self.slow_response(request, float(body.split()[1]))
+        elif body.startswith("@slowtool "):
+            seconds = float(body.split()[1])
+            call, command = f"toolu_{request}", {"command": f"sleep {seconds:g}"}
+            self.respond(
+                f"{request}a",
+                [{"type": "tool_use", "id": call, "name": "Bash", "input": command}],
+                "tool_use",
+            )
+            if self.interrupt.wait(seconds):
+                self.cut_tool(call, "Bash", command)
+            self.tool_result(call, "slept")
+            self.respond(f"{request}b", [{"type": "text", "text": "done"}], "end_turn")
+            self.result("done")
         elif body == "@bg":
             self.respond(request, [{"type": "text", "text": "started"}], "end_turn")
             self.result("started")
@@ -433,6 +637,28 @@ class Stub:
                 continue
             if msg.get("type") == "user":
                 self.inbox.put(msg)
+            elif (msg.get("request") or {}).get("subtype") == "interrupt":
+                self.emit(
+                    {
+                        "type": "control_response",
+                        "response": {
+                            "subtype": "success",
+                            "request_id": msg.get("request_id"),
+                            "response": {"still_queued": []},
+                        },
+                    }
+                )
+                with self.cv:
+                    self.interrupt.set()
+                    self.cv.notify_all()
+            elif msg.get("type") == "control_response":
+                response = msg.get("response") or {}
+                with self.cv:
+                    self.replies[str(response.get("request_id"))] = response.get("response") or {}
+                    self.cv.notify_all()
+        with self.cv:
+            self.stdin_closed = True
+            self.cv.notify_all()
         self.inbox.put(None)
 
     def serve(self) -> int:
@@ -476,17 +702,6 @@ class StubClaude:
         if not self.timing_log.exists():
             return []
         return [json.loads(line) for line in self.timing_log.read_text().splitlines() if line]
-
-    def session_env(self, project) -> dict[str, str]:
-        """The env an e2e test launches ``ai-hats headless`` with: the scrubbed
-        parent env, the project's pins, and this stub first on PATH."""
-        from _helpers.env import clean_env  # lazy: this file also runs as the stub
-
-        env = clean_env(os.environ)
-        env.update(project.env)
-        env.update(self.env(env.get("PATH", "")))
-        env["AI_HATS_NO_UPDATE_CHECK"] = "1"
-        return env
 
     def argvs(self) -> list[list[str]]:
         """Every argv the stub was launched with for a session (not ``auth status``)."""

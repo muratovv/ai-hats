@@ -22,8 +22,10 @@ import json
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession, SessionEnded
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession, SessionEnded
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -48,7 +50,7 @@ def test_e2e_the_parameters_of_a_bare_session_mean_the_same_here(tmp_project, tm
             str(tmp_path),
         ),
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
     ) as session:
         first = session.next_turn()
         end = session.close()
@@ -86,7 +88,7 @@ def test_e2e_what_would_break_the_wire_is_refused_before_anything_starts(
 
     with pytest.raises(SessionEnded) as refused:
         HeadlessSession.start(
-            _argv(tmp_project, *args), cwd=tmp_project.path, env=stub.session_env(tmp_project)
+            _argv(tmp_project, *args), cwd=tmp_project.path, env=session_env(stub, tmp_project)
         )
 
     assert refused.value.exit.code == 2

@@ -18,13 +18,25 @@ import threading
 import time
 import uuid
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
-from ai_hats_observe.canonical import Notice, WorthRecording
-from ai_hats_observe.canonical.types import PromptId, now
-from ai_hats_observe.commands import Prompt, Rejected, decode_command
+from ai_hats_observe.canonical import (
+    AskKind,
+    GateDecision,
+    GatePoint,
+    GateVerdict,
+    Notice,
+    PersonAsked,
+    ToolResultReceived,
+    WorthRecording,
+)
+from ai_hats_observe.canonical.types import PromptId, ToolCallId, now
+from ai_hats_observe.commands import Answer, Interrupt, Prompt, Rejected, decode_command
+from ai_hats_observe.event_log import read_events
 
+from ..env import ENV_QUESTIONS_ON_WIRE
 from ..wrap_runner import WrapRunner
 from .copier import LogCopier
 from .header import SessionHeader
@@ -33,12 +45,16 @@ if TYPE_CHECKING:
     from ai_hats_observe import Session
     from ai_hats_observe.event_log_writer import EventLogWriter
 
-    from ..surfaces import Wire
+    from ..surfaces import Control, Question, Wire
 
 #: How long the child's group gets after SIGTERM before SIGKILL. Measured claude
 #: leaves in under a second; this only bounds a stuck one.
 GRACE_S = 5.0
 _SOURCE = "headless"
+# Denied at EOF so the model stops instead of retrying into a closed session (ADR-0038 D3).
+#: How long EOF waits for a question a gate recorded but claude has not yet put on the wire.
+EOF_WAIT_S = 2.0
+_ENDING = "The session is ending now. Do not retry this or any other tool; reply in one sentence."
 
 
 class HeadlessRunner(WrapRunner):
@@ -90,6 +106,11 @@ class HeadlessRunner(WrapRunner):
 
     def _stdin_is_terminal(self) -> bool:
         return False  # stdin carries commands; the hold must never read it
+
+    def _serving_hooks(self, provider, session, env: dict[str, str]):
+        # the hook server and the binary share this env: both learn questions come over the wire
+        env[ENV_QUESTIONS_ON_WIRE] = "1"
+        return super()._serving_hooks(provider, session, env)
 
     def _on_signal(self, signum: int, _frame) -> None:
         if self._signal is None:
@@ -148,7 +169,7 @@ class HeadlessRunner(WrapRunner):
         sys.stderr.flush()
         self._copier = LogCopier(log, self._stdout_fd, report=session.log_sys).start()
 
-        relay = _Relay(child, self._wire(), event_log=event_log, report=session.log_sys)
+        relay = _Relay(child, self._wire(), event_log=event_log, report=session.log_sys, log=log)
         follower = threading.Thread(target=relay.follow, name="headless-follow", daemon=True)
         feeder = threading.Thread(
             target=relay.feed,
@@ -188,7 +209,8 @@ class _Relay:
 
     A prompt goes to the wire the moment it is read: whether it waits for the
     running turn or joins it is the surface's call — claude folds it in — and a
-    holder that queued in its stead would change that (ADR-0038 D3).
+    holder that queued in its stead would change that (ADR-0038 D3). A question
+    the binary puts waits here for its answer; the first answer closes it.
     """
 
     def __init__(
@@ -198,12 +220,25 @@ class _Relay:
         *,
         event_log: EventLogWriter,
         report: Callable[[str], None],
+        log: Path,
+        eof_wait: float = EOF_WAIT_S,
     ) -> None:
         self._child = child
         self._wire = wire
         self._event_log = event_log
         self._report = report
+        self._log = log
+        self._eof_wait = eof_wait
         self._ids: set[PromptId] = set()
+        self._lock = threading.Lock()  # the questions, shared by both pumps
+        self._open: dict[ToolCallId, Question] = {}
+        self._closed: set[ToolCallId] = set()
+        # answered before its question reached the wire (a gate records it first);
+        # the flag says whether the answer is the client's or the holder's own deny
+        self._early: dict[ToolCallId, tuple[Answer, str, bool]] = {}
+        self._arrived = threading.Condition(self._lock)
+        self._replying = 0  # held answers taken off _early and not yet written
+        self._asked: set[ToolCallId] = set()  # a PersonAsked this relay passed on
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
         """Holder stdin → commands → child stdin; EOF closes the child's stdin."""
@@ -217,9 +252,15 @@ class _Relay:
                 where = f"stdin line {number}"
                 if isinstance(command, Rejected):
                     self._reject(where, command.cmd, command.why)
+                elif isinstance(command, Answer):
+                    self._answer(command, where)
+                elif isinstance(command, Interrupt):
+                    self._send(self._wire.encode(command), where, "interrupt")
                 else:
                     self._prompt(command, where)
         finally:
+            self._deny_open()
+            self._deny_announced()
             # EOF for the child: it finishes the turns it has and exits.
             with contextlib.suppress(OSError, ValueError):
                 self._child.stdin.close()
@@ -232,14 +273,80 @@ class _Relay:
             self._reject(where, "prompt", f'"id" {prompt.id} is already used in this session')
             return
         self._ids.add(prompt.id)
-        self._send(self._wire.encode(prompt), where)
+        self._send(self._wire.encode(prompt), where, "prompt")
 
-    def _send(self, line: bytes, where: str) -> None:
+    def _answer(self, answer: Answer, where: str) -> None:
+        announced, resolved = self._in_log(answer.call_id)
+        with self._lock:
+            question = self._open.pop(answer.call_id, None)
+            closed = answer.call_id in self._closed or (question is None and resolved)
+            hold = question is None and not closed and announced
+            if hold:
+                self._early[answer.call_id] = (answer, where, True)
+            if question is not None or hold:
+                self._closed.add(answer.call_id)
+        if question is not None:
+            self._decide(question, answer, where, by_person=True)
+        elif not hold:
+            why = "is already closed" if closed else "names no open question"
+            self._reject(where, "answer", f'"call_id" {answer.call_id} {why}')
+
+    def _decide(self, question: Question, answer: Answer, where: str, *, by_person: bool) -> None:
+        if answer.answers is not None and not question.takes_answers:
+            self._reject(
+                where, "answer", f'"call_id" {answer.call_id} is a question that takes no answers'
+            )
+            with self._lock:
+                self._closed.discard(question.call_id)
+                self._open[question.call_id] = question
+            return
+        if by_person and answer.decision == "deny":
+            # the wire carries only the words; logged before the reply, so it precedes the result
+            refusal = GateVerdict(
+                point=GatePoint.BEFORE_TOOL,
+                decision=GateDecision.DENY,
+                hook="person",
+                reason=answer.message or "",
+                tool=question.tool,
+                call_id=question.call_id,
+                source=_SOURCE,
+                ts=now(),
+            )
+            self._emit(lambda: [refusal], f"the refusal of {question.call_id}")
+        self._send(self._wire.reply(question, answer), where, "answer")
+
+    def _deny_open(self) -> None:
+        with self._lock:
+            questions, self._open = list(self._open.values()), {}
+            self._closed.update(q.call_id for q in questions)
+        for question in questions:
+            deny = Answer(question.call_id, "deny", _ENDING)
+            self._decide(question, deny, "the end of stdin", by_person=False)
+
+    def _deny_announced(self) -> None:
+        """At EOF, deny too what a gate recorded and claude has not yet put on the wire."""
+        pending = self._open_in_log()
+        with self._lock:
+            for call_id in pending - self._closed - set(self._open):
+                deny = Answer(call_id, "deny", _ENDING)
+                self._early[call_id] = (deny, "the end of stdin", False)
+                self._closed.add(call_id)
+            if self._early or self._replying:
+                self._arrived.wait_for(
+                    lambda: not self._early and not self._replying, timeout=self._eof_wait
+                )
+            left, self._early = dict(self._early), {}
+        for call_id, (_, where, from_client) in left.items():
+            if from_client:
+                why = "never reached the holder before stdin closed"
+                self._reject(where, "answer", f'the question on "call_id" {call_id} {why}')
+
+    def _send(self, line: bytes, where: str, cmd: str) -> None:
         try:
             self._child.stdin.write(line)
             self._child.stdin.flush()
         except (OSError, ValueError):
-            self._reject(where, "prompt", "the session is ending")
+            self._reject(where, cmd, "the session is ending")
 
     def _reject(self, where: str, cmd: str | None, why: str) -> None:
         detail = f"{where}: {why}"
@@ -265,8 +372,69 @@ class _Relay:
                 self._report(f"headless: a non-JSON line from the surface: {raw[:120]!r}")
                 self._drift("malformed-json", f"{raw[:120]!r}")
                 continue
+            control = decoder.control(message)
+            if control is not None:
+                self._on_control(control)
+                continue
             self._emit(lambda: decoder.decode(message), f"{raw[:120]!r}")
         self._emit(decoder.close, "the end of the surface's stdout")
+
+    def _on_control(self, control: Control) -> None:
+        from ..surfaces import Withdrawn
+
+        if isinstance(control, Withdrawn):
+            with self._lock:
+                for call_id, question in list(self._open.items()):
+                    if question.request_id == control.request_id:
+                        del self._open[call_id]
+                        self._closed.add(call_id)
+            return
+        with self._lock:
+            held = self._early.pop(control.call_id, None)
+            if held is None:
+                self._open[control.call_id] = control
+            else:
+                self._replying += 1
+        if held is not None:
+            answer, where, from_client = held
+            try:
+                self._decide(control, answer, where, by_person=from_client)
+            finally:
+                with self._lock:
+                    self._replying -= 1
+                    self._arrived.notify_all()  # EOF waits for the write, not for the pop
+            return
+        if control.call_id in self._asked or self._in_log(control.call_id)[0]:
+            return  # one fact, one producer: a gate records its own question
+        asked = PersonAsked(
+            kind=AskKind.PERMISSION,
+            call_id=control.call_id,
+            tool=control.tool,
+            detail=control.reason,
+            source=control.source,
+            ts=now(),
+        )
+        self._emit(lambda: [asked], f"the question on {control.call_id}")
+
+    def _in_log(self, call_id: ToolCallId) -> tuple[bool, bool]:
+        """Whether the log holds a question on ``call_id``, and whether its call has a result."""
+        announced, resolved = call_id in self._asked, False
+        for event in read_events(self._log):
+            if isinstance(event, PersonAsked) and event.call_id == call_id:
+                announced = True
+            elif isinstance(event, ToolResultReceived) and event.call_id == call_id:
+                resolved = True
+        return announced, resolved
+
+    def _open_in_log(self) -> set[ToolCallId]:
+        asked: set[ToolCallId] = set()
+        answered: set[ToolCallId] = set()
+        for event in read_events(self._log):
+            if isinstance(event, PersonAsked) and event.call_id:
+                asked.add(event.call_id)
+            elif isinstance(event, ToolResultReceived):
+                answered.add(event.call_id)
+        return asked - answered
 
     def _emit(self, decode: Callable[[], list], what: str) -> None:
         # One bad line must not end the pump: every later event, turn ends included, rides it.
@@ -276,6 +444,7 @@ class _Relay:
             self._report(f"headless: could not read {what}: {type(exc).__name__}: {exc}")
             self._drift("decoder-error", f"{what}: {type(exc).__name__}: {exc}")
             return
+        self._asked.update(e.call_id for e in events if isinstance(e, PersonAsked) and e.call_id)
         self._event_log.emit(events)
 
     def _drift(self, raw_code: str, detail: str) -> None:

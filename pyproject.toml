@@ -42,10 +42,11 @@ dependencies = [
     # card directory is gated); HATS-1642 to 0.3.3 (PlanConsentExtension takes the
     # integrator's ticket STORE and exposes the post-lock spender it pairs with).
     "ai-hats-rack>=0.4.0",  # ai_hats_rack.selectors — the arrow grammar rack_wiring binds by (HATS-1719)
-    "ai-hats-observe>=0.17.0",  # Host.liveness, the wire's quota, the fork reading (0.17.0); floor tracks the workspace version
+    "ai-hats-observe>=0.18.0",  # commands/v1 answer and interrupt (0.18.0); floor tracks the workspace version
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
     # HATS-1755 the external session wrapper, not rack, consumes its tickets.
-    "ai-hats-library>=0.9.0",  # headless finalizes with finalize-hitl; floor tracks the workspace version
+    "ai-hats-library>=0.9.1",  # headless finalizes with finalize-hitl; floor tracks the workspace version
+    "ai-hats-client>=0.1.0",  # the client of `ai-hats headless` ships with the holder it drives
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
@@ -173,6 +174,7 @@ ai-hats-wt = { workspace = true }
 ai-hats-rack = { workspace = true }
 ai-hats-observe = { workspace = true }
 ai-hats-library = { workspace = true }
+ai-hats-client = { workspace = true }
 
 [tool.ruff]
 target-version = "py313"
@@ -214,6 +216,7 @@ testpaths = [
     "packages/ai-hats-rack/tests",
     "packages/ai-hats-observe/tests",
     "packages/ai-hats-library/tests",
+    "packages/ai-hats-client/tests",
     "src/ai_hats/surfaces/tests",
     "src/ai_hats/surfaces/agy/tests",
     "src/ai_hats/surfaces/claude/tests",
@@ -239,6 +242,7 @@ pythonpath = [
     "packages/ai-hats-rack/src",
     "packages/ai-hats-observe/src",
     "packages/ai-hats-library/src",
+    "packages/ai-hats-client/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.

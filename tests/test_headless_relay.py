@@ -4,10 +4,26 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from ai_hats_observe.canonical import AgentId, ResponseEnded, TurnEnded, WorthRecording
+from ai_hats_observe.canonical import (
+    AgentId,
+    AskKind,
+    GateDecision,
+    GateVerdict,
+    Notice,
+    PersonAsked,
+    ResponseEnded,
+    ToolCallId,
+    ToolResultReceived,
+    TurnEnded,
+    WorthRecording,
+)
+from ai_hats_observe.event_log import append_event
 from ai_hats_observe.event_log_writer import EventSource
 
 from ai_hats.headless.runner import HeadlessRunner, _Relay
@@ -59,6 +75,9 @@ def test_a_line_the_decoder_chokes_on_is_reported_and_the_pump_goes_on() -> None
                         raise RuntimeError("bad line")
                     return real.decode(line)
 
+                def control(self, line):
+                    return real.control(line)
+
                 def close(self):
                     return real.close()
 
@@ -69,6 +88,7 @@ def test_a_line_the_decoder_chokes_on_is_reported_and_the_pump_goes_on() -> None
         Choking(),
         event_log=log,
         report=said.append,
+        log=Path("/nowhere/events.jsonl"),
     )
     relay.follow()
 
@@ -92,6 +112,7 @@ def test_a_line_that_is_not_a_json_object_is_drift_in_the_log() -> None:
         ClaudeWire(),
         event_log=log,
         report=lambda _: None,
+        log=Path("/nowhere/events.jsonl"),
     )
     relay.follow()
 
@@ -106,7 +127,11 @@ def test_a_line_that_is_not_a_json_object_is_drift_in_the_log() -> None:
 def test_a_response_cut_by_the_surface_dying_is_ended_before_the_log_closes() -> None:
     log = _Log()
     relay = _Relay(
-        _child(_assistant("req_1"), b"not json"), ClaudeWire(), event_log=log, report=print
+        _child(_assistant("req_1"), b"not json"),
+        ClaudeWire(),
+        event_log=log,
+        report=print,
+        log=Path("/nowhere/events.jsonl"),
     )
     relay.follow()
 
@@ -132,3 +157,346 @@ def test_a_session_with_no_event_log_is_refused_before_the_surface_starts(capsys
     assert code == 1 and spawned == []
     assert said and "no event log" in said[0]
     assert "no event log" in capsys.readouterr().err
+
+
+class _Stdin:
+    """The child's stdin: every line the holder wrote, and whether it was closed."""
+
+    def __init__(self) -> None:
+        self.lines: list[dict] = []
+        self.closed = False
+
+    def write(self, data: bytes) -> None:
+        if self.closed:
+            raise ValueError("write to closed file")
+        self.lines.extend(json.loads(line) for line in data.splitlines())
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _question(call: str = "toolu_1", request: str = "req-1", reason: str | None = None) -> dict:
+    return {
+        "type": "control_request",
+        "request_id": request,
+        "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "Bash",
+            "input": {"command": "git push"},
+            "tool_use_id": call,
+            **({"decision_reason": reason, "decision_reason_type": "hook"} if reason else {}),
+        },
+    }
+
+
+def _relay(
+    tmp_path: Path, *wire_lines: object, eof_wait: float = 2.0
+) -> tuple[_Relay, _Log, _Stdin]:
+    child = _child(*wire_lines)
+    child.stdin = _Stdin()
+    log = _Log()
+    relay = _Relay(
+        child,
+        ClaudeWire(),
+        event_log=log,
+        report=print,
+        log=tmp_path / "events.jsonl",
+        eof_wait=eof_wait,
+    )
+    return relay, log, child.stdin
+
+
+def _feed(relay: _Relay, *commands: dict) -> None:
+    read, write = os.pipe()
+    os.write(
+        write, b"".join(json.dumps({"v": "commands/v1", **c}).encode() + b"\n" for c in commands)
+    )
+    os.close(write)
+    try:
+        relay.feed(read, "")
+    finally:
+        os.close(read)
+
+
+def _replies(stdin: _Stdin) -> list[dict]:
+    return [line["response"] for line in stdin.lines if line.get("type") == "control_response"]
+
+
+def _rejections(log: _Log) -> list[Notice]:
+    return [
+        e
+        for e in log.events
+        if isinstance(e, Notice) and e.reason is WorthRecording.COMMAND_REJECTED
+    ]
+
+
+def test_a_question_nobody_recorded_becomes_a_person_asked(tmp_path: Path) -> None:
+    relay, log, _ = _relay(tmp_path, _question(reason="a gate asks"))
+
+    relay.follow()
+
+    [asked] = [e for e in log.events if isinstance(e, PersonAsked)]
+    assert asked.kind is AskKind.PERMISSION and asked.call_id == ToolCallId("toolu_1")
+    assert asked.tool == "Bash" and asked.detail == "a gate asks"
+    assert asked.source == "claude/wire"
+
+
+def test_a_question_the_gate_already_recorded_is_not_recorded_twice(tmp_path: Path) -> None:
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    relay, log, _ = _relay(tmp_path, _question())
+
+    relay.follow()
+
+    assert not [e for e in log.events if isinstance(e, PersonAsked)]
+
+
+def test_an_answer_goes_to_the_binary_as_the_reply_to_its_question(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path, _question())
+    relay.follow()
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    [reply] = _replies(stdin)
+    assert reply["request_id"] == "req-1"
+    assert reply["response"] == {"behavior": "allow", "updatedInput": {"command": "git push"}}
+    assert not _rejections(log)
+
+
+def test_only_the_first_answer_counts(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path, _question())
+    relay.follow()
+
+    _feed(
+        relay,
+        {"cmd": "answer", "call_id": "toolu_1", "decision": "deny"},
+        {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"},
+        {"cmd": "answer", "call_id": "toolu_9", "decision": "allow"},
+    )
+
+    assert [r["response"]["behavior"] for r in _replies(stdin)] == ["deny"]
+    whys = [n.detail for n in _rejections(log)]
+    assert len(whys) == 2 and all(n.raw_code == "answer" for n in _rejections(log))
+    assert "already closed" in whys[0] and "no open question" in whys[1]
+
+
+def test_a_question_the_binary_took_back_takes_no_answer(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(
+        tmp_path, _question(), {"type": "control_cancel_request", "request_id": "req-1"}
+    )
+    relay.follow()
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    assert _replies(stdin) == []
+    [rejected] = _rejections(log)
+    assert "already closed" in rejected.detail
+
+
+def test_a_question_open_at_the_end_of_stdin_is_denied_before_the_binary_hears_eof(
+    tmp_path: Path,
+) -> None:
+    relay, _, stdin = _relay(tmp_path, _question())
+    relay.follow()
+
+    _feed(relay)
+
+    [reply] = _replies(stdin)
+    assert reply["response"]["behavior"] == "deny"
+    assert "session is ending" in reply["response"]["message"]
+    assert stdin.closed
+
+
+def test_an_interrupt_goes_to_the_binary_as_its_own_request(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path)
+
+    _feed(relay, {"cmd": "interrupt"})
+
+    [request] = [line for line in stdin.lines if line.get("type") == "control_request"]
+    assert request["request"] == {"subtype": "interrupt"}
+    assert not _rejections(log)
+
+
+def test_an_answer_to_a_question_the_gate_announced_waits_for_the_wire(tmp_path: Path) -> None:
+    """The gate records its question before the binary puts it on the wire, and
+    a client reading the log can answer inside that gap."""
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    relay, log, stdin = _relay(tmp_path, _question())
+    read, write = os.pipe()
+    os.write(write, b'{"v":"commands/v1","cmd":"answer","call_id":"toolu_1","decision":"allow"}\n')
+    feeder = threading.Thread(target=relay.feed, args=(read, ""), daemon=True)
+    feeder.start()
+    time.sleep(0.3)  # the answer is read before the question reaches the holder
+
+    assert _replies(stdin) == [] and not _rejections(log), "held, not refused"
+    relay.follow()
+    os.close(write)
+    feeder.join(5)
+    os.close(read)
+
+    [reply] = _replies(stdin)
+    assert reply["request_id"] == "req-1" and reply["response"]["behavior"] == "allow"
+
+
+def test_an_early_answer_nobody_announced_is_still_refused(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path, _question())
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    [rejected] = _rejections(log)
+    assert "names no open question" in rejected.detail
+
+
+def test_a_persons_deny_is_recorded_as_their_verdict(tmp_path: Path) -> None:
+    relay, log, _ = _relay(tmp_path, _question(), _question("toolu_2", "req-2"))
+    relay.follow()
+
+    _feed(
+        relay,
+        {"cmd": "answer", "call_id": "toolu_1", "decision": "deny", "message": "not today"},
+        {"cmd": "answer", "call_id": "toolu_2", "decision": "allow"},
+    )
+
+    [verdict] = [e for e in log.events if isinstance(e, GateVerdict)]
+    assert (verdict.decision, verdict.hook, verdict.call_id) == (
+        GateDecision.DENY,
+        "person",
+        ToolCallId("toolu_1"),
+    )
+    assert verdict.reason == "not today" and verdict.tool == "Bash"
+
+
+def test_a_persons_refusal_is_in_the_log_before_the_binary_hears_it(tmp_path: Path) -> None:
+    """The call's result can only follow the reply, so a verdict written first
+    stands before that result in the log, whichever thread gets there first."""
+    relay, log, stdin = _relay(tmp_path, _question())
+    relay.follow()
+    seen: list[bool] = []
+    write = stdin.write
+
+    def recording(data: bytes) -> None:
+        seen.append(any(isinstance(e, GateVerdict) for e in log.events))
+        write(data)
+
+    stdin.write = recording
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "deny"})
+
+    assert seen == [True], "the deny went to the binary before its verdict reached the log"
+
+
+def _feeding(relay: _Relay, *lines: bytes) -> tuple[threading.Thread, int, int]:
+    read, write = os.pipe()
+    for line in lines:
+        os.write(write, line + b"\n")
+    feeder = threading.Thread(target=relay.feed, args=(read, ""), daemon=True)
+    feeder.start()
+    return feeder, read, write
+
+
+def test_a_question_the_gate_announced_before_eof_is_denied_when_it_arrives(
+    tmp_path: Path,
+) -> None:
+    """At EOF the gate may have recorded its question while claude has not yet
+    put it on the wire; the deny must still be the holder's, not claude's abort."""
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    relay, log, stdin = _relay(tmp_path, _question())
+    feeder, read, write = _feeding(relay)
+    os.close(write)  # EOF before the question reaches the holder
+    time.sleep(0.2)
+    assert not stdin.closed, "the binary's stdin waits for the announced question"
+
+    relay.follow()
+    feeder.join(5)
+    os.close(read)
+
+    [reply] = _replies(stdin)
+    assert reply["response"]["behavior"] == "deny"
+    assert "session is ending" in reply["response"]["message"]
+    assert stdin.closed
+    assert not [e for e in log.events if isinstance(e, GateVerdict)], "nobody refused it"
+
+
+class _SlowReplies(ClaudeWire):
+    def reply(self, question, answer) -> bytes:
+        time.sleep(0.2)  # the reader thread is still building the deny when EOF looks
+        return super().reply(question, answer)
+
+
+def test_eof_closes_the_binarys_stdin_only_after_the_held_deny_is_written(tmp_path: Path) -> None:
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    child = _child(_question())
+    child.stdin = _Stdin()
+    log = _Log()
+    relay = _Relay(
+        child, _SlowReplies(), event_log=log, report=print, log=tmp_path / "events.jsonl"
+    )
+    feeder, read, write = _feeding(relay)
+    os.close(write)
+    time.sleep(0.2)
+
+    relay.follow()
+    feeder.join(5)
+    os.close(read)
+
+    [reply] = _replies(child.stdin)
+    assert reply["response"]["behavior"] == "deny"
+    assert not _rejections(log), "the deny met a closed stdin"
+
+
+def test_an_early_answer_whose_question_never_came_is_reported_at_eof(tmp_path: Path) -> None:
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    relay, log, stdin = _relay(tmp_path, eof_wait=0.3)
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    assert _replies(stdin) == []
+    [rejected] = _rejections(log)
+    assert "never reached" in rejected.detail
+
+
+def test_answers_go_only_to_a_question_that_takes_them(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path, _question())
+    relay.follow()
+
+    _feed(
+        relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow", "answers": {"q": "a"}}
+    )
+
+    [rejected] = _rejections(log)
+    assert "takes no answers" in rejected.detail
+    [reply] = _replies(stdin)
+    assert reply["response"]["behavior"] == "deny", "still open at EOF, so denied then"
+
+
+def test_an_answer_to_a_question_the_log_already_closed_is_refused(tmp_path: Path) -> None:
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    append_event(
+        ToolResultReceived(call_id=ToolCallId("toolu_1"), ok=False), tmp_path / "events.jsonl"
+    )
+    relay, log, _ = _relay(tmp_path)
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    [rejected] = _rejections(log)
+    assert "already closed" in rejected.detail

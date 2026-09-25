@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession, prompt_command
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -31,7 +33,7 @@ def session_on_stub(tmp_project, tmp_path):
         return HeadlessSession.start(
             [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant", *args],
             cwd=tmp_project.path,
-            env=stub.session_env(tmp_project),
+            env=session_env(stub, tmp_project),
         )
 
     return start
@@ -66,7 +68,8 @@ def test_e2e_a_repeated_or_malformed_id_is_refused(session_on_stub) -> None:
         used = session.prompt("one")
         session.turn_for(used)
         session.prompt("two", id=used)
-        session.send_raw(prompt_command("three", "NOT-A-UUID"))
+        # the client refuses this id itself; the raw line is how the holder's refusal is reached
+        session.send_raw('{"v":"commands/v1","cmd":"prompt","id":"NOT-A-UUID","text":"three"}')
         after = session.turn("four")
         session.close()
 
@@ -82,6 +85,9 @@ def test_e2e_the_header_names_the_log_format_and_the_commands(session_on_stub) -
         turn = session.next_turn()
         session.close()
 
-    assert (session.header.events, session.header.commands) == ("events/v1", ("prompt",))
+    assert (session.header.events, session.header.commands) == (
+        "events/v1",
+        ("prompt", "answer", "interrupt"),
+    )
     (received,) = turn.of("prompt_received")
     assert turn.prompt_ids == (received["prompt_id"],), "the positional prompt has an id too"

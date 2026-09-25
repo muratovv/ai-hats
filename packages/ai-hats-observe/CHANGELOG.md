@@ -4,6 +4,27 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.18.0]
+
+A headless client answers the session's questions and stops its turns. The
+`commands/v1` version is not bumped: both commands were in the format already,
+refused until now.
+
+### Added
+
+- `Answer(call_id, decision, message, answers)` and `Interrupt()` in
+  `ai_hats_observe.commands`, with `DECISIONS` and the `Command` union.
+  `COMMANDS` is now `prompt`, `answer`, `interrupt`. Reading is as strict as for
+  `prompt`: `decision` is `allow` or `deny`, `message` goes with a deny only, and
+  `answers` must be an object of strings.
+
+### Changed
+
+- The claude reader, fed the wire, no longer reads a person's refusal prose as
+  `GateVerdict(deny, person)`. On the wire a person refuses through the holder
+  in its own words, and claude writes that prose there only when an interrupt
+  cuts a tool. Read from the transcript, the prose is still a person's verdict.
+
 ## [0.17.0]
 
 Each fact a session records has one producer, in every mode, and the session

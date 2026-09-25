@@ -299,6 +299,7 @@ class ClaudeTranscriptReader:
         self._replayed_calls: set[str] = set()
         # the quota as the wire last reported it; each quota line replaces it
         self._quota: dict[str, Any] = {}
+        self._on_wire = False
 
     # -- EventReader -------------------------------------------------------
 
@@ -335,6 +336,7 @@ class ClaudeTranscriptReader:
         (``message_delta``) and a turn (``result``). A sub-agent's line is
         skipped: its own record is followed, and one fact has one producer.
         """
+        self._on_wire = True
         for event in self._wire_events(line):
             if getattr(event, "source", None) == SOURCE:
                 event = replace(event, source=WIRE_SOURCE)  # type: ignore[call-arg]
@@ -720,6 +722,9 @@ class ClaudeTranscriptReader:
             found = _DENY_REASON.search(text)
             reason = found.group(1) if found else ""
         elif text.startswith(_PERSON_DENY):
+            if self._on_wire:
+                # a person refuses through the holder, in its words; this prose is an interrupt
+                return None
             hook, reason = "person", ""
         else:
             return None

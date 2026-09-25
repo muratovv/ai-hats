@@ -125,7 +125,7 @@ environment. Repeat only when the repo or workflow filename changes.
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
 
-### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-rack`)
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-rack`, `ai-hats-client`)
 
 The workspace packages under `packages/*` carry their own
 **static** versions
@@ -134,8 +134,8 @@ publish through a separate workflow,
 [`release-packages.yml`](../.github/workflows/release-packages.yml) — build each
 with `uv build`, then a per-package OIDC publish **job** each (core first, then
 the `wt` and `observe` packages that depend on it, then the data-only
-`library` and the first-party-free `rack`, neither of which has an ordering
-constraint). It runs on **manual dispatch** and
+`library`, the first-party-free `rack` and the stdlib-only `client`, none of which
+has an ordering constraint). It runs on **manual dispatch** and
 **auto-triggers** on a push to master that touches `packages/*/pyproject.toml`
 (bump⇒publish is one step; `skip-existing` no-ops an unchanged
 version). A final `verify-remote-install` job then does a fresh-venv
@@ -158,7 +158,8 @@ none of the five surfaces meets them.
 environment)` tuple ("*a pending trusted publisher matching this configuration
 has already been registered for a different project name*"). The environment is
 the disambiguator, so each package's publish job runs in its own environment
-(`pypi-core` / `pypi-wt` / `pypi-observe` / `pypi-library` / `pypi-rack`) —
+(`pypi-core` / `pypi-wt` / `pypi-observe` / `pypi-library` / `pypi-rack` /
+`pypi-client`) —
 separate from the `pypi` environment the main `ai-hats` release uses.
 
 **One-time setup:**
@@ -171,6 +172,7 @@ separate from the `pypi` environment the main `ai-hats` release uses.
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-observe
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-library
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-rack
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-client
    ```
 
 2. Add a pending publisher for **each** package (*PyPI → Account settings →
@@ -185,6 +187,7 @@ separate from the `pypi` environment the main `ai-hats` release uses.
    | `ai-hats-observe` | `pypi-observe`   |
    | `ai-hats-library` | `pypi-library`   |
    | `ai-hats-rack`    | `pypi-rack`      |
+   | `ai-hats-client`  | `pypi-client`    |
 
 **To cut a package release:** bump the version in the package's `pyproject.toml`
 and merge to master — the push auto-triggers the publish (or run it manually via

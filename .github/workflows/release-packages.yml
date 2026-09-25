@@ -1,6 +1,6 @@
 name: release-packages
 
-# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-observe, ai-hats-library, ai-hats-rack) to PyPI via OIDC
+# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-observe, ai-hats-library, ai-hats-rack, ai-hats-client) to PyPI via OIDC
 # trusted publishing — no stored API token. Manual trigger: these packages carry
 # their own static versions in packages/*/pyproject.toml, decoupled from the
 # ai-hats `v*` release tag (release.yml). To cut a package release: bump the
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   build:
-    name: build (core + wt + observe + library + rack)
+    name: build (core + wt + observe + library + rack + client)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,6 +37,7 @@ jobs:
           uv build packages/ai-hats-observe -o dist-observe
           uv build packages/ai-hats-library -o dist-library
           uv build packages/ai-hats-rack -o dist-rack
+          uv build packages/ai-hats-client -o dist-client
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
         with:
@@ -47,6 +48,7 @@ jobs:
             dist-observe/
             dist-library/
             dist-rack/
+            dist-client/
           if-no-files-found: error
 
   # Split per package with a DISTINCT environment each: PyPI forbids two PENDING
@@ -148,13 +150,32 @@ jobs:
           packages-dir: dist-rack/
           skip-existing: true
 
+  publish-client:
+    name: publish ai-hats-client (PyPI trusted publishing)
+    # Standard library only — no ordering constraint; publishes straight off build.
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-client
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
+      - name: Publish ai-hats-client to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-client/
+          skip-existing: true
+
   verify-remote-install:
     # HATS-943 #2: reproduce the remote channel post-publish — a fresh venv
     # resolves ai-hats-core from PyPI (not the workspace) and imports the module
     # HATS-937 crashed on. Fails a skewed release loudly instead of DOA installs.
     # Retries tolerate PyPI CDN propagation lag right after upload.
     name: verify remote-channel install (post-publish)
-    needs: [publish-wt, publish-observe, publish-library]
+    needs: [publish-wt, publish-observe, publish-library, publish-client]
     runs-on: ubuntu-latest
     steps:
       - name: Install uv
@@ -175,4 +196,4 @@ jobs:
           done
           test -n "$ok" || { echo "remote install never succeeded" >&2; exit 1; }
           /tmp/verify-venv/bin/python -c \
-            "import ai_hats_core.migrations; import ai_hats_observe; import ai_hats_library; import ai_hats; print('remote-channel OK')"
+            "import ai_hats_core.migrations; import ai_hats_observe; import ai_hats_library; import ai_hats_client; import ai_hats; print('remote-channel OK')"

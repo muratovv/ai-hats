@@ -19,8 +19,10 @@ from pathlib import Path
 import pytest
 
 from _helpers.env import clean_env
-from _helpers.headless_client import HeadlessSession
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 from _helpers.wire_record_diff import assert_same, from_log, from_record
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
@@ -36,7 +38,7 @@ def test_e2e_the_wire_and_the_record_of_a_stub_session_agree(tmp_project, tmp_pa
     with HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant"],
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
     ) as session:
         session.turn("hello")
         session.turn("@tool")

@@ -8,8 +8,15 @@ from __future__ import annotations
 
 import pytest
 
-from ai_hats_observe.canonical import PromptId
-from ai_hats_observe.commands import Prompt, Rejected, decode_command, encode_command
+from ai_hats_observe.canonical import PromptId, ToolCallId
+from ai_hats_observe.commands import (
+    Answer,
+    Interrupt,
+    Prompt,
+    Rejected,
+    decode_command,
+    encode_command,
+)
 
 
 @pytest.mark.parametrize(
@@ -40,12 +47,7 @@ def test_a_blank_line_is_no_command(line: bytes) -> None:
         (b'{"v":"commands/v1","cmd":"prompt","txt":"hi"}', "prompt", 'unknown key "txt"'),
         (b'{"v":"commands/v1","cmd":"prompt","text":""}', "prompt", '"text" must be'),
         (b'{"v":"commands/v1","cmd":"prompt","text":7}', "prompt", '"text" must be'),
-        (
-            b'{"v":"commands/v1","cmd":"answer","call_id":"c","decision":"allow"}',
-            "answer",
-            "not implemented yet",
-        ),
-        (b'{"v":"commands/v1","cmd":"interrupt"}', "interrupt", "not implemented yet"),
+        (b'{"v":"commands/v1","cmd":"interrupt","now":true}', "interrupt", "takes no keys"),
         (b'{"v":"commands/v1","cmd":"stop"}', "stop", 'unknown command "stop"'),
     ],
 )
@@ -105,3 +107,47 @@ def test_what_a_client_writes_the_holder_reads_back(prompt: Prompt) -> None:
 
 def test_a_prompt_without_an_id_is_written_without_one() -> None:
     assert b'"id"' not in encode_command(Prompt("no id"))
+
+
+def test_an_answer_is_read() -> None:
+    line = b'{"v":"commands/v1","cmd":"answer","call_id":"toolu_1","decision":"allow"}'
+
+    assert decode_command(line) == Answer(ToolCallId("toolu_1"), "allow")
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        ('"decision":"allow"', '"call_id" must be'),
+        ('"call_id":"","decision":"allow"', '"call_id" must be'),
+        ('"call_id":"c"', '"decision" must be one of: allow, deny'),
+        ('"call_id":"c","decision":"maybe"', '"decision" must be one of'),
+        ('"call_id":"c","decision":"allow","message":"why"', '"message" goes with a deny'),
+        ('"call_id":"c","decision":"deny","message":3', '"message" must be a string'),
+        ('"call_id":"c","decision":"allow","answers":["red"]', '"answers" must be an object'),
+        ('"call_id":"c","decision":"allow","answers":{"q":1}', '"answers" must be an object'),
+        ('"call_id":"c","decision":"allow","reason":"x"', 'unknown key "reason" — answer takes'),
+    ],
+)
+def test_an_answer_that_cannot_be_executed_is_refused(body: str, why: str) -> None:
+    rejected = decode_command(('{"v":"commands/v1","cmd":"answer",%s}' % body).encode())
+
+    assert isinstance(rejected, Rejected) and rejected.cmd == "answer"
+    assert why in rejected.why
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        Answer(ToolCallId("toolu_1"), "allow"),
+        Answer(ToolCallId("toolu_1"), "deny", "not on master"),
+        Answer(ToolCallId("toolu_1"), "allow", answers={"Which color?": "Blue"}),
+    ],
+)
+def test_what_a_client_answers_the_holder_reads_back(answer: Answer) -> None:
+    assert decode_command(encode_command(answer)) == answer
+
+
+def test_an_interrupt_is_read_and_written_back() -> None:
+    assert decode_command(b'{"v":"commands/v1","cmd":"interrupt"}') == Interrupt()
+    assert decode_command(encode_command(Interrupt())) == Interrupt()
