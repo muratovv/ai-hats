@@ -35,8 +35,7 @@ if TYPE_CHECKING:
     from ai_hats_observe import Session
     from ai_hats_observe.event_log_writer import EventLogWriter
 
-    from ..surfaces import Wire
-    from ..surfaces.wire import Control, Question
+    from ..surfaces import Control, Question, Wire
 
 #: How long the child's group gets after SIGTERM before SIGKILL. Measured claude
 #: leaves in under a second; this only bounds a stuck one.
@@ -315,7 +314,7 @@ class _Relay:
         self._emit(decoder.close, "the end of the surface's stdout")
 
     def _on_control(self, control: Control) -> None:
-        from ..surfaces.wire import Withdrawn
+        from ..surfaces import Withdrawn
 
         if isinstance(control, Withdrawn):
             with self._lock:
