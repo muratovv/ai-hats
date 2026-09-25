@@ -535,7 +535,9 @@ class TestRecursionGuard:
         assert "auto_retro\tskip\trecursion-guard" in content
 
     def test_spawn_session_reviewer_sets_env(self, tmp_path, monkeypatch):
-        """Popen child env carries HATS_SKIP_RETRO=1 to break the loop."""
+        """Popen child env carries HATS_SKIP_RETRO=1 to break the loop, and the
+        detached child gets none of the caller's stdin — a headless client's pipe."""
+        import subprocess
         from ai_hats.retro import auto_retro
 
         captured: dict = {}
@@ -546,12 +548,14 @@ class TestRecursionGuard:
         def fake_popen(cmd, **kw):  # noqa: ANN001 — test stub
             captured["cmd"] = cmd
             captured["env"] = kw.get("env")
+            captured["stdin"] = kw.get("stdin")
             return _FakeProc()
 
         monkeypatch.setattr("subprocess.Popen", fake_popen)
         auto_retro._spawn_session_reviewer_background(ProjectLayout.at(tmp_path), "SID")
 
         assert captured["env"][ENV_SKIP_RETRO] == "1"
+        assert captured["stdin"] is subprocess.DEVNULL
         # ai_hats.cli.reflect_session_main is the harness entry-point.
         assert "ai_hats.cli.reflect_session_main" in captured["cmd"]
         assert "SID" in captured["cmd"]

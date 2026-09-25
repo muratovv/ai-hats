@@ -322,6 +322,8 @@ def _spawn_session_reviewer_background(
                     "1",
                 ],
                 cwd=str(layout.root),
+                # The caller's fd 0 is a headless client's command pipe, or a TTY.
+                stdin=sp.DEVNULL,
                 stdout=f,
                 stderr=f,
                 start_new_session=True,
