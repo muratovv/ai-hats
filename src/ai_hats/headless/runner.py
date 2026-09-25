@@ -264,8 +264,7 @@ class _Relay:
                 message = json.loads(raw)
             except ValueError:
                 self._report(f"headless: a non-JSON line from the surface: {raw[:120]!r}")
-                continue
-            if not isinstance(message, dict):
+                self._drift("malformed-json", f"{raw[:120]!r}")
                 continue
             self._emit(lambda: decoder.decode(message), f"{raw[:120]!r}")
         self._emit(decoder.close, "the end of the surface's stdout")
@@ -276,8 +275,19 @@ class _Relay:
             events = decode()
         except Exception as exc:
             self._report(f"headless: could not read {what}: {type(exc).__name__}: {exc}")
+            self._drift("decoder-error", f"{what}: {type(exc).__name__}: {exc}")
             return
         self._event_log.emit(events)
+
+    def _drift(self, raw_code: str, detail: str) -> None:
+        notice = Notice(
+            reason=WorthRecording.UNSUPPORTED_RECORD,
+            raw_code=raw_code,
+            detail=detail,
+            source=_SOURCE,
+            ts=now(),
+        )
+        self._event_log.emit([notice])
 
 
 def _lines(fd: int) -> Iterator[bytes]:
