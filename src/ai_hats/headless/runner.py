@@ -47,6 +47,7 @@ class HeadlessRunner(WrapRunner):
 
     finalize = FINALIZE_HEADLESS
     follows_main_record = False  # the wire is the main agent's record here (ADR-0038 D4)
+    refuses_unready = True  # no terminal to run the surface's login flow in
 
     def __init__(
         self,

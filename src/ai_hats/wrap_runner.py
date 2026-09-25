@@ -49,7 +49,11 @@ from .runtime_common import (
     _flag_sensor_error,
     _run_finalize_hitl,
     FinalizeAborted,
+    SUBAGENT_EXIT_ERROR,
+    blocking_findings,
     readiness_findings,
+    readiness_notices,
+    record_refused_run,
     sigint_shield,
     start_event_log,
 )
@@ -68,6 +72,7 @@ if TYPE_CHECKING:
 
     from ai_hats_core import CompositionResult
     from ai_hats_observe import Session, SessionManager, SidecarTracer
+    from ai_hats_observe.canonical.signals import Blocking, Signal
     from ai_hats_observe.event_log_writer import EventLogWriter
 
     from .pty_tap import PtyTapFactory
@@ -231,6 +236,9 @@ class WrapRunner:
     #: Whether the log follows the main agent's own record; a runner that reads
     #: the main agent off another stream says False.
     follows_main_record: bool = True
+    #: Whether a blocking readiness finding refuses the launch; a runner whose
+    #: surface can run its own login flow (the TUI) says False.
+    refuses_unready: bool = False
 
     def __init__(
         self,
@@ -370,16 +378,37 @@ class WrapRunner:
             session.log_sys(f"provider settings lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
 
-    def _probe_readiness(self, session: "Session") -> list[StartupNotice]:
-        """WARN per readiness finding — not logged in, CLI missing, probe
-        unavailable. HITL launches anyway: the surface's own TUI runs its
-        login flow (docs/glossary.md, *Readiness probe*).
-        """
+    def _probe_readiness(self, session: "Session") -> list[Signal]:
+        """Every readiness finding — not logged in, CLI missing, probe
+        unavailable. Whether one refuses is ``refuses_unready``'s call
+        (docs/glossary.md, *Readiness probe*)."""
         provider = self.payload.provider
         if provider is None:
             return []
-        findings = readiness_findings(provider, os.environ, report=session.log_sys)
-        return [StartupNotice("warn", f.detail or str(f.reason)) for f in findings]
+        return readiness_findings(provider, os.environ, report=session.log_sys)
+
+    def _refuse_unready(
+        self,
+        session: "Session",
+        refusals: list[Blocking],
+        notices: list[StartupNotice],
+        *,
+        env: dict[str, str],
+        tags: dict[str, str] | None,
+    ) -> int:
+        """Say why, record the run that never launched, and launch nothing."""
+        save_session_diagnostics(session.session_dir, "startup", startup_record(notices, 0.0))
+        self._hold_before_launch(notices, env=env)
+        record_refused_run(
+            session,
+            refusals,
+            role=self.payload.effective_role,
+            provider=self.payload.provider.name,
+            model="",
+            isolation_mode="none",
+            tags=tags,
+        )
+        return SUBAGENT_EXIT_ERROR
 
     def _lint_env_drift(self, session: "Session") -> list[StartupNotice]:
         """WARN when the editable dev env is stale — uv freezes
@@ -742,11 +771,16 @@ class WrapRunner:
         startup_notices.extend(self._payload_startup_notices())
         startup_notices.extend(notices_from_diagnostics(session.startup_diagnostics))
         startup_notices.extend(self._lint_provider_settings(session))
-        startup_notices.extend(self._probe_readiness(session))
+        readiness = self._probe_readiness(session)
+        startup_notices.extend(readiness_notices(readiness))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))
         startup_notices.extend(self._check_interpreter_pin())
         self._sweep_consent_store(session)
+        refusals = blocking_findings(readiness) if self.refuses_unready else []
+        if refusals:
+            code = self._refuse_unready(session, refusals, startup_notices, env=env, tags=tags)
+            return code, session
         # LAST here on purpose: unlike its fail-open neighbours a
         # refusal does not return, so everything above must speak first. And
         # after the launch record, which is what the gate reads.
