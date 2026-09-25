@@ -215,6 +215,8 @@ class _Relay:
         self._lock = threading.Lock()  # the questions, shared by both pumps
         self._open: dict[ToolCallId, Question] = {}
         self._closed: set[ToolCallId] = set()
+        # answered before its question reached the wire: a gate records it first
+        self._early: dict[ToolCallId, tuple[Answer, str]] = {}
         self._asked: set[ToolCallId] = set()  # a PersonAsked this relay passed on
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
@@ -252,15 +254,19 @@ class _Relay:
         self._send(self._wire.encode(prompt), where, "prompt")
 
     def _answer(self, answer: Answer, where: str) -> None:
+        announced = self._recorded(answer.call_id)
         with self._lock:
             question = self._open.pop(answer.call_id, None)
             closed = answer.call_id in self._closed
-            self._closed.add(answer.call_id)
-        if question is None:
+            if question is None and not closed and announced:
+                self._early[answer.call_id] = (answer, where)
+            if question is not None or announced:
+                self._closed.add(answer.call_id)
+        if question is not None:
+            self._send(self._wire.reply(question, answer), where, "answer")
+        elif closed or not announced:
             why = "is already closed" if closed else "names no open question"
             self._reject(where, "answer", f'"call_id" {answer.call_id} {why}')
-            return
-        self._send(self._wire.reply(question, answer), where, "answer")
 
     def _deny_open(self) -> None:
         with self._lock:
@@ -319,7 +325,13 @@ class _Relay:
                         self._closed.add(call_id)
             return
         with self._lock:
-            self._open[control.call_id] = control
+            early = self._early.pop(control.call_id, None)
+            if early is None:
+                self._open[control.call_id] = control
+        if early is not None:
+            answer, where = early
+            self._send(self._wire.reply(control, answer), where, "answer")
+            return
         if self._recorded(control.call_id):
             return  # one fact, one producer: a gate records its own question
         asked = PersonAsked(

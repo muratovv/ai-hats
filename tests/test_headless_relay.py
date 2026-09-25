@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -306,3 +308,36 @@ def test_an_interrupt_goes_to_the_binary_as_its_own_request(tmp_path: Path) -> N
     [request] = [line for line in stdin.lines if line.get("type") == "control_request"]
     assert request["request"] == {"subtype": "interrupt"}
     assert not _rejections(log)
+
+
+def test_an_answer_to_a_question_the_gate_announced_waits_for_the_wire(tmp_path: Path) -> None:
+    """The gate records its question before the binary puts it on the wire, and
+    a client reading the log can answer inside that gap."""
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    relay, log, stdin = _relay(tmp_path, _question())
+    read, write = os.pipe()
+    os.write(write, b'{"v":"commands/v1","cmd":"answer","call_id":"toolu_1","decision":"allow"}\n')
+    feeder = threading.Thread(target=relay.feed, args=(read, ""), daemon=True)
+    feeder.start()
+    time.sleep(0.3)  # the answer is read before the question reaches the holder
+
+    assert _replies(stdin) == [] and not _rejections(log), "held, not refused"
+    relay.follow()
+    os.close(write)
+    feeder.join(5)
+    os.close(read)
+
+    [reply] = _replies(stdin)
+    assert reply["request_id"] == "req-1" and reply["response"]["behavior"] == "allow"
+
+
+def test_an_early_answer_nobody_announced_is_still_refused(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path, _question())
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    [rejected] = _rejections(log)
+    assert "names no open question" in rejected.detail
