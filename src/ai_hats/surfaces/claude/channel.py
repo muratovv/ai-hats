@@ -97,6 +97,34 @@ STATUSLINE_COMMAND = (
 )
 
 
+def _a_wait_is_recorded(environ: Mapping[str, str]) -> bool:
+    """Whether the session's log already holds an open question with its call: a
+    gate's ask, or in a headless session the binary's own question on the wire."""
+    from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+    from ai_hats_observe.canonical import PersonAsked, ToolResultReceived
+    from ai_hats_observe.event_log import read_events
+
+    from ...session_identity import SessionIdentity
+
+    try:
+        identity = SessionIdentity.from_env(dict(environ))
+        if identity is None:
+            return False
+        asked: set[str] = set()
+        answered: set[str] = set()
+        for event in read_events(identity.session_dir / EVENT_LOG_JSONL):
+            if isinstance(event, PersonAsked) and event.call_id:
+                asked.add(event.call_id)
+            elif isinstance(event, ToolResultReceived):
+                answered.add(event.call_id)
+    except Exception as exc:  # a prompt is still worth recording when the log cannot be read
+        print(
+            f"ai-hats-hook: open questions not read: {type(exc).__name__}: {exc}", file=sys.stderr
+        )
+        return False
+    return bool(asked - answered)
+
+
 class ClaudeChannel:
     """The five things only claude can answer."""
 
@@ -153,6 +181,8 @@ class ClaudeChannel:
             or payload.get("notification_type") != OBSERVED_NOTIFICATION
         ):
             return None
+        if _a_wait_is_recorded(environ):
+            return None  # one fact, one producer: the question is in the log with its call
         from ai_hats_observe.canonical import AgentId, AskKind, PersonAsked, now
 
         message = payload.get("message")

@@ -29,8 +29,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ai_hats_observe.canonical import AskKind, PersonAsked
-from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
+from ai_hats_observe.canonical import AskKind, PersonAsked, ToolCallId, ToolResultReceived
+from ai_hats_observe.event_log import EVENT_LOG_JSONL, append_event, read_events
 
 from _helpers.hook_chain import run_claude_dispatch
 from _helpers.sessions import stand_in_session
@@ -100,3 +100,26 @@ def test_claudes_own_permission_prompt_opens_a_wait_in_the_sessions_log(session)
     assert (asked.tool, asked.call_id) == (None, None), "the measured payload names neither"
     assert asked.detail == "Claude needs your permission"
     assert asked.ts
+
+
+@pytest.mark.parametrize(("resolved", "lines"), [(False, 0), (True, 1)])
+def test_a_prompt_for_a_question_already_in_the_log_says_nothing_twice(
+    session, resolved: bool, lines: int
+) -> None:
+    """A gate's ask is recorded with its call before claude shows the prompt, and
+    in a headless session so is the binary's own question; the notification
+    names no call, so it would record the same wait a second time. Once the
+    call has its result, a new prompt is a new wait — the positive control."""
+    session.log.parent.mkdir(parents=True, exist_ok=True)
+    asked = PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain")
+    append_event(asked, session.log)
+    if resolved:
+        append_event(ToolResultReceived(call_id=ToolCallId("toolu_1"), ok=True), session.log)
+
+    done = run_claude_dispatch(
+        session.project, session.env, event="Notification", tool="", extra=PERMISSION_PROMPT
+    )
+
+    assert done.returncode == 0, done
+    fresh = [e for e in read_events(session.log) if isinstance(e, PersonAsked) and not e.call_id]
+    assert len(fresh) == lines, fresh
