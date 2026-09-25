@@ -28,7 +28,7 @@ import pytest
 
 from _helpers.env import clean_env
 from _helpers.git import git
-from ai_hats_client import HeadlessSession
+from ai_hats_client import HeadlessSession, QuestionPending
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces, pytest.mark.live_headless]
 
@@ -109,7 +109,8 @@ def test_e2e_the_roles_push_guard_asks_the_stdin_owner_once(
     with _session(tmp_project, "maintainer") as session:
         session.turn(
             "Run exactly this command with the Bash tool: git push origin HEAD:refs/heads/live-check"
-            " (origin is a throwaway local bare repository made for this test). Then reply DONE.",
+            " (origin is a throwaway local bare repository made for this test). I confirm this push:"
+            " run it now, without asking me first. Then reply DONE.",
             timeout=180.0,
             on_question=_answering(session, decision, asked),
         )
@@ -240,4 +241,33 @@ def test_e2e_a_consent_point_of_the_role_is_granted_through_answer(
         if ln.strip().startswith("state:")
     )
     assert moved == state, context
+    assert end.code == 0
+
+
+def test_e2e_closing_stdin_while_the_guard_asks_is_the_holders_deny(
+    requires_claude_auth, tmp_project, tmp_path: Path
+) -> None:
+    """The guard records its question before claude sends it to the holder, so a
+    client that closes stdin on reading it closes inside that gap: the holder still
+    answers, in its own words, rather than leaving the refusal to claude's abort."""
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "--bare", "-b", "master", str(remote))
+    git(tmp_project.path, "remote", "add", "origin", str(remote))
+
+    with _session(tmp_project, "maintainer") as session:
+        id = session.prompt(
+            "Run exactly this command with the Bash tool: git push origin HEAD:refs/heads/live-eof"
+            " (origin is a throwaway local bare repository made for this test). I confirm this push:"
+            " run it now, without asking me first. Then reply DONE."
+        )
+        with pytest.raises(QuestionPending):
+            session.turn_for(id, timeout=180.0)
+        end = session.close(timeout=120.0)
+
+    refs = subprocess.run(
+        ["git", "--git-dir", str(remote), "show-ref"], capture_output=True, text=True
+    ).stdout
+    assert "refs/heads/live-eof" not in refs, refs
+    results = [str(e.get("content")) for e in end.of("tool_result_received")]
+    assert any("session is ending" in r for r in results), results
     assert end.code == 0
