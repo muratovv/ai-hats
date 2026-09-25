@@ -1157,6 +1157,39 @@ def test_an_interrupt_of_a_tool_keeps_the_model_s_own_stop_reason(tmp_path: Path
     assert [r.ok for r in items(events, ItemKind.TOOL_RESULT)] == [False]
 
 
+def test_on_the_wire_a_cut_tool_is_an_interrupt_not_a_persons_refusal() -> None:
+    """On the wire every person's refusal passes through the holder in its own
+    words; claude writes this prose there only when an interrupt cuts a tool.
+    The record keeps reading it as a refusal: in the terminal it is one."""
+    reader = ClaudeTranscriptReader(None)
+    records = [
+        assistant("req-a", [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {}}]),
+        _denied("c1", PERSON_DENY),
+        user([{"type": "text", "text": "[Request interrupted by user for tool use]"}]),
+    ]
+
+    events = [e for record in records for e in reader.feed(record)]
+
+    assert not [e for e in events if isinstance(e, GateVerdict)]
+    assert [r.ok for r in items(events, ItemKind.TOOL_RESULT)] == [False]
+    assert WorthRecording.INTERRUPTED in [
+        n.reason for n in signals(events) if isinstance(n, Notice)
+    ]
+
+
+def test_on_the_wire_the_classifiers_refusal_is_still_a_verdict() -> None:
+    reader = ClaudeTranscriptReader(None)
+    records = [
+        assistant("req-a", [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {}}]),
+        _denied("c1", CLASSIFIER_DENY),
+    ]
+
+    events = [e for record in records for e in reader.feed(record)]
+
+    [verdict] = [e for e in events if isinstance(e, GateVerdict)]
+    assert verdict.hook == "auto-mode-classifier"
+
+
 # --- fail-soft -------------------------------------------------------------
 
 

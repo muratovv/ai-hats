@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 
 from ai_hats_observe.canonical import Event, ToolCallId
-from ai_hats_observe.commands import Answer, Prompt
+from ai_hats_observe.commands import Answer, Interrupt, Prompt
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ class Wire(Protocol):
         """The flags among ``args`` the holder sets or forbids itself, in order."""
         ...
 
-    def encode(self, command: Prompt) -> bytes:
+    def encode(self, command: Prompt | Interrupt) -> bytes:
         """One command as the binary reads it from its stdin: a single line.
         The prompt's id becomes the surface's own id for it, so the wire says
         it back when the turn starts and ends."""

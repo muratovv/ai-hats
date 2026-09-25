@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 
 import pytest
-from ai_hats_client import answer_command, prompt_command
+from ai_hats_client import answer_command, interrupt_command, prompt_command
 from ai_hats_observe.canonical import PromptId, ToolCallId
-from ai_hats_observe.commands import Answer, Prompt, decode_command, encode_command
+from ai_hats_observe.commands import Answer, Interrupt, Prompt, decode_command, encode_command
 
 
 @pytest.mark.parametrize(
@@ -36,3 +36,10 @@ def test_the_clients_answer_command_is_the_codecs(answer: Answer) -> None:
 
     assert decode_command(line.encode()) == answer
     assert json.loads(line) == json.loads(encode_command(answer))
+
+
+def test_the_clients_interrupt_command_is_the_codecs() -> None:
+    line = interrupt_command()
+
+    assert decode_command(line.encode()) == Interrupt()
+    assert json.loads(line) == json.loads(encode_command(Interrupt()))

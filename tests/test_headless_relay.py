@@ -296,3 +296,13 @@ def test_a_question_open_at_the_end_of_stdin_is_denied_before_the_binary_hears_e
     assert reply["response"]["behavior"] == "deny"
     assert "session is ending" in reply["response"]["message"]
     assert stdin.closed
+
+
+def test_an_interrupt_goes_to_the_binary_as_its_own_request(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path)
+
+    _feed(relay, {"cmd": "interrupt"})
+
+    [request] = [line for line in stdin.lines if line.get("type") == "control_request"]
+    assert request["request"] == {"subtype": "interrupt"}
+    assert not _rejections(log)

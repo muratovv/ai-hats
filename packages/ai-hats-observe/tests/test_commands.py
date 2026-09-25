@@ -9,7 +9,14 @@ from __future__ import annotations
 import pytest
 
 from ai_hats_observe.canonical import PromptId, ToolCallId
-from ai_hats_observe.commands import Answer, Prompt, Rejected, decode_command, encode_command
+from ai_hats_observe.commands import (
+    Answer,
+    Interrupt,
+    Prompt,
+    Rejected,
+    decode_command,
+    encode_command,
+)
 
 
 @pytest.mark.parametrize(
@@ -40,7 +47,7 @@ def test_a_blank_line_is_no_command(line: bytes) -> None:
         (b'{"v":"commands/v1","cmd":"prompt","txt":"hi"}', "prompt", 'unknown key "txt"'),
         (b'{"v":"commands/v1","cmd":"prompt","text":""}', "prompt", '"text" must be'),
         (b'{"v":"commands/v1","cmd":"prompt","text":7}', "prompt", '"text" must be'),
-        (b'{"v":"commands/v1","cmd":"interrupt"}', "interrupt", "not implemented yet"),
+        (b'{"v":"commands/v1","cmd":"interrupt","now":true}', "interrupt", "takes no keys"),
         (b'{"v":"commands/v1","cmd":"stop"}', "stop", 'unknown command "stop"'),
     ],
 )
@@ -139,3 +146,8 @@ def test_an_answer_that_cannot_be_executed_is_refused(body: str, why: str) -> No
 )
 def test_what_a_client_answers_the_holder_reads_back(answer: Answer) -> None:
     assert decode_command(encode_command(answer)) == answer
+
+
+def test_an_interrupt_is_read_and_written_back() -> None:
+    assert decode_command(b'{"v":"commands/v1","cmd":"interrupt"}') == Interrupt()
+    assert decode_command(encode_command(Interrupt())) == Interrupt()

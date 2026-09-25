@@ -16,16 +16,17 @@ from .canonical.types import PromptId, ToolCallId
 
 COMMANDS_V1 = "commands/v1"
 
-#: What a holder executes today; a client reads the same list off the session header.
-COMMANDS = ("prompt", "answer")
-
-# Named by ADR-0038 D3 and not built yet: refused as such, never as unknown.
-_PLANNED = ("interrupt",)
+#: What a holder executes; a client reads the same list off the session header.
+COMMANDS = ("prompt", "answer", "interrupt")
 
 #: What an ``answer`` may decide.
 DECISIONS = ("allow", "deny")
 
-_KEYS = {"prompt": ("text", "id"), "answer": ("call_id", "decision", "message", "answers")}
+_KEYS: dict[str, tuple[str, ...]] = {
+    "prompt": ("text", "id"),
+    "answer": ("call_id", "decision", "message", "answers"),
+    "interrupt": (),
+}
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,12 @@ class Answer:
     answers: dict[str, str] | None = None
 
 
-Command = Prompt | Answer
+@dataclass(frozen=True)
+class Interrupt:
+    """Stop the running turn and keep the session; with no turn running, nothing."""
+
+
+Command = Prompt | Answer | Interrupt
 
 
 @dataclass(frozen=True)
@@ -63,7 +69,9 @@ class Rejected:
 def encode_command(command: Command) -> bytes:
     """One command as a line of the holder's stdin."""
     body: dict[str, Any] = {"v": COMMANDS_V1}
-    if isinstance(command, Answer):
+    if isinstance(command, Interrupt):
+        body["cmd"] = "interrupt"
+    elif isinstance(command, Answer):
         body.update(cmd="answer", call_id=command.call_id, decision=command.decision)
         if command.message is not None:
             body["message"] = command.message
@@ -100,13 +108,15 @@ def decode_command(line: bytes) -> Command | Rejected | None:
         return Rejected(cmd, f'missing "v" — expected "{COMMANDS_V1}"')
     if version != COMMANDS_V1:
         return Rejected(cmd, f'unsupported "v" {version!r} — this holder speaks {COMMANDS_V1}')
-    if cmd in _PLANNED:
-        return Rejected(cmd, f"{cmd} is not implemented yet")
     if cmd not in COMMANDS:
         return Rejected(cmd, f'unknown command "{cmd}" — known: {known}')
     unknown = sorted(set(body) - {"v", "cmd", *_KEYS[cmd]})
     if unknown:
-        return Rejected(cmd, f'unknown key "{unknown[0]}" — {cmd} takes: {", ".join(_KEYS[cmd])}')
+        takes = ", ".join(_KEYS[cmd])
+        what = f"{cmd} takes: {takes}" if takes else f"{cmd} takes no keys"
+        return Rejected(cmd, f'unknown key "{unknown[0]}" — {what}')
+    if cmd == "interrupt":
+        return Interrupt()
     return _answer(body) if cmd == "answer" else _prompt(body)
 
 
@@ -162,6 +172,7 @@ __all__ = [
     "DECISIONS",
     "Answer",
     "Command",
+    "Interrupt",
     "Prompt",
     "Rejected",
     "decode_command",

@@ -14,7 +14,7 @@ from ai_hats_observe.canonical import (
     TurnEnded,
     WorthRecording,
 )
-from ai_hats_observe.commands import Answer, Prompt
+from ai_hats_observe.commands import Answer, Interrupt, Prompt
 
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.claude.wire import ClaudeWire
@@ -203,3 +203,10 @@ def test_answers_to_the_models_questions_ride_on_the_call() -> None:
     reply = _response(ClaudeWire().reply(QUESTION, answer))
 
     assert reply["updatedInput"] == {**QUESTION.input, "answers": {"Which color?": "Blue"}}
+
+
+def test_an_interrupt_is_a_control_request_of_its_own() -> None:
+    first, second = (json.loads(ClaudeWire().encode(Interrupt())) for _ in range(2))
+
+    assert first["type"] == "control_request" and first["request"] == {"subtype": "interrupt"}
+    assert first["request_id"] != second["request_id"], "the binary answers each by its id"

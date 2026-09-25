@@ -247,6 +247,12 @@ class HeadlessSession:
         the answer. The first answer on a call_id wins; the holder refuses the rest."""
         self.send_raw(answer_command(call_id, decision, message=message, answers=answers))
 
+    def interrupt(self) -> None:
+        """Stop the running turn and keep the session: it still ends with its
+        ``turn_ended``, and a question it had open is closed. With no turn
+        running, nothing happens."""
+        self.send_raw(interrupt_command())
+
     def send_raw(self, line: str) -> None:
         """Write one line to the holder's stdin as it is — for testing its refusals."""
         self._stdin.write(line.encode("utf-8") + b"\n")
@@ -403,6 +409,11 @@ def prompt_command(text: str, id: str | None = None) -> str:
     return json.dumps(body)
 
 
+def interrupt_command() -> str:
+    """One ``interrupt`` command, as this client writes it on the holder's stdin."""
+    return json.dumps({"v": COMMANDS_V1, "cmd": "interrupt"})
+
+
 def answer_command(
     call_id: str,
     decision: str,
@@ -433,5 +444,6 @@ __all__ = [
     "SessionEnded",
     "Turn",
     "answer_command",
+    "interrupt_command",
     "prompt_command",
 ]

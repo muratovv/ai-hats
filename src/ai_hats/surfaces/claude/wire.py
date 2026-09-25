@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any, Mapping
 
 from ai_hats_observe.canonical import Event, Notice, ToolCallId, WorthRecording
 from ai_hats_observe.canonical.types import now
-from ai_hats_observe.commands import Answer, Prompt
+from ai_hats_observe.commands import Answer, Interrupt, Prompt
 from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
 from ..wire import Control, Question, Withdrawn
@@ -55,7 +56,13 @@ class ClaudeWire:
         names = (a.split("=", 1)[0] for a in args)
         return [name for name in names if name in _OWNED]
 
-    def encode(self, command: Prompt) -> bytes:
+    def encode(self, command: Prompt | Interrupt) -> bytes:
+        if isinstance(command, Interrupt):
+            # the binary acknowledges each request by its own id
+            request = {"subtype": "interrupt"}
+            return _line(
+                {"type": "control_request", "request_id": str(uuid.uuid4()), "request": request}
+            )
         line: dict[str, Any] = {
             "type": "user",
             "message": {"role": "user", "content": command.text},

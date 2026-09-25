@@ -31,6 +31,12 @@ prompt text:
                     the turn says the answer; without them, it asks in words
     @plan           the model asks to leave plan mode with ``ExitPlanMode``: the
                     turn says ``planned`` on allow, ``still planning`` on deny
+    @slow <s>       a response that takes <s> seconds to write
+    @slowtool <s>   a Bash call that runs <s> seconds
+
+An ``interrupt`` control request cuts the running response or tool the way
+claude does — and takes back a question still open — and the next prompt is
+served as usual.
 
 A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 
@@ -66,6 +72,17 @@ TIMING_ENV = "STUB_CLAUDE_TIMING"
 LOGGED_OUT_ENV = "STUB_CLAUDE_LOGGED_OUT"
 #: When a quota window lifts, as epoch seconds — the one a @quota turn reports.
 QUOTA_RESETS_AT = 1790340000
+
+# What claude writes when a person stops a tool, measured on 2.1.281.
+PERSON_STOP = (
+    "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it "
+    "was a file edit, the new_string was NOT written to the file). STOP what you are doing and "
+    "wait for the user to tell you how to proceed."
+)
+
+
+class _Interrupted(Exception):
+    """The running turn was cut; it has already said so on the wire."""
 
 
 def _now() -> str:
@@ -111,12 +128,15 @@ class Stub:
         self.stdin_closed = False
         self.cv = threading.Condition()
         self.denials: list[dict] = []  # the running turn's refused calls
+        self.interrupt = threading.Event()
+        self.out_lock = threading.Lock()
 
     # -- wire and record ---------------------------------------------------
 
     def emit(self, obj: dict) -> None:
-        sys.stdout.write(json.dumps(obj) + "\n")
-        sys.stdout.flush()
+        with self.out_lock:  # the stdin reader answers interrupts from its own thread
+            sys.stdout.write(json.dumps(obj) + "\n")
+            sys.stdout.flush()
 
     def record(self, obj: dict) -> None:
         obj.setdefault("sessionId", self.session_id)
@@ -222,15 +242,23 @@ class Stub:
         self.record(record)
         self.emit({**record, "parent_tool_use_id": None, "session_id": self.session_id})
 
-    def result(self, text: str, *, is_error: bool = False, stop_reason: str = "end_turn") -> None:
+    def result(
+        self,
+        text: str,
+        *,
+        is_error: bool = False,
+        stop_reason: str | None = "end_turn",
+        subtype: str = "success",
+        terminal_reason: str = "completed",
+    ) -> None:
         self.cost += 0.001
         self.emit(
             {
                 "type": "result",
-                "subtype": "success",
+                "subtype": subtype,
                 "is_error": is_error,
                 "stop_reason": stop_reason,
-                "terminal_reason": "completed",
+                "terminal_reason": terminal_reason,
                 "result": text,
                 "result_index": self.results,
                 "permission_denials": list(self.denials),
@@ -261,8 +289,79 @@ class Stub:
             }
         )
         with self.cv:
-            self.cv.wait_for(lambda: request in self.replies or self.stdin_closed, timeout=120)
-            return self.replies.pop(request, None)
+            self.cv.wait_for(
+                lambda: request in self.replies or self.stdin_closed or self.interrupt.is_set(),
+                timeout=120,
+            )
+            reply = self.replies.pop(request, None)
+        if reply is None and self.interrupt.is_set():
+            self.emit({"type": "control_cancel_request", "request_id": request})
+            self.cut_tool(call, tool, tool_input)
+        return reply
+
+    def marker(self, text: str) -> None:
+        record = {
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "text", "text": text}]},
+        }
+        self.record(record)
+        self.emit({**record, "parent_tool_use_id": None, "session_id": self.session_id})
+
+    def cut_tool(self, call: str, tool: str, tool_input: dict) -> None:
+        """An interrupt during a tool: refused result, marker, an aborted turn."""
+        self.tool_result(call, PERSON_STOP, is_error=True)
+        self.denials.append({"tool_name": tool, "tool_use_id": call, "tool_input": tool_input})
+        self.marker("[Request interrupted by user for tool use]")
+        self.result(
+            "",
+            is_error=True,
+            stop_reason="tool_use",
+            subtype="error_during_execution",
+            terminal_reason="aborted_tools",
+        )
+        raise _Interrupted
+
+    def slow_response(self, request: str, seconds: float) -> None:
+        """A response still being written; an interrupt cuts it mid-stream."""
+        mid = {
+            "id": f"msg_{request}",
+            "role": "assistant",
+            "model": self.model,
+            "stop_reason": None,
+            "usage": {"input_tokens": 10, "output_tokens": 1},
+            "content": [{"type": "text", "text": "partial"}],
+        }
+        self.record({"type": "assistant", "requestId": request, "message": mid})
+        if self.partial:
+            self.stream({"type": "message_start", "message": {**mid, "content": []}})
+        self.emit(
+            {
+                "type": "assistant",
+                "message": mid,
+                "request_id": request,
+                "uuid": str(uuid.uuid4()),
+                "timestamp": _now(),
+                "parent_tool_use_id": None,
+                "session_id": self.session_id,
+            }
+        )
+        if self.interrupt.wait(seconds):
+            self.marker("[Request interrupted by user]")
+            self.result(
+                "",
+                is_error=True,
+                stop_reason=None,
+                subtype="error_during_execution",
+                terminal_reason="aborted_streaming",
+            )
+            raise _Interrupted
+        if self.partial:
+            final = {"input_tokens": 10, "output_tokens": 5}
+            self.stream(
+                {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": final}
+            )
+            self.stream({"type": "message_stop"})
+        self.result("finished")
 
     def asked_call(self, request: str, tool: str, tool_input: dict) -> dict | None:
         """A tool call the binary asks about; the reply that let it run, or ``None``."""
@@ -283,6 +382,7 @@ class Stub:
     # -- a turn --------------------------------------------------------------
 
     def turn(self, text: str, prompt_uuid: str) -> None:
+        self.interrupt.clear()  # an interrupt between turns stops nothing
         self.init()
         body, late = text, None
         while body.startswith(("@sleep ", "@late ")):
@@ -303,7 +403,10 @@ class Stub:
         self.record(prompt)
         self.echo(text, prompt_uuid, prompt["timestamp"])
         self.turn_ids = [prompt_uuid]
-        self.run(body, text)
+        try:
+            self.run(body, text)
+        except _Interrupted:
+            self.previous = text
         if late is not None:
             records, self.deferred = self.deferred, None
             self.write_late(records, late, time.time())
@@ -465,6 +568,21 @@ class Stub:
             text = "planned" if allowed is not None else "still planning"
             self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
             self.result(text)
+        elif body.startswith("@slow "):
+            self.slow_response(request, float(body.split()[1]))
+        elif body.startswith("@slowtool "):
+            seconds = float(body.split()[1])
+            call, command = f"toolu_{request}", {"command": f"sleep {seconds:g}"}
+            self.respond(
+                f"{request}a",
+                [{"type": "tool_use", "id": call, "name": "Bash", "input": command}],
+                "tool_use",
+            )
+            if self.interrupt.wait(seconds):
+                self.cut_tool(call, "Bash", command)
+            self.tool_result(call, "slept")
+            self.respond(f"{request}b", [{"type": "text", "text": "done"}], "end_turn")
+            self.result("done")
         elif body == "@bg":
             self.respond(request, [{"type": "text", "text": "started"}], "end_turn")
             self.result("started")
@@ -519,6 +637,20 @@ class Stub:
                 continue
             if msg.get("type") == "user":
                 self.inbox.put(msg)
+            elif (msg.get("request") or {}).get("subtype") == "interrupt":
+                self.emit(
+                    {
+                        "type": "control_response",
+                        "response": {
+                            "subtype": "success",
+                            "request_id": msg.get("request_id"),
+                            "response": {"still_queued": []},
+                        },
+                    }
+                )
+                with self.cv:
+                    self.interrupt.set()
+                    self.cv.notify_all()
             elif msg.get("type") == "control_response":
                 response = msg.get("response") or {}
                 with self.cv:

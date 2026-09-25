@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Callable, Iterator
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
 from ai_hats_observe.canonical import AskKind, Notice, PersonAsked, WorthRecording
 from ai_hats_observe.canonical.types import PromptId, ToolCallId, now
-from ai_hats_observe.commands import Answer, Prompt, Rejected, decode_command
+from ai_hats_observe.commands import Answer, Interrupt, Prompt, Rejected, decode_command
 from ai_hats_observe.event_log import read_events
 
 from ..wrap_runner import WrapRunner
@@ -231,6 +231,8 @@ class _Relay:
                     self._reject(where, command.cmd, command.why)
                 elif isinstance(command, Answer):
                     self._answer(command, where)
+                elif isinstance(command, Interrupt):
+                    self._send(self._wire.encode(command), where, "interrupt")
                 else:
                     self._prompt(command, where)
         finally:

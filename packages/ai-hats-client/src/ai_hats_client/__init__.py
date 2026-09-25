@@ -13,6 +13,7 @@ from .session import (
     SessionEnded,
     Turn,
     answer_command,
+    interrupt_command,
     prompt_command,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "SessionEnded",
     "Turn",
     "answer_command",
+    "interrupt_command",
     "prompt_command",
 ]
