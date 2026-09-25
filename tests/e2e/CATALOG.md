@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**344 of 344 files catalogued — 352 flows.**
+**345 of 345 files catalogued — 353 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1624,6 +1624,20 @@ as a claim to check, not as evidence.
 
 - **expect** — exit 143 on SIGTERM and 130 on SIGINT; the log still ends with run_ended and the session is finalized; no claude process outlives the holder
 - **why** — a script must learn the outcome from the exit code and never leave an orphaned claude behind — the child runs in its own process group, so only the holder can take it down
+
+## `test_headless_answer.py`
+
+*pins HATS-2021*
+
+- **flow** — a program answers the questions a headless session puts to its stdin owner — allow runs the call, deny refuses it — the way a person would in the terminal
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the binary's question reaches the client as person_asked with a call_id; answer allow runs the call, answer deny leaves it unrun with the deny's message; the turn ends either way
+- **why** — the call a guard or the binary asks about is exactly the one worth asking: without an answer a headless session could never run it
 
 ## `test_headless_client.py`
 
