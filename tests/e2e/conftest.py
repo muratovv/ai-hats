@@ -75,6 +75,31 @@ def _scrub_redirect_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
+#: Where a test's sessions land: its project at the root of ``tmp_path`` or one or two levels down.
+_JOURNALS = tuple(
+    f"{depth}.agent/ai-hats/sessions/runs/*/events.jsonl" for depth in ("", "*/", "*/*/")
+)
+
+
+@pytest.fixture(autouse=True)
+def _one_fact_one_event(request):
+    """Every journal a test leaves records each fact once: a second producer of
+    one fact is a defect in whichever mode wrote it (ADR-0038 D4)."""
+    yield
+    if "tmp_path" not in request.fixturenames:
+        return
+    from _helpers.one_producer import journal_duplicates
+
+    root = request.getfixturevalue("tmp_path")
+    found = {
+        str(path.relative_to(root)): dups
+        for pattern in _JOURNALS
+        for path in root.glob(pattern)
+        if (dups := journal_duplicates(path))
+    }
+    assert not found, f"a fact recorded twice: {found}"
+
+
 _trace_lock = threading.Lock()
 _in_traced_run = threading.local()
 
