@@ -32,6 +32,32 @@ assert "KIWI" in second.text and end.code == 0
 Every wait has a bound. Every error carries what was read so far and the tail of
 the holder's stderr.
 
+## Questions and interrupts
+
+A session asks its stdin owner what it would ask a person at the terminal: a
+gate's `ask`, a consent point, claude's own permission prompt, leaving plan mode,
+the model's own question. Each question arrives as a `person_asked` event with a
+`call_id`, and the call waits for your answer.
+
+```python
+def decide(question):
+    s.answer(question["call_id"], "allow")          # or "deny", message="why"
+
+turn = s.turn("push the branch", on_question=decide)
+```
+
+- A turn wait calls `on_question` once for each call id. Without a handler it
+  raises `QuestionPending` instead of waiting out its bound. Answer
+  `pending.question["call_id"]` and wait again: nothing read so far is lost.
+- `answer(call_id, "allow", answers={"<question>": "<answer>"})` answers a
+  question the model asked with `AskUserQuestion`.
+- The first answer on a call id wins. The holder refuses the rest and logs a
+  `command_rejected` signal for each.
+- `interrupt()` stops the running turn and keeps the session. The turn still
+  ends with its `turn_ended`, and a question it had open is closed.
+
+The holder never times out a question. If you will not wait, answer `deny`.
+
 The client is synchronous. A caller that needs asyncio runs it in a thread.
 
 ## Testing without a model

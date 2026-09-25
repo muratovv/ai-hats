@@ -3,6 +3,13 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.9.1
+
+- **`safety-guard` no longer says an `ask` blocks in headless** (HATS-2021). It
+  blocks under `claude -p`; `ai-hats headless` puts it to its stdin owner. The
+  comments beside `AI_HATS_CONSENT_ACK` and the shared-state guard's refusal
+  say so. No behaviour changes.
+
 ## 0.4.1
 
 - **`hatrack` stops hand-maintaining the named edges** (HATS-1257). The rendered

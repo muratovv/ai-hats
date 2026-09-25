@@ -378,3 +378,46 @@ that blocked, the wire carries a `system/notification` for the UI.
 **Sub-agents.** A sub-agent's lines carry `parent_tool_use_id`. The wire misses the sub-agent's
 first thinking and its whole final answer, so the sub-agent's own record stays the source. Its
 hooks' lines carry no `parent_tool_use_id`.
+
+## 12. Questions answered over the wire (2.1.282, haiku)
+
+Measured for the `answer` command, with `--permission-prompt-tool stdio` and one run per
+case. The questions came to the driver as `control_request` `can_use_tool`, and it answered
+each with `control_response`.
+
+**A hook's rewrite rides on the question.** The case was a PreToolUse hook that answers `ask`
+and rewrites the command in `updatedInput`, the way a consent point adds its ticket.
+
+- The question's `input.command` is the rewritten command. The hook itself saw the original.
+- An allow that echoes `input` as `updatedInput` runs the rewritten command.
+- An allow with no `updatedInput` at all runs the rewritten command too.
+- In both cases the model reported that it ran the original command.
+
+**Plan mode is not a dead end with a question channel.**
+
+- Under `--permission-mode plan` the model calls `ExitPlanMode`, and the call comes as
+  `can_use_tool` with `input.plan`, `input.planFilePath` and the key
+  `requires_user_interaction`.
+- An allow is followed by `system/status` with `permissionMode: default`. The next `Write`
+  is asked as usual and runs on allow.
+- With the person's own settings loaded, the mode after the allow is still `default`, not the
+  settings' `auto`.
+- The dead end in §10.1 was measured without a question channel.
+
+**The model's own question.**
+
+- `AskUserQuestion` comes as `can_use_tool` with `input.questions[]` and
+  `requires_user_interaction`.
+- An allow that echoes `input` gives the model the tool result "The user did not answer the
+  questions.", and the model asks again in words.
+- An allow whose `updatedInput` adds `answers` (question text → chosen label) gives "The user
+  answered: …", and the model goes on with that answer.
+
+**A gate's question reaches the log before the wire.**
+
+- On a live maintainer session the shared-state guard's `GateVerdict(ask)` and
+  `PersonAsked(source: chain)` were in `events.jsonl` before the `can_use_tool` line reached
+  the holder.
+- A client that answered from the log did so in that gap.
+- About six seconds into an unanswered question the `Notification` hook fired
+  `permission_prompt`, with no call id.
