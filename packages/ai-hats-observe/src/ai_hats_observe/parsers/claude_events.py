@@ -197,6 +197,7 @@ _SILENT_WIRE_SUBTYPES = frozenset(
         "hook_started",
         "init",
         "notification",
+        "permission_denied",  # the refused call's is_error result says it, in both modes
         "status",
         "task_notification",
         "task_progress",

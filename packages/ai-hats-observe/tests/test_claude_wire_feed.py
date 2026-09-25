@@ -23,6 +23,7 @@ from ai_hats_observe.canonical import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    ToolResultReceived,
     TurnEnded,
     WorthRecording,
 )
@@ -377,3 +378,57 @@ def test_a_record_prompt_has_its_records_uuid_as_its_id() -> None:
     (prompt,) = list(reader._record(record))
 
     assert prompt.prompt_id == "3f0e2d9c-0000-4000-8000-000000000003"
+
+
+def test_a_tool_the_mode_refused_is_its_error_result_said_once() -> None:
+    """Measured on 2.1.282 under ``dontAsk``: ``system/permission_denied`` and
+    the result's ``permission_denials`` repeat the ``is_error`` result — the one
+    thing the record has, so the one producer in both modes (ADR-0038 D4)."""
+    text = (
+        "Permission to use Bash has been denied because Claude Code is running in don't ask mode."
+    )
+    call = {"type": "tool_use", "id": "toolu_d", "name": "Bash", "input": {"command": "touch x"}}
+    events = _feed(
+        {
+            **_assistant("req_d", "x"),
+            "message": {**_assistant("req_d", "x")["message"], "content": [call]},
+        },
+        {
+            "type": "system",
+            "subtype": "permission_denied",
+            "tool_name": "Bash",
+            "tool_use_id": "toolu_d",
+            "decision_reason_type": "mode",
+            "message": text,
+        },
+        {
+            "type": "user",
+            "parent_tool_use_id": None,
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_d",
+                        "content": text,
+                        "is_error": True,
+                    }
+                ],
+            },
+        },
+        _result(
+            terminal_reason="completed",
+            permission_denials=[
+                {
+                    "tool_name": "Bash",
+                    "tool_use_id": "toolu_d",
+                    "tool_input": {"command": "touch x"},
+                }
+            ],
+        ),
+    )
+
+    assert not [e for e in events if isinstance(e, Notice)], "no drift, no second producer"
+    (refused,) = [e for e in events if isinstance(e, ToolResultReceived)]
+    assert (refused.call_id, refused.ok) == ("toolu_d", False)
+    assert isinstance(events[-1], TurnEnded)
