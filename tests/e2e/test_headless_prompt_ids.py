@@ -84,6 +84,9 @@ def test_e2e_the_header_names_the_log_format_and_the_commands(session_on_stub) -
         turn = session.next_turn()
         session.close()
 
-    assert (session.header.events, session.header.commands) == ("events/v1", ("prompt",))
+    assert (session.header.events, session.header.commands) == (
+        "events/v1",
+        ("prompt", "answer"),
+    )
     (received,) = turn.of("prompt_received")
     assert turn.prompt_ids == (received["prompt_id"],), "the positional prompt has an id too"

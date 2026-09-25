@@ -7,9 +7,12 @@ from .session import (
     HeadlessError,
     HeadlessSession,
     HeadlessTimeout,
+    OnQuestion,
     ProtocolError,
+    QuestionPending,
     SessionEnded,
     Turn,
+    answer_command,
     prompt_command,
 )
 
@@ -20,8 +23,11 @@ __all__ = [
     "HeadlessError",
     "HeadlessSession",
     "HeadlessTimeout",
+    "OnQuestion",
     "ProtocolError",
+    "QuestionPending",
     "SessionEnded",
     "Turn",
+    "answer_command",
     "prompt_command",
 ]

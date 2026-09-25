@@ -22,6 +22,10 @@ prompt text:
                     the wall: then an API-error record (429) ends the turn
     @ignore-term    ignore SIGTERM from here on, then hang in the turn
     @kill <sig>     kill itself with signal <sig> in the middle of the turn
+    @ask            a Bash ``tool_use`` the binary asks about (``can_use_tool``
+                    under ``--permission-prompt-tool stdio``): on allow the call
+                    runs and writes ``stub-ran`` in the cwd, on deny or no
+                    answer it fails with the reply's message
 
 A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 
@@ -97,6 +101,11 @@ class Stub:
         self.inbox: queue.Queue[dict | None] = queue.Queue()
         self.seen: set[str] = set()
         self.turn_ids: list[str] = []  # the prompts the running turn answers
+        self.asks = _flag(argv, "--permission-prompt-tool") == "stdio"
+        self.replies: dict[str, dict] = {}  # control_response bodies, by request id
+        self.stdin_closed = False
+        self.cv = threading.Condition()
+        self.denials: list[dict] = []  # the running turn's refused calls
 
     # -- wire and record ---------------------------------------------------
 
@@ -200,14 +209,11 @@ class Stub:
             }
         )
 
-    def tool_result(self, call: str, content: str) -> None:
-        record = {
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": call, "content": content}],
-            },
-        }
+    def tool_result(self, call: str, content: str, *, is_error: bool = False) -> None:
+        block = {"type": "tool_result", "tool_use_id": call, "content": content}
+        if is_error:
+            block["is_error"] = True
+        record = {"type": "user", "message": {"role": "user", "content": [block]}}
         self.record(record)
         self.emit({**record, "parent_tool_use_id": None, "session_id": self.session_id})
 
@@ -222,13 +228,52 @@ class Stub:
                 "terminal_reason": "completed",
                 "result": text,
                 "result_index": self.results,
-                "permission_denials": [],
+                "permission_denials": list(self.denials),
                 "total_cost_usd": round(self.cost, 6),
                 "session_id": self.session_id,
                 "user_message_uuids": list(self.turn_ids),
             }
         )
         self.results += 1
+        self.denials = []
+
+    def permission(self, call: str, tool: str, tool_input: dict) -> dict | None:
+        """Ask on the wire and wait for the reply; ``None`` when stdin closed first."""
+        if not self.asks:
+            return None
+        request = str(uuid.uuid4())
+        self.emit(
+            {
+                "type": "control_request",
+                "request_id": request,
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": tool,
+                    "display_name": tool,
+                    "input": tool_input,
+                    "tool_use_id": call,
+                },
+            }
+        )
+        with self.cv:
+            self.cv.wait_for(lambda: request in self.replies or self.stdin_closed, timeout=120)
+            return self.replies.pop(request, None)
+
+    def asked_call(self, request: str, tool: str, tool_input: dict) -> dict | None:
+        """A tool call the binary asks about; the reply that let it run, or ``None``."""
+        call = f"toolu_{request}"
+        self.respond(
+            f"{request}a",
+            [{"type": "tool_use", "id": call, "name": tool, "input": tool_input}],
+            "tool_use",
+        )
+        reply = self.permission(call, tool, tool_input)
+        if reply is not None and reply.get("behavior") == "allow":
+            return {"call": call, **reply}
+        why = (reply or {}).get("message") or "Tool permission request failed: stream closed"
+        self.tool_result(call, why, is_error=True)
+        self.denials.append({"tool_name": tool, "tool_use_id": call, "tool_input": tool_input})
+        return None
 
     # -- a turn --------------------------------------------------------------
 
@@ -378,6 +423,15 @@ class Stub:
             self.fold_waiting()
             self.respond(f"{request}b", [{"type": "text", "text": "folded"}], "end_turn")
             self.result("folded")
+        elif body == "@ask":
+            allowed = self.asked_call(request, "Bash", {"command": "echo hi"})
+            if allowed is not None:
+                ran = (allowed.get("updatedInput") or {}).get("command", "")
+                Path("stub-ran").write_text(ran)
+                self.tool_result(allowed["call"], f"ran: {ran}")
+            text = "allowed" if allowed is not None else "denied"
+            self.respond(f"{request}b", [{"type": "text", "text": text}], "end_turn")
+            self.result(text)
         elif body == "@bg":
             self.respond(request, [{"type": "text", "text": "started"}], "end_turn")
             self.result("started")
@@ -432,6 +486,14 @@ class Stub:
                 continue
             if msg.get("type") == "user":
                 self.inbox.put(msg)
+            elif msg.get("type") == "control_response":
+                response = msg.get("response") or {}
+                with self.cv:
+                    self.replies[str(response.get("request_id"))] = response.get("response") or {}
+                    self.cv.notify_all()
+        with self.cv:
+            self.stdin_closed = True
+            self.cv.notify_all()
         self.inbox.put(None)
 
     def serve(self) -> int:

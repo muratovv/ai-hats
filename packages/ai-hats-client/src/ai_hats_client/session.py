@@ -26,13 +26,16 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 HEADLESS_V1 = "headless/v1"
 COMMANDS_V1 = "commands/v1"
 
 #: One ``events/v1`` line, decoded. Its kind is ``event["event"]``.
 Event = dict[str, Any]
+
+#: Called with each ``person_asked`` a turn wait reads; it answers through ``answer()``.
+OnQuestion = Callable[[Event], None]
 
 _EOF = object()
 
@@ -53,6 +56,20 @@ class ProtocolError(HeadlessError):
 
 class HeadlessTimeout(HeadlessError):
     """A bounded wait ran out — for the header, a turn, or the end."""
+
+
+class QuestionPending(HeadlessError):
+    """A turn wait read a question and was given no handler to answer it with.
+    Answer ``question["call_id"]`` and wait again: nothing read is lost."""
+
+    def __init__(self, question: Event, *, events: Sequence[Event] = (), stderr: str = "") -> None:
+        super().__init__(
+            f"the session asks about {question.get('tool')} ({question.get('call_id')}): "
+            "answer it, or pass on_question to the wait",
+            events=events,
+            stderr=stderr,
+        )
+        self.question = question
 
 
 class SessionEnded(HeadlessError):
@@ -160,6 +177,7 @@ class HeadlessSession:
         self._read: list[Event] = []  # every event read, in order
         self._pending: list[Event] = []  # read, not yet handed out in a Turn
         self._turns: dict[str, Turn] = {}  # every turn read, by the prompt ids it answered
+        self._questions: set[str] = set()  # the call_ids already handed to a handler
         self._exit: Exit | None = None
         self._header: Header | None = None
         self._stdout_closed = False
@@ -215,6 +233,20 @@ class HeadlessSession:
         self.send_raw(prompt_command(text, id))
         return id
 
+    def answer(
+        self,
+        call_id: str,
+        decision: str,
+        *,
+        message: str | None = None,
+        answers: Mapping[str, str] | None = None,
+    ) -> None:
+        """Decide the question ``call_id`` names: ``"allow"`` runs the call as it
+        was asked, ``"deny"`` refuses it with ``message`` for the model. A question
+        the model asked itself takes ``answers``, each question's text mapped to
+        the answer. The first answer on a call_id wins; the holder refuses the rest."""
+        self.send_raw(answer_command(call_id, decision, message=message, answers=answers))
+
     def send_raw(self, line: str) -> None:
         """Write one line to the holder's stdin as it is — for testing its refusals."""
         self._stdin.write(line.encode("utf-8") + b"\n")
@@ -222,8 +254,12 @@ class HeadlessSession:
 
     # -- turns ------------------------------------------------------------------
 
-    def next_turn(self, timeout: float = 60.0) -> Turn:
-        """Wait for the next ``turn_ended`` and return the turn it closes."""
+    def next_turn(self, timeout: float = 60.0, *, on_question: OnQuestion | None = None) -> Turn:
+        """Wait for the next ``turn_ended`` and return the turn it closes.
+
+        A ``person_asked`` read on the way goes to ``on_question`` once per
+        call_id; with no handler the wait raises ``QuestionPending`` rather than
+        run out its bound on a question nobody will answer."""
         deadline = time.monotonic() + timeout
         while True:
             line = self._next_line(deadline - time.monotonic(), "the end of a turn")
@@ -232,23 +268,38 @@ class HeadlessSession:
                 raise SessionEnded(f"the session ended mid-turn (exit {end.code})", exit=end)
             event = self._decode(line)  # type: ignore[arg-type]
             self._pending.append(event)
+            if event.get("event") == "person_asked":
+                self._ask(event, on_question)
             if event.get("event") == "turn_ended":
                 turn, self._pending = Turn(tuple(self._pending)), []
                 for answered in turn.prompt_ids:
                     self._turns[answered] = turn
                 return turn
 
-    def turn_for(self, id: str, timeout: float = 60.0) -> Turn:
+    def turn_for(
+        self, id: str, timeout: float = 60.0, *, on_question: OnQuestion | None = None
+    ) -> Turn:
         """Wait for the turn that answered prompt ``id`` — already read, when a
         fold ended it together with an earlier prompt."""
         deadline = time.monotonic() + timeout
         while id not in self._turns:
-            self.next_turn(deadline - time.monotonic())
+            self.next_turn(deadline - time.monotonic(), on_question=on_question)
         return self._turns[id]
 
-    def turn(self, text: str, timeout: float = 60.0) -> Turn:
+    def turn(
+        self, text: str, timeout: float = 60.0, *, on_question: OnQuestion | None = None
+    ) -> Turn:
         """Send one turn and wait for it to end."""
-        return self.turn_for(self.prompt(text), timeout)
+        return self.turn_for(self.prompt(text), timeout, on_question=on_question)
+
+    def _ask(self, question: Event, on_question: OnQuestion | None) -> None:
+        call_id = question.get("call_id")
+        if not call_id or call_id in self._questions:
+            return  # nothing to answer it by, or already handed out
+        if on_question is None:
+            raise QuestionPending(question, events=self._read, stderr=self._stderr_text())
+        self._questions.add(call_id)
+        on_question(question)
 
     # -- the end ------------------------------------------------------------------
 
@@ -352,6 +403,23 @@ def prompt_command(text: str, id: str | None = None) -> str:
     return json.dumps(body)
 
 
+def answer_command(
+    call_id: str,
+    decision: str,
+    *,
+    message: str | None = None,
+    answers: Mapping[str, str] | None = None,
+) -> str:
+    """One ``answer`` command, as this client writes it on the holder's stdin."""
+    body: dict[str, Any] = {"v": COMMANDS_V1, "cmd": "answer", "call_id": call_id}
+    body["decision"] = decision
+    if message is not None:
+        body["message"] = message
+    if answers is not None:
+        body["answers"] = dict(answers)
+    return json.dumps(body)
+
+
 __all__ = [
     "Event",
     "Exit",
@@ -359,8 +427,11 @@ __all__ = [
     "HeadlessError",
     "HeadlessSession",
     "HeadlessTimeout",
+    "OnQuestion",
     "ProtocolError",
+    "QuestionPending",
     "SessionEnded",
     "Turn",
+    "answer_command",
     "prompt_command",
 ]

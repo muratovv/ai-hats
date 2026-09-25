@@ -99,5 +99,5 @@ def test_e2e_a_line_the_holder_cannot_run_is_refused_and_the_session_goes_on(
         (None, "stdin line 1"),
         ("answer", "stdin line 2"),
     ], "each refusal names the line it answers, so the client finds its own command"
-    assert "not implemented yet" in refused[1]["detail"]
+    assert "names no open question" in refused[1]["detail"]
     assert turn.ok and turn.text == "ok: hi"
