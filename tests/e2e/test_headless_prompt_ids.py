@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_hats_client import HeadlessSession, prompt_command
+from ai_hats_client import HeadlessSession
 from ai_hats_client.testing import install
 
 from _helpers.headless import session_env
@@ -68,7 +68,8 @@ def test_e2e_a_repeated_or_malformed_id_is_refused(session_on_stub) -> None:
         used = session.prompt("one")
         session.turn_for(used)
         session.prompt("two", id=used)
-        session.send_raw(prompt_command("three", "NOT-A-UUID"))
+        # the client refuses this id itself; the raw line is how the holder's refusal is reached
+        session.send_raw('{"v":"commands/v1","cmd":"prompt","id":"NOT-A-UUID","text":"three"}')
         after = session.turn("four")
         session.close()
 

@@ -177,7 +177,9 @@ class HeadlessSession:
         self._read: list[Event] = []  # every event read, in order
         self._pending: list[Event] = []  # read, not yet handed out in a Turn
         self._turns: dict[str, Turn] = {}  # every turn read, by the prompt ids it answered
-        self._questions: set[str] = set()  # the call_ids already handed to a handler
+        self._handled: set[str] = set()  # call_ids a handler returned from, or answered
+        self._unhandled: dict[str, Event] = {}  # questions read and not yet dealt with
+        self._close_timeout = 60.0
         self._exit: Exit | None = None
         self._header: Header | None = None
         self._stdout_closed = False
@@ -195,8 +197,10 @@ class HeadlessSession:
         cwd: Path | str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: float = 30.0,
+        close_timeout: float = 60.0,
     ) -> HeadlessSession:
-        """Launch the holder and read its header; ``SessionEnded`` when it refused."""
+        """Launch the holder and read its header; ``SessionEnded`` when it refused.
+        ``close_timeout`` bounds how long leaving a ``with`` block waits for the end."""
         proc = subprocess.Popen(
             list(argv),
             cwd=cwd,
@@ -206,6 +210,7 @@ class HeadlessSession:
             stderr=subprocess.PIPE,
         )
         session = cls(proc)
+        session._close_timeout = close_timeout
         first = session._next_line(timeout, "the session header")
         if first is _EOF:
             end = session._reap(timeout)
@@ -230,7 +235,7 @@ class HeadlessSession:
         """Send one prompt and return its id; sent mid-turn, claude may fold it
         into the running turn, whose ``turn_ended`` then lists both ids."""
         id = id or str(uuid.uuid4())
-        self.send_raw(prompt_command(text, id))
+        self._send("prompt", prompt_command(text, id))
         return id
 
     def answer(
@@ -245,18 +250,43 @@ class HeadlessSession:
         was asked, ``"deny"`` refuses it with ``message`` for the model. A question
         the model asked itself takes ``answers``, each question's text mapped to
         the answer. The first answer on a call_id wins; the holder refuses the rest."""
-        self.send_raw(answer_command(call_id, decision, message=message, answers=answers))
+        self._send("answer", answer_command(call_id, decision, message=message, answers=answers))
+        self._handled.add(call_id)
+        self._unhandled.pop(call_id, None)
+
+    def tool_call(self, call_id: str) -> dict[str, Any] | None:
+        """The call a question is about, as read so far: ``name`` and ``input`` —
+        for ``AskUserQuestion``, the questions and their options."""
+        for event in self._read:
+            item = event.get("item") or {}
+            if event.get("event") == "item_emitted" and item.get("call_id") == call_id:
+                return item
+        return None
 
     def interrupt(self) -> None:
         """Stop the running turn and keep the session: it still ends with its
         ``turn_ended``, and a question it had open is closed. With no turn
         running, nothing happens."""
-        self.send_raw(interrupt_command())
+        self._send("interrupt", interrupt_command())
 
     def send_raw(self, line: str) -> None:
-        """Write one line to the holder's stdin as it is — for testing its refusals."""
-        self._stdin.write(line.encode("utf-8") + b"\n")
-        self._stdin.flush()
+        """Write one line to the holder's stdin as it is — for testing its refusals.
+        Safe from another thread: one write of one line."""
+        try:
+            self._stdin.write(line.encode("utf-8") + b"\n")
+            self._stdin.flush()
+        except (OSError, ValueError) as exc:
+            raise HeadlessError(
+                f"the session takes no more input: {exc}",
+                events=self._read,
+                stderr=self._stderr_text(),
+            ) from exc
+
+    def _send(self, cmd: str, line: str) -> None:
+        if cmd not in self.header.commands:
+            known = ", ".join(self.header.commands)
+            raise HeadlessError(f"this holder does not run {cmd!r}; it runs: {known}")
+        self.send_raw(line)
 
     # -- turns ------------------------------------------------------------------
 
@@ -268,15 +298,22 @@ class HeadlessSession:
         run out its bound on a question nobody will answer."""
         deadline = time.monotonic() + timeout
         while True:
+            if self._unhandled and self._lines.empty():
+                # offered once everything already read is in: a result may close one first
+                self._offer(on_question)
             line = self._next_line(deadline - time.monotonic(), "the end of a turn")
             if line is _EOF:
                 end = self._reap(timeout)
                 raise SessionEnded(f"the session ended mid-turn (exit {end.code})", exit=end)
             event = self._decode(line)  # type: ignore[arg-type]
             self._pending.append(event)
-            if event.get("event") == "person_asked":
-                self._ask(event, on_question)
-            if event.get("event") == "turn_ended":
+            kind = event.get("event")
+            if kind == "person_asked" and event.get("call_id"):
+                if event["call_id"] not in self._handled:
+                    self._unhandled.setdefault(event["call_id"], event)
+            elif kind == "tool_result_received":
+                self._unhandled.pop(event.get("call_id"), None)  # its question is closed
+            if kind == "turn_ended":
                 turn, self._pending = Turn(tuple(self._pending)), []
                 for answered in turn.prompt_ids:
                     self._turns[answered] = turn
@@ -298,14 +335,17 @@ class HeadlessSession:
         """Send one turn and wait for it to end."""
         return self.turn_for(self.prompt(text), timeout, on_question=on_question)
 
-    def _ask(self, question: Event, on_question: OnQuestion | None) -> None:
-        call_id = question.get("call_id")
-        if not call_id or call_id in self._questions:
-            return  # nothing to answer it by, or already handed out
-        if on_question is None:
-            raise QuestionPending(question, events=self._read, stderr=self._stderr_text())
-        self._questions.add(call_id)
-        on_question(question)
+    def _offer(self, on_question: OnQuestion | None) -> None:
+        """Hand every question not yet dealt with to the handler, or stop the wait on it.
+        A question leaves the list once its handler returns, or once it is answered."""
+        for call_id, question in list(self._unhandled.items()):
+            if call_id not in self._unhandled:
+                continue  # answered by an earlier handler in this loop
+            if on_question is None:
+                raise QuestionPending(question, events=self._read, stderr=self._stderr_text())
+            on_question(question)
+            self._handled.add(call_id)
+            self._unhandled.pop(call_id, None)
 
     # -- the end ------------------------------------------------------------------
 
@@ -328,8 +368,15 @@ class HeadlessSession:
         if self._exit is not None:
             return
         if exc_type is None:
-            self.close()
+            try:
+                self.close(self._close_timeout)
+            except HeadlessTimeout:
+                self._abort()  # the with block is over: nothing may keep spending turns
+                raise
             return
+        self._abort()
+
+    def _abort(self) -> None:
         try:
             self.terminate()
         except HeadlessError:
@@ -402,11 +449,23 @@ class HeadlessSession:
 
 
 def prompt_command(text: str, id: str | None = None) -> str:
-    """One ``prompt`` command, as this client writes it on the holder's stdin."""
+    """One ``prompt`` command, as this client writes it on the holder's stdin.
+    ``ValueError`` for one the holder would refuse, so no wait hangs on it."""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError('"text" must be a non-empty string')
+    if id is not None and not _canonical_uuid(id):
+        raise ValueError(f'"id" must be a UUID in canonical form (lowercase, hyphenated): {id!r}')
     body = {"v": COMMANDS_V1, "cmd": "prompt", "text": text}
     if id is not None:
         body["id"] = id
     return json.dumps(body)
+
+
+def _canonical_uuid(value: str) -> bool:
+    try:
+        return str(uuid.UUID(value)) == value
+    except ValueError:
+        return False
 
 
 def interrupt_command() -> str:
@@ -421,7 +480,18 @@ def answer_command(
     message: str | None = None,
     answers: Mapping[str, str] | None = None,
 ) -> str:
-    """One ``answer`` command, as this client writes it on the holder's stdin."""
+    """One ``answer`` command, as this client writes it on the holder's stdin.
+    ``ValueError`` for one the holder would refuse, so no wait hangs on it."""
+    if not isinstance(call_id, str) or not call_id:
+        raise ValueError('"call_id" must be the call_id of a person_asked')
+    if decision not in ("allow", "deny"):
+        raise ValueError(f'"decision" must be "allow" or "deny", not {decision!r}')
+    if message is not None and decision == "allow":
+        raise ValueError('"message" goes with a deny; an allow runs the call')
+    if answers is not None and not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in dict(answers).items()
+    ):
+        raise ValueError('"answers" must map each question\'s text to a string')
     body: dict[str, Any] = {"v": COMMANDS_V1, "cmd": "answer", "call_id": call_id}
     body["decision"] = decision
     if message is not None:

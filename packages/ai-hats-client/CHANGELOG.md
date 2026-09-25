@@ -13,8 +13,16 @@ to [Semantic Versioning](https://semver.org/).
   abort the session. Every wait is bounded.
 - `answer(call_id, decision, message=, answers=)` decides a question the
   session put; `interrupt()` stops the running turn and keeps the session.
-- A turn wait takes `on_question`, called once per `person_asked` call id. With
-  no handler it raises `QuestionPending` instead of waiting out its bound.
+- A turn wait takes `on_question`. A question stays offered until it is answered,
+  its handler returns, or its call gets a result. With no handler the wait raises
+  `QuestionPending` instead of waiting out its bound. `tool_call(call_id)` returns
+  the call a question is about.
+- A command the holder would refuse raises `ValueError` before it is sent; one the
+  holder does not run (per `header.commands`), or any command after the session
+  ended, raises `HeadlessError`.
+- Leaving a `with` block terminates a holder that does not end within
+  `close_timeout`, then raises the timeout.
+- Typed: the wheel carries `py.typed`.
 - `ai_hats_client.testing`: a stand-in `claude` binary that speaks the
   stream-json wire, so tests of a client run with no model and no login. It asks
   questions (`@ask`, `@askq`, `@plan`) and runs long turns an interrupt can cut

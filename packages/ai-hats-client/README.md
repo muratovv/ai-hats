@@ -28,9 +28,22 @@ assert "KIWI" in second.text and end.code == 0
 - `close()` closes stdin, which tells the holder to finish its turns and exit. It
   then reads to the end and returns an `Exit` with the code, every event and the
   holder's stderr. `terminate()` signals the holder instead.
+- Leaving a `with` block closes the session. If the session does not end within
+  `start(..., close_timeout=60)`, the holder is terminated and the
+  `HeadlessTimeout` is raised, so no session keeps spending turns.
 
 Every wait has a bound. Every error carries what was read so far and the tail of
 the holder's stderr.
+
+- A command the holder would refuse raises `ValueError` before it is sent: empty
+  text, an `id` that is not a lowercase canonical UUID, a `decision` other than
+  `allow` or `deny`.
+- A command the holder does not run raises `HeadlessError`, and so does any
+  command after the session has ended. The holder lists what it runs in
+  `header.commands`.
+- `prompt()`, `answer()` and `interrupt()` may be called from another thread, for
+  instance a watchdog that interrupts a turn while the main thread waits on it.
+  The waits themselves belong to one thread.
 
 ## Questions and interrupts
 
@@ -50,7 +63,11 @@ turn = s.turn("push the branch", on_question=decide)
   raises `QuestionPending` instead of waiting out its bound. Answer
   `pending.question["call_id"]` and wait again: nothing read so far is lost.
 - `answer(call_id, "allow", answers={"<question>": "<answer>"})` answers a
-  question the model asked with `AskUserQuestion`.
+  question the model asked with `AskUserQuestion`. `tool_call(call_id)` returns
+  the call the question is about, with the questions and their options in its
+  `input`.
+- A question stays offered until you answer it, its handler returns, or its call
+  gets a result: a handler that raised sees it again on the next wait.
 - The first answer on a call id wins. The holder refuses the rest and logs a
   `command_rejected` signal for each.
 - `interrupt()` stops the running turn and keeps the session. The turn still
