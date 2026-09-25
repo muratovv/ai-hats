@@ -27,6 +27,7 @@ from ai_hats_observe.canonical.types import PromptId, ToolCallId, now
 from ai_hats_observe.commands import Answer, Interrupt, Prompt, Rejected, decode_command
 from ai_hats_observe.event_log import read_events
 
+from ..env import ENV_QUESTIONS_ON_WIRE
 from ..wrap_runner import WrapRunner
 from .copier import LogCopier
 from .header import SessionHeader
@@ -94,6 +95,11 @@ class HeadlessRunner(WrapRunner):
 
     def _stdin_is_terminal(self) -> bool:
         return False  # stdin carries commands; the hold must never read it
+
+    def _serving_hooks(self, provider, session, env: dict[str, str]):
+        # the hook server and the binary share this env: both learn questions come over the wire
+        env[ENV_QUESTIONS_ON_WIRE] = "1"
+        return super()._serving_hooks(provider, session, env)
 
     def _on_signal(self, signum: int, _frame) -> None:
         if self._signal is None:

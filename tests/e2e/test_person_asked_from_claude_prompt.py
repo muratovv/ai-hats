@@ -102,22 +102,29 @@ def test_claudes_own_permission_prompt_opens_a_wait_in_the_sessions_log(session)
     assert asked.ts
 
 
-@pytest.mark.parametrize(("resolved", "lines"), [(False, 0), (True, 1)])
-def test_a_prompt_for_a_question_already_in_the_log_says_nothing_twice(
-    session, resolved: bool, lines: int
+@pytest.mark.parametrize(
+    ("headless", "resolved", "lines"),
+    [(True, False, 0), (True, True, 1), (False, False, 1)],
+)
+def test_a_prompt_for_a_question_already_in_the_log_is_not_recorded_twice_in_headless(
+    session, headless: bool, resolved: bool, lines: int
 ) -> None:
-    """A gate's ask is recorded with its call before claude shows the prompt, and
-    in a headless session so is the binary's own question; the notification
-    names no call, so it would record the same wait a second time. Once the
-    call has its result, a new prompt is a new wait — the positive control."""
+    """In a headless session every question is in the log with its call before
+    claude notifies it — a gate's ask, or the binary's own, recorded by the holder
+    — so the notification, which names no call, would record the wait twice. Once
+    the call has its result, a new prompt is a new wait. A terminal session keeps
+    recording the prompt: its log can lack a call's result for good (a resumed
+    session reads no transcript), and a wait read as open there would silence every
+    prompt after it."""
     session.log.parent.mkdir(parents=True, exist_ok=True)
     asked = PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain")
     append_event(asked, session.log)
     if resolved:
         append_event(ToolResultReceived(call_id=ToolCallId("toolu_1"), ok=True), session.log)
+    env = {**session.env, "AI_HATS_QUESTIONS_ON_WIRE": "1"} if headless else session.env
 
     done = run_claude_dispatch(
-        session.project, session.env, event="Notification", tool="", extra=PERMISSION_PROMPT
+        session.project, env, event="Notification", tool="", extra=PERMISSION_PROMPT
     )
 
     assert done.returncode == 0, done

@@ -49,6 +49,10 @@ ENV_HOOK_SOCKET = "AI_HATS_HOOK_SOCK"
 #: session's `--settings` replaces the `statusLine` slot, so theirs rides here.
 ENV_STATUSLINE_INNER = "AI_HATS_STATUSLINE_INNER"
 
+#: Set by `ai-hats headless`: every question reaches the log with its call before
+#: claude notifies it, so a prompt notification would only repeat one.
+ENV_QUESTIONS_ON_WIRE = "AI_HATS_QUESTIONS_ON_WIRE"
+
 #: Claude Code's own home override, and the platform's home it falls back to —
 #: named here so a reader of a probed env spells neither.
 ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
@@ -420,6 +424,7 @@ __all__ = [
     "ENV_AI_HATS_PYTHON",
     "ENV_HOOK_SOCKET",
     "ENV_STATUSLINE_INNER",
+    "ENV_QUESTIONS_ON_WIRE",
     "ENV_CLAUDE_CONFIG_DIR",
     "ENV_HOME",
     "ENV_HOOK_POINT",
