@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -197,10 +198,18 @@ def test_a_deny_without_a_message_still_says_who_refused() -> None:
     assert reply["behavior"] == "deny" and reply["message"]
 
 
+def test_the_models_own_question_is_read_as_one_that_takes_answers() -> None:
+    line = {**CAN_USE_TOOL, "request": {**CAN_USE_TOOL["request"], "tool_name": "AskUserQuestion"}}
+
+    assert ClaudeWire().decoder().control(line).takes_answers
+    assert not ClaudeWire().decoder().control(CAN_USE_TOOL).takes_answers
+
+
 def test_answers_to_the_models_questions_ride_on_the_call() -> None:
+    asked = replace(QUESTION, tool="AskUserQuestion", takes_answers=True)
     answer = Answer(ToolCallId("toolu_1"), "allow", answers={"Which color?": "Blue"})
 
-    reply = _response(ClaudeWire().reply(QUESTION, answer))
+    reply = _response(ClaudeWire().reply(asked, answer))
 
     assert reply["updatedInput"] == {**QUESTION.input, "answers": {"Which color?": "Blue"}}
 

@@ -75,6 +75,9 @@ def test_e2e_a_denied_call_does_not_run_and_the_model_hears_why(
     [result] = turn.of("tool_result_received")
     assert result["ok"] is False and "not today" in str(result["content"])
     assert turn.text == "denied"
+    [verdict] = [v for v in turn.of("gate_verdict") if v.get("hook") == "person"]
+    assert verdict["decision"] == "deny" and verdict["call_id"] == result["call_id"]
+    assert verdict["reason"] == "not today", "the log keeps the person's refusal"
 
 
 def test_e2e_a_wait_with_no_handler_stops_at_the_question_instead_of_timing_out(

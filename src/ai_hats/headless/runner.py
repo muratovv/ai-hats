@@ -22,7 +22,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
 
 from ai_hats_observe.artifacts import EVENT_LOG_JSONL
-from ai_hats_observe.canonical import AskKind, Notice, PersonAsked, WorthRecording
+from ai_hats_observe.canonical import (
+    AskKind,
+    GateDecision,
+    GatePoint,
+    GateVerdict,
+    Notice,
+    PersonAsked,
+    ToolResultReceived,
+    WorthRecording,
+)
 from ai_hats_observe.canonical.types import PromptId, ToolCallId, now
 from ai_hats_observe.commands import Answer, Interrupt, Prompt, Rejected, decode_command
 from ai_hats_observe.event_log import read_events
@@ -43,6 +52,8 @@ if TYPE_CHECKING:
 GRACE_S = 5.0
 _SOURCE = "headless"
 # Denied at EOF so the model stops instead of retrying into a closed session (ADR-0038 D3).
+#: How long EOF waits for a question a gate recorded but claude has not yet put on the wire.
+EOF_WAIT_S = 2.0
 _ENDING = "The session is ending now. Do not retry this or any other tool; reply in one sentence."
 
 
@@ -220,8 +231,10 @@ class _Relay:
         self._lock = threading.Lock()  # the questions, shared by both pumps
         self._open: dict[ToolCallId, Question] = {}
         self._closed: set[ToolCallId] = set()
-        # answered before its question reached the wire: a gate records it first
-        self._early: dict[ToolCallId, tuple[Answer, str]] = {}
+        # answered before its question reached the wire (a gate records it first);
+        # the flag says whether the answer is the client's or the holder's own deny
+        self._early: dict[ToolCallId, tuple[Answer, str, bool]] = {}
+        self._arrived = threading.Condition(self._lock)
         self._asked: set[ToolCallId] = set()  # a PersonAsked this relay passed on
 
     def feed(self, stdin_fd: int, first_prompt: str) -> None:
@@ -244,6 +257,7 @@ class _Relay:
                     self._prompt(command, where)
         finally:
             self._deny_open()
+            self._deny_announced()
             # EOF for the child: it finishes the turns it has and exits.
             with contextlib.suppress(OSError, ValueError):
                 self._child.stdin.close()
@@ -259,19 +273,44 @@ class _Relay:
         self._send(self._wire.encode(prompt), where, "prompt")
 
     def _answer(self, answer: Answer, where: str) -> None:
-        announced = self._recorded(answer.call_id)
+        announced, resolved = self._in_log(answer.call_id)
         with self._lock:
             question = self._open.pop(answer.call_id, None)
-            closed = answer.call_id in self._closed
-            if question is None and not closed and announced:
-                self._early[answer.call_id] = (answer, where)
-            if question is not None or announced:
+            closed = answer.call_id in self._closed or (question is None and resolved)
+            hold = question is None and not closed and announced
+            if hold:
+                self._early[answer.call_id] = (answer, where, True)
+            if question is not None or hold:
                 self._closed.add(answer.call_id)
         if question is not None:
-            self._send(self._wire.reply(question, answer), where, "answer")
-        elif closed or not announced:
+            self._decide(question, answer, where, by_person=True)
+        elif not hold:
             why = "is already closed" if closed else "names no open question"
             self._reject(where, "answer", f'"call_id" {answer.call_id} {why}')
+
+    def _decide(self, question: Question, answer: Answer, where: str, *, by_person: bool) -> None:
+        if answer.answers is not None and not question.takes_answers:
+            self._reject(
+                where, "answer", f'"call_id" {answer.call_id} is a question that takes no answers'
+            )
+            with self._lock:
+                self._closed.discard(question.call_id)
+                self._open[question.call_id] = question
+            return
+        self._send(self._wire.reply(question, answer), where, "answer")
+        if by_person and answer.decision == "deny":
+            # the person's refusal reaches no record: the wire shows claude only the words
+            refusal = GateVerdict(
+                point=GatePoint.BEFORE_TOOL,
+                decision=GateDecision.DENY,
+                hook="person",
+                reason=answer.message or "",
+                tool=question.tool,
+                call_id=question.call_id,
+                source=_SOURCE,
+                ts=now(),
+            )
+            self._emit(lambda: [refusal], f"the refusal of {question.call_id}")
 
     def _deny_open(self) -> None:
         with self._lock:
@@ -279,7 +318,23 @@ class _Relay:
             self._closed.update(q.call_id for q in questions)
         for question in questions:
             deny = Answer(question.call_id, "deny", _ENDING)
-            self._send(self._wire.reply(question, deny), "the end of stdin", "answer")
+            self._decide(question, deny, "the end of stdin", by_person=False)
+
+    def _deny_announced(self) -> None:
+        """At EOF, deny too what a gate recorded and claude has not yet put on the wire."""
+        pending = self._open_in_log()
+        with self._lock:
+            for call_id in pending - self._closed - set(self._open):
+                deny = Answer(call_id, "deny", _ENDING)
+                self._early[call_id] = (deny, "the end of stdin", False)
+                self._closed.add(call_id)
+            if self._early:
+                self._arrived.wait_for(lambda: not self._early, timeout=EOF_WAIT_S)
+            left, self._early = dict(self._early), {}
+        for call_id, (_, where, from_client) in left.items():
+            if from_client:
+                why = "never reached the holder before stdin closed"
+                self._reject(where, "answer", f'the question on "call_id" {call_id} {why}')
 
     def _send(self, line: bytes, where: str, cmd: str) -> None:
         try:
@@ -330,14 +385,15 @@ class _Relay:
                         self._closed.add(call_id)
             return
         with self._lock:
-            early = self._early.pop(control.call_id, None)
-            if early is None:
+            held = self._early.pop(control.call_id, None)
+            if held is None:
                 self._open[control.call_id] = control
-        if early is not None:
-            answer, where = early
-            self._send(self._wire.reply(control, answer), where, "answer")
+            self._arrived.notify_all()
+        if held is not None:
+            answer, where, from_client = held
+            self._decide(control, answer, where, by_person=from_client)
             return
-        if self._recorded(control.call_id):
+        if control.call_id in self._asked or self._in_log(control.call_id)[0]:
             return  # one fact, one producer: a gate records its own question
         asked = PersonAsked(
             kind=AskKind.PERMISSION,
@@ -349,13 +405,25 @@ class _Relay:
         )
         self._emit(lambda: [asked], f"the question on {control.call_id}")
 
-    def _recorded(self, call_id: ToolCallId) -> bool:
-        if call_id in self._asked:
-            return True
-        return any(
-            isinstance(event, PersonAsked) and event.call_id == call_id
-            for event in read_events(self._log)
-        )
+    def _in_log(self, call_id: ToolCallId) -> tuple[bool, bool]:
+        """Whether the log holds a question on ``call_id``, and whether its call has a result."""
+        announced, resolved = call_id in self._asked, False
+        for event in read_events(self._log):
+            if isinstance(event, PersonAsked) and event.call_id == call_id:
+                announced = True
+            elif isinstance(event, ToolResultReceived) and event.call_id == call_id:
+                resolved = True
+        return announced, resolved
+
+    def _open_in_log(self) -> set[ToolCallId]:
+        asked: set[ToolCallId] = set()
+        answered: set[ToolCallId] = set()
+        for event in read_events(self._log):
+            if isinstance(event, PersonAsked) and event.call_id:
+                asked.add(event.call_id)
+            elif isinstance(event, ToolResultReceived):
+                answered.add(event.call_id)
+        return asked - answered
 
     def _emit(self, decode: Callable[[], list], what: str) -> None:
         # One bad line must not end the pump: every later event, turn ends included, rides it.

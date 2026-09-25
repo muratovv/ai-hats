@@ -13,16 +13,20 @@ from types import SimpleNamespace
 from ai_hats_observe.canonical import (
     AgentId,
     AskKind,
+    GateDecision,
+    GateVerdict,
     Notice,
     PersonAsked,
     ResponseEnded,
     ToolCallId,
+    ToolResultReceived,
     TurnEnded,
     WorthRecording,
 )
 from ai_hats_observe.event_log import append_event
 from ai_hats_observe.event_log_writer import EventSource
 
+from ai_hats.headless import runner
 from ai_hats.headless.runner import HeadlessRunner, _Relay
 from ai_hats.runtime_common import sub_agent_sources
 from ai_hats.surfaces.claude.wire import ClaudeWire
@@ -341,3 +345,104 @@ def test_an_early_answer_nobody_announced_is_still_refused(tmp_path: Path) -> No
 
     [rejected] = _rejections(log)
     assert "names no open question" in rejected.detail
+
+
+def test_a_persons_deny_is_recorded_as_their_verdict(tmp_path: Path) -> None:
+    relay, log, _ = _relay(tmp_path, _question(), _question("toolu_2", "req-2"))
+    relay.follow()
+
+    _feed(
+        relay,
+        {"cmd": "answer", "call_id": "toolu_1", "decision": "deny", "message": "not today"},
+        {"cmd": "answer", "call_id": "toolu_2", "decision": "allow"},
+    )
+
+    [verdict] = [e for e in log.events if isinstance(e, GateVerdict)]
+    assert (verdict.decision, verdict.hook, verdict.call_id) == (
+        GateDecision.DENY,
+        "person",
+        ToolCallId("toolu_1"),
+    )
+    assert verdict.reason == "not today" and verdict.tool == "Bash"
+
+
+def _feeding(relay: _Relay, *lines: bytes) -> tuple[threading.Thread, int, int]:
+    read, write = os.pipe()
+    for line in lines:
+        os.write(write, line + b"\n")
+    feeder = threading.Thread(target=relay.feed, args=(read, ""), daemon=True)
+    feeder.start()
+    return feeder, read, write
+
+
+def test_a_question_the_gate_announced_before_eof_is_denied_when_it_arrives(
+    tmp_path: Path,
+) -> None:
+    """At EOF the gate may have recorded its question while claude has not yet
+    put it on the wire; the deny must still be the holder's, not claude's abort."""
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    relay, log, stdin = _relay(tmp_path, _question())
+    feeder, read, write = _feeding(relay)
+    os.close(write)  # EOF before the question reaches the holder
+    time.sleep(0.2)
+    assert not stdin.closed, "the binary's stdin waits for the announced question"
+
+    relay.follow()
+    feeder.join(5)
+    os.close(read)
+
+    [reply] = _replies(stdin)
+    assert reply["response"]["behavior"] == "deny"
+    assert "session is ending" in reply["response"]["message"]
+    assert stdin.closed
+    assert not [e for e in log.events if isinstance(e, GateVerdict)], "nobody refused it"
+
+
+def test_an_early_answer_whose_question_never_came_is_reported_at_eof(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(runner, "EOF_WAIT_S", 0.3)
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    relay, log, stdin = _relay(tmp_path)
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    assert _replies(stdin) == []
+    [rejected] = _rejections(log)
+    assert "never reached" in rejected.detail
+
+
+def test_answers_go_only_to_a_question_that_takes_them(tmp_path: Path) -> None:
+    relay, log, stdin = _relay(tmp_path, _question())
+    relay.follow()
+
+    _feed(
+        relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow", "answers": {"q": "a"}}
+    )
+
+    [rejected] = _rejections(log)
+    assert "takes no answers" in rejected.detail
+    [reply] = _replies(stdin)
+    assert reply["response"]["behavior"] == "deny", "still open at EOF, so denied then"
+
+
+def test_an_answer_to_a_question_the_log_already_closed_is_refused(tmp_path: Path) -> None:
+    append_event(
+        PersonAsked(kind=AskKind.PERMISSION, call_id=ToolCallId("toolu_1"), source="chain"),
+        tmp_path / "events.jsonl",
+    )
+    append_event(
+        ToolResultReceived(call_id=ToolCallId("toolu_1"), ok=False), tmp_path / "events.jsonl"
+    )
+    relay, log, _ = _relay(tmp_path)
+
+    _feed(relay, {"cmd": "answer", "call_id": "toolu_1", "decision": "allow"})
+
+    [rejected] = _rejections(log)
+    assert "already closed" in rejected.detail

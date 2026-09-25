@@ -30,6 +30,8 @@ _OWNED = (
 )
 
 _SOURCE = "claude/wire"
+# the tools through which the model asks a person and reads the answer back
+_ANSWERED_TOOLS = frozenset({"AskUserQuestion"})
 _DENIED = "The person driving this session denied this call."
 
 
@@ -78,7 +80,7 @@ class ClaudeWire:
         if answer.decision == "allow":
             # the input carries what a hook put on the call — a consent ticket among it
             run = dict(question.input)
-            if answer.answers is not None:
+            if answer.answers is not None and question.takes_answers:
                 run["answers"] = dict(answer.answers)
             decision: dict[str, Any] = {"behavior": "allow", "updatedInput": run}
         else:
@@ -143,6 +145,7 @@ class _Decoder:
             input=dict(given) if isinstance(given := request.get("input"), Mapping) else {},
             reason=reason if isinstance(reason, str) and reason else None,
             source=_SOURCE,
+            takes_answers=str(request.get("tool_name", "")) in _ANSWERED_TOOLS,
         )
 
     def close(self) -> list[Event]:

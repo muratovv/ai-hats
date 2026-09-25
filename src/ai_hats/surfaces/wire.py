@@ -31,6 +31,8 @@ class Question:
     reason: str | None = None
     # who put the question: the ``source`` of the PersonAsked the holder writes for it
     source: str | None = None
+    # the model's own question, answered with ``answers`` rather than a bare decision
+    takes_answers: bool = False
 
 
 @dataclass(frozen=True)
