@@ -26,4 +26,6 @@ to [Semantic Versioning](https://semver.org/).
 - `ai_hats_client.testing`: a stand-in `claude` binary that speaks the
   stream-json wire, so tests of a client run with no model and no login. It asks
   questions (`@ask`, `@askq`, `@plan`) and runs long turns an interrupt can cut
-  (`@slow`, `@slowtool`).
+  (`@slow`, `@slowtool`). It drifts off the wire (`@drift`), hits the quota
+  (`@quota <status>`, reset at `QUOTA_RESETS_AT`), dies by a signal (`@kill`,
+  `@ignore-term`), and reports itself logged out under `LOGGED_OUT_ENV`.

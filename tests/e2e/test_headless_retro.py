@@ -14,8 +14,10 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from _helpers.headless_client import HeadlessSession
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -31,7 +33,7 @@ def test_e2e_a_headless_session_reaches_the_session_reviewer(tmp_project, tmp_pa
     config = yaml.safe_load(tmp_project.yaml.read_text())
     config.setdefault("feedback", {})["session_retro"] = {"policy": "always"}
     tmp_project.yaml.write_text(yaml.safe_dump(config))
-    env = install(tmp_path).session_env(tmp_project)
+    env = session_env(install(tmp_path), tmp_project)
 
     session = HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant"],

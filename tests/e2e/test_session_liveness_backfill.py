@@ -25,8 +25,10 @@ import time
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.observe]
 
@@ -61,7 +63,7 @@ def _wait_for(condition, timeout_s: float = 10.0) -> bool:
 
 def test_e2e_a_killed_session_reads_dead_and_backfill_collects_it(tmp_project, tmp_path):
     stub = install(tmp_path)
-    env = stub.session_env(tmp_project)
+    env = session_env(stub, tmp_project)
     session = HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), *ARGV], cwd=tmp_project.path, env=env
     )
@@ -90,7 +92,7 @@ def test_e2e_a_killed_session_reads_dead_and_backfill_collects_it(tmp_project, t
 def test_e2e_backfill_leaves_a_running_session_alone(tmp_project, tmp_path):
     """Negative control: a live owner is not a dead one."""
     stub = install(tmp_path)
-    env = stub.session_env(tmp_project)
+    env = session_env(stub, tmp_project)
     with HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), *ARGV], cwd=tmp_project.path, env=env
     ) as session:

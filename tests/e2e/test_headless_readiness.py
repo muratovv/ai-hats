@@ -19,9 +19,11 @@ import json
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession, SessionEnded
+from ai_hats_client import HeadlessSession, SessionEnded
+from ai_hats_client.testing import LOGGED_OUT_ENV, install
+
+from _helpers.headless import session_env
 from _helpers.sessions import snapshot_session_dirs, wait_for_new_session_dir
-from _helpers.stub_claude import LOGGED_OUT_ENV, install
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -32,7 +34,7 @@ def test_e2e_a_claude_that_is_not_logged_in_is_refused_before_the_start(
     tmp_project, tmp_path
 ) -> None:
     stub = install(tmp_path)
-    env = {**stub.session_env(tmp_project), LOGGED_OUT_ENV: "1"}
+    env = {**session_env(stub, tmp_project), LOGGED_OUT_ENV: "1"}
     before = snapshot_session_dirs(tmp_project.path)
 
     with pytest.raises(SessionEnded) as refused:
@@ -63,7 +65,7 @@ def test_e2e_a_logged_in_claude_starts_as_usual(tmp_project, tmp_path) -> None:
     with HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), *ARGV],
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
     ) as session:
         assert session.header.session_id
         end = session.close()

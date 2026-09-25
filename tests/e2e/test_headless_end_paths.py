@@ -26,8 +26,10 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession, prompt_command
-from _helpers.stub_claude import install
+from ai_hats_client import HeadlessSession, prompt_command
+from ai_hats_client.testing import install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -52,7 +54,7 @@ def _start(tmp_project, stub) -> HeadlessSession:
     return HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), *ARGV],
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
     )
 
 
@@ -78,7 +80,7 @@ def test_e2e_a_reader_that_goes_away_does_not_end_the_session(tmp_project, tmp_p
     proc = subprocess.Popen(
         [str(tmp_project.ai_hats_binary), *ARGV],
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

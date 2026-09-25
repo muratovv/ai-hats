@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import pytest
 
-from _helpers.headless_client import HeadlessSession
-from _helpers.stub_claude import QUOTA_RESETS_AT, install
+from ai_hats_client import HeadlessSession
+from ai_hats_client.testing import QUOTA_RESETS_AT, install
+
+from _helpers.headless import session_env
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
@@ -25,7 +27,7 @@ def test_e2e_the_quota_warning_and_the_wall_are_each_said_once(tmp_project, tmp_
     with HeadlessSession.start(
         [str(tmp_project.ai_hats_binary), "headless", "-p", "claude", "-r", "assistant"],
         cwd=tmp_project.path,
-        env=stub.session_env(tmp_project),
+        env=session_env(stub, tmp_project),
     ) as session:
         warned = session.turn("@quota allowed_warning")
         walled = session.turn("@quota rejected")
