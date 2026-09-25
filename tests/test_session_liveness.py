@@ -278,3 +278,29 @@ def test_a_pid_absent_from_a_stale_snapshot_is_not_a_death(live_proc):
     empty = LivenessSnapshot(start_times={1: "x"}, available=True)
     lazy = session_liveness.LazyLiveness(capture=lambda: empty)
     assert lazy.is_live(live_proc.pid, "Wed Jan  1 00:00:00 2000") is True
+
+
+# ---------- session_alive: what `session list` and `backfill` read ----------
+
+
+def test_a_session_whose_owner_runs_is_alive(tmp_path):
+    session_liveness.write_session_anchor(tmp_path)
+
+    assert session_liveness.session_alive(tmp_path, session_liveness.LazyLiveness()) is True
+
+
+def test_a_reused_pid_and_a_gone_cache_are_both_dead(tmp_path):
+    """The pid is alive (it is this test) but started at another time: another
+    process owns it now. No cache dir: torn down, or reaped once its owners died."""
+    anchor = {"root_pid": os.getpid(), "start_time_utc": "Wed Jan  1 00:00:00 2000"}
+    (tmp_path / ANCHOR_NAME).write_text(json.dumps(anchor))
+
+    assert session_liveness.session_alive(tmp_path, session_liveness.LazyLiveness()) is False
+    gone = tmp_path / "reaped"
+    assert session_liveness.session_alive(gone, session_liveness.LazyLiveness()) is False
+
+
+def test_an_unreadable_anchor_is_not_a_verdict(tmp_path):
+    (tmp_path / ANCHOR_NAME).write_text("{ not json")
+
+    assert session_liveness.session_alive(tmp_path, session_liveness.LazyLiveness()) is None

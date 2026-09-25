@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from enum import StrEnum
 
 import click
 
@@ -62,6 +63,26 @@ def session_audit(session_id: str | None):
         _host.host().console.print(s.audit_path.read_text())
     else:
         _host.host().console.print(f"[yellow]No audit for session {s.session_id}[/]")
+
+
+class SessionState(StrEnum):
+    """Whether a session runs, as ``session list`` says it."""
+
+    LIVE = "live"
+    ENDED = "ended"
+    DEAD = "dead"  # its owner is gone and its finalize never ran
+    UNKNOWN = "unknown"
+
+
+def session_state(session_id: str, metrics: dict | None) -> SessionState:
+    """``ended`` once finalized — or when ``metrics.json`` predates its stub, which
+    only a finalize wrote; otherwise what the host's liveness anchor says."""
+    if metrics is not None and metrics.get("finalized", True) is not False:
+        return SessionState.ENDED
+    alive = _host.host().liveness(session_id)
+    if alive is None:
+        return SessionState.UNKNOWN
+    return SessionState.LIVE if alive else SessionState.DEAD
 
 
 @session.command("list")
@@ -151,6 +172,7 @@ def session_list(
     table = Table(show_header=True, header_style="bold")
     table.add_column("Date", style="dim")
     table.add_column("Session ID", style="cyan")
+    table.add_column("State")
     table.add_column("Role")
     table.add_column("Provider")
     table.add_column("Turns", justify="right")
@@ -166,13 +188,10 @@ def session_list(
 
     for s in sessions:
         date_str = _session_date(s.session_id)
-        if not s.metrics_path.exists():
-            table.add_row(date_str, s.session_id, "?", "?", "?", "?", "?", "?")
-            continue
-        try:
-            m = json.loads(s.metrics_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            table.add_row(date_str, s.session_id, "?", "?", "?", "?", "?", "?")
+        m = _load_metrics_safe(s)
+        state = str(session_state(s.session_id, m))
+        if m is None:
+            table.add_row(date_str, s.session_id, state, "?", "?", "?", "?", "?", "?")
             continue
 
         role = m.get("role", "?")
@@ -201,6 +220,7 @@ def session_list(
         table.add_row(
             date_str,
             s.session_id,
+            state,
             str(role),
             str(provider),
             str(turns),
@@ -239,17 +259,10 @@ def _emit_sessions_json(sessions) -> None:
         started = _started_at(s.session_id)
         if started:
             item["started_at"] = started
-        if s.metrics_path.exists():
-            try:
-                m = json.loads(s.metrics_path.read_text())
-                # Merge metrics first, then re-stamp computed fields so the
-                # session_id/session_dir from metrics (if any) never shadow
-                # the authoritative on-disk identity.
-                merged = {**m, **item}
-                item = merged
-            except (json.JSONDecodeError, OSError):
-                pass
-        out.append(item)
+        m = _load_metrics_safe(s)
+        item["state"] = str(session_state(s.session_id, m))
+        # Metrics first, then the computed fields, so the on-disk identity is never shadowed.
+        out.append({**(m or {}), **item})
     click.echo(json.dumps(out, indent=2, sort_keys=True))
 
 
@@ -562,9 +575,16 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
     # HATS-1397: `build` replaces audit.md wholesale, so rewriting a session that
     # is still running destroys the `## Events` log it is appending to and races
     # `finalize_audit` for metrics.json. `finalized` exists to answer this.
+    dead = ""
     if metrics.get("finalized") is False:
-        row["note"] = "not finalized (session still running)"
-        return row
+        state = session_state(s.session_id, metrics)
+        if state is SessionState.LIVE:
+            row["note"] = "not finalized (session still running)"
+            return row
+        if state is not SessionState.DEAD:
+            row["note"] = f"not finalized (session {state})"
+            return row
+        dead = " — owner dead, never finalized"
 
     # Exact match only: live discovery falls back to the freshest transcript,
     # which retroactively resolves a stranger's (HATS-1374 — a dry run
@@ -624,7 +644,7 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
     row["after"] = "measured" if is_measured(after) else "unmeasured"
     row["turns"] = str(after.get("turns", "-"))
     row["tool_calls"] = str(after.get("tool_calls", "-"))
-    row["note"] = "rewritten" + suffix
+    row["note"] = "rewritten" + suffix + dead
     return row
 
 

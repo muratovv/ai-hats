@@ -389,6 +389,18 @@ def _pid_from_dirname(name: str) -> int | None:
     return _valid_pid(int(pid))
 
 
+def session_alive(cache_dir: Path, liveness: LazyLiveness) -> bool | None:
+    """Whether the session that owns ``cache_dir`` still runs; ``None`` when its
+    anchor cannot say. No dir is dead: teardown removes it, and the sweep reaps
+    it once every owner is gone — and the anchor precedes ``metrics.json``."""
+    if not cache_dir.is_dir():
+        return False
+    owners = session_owners(cache_dir)
+    if not owners:
+        return None
+    return any(liveness.is_live(pid, start_time) for pid, start_time in owners)
+
+
 def session_owners(session_dir: Path) -> tuple[Owner, ...] | None:
     """Every process whose life keeps ``session_dir`` in use — wrapper first.
 

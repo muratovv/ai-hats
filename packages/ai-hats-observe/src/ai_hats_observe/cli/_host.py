@@ -57,14 +57,22 @@ def _default_provider_adapter(provider: str) -> tuple[object | None, object | No
     return None, None
 
 
+def _default_liveness(session_id: str) -> bool | None:
+    """Standalone: the liveness anchor is the integrator's to read, so no verdict."""
+    del session_id
+    return None
+
+
 @dataclass(frozen=True)
 class Host:
-    """The four things a host provides — as ONE value, so a partial override cannot happen."""
+    """The things a host provides — as ONE value, so a partial override cannot happen."""
 
     layout: Callable[[], ProjectLayout]
     tag_filter_parser: Callable[[Iterable[str]], dict[str, str]]
     provider_adapter: ProviderAdapter
     console: Console
+    #: Whether a session still runs, by its liveness anchor; ``None`` when unknown.
+    liveness: Callable[[str], bool | None]
 
 
 STANDALONE = Host(
@@ -72,6 +80,7 @@ STANDALONE = Host(
     tag_filter_parser=_default_tag_filter_parser,
     provider_adapter=_default_provider_adapter,
     console=Console(),
+    liveness=_default_liveness,
 )
 
 _current: Host = STANDALONE
