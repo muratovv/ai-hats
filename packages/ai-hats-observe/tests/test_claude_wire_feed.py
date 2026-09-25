@@ -146,6 +146,54 @@ def test_an_api_error_line_is_a_signal_and_no_response() -> None:
     assert (events[-1].ok, events[-1].detail) == (False, "429")
 
 
+def _quota(status: str, resets_at: int = 1790340000) -> dict[str, Any]:
+    """Shaped as measured on 2.1.282: utilization lives per window, not on top."""
+    return {
+        "type": "rate_limit_event",
+        "rate_limit_info": {
+            "status": status,
+            "resetsAt": resets_at,
+            "rateLimitType": "five_hour",
+            "unifiedWindows": {"five_hour": {"utilization": 0.91, "resetsAt": resets_at}},
+        },
+    }
+
+
+def test_a_warning_from_the_quota_is_said_before_the_wall() -> None:
+    """Only the wire says the quota is close: the record never does, and a PTY
+    session hears it from its status line instead."""
+    (notice,) = _feed(_quota("allowed_warning"))
+
+    assert (notice.reason, notice.raw_code) == (WorthRecording.APPROACHING_LIMIT, "allowed_warning")
+    assert notice.source == WIRE_SOURCE and notice.ts
+    assert "five_hour" in notice.detail and "91%" in notice.detail
+
+
+def test_the_wall_is_the_api_error_and_takes_its_reset_from_the_quota_line() -> None:
+    """One wall, one producer: the refused turn's API error, in both inputs. Its
+    reset rides the message in the record and the quota line on the wire."""
+    wall = {
+        "type": "assistant",
+        "error": "rate_limit",
+        "is_api_error_message": True,
+        "request_id": "req_e",
+        "parent_tool_use_id": None,
+        "message": {
+            "id": "e",
+            "model": "<synthetic>",
+            "content": [{"type": "text", "text": "429"}],
+        },
+    }
+
+    events = _feed(_quota("rejected"), wall, _result(is_error=True, result="429"))
+    waits = [e for e in events if isinstance(e, HarnessActionRequired)]
+
+    assert [(w.reason, w.retry_after) for w in waits] == [(HarnessMustAct.WAIT, 1790340000)]
+    # POSITIVE CONTROL: without the quota line the wall still stands, with no reset
+    (alone,) = [e for e in _feed(wall) if isinstance(e, HarnessActionRequired)]
+    assert alone.retry_after is None
+
+
 @pytest.mark.parametrize(
     "line",
     [

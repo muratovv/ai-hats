@@ -538,7 +538,7 @@ def _stream_signals_to(event_log: Path | None) -> "Callable[[object], None] | No
     Fail-open: a line that cannot land is logged, the run goes on."""
     if event_log is None:
         return None
-    from ai_hats_observe.canonical import now
+    from ai_hats_observe.canonical import Notice, now
     from ai_hats_observe.event_log import write_events
 
     from .stream_events import rate_limit_events
@@ -547,8 +547,10 @@ def _stream_signals_to(event_log: Path | None) -> "Callable[[object], None] | No
         info = getattr(message, "rate_limit_info", None)
         if info is None or type(message).__name__ != "RateLimitEvent":
             return
+        # the wall is the transcript's: its API error is the one producer (ADR-0038 D4)
+        warnings = [e for e in rate_limit_events(info, ts=now()) if isinstance(e, Notice)]
         try:
-            write_events(rate_limit_events(info, ts=now()), event_log, append=True)
+            write_events(warnings, event_log, append=True)
         except Exception:
             logger.warning("rate-limit signal not recorded in %s", event_log, exc_info=True)
 

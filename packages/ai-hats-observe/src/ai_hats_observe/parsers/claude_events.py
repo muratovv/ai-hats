@@ -188,8 +188,8 @@ _WIRE_RENAMES = {
     "isSynthetic": "isMeta",
 }
 # Wire lines that say nothing the log records: the per-command queue (the turn's
-# prompts ride its `result`) and the quota, which is a later reader's to take.
-_SILENT_WIRE_TYPES = frozenset({"command_lifecycle", "rate_limit_event"})
+# prompts ride its `result`).
+_SILENT_WIRE_TYPES = frozenset({"command_lifecycle"})
 # `system` subtypes only the wire has: the binary's bookkeeping and UI lines.
 _SILENT_WIRE_SUBTYPES = frozenset(
     {
@@ -296,6 +296,8 @@ class ClaudeTranscriptReader:
         # parent's record is that call's producer, so the replay is skipped
         self._in_fork_head = False
         self._replayed_calls: set[str] = set()
+        # when the quota wall lifts: the wire says it on the quota line, not on the error
+        self._wall_resets_at: int | None = None
 
     # -- EventReader -------------------------------------------------------
 
@@ -348,14 +350,33 @@ class ClaudeTranscriptReader:
         if rtype in _SILENT_WIRE_TYPES or (rtype == "system" and subtype in _SILENT_WIRE_SUBTYPES):
             return
         match rtype:
+            case "rate_limit_event":
+                yield from self._quota(record)
             case "stream_event":
                 yield from self._stream_event(record)
             case "result":
                 yield from self._result(record)
+            case "assistant" if _is_wall(record) and "quotaLimits" not in record:
+                if self._wall_resets_at is not None:
+                    record["quotaLimits"] = {"status": "rejected", "resetsAt": self._wall_resets_at}
+                yield from self._record(record)
             case "system" if subtype == "hook_response":
                 yield from self._hook_response(record)
             case _:
                 yield from self._record(record)
+
+    def _quota(self, record: dict[str, Any]) -> Iterator[Event]:
+        """The quota's state. ``rejected`` is the wall, whose producer is the
+        refused turn's API error — here it only lends that error its reset."""
+        info = record.get("rate_limit_info")
+        if not isinstance(info, dict):
+            return
+        if info.get("status") == "rejected":
+            resets = info.get("resetsAt")
+            self._wall_resets_at = resets if isinstance(resets, int) else None
+        notice = approaching_limit(info)
+        if notice is not None:
+            yield replace(notice, source=SOURCE, ts=_ts(record))
 
     def _hook_response(self, record: dict[str, Any]) -> Iterator[Event]:
         """One hook the surface ran. A Stop hook is read as the record reads
@@ -892,6 +913,36 @@ def _prompt_id(record: dict[str, Any]) -> PromptId | None:
     """The record's own uuid: on the wire, the id the harness sent the prompt with."""
     value = record.get("uuid")
     return PromptId(value) if isinstance(value, str) and value else None
+
+
+def approaching_limit(info: Mapping[str, Any]) -> Notice | None:
+    """A ``Notice`` when the quota ``info`` (the wire's ``rate_limit_info``) says
+    the limit is close; ``None`` for any other state, the wall included."""
+    if info.get("status") != "allowed_warning":
+        return None
+    window = info.get("rateLimitType")
+    parts = [f"{window or 'rate limit'} allowed_warning"]
+    windows = info.get("unifiedWindows")
+    per_window = windows.get(window) if isinstance(windows, dict) else None
+    utilization = info.get("utilization")
+    if utilization is None and isinstance(per_window, dict):
+        utilization = per_window.get("utilization")
+    if isinstance(utilization, (int, float)):
+        parts.append(f"utilization {utilization:.0%}")
+    if info.get("resetsAt"):
+        parts.append(f"resets at {info['resetsAt']}")
+    if info.get("overageDisabledReason"):
+        parts.append(f"overage unavailable: {info['overageDisabledReason']}")
+    return Notice(
+        reason=WorthRecording.APPROACHING_LIMIT,
+        detail="; ".join(parts),
+        raw_code="allowed_warning",
+        source=SOURCE,
+    )
+
+
+def _is_wall(record: dict[str, Any]) -> bool:
+    return bool(record.get("isApiErrorMessage")) and record.get("error") == "rate_limit"
 
 
 def _tool_use_ids(record: dict[str, Any]) -> set[str]:
