@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-27
+
 ### Added
 
 - **A headless session's log tells the person's prompts from what claude injects, in the order a chat needs** (HATS-2032, from the hai chat PoC). A prompt sent on stdin is now `prompt_received` with `origin: person` and the text exactly as sent; everything claude puts into the conversation — a skill's body, a system reminder, a task notification, a sub-agent's hand-back, the `/compact` summary — stays `harness`. The holder tells claude's wire codec each prompt it writes, and the codec records it at the first sign claude took it: `command_lifecycle` `started`, or the echo when that comes first. The echo alone was late for a slash command claude runs itself (`/model`, `/context`), which it answers before echoing, and missing for one it refuses here (`/tui`, `/login`), so a late reader of the log saw the answer and never the question. `/clear` is a `context_cleared` signal instead of `unsupported_record`, and `system/vcs_state_changed` after a commit or a push is silent. The how-to now says how to tell an interrupted tool from a person's refusal, and how to run the holder from a development venv, which has no `ai-hats` script. `ai-hats-observe` 0.19.0, `ai-hats-client` 0.2.0.
@@ -2902,7 +2904,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/muratovv/ai-hats/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/muratovv/ai-hats/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/muratovv/ai-hats/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/muratovv/ai-hats/compare/v0.13.2...v0.14.0
