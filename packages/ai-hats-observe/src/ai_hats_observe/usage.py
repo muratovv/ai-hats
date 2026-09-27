@@ -92,8 +92,9 @@ def empty_usage_report(source: str) -> dict[str, Any]:
     }
 
 
-def parse_session_usage(jsonl_path: str | Path) -> dict[str, Any]:
-    """Parse one Claude Code JSONL transcript into a ``usage/v2`` report dict.
+def parse_session_usage(jsonl_path: str | Path | Iterable[str | Path]) -> dict[str, Any]:
+    """Parse a Claude Code JSONL transcript into a ``usage/v2`` report dict — or
+    several, in order, as one session: claude's ``/clear`` goes on in a new one.
 
     Two passes, because they answer different questions: the canonical reader
     says what the *run* did — calls, cost, items, signals — while the record
@@ -107,20 +108,27 @@ def parse_session_usage(jsonl_path: str | Path) -> dict[str, Any]:
     # parser, which imports this module — a top-level import would close a cycle.
     from .parsers.claude_events import ClaudeTranscriptReader
 
-    path = Path(jsonl_path)
-    report = empty_usage_report(path.name)
+    paths = (
+        [Path(jsonl_path)] if isinstance(jsonl_path, (str, Path)) else [Path(p) for p in jsonl_path]
+    )
+    report = empty_usage_report(paths[0].name if paths else "")
 
-    try:
-        raw = path.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        # Unreadable file is an infrastructure error, not transcript drift —
-        # surface it but still hand back a well-formed empty report.
-        report["flags"].append(f"unreadable: {type(exc).__name__}")
+    events: list[Event] = []
+    read = 0
+    for path in paths:
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            # Unreadable file is an infrastructure error, not transcript drift —
+            # surface it but still hand back a well-formed report.
+            report["flags"].append(f"unreadable: {type(exc).__name__}")
+            continue
+        read += 1
+        _read_records(raw, report)
+        events.extend(ClaudeTranscriptReader(path).read())
+    if not read:
         return report
 
-    _read_records(raw, report)
-
-    events = list(ClaudeTranscriptReader(path).read())
     _fold_run(collect(events), report)
     _walk_timeline(events, report)
     # The two passes stamp their own events; a report is read as a chronology.

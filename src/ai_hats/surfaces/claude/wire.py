@@ -119,6 +119,7 @@ class _Decoder:
         self._lock = threading.Lock()
         self._sent: dict[str, str] = {}
         self._received: set[str] = set()
+        self.provider_session_id: str | None = None
 
     def sent(self, prompt: Prompt) -> None:
         if prompt.id is not None:
@@ -128,6 +129,7 @@ class _Decoder:
     def decode(self, line: Mapping[str, Any]) -> list[Event]:
         if not isinstance(line, Mapping):
             return list(self._reader.feed(line))  # the reader reports a line that is no object
+        self._note_session(line)
         taken = self._taken(line)
         if taken is not None:
             return taken
@@ -152,6 +154,7 @@ class _Decoder:
     def control(self, line: Mapping[str, Any]) -> Control | None:
         if not isinstance(line, Mapping):
             return None
+        self._note_session(line)
         kind = line.get("type")
         if kind == "control_cancel_request":
             return Withdrawn(str(line.get("request_id", "")))
@@ -172,6 +175,12 @@ class _Decoder:
     def close(self) -> list[Event]:
         self._reader.close()
         return list(self._reader.read())
+
+    def _note_session(self, line: Mapping[str, Any]) -> None:
+        # /clear moves the binary to a new session, and every later line names it (2.1.283)
+        session_id = line.get("session_id")
+        if isinstance(session_id, str) and session_id and not line.get("parent_tool_use_id"):
+            self.provider_session_id = session_id
 
     def _taken(self, line: Mapping[str, Any]) -> list[Event] | None:
         """A sent prompt's receipt at the first sign the binary took it, else ``None``.

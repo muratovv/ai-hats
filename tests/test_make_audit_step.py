@@ -243,3 +243,36 @@ def test_swallows_audit_writer_keyboard_interrupt(tmp_path):
         session_factory=Session,
         audit_writer_factory=_InterruptingAuditWriter,
     )  # must not raise
+
+
+def test_passes_every_transcript_of_a_session_the_surface_moved(tmp_path, monkeypatch):
+    """After claude's /clear the session goes on in a second transcript; the audit reads both."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    session = make_session(tmp_path)
+    session.init_audit(role="primary", provider="claude")
+    session.record_provider_session_id("sid-before")
+    session.record_provider_session_moved("sid-after")
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+    before, after = claude_dir / "sid-before.jsonl", claude_dir / "sid-after.jsonl"
+    before.write_text("{}")
+    after.write_text("{}")
+    captured: dict = {}
+
+    class _CapturingAuditWriter:
+        def build(self, session, jsonl_path=None, keep_raw=False, transcript_verified=False):
+            captured["jsonl_path"] = jsonl_path
+
+    MakeAudit().run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        claude_session_id="sid-before",
+        layout=ProjectLayout.at(project_dir),
+        transcript_resolver=_claude_resolver,
+        exit_code=0,
+        session_factory=Session,
+        audit_writer_factory=_CapturingAuditWriter,
+    )
+
+    assert captured["jsonl_path"] == [before, after]

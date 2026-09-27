@@ -101,6 +101,38 @@ def test_identity_is_persisted_at_launch_not_at_teardown(tmp_path: Path) -> None
     assert metrics["finalized"] is False
 
 
+MOVED = "66666666-7777-4888-8999-000000000000"
+
+
+def test_a_session_the_surface_moved_keeps_every_id_in_order(tmp_path: Path) -> None:
+    """claude's /clear goes on under a new id and transcript; both belong to the session."""
+    s = _session(tmp_path)
+    s.record_provider_session_id(SID)
+
+    s.record_provider_session_moved(MOVED)
+    s.record_provider_session_moved(MOVED)  # the stdout names it on every line
+    s.record_provider_session_moved(SID)  # the launch id is not a move
+
+    assert s.provider_session_ids() == (SID, MOVED)
+    metrics = json.loads(s.metrics_path.read_text())
+    assert (metrics["claude_session_id"], metrics["claude_session_ids"]) == (SID, [SID, MOVED])
+    fresh = Session(session_id=s.session_id, session_dir=s.session_dir)
+    assert fresh.provider_session_ids() == (SID, MOVED), "a finalize reads it back"
+
+
+def test_a_session_that_never_moved_is_its_one_id(tmp_path: Path) -> None:
+    s = _session(tmp_path)
+    s.record_provider_session_id(SID)
+
+    fresh = Session(session_id=s.session_id, session_dir=s.session_dir)
+    assert fresh.provider_session_ids() == (SID,)
+    assert "claude_session_ids" not in json.loads(s.metrics_path.read_text())
+
+
+def test_a_session_with_no_id_has_none(tmp_path: Path) -> None:
+    assert _session(tmp_path).provider_session_ids() == ()
+
+
 def test_an_unclaimed_identity_is_not_persisted(tmp_path: Path) -> None:
     s = _session(tmp_path)
 

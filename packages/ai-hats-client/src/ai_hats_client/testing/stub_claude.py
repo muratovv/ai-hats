@@ -36,6 +36,8 @@ prompt text:
     /model <x>, /context, /usage, /rename
                     run locally, as claude 2.1.283 does: a ``<synthetic>``
                     answer, and only then the echo, in ``<command-name>`` form
+    /clear          start over: ``conversation_reset``, then a new session id
+                    and a new transcript for everything after it
     /tui, /login, /logout, /theme, /status, /upgrade, /voice
                     refused here: a ``<synthetic>`` "isn't available" and no
                     echo at all; any other ``/x`` is an ordinary prompt
@@ -111,6 +113,15 @@ def _flag(argv: list[str], name: str) -> str | None:
         if arg.startswith(name + "="):
             return arg.split("=", 1)[1]
     return None
+
+
+def _command_name(command: str, args: str) -> str:
+    """How claude writes a slash command it ran itself into the record and the echo."""
+    return (
+        f"<command-name>/{command}</command-name>\n"
+        f"            <command-message>{command}</command-message>\n"
+        f"            <command-args>{args}</command-args>"
+    )
 
 
 def _content(msg: dict) -> str:
@@ -412,8 +423,11 @@ class Stub:
     def turn(self, text: str, prompt_uuid: str) -> None:
         self.interrupt.clear()  # an interrupt between turns stops nothing
         self.lifecycle(prompt_uuid, "started")
-        self.init()
         command, _, args = text[1:].partition(" ") if text.startswith("/") else ("", "", "")
+        if command == "clear":
+            self.clear(prompt_uuid)
+            return
+        self.init()
         if command in _LOCAL_COMMANDS | _REFUSED_COMMANDS:
             self.slash_command(command, args, prompt_uuid)
             return
@@ -444,6 +458,31 @@ class Stub:
             records, self.deferred = self.deferred, None
             self.write_late(records, late, time.time())
 
+    def clear(self, prompt_uuid: str) -> None:
+        """/clear: the conversation starts over under a new session id and transcript."""
+        self.turn_ids = [prompt_uuid]
+        self.emit(
+            {
+                "type": "conversation_reset",
+                "new_conversation_id": str(uuid.uuid4()),
+                "trigger": "clear",
+                "user_message_uuid": prompt_uuid,
+                "timestamp": _now(),
+                "uuid": str(uuid.uuid4()),
+                "session_id": self.session_id,  # still the old one, as measured
+            }
+        )
+        self.session_id = str(uuid.uuid4())
+        self.transcript = self.transcript.with_name(f"{self.session_id}.jsonl")
+        self.previous = ""  # the model no longer remembers
+        self.init()
+        said = _command_name("clear", "")
+        self.record(
+            {"type": "user", "uuid": prompt_uuid, "message": {"role": "user", "content": said}}
+        )
+        self.echo(said, prompt_uuid, _now())
+        self.result("", stop_reason=None, terminal_reason=None)
+
     def slash_command(self, command: str, args: str, prompt_uuid: str) -> None:
         """Answered by the binary, not the model: the answer first, the echo after it."""
         self.turn_ids = [prompt_uuid]
@@ -468,11 +507,7 @@ class Stub:
             }
         )
         if command in _LOCAL_COMMANDS:
-            said = (
-                f"<command-name>/{command}</command-name>\n"
-                f"            <command-message>{command}</command-message>\n"
-                f"            <command-args>{args}</command-args>"
-            )
+            said = _command_name(command, args)
             self.record(
                 {"type": "user", "uuid": prompt_uuid, "message": {"role": "user", "content": said}}
             )

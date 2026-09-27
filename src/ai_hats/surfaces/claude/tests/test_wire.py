@@ -329,3 +329,29 @@ def test_input_the_holder_did_not_send_stays_the_harnesss() -> None:
 
     assert received.origin is PromptOrigin.HARNESS
     assert received.prompt_id == "3f0e2d9c-0000-4000-8000-0000000000ff"
+
+
+def test_the_binarys_session_is_the_one_its_stdout_last_named() -> None:
+    """/clear moves claude to a new session; its own reset line still names the old one."""
+    decoder = ClaudeWire().decoder()
+    seen = []
+    for raw in (FIXTURES / "commands.wire.jsonl").read_text().splitlines():
+        line = json.loads(raw)
+        decoder.decode(line)
+        seen.append((line["type"], decoder.provider_session_id))
+
+    first, moved = "00000000-0000-4000-9000-000000000001", "00000000-0000-4000-9000-000000000002"
+    reset = next(i for i, (kind, _) in enumerate(seen) if kind == "conversation_reset")
+    assert {sid for _, sid in seen[: reset + 1]} == {first}
+    assert seen[reset + 1] == ("system", moved), "the init after the reset names the new one"
+    assert {sid for _, sid in seen[reset + 1 :]} == {moved}
+
+
+def test_a_line_with_no_session_or_a_sub_agents_leaves_it_as_it_was() -> None:
+    decoder = ClaudeWire().decoder()
+    decoder.decode({"type": "system", "subtype": "init", "session_id": "s-1"})
+
+    decoder.decode({"type": "control_response", "response": {"subtype": "success"}})
+    decoder.decode({"type": "assistant", "parent_tool_use_id": "toolu_1", "session_id": "s-2"})
+
+    assert decoder.provider_session_id == "s-1"

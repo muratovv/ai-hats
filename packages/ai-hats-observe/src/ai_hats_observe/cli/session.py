@@ -608,7 +608,7 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
     # HATS-1397: the resolver refuses to guess once given an id, so the stem check
     # that used to sit here is gone — it only ever described claude's filenames and
     # rejected agy (`…/<psid>/…/transcript.jsonl`) and cline (`<psid>.messages`).
-    jsonl_path = resolver(project_dir, s.session_id, provider_session_id=provider_session_id)
+    jsonl_path = s.transcripts(resolver, project_dir, provider_session_id)
     has_existing = (
         any(p.exists() for p in jsonl_path)
         if isinstance(jsonl_path, (list, tuple))

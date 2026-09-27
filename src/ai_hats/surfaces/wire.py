@@ -48,6 +48,10 @@ Control = Question | Withdrawn
 class WireDecoder(Protocol):
     """One session's stdout, line by line, as the main agent's events (ADR-0038 D4)."""
 
+    #: The binary's own session id, as its stdout last named it; ``None`` until it does.
+    #: It can change mid-run — claude's ``/clear`` goes on in a new session and transcript.
+    provider_session_id: str | None
+
     def sent(self, prompt: Prompt) -> None:
         """The holder is writing ``prompt`` to the binary's stdin; called before the write.
 

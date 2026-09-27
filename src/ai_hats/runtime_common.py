@@ -587,6 +587,20 @@ def sub_agent_sources(sources: "Sequence[Path | EventSource]") -> "list[EventSou
     return [s for s in sources if isinstance(s, EventSource) and s.agent is not None]
 
 
+def located_sources(
+    provider, session: "Session", root: Path, provider_session_id: str, *, main_record: bool
+) -> list:
+    """The records to follow, in every session the surface ran under — claude's
+    ``/clear`` goes on under a new id, and its sub-agents' records with it."""
+    ids = session.provider_session_ids() or (provider_session_id,)
+    sources = [
+        source
+        for sid in ids
+        for source in provider.event_sources(root, session.session_id, provider_session_id=sid)
+    ]
+    return sources if main_record else sub_agent_sources(sources)
+
+
 def start_event_log(
     provider,
     session: "Session",
@@ -622,10 +636,9 @@ def start_event_log(
     root = Path(cwd).resolve()
 
     def locate():
-        sources = provider.event_sources(
-            root, session.session_id, provider_session_id=provider_session_id
+        return located_sources(
+            provider, session, root, provider_session_id, main_record=main_record
         )
-        return sources if main_record else sub_agent_sources(sources)
 
     try:
         return EventLogWriter(
@@ -823,6 +836,11 @@ def _finalize_session_basic(
         # of this one field.
         if claude_session_id:
             metrics["claude_session_id"] = claude_session_id
+        from ai_hats_observe.session import PROVIDER_SESSION_IDS
+
+        chain = session.provider_session_ids()
+        if len(chain) > 1:  # the surface moved (claude's /clear): every transcript is ours
+            metrics[PROVIDER_SESSION_IDS] = list(chain)
         if tags:
             metrics["tags"] = tags
         if duration_s is not None:

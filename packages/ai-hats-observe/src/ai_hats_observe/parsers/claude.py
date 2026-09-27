@@ -75,8 +75,7 @@ class ClaudeParser:
         """JSONL present → the measured ``usage/v1`` report; else trace fallback."""
         paths = self._normalize_paths(jsonl_path)
         if paths:
-            # If multiple paths exist, parse the primary (first) transcript
-            return _usage.parse_session_usage(paths[0])
+            return _usage.parse_session_usage(paths)
         return self._trace.parse_usage(None, trace_path)
 
     @classmethod
