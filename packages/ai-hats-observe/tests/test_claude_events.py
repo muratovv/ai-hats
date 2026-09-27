@@ -279,6 +279,10 @@ LIMIT_NOTICE = "You've hit your monthly spend limit"
     ("error", "expected_reason"),
     [
         ("authentication_failed", PersonMustAct.REAUTHENTICATE),
+        ("cloud_credential_error", PersonMustAct.REAUTHENTICATE),
+        ("oauth_org_not_allowed", PersonMustAct.AUTHORIZE),
+        ("account_on_hold", PersonMustAct.AUTHORIZE),
+        ("verification_required", PersonMustAct.AUTHORIZE),
         ("billing_error", PersonMustAct.PAY),
     ],
 )
@@ -292,12 +296,32 @@ def test_person_must_act_errors_map_to_their_obligation(
     assert raised[0].reason is expected_reason
 
 
+ORG_DISABLED = (
+    "Your organization has disabled Claude subscription access for Claude Code · "
+    "Use an Anthropic API key instead, or ask your admin to enable access"
+)
+
+
+def test_an_org_that_disabled_access_is_a_person_who_must_authorize(tmp_path: Path) -> None:
+    """Logging in again does not help here: an admin has to enable access, or
+    the person switches to an API key. Recorded as claude 2.1.283 wrote it."""
+    record = api_error("oauth_org_not_allowed", ORG_DISABLED, apiErrorStatus=403)
+
+    [raised] = signals(events_of(tmp_path, [record]))
+
+    assert isinstance(raised, PersonActionRequired)
+    assert raised.reason is PersonMustAct.AUTHORIZE
+    assert (raised.raw_code, raised.detail) == ("403", ORG_DISABLED)
+
+
 @pytest.mark.parametrize(
     ("error", "expected_reason"),
     [
         ("rate_limit", HarnessMustAct.WAIT),
+        ("overloaded", HarnessMustAct.RETRY),
         ("server_error", HarnessMustAct.RETRY),
         ("invalid_request", HarnessMustAct.ABORT),
+        ("model_not_found", HarnessMustAct.ABORT),
         ("unknown", HarnessMustAct.ABORT),
     ],
 )
