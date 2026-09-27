@@ -25,6 +25,7 @@ from ..canonical.events import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    SessionConfigured,
     ToolResultReceived,
     TurnEnded,
 )
@@ -196,10 +197,8 @@ _SILENT_WIRE_SUBTYPES = frozenset(
     {
         "background_tasks_changed",
         "hook_started",
-        "init",
         "notification",
         "permission_denied",  # the refused call's is_error result says it, in both modes
-        "status",
         "task_notification",
         "task_progress",
         "task_started",
@@ -300,6 +299,7 @@ class ClaudeTranscriptReader:
         self._replayed_calls: set[str] = set()
         # the quota as the wire last reported it; each quota line replaces it
         self._quota: dict[str, Any] = {}
+        self._configuration: SessionConfigured | None = None
         self._on_wire = False
 
     # -- EventReader -------------------------------------------------------
@@ -381,8 +381,34 @@ class ClaudeTranscriptReader:
                 )
             case "system" if subtype == "hook_response":
                 yield from self._hook_response(record)
+            case "system" if subtype in ("init", "status"):
+                yield from self._configured(record)
             case _:
                 yield from self._record(record)
+
+    def _configured(self, record: dict[str, Any]) -> Iterator[Event]:
+        """The session's configuration, when it changed: whole from a turn's
+        ``init``, the mode alone from a ``status`` that names one."""
+        last = self._configuration
+        mode = record.get("permissionMode")
+        if not isinstance(mode, str) or not mode:
+            if record.get("subtype") == "status":
+                return  # a request going out, not a setting
+            mode = None
+        if record.get("subtype") == "init":
+            current = SessionConfigured(
+                model=_model(record),
+                permission_mode=mode,
+                commands=_names(record.get("slash_commands")),
+                skills=_names(record.get("skills")),
+            )
+        else:
+            current = last if last is not None else SessionConfigured()
+        current = replace(current, permission_mode=mode, planning=mode == "plan", ts=_ts(record))
+        if last is not None and replace(current, ts=last.ts) == last:
+            return
+        self._configuration = current
+        yield current
 
     def _quota_line(self, record: dict[str, Any]) -> Iterator[Event]:
         """The quota's state. ``rejected`` says nothing itself: the wall's producer
@@ -1027,6 +1053,10 @@ def _hook_failure(attachment: dict[str, Any]) -> str:
 def _model(message: Any) -> ModelName | None:
     value = message.get("model") if isinstance(message, dict) else None
     return ModelName(value) if isinstance(value, str) and value else None
+
+
+def _names(value: Any) -> tuple[str, ...]:
+    return tuple(v for v in value if isinstance(v, str) and v) if isinstance(value, list) else ()
 
 
 def _fallback_detail(block: dict[str, Any]) -> str | None:

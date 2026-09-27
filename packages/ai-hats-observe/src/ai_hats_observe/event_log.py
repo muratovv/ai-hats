@@ -31,6 +31,7 @@ from .canonical.events import (
     ResponseStarted,
     RunEnded,
     RunStarted,
+    SessionConfigured,
     ToolResultReceived,
     TurnEnded,
 )
@@ -203,6 +204,16 @@ def encode(event: Event) -> dict[str, Any]:
                 "prompt_ids": list(event.prompt_ids),
                 "ts": event.ts,
             }
+        case SessionConfigured():
+            body = {
+                "event": "session_configured",
+                "model": event.model,
+                "planning": event.planning,
+                "permission_mode": event.permission_mode,
+                "commands": list(event.commands),
+                "skills": list(event.skills),
+                "ts": event.ts,
+            }
         case PromptReceived():
             body = {
                 "event": "prompt_received",
@@ -344,6 +355,16 @@ def _decode(record: dict[str, Any]) -> Event | None:
                     for i in (ids if isinstance(ids, list) else [])
                     if isinstance(i, str)
                 ),
+                ts=ts,
+            )
+        case "session_configured":
+            model, mode = record.get("model"), record.get("permission_mode")
+            return SessionConfigured(
+                model=ModelName(model) if isinstance(model, str) and model else None,
+                planning=record.get("planning") is True,
+                permission_mode=mode if isinstance(mode, str) else None,
+                commands=_strings(record.get("commands")),
+                skills=_strings(record.get("skills")),
                 ts=ts,
             )
         case "prompt_received":
@@ -498,6 +519,10 @@ def _usage_fields(usage: Usage) -> dict[str, int]:
         "cache_read_input_tokens": usage.cache_read_input_tokens,
         "cache_creation_input_tokens": usage.cache_creation_input_tokens,
     }
+
+
+def _strings(value: Any) -> tuple[str, ...]:
+    return tuple(v for v in value if isinstance(v, str)) if isinstance(value, list) else ()
 
 
 def _usage_from(record: Any) -> Usage:

@@ -20,6 +20,7 @@ from .events import (
     ResponseStarted,
     RunEnded,
     RunStarted,
+    SessionConfigured,
     ToolResultReceived,
     TurnEnded,
 )
@@ -100,6 +101,7 @@ __all__ = [
     "ResponseStarted",
     "RunEnded",
     "RunStarted",
+    "SessionConfigured",
     "Signal",
     "TextItem",
     "ThinkingItem",

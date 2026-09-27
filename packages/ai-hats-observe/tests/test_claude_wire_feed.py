@@ -23,6 +23,7 @@ from ai_hats_observe.canonical import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    SessionConfigured,
     ToolResultReceived,
     TurnEnded,
     WorthRecording,
@@ -218,7 +219,6 @@ def test_a_wall_reads_the_quota_as_last_reported_not_an_old_rejection() -> None:
     [
         {"type": "command_lifecycle", "command_uuid": "x", "state": "queued"},
         {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed"}},
-        {"type": "system", "subtype": "init", "model": "claude-x"},
         {"type": "system", "subtype": "status", "status": "requesting"},
         {"type": "system", "subtype": "hook_started", "hook_event": "Stop"},
         {"type": "system", "subtype": "notification", "key": "stop-hook-error"},
@@ -230,6 +230,55 @@ def test_a_wall_reads_the_quota_as_last_reported_not_an_old_rejection() -> None:
 )
 def test_the_wires_bookkeeping_says_nothing(line: dict[str, Any]) -> None:
     assert _feed({**line, "parent_tool_use_id": None}) == []
+
+
+def _init(model: str = "claude-haiku-4-5-20251001", **fields: Any) -> dict[str, Any]:
+    """A turn's ``system/init`` as claude 2.1.283 sends it, trimmed to what is read."""
+    return {
+        "type": "system",
+        "subtype": "init",
+        "session_id": "s-1",
+        "parent_tool_use_id": None,
+        "model": model,
+        "permissionMode": "default",
+        "slash_commands": ["compact", "model", "debug"],
+        "skills": ["debug"],
+        "tools": ["Bash", "Read"],
+        **fields,
+    }
+
+
+def test_the_first_init_says_how_the_session_is_configured_and_a_repeat_says_nothing() -> None:
+    (first,) = _feed(_init(), _init())
+
+    assert isinstance(first, SessionConfigured)
+    assert first.model == "claude-haiku-4-5-20251001"
+    assert (first.planning, first.permission_mode) == (False, "default")
+    assert (first.commands, first.skills) == (("compact", "model", "debug"), ("debug",))
+    assert first.ts, "stamped when it arrived"
+
+
+def test_a_model_picked_with_slash_model_is_a_new_snapshot_at_the_next_init() -> None:
+    first, second = _feed(_init(), _init(), _init("claude-sonnet-5"))
+
+    assert (first.model, second.model) == ("claude-haiku-4-5-20251001", "claude-sonnet-5")
+    assert second.commands == first.commands, "a snapshot is whole, not the field that changed"
+
+
+def test_a_mode_switch_is_said_at_once_and_a_request_going_out_is_not() -> None:
+    """``status`` carries the mode only when it changed (2.1.283); the
+    ``requesting`` beside it in the same feed must stay silent."""
+    requesting = {"type": "system", "subtype": "status", "status": "requesting"}
+    plan = {"type": "system", "subtype": "status", "status": None, "permissionMode": "plan"}
+
+    first, planned = _feed(_init(), requesting, plan, requesting)
+
+    assert (planned.planning, planned.permission_mode) == (True, "plan")
+    assert (planned.model, planned.commands) == (first.model, first.commands)
+
+
+def test_a_sub_agents_init_is_not_the_sessions() -> None:
+    assert _feed({**_init("claude-opus-5"), "parent_tool_use_id": "toolu_parent"}) == []
 
 
 def test_an_unknown_line_is_drift_said_by_the_wire() -> None:
@@ -328,11 +377,11 @@ def _record_events(name: str) -> list:
 def _comparable(events: list) -> Counter:
     """The events with the declared differences taken out (ADR-0037, the reader
     with two inputs): when a thing arrived, who said it, how a hook failure and
-    an API error are worded, the turn's end, the Stop verdicts' count, and the
-    record kinds the wire never carries."""
+    an API error are worded, the turn's end and the configuration only the wire
+    carries, the Stop verdicts' count, and the record kinds the wire never carries."""
     kept = []
     for event in events:
-        if isinstance(event, TurnEnded):
+        if isinstance(event, (TurnEnded, SessionConfigured)):
             continue
         if isinstance(event, GateVerdict) and event.point == GatePoint.AT_STOP:
             continue

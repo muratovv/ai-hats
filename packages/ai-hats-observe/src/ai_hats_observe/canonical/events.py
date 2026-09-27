@@ -118,6 +118,27 @@ class TurnEnded:
 
 
 @dataclass(frozen=True)
+class SessionConfigured:
+    """What the session is set to now, for a client that shows it.
+
+    Said when any of it changes and only then, each time whole: a client
+    replaces what it held instead of reconciling, and a surface that repeats
+    its configuration every turn does not fill the log with copies.
+    """
+
+    model: ModelName | None = None
+    # the model may read and plan, not change anything
+    planning: bool = False
+    # the surface's own word for its mode, verbatim
+    permission_mode: str | None = None
+    # the slash commands a person can send, by name; ``skills`` are those that are skills
+    commands: tuple[str, ...] = ()
+    skills: tuple[str, ...] = ()
+    ts: Timestamp | None = None
+    agent: AgentId | None = None
+
+
+@dataclass(frozen=True)
 class PromptReceived:
     """Input addressed to the model, from a person or from the harness.
 
@@ -262,6 +283,7 @@ Event = (
     RunStarted
     | RunEnded
     | TurnEnded
+    | SessionConfigured
     | PromptReceived
     | PersonAsked
     | ResponseStarted
