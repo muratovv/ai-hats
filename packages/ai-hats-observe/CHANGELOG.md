@@ -4,6 +4,31 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.21.0]
+
+A claude run refused because the account may not use it now says a person must
+authorize, not that the harness must abort.
+
+### Added
+
+- `PersonMustAct.AUTHORIZE` (`authorize`): the person is logged in but not
+  allowed. An admin enables access, the person switches to an API key, appeals
+  a hold or verifies the organization. Logging in again does not help.
+- `claude_events.API_ERRORS` and `claude_events.api_error_signals`: claude's
+  top-level `error` values by who must act, and the signals one value gives.
+  Every reader of claude reads an api error through them.
+
+### Changed
+
+- The claude reader knows 12 of the 13 `error` values claude 2.1.283 can send,
+  up from 6. `oauth_org_not_allowed`, `account_on_hold` and
+  `verification_required` read as `authorize`, `cloud_credential_error` as
+  `reauthenticate`, `overloaded` as `retry` and `model_not_found` as `abort`.
+- A value it does not know still reads as `abort`, and a
+  `Notice(unsupported_record)` with `raw_code` `error/<value>` follows it, so
+  the drift is on the log. `max_output_tokens` takes that path: claude does not
+  block on it.
+
 ## [0.20.0]
 
 A headless session's log carries what a chat's status line shows: the model,

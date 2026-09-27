@@ -18,6 +18,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **The headless client no longer stops a wait on a question its result already closed** (HATS-2038). The holder copies its log to stdout a tick at a time, so a question and the result that closes it, written within one tick, arrive in one write. The client's reader handed them over one line at a time, and a wait could see the question alone and raise `QuestionPending`. The reader now hands over everything one read takes. `ai-hats-client` 0.3.1.
 
+- **A claude run refused because the organization turned off subscription access now says a person must act** (HATS-2039). The reader knew six of the values claude writes in an API error's `error` field and read every other value as "the harness must abort". So `oauth_org_not_allowed` ("Your organization has disabled Claude subscription access for Claude Code") told nobody that a person had to go to an admin or switch to an API key. A new reason, `authorize`, covers it and two siblings: `account_on_hold` and `verification_required`. Logging in again clears none of the three. The table now follows the 13 values claude 2.1.283 knows. `overloaded` retries and `cloud_credential_error` asks to re-authenticate. Only `max_output_tokens`, which claude does not block on, is left out. A value outside the table still aborts, and an `unsupported_record` notice with `raw_code` `error/<value>` follows it, so the next new value shows up in the log. The transcript, the headless wire and the SDK stream read through one table now. `ai-hats-observe` 0.21.0.
+
 ## [0.16.0] - 2026-09-27
 
 ### Added
