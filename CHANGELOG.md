@@ -14,6 +14,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **A headless session's log says what a chat's status line shows** (HATS-2036, from the hai chat). `session_configured` carries the model, whether the session is in plan mode, claude's own word for its permission mode, and the slash commands and skills a person can send. It is written when any of that changes, never per turn: claude re-sends its `system/init` at the start of every turn, and the holder used to drop it. A mode switch arrives at once through `system/status`, a `/model` at the next turn's start. `context_usage` carries `used_tokens` and `max_tokens`, once per turn the model answered and before that turn's `turn_ended`; the window comes from the `result`'s `modelUsage`, which the holder dropped too. A slash command claude runs itself says no fill. `ai-hats-observe` 0.20.0, `ai-hats-client` 0.3.0.
 
+### Fixed
+
+- **The headless client no longer stops a wait on a question its result already closed** (HATS-2038). The holder copies its log to stdout a tick at a time, so a question and the result that closes it, written within one tick, arrive in one write. The client's reader handed them over one line at a time, and a wait could see the question alone and raise `QuestionPending`. The reader now hands over everything one read takes. `ai-hats-client` 0.3.1.
+
 ## [0.16.0] - 2026-09-27
 
 ### Added

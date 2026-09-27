@@ -5,7 +5,10 @@ fake_holder.py <mode> <stdin-log>
 ignore-eof   the header, then never exits, stdin closed or not
 old-holder   the header of a holder that runs `prompt` alone, then exit at EOF
 question     a tool call and a question on it; the turn ends once an answer arrives
-withdrawn    a question whose call gets its result at once, then the turn ends
+withdrawn    a question and its call's result in one write, then the turn ends —
+             the holder's log copier writes the lines of one tick so
+long-line    a turn whose one text item is longer than a pipe holds
+torn         a line cut short by the end of stdout
 """
 
 from __future__ import annotations
@@ -16,8 +19,8 @@ import sys
 import time
 
 
-def emit(body: dict) -> None:
-    sys.stdout.write(json.dumps({"v": "events/v1", **body}) + "\n")
+def emit(*bodies: dict) -> None:
+    sys.stdout.write("".join(json.dumps({"v": "events/v1", **b}) + "\n" for b in bodies))
     sys.stdout.flush()
 
 
@@ -56,12 +59,27 @@ def main(mode: str, log: str) -> int:
             pass
         return 0
     header(["prompt", "answer", "interrupt"])
+    if mode == "long-line":
+        emit({"event": "item_emitted", "item": {"kind": "text", "text": "x" * 300_000}})
+        emit({"event": "turn_ended", "ok": True, "prompt_ids": []})
+        for _ in lines(log):
+            pass
+        return 0
+    if mode == "torn":
+        sys.stdout.write('{"v": "events/v1", "event": "turn_')
+        return 0
     call = {"kind": "tool_call", "call_id": "c1", "name": "AskUserQuestion", "input": {"q": 1}}
     emit({"event": "item_emitted", "item": call})
-    emit({"event": "person_asked", "kind": "question", "call_id": "c1", "tool": "AskUserQuestion"})
+    asked = {
+        "event": "person_asked",
+        "kind": "question",
+        "call_id": "c1",
+        "tool": "AskUserQuestion",
+    }
     if mode == "withdrawn":
-        emit({"event": "tool_result_received", "call_id": "c1", "ok": False})
+        emit(asked, {"event": "tool_result_received", "call_id": "c1", "ok": False})
     else:
+        emit(asked)
         for command in lines(log):
             if command.get("cmd") == "answer":
                 break

@@ -4,6 +4,17 @@ All notable changes to `ai-hats-client` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1]
+
+### Fixed
+
+- A question whose result the holder wrote with it is no longer offered. The
+  holder copies its log to stdout a tick at a time, in one write; the reader
+  handed that write over line by line, and a wait could look between the two
+  lines, find nothing left to read, and raise `QuestionPending` for a question
+  its result had already closed. Everything one read takes is now handed over
+  at once.
+
 ## [0.3.0]
 
 ### Added

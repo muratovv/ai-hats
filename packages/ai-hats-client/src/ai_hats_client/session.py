@@ -24,6 +24,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -172,7 +173,8 @@ class HeadlessSession:
             raise ValueError("the holder's stdin, stdout and stderr must all be pipes")
         self._proc = proc
         self._stdin, self._stdout, self._stderr_pipe = proc.stdin, proc.stdout, proc.stderr
-        self._lines: queue.Queue[object] = queue.Queue()
+        self._lines: queue.Queue[list[object]] = queue.Queue()  # one item per read of stdout
+        self._ready: deque[object] = deque()  # lines handed over, not yet decoded
         self._stderr: list[bytes] = []
         self._read: list[Event] = []  # every event read, in order
         self._pending: list[Event] = []  # read, not yet handed out in a Turn
@@ -298,8 +300,8 @@ class HeadlessSession:
         run out its bound on a question nobody will answer."""
         deadline = time.monotonic() + timeout
         while True:
-            if self._unhandled and self._lines.empty():
-                # offered once everything already read is in: a result may close one first
+            if self._unhandled and not self._ready and self._lines.empty():
+                # offered once every line already read is in: a result read with it closes it
                 self._offer(on_question)
             line = self._next_line(deadline - time.monotonic(), "the end of a turn")
             if line is _EOF:
@@ -386,9 +388,17 @@ class HeadlessSession:
     # -- plumbing -------------------------------------------------------------------
 
     def _pump_stdout(self) -> None:
-        for line in iter(self._stdout.readline, b""):
-            self._lines.put(line)
-        self._lines.put(_EOF)
+        # the holder writes a tick's lines at once; handed over as one, a wait never sees
+        # a question without the result written with it
+        read, rest = getattr(self._stdout, "read1", self._stdout.read), b""  # one read a call
+        while chunk := read(1 << 16):
+            cut = chunk.rfind(b"\n") + 1
+            if not cut:
+                rest += chunk
+                continue
+            whole, rest = rest + chunk[:cut], chunk[cut:]
+            self._lines.put([line + b"\n" for line in whole[:-1].split(b"\n")])
+        self._lines.put([rest, _EOF] if rest else [_EOF])
 
     def _pump_stderr(self) -> None:
         for chunk in iter(self._stderr_pipe.readline, b""):
@@ -400,12 +410,14 @@ class HeadlessSession:
     def _next_line(self, timeout: float, awaited: str) -> object:
         if self._stdout_closed:
             return _EOF
-        try:
-            line = self._lines.get(timeout=max(timeout, 0.0))
-        except queue.Empty:
-            raise HeadlessTimeout(
-                f"no {awaited} within the bound", events=self._read, stderr=self._stderr_text()
-            ) from None
+        if not self._ready:
+            try:
+                self._ready.extend(self._lines.get(timeout=max(timeout, 0.0)))
+            except queue.Empty:
+                raise HeadlessTimeout(
+                    f"no {awaited} within the bound", events=self._read, stderr=self._stderr_text()
+                ) from None
+        line = self._ready.popleft()
         if line is _EOF:
             self._stdout_closed = True
         return line
