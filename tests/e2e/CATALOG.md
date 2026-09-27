@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**347 of 347 files catalogued — 355 flows.**
+**348 of 348 files catalogued — 356 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1824,6 +1824,20 @@ as a claim to check, not as evidence.
 
 - **expect** — retro.log holds the finalize's decision to run the reviewer and, under the e2e default HATS_SKIP_RETRO=1, a suppressed-by-guard outcome
 - **why** — a session the reviewer never sees is invisible to the reflect loop
+
+## `test_headless_session_state.py`
+
+*pins HATS-2036*
+
+- **flow** — a chat drives a headless session and keeps a status line: the model, the mode and how full the context is
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the first turn says the session's configuration once, before its response; every turn the model answered says how full the context is right before its turn_ended; a turn with the same configuration says none, a slash command claude runs itself says no fill, and the turn after /model says the new model
+- **why** — the configuration rides claude's system/init and the fill its result, both of which the holder dropped before; a chat waking on turn_ended must already hold the fill of that turn
 
 ## `test_headless_wire_order.py`
 
