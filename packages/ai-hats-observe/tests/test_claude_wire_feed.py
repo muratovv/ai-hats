@@ -217,7 +217,6 @@ def test_an_api_error_line_is_a_signal_and_no_response() -> None:
     assert (events[-1].ok, events[-1].detail) == (False, "429")
 
 
-
 def _api_error(error: str, text: str) -> dict[str, Any]:
     """An api-error line as 2.1.283 sends it: the HTTP status rides the result, not here."""
     return {
@@ -247,6 +246,7 @@ def test_on_the_wire_an_error_value_we_do_not_know_is_reported_as_drift() -> Non
         "error/some_future_error",
     )
     assert drift.source == WIRE_SOURCE
+
 
 def _quota(status: str, resets_at: int = 1790340000) -> dict[str, Any]:
     """Shaped as measured on 2.1.282: utilization lives per window, not on top."""

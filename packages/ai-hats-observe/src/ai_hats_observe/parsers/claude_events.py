@@ -1175,7 +1175,11 @@ def api_error_signals(
     reported as drift beside it. ``retry_after`` counts only for a wait."""
     reason = API_ERRORS.get(error)
     if isinstance(reason, PersonMustAct):
-        return [PersonActionRequired(ts=ts, detail=detail, raw_code=raw_code, source=source, reason=reason)]
+        return [
+            PersonActionRequired(
+                ts=ts, detail=detail, raw_code=raw_code, source=source, reason=reason
+            )
+        ]
     blocking = HarnessActionRequired(
         ts=ts,
         detail=detail,

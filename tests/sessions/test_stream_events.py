@@ -407,30 +407,47 @@ class TestAssistantError:
         ("error", "expected_type", "expected_reason"),
         [
             ("authentication_failed", PersonActionRequired, PersonMustAct.REAUTHENTICATE),
+            ("cloud_credential_error", PersonActionRequired, PersonMustAct.REAUTHENTICATE),
+            ("oauth_org_not_allowed", PersonActionRequired, PersonMustAct.AUTHORIZE),
+            ("account_on_hold", PersonActionRequired, PersonMustAct.AUTHORIZE),
+            ("verification_required", PersonActionRequired, PersonMustAct.AUTHORIZE),
             ("billing_error", PersonActionRequired, PersonMustAct.PAY),
             ("rate_limit", HarnessActionRequired, HarnessMustAct.WAIT),
+            ("overloaded", HarnessActionRequired, HarnessMustAct.RETRY),
             ("server_error", HarnessActionRequired, HarnessMustAct.RETRY),
             ("invalid_request", HarnessActionRequired, HarnessMustAct.ABORT),
+            ("model_not_found", HarnessActionRequired, HarnessMustAct.ABORT),
             ("unknown", HarnessActionRequired, HarnessMustAct.ABORT),
         ],
     )
     def test_every_error_value_maps(self, error, expected_type, expected_reason):
         events = drain([_assistant(TextBlock(text="nope"), error=error)])
 
-        signal = _signals(events)[0]
+        [signal] = _signals(events)
         assert isinstance(signal, expected_type)
         assert signal.reason is expected_reason
         assert signal.raw_code == error
         assert signal.source == SOURCE
 
-    def test_no_error_value_is_left_unmapped(self):
-        """The literal is closed at six members; a seventh would need a reading."""
+    def test_an_error_value_we_do_not_know_still_blocks_and_is_reported_as_drift(self):
+        events = drain([_assistant(TextBlock(text="nope"), error="some_future_error")])
+
+        abort, drift = _signals(events)
+        assert isinstance(abort, HarnessActionRequired) and abort.reason is HarnessMustAct.ABORT
+        assert (drift.reason, drift.raw_code) == (
+            WorthRecording.UNSUPPORTED_RECORD,
+            "error/some_future_error",
+        )
+        assert drift.source == SOURCE
+
+    def test_no_error_value_the_sdk_names_is_left_unmapped(self):
+        """The SDK's literal lags claude's own list; every member it names needs a reading."""
         from claude_agent_sdk.types import AssistantMessageError
         from typing import get_args
 
-        from ai_hats.surfaces.claude.stream_events import _ERROR_SIGNALS
+        from ai_hats_observe.parsers.claude_events import API_ERRORS
 
-        assert set(get_args(AssistantMessageError)) == set(_ERROR_SIGNALS)
+        assert set(get_args(AssistantMessageError)) <= set(API_ERRORS)
 
 
 # ---------------------------------------------------------------------------
