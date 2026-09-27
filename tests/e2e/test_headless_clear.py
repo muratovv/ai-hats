@@ -1,7 +1,8 @@
 """e2e (HATS-2032)
 
-flow:   a headless session sends a prompt, /clear, and another prompt; claude
-        goes on after /clear under a new session id and a new transcript
+flow:   a program sends a headless session a prompt, /clear and another
+        prompt; claude goes on after /clear under a new session id and a new
+        transcript
 cmds:
     ai-hats headless -p claude -r assistant
 expect: /clear is a context_cleared signal; metrics.json names both session

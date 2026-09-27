@@ -4,6 +4,32 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.19.0]
+
+A headless session survives claude's `/clear`, and the log tells it apart.
+
+### Added
+
+- `WorthRecording.CONTEXT_CLEARED`. The claude reader, fed the wire, reads the
+  `conversation_reset` line of `/clear` as `Notice(context_cleared)` with
+  `raw_code: conversation_reset` and the trigger as `detail`, no longer as
+  `unsupported_record`.
+- `Session.provider_session_ids()`, `Session.record_provider_session_moved(id)`
+  and `Session.transcripts(resolver, cwd, provider_session_id)`. After `/clear`
+  claude goes on under a new session id and transcript; the session keeps every
+  id, the launch's first, and writes them as `claude_session_ids` in
+  `metrics.json` once there is a second. `transcripts` resolves each id of the
+  chain in order, or the one id as before when the surface never moved.
+- `session backfill` reads every transcript of a moved session.
+
+### Changed
+
+- `parse_session_usage` and `ClaudeParser.parse_usage` read every transcript
+  they are given, in order, as one session. `parse_usage` used to read only the
+  first.
+- The reader treats `system/vcs_state_changed` (claude after a commit or a push)
+  as silent bookkeeping, not as drift.
+
 ## [0.18.0]
 
 A headless client answers the session's questions and stops its turns. The

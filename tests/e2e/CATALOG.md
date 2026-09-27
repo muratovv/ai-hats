@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**346 of 346 files catalogued — 354 flows.**
+**347 of 347 files catalogued — 355 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1638,6 +1638,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the binary's question reaches the client as person_asked with a call_id; answer allow runs the call, answer deny leaves it unrun with the deny's message; the turn ends either way
 - **why** — the call a guard or the binary asks about is exactly the one worth asking: without an answer a headless session could never run it
+
+## `test_headless_clear.py`
+
+*pins HATS-2032*
+
+- **flow** — a program sends a headless session a prompt, /clear and another prompt; claude goes on after /clear under a new session id and a new transcript
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — /clear is a context_cleared signal; metrics.json names both session ids, the launch's first; the audit and the usage read both transcripts
+- **why** — with one id the finalize read only what came before /clear
 
 ## `test_headless_client.py`
 
