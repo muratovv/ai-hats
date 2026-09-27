@@ -7,6 +7,7 @@ and a terminal that stops looking like one only in someone else's session.
 from __future__ import annotations
 
 import io
+import logging
 import socket
 from pathlib import Path
 
@@ -14,6 +15,7 @@ import pytest
 
 from ai_hats.surfaces.claude.hook_server import (
     _Fanout,
+    _handler,
     make_sockets_dir,
     socket_path,
     sockets_dir,
@@ -93,3 +95,28 @@ def test_asking_where_the_sockets_go_creates_nothing(tmp_path: Path) -> None:
     home = sockets_dir(tmp_path)
 
     assert not home.exists(), "asking for the directory built it"
+
+
+class _Answering:
+    """A host whose gate has already allowed the call."""
+
+    def answer(self, payload: str) -> tuple[int, str, str]:
+        return 0, "", ""
+
+
+def test_a_client_gone_before_the_answer_is_a_warning_not_a_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Claude kills the hook client on interrupt; the gate has already run, so
+    only the delivery is lost. An exception out of `handle` would reach
+    `socketserver`'s `handle_error`, which prints a traceback on the holder."""
+    server_end, client_end = socket.socketpair()
+    client_end.sendall(b"{}\n")
+    client_end.close()
+
+    with server_end, caplog.at_level(logging.WARNING):
+        _handler(_Answering())(server_end, "", None)
+
+    [record] = caplog.records
+    assert record.name == "ai_hats.surfaces.claude.hook_server"
+    assert record.levelno == logging.WARNING
