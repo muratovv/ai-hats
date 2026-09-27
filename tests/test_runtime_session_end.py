@@ -178,6 +178,29 @@ def test_basic_appends_tags_to_metrics(basic_kwargs):
     assert metrics["tags"] == {"ticket": "HATS-535", "scope": "test"}
 
 
+def test_basic_keeps_the_chain_of_a_session_the_surface_moved(basic_kwargs):
+    """finalize_audit rewrites metrics.json; a /clear's second transcript must survive it."""
+    session = basic_kwargs["session"]
+    session.record_provider_session_id("sid-1")
+    session.record_provider_session_moved("sid-2")
+
+    _finalize_session_basic(**basic_kwargs, claude_session_id="sid-1")
+
+    metrics = json.loads(session.metrics_path.read_text())
+    assert (metrics["claude_session_id"], metrics["claude_session_ids"]) == (
+        "sid-1",
+        ["sid-1", "sid-2"],
+    )
+
+
+def test_basic_writes_no_chain_for_a_session_that_never_moved(basic_kwargs):
+    basic_kwargs["session"].record_provider_session_id("sid-1")
+
+    _finalize_session_basic(**basic_kwargs, claude_session_id="sid-1")
+
+    assert "claude_session_ids" not in json.loads(basic_kwargs["session"].metrics_path.read_text())
+
+
 # ---------------------------------------------------------------------------
 # _print_session_end — banner contract (HATS-158 retro line + HATS-535 banner split)
 # ---------------------------------------------------------------------------

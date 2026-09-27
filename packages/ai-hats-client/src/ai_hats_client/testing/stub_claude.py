@@ -33,12 +33,24 @@ prompt text:
                     turn says ``planned`` on allow, ``still planning`` on deny
     @slow <s>       a response that takes <s> seconds to write
     @slowtool <s>   a Bash call that runs <s> seconds
+    /model <x>, /context, /usage, /rename
+                    run locally, as claude 2.1.283 does: a ``<synthetic>``
+                    answer, and only then the echo, in ``<command-name>`` form
+    /clear          start over: ``conversation_reset``, then a new session id
+                    and a new transcript for everything after it
+    /tui, /login, /logout, /theme, /status, /upgrade, /voice
+                    refused here: a ``<synthetic>`` "isn't available" and no
+                    echo at all; any other ``/x`` is an ordinary prompt
 
 An ``interrupt`` control request cuts the running response or tool the way
 claude does — and takes back a question still open — and the next prompt is
 served as usual.
 
 A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
+
+Every prompt line is followed on the wire by ``command_lifecycle``: ``queued`` when
+it is read, ``started`` when its turn begins (after the echo of one folded into a
+running turn), ``completed`` after its ``result``.
 
 With ``--replay-user-messages`` a turn opens with the prompt's echo, and with
 ``--include-partial-messages`` each response is framed by ``message_start`` /
@@ -81,6 +93,11 @@ PERSON_STOP = (
 )
 
 
+# Slash commands claude 2.1.283 runs itself in stream-json mode, and those it refuses there.
+_LOCAL_COMMANDS = frozenset({"model", "context", "usage", "rename"})
+_REFUSED_COMMANDS = frozenset({"tui", "login", "logout", "theme", "status", "upgrade", "voice"})
+
+
 class _Interrupted(Exception):
     """The running turn was cut; it has already said so on the wire."""
 
@@ -96,6 +113,15 @@ def _flag(argv: list[str], name: str) -> str | None:
         if arg.startswith(name + "="):
             return arg.split("=", 1)[1]
     return None
+
+
+def _command_name(command: str, args: str) -> str:
+    """How claude writes a slash command it ran itself into the record and the echo."""
+    return (
+        f"<command-name>/{command}</command-name>\n"
+        f"            <command-message>{command}</command-message>\n"
+        f"            <command-args>{args}</command-args>"
+    )
 
 
 def _content(msg: dict) -> str:
@@ -249,26 +275,39 @@ class Stub:
         is_error: bool = False,
         stop_reason: str | None = "end_turn",
         subtype: str = "success",
-        terminal_reason: str = "completed",
+        terminal_reason: str | None = "completed",
     ) -> None:
         self.cost += 0.001
-        self.emit(
-            {
-                "type": "result",
-                "subtype": subtype,
-                "is_error": is_error,
-                "stop_reason": stop_reason,
-                "terminal_reason": terminal_reason,
-                "result": text,
-                "result_index": self.results,
-                "permission_denials": list(self.denials),
-                "total_cost_usd": round(self.cost, 6),
-                "session_id": self.session_id,
-                "user_message_uuids": list(self.turn_ids),
-            }
-        )
+        line = {
+            "type": "result",
+            "subtype": subtype,
+            "is_error": is_error,
+            "stop_reason": stop_reason,
+            "result": text,
+            "result_index": self.results,
+            "permission_denials": list(self.denials),
+            "total_cost_usd": round(self.cost, 6),
+            "session_id": self.session_id,
+            "user_message_uuids": list(self.turn_ids),
+        }
+        if terminal_reason is not None:  # a local command's result has none
+            line["terminal_reason"] = terminal_reason
+        self.emit(line)
         self.results += 1
         self.denials = []
+        for prompt_uuid in self.turn_ids:
+            self.lifecycle(prompt_uuid, "completed")
+
+    def lifecycle(self, prompt_uuid: str, state: str) -> None:
+        self.emit(
+            {
+                "type": "command_lifecycle",
+                "command_uuid": prompt_uuid,
+                "state": state,
+                "uuid": str(uuid.uuid4()),
+                "session_id": self.session_id,
+            }
+        )
 
     def permission(self, call: str, tool: str, tool_input: dict) -> dict | None:
         """Ask on the wire and wait for the reply; ``None`` when stdin closed first."""
@@ -383,7 +422,15 @@ class Stub:
 
     def turn(self, text: str, prompt_uuid: str) -> None:
         self.interrupt.clear()  # an interrupt between turns stops nothing
+        self.lifecycle(prompt_uuid, "started")
+        command, _, args = text[1:].partition(" ") if text.startswith("/") else ("", "", "")
+        if command == "clear":
+            self.clear(prompt_uuid)
+            return
         self.init()
+        if command in _LOCAL_COMMANDS | _REFUSED_COMMANDS:
+            self.slash_command(command, args, prompt_uuid)
+            return
         body, late = text, None
         while body.startswith(("@sleep ", "@late ")):
             word, seconds, *rest = body.split(" ", 2)
@@ -410,6 +457,63 @@ class Stub:
         if late is not None:
             records, self.deferred = self.deferred, None
             self.write_late(records, late, time.time())
+
+    def clear(self, prompt_uuid: str) -> None:
+        """/clear: the conversation starts over under a new session id and transcript."""
+        self.turn_ids = [prompt_uuid]
+        self.emit(
+            {
+                "type": "conversation_reset",
+                "new_conversation_id": str(uuid.uuid4()),
+                "trigger": "clear",
+                "user_message_uuid": prompt_uuid,
+                "timestamp": _now(),
+                "uuid": str(uuid.uuid4()),
+                "session_id": self.session_id,  # still the old one, as measured
+            }
+        )
+        self.session_id = str(uuid.uuid4())
+        self.transcript = self.transcript.with_name(f"{self.session_id}.jsonl")
+        self.previous = ""  # the model no longer remembers
+        self.init()
+        said = _command_name("clear", "")
+        self.record(
+            {"type": "user", "uuid": prompt_uuid, "message": {"role": "user", "content": said}}
+        )
+        self.echo(said, prompt_uuid, _now())
+        self.result("", stop_reason=None, terminal_reason=None)
+
+    def slash_command(self, command: str, args: str, prompt_uuid: str) -> None:
+        """Answered by the binary, not the model: the answer first, the echo after it."""
+        self.turn_ids = [prompt_uuid]
+        if command in _REFUSED_COMMANDS:
+            answer = f"/{command} isn't available in this environment."
+        else:
+            answer = f"Set model to {args}" if command == "model" else f"/{command} done"
+        self.emit(
+            {
+                "type": "assistant",
+                "message": {
+                    "id": str(uuid.uuid4()),
+                    "model": "<synthetic>",
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "type": "message",
+                    "content": [{"type": "text", "text": answer}],
+                },
+                "parent_tool_use_id": None,
+                "session_id": self.session_id,
+                "uuid": str(uuid.uuid4()),
+            }
+        )
+        if command in _LOCAL_COMMANDS:
+            said = _command_name(command, args)
+            self.record(
+                {"type": "user", "uuid": prompt_uuid, "message": {"role": "user", "content": said}}
+            )
+            self.echo(said, prompt_uuid, _now())
+        self.record({"type": "system", "subtype": "local_command", "content": answer})
+        self.result(answer, stop_reason=None, terminal_reason=None)
 
     def echo(self, text: str, prompt_uuid: str, ts: str) -> None:
         if self.replay:
@@ -448,6 +552,7 @@ class Stub:
             }
         )
         self.echo(text, prompt_uuid, _now())
+        self.lifecycle(prompt_uuid, "started")  # a folded prompt's echo comes first
         self.turn_ids.append(prompt_uuid)
 
     def own_turn(self) -> None:
@@ -636,6 +741,11 @@ class Stub:
                 print(f"stub claude: not JSON: {line[:80]!r}", file=sys.stderr)
                 continue
             if msg.get("type") == "user":
+                if msg.get("uuid"):
+                    try:
+                        self.lifecycle(msg["uuid"], "queued")
+                    except OSError:  # silent-ok: stdout's reader is gone; this thread must still reach stdin's EOF  # noqa: S110
+                        pass
                 self.inbox.put(msg)
             elif (msg.get("request") or {}).get("subtype") == "interrupt":
                 self.emit(

@@ -13,7 +13,7 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO, Callable
 
 from ai_hats_core import atomic_write_text
 from ai_hats_core.diagnostics import Diagnostic
@@ -40,6 +40,8 @@ from .trace import ENV_SESSION_ID, ENV_TRACE_LOG_PATH, TraceTag
 # HATS-948: the metrics.json (machine-readable audit) schema tag — observe's
 # first versioned surface (mirrors usage/v1). Bumped by the migration seam.
 AUDIT_SCHEMA_VERSION = "audit/v1"
+#: metrics.json: every id the surface ran the session under, written once it moved to a second
+PROVIDER_SESSION_IDS = "claude_session_ids"
 
 
 class SessionManager:
@@ -164,6 +166,12 @@ class SessionManager:
         return sessions
 
 
+def _paths(found: Any) -> list[Any]:
+    if found is None:
+        return []
+    return [found] if isinstance(found, (str, Path)) else list(found)
+
+
 def _load_metrics_safe(session: "Session") -> dict | None:
     """Return parsed metrics.json, or None if missing/corrupt."""
     if not session.metrics_path.exists():
@@ -189,6 +197,7 @@ class Session:
         self.session_id = session_id
         self.session_dir = session_dir
         self.startup_diagnostics = startup_diagnostics
+        self._provider_session_ids: list[str] = []
         self.trace_path = session_dir / TRACE_LOG
         self.audit_path = session_dir / AUDIT_MD
         self.reasoning_path = session_dir / REASONING_LOG
@@ -251,9 +260,46 @@ class Session:
         """
         if not provider_session_id:
             return
+        self._provider_session_ids = [provider_session_id]
         metrics = _load_metrics_safe(self) or {}
         metrics["claude_session_id"] = provider_session_id
         self.write_artifact_text(self.metrics_path, json.dumps(metrics, indent=2))
+
+    def record_provider_session_moved(self, provider_session_id: str) -> None:
+        """The surface went on under another id — claude's ``/clear`` starts a new
+        session and transcript. An id already in the chain is not a move."""
+        ids = list(self.provider_session_ids())
+        if not provider_session_id or provider_session_id in ids:
+            return
+        self._provider_session_ids = [*ids, provider_session_id]
+        metrics = _load_metrics_safe(self) or {}
+        metrics[PROVIDER_SESSION_IDS] = list(self._provider_session_ids)
+        self.write_artifact_text(self.metrics_path, json.dumps(metrics, indent=2))
+
+    def transcripts(
+        self, resolver: Callable[..., Any], cwd: Path, provider_session_id: str | None
+    ) -> list[Path]:
+        """The surface's record of this session: every transcript, in order, once
+        the surface moved it (claude's ``/clear``); else the one
+        ``provider_session_id`` names, or the resolver's own discovery with no id."""
+        chain = self.provider_session_ids()
+        ids = chain if len(chain) > 1 else (provider_session_id or None,)
+        return [
+            Path(path)
+            for sid in ids
+            for path in _paths(resolver(cwd, self.session_id, provider_session_id=sid))
+        ]
+
+    def provider_session_ids(self) -> tuple[str, ...]:
+        """Every id the surface ran this session under, the launch's first; ``()`` if none."""
+        if self._provider_session_ids:
+            return tuple(self._provider_session_ids)
+        metrics = _load_metrics_safe(self) or {}
+        chain = metrics.get(PROVIDER_SESSION_IDS)
+        if isinstance(chain, list) and chain and all(isinstance(i, str) and i for i in chain):
+            return tuple(chain)
+        first = metrics.get("claude_session_id")
+        return (first,) if isinstance(first, str) and first else ()
 
     def log_trace(self, tag: str, message: str) -> None:
         """Append a trace entry."""

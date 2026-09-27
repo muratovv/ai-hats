@@ -48,6 +48,9 @@ class WorthRecording(StrEnum):
 
     MODEL_SWITCHED = "model_switched"
     CONTEXT_COMPACTED = "context_compacted"
+    # The conversation was started over (claude's /clear): the model no longer
+    # remembers what came before, and a reader drawing the history marks the cut.
+    CONTEXT_CLEARED = "context_cleared"
 
     # The surface reported something a reader should know that is not a failure
     # and not drift — a degraded feature, an optional connection lost. Distinct

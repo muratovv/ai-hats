@@ -17,6 +17,8 @@ from ai_hats_observe.canonical import (
     GateVerdict,
     Notice,
     PersonAsked,
+    PromptOrigin,
+    PromptReceived,
     ResponseEnded,
     ToolCallId,
     ToolResultReceived,
@@ -25,9 +27,10 @@ from ai_hats_observe.canonical import (
 )
 from ai_hats_observe.event_log import append_event
 from ai_hats_observe.event_log_writer import EventSource
+from ai_hats_observe.session import Session
 
 from ai_hats.headless.runner import HeadlessRunner, _Relay
-from ai_hats.runtime_common import sub_agent_sources
+from ai_hats.runtime_common import located_sources, sub_agent_sources
 from ai_hats.surfaces.claude.wire import ClaudeWire
 
 
@@ -61,6 +64,30 @@ def test_the_main_record_is_left_out_and_the_sub_agents_kept() -> None:
     assert sub_agent_sources(sources) == [child]
 
 
+class _Surface:
+    """Each session id's record and one sub-agent's, as claude lays them out."""
+
+    def event_sources(self, cwd, session_id, *, provider_session_id=None):
+        del cwd, session_id
+        return [
+            Path(f"{provider_session_id}.jsonl"),
+            EventSource(Path(f"{provider_session_id}/subagents/a.jsonl"), agent=AgentId("a")),
+        ]
+
+
+def test_the_sub_agents_are_followed_in_every_session_the_surface_moved_to(tmp_path: Path) -> None:
+    session = Session(session_id="s", session_dir=tmp_path)
+    session.record_provider_session_id("sid-1")
+    session.record_provider_session_moved("sid-2")
+
+    sources = located_sources(_Surface(), session, tmp_path, "sid-1", main_record=False)
+
+    assert [s.path for s in sources] == [
+        Path("sid-1/subagents/a.jsonl"),
+        Path("sid-2/subagents/a.jsonl"),
+    ]
+
+
 def test_a_line_the_decoder_chokes_on_is_reported_and_the_pump_goes_on() -> None:
     said: list[str] = []
     log = _Log()
@@ -70,6 +97,13 @@ def test_a_line_the_decoder_chokes_on_is_reported_and_the_pump_goes_on() -> None
             real = super().decoder()
 
             class Once:
+                @property
+                def provider_session_id(self):
+                    return real.provider_session_id
+
+                def sent(self, prompt):
+                    real.sent(prompt)
+
                 def decode(self, line):
                     if line.get("type") == "boom":
                         raise RuntimeError("bad line")
@@ -500,3 +534,89 @@ def test_an_answer_to_a_question_the_log_already_closed_is_refused(tmp_path: Pat
 
     [rejected] = _rejections(log)
     assert "already closed" in rejected.detail
+
+
+def test_a_prompt_the_holder_wrote_is_received_as_the_persons_before_claude_answers(
+    tmp_path: Path,
+) -> None:
+    """A command claude refuses here: no echo, its answer is the only line about it."""
+    prompt_id = "3f0e2d9c-0000-4000-8000-000000000001"
+    refused = [
+        {"type": "command_lifecycle", "command_uuid": prompt_id, "state": "started"},
+        {
+            "type": "assistant",
+            "parent_tool_use_id": None,
+            "message": {
+                "id": "s1",
+                "model": "<synthetic>",
+                "content": [{"type": "text", "text": "/tui isn't available in this environment."}],
+            },
+        },
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "user_message_uuids": [prompt_id],
+        },
+    ]
+    relay, log, stdin = _relay(tmp_path, *refused)
+
+    _feed(relay, {"cmd": "prompt", "id": prompt_id, "text": "/tui"})
+    relay.follow()
+
+    assert [line["uuid"] for line in stdin.lines] == [prompt_id]
+    received, *rest = log.events
+    assert isinstance(received, PromptReceived)
+    assert (received.prompt_id, received.text, received.origin) == (
+        prompt_id,
+        "/tui",
+        PromptOrigin.PERSON,
+    )
+    assert type(rest[-1]) is TurnEnded and rest[-1].prompt_ids == (prompt_id,)
+
+
+def test_the_holder_learns_each_session_the_surface_moves_to(tmp_path: Path) -> None:
+    moved: list[str] = []
+    child = _child(
+        {"type": "system", "subtype": "init", "session_id": "sid-1"},
+        {"type": "result", "subtype": "success", "is_error": False, "session_id": "sid-1"},
+        {"type": "conversation_reset", "trigger": "clear", "session_id": "sid-1"},
+        {"type": "system", "subtype": "init", "session_id": "sid-2"},
+        {"type": "result", "subtype": "success", "is_error": False, "session_id": "sid-2"},
+    )
+    relay = _Relay(
+        child,
+        ClaudeWire(),
+        event_log=_Log(),
+        report=print,
+        log=tmp_path / "events.jsonl",
+        on_session=moved.append,
+    )
+
+    relay.follow()
+
+    assert moved == ["sid-1", "sid-2"], "once per id, as the stdout first names it"
+
+
+def test_a_session_the_holder_cannot_record_is_reported_and_the_pump_goes_on(
+    tmp_path: Path,
+) -> None:
+    said: list[str] = []
+    log = _Log()
+
+    def full_disk(session_id: str) -> None:
+        raise OSError("disk full")
+
+    relay = _Relay(
+        _child({"type": "result", "subtype": "success", "is_error": False, "session_id": "sid-1"}),
+        ClaudeWire(),
+        event_log=log,
+        report=said.append,
+        log=tmp_path / "events.jsonl",
+        on_session=full_disk,
+    )
+
+    relay.follow()
+
+    assert [type(e) for e in log.events] == [TurnEnded]
+    assert len(said) == 1 and "sid-1" in said[0] and "disk full" in said[0]

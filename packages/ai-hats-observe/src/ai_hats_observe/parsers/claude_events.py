@@ -131,6 +131,7 @@ _SILENT_SYSTEM_SUBTYPES = frozenset(
         "local_command",
         "scheduled_task_fire",
         "turn_duration",
+        "vcs_state_changed",  # git state changed after a commit or a push
     }
 )
 
@@ -369,6 +370,15 @@ class ClaudeTranscriptReader:
                 yield from self._stream_event(record)
             case "result":
                 yield from self._result(record)
+            case "conversation_reset":
+                trigger = record.get("trigger")
+                yield Notice(
+                    ts=_ts(record),
+                    reason=WorthRecording.CONTEXT_CLEARED,
+                    raw_code="conversation_reset",
+                    detail=trigger if isinstance(trigger, str) else None,
+                    source=WIRE_SOURCE,
+                )
             case "system" if subtype == "hook_response":
                 yield from self._hook_response(record)
             case _:

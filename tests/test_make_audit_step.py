@@ -243,3 +243,36 @@ def test_swallows_audit_writer_keyboard_interrupt(tmp_path):
         session_factory=Session,
         audit_writer_factory=_InterruptingAuditWriter,
     )  # must not raise
+
+
+def test_passes_every_transcript_of_a_session_the_surface_moved(tmp_path):
+    """After claude's /clear the session goes on in a second transcript; the audit reads both."""
+    session = make_session(tmp_path)
+    session.init_audit(role="primary", provider="claude")
+    session.record_provider_session_id("sid-before")
+    session.record_provider_session_moved("sid-after")
+    asked: list = []
+
+    def resolver(cwd, session_id, *, provider_session_id=None):
+        asked.append(provider_session_id)
+        return [tmp_path / f"{provider_session_id}.jsonl"]
+
+    captured: dict = {}
+
+    class _CapturingAuditWriter:
+        def build(self, session, jsonl_path=None, keep_raw=False, transcript_verified=False):
+            captured["jsonl_path"] = jsonl_path
+
+    MakeAudit().run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        claude_session_id="sid-before",
+        layout=ProjectLayout.at(tmp_path),
+        transcript_resolver=resolver,
+        exit_code=0,
+        session_factory=Session,
+        audit_writer_factory=_CapturingAuditWriter,
+    )
+
+    assert asked == ["sid-before", "sid-after"]
+    assert captured["jsonl_path"] == [tmp_path / "sid-before.jsonl", tmp_path / "sid-after.jsonl"]

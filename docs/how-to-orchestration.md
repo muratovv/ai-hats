@@ -227,6 +227,10 @@ ai-hats headless -p claude -r maintainer < turns.ndjson > events.ndjson
 ai-hats headless -r maintainer "summarise README.md" </dev/null > events.ndjson
 ```
 
+A development venv (`uv pip install -e ".[dev]"`) has no `ai-hats` console
+script, since the launcher installs that one. There, run
+`python -m ai_hats headless …` with the venv's interpreter.
+
 **stdin** takes one command per line. There are three commands:
 
 ```json
@@ -272,6 +276,23 @@ turn comes before that turn's `turn_ended`. A prompt's `prompt_received`
 (with its `prompt_id`) comes after the previous `turn_ended` whenever claude
 started it after that turn.
 
+Every prompt you send has its `prompt_received`, before anything that answers
+it. Its `origin` is `person` and its `text` is exactly what you sent. Everything
+else claude puts into the conversation is `origin: harness`: a skill's body, a
+`<system-reminder>`, a `<task-notification>`, a sub-agent's hand-back, the
+summary after `/compact`. Such a prompt has a `prompt_id` of its own that no
+`turn_ended` lists, so wait for the ids you sent, never for every id you see.
+
+A slash command is sent as a prompt. Measured on claude 2.1.282 and 2.1.283:
+
+- one claude runs itself (`/model`, `/context`, `/usage`, `/rename`) is answered
+  by a response whose `model` is `<synthetic>`;
+- one it refuses here (`/tui`, `/login`, `/logout`, `/theme`, `/status`,
+  `/upgrade`, `/voice`) is answered "/tui isn't available in this environment.";
+- either turn ends with `raw_code: "success"`, where a model turn ends
+  `"completed"`;
+- any other `/x` goes to the model as an ordinary prompt.
+
 Each turn ends with one `turn_ended`: `ok`, `raw_code`, `detail` and
 `prompt_ids`, the ids of the prompts it answered. Find your turn by id: wait for
 the `turn_ended` whose `prompt_ids` holds the id you sent. Do not count
@@ -293,6 +314,11 @@ Signals worth acting on, each said once:
 - `approaching_limit` — the quota is close, from claude's `rate_limit_event`;
 - `wait` — the turn ran into the quota wall. `retry_after` is the epoch second
   the quota lifts, when claude said it;
+- `context_cleared` — `/clear` started the conversation over, and the model
+  no longer remembers what came before it. claude goes on under a new session
+  id and a new transcript. The session is still one: `metrics.json` names both
+  ids in `claude_session_ids`, and the audit, the usage and the sub-agents'
+  events cover both sides of the clear;
 - `unsupported_record` — a line from claude the holder cannot read or does not
   know yet. The session carries on.
 
@@ -338,7 +364,10 @@ while a role gate's `ask` still reaches you.
 `interrupt` stops the running turn and keeps the session. The turn still ends
 with its `turn_ended` (`ok: false`), a response it cut is closed `cancelled`,
 and a question it had open is closed, so a late answer to it is refused. A tool
-it cut is not recorded as a person's refusal. With no turn running, it does
+it cut is not recorded as a person's refusal, although its result reads the
+same, word for word ("The user doesn't want to proceed with this tool use…"). A
+person's refusal is the `gate_verdict` with `hook: person`; the cut tool has
+the `interrupted` signal beside it. With no turn running, it does
 nothing.
 
 **stderr** carries everything meant for a person: the start banner, the
@@ -402,7 +431,3 @@ never ran) or `unknown`. `ai-hats session backfill <id>` collects a dead
 session's audit and counters from claude's record. It leaves `events.jsonl` as
 the run left it, and it does not touch a live session. A claude killed by
 SIGKILL also makes the holder exit 137, but that log does end with `run_ended`.
-
-Not there yet:
-
-- a turn record's `origin`: a turn sent on stdin is recorded as `harness`.

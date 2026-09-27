@@ -169,7 +169,14 @@ class HeadlessRunner(WrapRunner):
         sys.stderr.flush()
         self._copier = LogCopier(log, self._stdout_fd, report=session.log_sys).start()
 
-        relay = _Relay(child, self._wire(), event_log=event_log, report=session.log_sys, log=log)
+        relay = _Relay(
+            child,
+            self._wire(),
+            event_log=event_log,
+            report=session.log_sys,
+            log=log,
+            on_session=session.record_provider_session_moved,
+        )
         follower = threading.Thread(target=relay.follow, name="headless-follow", daemon=True)
         feeder = threading.Thread(
             target=relay.feed,
@@ -222,9 +229,14 @@ class _Relay:
         report: Callable[[str], None],
         log: Path,
         eof_wait: float = EOF_WAIT_S,
+        on_session: Callable[[str], None] | None = None,
     ) -> None:
         self._child = child
+        self._on_session = on_session
+        self._session: str | None = None
         self._wire = wire
+        # one per session, shared by both pumps: stdin's tells it what was sent, stdout's reads
+        self._decoder = wire.decoder()
         self._event_log = event_log
         self._report = report
         self._log = log
@@ -273,6 +285,8 @@ class _Relay:
             self._reject(where, "prompt", f'"id" {prompt.id} is already used in this session')
             return
         self._ids.add(prompt.id)
+        # before the write: the binary may take it before this thread runs again
+        self._decoder.sent(prompt)
         self._send(self._wire.encode(prompt), where, "prompt")
 
     def _answer(self, answer: Answer, where: str) -> None:
@@ -364,7 +378,7 @@ class _Relay:
 
     def follow(self) -> None:
         """Child stdout → the main agent's events, in the wire's order (ADR-0038 D4)."""
-        decoder = self._wire.decoder()
+        decoder = self._decoder
         for raw in iter(self._child.stdout.readline, b""):
             try:
                 message = json.loads(raw)
@@ -375,9 +389,23 @@ class _Relay:
             control = decoder.control(message)
             if control is not None:
                 self._on_control(control)
-                continue
-            self._emit(lambda: decoder.decode(message), f"{raw[:120]!r}")
+            else:
+                self._emit(lambda: decoder.decode(message), f"{raw[:120]!r}")
+            self._note_session(decoder.provider_session_id)
         self._emit(decoder.close, "the end of the surface's stdout")
+
+    def _note_session(self, session_id: str | None) -> None:
+        if session_id is None or session_id == self._session:
+            return
+        self._session = session_id
+        if self._on_session is None:
+            return
+        try:
+            self._on_session(session_id)
+        except (
+            Exception
+        ) as exc:  # the pump carries every later event; a failed note must not end it
+            self._report(f"headless: could not record the surface's session {session_id}: {exc!r}")
 
     def _on_control(self, control: Control) -> None:
         from ..surfaces import Withdrawn

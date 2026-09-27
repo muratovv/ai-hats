@@ -251,3 +251,21 @@ def test_success_rate_none_when_no_results() -> None:
     report = parse_session_usage(TRANSCRIPTS / "sidechain.jsonl")
     # No tool_result entries → success-rate is None (distinct from 0.0).
     assert report["aggregates"]["tool_success_rate"] is None
+
+
+def test_a_session_in_two_transcripts_is_counted_in_both(normal: dict, fragmented: dict) -> None:
+    """claude's /clear goes on in a second transcript; the session's cost is both files'."""
+    from ai_hats_observe.parsers.claude import ClaudeParser
+
+    both = ClaudeParser().parse_usage(
+        [TRANSCRIPTS / "fragments.jsonl", TRANSCRIPTS / "normal.jsonl"], Path("/nowhere/trace.log")
+    )
+
+    assert both["api_calls"] == fragmented["api_calls"] + normal["api_calls"]
+    assert both["usage_totals"] == {
+        key: fragmented["usage_totals"][key] + normal["usage_totals"][key]
+        for key in normal["usage_totals"]
+    }
+    assert both["entry_types_seen"]["assistant"] == (
+        fragmented["entry_types_seen"]["assistant"] + normal["entry_types_seen"]["assistant"]
+    )

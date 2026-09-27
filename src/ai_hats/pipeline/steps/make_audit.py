@@ -84,11 +84,7 @@ class MakeAudit(Step):
         # by the project root.
         try:
             jsonl_path = (
-                transcript_resolver(
-                    layout.cwd,
-                    session_id,
-                    provider_session_id=claude_session_id or None,
-                )
+                session.transcripts(transcript_resolver, layout.cwd, claude_session_id)
                 if transcript_resolver is not None
                 else None
             )

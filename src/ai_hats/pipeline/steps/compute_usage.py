@@ -95,12 +95,9 @@ class ComputeUsage(Step):
         try:
             # Provider owns discovery; no resolver → empty. Keyed by where the
             # surface ran (layout.cwd), as in make_audit.
+            session = Session(session_id=session_id, session_dir=session_dir)
             jsonl_path = (
-                transcript_resolver(
-                    layout.cwd,
-                    session_id,
-                    provider_session_id=claude_session_id or None,
-                )
+                session.transcripts(transcript_resolver, layout.cwd, claude_session_id)
                 if transcript_resolver is not None
                 else None
             )
@@ -118,7 +115,7 @@ class ComputeUsage(Step):
             if report.get("role") and static_cost_analyzer is not None:
                 self._enrich_static(report, static_cost_analyzer, report["role"])
 
-            Session(session_id=session_id, session_dir=session_dir).write_artifact_text(
+            session.write_artifact_text(
                 usage_path,
                 json.dumps(report, ensure_ascii=False, indent=2, default=str),
             )

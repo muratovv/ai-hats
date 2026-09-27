@@ -4,6 +4,20 @@ All notable changes to `ai-hats-client` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0]
+
+### Added
+
+- The stub claude (`ai_hats_client.testing`) follows claude 2.1.283 further:
+  - every prompt line gets `command_lifecycle` on the wire (`queued`, `started`,
+    `completed`); a prompt folded into a running turn is echoed before it is
+    started;
+  - slash commands: `/model`, `/context`, `/usage` and `/rename` are answered by
+    a `<synthetic>` response before their echo, and `/tui`, `/login` and the
+    other refused ones get "isn't available in this environment" and no echo;
+  - `/clear` writes `conversation_reset`, then goes on under a new session id
+    and in a new transcript, and forgets the previous prompt.
+
 ## [0.1.0]
 
 ### Added
