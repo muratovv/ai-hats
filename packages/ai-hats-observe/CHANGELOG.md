@@ -4,6 +4,27 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.20.0]
+
+A headless session's log carries what a chat's status line shows: the model,
+the mode and how full the context is.
+
+### Added
+
+- `SessionConfigured` (`session_configured`): `model`, `planning`,
+  `permission_mode`, `commands`, `skills`. The claude reader, fed the wire,
+  writes it from `system/init` when the configuration differs from the last one
+  it wrote, and from a `system/status` that names a new `permissionMode` at once.
+- `ContextUsage` (`context_usage`): `used_tokens`, `max_tokens`. The claude
+  reader, fed the wire, writes one per turn the model answered, before that
+  turn's `TurnEnded`: the last answer's input with its cache reads and writes,
+  against the `contextWindow` the `result`'s `modelUsage` gives that model.
+
+### Changed
+
+- `system/init` and a `system/status` that names a mode are no longer silent on
+  the wire.
+
 ## [0.19.0]
 
 A headless session survives claude's `/clear`, and the log tells it apart.
