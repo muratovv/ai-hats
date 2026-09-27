@@ -21,6 +21,7 @@ from ai_hats_observe.canonical import (
     HarnessMustAct,
     Notice,
     PersonActionRequired,
+    PersonMustAct,
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
@@ -215,6 +216,37 @@ def test_an_api_error_line_is_a_signal_and_no_response() -> None:
     assert not any(isinstance(e, (ResponseStarted, ResponseEnded)) for e in events)
     assert (events[-1].ok, events[-1].detail) == (False, "429")
 
+
+
+def _api_error(error: str, text: str) -> dict[str, Any]:
+    """An api-error line as 2.1.283 sends it: the HTTP status rides the result, not here."""
+    return {
+        "type": "assistant",
+        "error": error,
+        "is_api_error_message": True,
+        "request_id": "req_e",
+        "parent_tool_use_id": None,
+        "message": {"id": "e", "model": "<synthetic>", "content": [{"type": "text", "text": text}]},
+    }
+
+
+def test_on_the_wire_an_org_that_disabled_access_is_a_person_who_must_authorize() -> None:
+    (signal,) = _feed(_api_error("oauth_org_not_allowed", "Your organization has disabled it"))
+
+    assert isinstance(signal, PersonActionRequired)
+    assert (signal.reason, signal.raw_code) == (PersonMustAct.AUTHORIZE, "oauth_org_not_allowed")
+    assert signal.source == WIRE_SOURCE
+
+
+def test_on_the_wire_an_error_value_we_do_not_know_is_reported_as_drift() -> None:
+    abort, drift = _feed(_api_error("some_future_error", "no"))
+
+    assert isinstance(abort, HarnessActionRequired) and abort.reason is HarnessMustAct.ABORT
+    assert (drift.reason, drift.raw_code) == (
+        WorthRecording.UNSUPPORTED_RECORD,
+        "error/some_future_error",
+    )
+    assert drift.source == WIRE_SOURCE
 
 def _quota(status: str, resets_at: int = 1790340000) -> dict[str, Any]:
     """Shaped as measured on 2.1.282: utilization lives per window, not on top."""

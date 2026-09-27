@@ -335,6 +335,34 @@ def test_harness_must_act_errors_map_to_their_obligation(
     assert raised[0].reason is expected_reason
 
 
+def test_an_error_value_we_do_not_know_still_blocks_and_is_reported_as_drift(
+    tmp_path: Path,
+) -> None:
+    records = [api_error("some_future_error", "upstream said no", apiErrorStatus=418)]
+
+    abort, drift = signals(events_of(tmp_path, records))
+
+    assert isinstance(abort, HarnessActionRequired) and abort.reason is HarnessMustAct.ABORT
+    assert isinstance(drift, Notice) and drift.reason is WorthRecording.UNSUPPORTED_RECORD
+    assert drift.raw_code == "error/some_future_error"
+
+
+@pytest.mark.parametrize("record_error", ["server_error", None])
+def test_a_known_or_missing_error_value_is_not_drift(
+    tmp_path: Path, record_error: str | None
+) -> None:
+    """Negative control for the drift notice; a missing field reads as ``unknown``."""
+    record = api_error("x", "upstream said no")
+    if record_error is None:
+        del record["error"]
+    else:
+        record["error"] = record_error
+
+    [blocking] = signals(events_of(tmp_path, [record]))
+
+    assert isinstance(blocking, HarnessActionRequired)
+
+
 def test_an_api_error_notice_never_becomes_the_answer(tmp_path: Path) -> None:
     """The bug that made a limit notice the agent's answer in 15 runs: an
     api-error record contributes no TextItem, only a signal.

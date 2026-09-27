@@ -1171,20 +1171,25 @@ def api_error_signals(
     ts: Timestamp | None = None,
     retry_after: EpochSeconds | None = None,
 ) -> list[Signal]:
-    """Who must act on claude's ``error`` value; ``retry_after`` counts only for a wait."""
-    reason = API_ERRORS.get(error, HarnessMustAct.ABORT)
+    """Who must act on claude's ``error`` value; an unmapped one still blocks,
+    reported as drift beside it. ``retry_after`` counts only for a wait."""
+    reason = API_ERRORS.get(error)
     if isinstance(reason, PersonMustAct):
         return [PersonActionRequired(ts=ts, detail=detail, raw_code=raw_code, source=source, reason=reason)]
-    return [
-        HarnessActionRequired(
-            ts=ts,
-            detail=detail,
-            raw_code=raw_code,
-            source=source,
-            reason=reason,
-            retry_after=retry_after if reason is HarnessMustAct.WAIT else None,
-        )
-    ]
+    blocking = HarnessActionRequired(
+        ts=ts,
+        detail=detail,
+        raw_code=raw_code,
+        source=source,
+        reason=reason or HarnessMustAct.ABORT,
+        retry_after=retry_after if reason is HarnessMustAct.WAIT else None,
+    )
+    if reason is not None:
+        return [blocking]
+    drift = Notice(
+        ts=ts, raw_code=f"error/{error}", source=source, reason=WorthRecording.UNSUPPORTED_RECORD
+    )
+    return [blocking, drift]
 
 
 def _api_error_signals(record: dict[str, Any], message: dict[str, Any]) -> list[Signal]:
