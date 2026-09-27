@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from ai_hats_observe.canonical import (
     Notice,
     PromptId,
+    PromptOrigin,
+    PromptReceived,
     ResponseEnded,
+    ResponseStarted,
     ToolCallId,
     TurnEnded,
     WorthRecording,
@@ -219,3 +223,109 @@ def test_an_interrupt_is_a_control_request_of_its_own() -> None:
 
     assert first["type"] == "control_request" and first["request"] == {"subtype": "interrupt"}
     assert first["request_id"] != second["request_id"], "the binary answers each by its id"
+
+
+# --- the stdin owner's prompts, as claude 2.1.283 took them ------------------
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _sent(n: int, text: str) -> Prompt:
+    return Prompt(text, PromptId(f"00000000-0000-4000-8000-{n:012x}"))
+
+
+# five lines written at once: a local command, a refused one, a prompt, /clear, a local command
+COMMANDS = (
+    _sent(0x1, "/model haiku"),
+    _sent(0x2, "/tui"),
+    _sent(0x3, "Reply with the single word ok."),
+    _sent(0x4, "/clear"),
+    _sent(0x5, "/context"),
+)
+# the second one arrived after the first one's tool call and was folded into its turn
+JOINED = (
+    _sent(
+        0xA1, "Run the shell command `sleep 6` with the Bash tool, then reply with the word done."
+    ),
+    _sent(0xA2, "Also add the word extra to your reply."),
+)
+
+
+def _replay(fixture: str, prompts: tuple[Prompt, ...]) -> list:
+    decoder = ClaudeWire().decoder()
+    for prompt in prompts:
+        decoder.sent(prompt)
+    events = []
+    for raw in (FIXTURES / fixture).read_text().splitlines():
+        events.extend(decoder.decode(json.loads(raw)))
+    return events + decoder.close()
+
+
+@pytest.mark.parametrize(
+    ("fixture", "prompts"), [("commands.wire.jsonl", COMMANDS), ("joined.wire.jsonl", JOINED)]
+)
+def test_every_prompt_sent_is_received_once_as_the_persons_with_its_text(
+    fixture: str, prompts: tuple[Prompt, ...]
+) -> None:
+    events = _replay(fixture, prompts)
+
+    received = [e for e in events if isinstance(e, PromptReceived)]
+    assert [(e.prompt_id, e.text, e.origin) for e in received] == [
+        (p.id, p.text, PromptOrigin.PERSON) for p in prompts
+    ], "one per prompt, in order, as sent — never claude's <command-name> form"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "prompts"), [("commands.wire.jsonl", COMMANDS), ("joined.wire.jsonl", JOINED)]
+)
+def test_a_prompt_is_received_before_the_turn_that_answers_it_ends(
+    fixture: str, prompts: tuple[Prompt, ...]
+) -> None:
+    events = _replay(fixture, prompts)
+
+    at = {e.prompt_id: i for i, e in enumerate(events) if isinstance(e, PromptReceived)}
+    ends = [(i, e) for i, e in enumerate(events) if isinstance(e, TurnEnded)]
+    assert sorted(p for _, e in ends for p in e.prompt_ids) == sorted(p.id for p in prompts)
+    for i, ended in ends:
+        assert all(at[p] < i for p in ended.prompt_ids)
+
+
+@pytest.mark.parametrize("n", [0x1, 0x2, 0x5])
+def test_a_slash_command_is_received_before_its_answer(n: int) -> None:
+    """claude echoes a local command after answering it, and a refused one not at all."""
+    events = _replay("commands.wire.jsonl", COMMANDS)
+    prompt_id = _sent(n, "").id
+
+    turn = _turn_of(events, prompt_id)
+    assert isinstance(turn[0], PromptReceived) and turn[0].prompt_id == prompt_id
+    assert any(isinstance(e, ResponseStarted) and e.model == "<synthetic>" for e in turn), (
+        "the sample holds the answer the order is about"
+    )
+
+
+def _turn_of(events: list, prompt_id: PromptId) -> list:
+    """The events from the previous turn's end to the end of the turn that lists ``prompt_id``."""
+    start = 0
+    for i, event in enumerate(events):
+        if isinstance(event, TurnEnded):
+            if prompt_id in event.prompt_ids:
+                return events[start:i]
+            start = i + 1
+    raise AssertionError(f"no turn lists {prompt_id}")
+
+
+def test_input_the_holder_did_not_send_stays_the_harnesss() -> None:
+    decoder = ClaudeWire().decoder()
+    decoder.sent(_sent(0x1, "the person's"))
+    skill_body = {
+        "type": "user",
+        "isSynthetic": True,
+        "uuid": "3f0e2d9c-0000-4000-8000-0000000000ff",
+        "parent_tool_use_id": None,
+        "message": {"role": "user", "content": "Base directory for this skill: /x"},
+    }
+
+    [received] = decoder.decode(skill_body)
+
+    assert received.origin is PromptOrigin.HARNESS
+    assert received.prompt_id == "3f0e2d9c-0000-4000-8000-0000000000ff"

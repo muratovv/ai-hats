@@ -34,9 +34,25 @@ def from_log(events: Iterable[Mapping[str, Any]]) -> Counter:
     return _comparable(kept)
 
 
-def from_record(transcript: Path, *, wire_prompt_ids: set[str]) -> Counter:
-    """The same session's record, read after the fact, comparable."""
+def sent_prompt_ids(events: Iterable[Mapping[str, Any]]) -> set[str]:
+    """The prompts claude took off stdin, by claude's own count: every turn's ``prompt_ids``."""
+    return {i for e in events if e.get("event") == "turn_ended" for i in e["prompt_ids"]}
+
+
+def from_record(
+    transcript: Path, *, wire_prompt_ids: set[str], sent: set[str] = frozenset()
+) -> Counter:
+    """The same session's record, read after the fact, comparable.
+
+    ``sent`` are the stdin owner's prompts: the holder knows they are a person's,
+    while the record stamps them ``promptSource: "sdk"`` and reads ``harness``."""
     events = [encode(e) for e in ClaudeTranscriptReader(transcript).read()]
+    events = [
+        {**e, "origin": "person"}
+        if e.get("event") == "prompt_received" and e.get("prompt_id") in sent
+        else e
+        for e in events
+    ]
     kept = [
         e
         for e in events
@@ -77,4 +93,4 @@ def assert_same(log: Counter, record: Counter) -> None:
     assert log == record, {"log only": log - record, "record only": record - log}
 
 
-__all__ = ["assert_same", "from_log", "from_record"]
+__all__ = ["assert_same", "from_log", "from_record", "sent_prompt_ids"]

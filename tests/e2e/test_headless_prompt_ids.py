@@ -91,3 +91,22 @@ def test_e2e_the_header_names_the_log_format_and_the_commands(session_on_stub) -
     )
     (received,) = turn.of("prompt_received")
     assert turn.prompt_ids == (received["prompt_id"],), "the positional prompt has an id too"
+
+
+def test_e2e_a_slash_command_is_the_persons_and_received_before_its_answer(
+    session_on_stub,
+) -> None:
+    """claude answers a local command before echoing it, and never echoes a refused one."""
+    with session_on_stub() as session:
+        local = session.turn("/model haiku")
+        refused = session.turn("/tui")
+        plain = session.turn("hello")
+        session.close()
+
+    assert refused.text == "/tui isn't available in this environment.", "the stub refused it"
+    for turn, sent in ((local, "/model haiku"), (refused, "/tui"), (plain, "hello")):
+        [received] = turn.of("prompt_received")
+        kinds = [e["event"] for e in turn.events]
+        assert kinds.index("prompt_received") < kinds.index("response_started"), sent
+        assert (received["text"], received["origin"]) == (sent, "person")
+        assert turn.prompt_ids == (received["prompt_id"],)

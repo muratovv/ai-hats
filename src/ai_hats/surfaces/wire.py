@@ -48,6 +48,14 @@ Control = Question | Withdrawn
 class WireDecoder(Protocol):
     """One session's stdout, line by line, as the main agent's events (ADR-0038 D4)."""
 
+    def sent(self, prompt: Prompt) -> None:
+        """The holder is writing ``prompt`` to the binary's stdin; called before the write.
+
+        Its receipt is then the decoder's to announce: one ``PromptReceived`` with
+        ``origin`` ``person`` and the text as sent, before any event of the turn
+        that answers it."""
+        ...
+
     def decode(self, line: Mapping[str, Any]) -> list[Event]:
         """The events one stdout line says; a sub-agent's line and a question say none."""
         ...

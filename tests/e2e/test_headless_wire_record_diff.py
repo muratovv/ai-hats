@@ -23,14 +23,15 @@ from ai_hats_client import HeadlessSession
 from ai_hats_client.testing import install
 
 from _helpers.headless import session_env
-from _helpers.wire_record_diff import assert_same, from_log, from_record
+from _helpers.wire_record_diff import assert_same, from_log, from_record, sent_prompt_ids
 
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 
 def _compare(session: HeadlessSession, transcript: Path, events: tuple) -> None:
     wire_ids = {e["prompt_id"] for e in events if e.get("event") == "prompt_received"}
-    assert_same(from_log(events), from_record(transcript, wire_prompt_ids=wire_ids))
+    record = from_record(transcript, wire_prompt_ids=wire_ids, sent=sent_prompt_ids(events))
+    assert_same(from_log(events), record)
 
 
 def test_e2e_the_wire_and_the_record_of_a_stub_session_agree(tmp_project, tmp_path) -> None:

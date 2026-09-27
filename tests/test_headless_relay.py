@@ -17,6 +17,8 @@ from ai_hats_observe.canonical import (
     GateVerdict,
     Notice,
     PersonAsked,
+    PromptOrigin,
+    PromptReceived,
     ResponseEnded,
     ToolCallId,
     ToolResultReceived,
@@ -500,3 +502,42 @@ def test_an_answer_to_a_question_the_log_already_closed_is_refused(tmp_path: Pat
 
     [rejected] = _rejections(log)
     assert "already closed" in rejected.detail
+
+
+def test_a_prompt_the_holder_wrote_is_received_as_the_persons_before_claude_answers(
+    tmp_path: Path,
+) -> None:
+    """A command claude refuses here: no echo, its answer is the only line about it."""
+    prompt_id = "3f0e2d9c-0000-4000-8000-000000000001"
+    refused = [
+        {"type": "command_lifecycle", "command_uuid": prompt_id, "state": "started"},
+        {
+            "type": "assistant",
+            "parent_tool_use_id": None,
+            "message": {
+                "id": "s1",
+                "model": "<synthetic>",
+                "content": [{"type": "text", "text": "/tui isn't available in this environment."}],
+            },
+        },
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "user_message_uuids": [prompt_id],
+        },
+    ]
+    relay, log, stdin = _relay(tmp_path, *refused)
+
+    _feed(relay, {"cmd": "prompt", "id": prompt_id, "text": "/tui"})
+    relay.follow()
+
+    assert [line["uuid"] for line in stdin.lines] == [prompt_id]
+    received, *rest = log.events
+    assert isinstance(received, PromptReceived)
+    assert (received.prompt_id, received.text, received.origin) == (
+        prompt_id,
+        "/tui",
+        PromptOrigin.PERSON,
+    )
+    assert type(rest[-1]) is TurnEnded and rest[-1].prompt_ids == (prompt_id,)

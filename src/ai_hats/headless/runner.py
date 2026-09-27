@@ -225,6 +225,8 @@ class _Relay:
     ) -> None:
         self._child = child
         self._wire = wire
+        # one per session, shared by both pumps: stdin's tells it what was sent, stdout's reads
+        self._decoder = wire.decoder()
         self._event_log = event_log
         self._report = report
         self._log = log
@@ -273,6 +275,8 @@ class _Relay:
             self._reject(where, "prompt", f'"id" {prompt.id} is already used in this session')
             return
         self._ids.add(prompt.id)
+        # before the write: the binary may take it before this thread runs again
+        self._decoder.sent(prompt)
         self._send(self._wire.encode(prompt), where, "prompt")
 
     def _answer(self, answer: Answer, where: str) -> None:
@@ -364,7 +368,7 @@ class _Relay:
 
     def follow(self) -> None:
         """Child stdout → the main agent's events, in the wire's order (ADR-0038 D4)."""
-        decoder = self._wire.decoder()
+        decoder = self._decoder
         for raw in iter(self._child.stdout.readline, b""):
             try:
                 message = json.loads(raw)

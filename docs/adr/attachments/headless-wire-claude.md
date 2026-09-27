@@ -421,3 +421,47 @@ and rewrites the command in `updatedInput`, the way a consent point adds its tic
 - A client that answered from the log did so in that gap.
 - About six seconds into an unanswered question the `Notification` hook fired
   `permission_prompt`, with no call id.
+
+## 13. Slash commands, a folded prompt and `/clear` (2.1.283, haiku)
+
+Two runs of the bare binary (`--input-format stream-json --output-format stream-json
+--verbose --replay-user-messages`), one prompt line per command, each with its own `uuid`.
+Local commands call no model. The scrubbed wires are the fixtures
+`src/ai_hats/surfaces/claude/tests/fixtures/commands.wire.jsonl` and `joined.wire.jsonl`.
+
+**Every stdin line is announced by `command_lifecycle`.** `queued` comes the moment the line
+is read, `started` when the binary takes it (after the previous command's `result`), and
+`completed` after its own `result`. The `command_uuid` is the line's `uuid`.
+
+**Five lines written at once:**
+
+| line           | on the wire, in order                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `/model haiku` | `started` → `assistant` with `model: "<synthetic>"` (the answer) → the echo, in `<command-name>` form → `result` |
+| `/tui`         | `started` → `<synthetic>` "/tui isn't available in this environment." → `result`; **no echo at all**             |
+| a prompt       | `started` → the echo → the model's answer → `result`                                                             |
+| `/clear`       | `started` → `conversation_reset` → the echo → `result`                                                           |
+| `/context`     | `started` → `<synthetic>` answer → the echo → `result`                                                           |
+
+- A local command's `result` has no `terminal_reason`, and its `subtype` is `success`.
+- Its `<synthetic>` line has no `request_id`. It carries `local_command_run`
+  (`{"command": "model", "args": "haiku"}`), and none for a refused command.
+- The echo has no `promptSource` and no `origin`. The record stamps the same prompt
+  `promptSource: "sdk"`.
+
+**A prompt folded into a running turn is echoed before it is started.** The second prompt
+went in a second after the first one's `tool_use`: `queued` → (the tool's result) → its echo
+→ `started` → the answer → one `result` listing both `uuid`s.
+
+So the first sign that the binary took a prompt is its `started`, or its echo when that comes
+first. The echo alone is late for a local command and missing for a refused one.
+
+**`/clear` starts a new session of the binary.**
+
+- `conversation_reset` carries `trigger: "clear"`, `user_message_uuid` (the command's `uuid`)
+  and `new_conversation_id`, and still the old `session_id`.
+- Every line after it carries a new `session_id`, first on a `system/init`.
+- The record goes on in a new transcript named by that `session_id`.
+  `new_conversation_id` is another id and names no file.
+- The new transcript does not refer to the old one: its first record has `parentUuid: null`.
+  The old one ends with what came before `/clear`.
