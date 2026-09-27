@@ -438,7 +438,7 @@ def _labelled_overlays(assembler, role_name: str, runtime_overlay: OverlayConfig
 
 
 def compose_for_checks(project_dir: Path, role: str | None = None) -> CompositionResult | None:
-    """Fail-CLOSED compose for the ``checks:`` gate channel.
+    """Fail-CLOSED compose for both gate channels — ``checks:`` and the git gates.
 
     ``role`` is the session's own role expression when a session is asking, and
     ``None`` only outside one — where ``active_role`` genuinely is the answer.
