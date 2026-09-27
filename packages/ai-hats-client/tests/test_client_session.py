@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from ai_hats_client import (
     HeadlessError,
     HeadlessSession,
     HeadlessTimeout,
+    ProtocolError,
     QuestionPending,
     answer_command,
     prompt_command,
@@ -107,6 +110,53 @@ def test_a_question_closed_by_its_result_is_not_offered(tmp_path: Path) -> None:
         turn = session.next_turn(timeout=10)
 
     assert turn.of("person_asked") and turn.of("tool_result_received")
+
+
+class _SlowPipe:
+    """A pipe whose every read waits first, as a reader thread on a loaded machine does."""
+
+    def __init__(self, pipe) -> None:
+        self._pipe = pipe
+
+    def __getattr__(self, name: str):
+        attr = getattr(self._pipe, name)
+        if name not in ("read", "read1", "readline"):
+            return attr
+
+        def slow(*args):
+            time.sleep(0.2)
+            return attr(*args)
+
+        return slow
+
+
+def test_a_question_and_its_result_in_one_write_are_not_offered_by_a_slow_reader(
+    tmp_path: Path,
+) -> None:
+    """The holder writes a tick's lines at once: read together, however slow the reader."""
+    argv = [sys.executable, str(FAKE), "withdrawn", str(tmp_path / "stdin.ndjson")]
+    pipe = subprocess.PIPE
+    proc = subprocess.Popen(argv, stdin=pipe, stdout=pipe, stderr=pipe)
+    proc.stdout = _SlowPipe(proc.stdout)  # type: ignore[assignment]
+    with HeadlessSession(proc) as session:
+        turn = session.next_turn(timeout=10)
+
+    assert turn.of("person_asked") and turn.of("tool_result_received")
+
+
+def test_a_line_longer_than_one_read_arrives_whole(tmp_path: Path) -> None:
+    session, _ = _start("long-line", tmp_path)
+    with session:
+        turn = session.next_turn(timeout=10)
+
+    assert turn.text == "x" * 300_000
+
+
+def test_a_line_cut_short_by_the_end_of_stdout_is_a_protocol_error(tmp_path: Path) -> None:
+    session, _ = _start("torn", tmp_path)
+    with session:
+        with pytest.raises(ProtocolError, match="torn"):
+            session.next_turn(timeout=10)
 
 
 def test_the_call_a_question_is_about_is_at_hand(tmp_path: Path) -> None:
