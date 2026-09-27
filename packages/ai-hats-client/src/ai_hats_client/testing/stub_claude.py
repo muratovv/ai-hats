@@ -742,7 +742,10 @@ class Stub:
                 continue
             if msg.get("type") == "user":
                 if msg.get("uuid"):
-                    self.lifecycle(msg["uuid"], "queued")
+                    try:
+                        self.lifecycle(msg["uuid"], "queued")
+                    except OSError:  # silent-ok: stdout's reader is gone; this thread must still reach stdin's EOF  # noqa: S110
+                        pass
                 self.inbox.put(msg)
             elif (msg.get("request") or {}).get("subtype") == "interrupt":
                 self.emit(
