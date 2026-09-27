@@ -200,7 +200,11 @@ def _handler(host: HookServer):
                 )
             # Status, the verdict as its single line, then stderr to the end —
             # the shape the client parses with two `read`s and a `cat`.
-            self.wfile.write(f"{status}\n{out.strip()}\n{err}".encode())
+            try:
+                self.wfile.write(f"{status}\n{out.strip()}\n{err}".encode())
+            except (BrokenPipeError, ConnectionResetError) as exc:
+                # Claude kills the client on interrupt; the gate already ran.
+                logger.warning("hook client left before its answer: %s", exc)
 
     return Handler
 
