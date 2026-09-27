@@ -143,6 +143,11 @@ record, kept silent because per-response usage already sums the run
 - `GateVerdict(point=at_stop)` is produced from Claude's `stop_hook_summary`;
   agy has a Stop hook, codex/cline/opencode have no stop-hook notion.
 - `Notice(MODEL_SWITCHED)` has a producer only on claude.
+- `Notice(CONTEXT_CLEARED)` has a producer only on claude's wire: its `conversation_reset`
+  line (`/clear`, 2.1.283). The same `/clear` moves the binary to a new session and a new
+  transcript that does not name the old one (measured on the wire; a PTY session is
+  HATS-2035). Beside it, the wire's `system/vcs_state_changed` (after a commit or a push)
+  is read as silent bookkeeping.
 - `raw_code` and `source` values are the surface's own by design.
 - Everything else (`PromptReceived`, `ResponseStarted/Ended` + usage,
   `ItemEmitted`, `ToolResultReceived` by call id, signals by obligation) has

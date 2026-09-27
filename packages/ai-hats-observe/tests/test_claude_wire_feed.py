@@ -222,6 +222,8 @@ def test_a_wall_reads_the_quota_as_last_reported_not_an_old_rejection() -> None:
         {"type": "system", "subtype": "status", "status": "requesting"},
         {"type": "system", "subtype": "hook_started", "hook_event": "Stop"},
         {"type": "system", "subtype": "notification", "key": "stop-hook-error"},
+        # claude marking a change in git state after a commit or a push (2.1.283)
+        {"type": "system", "subtype": "vcs_state_changed"},
         {"type": "stream_event", "event": {"type": "content_block_delta", "index": 0}},
         {"type": "stream_event", "event": {"type": "message_start", "message": {}}},
     ],
@@ -236,6 +238,27 @@ def test_an_unknown_line_is_drift_said_by_the_wire() -> None:
     assert isinstance(notice, Notice)
     assert (notice.reason, notice.raw_code) == (WorthRecording.UNSUPPORTED_RECORD, "keep_alive")
     assert notice.source == WIRE_SOURCE and notice.ts, "stamped when it arrived"
+
+
+def test_clear_is_the_context_cleared_not_drift() -> None:
+    """As claude 2.1.283 says /clear: the line still names the session it ended."""
+    (notice,) = _feed(
+        {
+            "type": "conversation_reset",
+            "new_conversation_id": "00000000-0000-4000-9000-0000000000ff",
+            "trigger": "clear",
+            "user_message_uuid": "00000000-0000-4000-8000-000000000004",
+            "session_id": "00000000-0000-4000-9000-000000000001",
+        }
+    )
+
+    assert isinstance(notice, Notice)
+    assert (notice.reason, notice.raw_code, notice.detail) == (
+        WorthRecording.CONTEXT_CLEARED,
+        "conversation_reset",
+        "clear",
+    )
+    assert notice.source == WIRE_SOURCE and notice.ts
 
 
 def _hook(event: str, exit_code: int, *, stdout: str = "", stderr: str = "") -> dict[str, Any]:

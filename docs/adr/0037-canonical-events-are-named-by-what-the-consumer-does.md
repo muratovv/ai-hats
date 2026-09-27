@@ -123,6 +123,10 @@ reader ничего не роняет молча, форма без дома п�
 - Поля `PromptReceived.prompt_id` и `TurnEnded.prompt_ids` вошли по D4 тем же
   путём: клиент headless находит конец своего хода по id промпта, а не по счёту
   `turn_ended` (ADR-0038 D3, D10).
+- Причина `WorthRecording.CONTEXT_CLEARED` вошла по D4 (HATS-2032): её consumer — чат
+  поверх headless, который отмечает в ленте, что история очищена и модель её больше не
+  помнит. Producer один — ридер провода claude, по строке `conversation_reset` (`/clear`).
+  Пара ей — `CONTEXT_COMPACTED`: там история сжата, здесь её нет.
 - Reader у surface'а один, а входов у него может быть два. У claude это `read()`,
   который хвостит запись (PTY), и `feed()`, который принимает строку провода
   (headless, ADR-0038 D4). Разбор `message` один: поля провода, названные иначе
