@@ -1,4 +1,4 @@
-"""e2e (HATS-2020, HATS-2021)
+"""e2e (HATS-2020, HATS-2021, HATS-2036)
 
 flow:   a test framework drives a live maintainer session on the real claude
         binary through ai-hats headless — S-AGENT-01, a HITL session of a real
@@ -11,8 +11,9 @@ expect: the model answers with a marker only the maintainer prompt carries;
         session is finalized; the same run under the assistant role has no
         such marker. The role's push guard asks once, and the push lands only
         on allow; leaving plan mode and the model's own question are answered
-        through the same channel
-why:    e2e could not drive the claude TUI, so a real role's HITL session —
+        through the same channel, and session_configured says when plan mode
+        ends. session_configured and context_usage follow a /model switch
+why:   e2e could not drive the claude TUI, so a real role's HITL session —
         composition, hooks, log, finalize — was checked by hand only; this is
         the first automated proof. Kept out of the mandatory gate (live_headless)
         because it spends real turns: run it with `-m live_headless`
@@ -152,10 +153,33 @@ def test_e2e_leaving_plan_mode_is_asked_and_answered(
             timeout=180.0,
             on_question=answer,
         )
-        session.close(timeout=120.0)
+        end = session.close(timeout=120.0)
 
     assert "ExitPlanMode" in [q["tool"] for q in asked], asked
     assert Path(tmp_project.path, "out.txt").exists() is written
+    planning = [e["planning"] for e in end.of("session_configured")]
+    assert planning[0] is True, "the session starts in plan mode"
+    assert planning[-1] is not written, "an approved plan leaves plan mode, a refused one stays"
+
+
+def test_e2e_a_status_line_follows_the_model_and_the_fill_live(
+    requires_claude_auth, tmp_project
+) -> None:
+    with _session(tmp_project, "assistant") as session:
+        first = session.turn("Reply with the single word: hi", timeout=180.0)
+        switch = session.turn("/model sonnet", timeout=180.0)
+        after = session.turn("Reply with the single word: ok", timeout=180.0)
+        session.close(timeout=120.0)
+
+    (configured,) = first.of("session_configured")
+    (filled,) = first.of("context_usage")
+    assert "haiku" in configured["model"], configured
+    assert filled["max_tokens"] and 0 < filled["used_tokens"] < filled["max_tokens"], filled
+    assert not switch.of("context_usage"), "no model read anything for /model"
+    (switched,) = after.of("session_configured")
+    (refilled,) = after.of("context_usage")
+    assert "sonnet" in switched["model"], switched
+    assert refilled["max_tokens"] and refilled["used_tokens"] > 0, refilled
 
 
 def test_e2e_the_models_own_question_is_answered_with_answers(
