@@ -411,7 +411,7 @@ def check_sql(cmd_bin: str, args) -> str:
     return ""
 
 
-#: Point-agnostic pre-approval; where no question can be asked — headless, cron,
+#: Point-agnostic pre-approval; where no question can be asked — `claude -p`, cron,
 #: a surface without runtime hooks — this is the channel (HATS-1642 fork 2).
 CONSENT_ACK = "AI_HATS_CONSENT_ACK"
 
@@ -984,9 +984,9 @@ def consent_requirement(cmd: str) -> ConsentQuestion | None:
         # — asking again is the click the grant was issued to remove (HATS-1735).
         if grant_covers("rack.transition", task_id, cmd):
             return None
-        # The env channel stands in wherever no question can be asked — headless,
-        # cron, a surface without runtime hooks. Set there, a prompt is redundant,
-        # and in headless an `ask` does not prompt, it blocks.
+        # The env channel stands in wherever no question can be asked — `claude -p`,
+        # cron, a surface without runtime hooks — where an `ask` blocks; `ai-hats
+        # headless` puts the ask to its stdin owner instead.
         for flag in (CONSENT_ACK, LEGACY_ACK_BY_TARGET.get(target, "")):
             if flag and os.environ.get(flag) == "1":
                 journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)

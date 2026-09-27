@@ -15,7 +15,7 @@
 #                  | irreversible   -> refuse, per caller:
 #       payload has hook_event_name -> exit 0 + permissionDecision "ask"
 #                                      (harness prompts the user; blocks when
-#                                       nobody can answer — headless, cron, CI)
+#                                       nobody can answer — `claude -p`, cron, CI)
 #       otherwise                   -> exit 2 + BLOCKED on stderr
 #       AI_HATS_SHARED_STATE_ACK=1  -> allow with stderr breadcrumb
 #
