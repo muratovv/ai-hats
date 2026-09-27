@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.githooks_run import GATE_BROKEN_EXIT
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 from ai_hats.session_identity import ENV_SESSION_IDENTITY, IDENTITY_VERSION
 
@@ -212,3 +213,37 @@ def test_outside_a_session_the_configured_role_still_decides(tmp_path: Path):
 
     assert cp.returncode == 0, f"commit failed:\n{cp.stdout}\n{cp.stderr}"
     assert marker.is_file(), f"no session, so active_role governs\n{cp.stdout}\n{cp.stderr}"
+
+
+def test_a_role_expression_runs_the_gates_its_overlay_adds(tmp_path: Path):
+    """A session launched as `<role> + <trait>` carries the expression in its
+    envelope; the dispatcher looked it up as one role's name and refused every
+    commit (`Role 'bare-role + trait-gated' not found`)."""
+    project = _project(tmp_path)
+    _self_init(project)
+    _set_active_role(project, "bare-role")
+    marker = project / ".marker-gated-role"
+    marker.unlink(missing_ok=True)
+
+    cp = _commit(project, "d.txt", _envelope(project, "bare-role + trait-gated"))
+
+    assert cp.returncode == 0, f"commit failed:\n{cp.stdout}\n{cp.stderr}"
+    assert marker.is_file(), (
+        f"the overlay adds trait-gated, whose pre-commit gate must run.\n{cp.stdout}\n{cp.stderr}"
+    )
+
+
+def test_a_role_expression_that_does_not_compose_refuses(tmp_path: Path):
+    """Reading the expression must not become a way to skip the gates: an
+    operand that resolves to nothing still refuses, and says which one."""
+    project = _project(tmp_path)
+    _self_init(project)
+    _set_active_role(project, "gated-role")
+
+    cp = _commit(project, "e.txt", _envelope(project, "bare-role + no-such-trait"))
+
+    assert cp.returncode == GATE_BROKEN_EXIT, f"commit went through:\n{cp.stdout}\n{cp.stderr}"
+    assert "git gates REFUSED" in cp.stderr, cp.stderr
+    assert "'no-such-trait' is not a known trait" in cp.stderr, (
+        f"refused, but not on the operand — the expression was not read:\n{cp.stderr}"
+    )

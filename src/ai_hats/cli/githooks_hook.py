@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
-    from ..assembler import Assembler
+    from ..composition_seam import compose_for_checks
     from ..githooks_resolve import resolve_git_gates
     from ..githooks_run import (
         GATE_BROKEN_ACK_ENV,
@@ -28,7 +28,6 @@ def main(argv: list[str] | None = None) -> int:
         run_chain,
     )
     from ..hooks_manager import GITHOOKS_BYPASS_JOURNAL
-    from ..materialize import compose_to_arm
     from ..paths import builtin_library_hooks
     from ..session_identity import IdentityFault, SessionIdentity, SessionIdentityError
 
@@ -121,7 +120,6 @@ def main(argv: list[str] | None = None) -> int:
     # foreign, and mutating the process env would leak into every later caller.
     scoped_env = dict(os.environ)
     _drop_foreign_pin(scoped_env, project_dir)
-    assembler = Assembler(project_dir)
     # In a session the role is what THAT session composed; the config
     # is the answer only outside one. Reading it unconditionally ran maintainer's
     # git gates inside a judge session, which never declared them.
@@ -142,21 +140,19 @@ def main(argv: list[str] | None = None) -> int:
             event=args.event,
             project_dir=project_dir,
         )
-    if identity is not None:
-        role = identity.role
-    else:
-        cfg = assembler.project_config
-        role = cfg.active_role or cfg.default_role
 
     gates: list[Path] = []
-    if role:
-        try:
-            resolution = resolve_git_gates(compose_to_arm(assembler, role), args.event)
-        except Exception as exc:  # noqa: BLE001 — a hook must never raise at a human
-            # A composition refusal (removed script, unknown point name) renders
-            # friendly only in the click layer, which a git hook never enters —
-            # so it arrived here as a traceback on `git commit`.
-            return refuse(f"composition failed: {type(exc).__name__}: {exc}")
+    try:
+        # The seam, not a composition of our own: a session role may be an
+        # expression (`role + trait`), and only the seam reads one.
+        composition = compose_for_checks(project_dir, identity.role if identity else None)
+        resolution = None if composition is None else resolve_git_gates(composition, args.event)
+    except Exception as exc:  # noqa: BLE001 — a hook must never raise at a human
+        # A composition refusal (removed script, unknown point name) renders
+        # friendly only in the click layer, which a git hook never enters —
+        # so it arrived here as a traceback on `git commit`.
+        return refuse(f"composition failed: {type(exc).__name__}: {exc}")
+    if resolution is not None:
         if resolution.refusals:
             # A declared gate that cannot run is the anti-disarm case D2 names:
             # deleting or chmod-ing a script would otherwise silently retire it.
