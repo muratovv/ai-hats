@@ -35,7 +35,8 @@ prompt text:
     @slowtool <s>   a Bash call that runs <s> seconds
     /model <x>, /context, /usage, /rename
                     run locally, as claude 2.1.283 does: a ``<synthetic>``
-                    answer, and only then the echo, in ``<command-name>`` form
+                    answer, and only then the echo, in ``<command-name>`` form;
+                    after ``/model <x>`` the next turn's ``init`` names <x>
     /clear          start over: ``conversation_reset``, then a new session id
                     and a new transcript for everything after it
     /tui, /login, /logout, /theme, /status, /upgrade, /voice
@@ -51,6 +52,10 @@ A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 Every prompt line is followed on the wire by ``command_lifecycle``: ``queued`` when
 it is read, ``started`` when its turn begins (after the echo of one folded into a
 running turn), ``completed`` after its ``result``.
+
+Each turn opens with ``system/init`` (its model, mode, slash commands and
+skills), and each ``result`` carries ``modelUsage``: every model that answered
+so far, with a ``contextWindow`` of ``CONTEXT_WINDOW``.
 
 With ``--replay-user-messages`` a turn opens with the prompt's echo, and with
 ``--include-partial-messages`` each response is framed by ``message_start`` /
@@ -84,6 +89,8 @@ TIMING_ENV = "STUB_CLAUDE_TIMING"
 LOGGED_OUT_ENV = "STUB_CLAUDE_LOGGED_OUT"
 #: When a quota window lifts, as epoch seconds — the one a @quota turn reports.
 QUOTA_RESETS_AT = 1790340000
+#: The context window every model of the stub reports in ``modelUsage``.
+CONTEXT_WINDOW = 200000
 
 # What claude writes when a person stops a tool, measured on 2.1.281.
 PERSON_STOP = (
@@ -142,6 +149,9 @@ class Stub:
         self.previous = ""
         self.results = 0
         self.cost = 0.0
+        self.answered: dict[
+            str, int
+        ] = {}  # input tokens per model that answered, as modelUsage sums them
         self.replay = "--replay-user-messages" in argv
         self.partial = "--include-partial-messages" in argv
         self.deferred: list[dict] | None = None  # a @late turn's record, held back
@@ -211,6 +221,7 @@ class Stub:
                 "permissionMode": "default",
                 "model": self.model,
                 "plugins": plugins,
+                "slash_commands": sorted(_LOCAL_COMMANDS | {"clear", "compact"}) + skills,
                 "skills": skills,
             }
         )
@@ -228,6 +239,7 @@ class Stub:
             "content": blocks,
         }
         mid = {**message, "stop_reason": None, "usage": {**final, "output_tokens": 1}}
+        self.answered[self.model] = self.answered.get(self.model, 0) + final["input_tokens"]
         record = {"type": "assistant", "requestId": request, "message": message}
         self.record(record)
         if self.partial:
@@ -289,6 +301,10 @@ class Stub:
             "total_cost_usd": round(self.cost, 6),
             "session_id": self.session_id,
             "user_message_uuids": list(self.turn_ids),
+            "modelUsage": {
+                model: {"inputTokens": tokens, "contextWindow": CONTEXT_WINDOW}
+                for model, tokens in self.answered.items()
+            },
         }
         if terminal_reason is not None:  # a local command's result has none
             line["terminal_reason"] = terminal_reason
@@ -490,6 +506,8 @@ class Stub:
             answer = f"/{command} isn't available in this environment."
         else:
             answer = f"Set model to {args}" if command == "model" else f"/{command} done"
+            if command == "model" and args:
+                self.model = args  # claude's next init names it
         self.emit(
             {
                 "type": "assistant",

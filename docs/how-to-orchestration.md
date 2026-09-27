@@ -327,6 +327,32 @@ A tool call claude refused without asking, for instance under
 a terminal session. The turn around it still ends `ok: true`, so read the call's
 result, not the turn's.
 
+### A status line
+
+Two events carry what a status line shows. Both are about the main agent only.
+
+`session_configured` is what the session is set to: `model`, `planning` (plan
+mode: the model may read and plan, not change anything), `permission_mode`
+(claude's own word, such as `default` or `plan`), `commands` (the slash commands
+a person can send, by name) and `skills` (which of them are skills). It comes
+only when something in it changed, and each one is whole, so keep the last one
+and replace it. A session says it in its first turn, after that turn's
+`prompt_received` and before its first `response_started`. It says it again when
+the mode switches, at once, and after `/model`, at the start of the next turn.
+Nothing is said before the first prompt: claude reports its configuration at
+the start of a turn. Read the log from its first line, as the holder's stdout
+gives it: a reader that starts in the middle has no configuration until the
+next change.
+
+`context_usage` is how full the context is: `used_tokens` and `max_tokens`, the
+window of the model that answered (absent when claude did not say it). The
+percentage is `used_tokens / max_tokens`. It comes once per turn in which the
+model answered, right before that turn's `turn_ended`, so a client that wakes on
+`turn_ended` already has it. A turn with no answer from the model has none: a
+slash command claude runs itself, a turn that failed before the model answered.
+So after `/model` the new window shows with the new model's first answer, and
+after `/compact` the new fill does too.
+
 ### Questions and interrupts
 
 The session asks its stdin owner whatever it would ask a person at the terminal:

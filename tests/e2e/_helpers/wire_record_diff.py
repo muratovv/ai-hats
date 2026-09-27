@@ -19,6 +19,8 @@ from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 # The reader's own sources; the gate chain's verdicts are in no record.
 _OURS = {None, "claude/wire", "claude/jsonl"}
 _ENDS = {"run_started", "run_ended", "turn_ended"}
+# what the wire alone carries: the transcript has no `system/init` and no `result`
+_WIRE_ONLY = {"session_configured", "context_usage"}
 
 
 def from_log(events: Iterable[Mapping[str, Any]]) -> Counter:
@@ -72,7 +74,7 @@ def from_record(
 def _comparable(events: Iterable[Mapping[str, Any]]) -> Counter:
     kept = []
     for event in events:
-        if event.get("event") in _ENDS or event.get("source") not in _OURS:
+        if event.get("event") in _ENDS | _WIRE_ONLY or event.get("source") not in _OURS:
             continue
         if event.get("event") == "gate_verdict" and event.get("point") == "at_stop":
             continue  # one per hook on the wire, one per stop in the record

@@ -20,20 +20,24 @@ from dataclasses import replace
 from ai_hats_observe.canonical import (
     ANSWER_ONLY,
     WITH_REASONING,
+    AgentId,
     AskKind,
     Blocking,
+    ContextUsage,
     GateDecision,
     GatePoint,
     GateVerdict,
     ItemDelta,
     ItemEmitted,
     ItemKind,
+    ModelName,
     Notice,
     PersonAsked,
     ResponseId,
     ResponseStarted,
     RunEnded,
     RunStarted,
+    SessionConfigured,
     ToolResultReceived,
     TurnEnded,
     WorthRecording,
@@ -241,6 +245,47 @@ def test_a_turn_end_round_trips(tmp_path: Path, ended: TurnEnded) -> None:
     error turn's text included, since it is the one place that text lives."""
     path = tmp_path / EVENT_LOG_JSONL
     events = [RunStarted(ts="2026-09-24T12:00:00Z"), ended]
+
+    write_events(events, path)
+
+    assert list(read_events(path)) == events
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        SessionConfigured(
+            model=ModelName("claude-sonnet-5"),
+            planning=True,
+            permission_mode="plan",
+            commands=("compact", "debug"),
+            skills=("debug",),
+            ts="2026-09-24T12:00:01Z",
+        ),
+        SessionConfigured(),
+        SessionConfigured(model=ModelName("claude-x"), agent=AgentId("a-1")),
+    ],
+)
+def test_a_session_configuration_round_trips(tmp_path: Path, configured: SessionConfigured) -> None:
+    path = tmp_path / EVENT_LOG_JSONL
+    events = [RunStarted(ts="2026-09-24T12:00:00Z"), configured]
+
+    write_events(events, path)
+
+    assert list(read_events(path)) == events
+
+
+@pytest.mark.parametrize(
+    "filled",
+    [
+        ContextUsage(used_tokens=22134, max_tokens=200000, ts="2026-09-24T12:00:02Z"),
+        ContextUsage(used_tokens=17),
+        ContextUsage(used_tokens=5, max_tokens=1000000, agent=AgentId("a-1")),
+    ],
+)
+def test_a_context_usage_round_trips(tmp_path: Path, filled: ContextUsage) -> None:
+    path = tmp_path / EVENT_LOG_JSONL
+    events = [RunStarted(ts="2026-09-24T12:00:00Z"), filled]
 
     write_events(events, path)
 

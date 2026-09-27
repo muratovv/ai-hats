@@ -10,6 +10,7 @@ Under review; not wired to anything yet.
 """
 
 from .events import (
+    ContextUsage,
     Event,
     GateVerdict,
     ItemDelta,
@@ -20,6 +21,7 @@ from .events import (
     ResponseStarted,
     RunEnded,
     RunStarted,
+    SessionConfigured,
     ToolResultReceived,
     TurnEnded,
 )
@@ -75,6 +77,7 @@ __all__ = [
     "Collected",
     "Response",
     "Completion",
+    "ContextUsage",
     "EVERYTHING",
     "REORDER_DEPTH",
     "EpochSeconds",
@@ -100,6 +103,7 @@ __all__ = [
     "ResponseStarted",
     "RunEnded",
     "RunStarted",
+    "SessionConfigured",
     "Signal",
     "TextItem",
     "ThinkingItem",

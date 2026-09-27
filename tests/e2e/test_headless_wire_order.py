@@ -52,9 +52,11 @@ def test_e2e_a_turns_answer_precedes_its_end_when_the_record_trails_the_wire(
     assert turn.text == "ok: hello", "the answer is inside its turn, not after turn_ended"
     assert [e["event"] for e in turn.events if e["event"] not in ("signal", "run_started")] == [
         "prompt_received",
+        "session_configured",
         "response_started",
         "item_emitted",
         "response_ended",
+        "context_usage",
         "turn_ended",
     ]
     (timing,) = stub.timings()

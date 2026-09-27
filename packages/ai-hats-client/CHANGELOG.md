@@ -4,6 +4,14 @@ All notable changes to `ai-hats-client` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0]
+
+### Added
+
+- The stub claude's `system/init` lists `slash_commands`, and its `result`
+  carries `modelUsage` with a `contextWindow` (`CONTEXT_WINDOW`) for every model
+  that answered. After `/model <x>` the next turn runs on `<x>`.
+
 ## [0.2.0]
 
 ### Added

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**347 of 347 files catalogued — 355 flows.**
+**348 of 348 files catalogued — 356 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1742,7 +1742,7 @@ as a claim to check, not as evidence.
 
 ## `test_headless_live.py`
 
-*pins HATS-2020, HATS-2021*
+*pins HATS-2020, HATS-2021, HATS-2036*
 
 - **flow** — a test framework drives a live maintainer session on the real claude binary through ai-hats headless — S-AGENT-01, a HITL session of a real role checked without a terminal — and answers what the session asks
 - **cmds**
@@ -1751,7 +1751,7 @@ as a claim to check, not as evidence.
   ai-hats headless -p claude -r maintainer -m claude-haiku-4-5
   ```
 
-- **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker. The role's push guard asks once, and the push lands only on allow; leaving plan mode and the model's own question are answered through the same channel
+- **expect** — the model answers with a marker only the maintainer prompt carries; its Bash call is judged by the role's gates (a gate_verdict from the chain in the log); audit.md lists the maintainer's traits and the session is finalized; the same run under the assistant role has no such marker. The role's push guard asks once, and the push lands only on allow; leaving plan mode and the model's own question are answered through the same channel, and session_configured says when plan mode ends. session_configured and context_usage follow a /model switch
 - **why** — e2e could not drive the claude TUI, so a real role's HITL session — composition, hooks, log, finalize — was checked by hand only; this is the first automated proof. Kept out of the mandatory gate (live_headless) because it spends real turns: run it with `-m live_headless`
 
 ## `test_headless_live_kill.py`
@@ -1824,6 +1824,20 @@ as a claim to check, not as evidence.
 
 - **expect** — retro.log holds the finalize's decision to run the reviewer and, under the e2e default HATS_SKIP_RETRO=1, a suppressed-by-guard outcome
 - **why** — a session the reviewer never sees is invisible to the reflect loop
+
+## `test_headless_session_state.py`
+
+*pins HATS-2036*
+
+- **flow** — a chat drives a headless session and keeps a status line: the model, the mode and how full the context is
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant
+  ```
+
+- **expect** — the first turn says the session's configuration once, before its response; every turn the model answered says how full the context is right before its turn_ended; a turn with the same configuration says none, a slash command claude runs itself says no fill, and the turn after /model says the new model
+- **why** — the configuration rides claude's system/init and the fill its result, both of which the holder dropped before; a chat waking on turn_ended must already hold the fill of that turn
 
 ## `test_headless_wire_order.py`
 

@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from ai_hats_observe.canonical import (
+    ContextUsage,
     GateVerdict,
     HarnessActionRequired,
     HarnessMustAct,
@@ -23,6 +24,7 @@ from ai_hats_observe.canonical import (
     PromptReceived,
     ResponseEnded,
     ResponseStarted,
+    SessionConfigured,
     ToolResultReceived,
     TurnEnded,
     WorthRecording,
@@ -99,8 +101,75 @@ def test_a_response_the_wire_never_closed_ends_before_its_turn() -> None:
     closes the response first, so the turn's events never trail its end."""
     events = _feed(_assistant("req_1", "half"), _result(terminal_reason="completed"))
 
-    assert [type(e) for e in events][-2:] == [ResponseEnded, TurnEnded]
-    assert events[-2].completion == Completion.UNKNOWN
+    kinds = [type(e) for e in events]
+    assert kinds[-1] is TurnEnded and kinds.index(ResponseEnded) < len(kinds) - 1
+    assert events[kinds.index(ResponseEnded)].completion == Completion.UNKNOWN
+
+
+def _window(**windows: int) -> dict[str, Any]:
+    """``result.modelUsage`` as 2.1.283 sends it: cumulative, one entry per model."""
+    return {model: {"inputTokens": 1, "contextWindow": size} for model, size in windows.items()}
+
+
+def test_a_turn_the_model_answered_says_how_full_the_context_is_before_it_ends() -> None:
+    events = _feed(
+        _assistant("req_1", "hi"),
+        _delta("end_turn", 5),
+        _result(terminal_reason="completed", modelUsage=_window(**{"claude-x": 200000})),
+    )
+
+    assert [type(e) for e in events][-3:] == [ResponseEnded, ContextUsage, TurnEnded]
+    usage = events[-2]
+    assert (usage.used_tokens, usage.max_tokens) == (10 + 7 + 5, 200000)
+    assert usage.ts, "the moment the result arrived"
+
+
+def test_a_command_claude_ran_itself_says_nothing_of_the_context() -> None:
+    """``/model``'s answer as 2.1.283 sends it: no model read anything."""
+    local = _assistant("req_cmd", "Set model to sonnet")
+    local["message"] |= {"model": "<synthetic>", "usage": {"input_tokens": 0, "output_tokens": 0}}
+
+    events = _feed(
+        local, _result(terminal_reason="completed", modelUsage=_window(**{"claude-x": 1}))
+    )
+
+    assert TurnEnded in [type(e) for e in events] and ResponseEnded in [type(e) for e in events]
+    assert not [e for e in events if isinstance(e, ContextUsage)]
+
+
+def test_the_window_is_the_answering_models_not_the_largest() -> None:
+    """``modelUsage`` sums the session, sub-agents included; a switch down
+    from a 1M model must not keep showing 1M."""
+    events = _feed(
+        _assistant("req_1", "hi"),
+        _result(modelUsage=_window(**{"claude-big": 1000000, "claude-x": 200000})),
+    )
+
+    (usage,) = [e for e in events if isinstance(e, ContextUsage)]
+    assert usage.max_tokens == 200000
+
+
+def test_a_model_keyed_by_its_configured_name_still_has_its_window() -> None:
+    """2.1.283: ``claude-opus-5-5[1m]`` is keyed so in ``modelUsage`` and in
+    ``init``, while its responses name ``claude-opus-5-5``."""
+    answer = _assistant("req_1", "hi")
+    answer["message"]["model"] = "claude-opus-5-5"
+
+    events = _feed(
+        _init("claude-opus-5-5[1m]"),
+        answer,
+        _result(modelUsage=_window(**{"claude-opus-5-5[1m]": 1000000})),
+    )
+
+    (usage,) = [e for e in events if isinstance(e, ContextUsage)]
+    assert usage.max_tokens == 1000000
+
+
+def test_a_window_nobody_reported_is_absent_not_guessed() -> None:
+    events = _feed(_assistant("req_1", "hi"), _result())
+
+    (usage,) = [e for e in events if isinstance(e, ContextUsage)]
+    assert (usage.used_tokens, usage.max_tokens) == (10, None)
 
 
 def test_a_sub_agents_line_is_left_to_its_own_record() -> None:
@@ -218,7 +287,6 @@ def test_a_wall_reads_the_quota_as_last_reported_not_an_old_rejection() -> None:
     [
         {"type": "command_lifecycle", "command_uuid": "x", "state": "queued"},
         {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed"}},
-        {"type": "system", "subtype": "init", "model": "claude-x"},
         {"type": "system", "subtype": "status", "status": "requesting"},
         {"type": "system", "subtype": "hook_started", "hook_event": "Stop"},
         {"type": "system", "subtype": "notification", "key": "stop-hook-error"},
@@ -230,6 +298,55 @@ def test_a_wall_reads_the_quota_as_last_reported_not_an_old_rejection() -> None:
 )
 def test_the_wires_bookkeeping_says_nothing(line: dict[str, Any]) -> None:
     assert _feed({**line, "parent_tool_use_id": None}) == []
+
+
+def _init(model: str = "claude-haiku-4-5-20251001", **fields: Any) -> dict[str, Any]:
+    """A turn's ``system/init`` as claude 2.1.283 sends it, trimmed to what is read."""
+    return {
+        "type": "system",
+        "subtype": "init",
+        "session_id": "s-1",
+        "parent_tool_use_id": None,
+        "model": model,
+        "permissionMode": "default",
+        "slash_commands": ["compact", "model", "debug"],
+        "skills": ["debug"],
+        "tools": ["Bash", "Read"],
+        **fields,
+    }
+
+
+def test_the_first_init_says_how_the_session_is_configured_and_a_repeat_says_nothing() -> None:
+    (first,) = _feed(_init(), _init())
+
+    assert isinstance(first, SessionConfigured)
+    assert first.model == "claude-haiku-4-5-20251001"
+    assert (first.planning, first.permission_mode) == (False, "default")
+    assert (first.commands, first.skills) == (("compact", "model", "debug"), ("debug",))
+    assert first.ts, "stamped when it arrived"
+
+
+def test_a_model_picked_with_slash_model_is_a_new_snapshot_at_the_next_init() -> None:
+    first, second = _feed(_init(), _init(), _init("claude-sonnet-5"))
+
+    assert (first.model, second.model) == ("claude-haiku-4-5-20251001", "claude-sonnet-5")
+    assert second.commands == first.commands, "a snapshot is whole, not the field that changed"
+
+
+def test_a_mode_switch_is_said_at_once_and_a_request_going_out_is_not() -> None:
+    """``status`` carries the mode only when it changed (2.1.283); the
+    ``requesting`` beside it in the same feed must stay silent."""
+    requesting = {"type": "system", "subtype": "status", "status": "requesting"}
+    plan = {"type": "system", "subtype": "status", "status": None, "permissionMode": "plan"}
+
+    first, planned = _feed(_init(), requesting, plan, requesting)
+
+    assert (planned.planning, planned.permission_mode) == (True, "plan")
+    assert (planned.model, planned.commands) == (first.model, first.commands)
+
+
+def test_a_sub_agents_init_is_not_the_sessions() -> None:
+    assert _feed({**_init("claude-opus-5"), "parent_tool_use_id": "toolu_parent"}) == []
 
 
 def test_an_unknown_line_is_drift_said_by_the_wire() -> None:
@@ -328,11 +445,11 @@ def _record_events(name: str) -> list:
 def _comparable(events: list) -> Counter:
     """The events with the declared differences taken out (ADR-0037, the reader
     with two inputs): when a thing arrived, who said it, how a hook failure and
-    an API error are worded, the turn's end, the Stop verdicts' count, and the
-    record kinds the wire never carries."""
+    an API error are worded, the turn's end, configuration and fill only the wire
+    carries, the Stop verdicts' count, and the record kinds the wire never carries."""
     kept = []
     for event in events:
-        if isinstance(event, TurnEnded):
+        if isinstance(event, (TurnEnded, SessionConfigured, ContextUsage)):
             continue
         if isinstance(event, GateVerdict) and event.point == GatePoint.AT_STOP:
             continue

@@ -465,3 +465,61 @@ first. The echo alone is late for a local command and missing for a refused one.
   `new_conversation_id` is another id and names no file.
 - The new transcript does not refer to the old one: its first record has `parentUuid: null`.
   The old one ends with what came before `/clear`.
+
+## 14. The session's configuration and how full its context is (2.1.283)
+
+Three runs of the bare binary with the holder's flags (`--input-format stream-json
+--output-format stream-json --verbose --permission-prompt-tool stdio --replay-user-messages
+--include-partial-messages --setting-sources ""`): haiku, then `/model sonnet` and
+`set_permission_mode plan`; the account default with `/compact`; and
+`--model claude-opus-5-5[1m]`.
+
+**`system/init` comes at the start of every turn,** after the command's `started` and
+before its first response. It carries `model`, `permissionMode`, `slash_commands[]` (names
+only), `skills[]`, `tools[]`, `agents[]`, `mcp_servers[]`, `plugins[]`, `output_style`,
+`fast_mode_state` and more, about 2.9 KB in a bare session. Every skill is also in
+`slash_commands`. `tools` grew from 32 to 36 between two turns while an account MCP server
+connected; the rest did not change.
+
+- After `/model sonnet` the next turn's `init` names `claude-sonnet-5`. The `/model` turn's
+  own `init` still names the old model: it is sent before the command runs.
+- After `/compact` the `init` is sent again, unchanged.
+
+**`system/status` names the mode when it changes.** `set_permission_mode plan` is followed at
+once by `system/status {status: null, permissionMode: "plan"}`, and the next `init` says
+`plan`. Its other forms carry no mode: `{status: "requesting"}` before each API request,
+`{status: "compacting"}` and `{status: null, compact_result: "success"}` around `/compact`.
+
+**`result.modelUsage` gives each model's context window.** It is keyed by model and sums the
+whole session, one entry per model that answered: `inputTokens`, `outputTokens`,
+`cacheReadInputTokens`, `cacheCreationInputTokens`, `costUSD`, `contextWindow`,
+`maxOutputTokens` and more. `contextWindow` was 200000 for haiku, 1000000 for sonnet-5 and
+opus-5-5. A model enters the map with its first answer, so the `/model` turn's `result` does
+not have the new one yet.
+
+- Under `--model claude-opus-5-5[1m]` the `init` and the `modelUsage` key are
+  `claude-opus-5-5[1m]`, while the response's `message.model` is `claude-opus-5-5`.
+- A local command's `result` carries `usage` of zeros, and the map as it was.
+
+**The last answer's input is the context's fill.** Its `input_tokens + cache_read_input_tokens
++ cache_creation_input_tokens` was 22134 after the first haiku turn, and the
+`get_context_usage` control request said `totalTokens: 22135` at the same point.
+
+**`compact_boundary` does not count the whole context.** On the wire it is
+`compact_metadata: {trigger, pre_tokens, post_tokens, cumulative_dropped_tokens,
+duration_ms}` (the record spells it `compactMetadata.postTokens`). `post_tokens` was 1650,
+while `get_context_usage` said `totalTokens: 16071` right after the compaction: it counts the
+messages kept, not the system prompt and the tools.
+
+**What the holder does not send.** Two control requests would answer sooner, and the holder
+sends neither:
+
+- `get_context_usage` answers at any time, before the first turn and at once after `/model`:
+  `model`, `totalTokens`, `maxTokens`, `percentage`, `autoCompactThreshold`, `categories`.
+  The answer is 14–28 KB;
+- `initialize` answers once with `commands[]` (with `description` and `argumentHint`),
+  `models[]` (no window), `current_permission_mode`, the output styles and `account`, which
+  holds the person's email.
+
+What ai-hats reads of all this is in the glossary, **Session configured** and **Context
+usage**.

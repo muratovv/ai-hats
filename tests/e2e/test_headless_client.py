@@ -53,6 +53,7 @@ def test_e2e_a_client_holds_a_two_turn_dialogue(session_on_stub) -> None:
         "response_started",
         "item_emitted",
         "response_ended",
+        "context_usage",
         "turn_ended",
     ]
     assert end.code == 0
