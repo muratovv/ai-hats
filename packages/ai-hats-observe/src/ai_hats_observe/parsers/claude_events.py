@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 from ..canonical.events import (
+    ContextUsage,
     Event,
     GateVerdict,
     ItemEmitted,
@@ -300,6 +301,8 @@ class ClaudeTranscriptReader:
         # the quota as the wire last reported it; each quota line replaces it
         self._quota: dict[str, Any] = {}
         self._configuration: SessionConfigured | None = None
+        # the turn's last closed response, until its `result` reads it
+        self._last_answer: _OpenResponse | None = None
         self._on_wire = False
 
     # -- EventReader -------------------------------------------------------
@@ -477,6 +480,9 @@ class ClaudeTranscriptReader:
         """The turn is over. A response still open ends first, so every event of
         the turn precedes its ``TurnEnded`` even when no ``message_delta`` came."""
         yield from self._end_open()
+        filled = self._filled(record)
+        if filled is not None:
+            yield filled
         failed = bool(record.get("is_error"))
         word = record.get("terminal_reason") or record.get("subtype")
         text = record.get("result")
@@ -488,6 +494,25 @@ class ClaudeTranscriptReader:
             prompt_ids=tuple(
                 PromptId(i) for i in (ids if isinstance(ids, list) else []) if isinstance(i, str)
             ),
+            ts=_ts(record),
+        )
+
+    def _filled(self, record: dict[str, Any]) -> ContextUsage | None:
+        """How full the context is after a turn the model answered: its last
+        answer's input against the window ``modelUsage`` gives that model."""
+        last, self._last_answer = self._last_answer, None
+        if last is None:
+            return None
+        usage = last.usage
+        used = (
+            usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+        )
+        if used <= 0:
+            return None  # a command claude ran itself: no model read anything
+        configured = self._configuration.model if self._configuration else None
+        return ContextUsage(
+            used_tokens=used,
+            max_tokens=_window(record.get("modelUsage"), last.model, configured),
             ts=_ts(record),
         )
 
@@ -901,6 +926,7 @@ class ClaudeTranscriptReader:
             return
         self._open = None
         self._ended.add(state.response_id)
+        self._last_answer = state
         yield ResponseEnded(
             response_id=state.response_id,
             completion=state.completion or Completion.UNKNOWN,
@@ -1053,6 +1079,21 @@ def _hook_failure(attachment: dict[str, Any]) -> str:
 def _model(message: Any) -> ModelName | None:
     value = message.get("model") if isinstance(message, dict) else None
     return ModelName(value) if isinstance(value, str) and value else None
+
+
+def _window(model_usage: Any, *models: ModelName | None) -> int | None:
+    """The ``contextWindow`` ``modelUsage`` gives the first of ``models`` it names.
+
+    The configured model backs up the answer's own: ``claude-opus-5-5[1m]`` is
+    keyed so while its responses name ``claude-opus-5-5`` (2.1.283)."""
+    if not isinstance(model_usage, dict):
+        return None
+    for model in models:
+        entry = model_usage.get(model) if model else None
+        window = entry.get("contextWindow") if isinstance(entry, dict) else None
+        if isinstance(window, int) and not isinstance(window, bool) and window > 0:
+            return window
+    return None
 
 
 def _names(value: Any) -> tuple[str, ...]:

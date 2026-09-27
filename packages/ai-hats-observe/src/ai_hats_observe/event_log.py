@@ -21,6 +21,7 @@ from typing import Any, Iterable, Iterator
 
 from .artifacts import EVENT_LOG_JSONL, private_opener
 from .canonical.events import (
+    ContextUsage,
     Event,
     GateVerdict,
     ItemDelta,
@@ -214,6 +215,13 @@ def encode(event: Event) -> dict[str, Any]:
                 "skills": list(event.skills),
                 "ts": event.ts,
             }
+        case ContextUsage():
+            body = {
+                "event": "context_usage",
+                "used_tokens": event.used_tokens,
+                "max_tokens": event.max_tokens,
+                "ts": event.ts,
+            }
         case PromptReceived():
             body = {
                 "event": "prompt_received",
@@ -367,6 +375,11 @@ def _decode(record: dict[str, Any]) -> Event | None:
                 skills=_strings(record.get("skills")),
                 ts=ts,
             )
+        case "context_usage":
+            used, most = record.get("used_tokens"), record.get("max_tokens")
+            if not _count(used):
+                return None
+            return ContextUsage(used_tokens=used, max_tokens=most if _count(most) else None, ts=ts)
         case "prompt_received":
             origin, prompt_id = record.get("origin"), record.get("prompt_id")
             return PromptReceived(
@@ -519,6 +532,10 @@ def _usage_fields(usage: Usage) -> dict[str, int]:
         "cache_read_input_tokens": usage.cache_read_input_tokens,
         "cache_creation_input_tokens": usage.cache_creation_input_tokens,
     }
+
+
+def _count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _strings(value: Any) -> tuple[str, ...]:

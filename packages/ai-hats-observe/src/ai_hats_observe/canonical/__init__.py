@@ -10,6 +10,7 @@ Under review; not wired to anything yet.
 """
 
 from .events import (
+    ContextUsage,
     Event,
     GateVerdict,
     ItemDelta,
@@ -76,6 +77,7 @@ __all__ = [
     "Collected",
     "Response",
     "Completion",
+    "ContextUsage",
     "EVERYTHING",
     "REORDER_DEPTH",
     "EpochSeconds",

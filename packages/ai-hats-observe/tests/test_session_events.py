@@ -23,6 +23,7 @@ from ai_hats_observe.canonical import (
     AgentId,
     AskKind,
     Blocking,
+    ContextUsage,
     GateDecision,
     GatePoint,
     GateVerdict,
@@ -268,6 +269,23 @@ def test_a_turn_end_round_trips(tmp_path: Path, ended: TurnEnded) -> None:
 def test_a_session_configuration_round_trips(tmp_path: Path, configured: SessionConfigured) -> None:
     path = tmp_path / EVENT_LOG_JSONL
     events = [RunStarted(ts="2026-09-24T12:00:00Z"), configured]
+
+    write_events(events, path)
+
+    assert list(read_events(path)) == events
+
+
+@pytest.mark.parametrize(
+    "filled",
+    [
+        ContextUsage(used_tokens=22134, max_tokens=200000, ts="2026-09-24T12:00:02Z"),
+        ContextUsage(used_tokens=17),
+        ContextUsage(used_tokens=5, max_tokens=1000000, agent=AgentId("a-1")),
+    ],
+)
+def test_a_context_usage_round_trips(tmp_path: Path, filled: ContextUsage) -> None:
+    path = tmp_path / EVENT_LOG_JSONL
+    events = [RunStarted(ts="2026-09-24T12:00:00Z"), filled]
 
     write_events(events, path)
 

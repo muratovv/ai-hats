@@ -139,6 +139,21 @@ class SessionConfigured:
 
 
 @dataclass(frozen=True)
+class ContextUsage:
+    """How full the agent's context is, for a client that shows it.
+
+    Counted by the surface's reader rather than by each client, because what
+    fills a context is counted differently from one surface to the next.
+    """
+
+    used_tokens: int
+    # absent when the surface did not say how large the window is
+    max_tokens: int | None = None
+    ts: Timestamp | None = None
+    agent: AgentId | None = None
+
+
+@dataclass(frozen=True)
 class PromptReceived:
     """Input addressed to the model, from a person or from the harness.
 
@@ -284,6 +299,7 @@ Event = (
     | RunEnded
     | TurnEnded
     | SessionConfigured
+    | ContextUsage
     | PromptReceived
     | PersonAsked
     | ResponseStarted

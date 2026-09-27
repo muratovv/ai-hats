@@ -19,8 +19,8 @@ from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 # The reader's own sources; the gate chain's verdicts are in no record.
 _OURS = {None, "claude/wire", "claude/jsonl"}
 _ENDS = {"run_started", "run_ended", "turn_ended"}
-# what the wire alone carries: the transcript has no `system/init`
-_WIRE_ONLY = {"session_configured"}
+# what the wire alone carries: the transcript has no `system/init` and no `result`
+_WIRE_ONLY = {"session_configured", "context_usage"}
 
 
 def from_log(events: Iterable[Mapping[str, Any]]) -> Counter:
