@@ -1,4 +1,4 @@
-"""e2e
+"""e2e (HATS-2045)
 
 flow:   a pytest session in which a test runs a real claude in its tmp dir
 cmds:

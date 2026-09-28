@@ -605,6 +605,20 @@ as a claim to check, not as evidence.
 - **expect** — framework update removes orphan CLAUDE.md scaffold while preserving user content
 - **why** — without migration step 7, legacy root CLAUDE.md scaffolds persist after being deprecated
 
+## `test_claude_traces_hygiene.py`
+
+*pins HATS-2045*
+
+- **flow** — a pytest session in which a test runs a real claude in its tmp dir
+- **cmds**
+
+  ```console
+  claude -p "Reply with the single word OK" --model claude-haiku-4-5
+  ```
+
+- **expect** — once the session ends, claude's home holds no transcript dir and no config key named by the session's tmp paths; the transcript sits in <basetemp>/claude-traces/
+- **why** — claude keys its traces by cwd into the person's home, where every live test left them for good
+
 ## `test_claude_user_hooks_untouched.py`
 
 *pins HATS-1874*
