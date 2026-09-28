@@ -150,6 +150,13 @@ def test_hook_scripts_are_out_of_scope(tmp_path: Path):
     assert done.returncode == 0, done.stdout + done.stderr
 
 
+def test_a_consumer_libraries_layer_is_out_of_scope(tmp_path: Path):
+    """The gate ships in ai-hats-dev only, so a consumer's `libraries/` is not its to check."""
+    root = _repo(tmp_path, "carried over from ACME-1430.\n", path="libraries/skills/demo/SKILL.md")
+    done = _run(root)
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
 def test_a_tracked_but_unstaged_id_does_not_retro_block_the_commit(tmp_path: Path):
     """Changed-files scope: the gate fires on what THIS commit touches.
 

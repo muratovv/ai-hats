@@ -4,8 +4,8 @@
 # Ships with the `skill-lint-gate` skill, attached to the `ai-hats-dev` trait
 # → installed only for the roles that author the SHIPPED library.
 #
-# Scope: only STAGED library SKILL.md files (any of the three layouts named at the filter) are checked, EXCLUDING the
-# third-party `golang-*` pack (HATS-627 decision — pack drift is handled
+# Scope: only STAGED library SKILL.md files (either layout named at the filter)
+# are checked, EXCLUDING the third-party `golang-*` pack (HATS-627 decision — pack drift is handled
 # separately, not as a blocking gate). Changed-files scope means the gate only
 # fires on commits that touch an authored skill; it never retro-blocks the
 # pre-existing backlog (HATS-626).
@@ -49,15 +49,15 @@ fi
 # derived content this guard protects. Rules: R1 every SKILL.md carries a
 # `license:`; R2 a declared-derived skill (sibling metadata.yaml has `upstream:`)
 # ships its co-located LICENSE.
-# Three spellings, because the library has moved once already: the monorepo
-# package (ai_hats_library), the pre-monorepo root (library/, still used by the
-# e2e fixtures), and a consumer project's local layer (libraries/). HATS-1437.
+# Two spellings: the monorepo package, and the pre-monorepo `library/` the e2e
+# fixtures still use. A consumer's `libraries/` is not this gate's: it ships in
+# ai-hats-dev, the layer addressed to this repository alone.
 lic_files=()
 while IFS= read -r _f; do
     [[ -n "$_f" ]] && lic_files+=("$_f")
 done < <(
     git diff --cached --name-only --diff-filter=ACM |
-        grep -E '(^|/)(ai_hats_library|library|libraries)/.*/SKILL\.md$' \
+        grep -E '(^|/)(ai_hats_library|library)/.*/SKILL\.md$' \
         || true
 )
 
@@ -99,7 +99,7 @@ while IFS= read -r _f; do
     [[ -n "$_f" ]] && files+=("$_f")
 done < <(
     git diff --cached --name-only --diff-filter=ACM \
-        | grep -E '(^|/)(ai_hats_library|library|libraries)/.*/SKILL\.md$' \
+        | grep -E '(^|/)(ai_hats_library|library)/.*/SKILL\.md$' \
         | grep -vE '(^|/)golang-[^/]+/SKILL\.md$' \
         || true
 )

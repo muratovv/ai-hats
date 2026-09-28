@@ -5,12 +5,11 @@
 # Ships with the `rule-delivery-gate` skill, attached to the `ai-hats-dev`
 # trait → installed only for the roles that author the SHIPPED library.
 #
-# Scope: fires only when a commit stages a library config.yaml (any of the three layouts named at the filter).
-# injection — the place a dangling pointer is introduced). The check itself scans
-# the whole working-tree `library/` (a pointer's existence depends on the
-# library rules directory), so it cannot
-# be a per-file diff. Changed-files SCOPE keeps the gate off commits that touch
-# no injection; it never retro-blocks pre-existing content.
+# Scope: fires only when a commit stages a library config.yaml — the place a
+# dangling pointer is introduced. The check itself scans the whole library root
+# at the checkout (a pointer's existence depends on the rules directory), so it
+# cannot be a per-file diff. Changed-files SCOPE keeps the gate off commits that
+# touch no injection; it never retro-blocks pre-existing content.
 #
 # The checker is the same pure function the G2 unit test uses, invoked through an
 # overridable command so tests can stub it / pin the interpreter:
@@ -45,15 +44,15 @@ fi
 
 # Staged (added/copied/modified) trait/role injections. Collected without
 # `mapfile` so the hook runs on macOS system bash 3.2.
-# Three spellings, because the library has moved once already: the monorepo
-# package (ai_hats_library), the pre-monorepo root (library/, still used by the
-# e2e fixtures), and a consumer project's local layer (libraries/). HATS-1437.
+# Two spellings: the monorepo package, and the pre-monorepo `library/` the e2e
+# fixtures still use. A consumer's `libraries/` is not this gate's: it ships in
+# ai-hats-dev, the layer addressed to this repository alone.
 staged=()
 while IFS= read -r _f; do
     [[ -n "$_f" ]] && staged+=("$_f")
 done < <(
     git diff --cached --name-only --diff-filter=ACM |
-        grep -E '(^|/)(ai_hats_library|library|libraries)/.*/config\.yaml$' \
+        grep -E '(^|/)(ai_hats_library|library)/.*/config\.yaml$' \
         || true
 )
 [[ ${#staged[@]} -eq 0 ]] && exit 0
@@ -91,24 +90,13 @@ if [[ "$(basename "${_cmd[0]}")" == python* ]] && ! "${_cmd[0]}" -c "import ai_h
     exit 0
 fi
 
-# Resolve the library root: prefer relative paths in cwd if present,
-# otherwise resolve from the package via python (HATS-1437).
+# The library root at the checkout being committed. The installed package is
+# never a stand-in: it is not what the commit stages.
 _libroot=""
 if [[ -d "packages/ai-hats-library/src/ai_hats_library" ]]; then
     _libroot="packages/ai-hats-library/src/ai_hats_library"
 elif [[ -d "library" ]]; then
     _libroot="library"
-else
-    _py="${_cmd[0]}"
-    if [[ "$_py" != *python* ]]; then
-        _toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-        if [[ -n "$_toplevel" && -x "$_toplevel/.venv/bin/python3" ]]; then
-            _py="$_toplevel/.venv/bin/python3"
-        else
-            _py="python3"
-        fi
-    fi
-    _libroot="$("$_py" -c 'import ai_hats_library,pathlib;print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"
 fi
 
 if [[ -z "$_libroot" || ! -d "$_libroot" ]]; then

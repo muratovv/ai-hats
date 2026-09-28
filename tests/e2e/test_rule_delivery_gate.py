@@ -123,6 +123,46 @@ def test_fires_on_the_monorepo_layout(repo: Path, tmp_path: Path):
     assert "rule_nope" in res.stderr
 
 
+def _marker_stub(tmp_path: Path) -> tuple[Path, Path]:
+    """A failing checker that leaves a marker, so a test can prove it never ran."""
+    marker = tmp_path / "checker-ran"
+    stub = tmp_path / "fail.sh"
+    stub.write_text(f"#!/usr/bin/env bash\ntouch {str(marker)!r}\nexit 1\n")
+    stub.chmod(0o755)
+    return stub, marker
+
+
+@pytest.mark.integration
+def test_a_consumer_libraries_layer_does_not_arm(repo: Path, tmp_path: Path):
+    """The gate ships in ai-hats-dev only, so a consumer's `libraries/` is not its to check."""
+    stub, marker = _marker_stub(tmp_path)
+    _stage_cfg(repo, "libraries/roles/r/config.yaml", "name: r\n")
+    res = _run_hook(repo, env={"AI_HATS_RULE_DELIVERY_CMD": f"bash {stub}"})
+    assert res.returncode == 0, res.stderr
+    assert not marker.exists(), res.stderr
+
+
+@pytest.mark.integration
+def test_an_unrooted_library_fails_open_loud(tmp_path: Path):
+    """No library at the checkout root is a journalled skip, never a scan of the installed package."""
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=str(project), check=True)
+    _git(project, "config", "user.email", "t@e.x")
+    _git(project, "config", "user.name", "t")
+    (project / "README.md").write_text("# p\n")
+    _git(project, "add", "README.md")
+    _git(project, "commit", "-m", "init", "--quiet")
+    _stage_cfg(project, "vendor/library/traits/t/config.yaml", "name: t\n")
+    stub, marker = _marker_stub(tmp_path)
+    # First on PATH: an interpreter that CAN import ai_hats_library.
+    path = f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    res = _run_hook(project, env={"AI_HATS_RULE_DELIVERY_CMD": f"bash {stub}", "PATH": path})
+    assert res.returncode == 0, res.stderr
+    assert "library root unresolved" in res.stderr
+    assert not marker.exists(), res.stderr
+
+
 @pytest.mark.integration
 def test_allows_when_checker_passes(repo: Path, tmp_path: Path):
     stub = _make_stub(tmp_path / "pass.sh", rc=0)
