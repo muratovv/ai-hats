@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,7 +31,9 @@ class ClaudeHome:
     def of_environ(cls, environ: Mapping[str, str]) -> ClaudeHome:
         """claude's own rule: ``$CLAUDE_CONFIG_DIR`` holds both, else ``~/.claude/`` and ``~/.claude.json``."""
         if config_dir := environ.get(ENV_CLAUDE_CONFIG_DIR):
-            return cls(projects=Path(config_dir) / "projects", config=Path(config_dir) / ".claude.json")
+            return cls(
+                projects=Path(config_dir) / "projects", config=Path(config_dir) / ".claude.json"
+            )
         home = Path(environ.get(ENV_HOME) or Path.home())
         return cls(projects=claude_dir(home) / "projects", config=home / ".claude.json")
 
@@ -83,20 +86,36 @@ def claude_config_lock(config: Path, *, wait_s: float = LOCK_STALE_S) -> Iterato
         lock.rmdir()
 
 
-def _drop_config_keys(config: Path, doomed: Callable[[str], bool]) -> int:
-    """Remove the ``projects`` entries ``doomed`` names; the file is rewritten only if any go."""
-    if not config.exists() or not any(map(doomed, _projects(config))):
-        return 0
+def update_claude_config(config: Path, change: Callable[[dict[str, Any]], bool]) -> None:
+    """Edit claude's config as claude does: under its lock, on a fresh read, written only when ``change`` says so.
+
+    A config that will not parse raises — never rewritten from scratch, which would drop the login.
+    """
     with claude_config_lock(config):
-        data = json.loads(config.read_text(encoding="utf-8"))
-        projects = data.get("projects") or {}
-        gone = [key for key in projects if doomed(key)]
-        for key in gone:
-            del projects[key]
+        data = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {}
+        if not change(data):
+            return
         tmp = config.with_name(f"{config.name}.ai-hats-{os.getpid()}.tmp")
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        shutil.copymode(config, tmp)
+        if config.exists():
+            shutil.copymode(config, tmp)
         os.replace(tmp, config)
+
+
+def _drop_config_keys(config: Path, doomed: Callable[[str], bool]) -> int:
+    """Remove the ``projects`` entries ``doomed`` names; the lock is taken only if any match."""
+    if not config.exists() or not any(map(doomed, _projects(config))):
+        return 0
+    gone: list[str] = []
+
+    def drop(data: dict[str, Any]) -> bool:
+        projects = data.get("projects") or {}
+        gone[:] = [key for key in projects if doomed(key)]
+        for key in gone:
+            del projects[key]
+        return bool(gone)
+
+    update_claude_config(config, drop)
     return len(gone)
 
 
@@ -142,8 +161,12 @@ def sweep_orphans(home: ClaudeHome, runs_root: Path) -> Swept:
     A run whose dir is still there — a concurrent one, or a red one pytest
     keeps — is left alone; its traces go with its dir, on a later call.
     """
-    dir_runs = [re.compile(rf"^{re.escape(key)}-pytest-(\d+)(?:-|$)") for key in _dir_keys(runs_root)]
-    key_runs = [re.compile(rf"^{re.escape(root)}/pytest-(\d+)(?:/|$)") for root in _spellings(runs_root)]
+    dir_runs = [
+        re.compile(rf"^{re.escape(key)}-pytest-(\d+)(?:-|$)") for key in _dir_keys(runs_root)
+    ]
+    key_runs = [
+        re.compile(rf"^{re.escape(root)}/pytest-(\d+)(?:/|$)") for root in _spellings(runs_root)
+    ]
 
     def orphan(name: str, patterns: list[re.Pattern[str]]) -> bool:
         run = next((m.group(1) for p in patterns if (m := p.match(name))), None)
@@ -165,7 +188,11 @@ def _report(scope: str, sweep: Callable[[], Swept], into: Path | None = None) ->
         return
     if swept == Swept():
         return
-    done = f"moved {swept.moved} transcript dirs into {into}" if into else f"deleted {swept.deleted} transcript dirs"
+    done = (
+        f"moved {swept.moved} transcript dirs into {into}"
+        if into
+        else f"deleted {swept.deleted} transcript dirs"
+    )
     print(f"\n[claude-traces] {scope}: {done}, dropped {swept.keys} config keys")
 
 

@@ -17,6 +17,7 @@ from tests._claude_traces import (
     runs_root,
     sweep_orphans,
     sweep_run,
+    update_claude_config,
 )
 
 
@@ -26,7 +27,9 @@ def _key(path: Path | str) -> str:
 
 @pytest.fixture
 def home(tmp_path: Path) -> ClaudeHome:
-    claude = ClaudeHome(projects=tmp_path / "home/.claude/projects", config=tmp_path / "home/.claude.json")
+    claude = ClaudeHome(
+        projects=tmp_path / "home/.claude/projects", config=tmp_path / "home/.claude.json"
+    )
     claude.projects.mkdir(parents=True)
     return claude
 
@@ -40,8 +43,14 @@ def _trace(home: ClaudeHome, cwd: Path | str) -> Path:
 
 def test_run_traces_move_into_the_run_and_others_stay(home: ClaudeHome, tmp_path: Path) -> None:
     basetemp = tmp_path / "pytest-of-u/pytest-7"
-    ours = [_trace(home, basetemp / "test_a0/project"), _trace(home, basetemp / "popen-gw1/wt-sandbox0/x")]
-    theirs = [_trace(home, tmp_path / "pytest-of-u/pytest-70/test_b0"), _trace(home, "/srv/work/proj")]
+    ours = [
+        _trace(home, basetemp / "test_a0/project"),
+        _trace(home, basetemp / "popen-gw1/wt-sandbox0/x"),
+    ]
+    theirs = [
+        _trace(home, tmp_path / "pytest-of-u/pytest-70/test_b0"),
+        _trace(home, "/srv/work/proj"),
+    ]
     into = basetemp / "claude-traces"
 
     swept = sweep_run(home, basetemp, into)
@@ -53,7 +62,9 @@ def test_run_traces_move_into_the_run_and_others_stay(home: ClaudeHome, tmp_path
 
 
 def _config(home: ClaudeHome, *keys: str, **top: object) -> None:
-    home.config.write_text(json.dumps({**top, "projects": {k: {"lastSessionId": "x"} for k in keys}}))
+    home.config.write_text(
+        json.dumps({**top, "projects": {k: {"lastSessionId": "x"} for k in keys}})
+    )
 
 
 def test_run_config_keys_are_dropped_and_the_rest_kept(home: ClaudeHome, tmp_path: Path) -> None:
@@ -106,8 +117,17 @@ def test_orphans_of_vanished_runs_go_and_live_runs_stay(home: ClaudeHome, tmp_pa
     root = tmp_path / "pytest-of-u"
     (root / "pytest-8").mkdir(parents=True)
     gone = [_trace(home, root / "pytest-7/test_a0/project"), _trace(home, root / "pytest-7")]
-    stay = [_trace(home, root / "pytest-8/test_a0"), _trace(home, root / "pytest-78x"), _trace(home, "/srv/work/proj")]
-    _config(home, str(root / "pytest-7/test_a0/project"), str(root / "pytest-8/test_a0"), "/srv/work/proj")
+    stay = [
+        _trace(home, root / "pytest-8/test_a0"),
+        _trace(home, root / "pytest-78x"),
+        _trace(home, "/srv/work/proj"),
+    ]
+    _config(
+        home,
+        str(root / "pytest-7/test_a0/project"),
+        str(root / "pytest-8/test_a0"),
+        "/srv/work/proj",
+    )
 
     swept = sweep_orphans(home, root)
 
@@ -124,9 +144,9 @@ def test_claude_home_follows_the_config_dir_override(tmp_path: Path) -> None:
     assert ClaudeHome.of_environ({"HOME": str(tmp_path)}) == ClaudeHome(
         projects=tmp_path / ".claude/projects", config=tmp_path / ".claude.json"
     )
-    assert ClaudeHome.of_environ({"HOME": str(tmp_path), "CLAUDE_CONFIG_DIR": str(tmp_path / "c")}) == (
-        ClaudeHome(projects=tmp_path / "c/projects", config=tmp_path / "c/.claude.json")
-    )
+    assert ClaudeHome.of_environ(
+        {"HOME": str(tmp_path), "CLAUDE_CONFIG_DIR": str(tmp_path / "c")}
+    ) == (ClaudeHome(projects=tmp_path / "c/projects", config=tmp_path / "c/.claude.json"))
 
 
 def test_the_runs_root_is_where_pytest_numbers_its_runs(tmp_path: Path) -> None:
@@ -169,9 +189,13 @@ def test_a_session_sweeps_at_start_and_moves_its_own_at_the_end(
     basetemp = pytester.path.parent / "basetemp"
     assert not orphan.exists()
     assert list(home.projects.iterdir()) == []
-    assert [p.name.startswith(_key(basetemp)) for p in (basetemp / "claude-traces").iterdir()] == [True]
+    assert [p.name.startswith(_key(basetemp)) for p in (basetemp / "claude-traces").iterdir()] == [
+        True
+    ]
     assert list(json.loads(home.config.read_text())["projects"]) == ["/srv/work/proj"]
-    result.stdout.fnmatch_lines(["*deleted 1 transcript dirs*", "*moved 1 transcript dirs*dropped 1 config keys*"])
+    result.stdout.fnmatch_lines(
+        ["*deleted 1 transcript dirs*", "*moved 1 transcript dirs*dropped 1 config keys*"]
+    )
 
 
 def test_a_green_run_takes_its_traces_down_with_its_basetemp(
@@ -185,12 +209,25 @@ def test_a_green_run_takes_its_traces_down_with_its_basetemp(
     _config(home)
     pytester.makepyfile(_INNER_TEST)
 
-    result = pytester.runpytest_inprocess("-p", "tests._claude_traces", "-o", "tmp_path_retention_policy=failed")
+    result = pytester.runpytest_inprocess(
+        "-p", "tests._claude_traces", "-o", "tmp_path_retention_policy=failed"
+    )
 
     result.assert_outcomes(passed=1)
     result.stdout.fnmatch_lines(["*moved 1 transcript dirs*"])
     assert list(home.projects.iterdir()) == []
     assert list(runs_root(os.environ).iterdir()) == []
+
+
+def test_an_update_applies_to_a_fresh_read_and_writes_only_a_change(home: ClaudeHome) -> None:
+    update_claude_config(home.config, lambda data: data.update(seen=True) or True)
+    before = home.config.read_text()
+
+    update_claude_config(home.config, lambda data: False)
+
+    assert json.loads(before) == {"seen": True}
+    assert home.config.read_text() == before
+    assert not home.config.with_name(".claude.json.lock").exists()
 
 
 def test_the_lock_is_released_when_the_holder_fails(home: ClaudeHome) -> None:
