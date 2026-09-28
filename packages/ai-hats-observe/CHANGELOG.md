@@ -4,6 +4,18 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.22.0]
+
+A refused answer names the call it answered.
+
+### Added
+
+- `Notice.call_id` (`call_id` on every notice's `signal` line): the tool call
+  the notice is about, `null` when it is about none. A headless holder sets it
+  on the `command_rejected` of an `answer`.
+- `Rejected.call_id`: the call an `answer` line named as a non-empty string,
+  whatever else that line got wrong.
+
 ## [0.21.0]
 
 A claude run refused because the account may not use it now says a person must

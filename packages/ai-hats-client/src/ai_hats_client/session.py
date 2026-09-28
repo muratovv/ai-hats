@@ -388,8 +388,7 @@ class HeadlessSession:
     # -- plumbing -------------------------------------------------------------------
 
     def _pump_stdout(self) -> None:
-        # the holder writes a tick's lines at once; handed over as one, a wait never sees
-        # a question without the result written with it
+        # a read's lines go over as one, so a result read with its question closes it first
         read, rest = getattr(self._stdout, "read1", self._stdout.read), b""  # one read a call
         while chunk := read(1 << 16):
             cut = chunk.rfind(b"\n") + 1
