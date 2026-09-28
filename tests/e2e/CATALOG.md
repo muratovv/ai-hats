@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**348 of 348 files catalogued — 356 flows.**
+**349 of 349 files catalogued — 357 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -71,6 +71,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the run is refused before the launch attempt starts; the envelope carries exit_code 1 and an error naming `claude auth login`; the session's events.jsonl says run_started → reauthenticate → run_ended
 - **why** — without the pre-flight probe an unauthenticated run takes a worktree and a role materialization, launches claude, and reports a green "Sub-agent completed" with exit 1, the reason only in transcript.txt
+
+## `test_agent_reports_what_blocked_the_run.py`
+
+*pins HATS-2047*
+
+- **flow** — an orchestrator launches a claude sub-agent whose run the API refuses mid-run, and reads the result to decide whose move it is
+- **cmds**
+
+  ```console
+  ai-hats agent assistant --task "Reply with just: ok" --model <no such model> --json
+  ai-hats agent assistant --task "Reply with just: ok" --model <no such model>
+  ```
+
+- **expect** — exit 1; the envelope carries `blocked` (harness_must_act / abort, with claude's own words) and an `error` naming it; the human summary says "Sub-agent failed" with that line
+- **why** — the refusal is recorded by the transcript reader inside the session process and folded into metrics.json at finalize, so only a real claude run proves the signal travels from the API's answer to the caller — before this, the same run printed a green "Sub-agent completed" and an envelope with nothing but exit_code 1
 
 ## `test_agy_bypass.py`
 
