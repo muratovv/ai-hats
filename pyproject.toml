@@ -45,7 +45,7 @@ dependencies = [
     "ai-hats-observe>=0.20.0",  # session_configured, context_usage (0.20.0); floor tracks the workspace version
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
     # HATS-1755 the external session wrapper, not rack, consumes its tickets.
-    "ai-hats-library>=0.9.1",  # headless finalizes with finalize-hitl; floor tracks the workspace version
+    "ai-hats-library>=0.9.2",  # floor tracks the workspace version
     "ai-hats-client>=0.3.1",  # the client of `ai-hats headless` ships with the holder it drives
     "click>=8.1",
     "pyyaml>=6.0",
