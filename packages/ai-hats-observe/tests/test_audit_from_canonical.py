@@ -17,8 +17,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ai_hats_observe.audit import AuditWriter
-from ai_hats_observe.canonical import Blocking, PersonMustAct
+from ai_hats_observe.audit import AuditWriter, obligation_phrase
+from ai_hats_observe.canonical import (
+    Blocking,
+    HarnessActionRequired,
+    HarnessMustAct,
+    PersonActionRequired,
+    PersonMustAct,
+)
 from ai_hats_observe.parsers.base import ParsedTranscript
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats_observe.parsers.trace import TraceParser
@@ -258,6 +264,16 @@ def test_an_org_that_disabled_access_asks_a_person_to_authorize(tmp_path: Path) 
 
     assert "a person must authorize [403]" in audit
     assert "Your organization has disabled it" in audit
+
+
+def test_the_obligation_is_said_in_the_same_words_outside_the_audit() -> None:
+    person = PersonActionRequired(reason=PersonMustAct.AUTHORIZE, detail="ask your admin")
+    timed = HarnessActionRequired(reason=HarnessMustAct.WAIT, retry_after=1)
+    untimed = HarnessActionRequired(reason=HarnessMustAct.ABORT)
+
+    assert obligation_phrase(person) == "a person must authorize"
+    assert obligation_phrase(timed) == "the harness must wait, not before 1970-01-01T00:00:01+00:00"
+    assert obligation_phrase(untimed) == "the harness must abort"
 
 
 def test_parse_quality_and_run_health_stay_separate_axes(tmp_path: Path) -> None:

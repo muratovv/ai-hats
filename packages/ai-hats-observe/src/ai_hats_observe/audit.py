@@ -25,7 +25,6 @@ from .artifacts import (
 )
 from .canonical.signals import (
     Blocking,
-    HarnessActionRequired,
     PersonActionRequired,
     Signal,
 )
@@ -54,15 +53,20 @@ def _merge_flags(prior: object, new: list[str]) -> list[str]:
     return merged
 
 
-def _signal_label(signal: Signal) -> str:
-    """Who has to act, in the words a reader of the audit thinks in."""
+def obligation_phrase(signal: Blocking) -> str:
+    """Who has to act and how, e.g. "a person must authorize"."""
     reason = str(signal.reason).replace("_", " ")
     if isinstance(signal, PersonActionRequired):
-        return f"⛔ run blocked — a person must {reason}"
-    if isinstance(signal, HarnessActionRequired):
-        when = f", not before {_utc(signal.retry_after)}" if signal.retry_after else ""
-        return f"⛔ run blocked — the harness must {reason}{when}"
-    return f"ℹ️ {reason}"
+        return f"a person must {reason}"
+    when = f", not before {_utc(signal.retry_after)}" if signal.retry_after else ""
+    return f"the harness must {reason}{when}"
+
+
+def _signal_label(signal: Signal) -> str:
+    """Who has to act, in the words a reader of the audit thinks in."""
+    if isinstance(signal, Blocking):
+        return f"⛔ run blocked — {obligation_phrase(signal)}"
+    return f"ℹ️ {str(signal.reason).replace('_', ' ')}"
 
 
 def _utc(epoch: int) -> str:
