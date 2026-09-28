@@ -56,6 +56,9 @@ Always prefer free over venv over live.
    # project fixture: take `requires_claude_auth` (or `requires_agy_auth`)
    # alongside whichever project fixture the test needs, and drive the real
    # runner or binary. The gate fixture skips when nothing is authenticated.
+   # Never probe the login with a claude call of your own: it costs a turn,
+   # leaves a transcript in the checkout's own history, and misses the
+   # `live_claude` marker that only `requires_claude_auth` brings.
    def test_something(some_project, requires_claude_auth) -> None:
        ...
    ```
@@ -135,6 +138,13 @@ is how a row for a deleted module survived here (HATS-1847).
   the Claude CLI and authenticate (`claude login`). The `agy` cohort skips
   the same way and is excluded from the full e2e gate; run it explicitly
   with `pytest -m live_agy tests/e2e/`.
+- **Looking for a live test's claude transcript** — claude files it in the
+  person's home, under `~/.claude/projects/` keyed by the test's tmp dir. At
+  session end `tests/_claude_traces.py` moves it into
+  `<basetemp>/claude-traces/` and drops the dir's entry from `~/.claude.json`:
+  a red run keeps it there for triage (pytest keeps the last three runs), a
+  green run's basetemp is reaped with it. Each session also starts by deleting
+  what vanished runs left behind.
 
 ## Adding a new fixture
 
