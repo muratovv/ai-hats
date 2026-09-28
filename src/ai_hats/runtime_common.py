@@ -388,6 +388,8 @@ def _finalize_sub_agent(
                 metrics["timed_out"] = True
             if error is not None:
                 metrics["error"] = error
+            if exit_code != 0:
+                metrics.update(_blocked_metrics(session, error=error))
             if tags:
                 metrics["tags"] = tags
             if duration_s is not None:
@@ -737,7 +739,7 @@ def record_refused_run(
 ) -> None:
     """A run that never launched still says why: ``events.jsonl`` holds the
     lifecycle around the signals, ``metrics.json`` is finalized with the
-    first refusal as ``error``."""
+    first refusal as ``error`` and ``blocked``."""
     from ai_hats_observe.artifacts import EVENT_LOG_JSONL
     from ai_hats_observe.canonical.events import RunEnded, RunStarted
     from ai_hats_observe.canonical.types import now
@@ -762,11 +764,40 @@ def record_refused_run(
         "model": model,
         "isolation_mode": isolation_mode,
         "error": detail,
+        **_blocked_fields(stamped[0], error=detail),
     }
     if tags:
         metrics["tags"] = tags
     session.finalize_audit(metrics)
     session.log_sys(f"Session refused before launch: {detail}")
+
+
+def _blocked_metrics(session: "Session", *, error: str | None) -> dict:
+    """What a failed run ended on, from the signal its own event log holds."""
+    from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+    from ai_hats_observe.canonical.views import collect
+    from ai_hats_observe.event_log import read_events
+
+    try:
+        signal = collect(read_events(session.session_dir / EVENT_LOG_JSONL)).blocked_by
+    except OSError:
+        logger.warning("events.jsonl unreadable; what blocked the run is unknown", exc_info=True)
+        return {}
+    if signal is None:
+        return {}
+    return _blocked_fields(signal, error=error)
+
+
+def _blocked_fields(signal: "Blocking", *, error: str | None) -> dict:
+    """``blocked`` for the envelope, and an ``error`` in words when none was given."""
+    from ai_hats_observe.audit import obligation_phrase
+    from ai_hats_observe.event_log import signal_fields
+
+    fields: dict = {"blocked": signal_fields(signal)}
+    if error is None:
+        said = obligation_phrase(signal)
+        fields["error"] = f"{said}: {signal.detail}" if signal.detail else said
+    return fields
 
 
 def _close_event_log(event_log: "EventLogWriter", session: "Session", *, exit_code: int) -> None:

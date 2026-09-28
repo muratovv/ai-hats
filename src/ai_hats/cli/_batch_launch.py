@@ -96,6 +96,7 @@ def _report(result: SessionOutcome, *, as_json: bool) -> NoReturn:
             metrics = json.loads(metrics_path.read_text())
         except (json.JSONDecodeError, OSError):
             metrics = {}
+    exit_code = result.exit_code_or(int(metrics.get("exit_code", 1)))
 
     if as_json:
         payload = {
@@ -104,12 +105,13 @@ def _report(result: SessionOutcome, *, as_json: bool) -> NoReturn:
             "session_dir": str(session_dir),
         }
         click.echo(json.dumps(payload, sort_keys=True))
-    elif metrics.get("error"):
+    elif exit_code != 0 or metrics.get("error"):
         console.print(f"[red]Sub-agent failed[/]: {session_id}")
-        console.print(f"  {metrics['error']}", soft_wrap=True)
+        if metrics.get("error"):
+            console.print(f"  {metrics['error']}", soft_wrap=True)
         console.print(f"  Session dir: {session_dir}")
     else:
         console.print(f"[green]Sub-agent completed[/]: {session_id}")
         console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(result.exit_code_or(int(metrics.get("exit_code", 1))))
+    sys.exit(exit_code)

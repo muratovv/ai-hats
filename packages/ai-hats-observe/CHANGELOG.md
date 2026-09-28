@@ -4,6 +4,16 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.23.0]
+
+Who must act is said in the audit's words outside the audit too.
+
+### Added
+
+- `audit.obligation_phrase(signal)`: who must act and how, for a blocking
+  signal, e.g. "a person must authorize" or "the harness must wait, not before
+  <utc>". The audit's run-blocked line is built on it.
+
 ## [0.22.0]
 
 A refused answer names the call it answered.

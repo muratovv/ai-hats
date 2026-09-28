@@ -305,3 +305,107 @@ def test_third_ctrl_c_aborts_the_subagent_finalize(tmp_path, monkeypatch, caplog
     # THEN the remaining work is abandoned, on the record, without escaping
     assert reached == []
     assert "sub-agent finalize aborted by operator" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# What blocked the run
+# ---------------------------------------------------------------------------
+
+
+def _log_events(session: Session, *events) -> None:
+    from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+    from ai_hats_observe.event_log import write_events
+
+    write_events(events, session.session_dir / EVENT_LOG_JSONL)
+
+
+def _refused_by_org(detail: str = "ask your admin"):
+    from ai_hats_observe.canonical.signals import PersonActionRequired, PersonMustAct
+
+    return PersonActionRequired(
+        reason=PersonMustAct.AUTHORIZE, detail=detail, raw_code="403", source="claude/jsonl"
+    )
+
+
+def _finalize(session: Session, *, exit_code: int, error: str | None = None) -> dict:
+    _finalize_sub_agent(
+        session,
+        role="primary",
+        model="",
+        isolation_mode="discard",
+        exit_code=exit_code,
+        error=error,
+    )
+    return _read_metrics(session)
+
+
+def test_a_failed_run_says_what_blocked_it(tmp_path):
+    from ai_hats_observe.canonical.events import RunEnded, RunStarted
+
+    session = _make_session(tmp_path)
+    _log_events(session, RunStarted(), _refused_by_org(), RunEnded(ok=False, raw_code="1"))
+
+    m = _finalize(session, exit_code=SUBAGENT_EXIT_ERROR)
+
+    blocked = m["blocked"]
+    assert blocked["obligation"] == "person_must_act"
+    assert blocked["kind"] == "authorize"
+    assert blocked["detail"] == "ask your admin"
+    assert blocked["raw_code"] == "403"
+    assert blocked["source"] == "claude/jsonl"
+    assert m["error"] == "a person must authorize: ask your admin"
+
+
+def test_a_run_that_succeeded_is_not_blocked_by_a_signal_it_survived(tmp_path):
+    # A Task sub-agent's own refusal lands in the same log; the main agent went on.
+    session = _make_session(tmp_path)
+    _log_events(session, _refused_by_org())
+
+    m = _finalize(session, exit_code=0)
+
+    assert "blocked" not in m
+    assert "error" not in m
+
+
+def test_a_failure_with_no_signal_is_not_blocked(tmp_path):
+    from ai_hats_observe.canonical.events import RunEnded, RunStarted
+
+    session = _make_session(tmp_path)
+    _log_events(session, RunStarted(), RunEnded(ok=False, raw_code="1"))
+
+    m = _finalize(session, exit_code=SUBAGENT_EXIT_ERROR)
+
+    assert "blocked" not in m
+    assert "error" not in m
+
+
+def test_a_surface_that_writes_no_log_is_not_blocked(tmp_path):
+    session = _make_session(tmp_path)
+
+    m = _finalize(session, exit_code=SUBAGENT_EXIT_ERROR)
+
+    assert "blocked" not in m
+
+
+def test_the_runtime_error_is_kept_beside_what_blocked_the_run(tmp_path):
+    session = _make_session(tmp_path)
+    _log_events(session, _refused_by_org())
+
+    m = _finalize(session, exit_code=SUBAGENT_EXIT_ERROR, error="ProcessError: exit 1")
+
+    assert m["error"] == "ProcessError: exit 1"
+    assert m["blocked"]["kind"] == "authorize"
+
+
+def test_an_unreadable_log_costs_the_blocked_field_not_the_metrics(tmp_path, caplog):
+    from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+
+    session = _make_session(tmp_path)
+    (session.session_dir / EVENT_LOG_JSONL).mkdir()  # read_bytes() raises IsADirectoryError
+
+    with caplog.at_level(logging.WARNING):
+        m = _finalize(session, exit_code=SUBAGENT_EXIT_ERROR)
+
+    assert m["exit_code"] == SUBAGENT_EXIT_ERROR
+    assert "blocked" not in m
+    assert "events.jsonl unreadable" in caplog.text
