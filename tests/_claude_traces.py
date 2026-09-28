@@ -134,6 +134,10 @@ def _dir_keys(path: Path) -> set[str]:
     return {claude_transcripts_dir(Path(form)).name for form in _spellings(path)}
 
 
+def _project_dirs(home: ClaudeHome) -> list[Path]:
+    return list(home.projects.iterdir()) if home.projects.is_dir() else []
+
+
 def _dir_under(name: str, keys: set[str]) -> bool:
     return any(name == key or name.startswith(f"{key}-") for key in keys)
 
@@ -145,7 +149,7 @@ def _path_under(key: str, roots: set[str]) -> bool:
 def sweep_run(home: ClaudeHome, basetemp: Path, into: Path) -> Swept:
     """Move every transcript dir claude keyed under ``basetemp`` into ``into``; drop its config keys."""
     keys = _dir_keys(basetemp)
-    doomed = [d for d in home.projects.iterdir() if _dir_under(d.name, keys)]
+    doomed = [d for d in _project_dirs(home) if _dir_under(d.name, keys)]
     if doomed:
         into.mkdir(parents=True, exist_ok=True)
     for d in doomed:
@@ -172,7 +176,7 @@ def sweep_orphans(home: ClaudeHome, runs_root: Path) -> Swept:
         run = next((m.group(1) for p in patterns if (m := p.match(name))), None)
         return run is not None and not (runs_root / f"pytest-{run}").exists()
 
-    doomed = [d for d in home.projects.iterdir() if orphan(d.name, dir_runs)]
+    doomed = [d for d in _project_dirs(home) if orphan(d.name, dir_runs)]
     for d in doomed:
         shutil.rmtree(d)
     dropped = _drop_config_keys(home.config, lambda key: orphan(key, key_runs))

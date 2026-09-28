@@ -13,6 +13,7 @@ from tests._claude_traces import (
     LOCK_STALE_S,
     ClaudeHome,
     Swept,
+    _report,
     claude_config_lock,
     runs_root,
     sweep_orphans,
@@ -228,6 +229,24 @@ def test_an_update_applies_to_a_fresh_read_and_writes_only_a_change(home: Claude
     assert json.loads(before) == {"seen": True}
     assert home.config.read_text() == before
     assert not home.config.with_name(".claude.json.lock").exists()
+
+
+def test_a_home_claude_never_wrote_to_has_nothing_to_sweep(tmp_path: Path) -> None:
+    home = ClaudeHome(projects=tmp_path / "none/projects", config=tmp_path / "none/.claude.json")
+
+    assert sweep_run(home, tmp_path / "pytest-of-u/pytest-7", tmp_path / "into") == Swept()
+    assert sweep_orphans(home, tmp_path / "pytest-of-u") == Swept()
+
+
+def test_a_sweep_that_cannot_run_says_so_and_lets_the_session_go_on(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def busy() -> Swept:
+        raise TimeoutError("lock held")
+
+    _report("this run", busy)
+
+    assert "[claude-traces] this run: skipped, TimeoutError('lock held')" in capsys.readouterr().out
 
 
 def test_the_lock_is_released_when_the_holder_fails(home: ClaudeHome) -> None:
