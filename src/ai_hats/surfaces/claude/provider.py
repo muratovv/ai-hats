@@ -64,6 +64,19 @@ from ai_hats.constants import (
 
 logger = logging.getLogger(__name__)
 
+#: Claude Code's timed prompt for a critical-path `rm`; off only where the gate asks instead.
+RM_TIMER_ENV = "CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT"
+
+
+def _gate_asks_for_removals(composition: CompositionPlan, rows) -> bool:
+    """The role declares `fs.remove` and `safety_gate.py` stands on PreToolUse (ADR-0039 D4)."""
+    declared = any(
+        hook.app == "consent_gate" and hook.object == "fs.remove"
+        for hook in composition.hooks.external
+    )
+    gated = any(Path(row["command"]).name == "safety_gate.py" for row in rows.get("PreToolUse", ()))
+    return declared and gated
+
 
 def _entry_matcher(rows: list[dict[str, str]]) -> str:
     """One matcher covering every row's, in the alternation the entries already
@@ -292,6 +305,8 @@ class ClaudeSurface(Surface):
             entries.append(describe_write_text(settings, json.dumps(document, indent=2)))
             env.update(hook_env)
             env.update(settings_env)
+            if _gate_asks_for_removals(composition, rows):
+                env[RM_TIMER_ENV] = "1"
             if hitl:
                 args += ["--settings", str(settings)]
             else:
