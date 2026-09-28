@@ -739,7 +739,7 @@ def record_refused_run(
 ) -> None:
     """A run that never launched still says why: ``events.jsonl`` holds the
     lifecycle around the signals, ``metrics.json`` is finalized with the
-    first refusal as ``error``."""
+    first refusal as ``error`` and ``blocked``."""
     from ai_hats_observe.artifacts import EVENT_LOG_JSONL
     from ai_hats_observe.canonical.events import RunEnded, RunStarted
     from ai_hats_observe.canonical.types import now
@@ -764,6 +764,7 @@ def record_refused_run(
         "model": model,
         "isolation_mode": isolation_mode,
         "error": detail,
+        **_blocked_fields(stamped[0], error=detail),
     }
     if tags:
         metrics["tags"] = tags

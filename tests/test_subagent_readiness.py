@@ -86,6 +86,16 @@ def test_a_blocking_finding_refuses_and_finalizes_the_session(tmp_path):
     assert "refused before launch" in run.session.trace_path.read_text()
 
 
+def test_a_refusal_says_what_blocked_the_run_the_way_a_mid_run_block_does(tmp_path):
+    refused, run = _refuse(tmp_path, _Provider(findings=[_REFUSAL]))
+
+    metrics = json.loads(run.session.metrics_path.read_text())
+    assert metrics["blocked"]["obligation"] == "person_must_act"
+    assert metrics["blocked"]["kind"] == "reauthenticate"
+    assert metrics["blocked"]["detail"] == _REFUSAL.detail
+    assert metrics["error"] == _REFUSAL.detail
+
+
 def test_the_refusal_is_the_whole_event_log(tmp_path):
     _refused, run = _refuse(tmp_path, _Provider(findings=[_REFUSAL]))
 
