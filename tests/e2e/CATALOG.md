@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**350 of 350 files catalogued — 358 flows.**
+**351 of 351 files catalogued — 359 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1129,6 +1129,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the composed PreToolUse chain refuses both; consent set in the ENVIRONMENT still works, and an unprefixed transition still passes
 - **why** — rack reads these acks itself, so an inline prefix reaches them; and on a point the role DECLARED, silence is what the permission flow reads as allow — the same grant by another road (HATS-1682 A4)
+
+## `test_critical_rm_asks.py`
+
+*pins HATS-2044*
+
+- **flow** — an agent removes its own working directory in a session whose role declares fs.remove
+- **cmds**
+
+  ```console
+  rm -rf <project>
+  consent all 30
+  consent fs.remove 30
+  ```
+
+- **expect** — the composed chain asks, with no ticket rewrite; a grant, the consent ack and an unparsable line never turn the question into silence; the verb refuses fs.remove by name; an ordinary removal is not asked about
+- **why** — Claude Code's own prompt for a critical-path rm times out into a refusal, so the launch switches that timer off and the gate becomes the only question; a gate that goes quiet here hands the removal to the harness's classifier (ADR-0039)
 
 ## `test_customize_parallel_writes.py`
 
