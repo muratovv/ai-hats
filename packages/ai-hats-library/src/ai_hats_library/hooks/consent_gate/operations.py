@@ -51,10 +51,16 @@ class OperationSpec:
     binds_ticket: bool = False
     hook_only_because: str = ""
     value_flags: frozenset[str] = field(default_factory=frozenset)
+    #: For a hook-only operation, the binaries it reads: argv reaches ``read`` without one.
+    binaries: tuple[str, ...] = ()
+    #: False where the gate's silence would not allow the call but hand it to someone else.
+    grantable: bool = True
 
     def __post_init__(self) -> None:
         if self.surface is None and not self.hook_only_because:
             raise ValueError(f"{self.type}: an operation with no surface must say why")
+        if self.surface is None and not self.binaries:
+            raise ValueError(f"{self.type}: a hook-only operation must name its binaries")
 
 
 def operands(argv: Sequence[str], value_flags: frozenset[str]) -> list[str]:
@@ -168,6 +174,21 @@ def _read_wt(verb: str):
     return read
 
 
+def _read_removal(argv: Sequence[str]) -> Reading | None:
+    """The operands of `rm` / `rmdir`; after `--` a leading dash is an operand too."""
+    ops: list[str] = []
+    flags_over = False
+    for word in argv:
+        if not flags_over and word == "--":
+            flags_over = True
+        elif flags_over or not word.startswith("-"):
+            ops.append(word)
+    if not ops:
+        return None
+    subject = " ".join(ops)
+    return Reading(subject=subject, label=f"remove {subject}")
+
+
 #: The one answer, per operation, to "does a declared selector cover this call".
 def _arrow_admits(selectors, source_state, reading) -> bool:
     return any(
@@ -216,7 +237,26 @@ REGISTRY: dict[str, OperationSpec] = {
         legacy_flags=lambda _r: (_ACK,),
         value_flags=AI_HATS_VALUE_FLAGS,
     ),
+    # ADR-0039 — the harness's own circuit breaker times its question out, so
+    # the gate asks instead; which operands are critical is the gate's call.
+    "fs.remove": OperationSpec(
+        type="fs.remove",
+        surface=None,
+        read=_read_removal,
+        selector_reason=_only("critical-path"),
+        admits=_point_admits("critical-path"),
+        legacy_flags=lambda _r: (),
+        hook_only_because="a shim under `rm` would sit under every script and the person's own shell",
+        binaries=("rm", "rmdir"),
+        grantable=False,
+    ),
 }
+
+
+def grantable(operation: str, *, registry: dict | None = None) -> bool:
+    """Whether a grant may silence ``operation``; an unregistered type keeps the default."""
+    spec = spec_for(operation, registry=registry)
+    return spec is None or spec.grantable
 
 
 def spec_for(operation: str, *, registry: dict | None = None) -> OperationSpec | None:
@@ -234,7 +274,9 @@ def read(
     remove.
     """
     spec = spec_for(operation, registry=registry)
-    if spec is None or (spec.surface is not None and spec.surface != surface):
+    if spec is None:
+        return None
+    if surface not in ((spec.surface,) if spec.surface is not None else spec.binaries):
         return None
     return spec.read(argv)
 

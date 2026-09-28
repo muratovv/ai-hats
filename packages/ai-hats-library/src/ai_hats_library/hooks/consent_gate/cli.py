@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 import time
 
-from . import host
+from . import host, operations
 from .issue import DEFAULT_WINDOW_MINUTES, IssueError, Radius, issue
 
 #: Exit codes. Distinct on purpose: "there was nobody to issue against" is not
@@ -54,8 +54,16 @@ def radius_for(what: str, declared: tuple[str, ...]) -> Radius:
             "this session's role declares no gateable operation types — "
             "nothing to consent to (see `apps.consent_gate` in the role)"
         )
+    open_ = tuple(t for t in declared if operations.grantable(t))
+    closed = tuple(t for t in declared if t not in open_)
     if what == ALL:
-        return Radius(types=tuple(declared))
+        if not open_:
+            raise IssueError(f"{', '.join(closed)} cannot be granted — asked every time (ADR-0039)")
+        return Radius(types=open_)
+    if what in closed:
+        raise IssueError(
+            f"{what!r} cannot be granted — its question is asked every time (ADR-0039)"
+        )
     if what in declared:
         return Radius(types=(what,))
     raise IssueError(f"{what!r} is not a declared operation type — declared: {', '.join(declared)}")

@@ -259,6 +259,28 @@ def test_a_role_declaring_nothing_gets_a_refusal_that_names_the_block():
         radius_for("all", ())
 
 
+def test_an_ungrantable_type_is_refused_by_name():
+    """A grant's silence on fs.remove hands the removal to the harness's classifier."""
+    from ai_hats_library.hooks.consent_gate.cli import radius_for
+
+    with pytest.raises(IssueError, match="cannot be granted"):
+        radius_for("fs.remove", ("rack.transition", "fs.remove"))
+
+
+def test_all_leaves_an_ungrantable_type_out():
+    from ai_hats_library.hooks.consent_gate.cli import radius_for
+
+    declared = ("rack.transition", "fs.remove", "wt.merge")
+    assert radius_for("all", declared) == Radius(types=("rack.transition", "wt.merge"))
+
+
+def test_all_over_only_ungrantable_types_is_a_refusal_not_an_empty_grant():
+    from ai_hats_library.hooks.consent_gate.cli import radius_for
+
+    with pytest.raises(IssueError, match="cannot be granted"):
+        radius_for("all", ("fs.remove",))
+
+
 def test_too_many_words_is_a_refusal_not_a_guess():
     from ai_hats_library.hooks.consent_gate.cli import parse
 

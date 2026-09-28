@@ -108,7 +108,73 @@ def test_an_operation_with_no_surface_must_say_why():
             selector_reason=lambda _s: None,
             admits=lambda *_a: False,
             legacy_flags=lambda _r: (),
+            binaries=("probe",),
         )
+
+
+def _hook_only(binaries=("rm",)):
+    return operations.OperationSpec(
+        type="probe.remove",
+        surface=None,
+        read=lambda argv: operations.Reading(subject=" ".join(argv), label="probe"),
+        selector_reason=lambda _s: None,
+        admits=lambda *_a: True,
+        legacy_flags=lambda _r: (),
+        hook_only_because="probe",
+        binaries=binaries,
+    )
+
+
+def test_a_hook_only_operation_reads_only_its_own_binaries():
+    """argv reaches a reader without its binary, so a hook-only spec must name it."""
+    registry = {"probe.remove": _hook_only()}
+    assert (
+        operations.read("probe.remove", "rack", ["transition", "X", "done"], registry=registry)
+        is None
+    )
+    assert operations.read("probe.remove", "rm", ["-rf", "x"], registry=registry) is not None
+
+
+def test_a_hook_only_operation_must_name_its_binaries():
+    with pytest.raises(ValueError, match="binaries"):
+        _hook_only(binaries=())
+
+
+@pytest.mark.parametrize(
+    ("surface", "argv", "subject"),
+    [
+        ("rm", ["-rf", "build", "dist"], "build dist"),
+        ("rmdir", ["empty"], "empty"),
+        # after `--` a leading dash is an operand, not a flag
+        ("rm", ["-rf", "--", "-odd", "x"], "-odd x"),
+    ],
+)
+def test_fs_remove_reads_the_operands_of_rm_and_rmdir(surface, argv, subject):
+    reading = operations.read("fs.remove", surface, argv)
+    assert reading is not None and reading.subject == subject
+
+
+@pytest.mark.parametrize(
+    ("surface", "argv"),
+    [("rm", ["-rf"]), ("rack", ["transition", "X", "done"]), ("ai-hats", ["wt", "discard", "b"])],
+)
+def test_fs_remove_reads_nothing_else(surface, argv):
+    assert operations.read("fs.remove", surface, argv) is None
+
+
+def test_fs_remove_is_declared_at_critical_path_only():
+    from ai_hats.consent_wrapper import ConsentPolicyError, policy_of
+    from ai_hats.surfaces.plan import ExternalHook
+
+    def point(at):
+        return ExternalHook(
+            app="consent_gate", object="fs.remove", at=at, run=None, on_error=None, declared_by="t"
+        )
+
+    assert policy_of([point("critical-path")]) == {"fs.remove": ("critical-path",)}
+    with pytest.raises(ConsentPolicyError, match="critical-path"):
+        policy_of([point("everywhere")])
+    assert operations.wrapped_surfaces(["fs.remove"]) == []
 
 
 def test_hook_only_operations_materialise_no_shim():
