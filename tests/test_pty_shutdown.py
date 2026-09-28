@@ -23,6 +23,12 @@ from ai_hats.pty_shutdown import (
     emit_terminal_reset,
 )
 
+# Key-encoding modes first (kitty keyboard, modifyOtherKeys, …), then mouse modes.
+_FULL_RESET = (
+    b"\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
+    b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
+)
+
 
 class FakeProc:
     """Minimal duck-type substitute for ptyprocess.PtyProcess.
@@ -261,7 +267,7 @@ def test_emit_terminal_reset_writes_expected_bytes_when_forced(tmp_path):
         emit_terminal_reset(fh.fileno(), force=True)
 
     written = log.read_bytes()
-    assert written == (b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l")
+    assert written == _FULL_RESET
 
 
 def test_emit_terminal_reset_skips_non_tty_by_default(tmp_path):
@@ -285,7 +291,7 @@ def test_emit_terminal_reset_writes_when_fd_is_real_tty():
             data = os.read(master, 1024)
         except BlockingIOError:
             data = b""
-        assert data == (b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l")
+        assert data == _FULL_RESET
     finally:
         os.close(master)
         os.close(slave)

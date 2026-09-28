@@ -31,6 +31,7 @@ from ai_hats_observe.artifacts import (
 )
 from .pipeline import PipelineConfig, PipelineResult, SessionRef, run_subpipeline
 from .pipeline_catalog import FINALIZE_HITL, FINALIZE_SUBAGENT
+from .pty_shutdown import _TERM_RESET_PRELUDE  # noqa: F401 — re-exported for the start-of-session write
 from .session_policy import FinalizeRunParams
 
 # The pre-launch startup-notice surface moved to its own module;
@@ -66,20 +67,6 @@ SUBAGENT_SUBPROCESS_TIMEOUT_S = 600
 # Exit code conventions for early termination. 124 matches GNU coreutils `timeout`.
 SUBAGENT_EXIT_TIMEOUT = 124
 SUBAGENT_EXIT_ERROR = 1
-
-# Emitted on stdout before each PTY child spawn to
-# neutralise terminal state a prior TUI session may have leaked (idempotent on a
-# clean terminal). A leaked modifyOtherKeys=2 re-encoded plain Enter. Each
-# sequence:
-#   \x1b[=0;1u    — kitty-keyboard ABSOLUTE set (flags=0, mode=1); replaces the
-#                   unreliable relative `\x1b[<u` pop.
-#   \x1b[>4;0m    — modifyOtherKeys=0 (the leaking mode); keeps Enter→\r.
-#   \x1b[20l      — LNM off (DEC ANSI mode 20); defensive.
-#   \x1b>         — DECKPNM; keypad Enter sends \r, not \x1bOM.
-#   \x1b[?2004l   — disable bracketed paste.
-#   \x1b[?1l      — exit application cursor mode (DECCKM off).
-#   \x1b[?25h     — show cursor (in case a crashed TUI hid it).
-_TERM_RESET_PRELUDE = "\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
 
 
 # Parent escape-hatch for a wedged PTY provider. When the child

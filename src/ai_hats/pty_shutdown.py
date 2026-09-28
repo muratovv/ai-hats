@@ -34,6 +34,18 @@ logger = logging.getLogger(__name__)
 # burn CPU. 50 ms matches the runtime.py select() granularity.
 _POLL_INTERVAL_S = 0.05
 
+# Modes a TUI sets on the OUTER terminal that only its graceful exit unsets;
+# written before each spawn and after the child is gone (idempotent).
+#   \x1b[=0;1u    — kitty-keyboard ABSOLUTE set (flags=0, mode=1); replaces the
+#                   unreliable relative `\x1b[<u` pop.
+#   \x1b[>4;0m    — modifyOtherKeys=0; keeps Enter→\r.
+#   \x1b[20l      — LNM off (DEC ANSI mode 20); defensive.
+#   \x1b>         — DECKPNM; keypad Enter sends \r, not \x1bOM.
+#   \x1b[?2004l   — disable bracketed paste.
+#   \x1b[?1l      — exit application cursor mode (DECCKM off).
+#   \x1b[?25h     — show cursor (in case a crashed TUI hid it).
+_TERM_RESET_PRELUDE = "\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
+
 # DECRST mouse-tracking off. Emitted by emit_terminal_reset() after a
 # PTY child terminates so any mouse-tracking enabled by the child (and
 # not turned off because the child crashed / hung mid-exit) does not
@@ -172,13 +184,13 @@ def bounded_proc_shutdown(
 
 
 def emit_terminal_reset(fd: int = 1, *, force: bool = False) -> None:
-    """Write DECRST mouse-tracking off to *fd*.
+    """Write the key-mode reset and DECRST mouse-tracking off to *fd*.
 
     Called from the PTY parent on its own stdout AFTER the child has
     terminated. The parent's stdout is the OUTER terminal (the tmux
-    pane / Ghostty window), so this clears mouse-tracking state that
-    the dead child may have left enabled — preventing raw SGR mouse
-    reports from rendering as visible text in the surrounding shell.
+    pane / Ghostty window), so this clears the key-encoding and
+    mouse-tracking state a killed child left enabled — a shell that
+    cannot take Enter, raw SGR mouse reports printed as text.
 
     When *fd* is not a TTY (redirected to file / pipe — CI capture,
     ``ai-hats run > out.log``), emission is skipped so escape bytes
@@ -200,7 +212,7 @@ def emit_terminal_reset(fd: int = 1, *, force: bool = False) -> None:
         except OSError:
             return
     try:
-        os.write(fd, _DECRST_MOUSE_RESET.encode("ascii"))
+        os.write(fd, (_TERM_RESET_PRELUDE + _DECRST_MOUSE_RESET).encode("ascii"))
     except OSError:
         # EBADF (closed), EPIPE (other end gone), or similar — drop.
         pass

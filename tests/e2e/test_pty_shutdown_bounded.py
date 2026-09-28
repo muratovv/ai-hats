@@ -74,6 +74,12 @@ COOPERATIVE_CHILD_SOURCE = textwrap.dedent(
 )
 
 
+_FULL_RESET = (
+    b"\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
+    b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
+)
+
+
 def _write_child(tmp_path: Path, name: str, source: str) -> Path:
     p = tmp_path / name
     p.write_text(source)
@@ -220,7 +226,7 @@ def test_e2e_emit_terminal_reset_writes_to_real_tty(_import_pty_shutdown):
         os.close(master)
         os.close(slave)
 
-    assert data == (b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l")
+    assert data == _FULL_RESET
 
 
 @pytest.mark.integration
