@@ -9,7 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from tests._claude_traces import LOCK_STALE_S, ClaudeHome, claude_config_lock, sweep_run
+from tests._claude_traces import (
+    LOCK_STALE_S,
+    ClaudeHome,
+    Swept,
+    claude_config_lock,
+    runs_root,
+    sweep_orphans,
+    sweep_run,
+)
 
 
 def _key(path: Path | str) -> str:
@@ -92,6 +100,97 @@ def test_a_stale_claude_lock_is_taken_over_and_released(home: ClaudeHome) -> Non
         assert lock.is_dir()
 
     assert not lock.exists()
+
+
+def test_orphans_of_vanished_runs_go_and_live_runs_stay(home: ClaudeHome, tmp_path: Path) -> None:
+    root = tmp_path / "pytest-of-u"
+    (root / "pytest-8").mkdir(parents=True)
+    gone = [_trace(home, root / "pytest-7/test_a0/project"), _trace(home, root / "pytest-7")]
+    stay = [_trace(home, root / "pytest-8/test_a0"), _trace(home, root / "pytest-78x"), _trace(home, "/srv/work/proj")]
+    _config(home, str(root / "pytest-7/test_a0/project"), str(root / "pytest-8/test_a0"), "/srv/work/proj")
+
+    swept = sweep_orphans(home, root)
+
+    assert (swept.deleted, swept.keys) == (2, 1)
+    assert all(not d.exists() for d in gone)
+    assert all(d.exists() for d in stay)
+    assert sorted(json.loads(home.config.read_text())["projects"]) == sorted(
+        [str(root / "pytest-8/test_a0"), "/srv/work/proj"]
+    )
+    assert sweep_orphans(home, root) == Swept()
+
+
+def test_claude_home_follows_the_config_dir_override(tmp_path: Path) -> None:
+    assert ClaudeHome.of_environ({"HOME": str(tmp_path)}) == ClaudeHome(
+        projects=tmp_path / ".claude/projects", config=tmp_path / ".claude.json"
+    )
+    assert ClaudeHome.of_environ({"HOME": str(tmp_path), "CLAUDE_CONFIG_DIR": str(tmp_path / "c")}) == (
+        ClaudeHome(projects=tmp_path / "c/projects", config=tmp_path / "c/.claude.json")
+    )
+
+
+def test_the_runs_root_is_where_pytest_numbers_its_runs(tmp_path: Path) -> None:
+    root = runs_root({"PYTEST_DEBUG_TEMPROOT": str(tmp_path)})
+
+    assert root.parent == tmp_path.resolve()
+    assert root.name.startswith("pytest-of-")
+
+
+_INNER_TEST = """
+import json, os
+from pathlib import Path
+
+def test_claude_ran_here(tmp_path):
+    home = Path(os.environ["CLAUDE_CONFIG_DIR"])
+    key = "".join(c if c.isalnum() else "-" for c in str(tmp_path))
+    (home / "projects" / key).mkdir()
+    config = home / ".claude.json"
+    data = json.loads(config.read_text())
+    data["projects"][str(tmp_path)] = {}
+    config.write_text(json.dumps(data))
+"""
+
+
+def test_a_session_sweeps_at_start_and_moves_its_own_at_the_end(
+    pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = tmp_path / "claude-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(fake))
+    monkeypatch.setenv("PYTEST_DEBUG_TEMPROOT", str(tmp_path / "temproot"))
+    home = ClaudeHome.of_environ(os.environ)
+    home.projects.mkdir(parents=True)
+    orphan = _trace(home, runs_root(os.environ) / "pytest-999/test_x0")
+    _config(home, "/srv/work/proj")
+    pytester.makepyfile(_INNER_TEST)
+
+    result = pytester.runpytest("-p", "tests._claude_traces")
+
+    result.assert_outcomes(passed=1)
+    basetemp = pytester.path.parent / "basetemp"
+    assert not orphan.exists()
+    assert list(home.projects.iterdir()) == []
+    assert [p.name.startswith(_key(basetemp)) for p in (basetemp / "claude-traces").iterdir()] == [True]
+    assert list(json.loads(home.config.read_text())["projects"]) == ["/srv/work/proj"]
+    result.stdout.fnmatch_lines(["*deleted 1 transcript dirs*", "*moved 1 transcript dirs*dropped 1 config keys*"])
+
+
+def test_a_green_run_takes_its_traces_down_with_its_basetemp(
+    pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
+    monkeypatch.setenv("PYTEST_DEBUG_TEMPROOT", str(tmp_path / "temproot"))
+    (tmp_path / "temproot").mkdir()
+    home = ClaudeHome.of_environ(os.environ)
+    home.projects.mkdir(parents=True)
+    _config(home)
+    pytester.makepyfile(_INNER_TEST)
+
+    result = pytester.runpytest_inprocess("-p", "tests._claude_traces", "-o", "tmp_path_retention_policy=failed")
+
+    result.assert_outcomes(passed=1)
+    result.stdout.fnmatch_lines(["*moved 1 transcript dirs*"])
+    assert list(home.projects.iterdir()) == []
+    assert list(runs_root(os.environ).iterdir()) == []
 
 
 def test_the_lock_is_released_when_the_holder_fails(home: ClaudeHome) -> None:

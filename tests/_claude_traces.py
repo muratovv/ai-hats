@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import tempfile
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ai_hats.paths import claude_transcripts_dir
+import pytest
+
+from ai_hats.env import ENV_CLAUDE_CONFIG_DIR, ENV_HOME
+from ai_hats.paths import claude_dir, claude_transcripts_dir
 
 
 @dataclass(frozen=True)
@@ -21,10 +26,27 @@ class ClaudeHome:
     projects: Path
     config: Path
 
+    @classmethod
+    def of_environ(cls, environ: Mapping[str, str]) -> ClaudeHome:
+        """claude's own rule: ``$CLAUDE_CONFIG_DIR`` holds both, else ``~/.claude/`` and ``~/.claude.json``."""
+        if config_dir := environ.get(ENV_CLAUDE_CONFIG_DIR):
+            return cls(projects=Path(config_dir) / "projects", config=Path(config_dir) / ".claude.json")
+        home = Path(environ.get(ENV_HOME) or Path.home())
+        return cls(projects=claude_dir(home) / "projects", config=home / ".claude.json")
+
+
+def runs_root(environ: Mapping[str, str]) -> Path:
+    """The dir pytest numbers its runs in, derived as pytest's own ``TempPathFactory`` does."""
+    from _pytest.tmpdir import get_user
+
+    temproot = Path(environ.get("PYTEST_DEBUG_TEMPROOT") or tempfile.gettempdir()).resolve()
+    return temproot / f"pytest-of-{get_user() or 'unknown'}"
+
 
 @dataclass(frozen=True)
 class Swept:
     moved: int = 0
+    deleted: int = 0
     keys: int = 0
 
 
@@ -112,3 +134,58 @@ def sweep_run(home: ClaudeHome, basetemp: Path, into: Path) -> Swept:
     roots = _spellings(basetemp)
     dropped = _drop_config_keys(home.config, lambda key: _path_under(key, roots))
     return Swept(moved=len(doomed), keys=dropped)
+
+
+def sweep_orphans(home: ClaudeHome, runs_root: Path) -> Swept:
+    """Delete the traces of every ``<runs_root>/pytest-N`` that no longer exists.
+
+    A run whose dir is still there — a concurrent one, or a red one pytest
+    keeps — is left alone; its traces go with its dir, on a later call.
+    """
+    dir_runs = [re.compile(rf"^{re.escape(key)}-pytest-(\d+)(?:-|$)") for key in _dir_keys(runs_root)]
+    key_runs = [re.compile(rf"^{re.escape(root)}/pytest-(\d+)(?:/|$)") for root in _spellings(runs_root)]
+
+    def orphan(name: str, patterns: list[re.Pattern[str]]) -> bool:
+        run = next((m.group(1) for p in patterns if (m := p.match(name))), None)
+        return run is not None and not (runs_root / f"pytest-{run}").exists()
+
+    doomed = [d for d in home.projects.iterdir() if orphan(d.name, dir_runs)]
+    for d in doomed:
+        shutil.rmtree(d)
+    dropped = _drop_config_keys(home.config, lambda key: orphan(key, key_runs))
+    return Swept(deleted=len(doomed), keys=dropped)
+
+
+def _report(scope: str, sweep: Callable[[], Swept], into: Path | None = None) -> None:
+    """Run ``sweep`` and say what it did; a failure is told, never raised — hygiene must not fail a run."""
+    try:
+        swept = sweep()
+    except (OSError, TimeoutError, ValueError) as exc:
+        print(f"\n[claude-traces] {scope}: skipped, {exc!r}")
+        return
+    if swept == Swept():
+        return
+    done = f"moved {swept.moved} transcript dirs into {into}" if into else f"deleted {swept.deleted} transcript dirs"
+    print(f"\n[claude-traces] {scope}: {done}, dropped {swept.keys} config keys")
+
+
+def _controller(config: pytest.Config) -> bool:
+    return not hasattr(config, "workerinput")
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Clear what vanished runs left: killed ones, and ones from a checkout without this sweep."""
+    if _controller(session.config):
+        home, root = ClaudeHome.of_environ(os.environ), runs_root(os.environ)
+        _report("vanished runs", lambda: sweep_orphans(home, root))
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """Carry this run's traces into its basetemp — before pytest reaps that dir on green."""
+    factory = getattr(session.config, "_tmp_path_factory", None)
+    basetemp = getattr(factory, "_basetemp", None)
+    if basetemp is None or not _controller(session.config):
+        return
+    home, into = ClaudeHome.of_environ(os.environ), basetemp / "claude-traces"
+    _report("this run", lambda: sweep_run(home, basetemp, into), into)
