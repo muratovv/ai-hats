@@ -254,3 +254,15 @@ def test_human_mode_names_the_error_of_a_failed_run(cli, monkeypatch, project_di
     assert "Sub-agent failed" in result.stdout
     assert "claude auth login" in result.stdout
     assert "stub-session" in result.stdout
+
+
+def test_human_mode_never_calls_a_failed_run_completed(cli, monkeypatch, project_dir):
+    """Exit 1 with no ``error`` — a claude run the API refused, before its
+    blocking signal reached the metrics — is still a failure on screen."""
+    _install_stub_runner(monkeypatch, project_dir, {"exit_code": 1, "role": "test-agent"})
+
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t"])
+    assert result.exit_code == 1
+    assert "Sub-agent completed" not in result.stdout
+    assert "Sub-agent failed" in result.stdout
+    assert "stub-session" in result.stdout
