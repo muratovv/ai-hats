@@ -7,6 +7,7 @@ chrome and appending ``[RES]``/``[REQ]`` trace lines through the injected
 
 from __future__ import annotations
 
+import codecs
 import os
 import re
 from collections.abc import Callable
@@ -18,6 +19,11 @@ from .trace import TraceTag
 
 if TYPE_CHECKING:
     from .session import Session
+
+
+def _utf8_stream_decoder() -> Callable[[bytes], str]:
+    """Decode a byte stream read in chunks; a character cut between reads waits for its tail."""
+    return codecs.getincrementaldecoder("utf-8")(errors="replace").decode
 
 
 class SidecarTracer:
@@ -94,12 +100,13 @@ class SidecarTracer:
         ``AuditWriter._extract_turns`` / ``_extract_pio_content``.
         """
 
+        decode = _utf8_stream_decoder()
+
         def master_read(fd: int) -> bytes:
             data = os.read(fd, 1024)
             self._raw_dump(b"<<", data)
-            cleaned = self.strip_ansi(data).strip()
-            if cleaned:
-                text = cleaned.decode("utf-8", errors="replace")
+            text = decode(self.strip_ansi(data).strip(), final=not data)
+            if text:
                 self._write(partial(self.session.log_trace, TraceTag.RES), text)
             return data
 
@@ -111,14 +118,15 @@ class SidecarTracer:
     def make_stdin_read(self) -> Callable[[int], bytes]:
         """Returns stdin_read callback for pty.spawn — logs user input as [REQ] on newline."""
 
+        decode = _utf8_stream_decoder()
+
         def stdin_read(fd: int) -> bytes:
             data = os.read(fd, 1024)
             self._raw_dump(b">>", data)
             self._req_buf.extend(data)
             if b"\n" in self._req_buf or b"\r" in self._req_buf:
-                line = self.strip_noise(self.strip_ansi(bytes(self._req_buf))).strip()
-                if line:
-                    text = line.decode("utf-8", errors="replace")
+                text = decode(self.strip_noise(self.strip_ansi(bytes(self._req_buf))).strip())
+                if text:
                     self._write(partial(self.session.log_trace, TraceTag.REQ), text)
                     # Detect context-changing slash commands
                     if self._CONTEXT_CLEAR_RE.match(text):

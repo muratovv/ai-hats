@@ -113,6 +113,42 @@ def test_stdin_read_strips_zellij_prefix(tmp_path):
     assert "Zellij" not in trace
 
 
+def test_master_read_keeps_a_character_split_between_reads(tmp_path):
+    session = make_test_session(tmp_path)
+    master_read = SidecarTracer(session).make_master_read()
+    te = "т".encode()
+
+    master_read(pipe_with(b"podnya" + te[:1]))
+    master_read(pipe_with(te[1:] + b"b"))
+
+    trace = session.trace_path.read_text()
+    assert "�" not in trace
+    assert "[RES] тb" in trace
+
+
+def test_master_read_marks_a_character_cut_off_by_eof(tmp_path):
+    session = make_test_session(tmp_path)
+    master_read = SidecarTracer(session).make_master_read()
+
+    master_read(pipe_with(b"podnya" + "т".encode()[:1]))
+    assert master_read(pipe_with(b"")) == b""
+
+    assert "[RES] �" in session.trace_path.read_text()
+
+
+def test_stdin_read_keeps_a_character_split_after_a_newline(tmp_path):
+    session = make_test_session(tmp_path)
+    stdin_read = SidecarTracer(session).make_stdin_read()
+    te = "т".encode()
+
+    stdin_read(pipe_with(b"first\npodnya" + te[:1]))
+    stdin_read(pipe_with(te[1:] + b"b\n"))
+
+    trace = session.trace_path.read_text()
+    assert "�" not in trace
+    assert "[REQ] тb" in trace
+
+
 def test_master_read_survives_a_removed_session_dir(tmp_path):
     session = make_test_session(tmp_path)
     tracer = SidecarTracer(session)
