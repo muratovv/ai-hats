@@ -1186,7 +1186,7 @@ class WrapRunner:
                             cur = termios.tcgetattr(stdin_fd)
                             if cur[0] & (termios.ICRNL | termios.INLCR | termios.IGNCR):
                                 tty.setraw(stdin_fd)
-                                tracer.session.log_sys(
+                                tracer.log_sys(
                                     f"Termios drift on stdin (iflag={cur[0]:#x}) — restored raw",
                                 )
                         except termios.error:
@@ -1256,6 +1256,10 @@ class WrapRunner:
             # mouse reports from rendering as text in the surrounding
             # shell when the child crashed without disabling them.
             emit_terminal_reset(stdout_fd)
+
+        # Reported only now: mid-session, stderr would land inside the surface's TUI.
+        if tracer.fault is not None:
+            print(f"[ai-hats] session trace stopped mid-session: {tracer.fault}", file=sys.stderr)
 
         # The parent escape-hatch fired (triple Ctrl-C against a
         # wedged child). bounded_proc_shutdown (above) already killed the child,
