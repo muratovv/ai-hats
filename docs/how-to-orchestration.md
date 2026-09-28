@@ -144,13 +144,30 @@ in stdout; the human-readable mode (without `--json`) is unchanged.
 | 124            | timeout (sub-agent exceeded the wall-clock limit) — GNU coreutils convention |
 | other non-zero | forwarded from the provider (claude/gemini exit code)                        |
 
-A run the surface could not serve at all — claude not logged in, the codex
-CLI missing — is refused **before** a worktree or a session cache is taken and
-reports as exit 1 with `error` in the envelope naming what to do (e.g.
-`claude auth login`); its `events.jsonl` holds `run_started`, the
-`person_must_act` signal and `run_ended`, so an orchestrator reads the cause
-the same way it reads a mid-run one. The probe is the surface's readiness
-probe (glossary); a probe that cannot run never refuses.
+A run that ended on a blocking signal says so in the envelope. `blocked` is
+that signal: `obligation` (`person_must_act` or `harness_must_act`), `kind`,
+`detail` in the surface's own words, `raw_code` and `source`, and for the
+harness `retry_after`, the epoch second the block lifts, when the surface said.
+`error` names it in words when nothing else did, e.g. "a person must
+authorize: Your organization has disabled…". The exit code stays 1: read whose
+move it is from `blocked.obligation`, not from `$?`. A run that succeeded, or
+failed with no signal to explain it, has no `blocked`.
+
+```bash
+ai-hats agent diagnoser --task "..." --json \
+  | jq -r 'select(.blocked) | .blocked | "\(.obligation)/\(.kind): \(.detail)"'
+```
+
+The signal comes from one of two places, and either way `events.jsonl` holds it
+between `run_started` and `run_ended`:
+
+- a run the surface could not serve at all — claude not logged in, the codex
+  CLI missing — is refused **before** a worktree or a session cache is taken.
+  The probe is the surface's readiness probe (glossary); a probe that cannot run
+  never refuses;
+- a run the API refused on the way — the organization turned off access, the
+  quota wall, a model that does not exist — ends on the signal the surface's
+  record carries. Only claude reports one today.
 
 Fan-out example:
 
