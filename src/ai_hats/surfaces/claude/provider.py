@@ -44,7 +44,7 @@ from .channel import (
     OBSERVED_NOTIFICATION,
     STATUSLINE_COMMAND,
 )
-from ai_hats.env import ENV_STATUSLINE_INNER
+from ai_hats.env import ENV_CLAUDE_RM_TIMER_OFF, ENV_STATUSLINE_INNER
 
 from .runtime_hooks import plan_hooks
 
@@ -63,9 +63,6 @@ from ai_hats.constants import (
 )
 
 logger = logging.getLogger(__name__)
-
-#: Claude Code's timed prompt for a critical-path `rm`; off only where the gate asks instead.
-RM_TIMER_ENV = "CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT"
 
 
 def _gate_asks_for_removals(composition: CompositionPlan, rows) -> bool:
@@ -306,7 +303,7 @@ class ClaudeSurface(Surface):
             env.update(hook_env)
             env.update(settings_env)
             if _gate_asks_for_removals(composition, rows):
-                env[RM_TIMER_ENV] = "1"
+                env[ENV_CLAUDE_RM_TIMER_OFF] = "1"
             if hitl:
                 args += ["--settings", str(settings)]
             else:

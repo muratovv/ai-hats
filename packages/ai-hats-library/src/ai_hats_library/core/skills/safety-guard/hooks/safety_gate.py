@@ -1073,7 +1073,7 @@ def removal_question(cmd: str, payload: dict | None = None) -> ConsentQuestion |
 
 def _removal_context(cmd: str, payload: dict) -> dict:
     """Where the removal runs and what counts as the session's own directories."""
-    project = _envelope().get("project_dir") or os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    project = _envelope().get("project_dir") or ""  # declared points exist only in a session
     working = [Path.cwd(), *(Path(p) for p in (payload.get("cwd"), project) if p)]
     return {
         "base": target_cwd(cmd),

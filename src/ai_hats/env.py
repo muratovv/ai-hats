@@ -58,6 +58,10 @@ ENV_QUESTIONS_ON_WIRE = "AI_HATS_QUESTIONS_ON_WIRE"
 ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
 ENV_HOME = "HOME"
 
+#: Written into a claude child where the consent gate asks about a critical-path
+#: `rm`, so Claude Code's own prompt for it stops timing out (ADR-0039 D4).
+ENV_CLAUDE_RM_TIMER_OFF = "CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT"
+
 # Hook-point vocabulary, owned by ADR-0020 D2; named here so it has one home.
 ENV_HOOK_POINT = "AI_HATS_HOOK_POINT"
 ENV_IN_HOOK = "AI_HATS_IN_HOOK"
@@ -426,6 +430,7 @@ __all__ = [
     "ENV_STATUSLINE_INNER",
     "ENV_QUESTIONS_ON_WIRE",
     "ENV_CLAUDE_CONFIG_DIR",
+    "ENV_CLAUDE_RM_TIMER_OFF",
     "ENV_HOME",
     "ENV_HOOK_POINT",
     "ENV_IN_HOOK",
