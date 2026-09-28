@@ -177,9 +177,13 @@ stdout ребёнка. Если `PersonAsked` с этим `call_id` в журн�
 - на один `call_id` побеждает первый `answer`; второй, как и `answer` на
   неизвестный или уже закрытый `call_id`, и строка, которую holder не смог
   прочитать, дают `Notice(reason=command_rejected, raw_code=<cmd>,
-  detail=<почему>)`. Это новая причина в `WorthRecording`, и её consumer живой —
-  клиент headless (правило D4 ADR-0037); `unsupported_record` остаётся за
-  дрейфом схемы (ADR-0037 D5).
+  call_id=<call_id ответа>, detail=<почему>)`. Это новая причина в
+  `WorthRecording`, и её consumer живой — клиент headless (правило D4
+  ADR-0037); `unsupported_record` остаётся за дрейфом схемы (ADR-0037 D5).
+  `call_id` — вызов, который назвал `answer`, `null` у прочих команд и у ответа
+  без годного `call_id`. По нему клиент находит отказ на свой ответ: вопрос,
+  который он только что прочёл, мог уже закрыться, и опоздавший ответ — не
+  ошибка клиента (поправка HATS-2046).
 - `request_id` и `input`, нужные для `control_response`, живут только в памяти
   holder'а. `input` — это вызов уже после хука: allow эхом `input` выполняет и
   то, что хук вписал в вызов, consent-тикет в том числе (поправка HATS-2021,

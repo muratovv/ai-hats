@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .types import AgentId, EpochSeconds, ModelName, Timestamp
+from .types import AgentId, EpochSeconds, ModelName, Timestamp, ToolCallId
 
 
 class PersonMustAct(StrEnum):
@@ -116,6 +116,8 @@ class Notice(_Signal):
     reason: WorthRecording = WorthRecording.UNSUPPORTED_RECORD
     # on MODEL_SWITCHED: which model took over
     model: ModelName | None = None
+    # the tool call this is about, when it is about one
+    call_id: ToolCallId | None = None
 
 
 Signal = PersonActionRequired | HarnessActionRequired | Notice

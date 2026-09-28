@@ -97,6 +97,7 @@ def signal_fields(signal: Signal) -> dict[str, Any]:
             fields["retry_after"] = signal.retry_after
         case Notice():
             fields["model"] = signal.model
+            fields["call_id"] = signal.call_id
     return fields
 
 
@@ -129,11 +130,12 @@ def _signal_from(record: dict[str, Any]) -> Signal | None:
                 retry_after=EpochSeconds(retry_after) if isinstance(retry_after, int) else None,
             )
         case "worth_recording" if kind in set(WorthRecording):
-            model = record.get("model")
+            model, call_id = record.get("model"), record.get("call_id")
             return Notice(
                 **shared,
                 reason=WorthRecording(kind),
                 model=ModelName(model) if isinstance(model, str) and model else None,
+                call_id=ToolCallId(call_id) if isinstance(call_id, str) and call_id else None,
             )
     return None
 

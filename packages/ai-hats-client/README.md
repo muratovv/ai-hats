@@ -69,7 +69,13 @@ turn = s.turn("push the branch", on_question=decide)
 - A question stays offered until you answer it, its handler returns, or its call
   gets a result: a handler that raised sees it again on the next wait.
 - The first answer on a call id wins. The holder refuses the rest and logs a
-  `command_rejected` signal for each.
+  `command_rejected` signal for each, whose `call_id` names the call. Match a
+  refusal to your answer by it, never by the `detail` text; it may land in a
+  later turn than the question, and `events` holds every one read so far.
+- A question you are offered may already be closed: the session withdrew it, or
+  its call's result had not been read yet. Answering it is then not a mistake —
+  the answer comes back refused, and whether the call ran is the `ok` of its
+  `tool_result_received`.
 - `interrupt()` stops the running turn and keeps the session. The turn still
   ends with its `turn_ended`, and a question it had open is closed.
 

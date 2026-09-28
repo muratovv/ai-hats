@@ -98,8 +98,10 @@ def test_e2e_an_answer_the_holder_cannot_execute_is_refused_and_the_question_sta
     session_on_stub,
 ) -> None:
     with session_on_stub() as session:
+        asked: list[str] = []
 
         def answer_wrong_then_right(question: dict) -> None:
+            asked.append(question["call_id"])
             session.answer("toolu_nobody_asked", "allow")
             session.answer(question["call_id"], "deny")
             session.answer(question["call_id"], "allow")
@@ -109,7 +111,10 @@ def test_e2e_an_answer_the_holder_cannot_execute_is_refused_and_the_question_sta
 
     assert turn.text == "denied", "the first answer on the call decided it"
     refused = [e for e in end.events if e.get("kind") == "command_rejected"]
-    assert [e["raw_code"] for e in refused] == ["answer", "answer"]
+    assert [(e["raw_code"], e["call_id"]) for e in refused] == [
+        ("answer", "toolu_nobody_asked"),
+        ("answer", asked[0]),
+    ], "each refusal names the call its answer named"
     assert "names no open question" in refused[0]["detail"]
     assert "already closed" in refused[1]["detail"]
 

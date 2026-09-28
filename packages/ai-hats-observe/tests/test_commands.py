@@ -57,6 +57,7 @@ def test_anything_else_is_refused_with_what_to_fix(line: bytes, cmd: str | None,
     assert isinstance(rejected, Rejected)
     assert rejected.cmd == cmd
     assert why in rejected.why
+    assert rejected.call_id is None
 
 
 def test_the_refusal_says_what_the_command_takes() -> None:
@@ -115,25 +116,38 @@ def test_an_answer_is_read() -> None:
     assert decode_command(line) == Answer(ToolCallId("toolu_1"), "allow")
 
 
+C = ToolCallId("c")
+
+
 @pytest.mark.parametrize(
-    ("body", "why"),
+    ("body", "why", "call_id"),
     [
-        ('"decision":"allow"', '"call_id" must be'),
-        ('"call_id":"","decision":"allow"', '"call_id" must be'),
-        ('"call_id":"c"', '"decision" must be one of: allow, deny'),
-        ('"call_id":"c","decision":"maybe"', '"decision" must be one of'),
-        ('"call_id":"c","decision":"allow","message":"why"', '"message" goes with a deny'),
-        ('"call_id":"c","decision":"deny","message":3', '"message" must be a string'),
-        ('"call_id":"c","decision":"allow","answers":["red"]', '"answers" must be an object'),
-        ('"call_id":"c","decision":"allow","answers":{"q":1}', '"answers" must be an object'),
-        ('"call_id":"c","decision":"allow","reason":"x"', 'unknown key "reason" — answer takes'),
+        ('"decision":"allow"', '"call_id" must be', None),
+        ('"call_id":"","decision":"allow"', '"call_id" must be', None),
+        ('"call_id":7,"decision":"allow"', '"call_id" must be', None),
+        ('"call_id":"c"', '"decision" must be one of: allow, deny', C),
+        ('"call_id":"c","decision":"maybe"', '"decision" must be one of', C),
+        ('"call_id":"c","decision":"allow","message":"why"', '"message" goes with a deny', C),
+        ('"call_id":"c","decision":"deny","message":3', '"message" must be a string', C),
+        ('"call_id":"c","decision":"allow","answers":["red"]', '"answers" must be an object', C),
+        ('"call_id":"c","decision":"allow","answers":{"q":1}', '"answers" must be an object', C),
+        ('"call_id":"c","decision":"allow","reason":"x"', 'unknown key "reason" — answer takes', C),
     ],
 )
-def test_an_answer_that_cannot_be_executed_is_refused(body: str, why: str) -> None:
+def test_an_answer_that_cannot_be_executed_is_refused_naming_its_call(
+    body: str, why: str, call_id: ToolCallId | None
+) -> None:
     rejected = decode_command(('{"v":"commands/v1","cmd":"answer",%s}' % body).encode())
 
     assert isinstance(rejected, Rejected) and rejected.cmd == "answer"
     assert why in rejected.why
+    assert rejected.call_id == call_id
+
+
+def test_an_answer_in_another_version_still_names_its_call() -> None:
+    rejected = decode_command(b'{"v":"commands/v2","cmd":"answer","call_id":"c"}')
+
+    assert isinstance(rejected, Rejected) and rejected.call_id == C
 
 
 @pytest.mark.parametrize(

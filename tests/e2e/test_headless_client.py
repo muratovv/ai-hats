@@ -96,9 +96,9 @@ def test_e2e_a_line_the_holder_cannot_run_is_refused_and_the_session_goes_on(
         session.close()
 
     refused = turn.signals("command_rejected")
-    assert [(e["raw_code"], e["detail"].split(":")[0]) for e in refused] == [
-        (None, "stdin line 1"),
-        ("answer", "stdin line 2"),
-    ], "each refusal names the line it answers, so the client finds its own command"
+    assert [(e["raw_code"], e["call_id"], e["detail"].split(":")[0]) for e in refused] == [
+        (None, None, "stdin line 1"),
+        ("answer", "c1", "stdin line 2"),
+    ], "each refusal names its line, and an answer's the call, so the client finds its own"
     assert "names no open question" in refused[1]["detail"]
     assert turn.ok and turn.text == "ok: hi"

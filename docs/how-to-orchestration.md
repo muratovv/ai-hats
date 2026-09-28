@@ -247,7 +247,7 @@ prompt. `answer` and `interrupt` are described under
 
 A line the holder cannot run is not dropped silently. It becomes a
 `command_rejected` signal in the log, whose `detail` starts with `stdin line N:`,
-and the session carries on. A repeated or malformed `id` is refused the same way:
+and the session carries on. A refused `answer` also names its call in `call_id`. A repeated or malformed `id` is refused the same way:
 claude would take any string, and it drops a repeated one without a turn, so the
 wait for it would never end.
 
@@ -386,7 +386,12 @@ while a role gate's `ask` still reaches you.
   `call_id`. An `allow` without `answers` leaves the model to ask again in
   words.
 - The first answer on a `call_id` wins. A second one, one for a call nobody
-  asked about, or one for a question already closed becomes `command_rejected`.
+  asked about, or one for a question already closed becomes `command_rejected`,
+  with that `call_id` in its own field: match refusals to answers by it, not by
+  the `detail` text.
+- A question you have just read may already be closed — claude withdrew it, or
+  its call's result had not reached you yet. That answer is refused, not lost:
+  whether the call ran is the `ok` of its `tool_result_received`.
   You may answer as soon as you read `person_asked`: a gate records its question
   before claude sends it to the holder, and the holder keeps your answer until
   then.
