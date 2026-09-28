@@ -75,6 +75,8 @@ Semantics that bite:
   and **blocks the turn** until the writer answers with a `control_response`
   (`behavior: allow|deny`). Answered allow → file written, `permission_denials: []`.
   This is the whole handshake; ~20 lines in `session.py`.
+  A sub-agent's call adds `"agent_id"`, the sub-agent's id (seen on the wire on
+  2.1.283; the binary builds it into the request since at least 2.1.281).
 - **With `--permission-prompts none`** (no handler) → auto-deny: a
   `system/permission_denied` event (`decision_reason_type: "asyncAgent"`, message text
   tells the model not to retry for the rest of the session), `permission_denials`

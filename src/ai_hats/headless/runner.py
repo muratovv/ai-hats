@@ -457,6 +457,7 @@ class _Relay:
             detail=control.reason,
             source=control.source,
             ts=now(),
+            agent=control.agent,
         )
         self._emit(lambda: [asked], f"the question on {control.call_id}")
 

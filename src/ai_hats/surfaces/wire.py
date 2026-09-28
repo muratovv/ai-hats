@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 
-from ai_hats_observe.canonical import Event, ToolCallId
+from ai_hats_observe.canonical import AgentId, Event, ToolCallId
 from ai_hats_observe.commands import Answer, Interrupt, Prompt
 
 
@@ -33,6 +33,8 @@ class Question:
     source: str | None = None
     # the model's own question, answered with ``answers`` rather than a bare decision
     takes_answers: bool = False
+    # the sub-agent whose call it is; ``None`` for the main agent's
+    agent: AgentId | None = None
 
 
 @dataclass(frozen=True)
