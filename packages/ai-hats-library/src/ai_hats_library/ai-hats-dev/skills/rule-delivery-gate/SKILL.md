@@ -4,8 +4,8 @@ description: Pre-commit gate over staged trait and role injections. Use when com
 ai_hats:
   # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. On a staged
-  # `{ai_hats_library,library,libraries}/**/config.yaml` (three spellings, one
-  # live here) it runs `python -m ai_hats.rule_delivery library`
+  # `{ai_hats_library,library}/**/config.yaml` it runs
+  # `python -m ai_hats.rule_delivery <library root>`
   # and blocks the commit if a `see rule X` pointer names an undeliverable
   # rule. Fail-open if python/ai_hats absent; override AI_HATS_RULE_DELIVERY_ACK=1.
   git_hooks:
@@ -25,15 +25,18 @@ through composition.
 ## What it gates
 
 - **Scope:** fires only when a commit stages a trait/role injection —
-  `{ai_hats_library,library,libraries}/**/config.yaml`, the three layouts the
-  filter knows. The check then scans the whole working-tree library, because a
-  pointer's validity
-  depends on rule existence across the library, not a single diff.
+  `{ai_hats_library,library}/**/config.yaml`: the monorepo package, or the
+  pre-monorepo `library/` the e2e fixtures use. The check then scans that
+  library root at the checkout, because a pointer's validity depends on rule
+  existence across the library, not a single diff. With no library root at the
+  checkout the gate is a loud, journalled skip.
+- **Not a consumer's `libraries/`:** this skill ships in the `ai-hats-dev`
+  layer, which is addressed to the ai-hats repository, not to a consuming project.
 - **Invariant:** every `see rule X` must resolve to a rule that exists in the library.
   A pointer to a non-existent rule blocks the commit.
 - **Effect:** the same pure function the G2 unit test uses
-  (`python -m ai_hats.rule_delivery library`) returns non-zero → commit blocked
-  with the offending `source: see rule X` lines.
+  (`python -m ai_hats.rule_delivery <library root>`) returns non-zero → commit
+  blocked with the offending `source: see rule X` lines.
 
 Because the scope is the changed files, the gate only fires on commits that
 touch an injection — it never retro-blocks the pre-existing library.
@@ -59,5 +62,6 @@ so the gate is live.
 ## Overrides
 
 - `AI_HATS_RULE_DELIVERY_ACK=1` — allow the current commit despite findings.
-- `AI_HATS_RULE_DELIVERY_CMD` — override the checker invocation (default
-  `python3 -m ai_hats.rule_delivery`); used by the test suite to inject a stub.
+- `AI_HATS_RULE_DELIVERY_CMD` — override the checker invocation (default:
+  `-m ai_hats.rule_delivery` under the checkout's own `.venv/bin/python3`, else
+  `python3` on PATH); used by the test suite to inject a stub.
