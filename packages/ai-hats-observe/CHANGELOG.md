@@ -4,6 +4,17 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.23.1]
+
+A character cut between two terminal reads reaches the trace whole.
+
+### Fixed
+
+- `SidecarTracer`: `make_master_read` and `make_stdin_read` decode their
+  stream incrementally, so a multibyte character split by a read boundary no
+  longer becomes U+FFFD in `[RES]` / `[REQ]`. On EOF `master_read` flushes
+  the decoder: a character cut off by the end still shows as U+FFFD.
+
 ## [0.23.0]
 
 Who must act is said in the audit's words outside the audit too.
