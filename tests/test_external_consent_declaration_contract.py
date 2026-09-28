@@ -131,6 +131,8 @@ def test_a_lifecycle_role_declares_only_external_wrapper_consent():
         ("consent_gate", ("wt.merge",), "pre-merge"),
         # ADR-0031 D4: the teardown road, which no hook saw before.
         ("consent_gate", ("wt.discard",), "pre-discard"),
+        # ADR-0039: the harness's own rm prompt times out, so the gate asks.
+        ("consent_gate", ("fs.remove",), "critical-path"),
     }
 
 

@@ -41,6 +41,9 @@ composition:
       wt.discard:
         - at: [pre-discard]
           consent: true
+      fs.remove:
+        - at: [critical-path]
+          consent: true
 injection: |
   ## AGENT BEHAVIOR
 

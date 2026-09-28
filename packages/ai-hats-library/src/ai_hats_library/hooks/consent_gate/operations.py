@@ -29,6 +29,8 @@ class Reading:
     label: str
     #: The state a transition moves TO; ``""`` for operations with no target axis.
     target: str = ""
+    #: The paths a removal names, one per operand; ``()`` for every other operation.
+    operands: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -186,7 +188,7 @@ def _read_removal(argv: Sequence[str]) -> Reading | None:
     if not ops:
         return None
     subject = " ".join(ops)
-    return Reading(subject=subject, label=f"remove {subject}")
+    return Reading(subject=subject, label=f"remove {subject}", operands=tuple(ops))
 
 
 #: The one answer, per operation, to "does a declared selector cover this call".
