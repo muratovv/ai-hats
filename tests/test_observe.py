@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 
 import pytest
@@ -110,6 +111,64 @@ def test_stdin_read_strips_zellij_prefix(tmp_path):
     assert "[REQ]" in trace
     assert "hello" in trace
     assert "Zellij" not in trace
+
+
+def test_master_read_survives_a_removed_session_dir(tmp_path):
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+    shutil.rmtree(session.session_dir)
+    fd = pipe_with(b"output after rm\n")
+
+    result = tracer.make_master_read()(fd)
+
+    assert result == b"output after rm\n"
+    assert isinstance(tracer.fault, FileNotFoundError)
+
+
+@pytest.mark.parametrize("line", [b"hello\r", b"/clear\r"])
+def test_stdin_read_survives_a_removed_session_dir(tmp_path, line):
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+    shutil.rmtree(session.session_dir)
+
+    result = tracer.make_stdin_read()(pipe_with(line))
+
+    assert result == line
+    assert isinstance(tracer.fault, FileNotFoundError)
+
+
+def test_trace_stays_stopped_after_the_first_fault(tmp_path):
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+    master_read = tracer.make_master_read()
+    shutil.rmtree(session.session_dir)
+    master_read(pipe_with(b"lost\n"))
+    first = tracer.fault
+    session.session_dir.mkdir()
+
+    master_read(pipe_with(b"after recreate\n"))
+
+    assert not session.trace_path.exists()
+    assert tracer.fault is first
+
+
+def test_log_sys_survives_a_removed_session_dir(tmp_path):
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+    shutil.rmtree(session.session_dir)
+
+    tracer.log_sys("Termios drift on stdin")
+
+    assert isinstance(tracer.fault, FileNotFoundError)
+
+
+def test_log_sys_writes_a_sys_line(tmp_path):
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+
+    tracer.log_sys("Termios drift on stdin")
+
+    assert "[SYS] Termios drift on stdin" in session.trace_path.read_text()
 
 
 # NOTE: HATS-529 — the live PTY ⏺-marker accumulator ("Path A") was

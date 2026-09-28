@@ -11,6 +11,7 @@ import os
 import re
 from collections.abc import Callable
 from datetime import datetime, timezone
+from functools import partial
 from typing import TYPE_CHECKING
 
 from .trace import TraceTag
@@ -35,6 +36,22 @@ class SidecarTracer:
         # diagnosing PTY/terminal issues like HATS-220.
         self._raw_dump_enabled = os.environ.get("AI_HATS_PTY_RAW_DUMP") == "1"
         self._raw_fp = None  # lazily opened on first dump when enabled
+        # The first failed session write; tracing stops there and the runner
+        # reports it once the terminal is back. The relay reads any OSError out
+        # of a read callback as a PTY failure, so a write error must never raise.
+        self.fault: OSError | None = None
+
+    def _write(self, write: Callable[[str], None], text: str) -> None:
+        if self.fault is not None:
+            return
+        try:
+            write(text)
+        except OSError as exc:
+            self.fault = exc
+
+    def log_sys(self, message: str) -> None:
+        """A runner note, written as fail-open as the relay's own trace."""
+        self._write(self.session.log_sys, message)
 
     def _raw_dump(self, direction: bytes, data: bytes) -> None:
         """HATS-220 diagnostic: append raw bytes to pty_raw.log.
@@ -83,7 +100,7 @@ class SidecarTracer:
             cleaned = self.strip_ansi(data).strip()
             if cleaned:
                 text = cleaned.decode("utf-8", errors="replace")
-                self.session.log_trace(TraceTag.RES, text)
+                self._write(partial(self.session.log_trace, TraceTag.RES), text)
             return data
 
         return master_read
@@ -102,14 +119,14 @@ class SidecarTracer:
                 line = self.strip_noise(self.strip_ansi(bytes(self._req_buf))).strip()
                 if line:
                     text = line.decode("utf-8", errors="replace")
-                    self.session.log_trace(TraceTag.REQ, text)
+                    self._write(partial(self.session.log_trace, TraceTag.REQ), text)
                     # Detect context-changing slash commands
                     if self._CONTEXT_CLEAR_RE.match(text):
-                        self.session.append_audit("🧹 Context cleared")
-                        self.session.log_trace(TraceTag.SYS, "Context cleared by user")
+                        self._write(self.session.append_audit, "🧹 Context cleared")
+                        self._write(self.session.log_sys, "Context cleared by user")
                     elif self._CONTEXT_COMPACT_RE.match(text):
-                        self.session.append_audit("🗜️ Context compacted")
-                        self.session.log_trace(TraceTag.SYS, "Context compacted by user")
+                        self._write(self.session.append_audit, "🗜️ Context compacted")
+                        self._write(self.session.log_sys, "Context compacted by user")
                 self._req_buf.clear()
             return data
 

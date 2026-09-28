@@ -68,8 +68,11 @@ DRIVER_SOURCE = textwrap.dedent(
             pass
 
     class _StubTracer:
+        fault = None
         def __init__(self):
             self.session = _StubSession()
+        def log_sys(self, *a, **k):
+            pass
         def make_master_read(self):
             return lambda fd: os.read(fd, 65536)
         def make_stdin_read(self):

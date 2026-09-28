@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**349 of 349 files catalogued — 357 flows.**
+**350 of 350 files catalogued — 358 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3725,6 +3725,22 @@ as a claim to check, not as evidence.
 
 - **expect** — ephemeral session cache files are written out-of-tree without modifying workspace files
 - **why** — without out-of-tree session caching, background sessions trigger fseventsd and pollute git status
+
+## `test_session_dir_removed_mid_session.py`
+
+*pins HATS-2048*
+
+- **flow** — an operator approves a removal that takes the session's own run dir with it (rm -rf .agent, git clean -xfd, removing the project) while the interactive session is running
+- **cmds**
+
+  ```console
+  ai-hats -r maintainer
+  # the agent runs, and the operator approves:
+  rm -rf .agent
+  ```
+
+- **expect** — the session keeps running and the keyboard stays live; the trace stops and says so once after the session; when the surface exits, the outer terminal gets its key-encoding modes reset, so the shell takes a line
+- **why** — the relay read a trace-write error as a PTY failure and killed the surface (exit 124), and a killed surface never turns off the kitty keyboard protocol it enabled on the outer terminal — the pane was left sending Enter as ESC[13u, which no shell submits
 
 ## `test_session_event_log.py`
 

@@ -61,7 +61,9 @@ _DRIVER = textwrap.dedent(
         def log_res(self, *a, **k): pass
 
     class _Tracer:
+        fault = None
         def __init__(self): self.session = _Sess()
+        def log_sys(self, *a, **k): pass
         def make_master_read(self): return lambda fd: os.read(fd, 65536)
         def make_stdin_read(self): return lambda fd: os.read(fd, 65536)
 
