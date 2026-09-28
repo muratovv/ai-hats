@@ -32,7 +32,9 @@ from ai_hats_observe.canonical import (
     ItemKind,
     ModelName,
     Notice,
+    PersonActionRequired,
     PersonAsked,
+    PersonMustAct,
     ResponseId,
     ResponseStarted,
     RunEnded,
@@ -307,6 +309,16 @@ def test_a_rejected_command_round_trips(tmp_path: Path) -> None:
     write_events([rejected], path)
 
     assert list(read_events(path)) == [rejected]
+
+
+@pytest.mark.parametrize("reason", list(PersonMustAct))
+def test_every_reason_a_person_must_act_round_trips(tmp_path: Path, reason: PersonMustAct) -> None:
+    path = tmp_path / EVENT_LOG_JSONL
+    blocked = PersonActionRequired(reason=reason, raw_code="403", source="claude/jsonl")
+
+    write_events([blocked], path)
+
+    assert list(read_events(path)) == [blocked]
 
 
 def test_a_gate_verdict_is_carried_by_a_projection_and_folded_by_none(

@@ -243,6 +243,23 @@ def test_a_run_the_platform_killed_says_so(tmp_path: Path) -> None:
     assert parsed.turns[0].response == "working on it"
 
 
+def test_an_org_that_disabled_access_asks_a_person_to_authorize(tmp_path: Path) -> None:
+    records = [
+        prompt("keep going"),
+        {
+            **fragment("req-1", [{"type": "text", "text": "Your organization has disabled it"}]),
+            "isApiErrorMessage": True,
+            "error": "oauth_org_not_allowed",
+            "apiErrorStatus": 403,
+        },
+    ]
+
+    audit = audit_of(tmp_path, records)
+
+    assert "a person must authorize [403]" in audit
+    assert "Your organization has disabled it" in audit
+
+
 def test_parse_quality_and_run_health_stay_separate_axes(tmp_path: Path) -> None:
     """``flags`` gates trace deletion and ``measured: false``; a blocked run is
     still a perfectly measured one, so it must not land there."""

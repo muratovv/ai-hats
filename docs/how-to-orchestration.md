@@ -314,6 +314,18 @@ Signals worth acting on, each said once:
 - `approaching_limit` — the quota is close, from claude's `rate_limit_event`;
 - `wait` — the turn ran into the quota wall. `retry_after` is the epoch second
   the quota lifts, when claude said it;
+- `person_must_act` — the turn failed for a reason no retry clears, and a
+  person has to step in. `kind` says what they do, `detail` carries claude's
+  own words:
+  - `reauthenticate` — log in again (`claude auth login`), or refresh the
+    cloud credentials claude runs on;
+  - `authorize` — the account is logged in but may not use Claude Code now:
+    an admin enables access, or the person switches to an API key, appeals a
+    hold or verifies the organization. `detail` says which;
+  - `pay` — the usage or spend limit is reached.
+
+  The turn ends `ok: false` and the session carries on, so stop sending
+  prompts and hand `detail` to the person;
 - `context_cleared` — `/clear` started the conversation over, and the model
   no longer remembers what came before it. claude goes on under a new session
   id and a new transcript. The session is still one: `metrics.json` names both

@@ -42,7 +42,7 @@ from ai_hats_observe.canonical import (
     Usage,
     WorthRecording,
 )
-from ai_hats_observe.parsers.claude_events import INTERRUPT_MARKERS
+from ai_hats_observe.parsers.claude_events import INTERRUPT_MARKERS, api_error_signals
 
 __all__ = ["SOURCE", "ClaudeStreamReader", "rate_limit_events"]
 
@@ -62,18 +62,6 @@ def _sdk():
 
 
 # --- fixed mappings --------------------------------------------------------
-
-# ``AssistantMessageError`` is a closed six-member literal, and each member says
-# whose problem it is. Identical on the transcript side: one failure, one
-# reading, whichever surface reports it.
-_ERROR_SIGNALS: dict[str, tuple[Any, Any]] = {
-    "authentication_failed": (PersonActionRequired, PersonMustAct.REAUTHENTICATE),
-    "billing_error": (PersonActionRequired, PersonMustAct.PAY),
-    "rate_limit": (HarnessActionRequired, HarnessMustAct.WAIT),
-    "server_error": (HarnessActionRequired, HarnessMustAct.RETRY),
-    "invalid_request": (HarnessActionRequired, HarnessMustAct.ABORT),
-    "unknown": (HarnessActionRequired, HarnessMustAct.ABORT),
-}
 
 _STOP_REASON_COMPLETIONS: dict[str, Completion] = {
     "end_turn": Completion.COMPLETE,
@@ -199,7 +187,7 @@ class ClaudeStreamReader:
             # Contamination rule: a message carrying ``error`` contributes no
             # item — its prose explains a failure, so it goes to the signal's
             # detail, and the failed call is not counted as an inference call.
-            return [self._error_signal(message)]
+            return self._error_signals(message)
 
         response_id = self._response_id(message)
         events = self._open_response(response_id, message)
@@ -208,14 +196,16 @@ class ClaudeStreamReader:
         self._record_call_facts(response_id, message)
         return events
 
-    def _error_signal(self, message: Any) -> Signal:
-        factory, reason = _ERROR_SIGNALS.get(
-            message.error, (HarnessActionRequired, HarnessMustAct.ABORT)
+    def _error_signals(self, message: Any) -> list[Event]:
+        """The same reading as the transcript's; the SDK's six-member literal is
+        narrower than what claude sends."""
+        blocking, *drift = api_error_signals(
+            message.error,
+            detail=_cap(_assistant_text(message)) or None,
+            raw_code=message.error,
+            source=SOURCE,
         )
-        detail = _cap(_assistant_text(message)) or None
-        return self._blocking(
-            factory(reason=reason, detail=detail, raw_code=message.error, source=SOURCE)
-        )
+        return [self._blocking(blocking), *drift]
 
     def _open_response(self, response_id: ResponseId, message: Any) -> list[Event]:
         if self._open is not None and self._open.response_id == response_id:

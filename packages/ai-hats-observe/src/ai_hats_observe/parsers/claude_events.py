@@ -15,6 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Iterator, Mapping
 
 from ..canonical.events import (
@@ -104,17 +105,24 @@ KNOWN_RECORD_TYPES = _READ_RECORD_TYPES | _SILENT_RECORD_TYPES
 
 # --- mappings --------------------------------------------------------------
 
-# The six values Claude's top-level `error` field can hold, split by who must act.
-_PERSON_ERRORS: dict[str, PersonMustAct] = {
-    "authentication_failed": PersonMustAct.REAUTHENTICATE,
-    "billing_error": PersonMustAct.PAY,
-}
-_HARNESS_ERRORS: dict[str, HarnessMustAct] = {
-    "rate_limit": HarnessMustAct.WAIT,
-    "server_error": HarnessMustAct.RETRY,
-    "invalid_request": HarnessMustAct.ABORT,
-    "unknown": HarnessMustAct.ABORT,
-}
+# Claude's top-level `error` values by who must act, for every reader of claude.
+# `max_output_tokens` is absent on purpose: claude does not block on it.
+API_ERRORS: Mapping[str, PersonMustAct | HarnessMustAct] = MappingProxyType(
+    {
+        "authentication_failed": PersonMustAct.REAUTHENTICATE,
+        "cloud_credential_error": PersonMustAct.REAUTHENTICATE,
+        "oauth_org_not_allowed": PersonMustAct.AUTHORIZE,
+        "account_on_hold": PersonMustAct.AUTHORIZE,
+        "verification_required": PersonMustAct.AUTHORIZE,
+        "billing_error": PersonMustAct.PAY,
+        "rate_limit": HarnessMustAct.WAIT,
+        "overloaded": HarnessMustAct.RETRY,
+        "server_error": HarnessMustAct.RETRY,
+        "invalid_request": HarnessMustAct.ABORT,
+        "model_not_found": HarnessMustAct.ABORT,
+        "unknown": HarnessMustAct.ABORT,
+    }
+)
 
 _STOP_REASONS: dict[str, Completion] = {
     "end_turn": Completion.COMPLETE,
@@ -590,7 +598,7 @@ class ClaudeTranscriptReader:
         # TextItem. Its prose is the signal's detail and nothing else — this is
         # what kept a spend-limit notice from being read as the agent's answer.
         if record.get("isApiErrorMessage"):
-            yield _api_error_signal(record, message)
+            yield from _api_error_signals(record, message)
             return
 
         response_id = _response_id(record, message)
@@ -1154,31 +1162,53 @@ def _fallback_model(record: dict[str, Any]) -> ModelName | None:
     return None
 
 
-def _api_error_signal(record: dict[str, Any], message: dict[str, Any]) -> Signal:
-    """Map Claude's six-value ``error`` field onto who has to act.
+def api_error_signals(
+    error: str,
+    *,
+    detail: str | None,
+    raw_code: str,
+    source: str,
+    ts: Timestamp | None = None,
+    retry_after: EpochSeconds | None = None,
+) -> list[Signal]:
+    """Who must act on claude's ``error`` value; an unmapped one still blocks,
+    reported as drift beside it. ``retry_after`` counts only for a wait."""
+    reason = API_ERRORS.get(error)
+    if isinstance(reason, PersonMustAct):
+        return [
+            PersonActionRequired(
+                ts=ts, detail=detail, raw_code=raw_code, source=source, reason=reason
+            )
+        ]
+    blocking = HarnessActionRequired(
+        ts=ts,
+        detail=detail,
+        raw_code=raw_code,
+        source=source,
+        reason=reason or HarnessMustAct.ABORT,
+        retry_after=retry_after if reason is HarnessMustAct.WAIT else None,
+    )
+    if reason is not None:
+        return [blocking]
+    drift = Notice(
+        ts=ts, raw_code=f"error/{error}", source=source, reason=WorthRecording.UNSUPPORTED_RECORD
+    )
+    return [blocking, drift]
 
-    ``raw_code`` prefers the HTTP status (403/429/529) and falls back to the
-    ``error`` value, so the surface's own code is always on the record.
-    """
+
+def _api_error_signals(record: dict[str, Any], message: dict[str, Any]) -> list[Signal]:
+    """``raw_code`` prefers the HTTP status (403/429/529) and falls back to the
+    ``error`` value, so the surface's own code is always on the record."""
     error = record.get("error")
     error = error if isinstance(error, str) and error else "unknown"
     status = record.get("apiErrorStatus")
-    raw_code = str(status) if status is not None else error
-    shared = {
-        "ts": _ts(record),
-        "detail": _first_text(message.get("content")),
-        "raw_code": raw_code,
-        "source": SOURCE,
-    }
-
-    if error in _PERSON_ERRORS:
-        return PersonActionRequired(**shared, reason=_PERSON_ERRORS[error])
-
-    reason = _HARNESS_ERRORS.get(error, HarnessMustAct.ABORT)
-    retry_after: EpochSeconds | None = None
     quota = record.get("quotaLimits")
-    if reason is HarnessMustAct.WAIT and isinstance(quota, dict):
-        resets = quota.get("resetsAt")
-        if isinstance(resets, int):
-            retry_after = EpochSeconds(resets)
-    return HarnessActionRequired(**shared, reason=reason, retry_after=retry_after)
+    resets = quota.get("resetsAt") if isinstance(quota, dict) else None
+    return api_error_signals(
+        error,
+        ts=_ts(record),
+        detail=_first_text(message.get("content")),
+        raw_code=str(status) if status is not None else error,
+        source=SOURCE,
+        retry_after=EpochSeconds(resets) if isinstance(resets, int) else None,
+    )

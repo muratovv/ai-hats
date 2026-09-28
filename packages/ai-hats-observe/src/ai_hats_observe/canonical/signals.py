@@ -22,6 +22,9 @@ class PersonMustAct(StrEnum):
     """Nothing automated can clear these; the run is over until a human moves."""
 
     REAUTHENTICATE = "reauthenticate"
+    # Logged in, but not allowed: an admin, an appeal or another credential
+    # clears it, and logging in again does not.
+    AUTHORIZE = "authorize"
     PAY = "pay"
     RAISE_LIMIT = "raise_limit"
 

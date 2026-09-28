@@ -279,6 +279,10 @@ LIMIT_NOTICE = "You've hit your monthly spend limit"
     ("error", "expected_reason"),
     [
         ("authentication_failed", PersonMustAct.REAUTHENTICATE),
+        ("cloud_credential_error", PersonMustAct.REAUTHENTICATE),
+        ("oauth_org_not_allowed", PersonMustAct.AUTHORIZE),
+        ("account_on_hold", PersonMustAct.AUTHORIZE),
+        ("verification_required", PersonMustAct.AUTHORIZE),
         ("billing_error", PersonMustAct.PAY),
     ],
 )
@@ -292,12 +296,32 @@ def test_person_must_act_errors_map_to_their_obligation(
     assert raised[0].reason is expected_reason
 
 
+ORG_DISABLED = (
+    "Your organization has disabled Claude subscription access for Claude Code · "
+    "Use an Anthropic API key instead, or ask your admin to enable access"
+)
+
+
+def test_an_org_that_disabled_access_is_a_person_who_must_authorize(tmp_path: Path) -> None:
+    """Logging in again does not help here: an admin has to enable access, or
+    the person switches to an API key. Recorded as claude 2.1.283 wrote it."""
+    record = api_error("oauth_org_not_allowed", ORG_DISABLED, apiErrorStatus=403)
+
+    [raised] = signals(events_of(tmp_path, [record]))
+
+    assert isinstance(raised, PersonActionRequired)
+    assert raised.reason is PersonMustAct.AUTHORIZE
+    assert (raised.raw_code, raised.detail) == ("403", ORG_DISABLED)
+
+
 @pytest.mark.parametrize(
     ("error", "expected_reason"),
     [
         ("rate_limit", HarnessMustAct.WAIT),
+        ("overloaded", HarnessMustAct.RETRY),
         ("server_error", HarnessMustAct.RETRY),
         ("invalid_request", HarnessMustAct.ABORT),
+        ("model_not_found", HarnessMustAct.ABORT),
         ("unknown", HarnessMustAct.ABORT),
     ],
 )
@@ -309,6 +333,34 @@ def test_harness_must_act_errors_map_to_their_obligation(
     assert len(raised) == 1
     assert isinstance(raised[0], HarnessActionRequired)
     assert raised[0].reason is expected_reason
+
+
+def test_an_error_value_we_do_not_know_still_blocks_and_is_reported_as_drift(
+    tmp_path: Path,
+) -> None:
+    records = [api_error("some_future_error", "upstream said no", apiErrorStatus=418)]
+
+    abort, drift = signals(events_of(tmp_path, records))
+
+    assert isinstance(abort, HarnessActionRequired) and abort.reason is HarnessMustAct.ABORT
+    assert isinstance(drift, Notice) and drift.reason is WorthRecording.UNSUPPORTED_RECORD
+    assert drift.raw_code == "error/some_future_error"
+
+
+@pytest.mark.parametrize("record_error", ["server_error", None])
+def test_a_known_or_missing_error_value_is_not_drift(
+    tmp_path: Path, record_error: str | None
+) -> None:
+    """Negative control for the drift notice; a missing field reads as ``unknown``."""
+    record = api_error("x", "upstream said no")
+    if record_error is None:
+        del record["error"]
+    else:
+        record["error"] = record_error
+
+    [blocking] = signals(events_of(tmp_path, [record]))
+
+    assert isinstance(blocking, HarnessActionRequired)
 
 
 def test_an_api_error_notice_never_becomes_the_answer(tmp_path: Path) -> None:
