@@ -503,9 +503,10 @@ not have the new one yet.
   `claude-opus-5-5[1m]`, while the response's `message.model` is `claude-opus-5-5`.
 - A local command's `result` carries `usage` of zeros, and the map as it was.
 
-**The last answer's input is the context's fill.** Its `input_tokens + cache_read_input_tokens
-+ cache_creation_input_tokens` was 22134 after the first haiku turn, and the
-`get_context_usage` control request said `totalTokens: 22135` at the same point.
+**The last answer's input is the context's fill.** Its
+`input_tokens + cache_read_input_tokens + cache_creation_input_tokens` was 22134 after
+the first haiku turn, and the `get_context_usage` control request said
+`totalTokens: 22135` at the same point.
 
 **`compact_boundary` does not count the whole context.** On the wire it is
 `compact_metadata: {trigger, pre_tokens, post_tokens, cumulative_dropped_tokens,
