@@ -148,6 +148,15 @@ def test_fires_on_the_monorepo_layout(repo: Path, tmp_path: Path):
 
 
 @pytest.mark.integration
+def test_a_consumer_libraries_layer_does_not_arm(repo: Path, tmp_path: Path):
+    """The gate ships in ai-hats-dev only, so a consumer's `libraries/` is not its to check."""
+    stub = _make_stub(tmp_path / "fail.sh", rc=1, message="would-fail")
+    _stage_skill(repo, "libraries/skills/mine/SKILL.md", _UNLICENSED_BODY)
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 0, res.stderr
+
+
+@pytest.mark.integration
 def test_allows_when_staged_skill_passes(repo: Path, tmp_path: Path):
     """A staged skill that agnix accepts is allowed through."""
     stub = _make_stub(tmp_path / "pass.sh", rc=0)

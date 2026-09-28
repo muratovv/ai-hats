@@ -55,14 +55,16 @@ if [[ -z "$prefix" ]]; then
     exit 0
 fi
 
-# Staged library prose, in the three layouts the library has lived under.
+# Staged library prose: the monorepo package, or the pre-monorepo `library/`.
+# A consumer's `libraries/` is not this gate's: it ships in ai-hats-dev, the
+# layer addressed to this repository alone.
 # Collected without `mapfile` (bash 4+) so the hook runs on macOS bash 3.2.
 files=()
 while IFS= read -r _f; do
     [[ -n "$_f" ]] && files+=("$_f")
 done < <(
     git diff --cached --name-only --diff-filter=ACM |
-        grep -E '(^|/)(ai_hats_library|library|libraries)/.*\.(md|ya?ml)$' |
+        grep -E '(^|/)(ai_hats_library|library)/.*\.(md|ya?ml)$' |
         grep -vE '(^|/)(hooks|git_hooks)/' ||
         true
 )

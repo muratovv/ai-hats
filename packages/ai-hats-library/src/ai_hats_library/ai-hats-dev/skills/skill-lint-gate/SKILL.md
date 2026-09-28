@@ -4,7 +4,7 @@ description: Pre-commit gate over staged library `SKILL.md`. Use when composing 
 ai_hats:
   # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. Over STAGED
-  # `{ai_hats_library,library,libraries}/**/SKILL.md` it runs two checks: (1) license/provenance
+  # `{ai_hats_library,library}/**/SKILL.md` it runs two checks: (1) license/provenance
   # regression-guard (always-on, pure bash, covers golang-*); (2) agnix
   # spec-lint against the repo-root `.agnix.toml` (excludes golang-*, fail-open
   # if agnix/node absent). Per-commit override AI_HATS_SKILL_LINT_ACK=1.
@@ -23,8 +23,10 @@ entirely through composition.
 
 ## What it gates
 
-Over STAGED `{ai_hats_library,library,libraries}/**/SKILL.md` (changed-files scope, so the gate never
-retro-blocks the pre-existing backlog), the hook runs, in order:
+Over STAGED `{ai_hats_library,library}/**/SKILL.md` (changed-files scope, so the gate never
+retro-blocks the pre-existing backlog), the hook runs, in order. A consumer's
+`libraries/` is out of scope: this skill ships in the `ai-hats-dev` layer, which
+is addressed to the ai-hats repository, not to a consuming project.
 
 1. **License/provenance regression-guard** (pure bash, always-on, NOT
    fail-open). Blocks when a skill has no non-empty `license:` frontmatter, or is
