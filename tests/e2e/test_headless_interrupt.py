@@ -106,6 +106,6 @@ def test_e2e_an_interrupt_closes_the_open_question_and_a_late_answer_is_refused(
 
     assert not turn.ok and not Path(tmp_project.path, "stub-ran").exists()
     refused = [e for e in end.events if e.get("kind") == "command_rejected"]
-    assert [e["raw_code"] for e in refused] == ["answer"]
+    assert [(e["raw_code"], e["call_id"]) for e in refused] == [("answer", late[0])]
     assert "already closed" in refused[0]["detail"]
     assert after.ok

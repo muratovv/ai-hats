@@ -263,11 +263,11 @@ class _Relay:
                     continue
                 where = f"stdin line {number}"
                 if isinstance(command, Rejected):
-                    self._reject(where, command.cmd, command.why)
+                    self._reject(where, command.cmd, command.why, call_id=command.call_id)
                 elif isinstance(command, Answer):
                     self._answer(command, where)
                 elif isinstance(command, Interrupt):
-                    self._send(self._wire.encode(command), where, "interrupt")
+                    self._send(self._wire.encode(command), where, "interrupt", call_id=None)
                 else:
                     self._prompt(command, where)
         finally:
@@ -282,12 +282,17 @@ class _Relay:
             prompt = replace(prompt, id=PromptId(str(uuid.uuid4())))
         elif prompt.id in self._ids:
             # claude drops a repeated uuid silently yet echoes it: its turn would never end
-            self._reject(where, "prompt", f'"id" {prompt.id} is already used in this session')
+            self._reject(
+                where,
+                "prompt",
+                f'"id" {prompt.id} is already used in this session',
+                call_id=None,
+            )
             return
         self._ids.add(prompt.id)
         # before the write: the binary may take it before this thread runs again
         self._decoder.sent(prompt)
-        self._send(self._wire.encode(prompt), where, "prompt")
+        self._send(self._wire.encode(prompt), where, "prompt", call_id=None)
 
     def _answer(self, answer: Answer, where: str) -> None:
         announced, resolved = self._in_log(answer.call_id)
@@ -303,12 +308,17 @@ class _Relay:
             self._decide(question, answer, where, by_person=True)
         elif not hold:
             why = "is already closed" if closed else "names no open question"
-            self._reject(where, "answer", f'"call_id" {answer.call_id} {why}')
+            self._reject(
+                where, "answer", f'"call_id" {answer.call_id} {why}', call_id=answer.call_id
+            )
 
     def _decide(self, question: Question, answer: Answer, where: str, *, by_person: bool) -> None:
         if answer.answers is not None and not question.takes_answers:
             self._reject(
-                where, "answer", f'"call_id" {answer.call_id} is a question that takes no answers'
+                where,
+                "answer",
+                f'"call_id" {answer.call_id} is a question that takes no answers',
+                call_id=answer.call_id,
             )
             with self._lock:
                 self._closed.discard(question.call_id)
@@ -327,7 +337,7 @@ class _Relay:
                 ts=now(),
             )
             self._emit(lambda: [refusal], f"the refusal of {question.call_id}")
-        self._send(self._wire.reply(question, answer), where, "answer")
+        self._send(self._wire.reply(question, answer), where, "answer", call_id=answer.call_id)
 
     def _deny_open(self) -> None:
         with self._lock:
@@ -353,22 +363,28 @@ class _Relay:
         for call_id, (_, where, from_client) in left.items():
             if from_client:
                 why = "never reached the holder before stdin closed"
-                self._reject(where, "answer", f'the question on "call_id" {call_id} {why}')
+                self._reject(
+                    where,
+                    "answer",
+                    f'the question on "call_id" {call_id} {why}',
+                    call_id=call_id,
+                )
 
-    def _send(self, line: bytes, where: str, cmd: str) -> None:
+    def _send(self, line: bytes, where: str, cmd: str, *, call_id: ToolCallId | None) -> None:
         try:
             self._child.stdin.write(line)
             self._child.stdin.flush()
         except (OSError, ValueError):
-            self._reject(where, cmd, "the session is ending")
+            self._reject(where, cmd, "the session is ending", call_id=call_id)
 
-    def _reject(self, where: str, cmd: str | None, why: str) -> None:
+    def _reject(self, where: str, cmd: str | None, why: str, *, call_id: ToolCallId | None) -> None:
         detail = f"{where}: {why}"
         self._event_log.emit(
             [
                 Notice(
                     reason=WorthRecording.COMMAND_REJECTED,
                     raw_code=cmd,
+                    call_id=call_id,
                     detail=detail,
                     source=_SOURCE,
                     ts=now(),

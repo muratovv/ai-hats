@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .canonical.types import PromptId, ToolCallId
@@ -60,10 +60,12 @@ Command = Prompt | Answer | Interrupt
 
 @dataclass(frozen=True)
 class Rejected:
-    """A line the holder will not execute; ``cmd`` is its ``cmd`` when it had one."""
+    """A line the holder will not execute; ``cmd`` is its ``cmd`` when it had one,
+    ``call_id`` the call an ``answer`` named when it named one."""
 
     cmd: str | None
     why: str
+    call_id: ToolCallId | None = None
 
 
 def encode_command(command: Command) -> bytes:
@@ -99,6 +101,19 @@ def decode_command(line: bytes) -> Command | Rejected | None:
         return Rejected(None, f"not JSON ({exc.msg}): {text.strip()[:80]!r}")
     if not isinstance(body, dict):
         return Rejected(None, "not a JSON object")
+    decoded = _decode(body)
+    named = body.get("call_id")
+    if (
+        isinstance(decoded, Rejected)
+        and decoded.cmd == "answer"
+        and isinstance(named, str)
+        and named
+    ):
+        return replace(decoded, call_id=ToolCallId(named))
+    return decoded
+
+
+def _decode(body: dict[str, Any]) -> Command | Rejected:
     known = ", ".join(COMMANDS)
     cmd = body.get("cmd")
     if not isinstance(cmd, str) or not cmd:

@@ -9,6 +9,7 @@ with it.
 
 from __future__ import annotations
 
+import json
 import stat
 import threading
 from pathlib import Path
@@ -40,6 +41,7 @@ from ai_hats_observe.canonical import (
     RunEnded,
     RunStarted,
     SessionConfigured,
+    ToolCallId,
     ToolResultReceived,
     TurnEnded,
     WorthRecording,
@@ -319,6 +321,24 @@ def test_every_reason_a_person_must_act_round_trips(tmp_path: Path, reason: Pers
     write_events([blocked], path)
 
     assert list(read_events(path)) == [blocked]
+
+
+def test_a_refused_answer_names_its_call_on_the_line(tmp_path: Path) -> None:
+    """A client ties the refusal to its answer by the call, not by the detail's text."""
+    path = tmp_path / EVENT_LOG_JSONL
+    refused = Notice(
+        reason=WorthRecording.COMMAND_REJECTED,
+        raw_code="answer",
+        call_id=ToolCallId("toolu_01"),
+        detail='stdin line 2: "call_id" toolu_01 is already closed',
+    )
+    unreadable = Notice(reason=WorthRecording.COMMAND_REJECTED, detail="stdin line 1: not JSON")
+
+    write_events([refused, unreadable], path)
+
+    lines = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [line["call_id"] for line in lines] == ["toolu_01", None]
+    assert list(read_events(path)) == [refused, unreadable]
 
 
 def test_a_gate_verdict_is_carried_by_a_projection_and_folded_by_none(
