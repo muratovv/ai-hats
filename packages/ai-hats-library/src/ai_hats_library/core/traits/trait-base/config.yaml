@@ -10,6 +10,12 @@ composition:
     # hooks. Their wiring became composition-gated when they stopped being
     # package-copied, so universal coverage needs a universal trait.
     - safety-guard
+  # the gate above asks about a critical-path rm only where this is declared (ADR-0039 D4).
+  apps:
+    consent_gate:
+      fs.remove:
+        - at: [critical-path]
+          consent: true
 injection: |
   ## BASE BEHAVIOR
 

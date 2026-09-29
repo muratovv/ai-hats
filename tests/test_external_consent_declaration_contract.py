@@ -119,8 +119,24 @@ def _shipped_consent(role: str) -> set[tuple[str, tuple[str, ...], str]]:
         "session-reviewer",
     ],
 )
-def test_a_role_without_trait_agent_declares_no_wrapper_consent(role):
-    assert _shipped_consent(role) == set()
+def test_a_role_without_trait_agent_declares_only_the_removal_question(role):
+    assert _shipped_consent(role) == {("consent_gate", ("fs.remove",), "critical-path")}
+
+
+def test_every_trait_carrying_the_gate_declares_the_removal_question():
+    """ADR-0039 D4: where `safety_gate.py` stands, the rm timer goes only with the declaration."""
+    import yaml
+
+    carriers = []
+    for config in sorted(_LIBRARY.glob("*/traits/*/config.yaml")):
+        composition = yaml.safe_load(config.read_text(encoding="utf-8")).get("composition") or {}
+        if "safety-guard" not in (composition.get("skills") or []):
+            continue
+        carriers.append(config.parent.name)
+        declared = ((composition.get("apps") or {}).get("consent_gate") or {}).get("fs.remove")
+        assert declared == [{"at": ["critical-path"], "consent": True}], config
+
+    assert {"trait-agent", "trait-base", "trait-analyst-base"} <= set(carriers)
 
 
 def test_a_lifecycle_role_declares_only_external_wrapper_consent():

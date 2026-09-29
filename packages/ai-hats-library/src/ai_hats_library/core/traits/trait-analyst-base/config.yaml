@@ -15,6 +15,12 @@ composition:
     # compose neither trait-base nor trait-agent, so without it the guards
     # stop being wired for them the moment wiring became composition-gated.
     - safety-guard
+  # the gate above asks about a critical-path rm only where this is declared (ADR-0039 D4).
+  apps:
+    consent_gate:
+      fs.remove:
+        - at: [critical-path]
+          consent: true
 injection: |
   ## ANALYST BASE BEHAVIOR
 

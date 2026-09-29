@@ -1132,9 +1132,9 @@ as a claim to check, not as evidence.
 
 ## `test_critical_rm_asks.py`
 
-*pins HATS-2044*
+*pins HATS-2044, HATS-2054*
 
-- **flow** — an agent removes its own working directory in a session whose role declares fs.remove
+- **flow** — an agent removes its own working directory in a session whose role declares fs.remove, with trait-agent and on the base trait alone
 - **cmds**
 
   ```console
@@ -1143,7 +1143,7 @@ as a claim to check, not as evidence.
   consent fs.remove 30
   ```
 
-- **expect** — the composed chain asks, with no ticket rewrite; a grant, the consent ack and an unparsable line never turn the question into silence; the verb refuses fs.remove by name; an ordinary removal is not asked about
+- **expect** — the composed chain asks, with no ticket rewrite; a grant, the consent ack and an unparsable line never turn the question into silence; the verb refuses fs.remove by name; an ordinary removal is not asked about; a role without trait-agent asks the same question with no command wrapper armed
 - **why** — Claude Code's own prompt for a critical-path rm times out into a refusal, so the launch switches that timer off and the gate becomes the only question; a gate that goes quiet here hands the removal to the harness's classifier (ADR-0039)
 
 ## `test_customize_parallel_writes.py`

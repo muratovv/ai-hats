@@ -345,7 +345,8 @@ def plan_consent(
 ) -> MaterializationPlan:
     """The plan with this role's command middleware in it: the wrapper's
     entries, its config, ``PATH`` led by its bin, the form server on the launch
-    line where the surface takes one. Unchanged when the role declares no consent."""
+    line where the surface takes one. Unchanged when the role declares no
+    consent, or only operations the gate asks about from the session envelope."""
     import dataclasses
 
     from .consent_mcp.registration import form_server_args
@@ -353,7 +354,7 @@ def plan_consent(
     from .surfaces import Launch
 
     policy = policy_of(plan.composition.hooks.external)
-    if not policy:
+    if not operations.wrapped_surfaces(policy):
         return plan
     if not surface.supports_session_command_wrappers():
         raise RuntimeError(

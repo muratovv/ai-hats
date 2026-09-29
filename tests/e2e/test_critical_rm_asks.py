@@ -1,17 +1,19 @@
-"""e2e (HATS-2044)
+"""e2e (HATS-2044, HATS-2054)
 
-flow:   an agent removes its own working directory in a session whose role declares fs.remove
+flow:   an agent removes its own working directory in a session whose role declares fs.remove,
+        with trait-agent and on the base trait alone
 cmds:
     rm -rf <project>
     consent all 30
     consent fs.remove 30
 expect: the composed chain asks, with no ticket rewrite; a grant, the consent ack and an
         unparsable line never turn the question into silence; the verb refuses fs.remove
-        by name; an ordinary removal is not asked about
+        by name; an ordinary removal is not asked about; a role without trait-agent asks
+        the same question with no command wrapper armed
 why:    Claude Code's own prompt for a critical-path rm times out into a refusal, so the
         launch switches that timer off and the gate becomes the only question; a gate
         that goes quiet here hands the removal to the harness's classifier (ADR-0039)
-"""
+"""  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
 
@@ -45,18 +47,24 @@ def project(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.fixture
-def env(project: Path, checkout_bin: Path) -> dict:
+def _session_env(project: Path, checkout_bin: Path, session_id: str, role: str) -> dict:
     from _helpers.env import checkout_pythonpath
     from _helpers.sessions import stand_in_wrapped_session
 
+    from ai_hats.consent_wrapper import CONFIG_ENV
+
     e = os.environ.copy()
-    for stale in ("AI_HATS_CONSENT_ACK", "AI_HATS_CONSENT_TICKET", "AI_HATS_YOLO"):
+    for stale in ("AI_HATS_CONSENT_ACK", "AI_HATS_CONSENT_TICKET", "AI_HATS_YOLO", CONFIG_ENV):
         e.pop(stale, None)
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
     e["PATH"] = os.pathsep.join([str(checkout_bin), e.get("PATH", "")])
-    return stand_in_wrapped_session(e, project, SESSION_ID)
+    return stand_in_wrapped_session(e, project, session_id, role=role)
+
+
+@pytest.fixture
+def env(project: Path, checkout_bin: Path) -> dict:
+    return _session_env(project, checkout_bin, SESSION_ID, "assistant")
 
 
 @pytest.fixture
@@ -132,3 +140,29 @@ def test_the_verb_refuses_fs_remove_by_name(project, env):
     refused = run_unasked(project, "consent fs.remove 30", env=env)
     assert refused.returncode == 1, refused.stdout
     assert "cannot be granted" in refused.stderr, refused.stderr
+
+
+BASE_ROLE = "initial-wizard"
+
+
+@pytest.fixture
+def base_env(project: Path, checkout_bin: Path) -> dict:
+    return _session_env(project, checkout_bin, f"{SESSION_ID}-base", BASE_ROLE)
+
+
+def test_a_role_without_trait_agent_declares_the_point_and_arms_no_wrapper(base_env):
+    """Control for the next test, and the wrapper stays out: fs.remove has no shim to arm."""
+    from ai_hats.consent_wrapper import CONFIG_ENV
+
+    rows = [r for r in _declared(base_env) if r.get("path") == ["fs.remove"]]
+    assert [r.get("selector") for r in rows] == ["critical-path"], _declared(base_env)
+    assert CONFIG_ENV not in base_env, "a hook-only declaration armed the command wrapper"
+
+
+def test_a_role_without_trait_agent_asks_about_its_working_directory(project, base_env):
+    settings = build_session_settings(project, role=BASE_ROLE, session_id="sid-base-hooks")
+
+    verdict = run_chain(project, f"rm -rf {project}", settings=settings, env=base_env)
+
+    assert verdict.decision == "ask", f"the removal went unasked: {verdict}"
+    assert str(project) in verdict.reason, verdict.reason

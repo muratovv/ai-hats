@@ -3,6 +3,13 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.10.1
+
+- **Every trait that carries `safety-guard` declares `fs.remove`** (HATS-2054).
+  `trait-base` and `trait-analyst-base` join `trait-agent`, so every role with
+  the gate asks about a critical-path `rm`, not only the `trait-agent` ones. See
+  ADR-0039.
+
 ## 0.10.0
 
 - **`fs.remove` joins the consent operations** (HATS-2044). `apps.consent_gate`

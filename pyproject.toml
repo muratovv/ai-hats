@@ -45,7 +45,7 @@ dependencies = [
     "ai-hats-observe>=0.23.1",  # trace.log decodes PTY reads incrementally (0.23.1); floor tracks the workspace version
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
     # HATS-1755 the external session wrapper, not rack, consumes its tickets.
-    "ai-hats-library>=0.10.0",  # fs.remove consent operation; floor tracks the workspace version
+    "ai-hats-library>=0.10.1",  # fs.remove in every trait carrying the gate; floor tracks the workspace version
     "ai-hats-client>=0.3.1",  # the client of `ai-hats headless` ships with the holder it drives
     "click>=8.1",
     "pyyaml>=6.0",
