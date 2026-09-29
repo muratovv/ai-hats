@@ -148,6 +148,30 @@ def test_a_surface_without_command_wrappers_cannot_carry_the_role(tmp_path: Path
         plan_consent(plan, AgySurface(), ProjectLayout.at(LAYOUT_ROOT), _host(tmp_path, "ai-hats"))
 
 
+@pytest.mark.parametrize("surface_name", ["claude", "agy"])
+def test_a_policy_of_hook_only_operations_needs_no_wrapper(tmp_path: Path, surface_name: str):
+    """The gate reads the declaration from the session envelope, never the wrapper config."""
+    from ai_hats.surface_registry import get_surface
+
+    plan = _plan(tmp_path, _consent("fs.remove", "critical-path"), surface=surface_name)
+    surface = get_surface(surface_name)
+
+    assert plan_consent(plan, surface, ProjectLayout.at(LAYOUT_ROOT), _host(tmp_path)) == plan
+
+
+def test_a_wrapped_operation_beside_a_hook_only_one_still_needs_the_wrapper(tmp_path: Path):
+    from ai_hats.surfaces.agy.provider import AgySurface
+
+    plan = _plan(
+        tmp_path,
+        _consent("fs.remove", "critical-path"),
+        _consent("rack.transition", "plan->execute"),
+        surface="agy",
+    )
+    with pytest.raises(RuntimeError, match="cannot enforce"):
+        plan_consent(plan, AgySurface(), ProjectLayout.at(LAYOUT_ROOT), _host(tmp_path, "rack"))
+
+
 def test_codex_gets_its_form_server_on_the_launch_line(tmp_path: Path):
     plan = _plan(tmp_path, _consent("rack.transition", "plan->execute"), surface="codex")
     host = _host(tmp_path, "rack")
