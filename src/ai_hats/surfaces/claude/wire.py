@@ -8,6 +8,7 @@ import uuid
 from typing import Any, Mapping
 
 from ai_hats_observe.canonical import (
+    AgentId,
     Event,
     Notice,
     PromptId,
@@ -162,6 +163,7 @@ class _Decoder:
         if kind != "control_request" or request.get("subtype") != "can_use_tool":
             return None
         reason = request.get("decision_reason")
+        agent = request.get("agent_id")  # a sub-agent's call only (2.1.281)
         return Question(
             request_id=str(line.get("request_id", "")),
             call_id=ToolCallId(str(request.get("tool_use_id", ""))),
@@ -170,6 +172,7 @@ class _Decoder:
             reason=reason if isinstance(reason, str) and reason else None,
             source=_SOURCE,
             takes_answers=str(request.get("tool_name", "")) in _ANSWERED_TOOLS,
+            agent=AgentId(agent) if isinstance(agent, str) and agent else None,
         )
 
     def close(self) -> list[Event]:

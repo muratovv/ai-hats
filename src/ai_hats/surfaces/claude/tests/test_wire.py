@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats_observe.canonical import (
+    AgentId,
     Notice,
     PromptId,
     PromptOrigin,
@@ -143,6 +144,16 @@ QUESTION = Question(
 
 def test_a_question_on_the_wire_is_read_as_one() -> None:
     assert ClaudeWire().decoder().control(CAN_USE_TOOL) == QUESTION
+
+
+def test_a_sub_agents_question_names_the_sub_agent() -> None:
+    line = {**CAN_USE_TOOL, "request": {**CAN_USE_TOOL["request"], "agent_id": "a4b10eb7812a3af39"}}
+
+    question = ClaudeWire().decoder().control(line)
+
+    assert question == replace(QUESTION, agent=AgentId("a4b10eb7812a3af39"))
+    # POSITIVE CONTROL: the main agent's question names none
+    assert ClaudeWire().decoder().control(CAN_USE_TOOL).agent is None
 
 
 def test_a_question_the_binary_takes_back_is_read_as_withdrawn() -> None:

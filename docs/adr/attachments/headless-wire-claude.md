@@ -75,6 +75,8 @@ Semantics that bite:
   and **blocks the turn** until the writer answers with a `control_response`
   (`behavior: allow|deny`). Answered allow → file written, `permission_denials: []`.
   This is the whole handshake; ~20 lines in `session.py`.
+  A sub-agent's call adds `"agent_id"`, the sub-agent's id (seen on the wire on
+  2.1.283; the binary builds it into the request since at least 2.1.281).
 - **With `--permission-prompts none`** (no handler) → auto-deny: a
   `system/permission_denied` event (`decision_reason_type: "asyncAgent"`, message text
   tells the model not to retry for the rest of the session), `permission_denials`
@@ -501,9 +503,10 @@ not have the new one yet.
   `claude-opus-5-5[1m]`, while the response's `message.model` is `claude-opus-5-5`.
 - A local command's `result` carries `usage` of zeros, and the map as it was.
 
-**The last answer's input is the context's fill.** Its `input_tokens + cache_read_input_tokens
-+ cache_creation_input_tokens` was 22134 after the first haiku turn, and the
-`get_context_usage` control request said `totalTokens: 22135` at the same point.
+**The last answer's input is the context's fill.** Its
+`input_tokens + cache_read_input_tokens + cache_creation_input_tokens` was 22134 after
+the first haiku turn, and the `get_context_usage` control request said
+`totalTokens: 22135` at the same point.
 
 **`compact_boundary` does not count the whole context.** On the wire it is
 `compact_metadata: {trigger, pre_tokens, post_tokens, cumulative_dropped_tokens,

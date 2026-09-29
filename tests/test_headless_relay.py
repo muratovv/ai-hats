@@ -212,7 +212,12 @@ class _Stdin:
         self.closed = True
 
 
-def _question(call: str = "toolu_1", request: str = "req-1", reason: str | None = None) -> dict:
+def _question(
+    call: str = "toolu_1",
+    request: str = "req-1",
+    reason: str | None = None,
+    agent: str | None = None,
+) -> dict:
     return {
         "type": "control_request",
         "request_id": request,
@@ -222,6 +227,7 @@ def _question(call: str = "toolu_1", request: str = "req-1", reason: str | None 
             "input": {"command": "git push"},
             "tool_use_id": call,
             **({"decision_reason": reason, "decision_reason_type": "hook"} if reason else {}),
+            **({"agent_id": agent} if agent else {}),
         },
     }
 
@@ -276,6 +282,25 @@ def test_a_question_nobody_recorded_becomes_a_person_asked(tmp_path: Path) -> No
     assert asked.kind is AskKind.PERMISSION and asked.call_id == ToolCallId("toolu_1")
     assert asked.tool == "Bash" and asked.detail == "a gate asks"
     assert asked.source == "claude/wire"
+
+
+def test_a_sub_agents_question_is_asked_as_the_sub_agents(tmp_path: Path) -> None:
+    """A background sub-agent's question outlives the main agent's turn; its
+    ``agent`` is how a client tells it from the main agent's."""
+    relay, log, _ = _relay(
+        tmp_path,
+        _question(call="toolu_1", request="req-1", agent="a4b10eb7812a3af39"),
+        _question(call="toolu_2", request="req-2"),
+    )
+
+    relay.follow()
+
+    asked = {e.call_id: e.agent for e in log.events if isinstance(e, PersonAsked)}
+    # POSITIVE CONTROL: the main agent's question, on the same wire, names none
+    assert asked == {
+        ToolCallId("toolu_1"): AgentId("a4b10eb7812a3af39"),
+        ToolCallId("toolu_2"): None,
+    }
 
 
 def test_a_question_the_gate_already_recorded_is_not_recorded_twice(tmp_path: Path) -> None:
