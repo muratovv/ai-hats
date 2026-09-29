@@ -3,6 +3,17 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.10.0
+
+- **`fs.remove` joins the consent operations** (HATS-2044). `apps.consent_gate`
+  accepts `fs.remove` at the point `critical-path`, and `trait-agent` declares
+  it. `safety-guard` asks about an `rm` / `rmdir` of the working directory, an
+  ancestor, a top-level directory or an operand holding `$` or a backtick. The
+  question carries no ticket, and no grant or ack silences it. `consent` refuses
+  the type by name and leaves it out of `all`. `OperationSpec` gains `binaries`
+  (a hook-only operation reads only its own binaries) and `grantable`, and
+  `Reading` gains `operands`. See ADR-0039.
+
 ## 0.9.1
 
 - **`safety-guard` no longer says an `ask` blocks in headless** (HATS-2021). It

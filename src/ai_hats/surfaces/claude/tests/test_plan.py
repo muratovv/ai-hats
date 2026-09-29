@@ -31,6 +31,7 @@ from ai_hats.surfaces.hook_dispatch import MANIFEST_VERSION
 from ai_hats.surfaces.plan import (
     CompositionPlan,
     Executable,
+    ExternalHook,
     Hooks,
     Host,
     Prompt,
@@ -255,6 +256,48 @@ def test_automate_wires_no_status_line(tmp_path):
 
     assert "statusLine" not in _content(plan, "settings.json")
     assert ENV_STATUSLINE_INNER not in plan.env
+
+
+# ── the harness's rm timer (ADR-0039) ───────────────────────────────────────
+
+RM_TIMER = "CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT"
+
+
+def _removal_point() -> ExternalHook:
+    return ExternalHook(
+        app="consent_gate",
+        object="fs.remove",
+        at="critical-path",
+        run=None,
+        on_error=None,
+        declared_by="trait-agent",
+    )
+
+
+def _guarded(tmp_path: Path, *, gate: str = "hooks/safety_gate.py", declared: bool = True):
+    skill = _skill(tmp_path, "safety-guard")
+    external = (_removal_point(),) if declared else ()
+    return _composition([skill], Hooks((_hook(skill, gate),), external))
+
+
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_the_gate_that_asks_about_removals_switches_the_harness_timer_off(tmp_path, run_mode):
+    plan = _plan(tmp_path, _guarded(tmp_path), run_mode=run_mode)
+    assert plan.env[RM_TIMER] == "1"
+
+
+def test_without_the_declaration_the_harness_keeps_its_timer(tmp_path: Path):
+    """The timer off with nobody asking is a removal the classifier decides alone."""
+    assert RM_TIMER not in _plan(tmp_path, _guarded(tmp_path, declared=False)).env
+
+
+def test_without_the_gate_the_harness_keeps_its_timer(tmp_path: Path):
+    assert RM_TIMER not in _plan(tmp_path, _guarded(tmp_path, gate="hooks/other_gate.py")).env
+
+
+def test_without_hooks_the_harness_keeps_its_timer(tmp_path: Path):
+    plan = _plan(tmp_path, _guarded(tmp_path), policy=SessionPolicy(hooks=False))
+    assert RM_TIMER not in plan.env
 
 
 def test_a_policy_without_hooks_wires_none(tmp_path: Path):

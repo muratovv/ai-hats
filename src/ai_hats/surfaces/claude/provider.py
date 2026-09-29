@@ -44,7 +44,7 @@ from .channel import (
     OBSERVED_NOTIFICATION,
     STATUSLINE_COMMAND,
 )
-from ai_hats.env import ENV_STATUSLINE_INNER
+from ai_hats.env import ENV_CLAUDE_RM_TIMER_OFF, ENV_STATUSLINE_INNER
 
 from .runtime_hooks import plan_hooks
 
@@ -63,6 +63,16 @@ from ai_hats.constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _gate_asks_for_removals(composition: CompositionPlan, rows) -> bool:
+    """The role declares `fs.remove` and `safety_gate.py` stands on PreToolUse (ADR-0039 D4)."""
+    declared = any(
+        hook.app == "consent_gate" and hook.object == "fs.remove"
+        for hook in composition.hooks.external
+    )
+    gated = any(Path(row["command"]).name == "safety_gate.py" for row in rows.get("PreToolUse", ()))
+    return declared and gated
 
 
 def _entry_matcher(rows: list[dict[str, str]]) -> str:
@@ -292,6 +302,8 @@ class ClaudeSurface(Surface):
             entries.append(describe_write_text(settings, json.dumps(document, indent=2)))
             env.update(hook_env)
             env.update(settings_env)
+            if _gate_asks_for_removals(composition, rows):
+                env[ENV_CLAUDE_RM_TIMER_OFF] = "1"
             if hitl:
                 args += ["--settings", str(settings)]
             else:

@@ -95,6 +95,12 @@ yours to know here. Three things you can do, and nothing else:
   binds to the exact call he was shown, and a consent flag you add yourself is
   a self-grant.
 
+A **critical-path removal** is asked every time, and no window covers it. That
+is an `rm` / `rmdir` of the working directory or an ancestor, a top-level
+directory, or an operand holding `$` or a backtick. Where the removal can be
+narrowed, narrow it: name the literal path under the working directory rather
+than `"$DIR"/*`. Where it cannot, run it bare and wait for the answer.
+
 ## The tracker backlog is `rack`-only
 
 `backlog_write_gate.py` (Edit/Write/MultiEdit) and a matching predicate in

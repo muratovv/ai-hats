@@ -62,6 +62,7 @@ tool when a question goes beyond built-in instructions.
 - [Flat library model](adr/0033-named-expressions-replace-roles-and-traits.md) — a series of four: overview and stages (0033), the DSL today vs under `-re` (0034), processing rules (0035), the materialization plan as the harness interface (0036).
 - [Canonical events are named by what the consumer does](adr/0037-canonical-events-are-named-by-what-the-consumer-does.md) — how a surface's own fact enters the shared `events.jsonl` vocabulary, and the three questions that decide whether a private type merges into a common one.
 - [Headless session is a filter over the binary](adr/0038-headless-session-is-a-holder-and-one-log.md) — `ai-hats headless`: commands on stdin, header and log on stdout, the holder's exit as the end; one writer, several writers sit on top; the two axes that separate it from `ai-hats agent`.
+- [The consent gate asks for critical-path removals](adr/0039-the-consent-gate-asks-for-critical-path-removals.md) — `fs.remove`: why the harness's timed `rm` prompt is switched off only where the gate stands, and why the operation is hook-only and ungrantable.
 - [`adr/attachments/`](adr/attachments/) — material an ADR leans on that is neither the
   decision nor user documentation: working context, measured baselines, corpora
   ([README](adr/attachments/README.md)).
