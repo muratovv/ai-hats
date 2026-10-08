@@ -509,17 +509,19 @@ def test_wrap_runner_closes_session_resources_before_session_cache(
 TRANSCRIPT_FIXTURE = Path(__file__).parent / "fixtures" / "transcripts" / "normal.jsonl"
 
 
-def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory, tmp_path):
+def test_wrap_runner_writes_the_event_log_during_the_session(
+    wrap_runner_factory, tmp_path, monkeypatch
+):
     """The session-time writer is the only writer of events.jsonl: a surface
     with a canonical reading leaves the complete record with no finalize pass,
     and the trace says how many events it holds."""
+    from ai_hats.runtime import WrapRunner
     from ai_hats.surfaces.claude.provider import ClaudeSurface
     from ai_hats_observe.canonical import RunEnded, RunStarted
     from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
     from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
     transcript = tmp_path / "live.jsonl"
-    transcript.write_text(TRANSCRIPT_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
 
     class Recorded(ClaudeSurface):
         def resolve_transcript(self, cwd, session_id, *, provider_session_id=None, end_ts=None):
@@ -527,6 +529,12 @@ def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory
 
     runner, _project = wrap_runner_factory(pty_exit_code=0)
     runner.payload = replace(runner.payload, provider=Recorded())
+
+    def surface_writes_its_record(self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):
+        transcript.write_text(TRANSCRIPT_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(WrapRunner, "_pty_spawn", surface_writes_its_record)
 
     _exit_code, session = runner.run()
 

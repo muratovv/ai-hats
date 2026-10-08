@@ -17,6 +17,7 @@ from ai_hats_core.lazy import lazy_facade
 
 if TYPE_CHECKING:  # the names below resolve for a reader and a type checker
     from .contract import (
+        EventReaderFactory,  # noqa: F401
         MetricsSink,  # noqa: F401
         SubagentEngine,  # noqa: F401
         Surface,  # noqa: F401
@@ -87,6 +88,7 @@ _HOMES = {
     "StdioMCPServer": ".mcp",
     "hook_profile": ".profiles",
     "run_chain": ".hook_channel",
+    "EventReaderFactory": ".contract",
     "MetricsSink": ".contract",
     "Provider": ".contract",
     "ProviderHint": ".contract",

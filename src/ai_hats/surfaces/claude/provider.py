@@ -15,8 +15,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from .. import SurfaceHint
-    from ai_hats_observe.canonical.reader import EventReader
+    from .. import EventReaderFactory, SurfaceHint
     from ai_hats_observe.canonical.signals import Signal
     from ai_hats_observe.event_log_writer import EventSource
     from ai_hats_observe.parsers.base import TranscriptParser
@@ -178,7 +177,7 @@ class ClaudeSurface(Surface):
         # Claude emits a structured JSONL session log → richer parse.
         return ClaudeParser()
 
-    def event_reader(self) -> Callable[[Path], EventReader]:
+    def event_reader(self) -> EventReaderFactory:
         # One reader per transcript path, holding its own position; live, so the
         # tail is held open until the session's writer says the run is over.
         return partial(ClaudeTranscriptReader, live=True)
