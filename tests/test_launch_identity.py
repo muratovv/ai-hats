@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.session_artifacts import RunMode, SessionPolicy, consumed_session_id
-from ai_hats.session_plan import launch
+from ai_hats.session_plan import launch, resumed_session_id
 from ai_hats.surfaces.claude.provider import ClaudeSurface
 from ai_hats.surfaces.agy.provider import AgySurface
 from ai_hats.surfaces.cline.provider import ClineSurface
@@ -28,7 +28,14 @@ from tests._plan_helpers import composition_with, flags
 SID = "11111111-2222-3333-4444-555555555555"
 
 
-def _cmd(provider, *, resume: bool = False, tmp_path: Path) -> list[str]:
+def _cmd(
+    provider,
+    *,
+    resume: bool = False,
+    extra: tuple[str, ...] = (),
+    provider_session_id: str = SID,
+    tmp_path: Path,
+) -> list[str]:
     """The argv the launch pair yields for a plan with no session args of its own."""
     composition = composition_with("r")
     root = tmp_path / "sessions" / "s"
@@ -47,8 +54,8 @@ def _cmd(provider, *, resume: bool = False, tmp_path: Path) -> list[str]:
         plan,
         flags(
             root,
-            provider_session_id=SID,
-            extra_args=("--resume",) if resume else (),
+            provider_session_id=provider_session_id,
+            extra_args=("--resume",) if resume else extra,
             claim=False,
         ),
         layout=ProjectLayout.at(tmp_path / "proj"),
@@ -69,6 +76,44 @@ def test_claude_resume_does_not_consume_it(tmp_path: Path) -> None:
 
     assert SID not in cmd
     assert consumed_session_id(cmd, SID) == ""
+
+
+RESUMED = "77777777-8888-4999-8aaa-bbbbbbbbbbbb"
+
+
+def test_claude_resume_by_id_makes_that_id_the_sessions_own(tmp_path: Path) -> None:
+    extra = ("--resume", RESUMED)
+    sid = resumed_session_id(extra)
+
+    cmd = _cmd(ClaudeSurface(), extra=extra, provider_session_id=sid or SID, tmp_path=tmp_path)
+
+    assert sid == RESUMED
+    assert "--session-id" not in cmd, "claude refuses a new id beside --resume"
+    assert consumed_session_id(cmd, sid) == RESUMED
+
+
+def test_claude_resume_spelled_with_equals_is_a_resume_too(tmp_path: Path) -> None:
+    extra = (f"--resume={RESUMED}",)
+    sid = resumed_session_id(extra)
+
+    cmd = _cmd(ClaudeSurface(), extra=extra, provider_session_id=sid or SID, tmp_path=tmp_path)
+
+    assert "--session-id" not in cmd
+    assert consumed_session_id(cmd, RESUMED) == RESUMED
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ("--resume",),
+        ("--resume", "--model", "x"),
+        ("--resume", "refactor auth"),  # claude's picker, with a search term
+        ("--resume", RESUMED, "--fork-session"),  # the fork runs under a new id
+        ("--continue",),
+    ],
+)
+def test_a_resume_that_names_no_session_claims_none(extra: tuple[str, ...]) -> None:
+    assert resumed_session_id(extra) is None
 
 
 @pytest.mark.parametrize("provider", [AgySurface(), ClineSurface()], ids=["agy", "cline"])
