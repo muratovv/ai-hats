@@ -300,6 +300,24 @@ else claude puts into the conversation is `origin: harness`: a skill's body, a
 summary after `/compact`. Such a prompt has a `prompt_id` of its own that no
 `turn_ended` lists, so wait for the ids you sent, never for every id you see.
 
+**Going on with a conversation.** When a holder is gone (a redeploy took it,
+say), start a new one on the same conversation, with the id the old header
+named:
+
+```bash
+ai-hats headless -p claude -r maintainer --resume "$provider_session_id" < turns.ndjson
+```
+
+The new header names the same `provider_session_id`, and claude answers from
+the conversation so far. The new log holds this run alone. The old log, under
+the old header's `session_dir`, holds the turns before it, and the two logs
+together are the whole conversation. If a turn was running when the old holder
+died, the old log ends without that turn's `turn_ended`. Put `--resume` before
+the prompt: everything after the prompt is claude's, and a `--resume` there is
+refused, like the other flags the holder sets itself. An id that is not a UUID,
+or that names no conversation of claude's under this directory, is refused with
+exit 2 before anything starts.
+
 A slash command is sent as a prompt. Measured on claude 2.1.282 and 2.1.283:
 
 - one claude runs itself (`/model`, `/context`, `/usage`, `/rename`) is answered
@@ -440,15 +458,15 @@ be on the way ([how-to-feedback-loop](how-to-feedback-loop.md)). Stopping readin
 stdout does not end the session: it runs on and its log on disk stays complete.
 Then read the exit code:
 
-| Exit code | Meaning                                                                                                                                                                                                                                                            |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0         | stdin closed and every turn ran. A turn that failed is `turn_ended.ok: false`, not the session's exit code.                                                                                                                                                        |
-| 130 / 143 | aborted by Ctrl-C / `kill -TERM <holder_pid>`. The log is still closed and the session finalized; a turn claude had not started does not run.                                                                                                                      |
-| N         | claude itself exited with N; 128+N when a signal N killed it.                                                                                                                                                                                                      |
-| 137       | the holder itself was killed (`kill -9`). Its log has no `run_ended` and the session is not finalized; see below.                                                                                                                                                  |
-| 1         | refused before the start, with no header: claude is not logged in (`claude auth login`). The session directory stays; its log is `run_started`, the `reauthenticate` signal and `run_ended`.                                                                       |
-| 3         | refused before the start, with no header: a startup gate refused the session.                                                                                                                                                                                      |
-| 2         | refused before the start, with no header. The cause is a flag the holder sets itself (`--input-format`, `--output-format`, `--print`, `--permission-prompt-tool`, `--resume`, `--continue`, `--session-id`, `--no-session-persistence`) or a surface with no wire. |
+| Exit code | Meaning                                                                                                                                                                                                                                                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0         | stdin closed and every turn ran. A turn that failed is `turn_ended.ok: false`, not the session's exit code.                                                                                                                                                                                                                        |
+| 130 / 143 | aborted by Ctrl-C / `kill -TERM <holder_pid>`. The log is still closed and the session finalized; a turn claude had not started does not run.                                                                                                                                                                                      |
+| N         | claude itself exited with N; 128+N when a signal N killed it.                                                                                                                                                                                                                                                                      |
+| 137       | the holder itself was killed (`kill -9`). Its log has no `run_ended` and the session is not finalized; see below.                                                                                                                                                                                                                  |
+| 1         | refused before the start, with no header: claude is not logged in (`claude auth login`). The session directory stays; its log is `run_started`, the `reauthenticate` signal and `run_ended`.                                                                                                                                       |
+| 3         | refused before the start, with no header: a startup gate refused the session.                                                                                                                                                                                                                                                      |
+| 2         | refused before the start, with no header. The cause is a flag the holder sets itself (`--input-format`, `--output-format`, `--print`, `--permission-prompt-tool`, `--resume`, `--continue`, `--fork-session`, `--session-id`, `--no-session-persistence`), a `--resume <id>` with no such conversation, or a surface with no wire. |
 
 The same loop by hand, from bash:
 

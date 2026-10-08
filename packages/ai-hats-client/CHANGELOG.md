@@ -4,6 +4,15 @@ All notable changes to `ai-hats-client` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0]
+
+### Added
+
+- The stub claude (`ai_hats_client.testing`) goes on with a conversation under
+  `--resume <id>`, as claude 2.1.294 does: the same session id, the same
+  transcript, and `@recall` answers with the prompt the earlier run last
+  remembered.
+
 ## [0.3.1]
 
 ### Fixed

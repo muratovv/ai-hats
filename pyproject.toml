@@ -42,11 +42,11 @@ dependencies = [
     # card directory is gated); HATS-1642 to 0.3.3 (PlanConsentExtension takes the
     # integrator's ticket STORE and exposes the post-lock spender it pairs with).
     "ai-hats-rack>=0.4.0",  # ai_hats_rack.selectors — the arrow grammar rack_wiring binds by (HATS-1719)
-    "ai-hats-observe>=0.23.1",  # trace.log decodes PTY reads incrementally (0.23.1); floor tracks the workspace version
+    "ai-hats-observe>=0.24.0",  # a resumed record is read from its end (0.24.0); floor tracks the workspace version
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
     # HATS-1755 the external session wrapper, not rack, consumes its tickets.
     "ai-hats-library>=0.10.1",  # fs.remove in every trait carrying the gate; floor tracks the workspace version
-    "ai-hats-client>=0.3.1",  # the client of `ai-hats headless` ships with the holder it drives
+    "ai-hats-client>=0.4.0",  # the client of `ai-hats headless` ships with the holder it drives
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
