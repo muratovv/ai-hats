@@ -387,6 +387,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         finalize_hitl_hook=None,
         layout: ProjectLayout | None = None,
         recovery=None,
+        while_running=None,
     ):
         from ai_hats.composition_seam import build_composition_payload
         from ai_hats_observe import SessionManager, SidecarTracer
@@ -407,6 +408,8 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         )
 
         def _stub_spawn(self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):
+            if while_running is not None:
+                while_running()  # what the surface does while it runs
             return pty_exit_code
 
         monkeypatch.setattr(WrapRunner, "_pty_spawn", _stub_spawn)
@@ -509,13 +512,10 @@ def test_wrap_runner_closes_session_resources_before_session_cache(
 TRANSCRIPT_FIXTURE = Path(__file__).parent / "fixtures" / "transcripts" / "normal.jsonl"
 
 
-def test_wrap_runner_writes_the_event_log_during_the_session(
-    wrap_runner_factory, tmp_path, monkeypatch
-):
+def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory, tmp_path):
     """The session-time writer is the only writer of events.jsonl: a surface
     with a canonical reading leaves the complete record with no finalize pass,
     and the trace says how many events it holds."""
-    from ai_hats.runtime import WrapRunner
     from ai_hats.surfaces.claude.provider import ClaudeSurface
     from ai_hats_observe.canonical import RunEnded, RunStarted
     from ai_hats_observe.event_log import EVENT_LOG_JSONL, read_events
@@ -527,14 +527,11 @@ def test_wrap_runner_writes_the_event_log_during_the_session(
         def resolve_transcript(self, cwd, session_id, *, provider_session_id=None, end_ts=None):
             return [transcript]
 
-    runner, _project = wrap_runner_factory(pty_exit_code=0)
-    runner.payload = replace(runner.payload, provider=Recorded())
-
-    def surface_writes_its_record(self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):
+    def surface_writes_its_record() -> None:
         transcript.write_text(TRANSCRIPT_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
-        return 0
 
-    monkeypatch.setattr(WrapRunner, "_pty_spawn", surface_writes_its_record)
+    runner, _project = wrap_runner_factory(pty_exit_code=0, while_running=surface_writes_its_record)
+    runner.payload = replace(runner.payload, provider=Recorded())
 
     _exit_code, session = runner.run()
 
