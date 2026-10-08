@@ -5,7 +5,7 @@ flow:   a user starts a headless session with the parameters they already use
         flags — and with one of the flags the holder keeps for itself
 cmds:
     ai-hats headless -p claude -r assistant -m claude-haiku-4-5 --tag k=v "first turn"
-    ai-hats headless -p claude -r assistant --resume abc  # no-resolve: refused by design, the holder owns --resume
+    ai-hats headless -p claude -r assistant turn --resume <uuid>  # no-resolve: refused by design, the holder owns --resume
 expect: the model and the provider flags reach the binary, the tag lands in
         metrics.json, and the positional prompt is the first turn; a flag
         that makes the wire (--resume, --permission-prompt-tool, …) or a
@@ -68,7 +68,10 @@ def test_e2e_the_parameters_of_a_bare_session_mean_the_same_here(tmp_project, tm
 @pytest.mark.parametrize(
     ("args", "named"),
     [
-        (("-p", "claude", "--resume", "abc"), "--resume"),
+        # after the prompt everything is the provider's: the holder's own --resume is not
+        (("-p", "claude", "turn", "--resume", "77777777-8888-4999-8aaa-bbbbbbbbbbbb"), "--resume"),
+        (("-p", "claude", "turn", "-r", "77777777-8888-4999-8aaa-bbbbbbbbbbbb"), "-r"),
+        (("-p", "claude", "turn", "--fork-session"), "--fork-session"),
         (("-p", "claude", "--permission-prompt-tool", "stdio"), "--permission-prompt-tool"),
         (("-p", "claude", "--output-format=text"), "--output-format"),
         (("-p", "claude", "--no-session-persistence"), "--no-session-persistence"),

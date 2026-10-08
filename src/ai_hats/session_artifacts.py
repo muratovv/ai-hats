@@ -100,10 +100,14 @@ def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:
 
     Only a surface that puts the id on its own command line will
     write a transcript under it. agy deletes it, cline inherits the base
-    no-op, and claude omits it on ``--resume``. Recording it regardless names
-    a session that exists nowhere, which also hides the trace-recovery path.
+    no-op, and claude on ``--continue`` runs under an id nobody passed it. Recording
+    it regardless names a session that exists nowhere, which also hides the
+    trace-recovery path.
     """
-    return provider_session_id if provider_session_id in cmd else ""
+    named = any(
+        arg == provider_session_id or arg.endswith(f"={provider_session_id}") for arg in cmd
+    )
+    return provider_session_id if provider_session_id and named else ""
 
 
 @dataclass

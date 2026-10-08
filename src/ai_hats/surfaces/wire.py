@@ -85,6 +85,10 @@ class Wire(Protocol):
         """The flags among ``args`` the holder sets or forbids itself, in order."""
         ...
 
+    def resume_args(self, provider_session_id: str) -> tuple[str, ...]:
+        """Appended to the argv to put the binary back on that conversation, under its id."""
+        ...
+
     def encode(self, command: Prompt | Interrupt) -> bytes:
         """One command as the binary reads it from its stdin: a single line.
         The prompt's id becomes the surface's own id for it, so the wire says

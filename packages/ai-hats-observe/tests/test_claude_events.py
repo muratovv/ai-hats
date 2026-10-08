@@ -139,6 +139,24 @@ def test_reader_satisfies_the_event_reader_protocol(tmp_path: Path) -> None:
     assert isinstance(reader, EventReader)
 
 
+def test_a_reader_from_an_offset_reads_only_what_follows_it(tmp_path: Path) -> None:
+    path = write(tmp_path / "t.jsonl", [user("before")])
+    offset = path.stat().st_size
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(user("after")) + "\n")
+
+    texts = [
+        e.text
+        for e in ClaudeTranscriptReader(path, offset=offset).read()
+        if isinstance(e, PromptReceived)
+    ]
+
+    assert texts == ["after"]
+    assert [
+        e.text for e in ClaudeTranscriptReader(path).read() if isinstance(e, PromptReceived)
+    ] == ["before", "after"], "the same record from its start holds both"
+
+
 # --- 1. usage is counted once ----------------------------------------------
 
 

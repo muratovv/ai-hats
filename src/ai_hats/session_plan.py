@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,7 +110,36 @@ def plan_session(
     return plan
 
 
-_RESUME_FLAGS = ("--resume", "--continue", "-c")
+_RESUME_BY_ID = ("--resume", "-r")
+_RESUME_FLAGS = (*_RESUME_BY_ID, "--continue", "-c")
+
+
+def _is_resume(args: Sequence[str]) -> bool:
+    return any(arg.partition("=")[0] in _RESUME_FLAGS for arg in args)
+
+
+def resumed_session_id(args: Sequence[str]) -> str | None:
+    """The session id a ``--resume`` in ``args`` names, as written; ``None`` when none.
+
+    claude also takes a search term there, and ``--fork-session`` moves the
+    resumed conversation to a new id — neither names the session that will run."""
+    if "--fork-session" in args:
+        return None
+    for i, arg in enumerate(args):
+        name, eq, value = arg.partition("=")
+        if name not in _RESUME_BY_ID:
+            continue
+        if not eq:
+            value = args[i + 1] if i + 1 < len(args) else ""
+        return value if _is_uuid(value) else None
+    return None
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
 
 
 def launch(plan: MaterializationPlan, flags: LaunchFlags, *, layout: ProjectLayout) -> Launched:
@@ -122,7 +152,7 @@ def launch(plan: MaterializationPlan, flags: LaunchFlags, *, layout: ProjectLayo
         return surface.automate_launch(plan, flags, env, layout=layout)
     cmd = surface.get_cli_command(list(flags.extra_args))
     cmd.extend(plan.launch.args or ())
-    is_resume = any(f in flags.extra_args for f in _RESUME_FLAGS)
+    is_resume = _is_resume(flags.extra_args)
     argv = surface.get_cli_launch_args(cmd, flags.provider_session_id or "", is_resume)
     return Launched(args=tuple(argv), sdk_options=None, env=env, prompt=context_text(plan))
 

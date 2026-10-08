@@ -49,6 +49,9 @@ served as usual.
 
 A prompt whose ``uuid`` was seen before is echoed and dropped, as claude does.
 
+``--resume <id>`` goes on under that id and in that transcript, as claude 2.1.294
+does: ``@recall`` answers with the prompt the earlier run last remembered.
+
 Every prompt line is followed on the wire by ``command_lifecycle``: ``queued`` when
 it is read, ``started`` when its turn begins (after the echo of one folded into a
 running turn), ``completed`` after its ``result``.
@@ -139,14 +142,15 @@ def _content(msg: dict) -> str:
 class Stub:
     def __init__(self, argv: list[str]) -> None:
         self.argv = argv
-        self.session_id = _flag(argv, "--session-id") or str(uuid.uuid4())
+        resumed = _flag(argv, "--resume")
+        self.session_id = _flag(argv, "--session-id") or resumed or str(uuid.uuid4())
         self.model = _flag(argv, "--model") or "stub-model"
         self.plugin_dir = _flag(argv, "--plugin-dir")
         config = os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
         key = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd()))
         self.transcript = Path(config) / "projects" / key / f"{self.session_id}.jsonl"
         self.transcript.parent.mkdir(parents=True, exist_ok=True)
-        self.previous = ""
+        self.previous = self._last_prompt() if resumed else ""
         self.results = 0
         self.cost = 0.0
         self.answered: dict[
@@ -166,6 +170,16 @@ class Stub:
         self.denials: list[dict] = []  # the running turn's refused calls
         self.interrupt = threading.Event()
         self.out_lock = threading.Lock()
+
+    def _last_prompt(self) -> str:
+        """What an earlier run of this conversation last remembered, from its record."""
+        last = ""
+        if self.transcript.exists():
+            for line in self.transcript.read_text(encoding="utf-8").splitlines():
+                record = json.loads(line)
+                if record.get("type") == "last-prompt":
+                    last = record.get("lastPrompt", "")
+        return last
 
     # -- wire and record ---------------------------------------------------
 

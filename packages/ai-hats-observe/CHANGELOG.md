@@ -4,6 +4,17 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.24.0]
+
+A record can be followed from where an earlier run left it.
+
+### Added
+
+- `ClaudeTranscriptReader(path, offset=N)` starts at byte `N`. A resumed
+  conversation's record already holds earlier runs, and a reader that read
+  through them would still hold the last answer open and end it in the new
+  run's log.
+
 ## [0.23.1]
 
 A character cut between two terminal reads reaches the trace whole.

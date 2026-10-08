@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
+from pathlib import Path
 
 import click
 
@@ -19,6 +21,18 @@ def _machine_stdout() -> int:
     return machine
 
 
+def _resumed(provider, wire, cwd: Path, provider_session_id: str) -> tuple[str, ...]:
+    """The argv that puts the binary back on a conversation the surface holds here.
+
+    Refused before the start otherwise: claude would print a header-less error turn
+    and exit 1, which a client cannot tell from a crash."""
+    if not provider.resolve_transcript(cwd.resolve(), "", provider_session_id=provider_session_id):
+        raise click.BadParameter(
+            f"no conversation {provider_session_id} under {cwd}", param_hint="--resume"
+        )
+    return wire.resume_args(provider_session_id)
+
+
 def _split_prompt(args: list[str]) -> tuple[str, list[str]]:
     """The positional prompt is the first leftover when it is not a flag; the rest
     is the provider's."""
@@ -32,6 +46,15 @@ def _split_prompt(args: list[str]) -> tuple[str, list[str]]:
     context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
 )
 @session_options
+@click.option(
+    "--resume",
+    "resume",
+    type=click.UUID,
+    default=None,
+    metavar="ID",
+    help="Go on with the conversation a header named as provider_session_id ID; "
+    "refused when the surface holds none under this directory.",
+)
 @click.argument(
     "passthrough", nargs=-1, type=click.UNPROCESSED, metavar="[PROMPT] [PROVIDER_ARGS]..."
 )
@@ -40,6 +63,7 @@ def headless_cmd(
     role: str | None,
     model: str | None,
     tags_raw: tuple[str, ...],
+    resume: uuid.UUID | None,
     passthrough: tuple[str, ...],
 ) -> None:
     """Run a role's session driven over stdin/stdout instead of a terminal.
@@ -99,6 +123,8 @@ def headless_cmd(
             f"{owned[0]} is set by ai-hats headless itself: the holder owns the wire "
             "(its formats, its permission channel, and which session it is)"
         )
+    if resume is not None:
+        extra = [*extra, *_resumed(payload.provider, wire, layout.cwd, str(resume))]
 
     from ai_hats_observe import SidecarTracer
 

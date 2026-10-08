@@ -387,6 +387,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         finalize_hitl_hook=None,
         layout: ProjectLayout | None = None,
         recovery=None,
+        while_running=None,
     ):
         from ai_hats.composition_seam import build_composition_payload
         from ai_hats_observe import SessionManager, SidecarTracer
@@ -407,6 +408,8 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         )
 
         def _stub_spawn(self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):
+            if while_running is not None:
+                while_running()  # what the surface does while it runs
             return pty_exit_code
 
         monkeypatch.setattr(WrapRunner, "_pty_spawn", _stub_spawn)
@@ -519,13 +522,15 @@ def test_wrap_runner_writes_the_event_log_during_the_session(wrap_runner_factory
     from ai_hats_observe.parsers.claude_events import ClaudeTranscriptReader
 
     transcript = tmp_path / "live.jsonl"
-    transcript.write_text(TRANSCRIPT_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
 
     class Recorded(ClaudeSurface):
         def resolve_transcript(self, cwd, session_id, *, provider_session_id=None, end_ts=None):
             return [transcript]
 
-    runner, _project = wrap_runner_factory(pty_exit_code=0)
+    def surface_writes_its_record() -> None:
+        transcript.write_text(TRANSCRIPT_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+
+    runner, _project = wrap_runner_factory(pty_exit_code=0, while_running=surface_writes_its_record)
     runner.payload = replace(runner.payload, provider=Recorded())
 
     _exit_code, session = runner.run()

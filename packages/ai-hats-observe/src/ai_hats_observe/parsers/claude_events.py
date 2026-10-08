@@ -286,12 +286,13 @@ class ClaudeTranscriptReader:
     ``UNKNOWN``. ``live`` says whether the run is still being written: a finished
     record (the default) closes its tail at EOF, a live one holds it open until
     ``close()``. A reader with no ``path`` reads only what ``feed`` hands it.
+    ``offset`` is the byte it starts at: what lies before it is another run's.
     """  # comment-length: allow — when a response ends IS the contract
 
-    def __init__(self, path: Path | str | None, *, live: bool = False) -> None:
+    def __init__(self, path: Path | str | None, *, live: bool = False, offset: int = 0) -> None:
         self._path = None if path is None else Path(path)
         self._live = live
-        self._offset = 0
+        self._offset = offset
         self._closed = False
         self._drained = False
         self._open: _OpenResponse | None = None

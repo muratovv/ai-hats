@@ -590,6 +590,15 @@ def located_sources(
     return sources if main_record else sub_agent_sources(sources)
 
 
+def _written_so_far(sources) -> dict[Path, int]:
+    """Where each record that already exists ends: a resumed conversation's
+    record holds earlier runs, whose logs have them already."""
+    from ai_hats_observe.event_log_writer import EventSource
+
+    paths = (s.path if isinstance(s, EventSource) else Path(s) for s in sources)
+    return {path: path.stat().st_size for path in paths if path.exists()}
+
+
 def start_event_log(
     provider,
     session: "Session",
@@ -604,7 +613,7 @@ def start_event_log(
     Two reasons for ``None``, both said in the trace where they are not the
     contract: a surface with no canonical reading of its own record writes no
     file rather than an empty one (``event_reader()`` is ``None``); and a
-    session the surface gave no id — claude on ``--resume`` — cannot be told
+    session the surface gave no id — claude on ``--continue`` — cannot be told
     apart from a neighbour's by time alone, so its record is not followed
     rather than risk following someone else's. A writer that cannot start is
     logged too; the session runs on without it. ``main_record=False`` leaves
@@ -630,9 +639,14 @@ def start_event_log(
         )
 
     try:
+        earlier = _written_so_far(locate())
+
+        def reader_at(path: Path):
+            return reader_factory(path, offset=earlier.get(path, 0))
+
         return EventLogWriter(
             locate=locate,
-            reader_factory=reader_factory,
+            reader_factory=reader_at,
             path=session.session_dir / EVENT_LOG_JSONL,
             report=session.log_sys,
         ).start()

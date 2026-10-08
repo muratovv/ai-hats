@@ -32,7 +32,7 @@ from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
 from .session_identity import SessionIdentity
 from .session_artifacts import RunMode, consumed_session_id
-from .session_plan import launch, plan_session, probe_host, session_record
+from .session_plan import launch, plan_session, probe_host, resumed_session_id, session_record
 from .session_run import SessionRun
 from .surfaces import LaunchFlags, apply
 from .startup_checks import run_startup_checks
@@ -651,7 +651,8 @@ class WrapRunner:
         # is what the surface plans from.
         builder_notices: list[StartupNotice] = []
         result = payload.result
-        claude_session_id = str(uuid.uuid4())
+        # a resumed conversation goes on under its own id, which claude then writes to
+        claude_session_id = resumed_session_id(extra_args or ()) or str(uuid.uuid4())
         cmd, env_map, meta_prompt, record = self._session_on_the_plan(
             session, run, extra_args=extra_args, provider_session_id=claude_session_id
         )

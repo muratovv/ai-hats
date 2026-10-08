@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**351 of 351 files catalogued — 359 flows.**
+**353 of 353 files catalogued — 361 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1765,7 +1765,7 @@ as a claim to check, not as evidence.
 
   ```console
   ai-hats headless -p claude -r assistant -m claude-haiku-4-5 --tag k=v "first turn"
-  ai-hats headless -p claude -r assistant --resume abc  # no-resolve: refused by design, the holder owns --resume
+  ai-hats headless -p claude -r assistant turn --resume <uuid>  # no-resolve: refused by design, the holder owns --resume
   ```
 
 - **expect** — the model and the provider flags reach the binary, the tag lands in metrics.json, and the positional prompt is the first turn; a flag that makes the wire (--resume, --permission-prompt-tool, …) or a surface with no wire is refused with exit 2 before anything starts — no header, no session
@@ -1799,6 +1799,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the real claude leaves by itself once its turn is over — no claude process of that session is left behind
 - **why** — the holder cannot take its child down when it is SIGKILLed; ADR-0038 D5 rests on claude reading EOF and leaving, which only the real binary can confirm. Kept out of the gate (live_headless): it spends a turn
+
+## `test_headless_live_resume.py`
+
+*pins HATS-2058*
+
+- **flow** — a relay's holder on a live claude conversation is stopped the way a redeploy stops it; the next prompt starts a new holder on that conversation
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant -m claude-haiku-4-5
+  kill -TERM <holder_pid>
+  ai-hats headless -p claude -r assistant -m claude-haiku-4-5 --resume <provider_session_id>
+  ```
+
+- **expect** — the resumed session names what the earlier one was told, under the same provider_session_id in its header; a fresh session in the same directory does not know it
+- **why** — the stub only replays what it is scripted to; whether the real binary keeps the context and the id across a resume over the wire is claude's own behaviour. Kept out of the gate (live_headless): it spends turns
 
 ## `test_headless_prompt_ids.py`
 
@@ -1841,6 +1857,21 @@ as a claim to check, not as evidence.
 
 - **expect** — exit 1 and nothing on stdout (no header); stderr says to log in; the session directory stays, its log holds run_started, the reauthenticate signal and run_ended ok false, and metrics.json is finalized with exit 1; claude never started a session
 - **why** — headless has no terminal to run claude's login flow, so the refusal must come at the start and be recorded, as an interactive session's directory would be
+
+## `test_headless_resume.py`
+
+*pins HATS-2058*
+
+- **flow** — a chat's holder is gone (a redeploy took it); the next prompt starts a new holder on the same conversation, under the same claude session id
+- **cmds**
+
+  ```console
+  ai-hats headless -p claude -r assistant "first turn"
+  ai-hats headless -p claude -r assistant --resume <provider_session_id> "next turn"
+  ```
+
+- **expect** — the binary is put back on that conversation (--resume <id>, no --session-id) and answers from it; the header and metrics.json name the same id; the new log holds this run's turn alone. A --resume that is no UUID, or names no conversation under the cwd, is refused with exit 2 before anything starts
+- **why** — the holder refused --resume, and without a launch id a resumed session had no event log, so a relay could not go on with a chat it had lost
 
 ## `test_headless_retro.py`
 

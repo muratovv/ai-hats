@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
-from typing import TYPE_CHECKING, Callable, Mapping, Protocol
+from typing import TYPE_CHECKING, Mapping, Protocol
 
 
 from ai_hats_core import CompositionResult
@@ -46,6 +46,12 @@ if TYPE_CHECKING:
     from .wire import Wire
 
 logger = logging.getLogger(__name__)
+
+
+class EventReaderFactory(Protocol):
+    """The reader of one record, from byte ``offset`` on."""
+
+    def __call__(self, path: Path, *, offset: int = 0) -> EventReader: ...
 
 
 @dataclass
@@ -258,12 +264,13 @@ class Surface(abc.ABC):
         """
         return TraceParser()
 
-    def event_reader(self) -> Callable[[Path], EventReader] | None:
+    def event_reader(self) -> EventReaderFactory | None:
         """Builds the reader that follows ONE of this surface's transcripts as
         canonical events while the session runs — same rule as
         ``transcript_parser``: it rides the surface, there is no registry. The
         reader must hold its tail open until ``close()``; the session's writer
-        is what declares the run over.
+        is what declares the run over. It starts at byte ``offset``: a resumed
+        conversation's record holds earlier runs before it.
 
         Default ``None``, not a reader that yields nothing: ``None`` means this
         surface has no canonical reading yet, so the session writes no
