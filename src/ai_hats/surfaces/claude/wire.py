@@ -35,6 +35,7 @@ _OWNED = (
     "-r",
     "--continue",
     "-c",
+    "--fork-session",
     "--session-id",
     "--no-session-persistence",
 )
@@ -67,6 +68,9 @@ class ClaudeWire:
     def owned_in(self, args: list[str]) -> list[str]:
         names = (a.split("=", 1)[0] for a in args)
         return [name for name in names if name in _OWNED]
+
+    def resume_args(self, provider_session_id: str) -> tuple[str, ...]:
+        return ("--resume", provider_session_id)
 
     def encode(self, command: Prompt | Interrupt) -> bytes:
         if isinstance(command, Interrupt):

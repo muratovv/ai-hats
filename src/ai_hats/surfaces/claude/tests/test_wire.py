@@ -102,11 +102,21 @@ def test_the_wire_asks_for_the_echo_the_final_usage_and_the_hooks() -> None:
         (["--resume", "abc", "-c"], ["--resume", "-c"]),
         (["-p", "hi"], ["-p"]),
         (["--session-id", "x"], ["--session-id"]),
+        (["--fork-session"], ["--fork-session"]),
         (["--no-session-persistence"], ["--no-session-persistence"]),
     ],
 )
 def test_the_flags_that_make_the_wire_are_the_holders(args: list[str], owned: list[str]) -> None:
     assert ClaudeWire().owned_in(args) == owned
+
+
+def test_the_holder_resumes_a_conversation_with_the_flag_it_refuses_from_a_caller() -> None:
+    sid = "77777777-8888-4999-8aaa-bbbbbbbbbbbb"
+
+    args = list(ClaudeWire().resume_args(sid))
+
+    assert args == ["--resume", sid]
+    assert ClaudeWire().owned_in(args) == ["--resume"]
 
 
 def test_the_launch_flags_put_the_binary_on_the_wire_both_ways() -> None:
