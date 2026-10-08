@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-08
+
 ### Added
 
 - **`ai-hats headless --resume <id>` goes on with a conversation** (HATS-2058, for the hai relay). A chat whose holder a redeploy took can now go on in a new holder under the same claude session id. The holder put `--resume` among the flags it owns, and a resumed session would not have started anyway, since it had no id and so no log. `--resume` is now the holder's own option. It takes a UUID, checks that claude holds that conversation under the cwd, and puts claude back on it. The header and `metrics.json` name the same id. The new log holds this run alone: the earlier holder's log holds the turns before it, so the two together are the whole conversation with no turn repeated. An id that is not a UUID, or names no conversation, is refused with exit 2 before anything starts; without the check, claude prints an error turn after the header and exits 1. `--resume`, `-r` and `--fork-session` after the prompt are still refused. Measured on claude 2.1.294 (the wire repeats no history on resume; the id stays the same); live check: `tests/e2e/test_headless_live_resume.py`. `ai-hats-observe` 0.24.0, `ai-hats-client` 0.4.0.
@@ -2929,7 +2931,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/muratovv/ai-hats/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/muratovv/ai-hats/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/muratovv/ai-hats/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/muratovv/ai-hats/compare/v0.14.0...v0.15.0
