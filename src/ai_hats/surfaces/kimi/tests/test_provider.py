@@ -58,11 +58,11 @@ def test_cli_command():
 def test_run_command_puts_prompt_last_after_flags():
     cmd = KimiSurface().get_run_command(["kimi", "--skills-dir", "/s"], "PROMPT")
     # kimi misparses `-p --flag`: flags come first, `-p` takes the final value.
+    # No --auto: print mode already runs with auto permissions and rejects it.
     assert cmd == [
         "kimi",
         "--skills-dir",
         "/s",
-        "--auto",
         "--output-format=stream-json",
         "-p",
         "PROMPT",

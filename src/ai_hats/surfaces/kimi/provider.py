@@ -3,12 +3,13 @@
 Hook protocol is Claude-Code-compatible, skills ride `--skills-dir` (which
 replaces kimi's discovery, so the composed set is exact), the HITL role lands
 in the managed `AGENTS.md` block, and headless runs go
-`kimi --auto --output-format=stream-json -p <prompt>` — `-p` last with its
-value: `-p --flag` misparses.
+`kimi --output-format=stream-json -p <prompt>` — `-p` last with its value
+(`-p --flag` misparses), and no `--auto`: print mode already implies it.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
@@ -20,8 +21,9 @@ from ai_hats.materialization import describe_mkdir
 from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 
+from .. import MetricsSink, SubagentEngine, SurfaceRunResult
 from ..mirror import mirror_entries, path_dirs
-from ..plan import CompositionPlan, Host, Launch, MaterializationPlan
+from ..plan import CompositionPlan, Host, Launch, Launched, MaterializationPlan
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
 
     from ai_hats.surfaces import SurfaceHint
+    from ai_hats.debt import SessionId
 
 KIMI_HOME_ENV = "KIMI_CODE_HOME"
 READINESS_SOURCE = "kimi/readiness"
@@ -233,8 +236,10 @@ class KimiSurface(Surface):
         meta_prompt: str,
     ) -> list[str]:
         # Flags first, `-p` last with its value: kimi misparses `-p --flag`.
-        kept = [a for a in (cmd or ["kimi"]) if a not in ("--yolo", "-y")]
-        return [*kept, "--auto", "--output-format=stream-json", "-p", meta_prompt]
+        # `-p` already runs with auto permissions; an explicit `--auto`/`--yolo`
+        # is a startup error in print mode.
+        kept = [a for a in (cmd or ["kimi"]) if a not in ("--yolo", "-y", "--auto")]
+        return [*kept, "--output-format=stream-json", "-p", meta_prompt]
 
     def get_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
@@ -243,3 +248,110 @@ class KimiSurface(Surface):
             ENV_AI_HATS_DIR: str(layout.base),
             AI_HATS_PROJECT_DIR_ENV: str(layout.root),
         }
+
+    def engine(self) -> "SubagentEngine | None":
+        return KimiSubagentEngine()
+
+
+class KimiSubagentEngine(SubagentEngine):
+    """Drives `kimi -p --output-format=stream-json` as a subprocess.
+
+    Kimi mints its own session id (no flag to pass one), so the runner-minted
+    id is ignored per the contract and the real one is reported back from the
+    stream's ``session.resume_hint`` meta line.
+    """
+
+    def run(
+        self,
+        *,
+        layout: ProjectLayout,
+        work_dir: Path,
+        session_id: SessionId,
+        env: dict[str, str],
+        model: str | None,
+        timeout_s: int,
+        metrics: MetricsSink,
+        launched: Launched,
+        brief: str | None,
+        provider_session_id: str | None = None,
+        event_log: Path | None = None,
+    ) -> SurfaceRunResult:
+        import subprocess
+
+        del layout, session_id, model, brief, provider_session_id, event_log
+        cmd = list(launched.args or ())
+        try:
+            proc = subprocess.run(  # noqa: S603 — argv comes from the plan, not a shell
+                cmd,
+                cwd=work_dir,
+                env=env or None,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return SurfaceRunResult(
+                exit_code=124,
+                stdout=_stream_text(exc.stdout or ""),
+                stderr=(exc.stderr or "") if isinstance(exc.stderr, str) else "",
+                timed_out=True,
+                error=f"kimi -p timed out after {timeout_s}s",
+            )
+        except OSError as exc:
+            return SurfaceRunResult(
+                exit_code=127, stdout="", stderr="", timed_out=False, error=str(exc)
+            )
+
+        stream = _stream_lines(proc.stdout or "")
+        found = next(
+            (
+                str(obj["session_id"])
+                for obj in stream
+                if obj.get("role") == "meta"
+                and obj.get("type") == "session.resume_hint"
+                and obj.get("session_id")
+            ),
+            None,
+        )
+        metrics.record(
+            {
+                "kimi_session_id": found or "",
+                "num_turns": sum(1 for obj in stream if obj.get("role") == "assistant"),
+                "stop_reason": "completed" if proc.returncode == 0 else "error",
+            }
+        )
+        return SurfaceRunResult(
+            exit_code=proc.returncode,
+            stdout="".join(
+                str(obj.get("content") or "")
+                for obj in stream
+                if obj.get("role") == "assistant" and isinstance(obj.get("content"), str)
+            ),
+            stderr=proc.stderr or "",
+            timed_out=False,
+            error=None if proc.returncode == 0 else f"kimi -p exited {proc.returncode}",
+        )
+
+
+def _stream_lines(raw: str) -> list[dict]:
+    out = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            out.append(obj)
+    return out
+
+
+def _stream_text(raw: str) -> str:
+    """The assistant text of a stream-json run — what the transcript records."""
+    return "".join(
+        str(obj.get("content") or "")
+        for obj in _stream_lines(raw)
+        if obj.get("role") == "assistant" and isinstance(obj.get("content"), str)
+    )
