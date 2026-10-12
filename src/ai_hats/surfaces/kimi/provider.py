@@ -139,19 +139,36 @@ class KimiSurface(Surface):
     ) -> list[Path]:
         from ai_hats.paths import resolve_transcript
 
-        del cwd  # kimi keys sessions by working directory, ours is identified by id
-        sessions_dir = kimi_home() / "sessions"
-        exact = None
-        if provider_session_id:
-            matches = sorted(sessions_dir.glob(f"*/{provider_session_id}/agents/main/wire.jsonl"))
-            exact = matches[0] if matches else None
-        return resolve_transcript(
-            sessions_dir,
-            "*/agents/main/wire.jsonl",
-            session_id,
-            exact_path=exact,
-            end_ts=end_ts,
-        )
+        # Hooks relocate KIMI_CODE_HOME into the session cache, so a hooked
+        # session's wire.jsonl lives there — the global home is the fallback.
+        roots = [kimi_home() / "sessions"]
+        try:
+            session_home = (
+                ProjectLayout.compute(cwd, os.environ).cache.session(session_id)
+                / "kimi-home"
+                / "sessions"
+            )
+            if session_home not in roots:
+                roots.insert(0, session_home)
+        except (OSError, ValueError):  # no layout for this cwd — global root still answers
+            pass
+        for sessions_dir in roots:
+            exact = None
+            if provider_session_id:
+                matches = sorted(
+                    sessions_dir.glob(f"*/{provider_session_id}/agents/main/wire.jsonl")
+                )
+                exact = matches[0] if matches else None
+            found = resolve_transcript(
+                sessions_dir,
+                "*/agents/main/wire.jsonl",
+                session_id,
+                exact_path=exact,
+                end_ts=end_ts,
+            )
+            if found:
+                return found
+        return []
 
     # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 
@@ -165,6 +182,8 @@ class KimiSurface(Surface):
         layout: ProjectLayout,
         host: Host,
     ) -> MaterializationPlan:
+        from .runtime_hooks import plan_hooks
+
         mode = RunMode(run_mode)
         skills_dir = root / "skills"
         prompt = composition.prompt  # kimi adds no block of its own
@@ -176,6 +195,12 @@ class KimiSurface(Surface):
         env: dict[str, str] = {}
         if dirs := path_dirs(composition, skills_dir):
             env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
+        if policy.hooks and (
+            hooked := plan_hooks(composition, root, host, layout=layout, skills_dir=skills_dir)
+        ):
+            hook_entries, hook_env = hooked
+            entries += hook_entries
+            env.update(hook_env)
         env.update(self.get_env(root, layout))
         return MaterializationPlan(
             composition=composition,

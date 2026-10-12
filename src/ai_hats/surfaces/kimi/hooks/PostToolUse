@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Same contract as the PreToolUse shim; PostToolUse under kimi is
+# observation-only (fire-and-forget), so a refusal here reaches the gate log
+# but cannot un-run the call.
+set -uo pipefail
+
+if [[ -n "${AI_HATS_GATE_BROKEN_ACK:-}" ]]; then
+    printf '%s\n' "ai-hats: gate SKIPPED (hatch) — AI_HATS_GATE_BROKEN_ACK set" >&2
+    exit 0
+fi
+
+if [[ -z "${AI_HATS_PYTHON:-}" ]]; then
+    printf '%s\n' "ai-hats-kimi-hook: AI_HATS_PYTHON is unset, so no gate can be consulted; restart the session" >&2
+    printf '%s\n' "ai-hats: this gate could not run — set AI_HATS_GATE_BROKEN_ACK=1 to proceed past it" >&2
+    exit 2
+fi
+
+exec "$AI_HATS_PYTHON" -m ai_hats.surfaces.kimi.hook_dispatcher PostToolUse
