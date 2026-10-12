@@ -26,6 +26,7 @@ from ..plan import CompositionPlan, Host, Launch, MaterializationPlan
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
     from ai_hats_observe.canonical.signals import Signal
+    from ai_hats_observe.parsers.base import TranscriptParser
 
     from ai_hats.surfaces import SurfaceHint
 
@@ -111,6 +112,12 @@ class KimiSurface(Surface):
                 description="Auto-approve regular tool calls; the agent may still ask questions.",
             ),
         ]
+
+    def transcript_parser(self) -> TranscriptParser:
+        # Lazy import: provider discovery must not eager-load observe parsers.
+        from .parser import KimiParser
+
+        return KimiParser()
 
     def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
         """Probe CLI/credential readiness without reading or changing kimi config."""
