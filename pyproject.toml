@@ -99,6 +99,7 @@ agy = "ai_hats.surfaces.agy.provider:AgySurface"
 claude = "ai_hats.surfaces.claude.provider:ClaudeSurface"
 cline = "ai_hats.surfaces.cline.provider:ClineSurface"
 codex = "ai_hats.surfaces.codex.provider:CodexSurface"
+kimi = "ai_hats.surfaces.kimi.provider:KimiSurface"
 opencode = "ai_hats.surfaces.opencode.provider:OpenCodeSurface"
 
 # HATS-1038 C1: the rack CLI discovers this factory by metadata (never imports
