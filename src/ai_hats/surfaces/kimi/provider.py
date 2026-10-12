@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
@@ -24,6 +25,7 @@ from ai_hats.session_artifacts import RunMode, SessionPolicy
 from .. import MetricsSink, SubagentEngine, SurfaceRunResult
 from ..mirror import mirror_entries, path_dirs
 from ..plan import CompositionPlan, Host, Launch, Launched, MaterializationPlan
+from .home import kimi_home
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -33,15 +35,11 @@ if TYPE_CHECKING:
     from ai_hats.surfaces import SurfaceHint
     from ai_hats.debt import SessionId
 
-KIMI_HOME_ENV = "KIMI_CODE_HOME"
 READINESS_SOURCE = "kimi/readiness"
 
 
-def kimi_home() -> Path:
-    """``$KIMI_CODE_HOME`` or ``~/.kimi-code`` — kimi's own relocation rule."""
-    from ai_hats.paths import tool_home
-
-    return tool_home("kimi-code", KIMI_HOME_ENV)
+def subprocess_run(*args, **kwargs):
+    return subprocess.run(*args, **kwargs)  # noqa: S603 — argv from the plan, not a shell
 
 
 def _readiness_findings(
@@ -261,6 +259,11 @@ class KimiSubagentEngine(SubagentEngine):
     stream's ``session.resume_hint`` meta line.
     """
 
+    def __init__(self, *, run=subprocess_run) -> None:
+        # The subprocess call is a seam: a test drives the engine by handing in
+        # its own, instead of patching the module under test.
+        self._run = run
+
     def run(
         self,
         *,
@@ -276,12 +279,10 @@ class KimiSubagentEngine(SubagentEngine):
         provider_session_id: str | None = None,
         event_log: Path | None = None,
     ) -> SurfaceRunResult:
-        import subprocess
-
         del layout, session_id, model, brief, provider_session_id, event_log
         cmd = list(launched.args or ())
         try:
-            proc = subprocess.run(  # noqa: S603 — argv comes from the plan, not a shell
+            proc = self._run(
                 cmd,
                 cwd=work_dir,
                 env=env or None,

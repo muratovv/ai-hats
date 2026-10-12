@@ -29,7 +29,7 @@ from ai_hats.materialization import (
 from ..hook_channel import BINDABLE_EVENTS
 from ..mirror import manifest_rows
 from ..plan import CompositionPlan, Host
-from .provider import kimi_home
+from .home import kimi_home
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def plan_hooks(
     if "PostToolUse" in hooks:
         logger.warning(
             "kimi: PostToolUse is observation-only (stdout never reaches the "
-            "model) — composed nudge hooks will not nudge; see HATS-2061"
+            "model) — composed nudge hooks will not nudge"
         )
     session_home = root / SESSION_HOME_SUBPATH
     hooks_dir = root / "hooks"

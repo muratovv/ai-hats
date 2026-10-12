@@ -1,4 +1,4 @@
-"""Kimi Code surface — Moonshot's `kimi` CLI as an ai-hats harness (HATS-2059)."""
+"""Kimi Code surface — Moonshot's `kimi` CLI as an ai-hats harness."""
 
 from .provider import KimiSurface
 

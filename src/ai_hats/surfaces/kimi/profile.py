@@ -20,8 +20,8 @@ PROFILE = SurfaceProfile(
     manifest_subpath=(),
     skills_subpath=("skills",),
     # PostToolUse stdout never reaches the model under kimi — nudges are
-    # fire-and-forget, so the dialect refuses to carry them. HATS-2061 owns a
-    # real nudge channel.
+    # fire-and-forget, so the dialect refuses to carry them.
+    # TODO(HATS-2061): a real nudge channel.
     speaks=Dialect(
         can_ask=False, can_ask_with_ticket=False, can_deny_after=False, can_carry_nudges=False
     ),

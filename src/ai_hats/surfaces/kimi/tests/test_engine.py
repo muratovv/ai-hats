@@ -1,5 +1,5 @@
-"""KimiSubagentEngine tests — the NDJSON stream from the HATS-2059 spike drives
-a stubbed subprocess; no real kimi, no auth."""
+"""KimiSubagentEngine tests — a recorded NDJSON stream drives an injected
+runner; no real kimi, no auth."""
 
 from __future__ import annotations
 
@@ -27,12 +27,14 @@ class _Metrics:
         self.values.update(values)
 
 
-def _run(engine, monkeypatch, *, returncode=0, stdout=_STREAM, stderr=""):
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess(a[0], returncode, stdout, stderr),
-    )
+def _engine(stdout=_STREAM, returncode=0, stderr=""):
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], returncode, stdout, stderr)
+
+    return KimiSubagentEngine(run=fake_run)
+
+
+def _run(engine):
     metrics = _Metrics()
     result = engine.run(
         layout=SimpleNamespace(),
@@ -48,8 +50,8 @@ def _run(engine, monkeypatch, *, returncode=0, stdout=_STREAM, stderr=""):
     return result, metrics
 
 
-def test_completed_run_extracts_text_and_session_id(monkeypatch):
-    result, metrics = _run(KimiSubagentEngine(), monkeypatch)
+def test_completed_run_extracts_text_and_session_id():
+    result, metrics = _run(_engine())
     assert result.exit_code == 0
     assert result.stdout == "done"
     assert result.error is None
@@ -58,36 +60,24 @@ def test_completed_run_extracts_text_and_session_id(monkeypatch):
     assert metrics.values["stop_reason"] == "completed"
 
 
-def test_failed_run_carries_exit_code(monkeypatch):
-    result, metrics = _run(KimiSubagentEngine(), monkeypatch, returncode=1, stdout="")
+def test_failed_run_carries_exit_code():
+    result, metrics = _run(_engine(returncode=1, stdout=""))
     assert result.exit_code == 1
     assert result.error
     assert metrics.values["stop_reason"] == "error"
     assert metrics.values["kimi_session_id"] == ""
 
 
-def test_timeout_is_reported(monkeypatch):
-    def _timeout(*a, **k):
+def test_timeout_is_reported():
+    def fake_run(*args, **kwargs):
         raise subprocess.TimeoutExpired(cmd="kimi", timeout=30)
 
-    monkeypatch.setattr(subprocess, "run", _timeout)
-    metrics = _Metrics()
-    result = KimiSubagentEngine().run(
-        layout=SimpleNamespace(),
-        work_dir=Path("/wd"),
-        session_id="sid",
-        env={},
-        model=None,
-        timeout_s=30,
-        metrics=metrics,
-        launched=SimpleNamespace(args=("kimi", "-p", "brief")),
-        brief="brief",
-    )
+    result, _ = _run(KimiSubagentEngine(run=fake_run))
     assert result.timed_out is True
     assert result.exit_code == 124
 
 
-def test_malformed_stream_lines_are_skipped(monkeypatch):
+def test_malformed_stream_lines_are_skipped():
     noisy = 'not json\n{"role":"assistant","content":"ok"}\n{"broken\n'
-    result, _ = _run(KimiSubagentEngine(), monkeypatch, stdout=noisy)
+    result, _ = _run(_engine(stdout=noisy))
     assert result.stdout == "ok"

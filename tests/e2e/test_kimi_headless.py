@@ -3,7 +3,7 @@
 flow:   ai-hats driving the real `kimi` CLI headless against a per-session
         KIMI_CODE_HOME (the shape plan_hooks materializes), then reading the
         session record it left
-cmds:   kimi --auto --output-format=stream-json -p "<prompt>"  (argv built by
+cmds:   kimi --output-format=stream-json -p "<prompt>"  (argv built by
         KimiSurface.get_run_command)
 expect: exit 0, an assistant answer and a session.resume_hint meta line on
         stdout; wire.jsonl under the session home; KimiParser reads turns and
@@ -11,10 +11,9 @@ expect: exit 0, an assistant answer and a session.resume_hint meta line on
         call is refused and the model sees the reason.
 why:    this is the task's core acceptance — headless first-class — and the
         parser must prove itself on a record the real harness wrote, not only
-        on fixtures.
-
-Gated on a host with the kimi CLI and an OAuth login (Kimi subscription);
-skips everywhere else, like the codex auth lifecycle e2e.
+        on fixtures. Gated on a host with the kimi CLI and an OAuth login
+        (Kimi subscription); skips everywhere else, like the codex auth
+        lifecycle e2e.
 """  # comment-length: allow — the e2e flow/cmds/expect/why header is the contract
 
 from __future__ import annotations

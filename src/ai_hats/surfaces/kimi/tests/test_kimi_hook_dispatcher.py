@@ -1,5 +1,5 @@
 """Dispatcher tests for the kimi hook chain — kimi payloads are Claude-shaped
-except ``tool_input``, which arrives as a dict-repr string (HATS-2059 spike)."""
+except ``tool_input``, which arrives as a dict-repr string (measured live)."""
 
 from __future__ import annotations
 

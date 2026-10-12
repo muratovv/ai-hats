@@ -5242,3 +5242,17 @@ as a claim to check, not as evidence.
 
 - **expect** — the merge gate refuses naming `e2e-rack` — a stage no gate declares, demanded because the branch changed `packages/ai-hats-rack/`, or because it edited a test carrying that zone's marker — and the same branch with that one stage earned is let through; a branch that changed nothing zoned is never asked for it, and the done gate never asks at all
 - **why** — without it a change lands in master with only the tier that runs after the merge, so the tests its own area owns are first run when the breakage is already shared
+
+## `test_kimi_headless.py`
+
+*pins HATS-2059*
+
+- **flow** — ai-hats driving the real `kimi` CLI headless against a per-session `KIMI_CODE_HOME`, then reading the session record it left; and a composed deny guard refusing a Bash call
+- **cmds**
+
+  ```console
+  kimi --output-format=stream-json -p "Reply with exactly: ok"
+  ```
+
+- **expect** — exit 0, assistant answer + `session.resume_hint` meta on stdout, `wire.jsonl` under the session home parsed by `KimiParser` (turns + token telemetry); with a `[[hooks]]` deny guard the refusal reason reaches the model and no tool output lands
+- **why** — headless is the kimi surface's day-one acceptance: the SubAgentRunner contract and the audit pipeline must hold on records the real harness writes, not only on fixtures; gated on a host with the kimi CLI and an OAuth login, skips elsewhere

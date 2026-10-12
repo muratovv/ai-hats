@@ -33,6 +33,10 @@ REWORDED_PROMPT_WRITES = {
     ("agy", RunMode.AUTOMATE): [],
     ("cline", RunMode.HITL): [],
     ("cline", RunMode.AUTOMATE): [],
+    # kimi hands the prompt nowhere on disk: HITL reads the project AGENTS.md
+    # (set_role, outside the plan), AUTOMATE carries it in the argv token.
+    ("kimi", RunMode.HITL): [],
+    ("kimi", RunMode.AUTOMATE): [],
 }
 
 
@@ -54,6 +58,8 @@ def maintainer(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     # agy registers its dispatcher in the person's settings — a home of the test's own.
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(tmp_path / "gemini-home"))
+    # kimi snapshots the person's config into the session home — pin it too.
+    monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "kimi-home"))
     project = tmp_path / "proj"
     project.mkdir()
     asm = Assembler(project)
