@@ -28,9 +28,19 @@ set -uo pipefail
 point="${AI_HATS_HOOK_POINT:-}"
 project_dir="${AI_HATS_PROJECT_DIR:-$PWD}"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=bypass_journal.sh
+if ! . "${SCRIPT_DIR}/bypass_journal.sh" 2>/dev/null; then
+    ai_hats_journal_catch() {
+        echo "[catch-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
+fi
+
 refuse() {
     # stdout, not stderr — the channel reads the verdict from there.
     echo "merge-order check: REFUSED — $1"
+    ai_hats_journal_catch merge-order "$point" "$1"
     exit 2
 }
 
@@ -89,21 +99,32 @@ if [[ "$point" == *'->review' ]]; then
     [[ -n "$id" ]] || refuse "no AI_HATS_TASK_ID in the hook envelope — cannot verify the review diff is alive (fail-closed)."
     branch="task/$(tr '[:upper:]' '[:lower:]' <<<"$id")"
 
-    # Base branch: the local one wtr-style diffs are computed against.
-    base=""
-    for candidate in master main; do
-        if git -C "$project_dir" show-ref --verify --quiet "refs/heads/$candidate"; then
-            base="$candidate"
-            break
-        fi
-    done
-    [[ -n "$base" ]] || refuse "no local master/main in $project_dir — cannot verify the review diff is alive (fail-closed)."
+    # A non-git project has no merge mechanics at all — nothing to blind.
+    git -C "$project_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+
+    # The base is what `wt merge` lands into (HATS-942): the checkout's current
+    # HEAD branch, master/main as the fallback for a detached HEAD. A repo with
+    # no nameable base gets no verdict here — the pre-merge state check above
+    # holds the primary invariant and does not depend on the base's name.
+    base="$(git -C "$project_dir" symbolic-ref --short HEAD 2>/dev/null || true)"
+    if [[ -z "$base" ]]; then
+        for candidate in master main; do
+            if git -C "$project_dir" show-ref --verify --quiet "refs/heads/$candidate"; then
+                base="$candidate"
+                break
+            fi
+        done
+    fi
+    if [[ -z "$base" ]]; then
+        echo "merge-order check: no base branch nameable in $project_dir — the containment test does not apply" >&2
+        exit 0
+    fi
 
     if ! git -C "$project_dir" show-ref --verify --quiet "refs/heads/$branch"; then
         # No task branch at all — nothing to blind (docs-only card, etc.).
         exit 0
     fi
-    if git -C "$project_dir" merge-base --is-ancestor "$branch" "$base"; then
+    if [[ "$branch" != "$base" ]] && git -C "$project_dir" merge-base --is-ancestor "$branch" "$base"; then
         refuse "$branch is already fully contained in $base — the review diff vs merge-base is empty by construction (PROX-619). The card cannot enter review blind; un-merge (or rebase the branch onto $base with new changes) first."
     fi
     exit 0
