@@ -40,9 +40,11 @@ def test_name_and_detection():
     assert surface.detected_home_dirs() == [".kimi-code"]
 
 
-def test_system_prompt_path_is_project_agents_md():
+def test_system_prompt_path_is_unmanaged():
+    """The role rides the session home's AGENTS.md only — a project-level
+    managed block would double-deliver it (kimi injects both files)."""
     layout = SimpleNamespace(root=Path("/proj"))
-    assert KimiSurface().system_prompt_path(layout) == Path("/proj/AGENTS.md")
+    assert KimiSurface().system_prompt_path(layout) is None
 
 
 def test_build_system_prompt_composes_sections():

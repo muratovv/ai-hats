@@ -125,8 +125,12 @@ class KimiSurface(Surface):
         return _readiness_findings(environ)
 
     def system_prompt_path(self, layout: ProjectLayout) -> Path | None:
-        """Kimi reads the project AGENTS.md natively — the managed block lands there."""
-        return layout.root / "AGENTS.md"
+        """Kimi receives the role via the session home's AGENTS.md; no project
+        file is managed. Managing `<project>/AGENTS.md` too would deliver the
+        role twice (kimi injects both files) and leak the managed block into
+        claude/codex sessions, which read AGENTS.md natively as well."""
+        del layout
+        return None
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
