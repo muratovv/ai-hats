@@ -52,6 +52,7 @@ def settings(project: Path) -> Path:
 
 
 def test_chain_denies_raw_merge_on_master(project: Path, settings: Path) -> None:
+    """The PROX-619 spelling, denied with the managed road named (HATS-2062)."""
     verdict = run_chain(project, "git merge task/prox-619", settings=settings, cwd=project)
     assert verdict.denied, verdict
     assert verdict.hook == GUARD

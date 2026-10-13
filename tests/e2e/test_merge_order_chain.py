@@ -159,7 +159,7 @@ def test_review_edge_refuses_a_pre_merged_branch(project: Path, env: dict) -> No
 
 def test_the_review_road_merges(project: Path, env: dict) -> None:
     """Positive control: the sanctioned chain — execute → document → review →
-    consented merge — lands the branch in master."""
+    consented merge — lands the branch in master (HATS-2062)."""
     card = _card_id(project, env)
     _to_execute(project, env, card)
     _commit_in_worktree(project, card)
