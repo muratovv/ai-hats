@@ -898,8 +898,7 @@ def test_task_list_table_filters(cli_project, monkeypatch, tmp_path):
 
     lib = tmp_path / "library"
     shutil.copytree(
-        Path(__file__).resolve().parents[1]
-        / "packages/ai-hats-library/src/ai_hats_library",
+        Path(__file__).resolve().parents[1] / "packages/ai-hats-library/src/ai_hats_library",
         lib,
         ignore=shutil.ignore_patterns("__pycache__"),
     )
