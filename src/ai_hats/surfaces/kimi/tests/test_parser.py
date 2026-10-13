@@ -67,6 +67,44 @@ def test_parsed_event_shape_violation_flags_drift(tmp_path: Path):
     assert any(s.reason == "unsupported_record" for s in parsed.signals)
 
 
+def test_non_object_part_flags_drift_and_drops_no_turn(tmp_path: Path):
+    """A scalar `part` in content.part must flag drift, not raise — and the
+    turn already collected must survive (drift is a signal, never an exception)."""
+    wire = tmp_path / "wire.jsonl"
+    wire.write_text(
+        '{"type":"metadata","protocol_version":1}\n'
+        '{"type":"turn.prompt","input":[{"type":"text","text":"hi"}],"time":1}\n'
+        '{"type":"context.append_loop_event","event":{"type":"content.part","part":"oops"},"time":2}\n'
+        '{"type":"context.append_loop_event","event":{"type":"content.part",'
+        '"part":{"type":"text","text":"ok"}},"time":3}\n'
+    )
+    parsed = KimiParser().parse(wire, tmp_path / "t.trace")
+    assert "schema-drift" in parsed.flags
+    assert any(s.reason == "unsupported_record" for s in parsed.signals)
+    assert parsed.turns[0].response == "ok"
+
+
+def test_non_numeric_usage_value_flags_drift_without_partial_counts(tmp_path: Path):
+    wire = tmp_path / "wire.jsonl"
+    wire.write_text(
+        '{"type":"metadata","protocol_version":1}\n'
+        '{"type":"usage.record","model":"m","usage":{"inputOther":10,"output":"lots"},"time":1}\n'
+        '{"type":"usage.record","model":"m","usage":{"inputOther":10,"output":5},"time":2}\n'
+    )
+    parsed = KimiParser().parse(wire, tmp_path / "t.trace")
+    assert "schema-drift" in parsed.flags
+    # The malformed row is dropped whole — no partial in/out counted.
+    assert parsed.model_stats["m"] == {"in": 10, "out": 5, "calls": 1}
+    assert parsed.agg_usage["output_tokens"] == 5
+
+
+def test_non_object_record_flags_drift(tmp_path: Path):
+    wire = tmp_path / "wire.jsonl"
+    wire.write_text('{"type":"metadata","protocol_version":1}\n[1,2,3]\n"a string"\n')
+    parsed = KimiParser().parse(wire, tmp_path / "t.trace")
+    assert "schema-drift" in parsed.flags
+
+
 def test_unknown_protocol_version_flags_drift(tmp_path: Path):
     wire = tmp_path / "wire.jsonl"
     wire.write_text('{"type":"metadata","protocol_version":99}\n')

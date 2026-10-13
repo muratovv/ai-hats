@@ -83,6 +83,9 @@ class KimiParser:
                 except ValueError:
                     drift(f"{path.name}:{lineno}: unparsable line")
                     continue
+                if not isinstance(event, dict):
+                    drift(f"{path.name}:{lineno}: record is not an object")
+                    continue
                 etype = event.get("type")
                 if etype == "metadata":
                     # "1.4" — the major is the breaking-change anchor.
@@ -110,7 +113,10 @@ class KimiParser:
                         continue
                     kind = loop.get("type")
                     if kind == "content.part" and turns:
-                        part = loop.get("part") or {}
+                        part = loop.get("part")
+                        if not isinstance(part, dict):
+                            drift("content.part carries no part object")
+                            continue
                         if part.get("type") == "text":
                             turns[-1].response += str(part.get("text", ""))
                         elif part.get("type") == "think":
@@ -122,13 +128,21 @@ class KimiParser:
                     if not isinstance(usage, dict):
                         drift("usage.record carries no usage object")
                         continue
+                    try:
+                        amounts = {
+                            key: int(usage.get(key, 0) or 0)
+                            for key in ("inputOther", "output", *_USAGE_MAP)
+                        }
+                    except (TypeError, ValueError):
+                        drift("usage.record carries a non-numeric usage value")
+                        continue
                     model = str(event.get("model") or "unknown")
                     row = stats.setdefault(model, {"in": 0, "out": 0, "calls": 0})
                     row["calls"] += 1
-                    row["in"] += int(usage.get("inputOther", 0) or 0)
-                    row["out"] += int(usage.get("output", 0) or 0)
+                    row["in"] += amounts["inputOther"]
+                    row["out"] += amounts["output"]
                     for kimi_key, canonical in _USAGE_MAP.items():
-                        agg[canonical] += int(usage.get(kimi_key, 0) or 0)
+                        agg[canonical] += amounts[kimi_key]
 
         parsed = ParsedTranscript(
             turns=turns,
