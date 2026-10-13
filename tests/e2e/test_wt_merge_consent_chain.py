@@ -30,7 +30,15 @@ TICKET_ENV = "AI_HATS_CONSENT_TICKET"
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
-    """A checkout on `master` that `ai-hats wt` can drive."""
+    """A checkout on `master` that `ai-hats wt` can drive.
+
+    The library is seeded INTO the sandbox: trait-agent now binds real check
+    scripts (HATS-2062), and a suite running from a linked worktree would hand
+    check resolution a worktree-rooted library — refused by ADR-0019 D9 clause
+    4 before any check runs.
+    """
+    import shutil
+
     from ai_hats.assembler import Assembler
     from ai_hats.models import ProjectConfig
 
@@ -39,7 +47,16 @@ def project(tmp_path: Path) -> Path:
     root = tmp_path / "proj"
     root.mkdir()
     init_repo(root, branch="master")
-    ProjectConfig(provider="claude", library_paths=[]).save(root / "ai-hats.yaml")
+    lib = tmp_path / "library"
+    shutil.copytree(
+        REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library",
+        lib,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    # A library ROOT holds roles/ skills/ … directly — the shipped layers are
+    # the roots here, not the package dir that contains them.
+    layers = [str(lib / layer) for layer in ("core", "usage", "ai-hats-dev")]
+    ProjectConfig(provider="claude", library_paths=layers).save(root / "ai-hats.yaml")
     Assembler(root).init()
     return root
 
@@ -65,7 +82,17 @@ def env(project: Path, tmp_path: Path, checkout_bin: Path) -> dict:
     # The approved command line says `ai-hats`, so a real one has to be on PATH:
     # the console script is no longer built (HATS-790), the shim is it.
     e["PATH"] = os.pathsep.join([str(checkout_bin), e.get("PATH", "")])
-    return stand_in_wrapped_session(e, project, "e2e-wt-merge-consent")
+    planted = stand_in_wrapped_session(e, project, "e2e-wt-merge-consent")
+    # trait-agent now binds real check scripts at wt:pre-merge (HATS-2062), and
+    # check resolution reads the session mirror, which a stand-in does not
+    # materialize — plant the one skill the rows name, as a launch would.
+    import shutil
+
+    shutil.copytree(
+        tmp_path / "library/core/skills/safety-guard",
+        project / ".agent/ai-hats/sessions/runs/e2e-wt-merge-consent/skills/safety-guard",
+    )
+    return planted
 
 
 @pytest.fixture

@@ -30,6 +30,17 @@ composition:
   # the path below consent_gate; `at` is the selector its adapter matches.
   # Rack, wt and their gate rows never read this policy (ADR-0030 D3).
   apps:
+    rack:
+      tasks:
+        # A card enters review only with a live review diff (HATS-2062).
+        - run: safety-guard/hooks/merge_order_check.sh
+          at: ['->review']
+          on_error: refuse
+    wt:
+      # A task branch merges only on the review road (HATS-2062).
+      - run: safety-guard/hooks/merge_order_check.sh
+        at: [pre-merge]
+        on_error: refuse
     consent_gate:
       rack.transition:
         - at: ['plan->execute', '->done']
