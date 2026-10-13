@@ -1,12 +1,10 @@
 """Kimi wire.jsonl parser — the surface's event-sourced session record.
 
-Kimi appends one JSON event per line: ``turn.prompt`` opens a turn,
-``context.append_loop_event`` carries the loop (content.part text/think,
-tool.call/result, step.end), ``usage.record`` reports per-model tokens per
-scope, and ``metadata.protocol_version`` is the churn anchor — an unknown
-version or event type surfaces as a flag + UNSUPPORTED_RECORD signal, never a
-silent misread and never an exception (a crashing parser would kill the whole
-audit write).
+Reads ``turn.prompt`` / ``context.append_loop_event`` / ``usage.record`` /
+``metadata.protocol_version``. An unknown protocol major, unparsable line, or
+a shape change in a PARSED event is a flag + UNSUPPORTED_RECORD signal, never
+an exception; an unknown top-level type is additive evolution and passes
+silently — a full session emits dozens of types this parser never reads.
 """
 
 from __future__ import annotations
@@ -23,19 +21,6 @@ from ai_hats_observe.parsers.trace import TraceParser
 logger = logging.getLogger(__name__)
 
 KNOWN_PROTOCOL_MAJORS = {1}
-# Events the parser reads or deliberately ignores — anything else is drift.
-KNOWN_EVENTS = {
-    "metadata",
-    "config.update",
-    "turn.prompt",
-    "context.append_message",
-    "context.append_loop_event",
-    "llm.request",
-    "llm.tools_snapshot",
-    "tools.set_active_tools",
-    "permission.set_mode",
-    "usage.record",
-}
 
 _USAGE_MAP = {
     "inputOther": "input_tokens",
@@ -76,7 +61,6 @@ class KimiParser:
         }
         flags: list[str] = []
         signals: list[Notice] = []
-        unknown: set[str] = set()
 
         def drift(detail: str) -> None:
             flags.append("schema-drift")
@@ -106,10 +90,13 @@ class KimiParser:
                     if not major.isdigit() or int(major) not in KNOWN_PROTOCOL_MAJORS:
                         drift(f"unknown wire protocol_version: {event.get('protocol_version')!r}")
                     continue
-                if etype not in KNOWN_EVENTS:
-                    unknown.add(str(etype))
-                    continue
+                # Unknown types are additive evolution, not drift: a full
+                # session emits dozens of types the parser never reads. Drift
+                # is a SHAPE change in an event the parser depends on.
                 if etype == "turn.prompt":
+                    if not isinstance(event.get("input"), list):
+                        drift("turn.prompt carries no input list")
+                        continue
                     text = " ".join(
                         str(part.get("text", ""))
                         for part in event.get("input") or []
@@ -117,7 +104,10 @@ class KimiParser:
                     )
                     turns.append(Turn(timestamp=_ts(event.get("time")), user_input=text))
                 elif etype == "context.append_loop_event":
-                    loop = event.get("event") or {}
+                    loop = event.get("event")
+                    if not isinstance(loop, dict):
+                        drift("context.append_loop_event carries no event object")
+                        continue
                     kind = loop.get("type")
                     if kind == "content.part" and turns:
                         part = loop.get("part") or {}
@@ -128,17 +118,17 @@ class KimiParser:
                     elif kind == "tool.call" and turns:
                         turns[-1].tools.append(str(loop.get("name", "")))
                 elif etype == "usage.record":
+                    usage = event.get("usage")
+                    if not isinstance(usage, dict):
+                        drift("usage.record carries no usage object")
+                        continue
                     model = str(event.get("model") or "unknown")
                     row = stats.setdefault(model, {"in": 0, "out": 0, "calls": 0})
-                    usage = event.get("usage") or {}
                     row["calls"] += 1
                     row["in"] += int(usage.get("inputOther", 0) or 0)
                     row["out"] += int(usage.get("output", 0) or 0)
                     for kimi_key, canonical in _USAGE_MAP.items():
                         agg[canonical] += int(usage.get(kimi_key, 0) or 0)
-
-        for etype in sorted(unknown):
-            drift(f"unknown wire event type: {etype}")
 
         parsed = ParsedTranscript(
             turns=turns,

@@ -37,10 +37,30 @@ def test_parse_simple_session():
     assert parsed.agg_usage["output_tokens"] > 0
 
 
-def test_unknown_event_type_flags_drift(tmp_path: Path):
+def test_parse_full_session_with_additive_event_types():
+    """A real full session emits ~10 event types beyond the spike's minimum —
+    additive types must not read as drift (the gate-run record, sanitized)."""
+    parsed = KimiParser().parse(_fixture("wire-full-session.jsonl"), Path("/nonexistent.trace"))
+    assert len(parsed.turns) == 1
+    assert parsed.turns[0].response.strip() == "ok"
+    assert parsed.agg_usage["output_tokens"] > 0
+    assert "schema-drift" not in parsed.flags
+
+
+def test_unknown_event_type_is_additive_noise_not_drift(tmp_path: Path):
     wire = tmp_path / "wire.jsonl"
     wire.write_text(
         '{"type":"metadata","protocol_version":1}\n{"type":"brand.new.event","time":1}\n'
+    )
+    parsed = KimiParser().parse(wire, tmp_path / "t.trace")
+    assert "schema-drift" not in parsed.flags
+
+
+def test_parsed_event_shape_violation_flags_drift(tmp_path: Path):
+    wire = tmp_path / "wire.jsonl"
+    wire.write_text(
+        '{"type":"metadata","protocol_version":1}\n'
+        '{"type":"usage.record","model":"m","usage":"oops","time":1}\n'
     )
     parsed = KimiParser().parse(wire, tmp_path / "t.trace")
     assert "schema-drift" in parsed.flags
