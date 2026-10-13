@@ -147,36 +147,21 @@ class KimiSurface(Surface):
     ) -> list[Path]:
         from ai_hats.paths import resolve_transcript
 
-        # Hooks relocate KIMI_CODE_HOME into the session cache, so a hooked
-        # session's wire.jsonl lives there — the global home is the fallback.
-        roots = [kimi_home() / "sessions"]
-        try:
-            session_home = (
-                ProjectLayout.compute(cwd, os.environ).cache.session(session_id)
-                / "kimi-home"
-                / "sessions"
-            )
-            if session_home not in roots:
-                roots.insert(0, session_home)
-        except (OSError, ValueError):  # no layout for this cwd — global root still answers
-            pass
-        for sessions_dir in roots:
-            exact = None
-            if provider_session_id:
-                matches = sorted(
-                    sessions_dir.glob(f"*/{provider_session_id}/agents/main/wire.jsonl")
-                )
-                exact = matches[0] if matches else None
-            found = resolve_transcript(
-                sessions_dir,
-                "*/agents/main/wire.jsonl",
-                session_id,
-                exact_path=exact,
-                end_ts=end_ts,
-            )
-            if found:
-                return found
-        return []
+        # The session home's sessions/ is a symlink into the global home, so
+        # every wire.jsonl — hooked session or not — lands in one place.
+        del cwd
+        sessions_dir = kimi_home() / "sessions"
+        exact = None
+        if provider_session_id:
+            matches = sorted(sessions_dir.glob(f"*/{provider_session_id}/agents/main/wire.jsonl"))
+            exact = matches[0] if matches else None
+        return resolve_transcript(
+            sessions_dir,
+            "*/*/agents/main/wire.jsonl",
+            session_id,
+            exact_path=exact,
+            end_ts=end_ts,
+        )
 
     # -- the plan (ADR-0036 D2): entries, env and launch from the composition half --
 
@@ -291,7 +276,9 @@ class KimiSubagentEngine(SubagentEngine):
             proc = self._run(
                 cmd,
                 cwd=work_dir,
-                env=env or None,
+                # `env` is ai-hats' ADDITIONS, not a whole environment — merge
+                # over the inherited one or the child has no PATH at all.
+                env={**os.environ, **env},
                 capture_output=True,
                 text=True,
                 timeout=timeout_s,
@@ -322,6 +309,8 @@ class KimiSubagentEngine(SubagentEngine):
         )
         metrics.record(
             {
+                # the generic key the finalize plumbing reads for the resolver
+                "provider_session_id": found or "",
                 "kimi_session_id": found or "",
                 "num_turns": sum(1 for obj in stream if obj.get("role") == "assistant"),
                 "stop_reason": "completed" if proc.returncode == 0 else "error",

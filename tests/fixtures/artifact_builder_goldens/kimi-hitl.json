@@ -101,6 +101,34 @@
       "target": "<cache>/sessions/dry-run/kimi-home"
     },
     {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<home>/.kimi-code/sessions"
+    },
+    {
+      "digest": null,
+      "kind": "symlink",
+      "size": null,
+      "source": "<home>/.kimi-code/sessions",
+      "target": "<cache>/sessions/dry-run/kimi-home/sessions"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<home>/.kimi-code/logs"
+    },
+    {
+      "digest": null,
+      "kind": "symlink",
+      "size": null,
+      "source": "<home>/.kimi-code/logs",
+      "target": "<cache>/sessions/dry-run/kimi-home/logs"
+    },
+    {
       "digest": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
       "kind": "write_text",
       "size": 1,

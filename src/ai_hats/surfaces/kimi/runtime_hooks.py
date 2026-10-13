@@ -5,12 +5,14 @@ instructions from ``$KIMI_CODE_HOME/AGENTS.md`` — both user-global files, so a
 per-session chain and role need a per-session home (the codex session-home
 pattern): the session's home carries a snapshot of the global config with the
 composed ``[[hooks]]`` appended, and symlinks ``credentials/`` back so OAuth
-keeps working. Sessions, logs and the wire transcript then land under the
-session cache too — ``resolve_transcript`` follows the same env.
-"""
+keeps working. ``sessions/`` and ``logs/`` also write through symlinks into
+the global home — the wire transcript must outlive the session cache, which
+the runner sweeps at run close.
+"""  # comment-length: allow — the per-session-home contract is the module's point
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from importlib.resources import files
@@ -94,6 +96,13 @@ def plan_session_home(
     credentials = global_home / "credentials"
     if credentials.is_dir():
         entries.append(describe_symlink(credentials, session_home / "credentials"))
+    # sessions/ and logs/ write THROUGH symlinks into the global home: the wire
+    # transcript must outlive the session cache (swept at run close), and
+    # `kimi -r` keeps working off the same records.
+    for sub in ("sessions", "logs"):
+        global_sub = global_home / sub
+        entries.append(dataclasses.replace(describe_mkdir(global_sub), escape=True))
+        entries.append(describe_symlink(global_sub, session_home / sub))
     if hooks:
         entries += [
             describe_write_executable(hooks_dir / name, shim_source(name)) for name in HOOK_SHIMS

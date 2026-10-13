@@ -56,6 +56,7 @@ def test_completed_run_extracts_text_and_session_id():
     assert result.stdout == "done"
     assert result.error is None
     assert metrics.values["kimi_session_id"] == "session_abc123"
+    assert metrics.values["provider_session_id"] == "session_abc123"
     assert metrics.values["num_turns"] == 2
     assert metrics.values["stop_reason"] == "completed"
 
@@ -81,3 +82,30 @@ def test_malformed_stream_lines_are_skipped():
     noisy = 'not json\n{"role":"assistant","content":"ok"}\n{"broken\n'
     result, _ = _run(_engine(stdout=noisy))
     assert result.stdout == "ok"
+
+
+def test_child_env_merges_additions_over_inherited(monkeypatch):
+    """The runner hands only ai-hats' additions; PATH & co. come from the
+    inherited environment — a wholesale replacement loses the binary itself."""
+    seen = {}
+
+    def fake_run(*args, **kwargs):
+        seen.update(kwargs.get("env") or {})
+        return subprocess.CompletedProcess(args[0], 0, _STREAM, "")
+
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    engine = KimiSubagentEngine(run=fake_run)
+    metrics = _Metrics()
+    engine.run(
+        layout=SimpleNamespace(),
+        work_dir=Path("/wd"),
+        session_id="sid",
+        env={"AI_HATS_SESSION_ID": "sid"},
+        model=None,
+        timeout_s=30,
+        metrics=metrics,
+        launched=SimpleNamespace(args=("kimi", "-p", "brief")),
+        brief="brief",
+    )
+    assert seen["AI_HATS_SESSION_ID"] == "sid"
+    assert seen["PATH"] == "/usr/bin:/bin"
