@@ -78,6 +78,25 @@ def test_timeout_is_reported():
     assert result.exit_code == 124
 
 
+def test_timeout_with_partial_bytes_output():
+    """TimeoutExpired.stdout is BYTES even under text=True on POSIX — the
+    partial stream must still yield its assistant text, not crash the branch."""
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd="kimi",
+            timeout=30,
+            output=b'{"role":"assistant","content":"half"}\n',
+            stderr=b"interrupted",
+        )
+
+    result, _ = _run(KimiSubagentEngine(run=fake_run))
+    assert result.timed_out is True
+    assert result.exit_code == 124
+    assert result.stdout == "half"
+    assert result.stderr == "interrupted"
+
+
 def test_malformed_stream_lines_are_skipped():
     noisy = 'not json\n{"role":"assistant","content":"ok"}\n{"broken\n'
     result, _ = _run(_engine(stdout=noisy))

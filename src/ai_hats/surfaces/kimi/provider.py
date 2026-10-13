@@ -286,8 +286,9 @@ class KimiSubagentEngine(SubagentEngine):
         except subprocess.TimeoutExpired as exc:
             return SurfaceRunResult(
                 exit_code=124,
-                stdout=_stream_text(exc.stdout or ""),
-                stderr=(exc.stderr or "") if isinstance(exc.stderr, str) else "",
+                # TimeoutExpired carries BYTES even under text=True on POSIX.
+                stdout=_stream_text(_as_text(exc.stdout)),
+                stderr=_as_text(exc.stderr),
                 timed_out=True,
                 error=f"kimi -p timed out after {timeout_s}s",
             )
@@ -327,6 +328,12 @@ class KimiSubagentEngine(SubagentEngine):
             timed_out=False,
             error=None if proc.returncode == 0 else f"kimi -p exited {proc.returncode}",
         )
+
+
+def _as_text(raw: str | bytes | None) -> str:
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return raw or ""
 
 
 def _stream_lines(raw: str) -> list[dict]:
