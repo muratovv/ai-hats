@@ -159,9 +159,7 @@ def test_deny_hard_without_claude_dialect(repo_on_master: Path) -> None:
 
 
 def test_no_payload_allows() -> None:
-    run = subprocess.run(
-        [str(GUARD)], input="", capture_output=True, text=True, timeout=20
-    )
+    run = subprocess.run([str(GUARD)], input="", capture_output=True, text=True, timeout=20)
     assert run.returncode == 0
 
 

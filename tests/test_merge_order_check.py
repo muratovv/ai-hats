@@ -53,9 +53,7 @@ def _rack(repo: Path, env: dict[str, str], *args: str) -> subprocess.CompletedPr
 
 
 def _run(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(CHECK)], env=env, capture_output=True, text=True, timeout=60
-    )
+    return subprocess.run([str(CHECK)], env=env, capture_output=True, text=True, timeout=60)
 
 
 @pytest.fixture
@@ -88,12 +86,8 @@ def _drive_state(repo: Path, target: str) -> None:
     env = _env(repo, "test-setup")
     for state in walk[: walk.index(target) + 1]:
         if state == "execute":
-            plan_md = (
-                repo / ".agent/ai-hats/tracker/backlog/tasks/TEST-001/plan.md"
-            )
-            plan_md.write_text(
-                plan_md.read_text(encoding="utf-8") + _PLAN_FILL, encoding="utf-8"
-            )
+            plan_md = repo / ".agent/ai-hats/tracker/backlog/tasks/TEST-001/plan.md"
+            plan_md.write_text(plan_md.read_text(encoding="utf-8") + _PLAN_FILL, encoding="utf-8")
             env["AI_HATS_PLAN_ACK"] = "1"
         moved = _rack(repo, env, "transition", "TEST-001", state)
         assert moved.returncode == 0, moved.stdout + moved.stderr
