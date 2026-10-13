@@ -62,6 +62,7 @@ injection: |
   ### Agent Protocol
   - Task cards follow the state machine `brainstorm → plan → execute → document → review → done`; never skip states.
   - **Stop at `review`**: Upon completing execution and docs, transition task to `review` and STOP. The reviewer/user drives `review → done`; never self-advance to `done`.
+  - **Merge point**: never merge a task branch into the base branch before the reviewer approves — a pre-review merge empties the supervisor's review diff by construction (merge-base becomes the branch tip). The merge runs on the `review → done` road via `ai-hats wt merge`, which checks the card state and asks the supervisor; a raw `git merge` of a task branch is hard-denied.
   - **Explicit Task IDs**: Always identify and output tasks by their full ID (e.g., `PROJ-042`) or full path to card (`.../tasks/PROJ-042/task.yaml`). Never refer to a task card using the generic filename "task.yaml" alone.
     - ✅ Correct: "Working on task PROJ-042", "Created card `.agent/ai-hats/tracker/backlog/tasks/PROJ-042/task.yaml`", "Tasks PROJ-101 and PROJ-102"
     - ❌ Incorrect: "Working on task.yaml", "Updated task.yaml", "The task.yaml card"

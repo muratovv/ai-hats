@@ -78,6 +78,18 @@ Isolated development using git worktrees. Each task gets its own working copy �
    ```
    The supervisor may instead run a direct merge; it is a separate top-level
    consent operation and therefore gets its own question.
+
+   **The merge happens only on the review→done road.** The review diff is
+   computed against the merge-base with the base branch, so merging the task
+   branch into it before review empties the diff by construction — merge-base
+   becomes the branch tip (PROX-619). Two guards hold the invariant, and
+   neither has an agent-reachable hatch (HATS-2062):
+   - a raw `git merge` of a task branch into master/main is hard-denied at
+     PreToolUse, with `ai-hats wt merge` named as the road;
+   - `ai-hats wt merge` itself refuses while the card is before `review`
+     (wt:pre-merge), and a card cannot ENTER `review` with its branch already
+     contained in the base.
+
    If `wt merge` refuses with `Refused (drift)`, the base holds commits
    your branch never took in (another agent's worktree merged, or
    `origin/<base>` received commits). Re-verify your changes against the
