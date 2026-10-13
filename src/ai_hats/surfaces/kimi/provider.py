@@ -2,9 +2,9 @@
 
 Hook protocol is Claude-Code-compatible, skills ride `--skills-dir` (which
 replaces kimi's discovery, so the composed set is exact), the HITL role lands
-in the managed `AGENTS.md` block, and headless runs go
-`kimi --output-format=stream-json -p <prompt>` — `-p` last with its value
-(`-p --flag` misparses), and no `--auto`: print mode already implies it.
+in `$KIMI_CODE_HOME/AGENTS.md` of the per-session home (kimi injects it), and
+headless runs go `kimi --output-format=stream-json -p <prompt>` — `-p` last
+with its value (`-p --flag` misparses), and no `--auto`: print mode implies it.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING, Mapping
 
-from ai_hats.materialization import describe_mkdir
+from ai_hats.materialization import describe_mkdir, describe_write_text
 from ai_hats.surfaces import Surface
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 
@@ -190,7 +190,7 @@ class KimiSurface(Surface):
         layout: ProjectLayout,
         host: Host,
     ) -> MaterializationPlan:
-        from .runtime_hooks import plan_hooks
+        from .runtime_hooks import plan_session_home
 
         mode = RunMode(run_mode)
         skills_dir = root / "skills"
@@ -203,12 +203,17 @@ class KimiSurface(Surface):
         env: dict[str, str] = {}
         if dirs := path_dirs(composition, skills_dir):
             env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
-        if policy.hooks and (
-            hooked := plan_hooks(composition, root, host, layout=layout, skills_dir=skills_dir)
-        ):
-            hook_entries, hook_env = hooked
-            entries += hook_entries
-            env.update(hook_env)
+        home_entries, home_env, session_home = plan_session_home(
+            composition, root, host, layout=layout, skills_dir=skills_dir
+        )
+        entries += home_entries
+        env.update(home_env)
+        context = None
+        if policy.context and mode is RunMode.HITL:
+            # Kimi injects $KIMI_CODE_HOME/AGENTS.md into every session's
+            # prompt — the composed role rides it (verified against the live CLI).
+            context = session_home / "AGENTS.md"
+            entries.append(describe_write_text(context, prompt.text))
         env.update(self.get_env(root, layout))
         return MaterializationPlan(
             composition=composition,
@@ -220,6 +225,7 @@ class KimiSurface(Surface):
             entries=tuple(entries),
             env=env,
             launch=Launch(args=tuple(args), sdk_options=None),
+            context=context,
         )
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:

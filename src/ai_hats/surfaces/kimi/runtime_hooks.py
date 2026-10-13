@@ -1,11 +1,12 @@
-"""Session-scoped runtime-hook delivery for the Kimi surface.
+"""Session-scoped home delivery for the Kimi surface.
 
-Kimi reads hooks only from ``$KIMI_CODE_HOME/config.toml`` — a user-global
-file, so a per-session hook chain needs a per-session home (the codex
-session-home pattern): the session's home carries a snapshot of the global
-config with the composed ``[[hooks]]`` appended, and symlinks ``credentials/``
-back so OAuth keeps working. Sessions, logs and the wire transcript then land
-under the session cache too — ``resolve_transcript`` follows the same env.
+Kimi reads hooks only from ``$KIMI_CODE_HOME/config.toml`` and global
+instructions from ``$KIMI_CODE_HOME/AGENTS.md`` — both user-global files, so a
+per-session chain and role need a per-session home (the codex session-home
+pattern): the session's home carries a snapshot of the global config with the
+composed ``[[hooks]]`` appended, and symlinks ``credentials/`` back so OAuth
+keeps working. Sessions, logs and the wire transcript then land under the
+session cache too — ``resolve_transcript`` follows the same env.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from ai_hats.materialization import (
 from ..hook_channel import BINDABLE_EVENTS
 from ..mirror import manifest_rows
 from ..plan import CompositionPlan, Host
-from .home import kimi_home
+from .home import KIMI_HOME_ENV, kimi_home
 
 logger = logging.getLogger(__name__)
 
@@ -59,20 +60,19 @@ def _config_with_hooks(base: str, hooks_dir: Path, events: tuple[str, ...]) -> s
     return base.rstrip() + "\n\n" + "\n".join(blocks)
 
 
-def plan_hooks(
+def plan_session_home(
     composition: CompositionPlan,
     root: Path,
     host: Host,
     *,
     layout: ProjectLayout,
     skills_dir: Path,
-) -> tuple[list[MaterializationEntry], dict[str, str]] | None:
-    """The per-session kimi home with the composed hook chain; ``None`` for a
-    composition with no chain to run — kimi then keeps its own global config."""
+) -> tuple[list[MaterializationEntry], dict[str, str], Path]:
+    """The per-session kimi home — always: the composed role lands in its
+    ``AGENTS.md``, so the home exists with or without a hook chain. Hooks join
+    when the composition carries runtime rows. Returns entries, env, home."""
     rows = manifest_rows(composition, skills_dir)
     hooks = {event: rows[event] for event in BINDABLE_EVENTS if event in rows}
-    if not hooks:
-        return None
     if "PostToolUse" in hooks:
         logger.warning(
             "kimi: PostToolUse is observation-only (stdout never reaches the "
@@ -94,36 +94,41 @@ def plan_hooks(
     credentials = global_home / "credentials"
     if credentials.is_dir():
         entries.append(describe_symlink(credentials, session_home / "credentials"))
-    entries += [
-        describe_write_executable(hooks_dir / name, shim_source(name)) for name in HOOK_SHIMS
-    ]
-    entries.append(
-        describe_write_text(
-            session_home / "config.toml",
-            _config_with_hooks(base_config, hooks_dir, HOOK_SHIMS),
-        )
-    )
-    entries.append(
-        describe_write_text(
-            root / "hooks.json",
-            json.dumps(
-                {
-                    "version": MANIFEST_VERSION,
-                    "session": {"id": root.name, "ai_hats_dir": str(layout.base)},
-                    "hooks": hooks,
-                },
-                indent=2,
-                sort_keys=True,
+    if hooks:
+        entries += [
+            describe_write_executable(hooks_dir / name, shim_source(name)) for name in HOOK_SHIMS
+        ]
+        entries.append(
+            describe_write_text(
+                root / "hooks.json",
+                json.dumps(
+                    {
+                        "version": MANIFEST_VERSION,
+                        "session": {"id": root.name, "ai_hats_dir": str(layout.base)},
+                        "hooks": hooks,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
             )
-            + "\n",
         )
-    )
+        config = _config_with_hooks(base_config, hooks_dir, HOOK_SHIMS)
+    else:
+        config = base_config.rstrip() + "\n"
+    entries.append(describe_write_text(session_home / "config.toml", config))
     env = {
-        "KIMI_CODE_HOME": str(session_home),
+        KIMI_HOME_ENV: str(session_home),
         ENV_SESSION_CACHE_DIR: str(root),
         ENV_AI_HATS_PYTHON: str(host.python),
     }
-    return entries, env
+    return entries, env, session_home
 
 
-__all__ = ["HOOK_SHIMS", "MANIFEST_VERSION", "plan_hooks", "shim_source"]
+__all__ = [
+    "HOOK_SHIMS",
+    "MANIFEST_VERSION",
+    "SESSION_HOME_SUBPATH",
+    "plan_session_home",
+    "shim_source",
+]

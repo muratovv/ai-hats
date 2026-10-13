@@ -60,10 +60,12 @@
     "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
     "AI_HATS_PRIVACY_ACK",
     "AI_HATS_PROJECT_DIR",
+    "AI_HATS_PYTHON",
     "AI_HATS_ROLE",
     "AI_HATS_ROOT_PID",
     "AI_HATS_RULE_DELIVERY_ACK",
     "AI_HATS_SECURITY_LINT_OFF",
+    "AI_HATS_SESSION_CACHE_DIR",
     "AI_HATS_SESSION_ID",
     "AI_HATS_SESSION_IDENTITY",
     "AI_HATS_SHARED_STATE_ACK",
@@ -77,6 +79,7 @@
     "AI_HATS_WT_GIT_OFF",
     "AI_HATS_WT_INTERP_OFF",
     "AI_HATS_YOLO",
+    "KIMI_CODE_HOME",
     "TRACE_LOG_PATH"
   ],
   "launch": [
@@ -115,6 +118,20 @@
       "size": 38,
       "source": null,
       "target": "<cache>/sessions/dry-run/skills/s/SKILL.md"
+    },
+    {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/kimi-home"
+    },
+    {
+      "digest": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "write_text",
+      "size": 1,
+      "source": null,
+      "target": "<cache>/sessions/dry-run/kimi-home/config.toml"
     }
   ],
   "notes": [],

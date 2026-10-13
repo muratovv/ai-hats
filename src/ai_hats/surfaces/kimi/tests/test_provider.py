@@ -181,3 +181,35 @@ def test_plan_mirrors_skills_and_passes_skills_dir(kimi_project):
     skills_dir = str(asm.layout.cache.session("sid") / "skills")
     assert ["--skills-dir", skills_dir] == list(plan.launch.args)
     assert plan.surface == "kimi"
+
+
+def _planned(kimi_project, run_mode):
+    asm, composition = kimi_project
+    return KimiSurface().plan(
+        composition,
+        run_mode=run_mode,
+        policy=SessionPolicy(hooks=False, context=True),
+        root=asm.layout.cache.session("sid"),
+        layout=asm.layout,
+        host=probe_host(),
+    ), asm
+
+
+def test_hitl_plan_writes_role_into_session_home_agents_md(kimi_project):
+    plan, asm = _planned(kimi_project, RunMode.HITL)
+    root = asm.layout.cache.session("sid")
+    agents_md = root / "kimi-home" / "AGENTS.md"
+    entry = next(e for e in plan.entries if e.target == agents_md)
+    assert "## ROLE" in entry.content
+    assert plan.context == agents_md
+    # The session home always exists — kimi reads config and AGENTS.md from it.
+    assert plan.env["KIMI_CODE_HOME"] == str(root / "kimi-home")
+
+
+def test_automate_plan_carries_role_inline_not_on_disk(kimi_project):
+    plan, asm = _planned(kimi_project, RunMode.AUTOMATE)
+    root = asm.layout.cache.session("sid")
+    assert plan.context is None
+    assert not any(e.target == root / "kimi-home" / "AGENTS.md" for e in plan.entries)
+    # …but the home still exists: hooks and kimi's own session data need it.
+    assert plan.env["KIMI_CODE_HOME"] == str(root / "kimi-home")

@@ -117,3 +117,20 @@ def test_pretooluse_guard_denies_bash(tmp_path: Path):
         line.get("role") == "tool" and "should-not-run" in str(line.get("content"))
         for line in lines
     )
+
+
+@needs_kimi
+def test_role_reaches_agent_via_session_home_agents_md(tmp_path: Path):
+    """The HITL role channel, verified headless: kimi injects
+    $KIMI_CODE_HOME/AGENTS.md — exactly the entry the plan materializes."""
+    home = _session_home(tmp_path)
+    (home / "AGENTS.md").write_text(
+        "# ROLE\nYou are a probe agent. When asked about your role, "
+        "answer with exactly the word XYZZY.\n"
+    )
+    proc = _run_kimi(home, tmp_path, "What is your role? Answer in one word.")
+    assert proc.returncode == 0, proc.stderr[-500:]
+    lines = _stream_lines(proc.stdout)
+    assert any(
+        line.get("role") == "assistant" and "XYZZY" in str(line.get("content")) for line in lines
+    ), f"role text did not reach the model: {proc.stdout[-500:]}"

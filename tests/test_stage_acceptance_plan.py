@@ -33,9 +33,9 @@ REWORDED_PROMPT_WRITES = {
     ("agy", RunMode.AUTOMATE): [],
     ("cline", RunMode.HITL): [],
     ("cline", RunMode.AUTOMATE): [],
-    # kimi hands the prompt nowhere on disk: HITL reads the project AGENTS.md
-    # (set_role, outside the plan), AUTOMATE carries it in the argv token.
-    ("kimi", RunMode.HITL): [],
+    # kimi: HITL writes the prompt into the session home's AGENTS.md; AUTOMATE
+    # carries it in the argv token.
+    ("kimi", RunMode.HITL): ["write_bytes"],
     ("kimi", RunMode.AUTOMATE): [],
 }
 
