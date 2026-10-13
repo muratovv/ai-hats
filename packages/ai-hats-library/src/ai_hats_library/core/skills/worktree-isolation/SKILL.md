@@ -83,7 +83,7 @@ Isolated development using git worktrees. Each task gets its own working copy â€
    computed against the merge-base with the base branch, so merging the task
    branch into it before review empties the diff by construction â€” merge-base
    becomes the branch tip (PROX-619). Two guards hold the invariant, and
-   neither has an agent-reachable hatch (HATS-2062):
+   neither has an agent-reachable hatch:
    - a raw `git merge` of a task branch into master/main is hard-denied at
      PreToolUse, with `ai-hats wt merge` named as the road;
    - `ai-hats wt merge` itself refuses while the card is before `review`

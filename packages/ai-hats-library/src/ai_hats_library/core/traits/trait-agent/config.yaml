@@ -32,12 +32,12 @@ composition:
   apps:
     rack:
       tasks:
-        # A card enters review only with a live review diff (HATS-2062).
+        # A card enters review only with a live review diff.
         - run: safety-guard/hooks/merge_order_check.sh
           at: ['->review']
           on_error: refuse
     wt:
-      # A task branch merges only on the review road (HATS-2062).
+      # A task branch merges only on the review road.
       - run: safety-guard/hooks/merge_order_check.sh
         at: [pre-merge]
         on_error: refuse
