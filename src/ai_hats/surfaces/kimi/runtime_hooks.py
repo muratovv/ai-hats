@@ -29,7 +29,7 @@ from ai_hats.materialization import (
     describe_write_text,
 )
 
-from ..hook_channel import BINDABLE_EVENTS
+from ..hook_channel import BINDABLE_EVENTS, surface_timeout
 from ..mirror import manifest_rows
 from ..plan import CompositionPlan, Host
 from .home import KIMI_HOME_ENV, kimi_home
@@ -56,8 +56,12 @@ def _config_with_hooks(base: str, hooks_dir: Path, events: tuple[str, ...]) -> s
     blocks = []
     for event in events:
         command = str(hooks_dir / event)
+        # The outer bound must outlive the chain's own budget — a hand-written
+        # number smaller than it lets kimi kill the dispatcher mid-chain and
+        # fail open with no verdict (the lesson surface_timeout() encodes).
         blocks.append(
-            f'[[hooks]]\nevent = "{event}"\ncommand = {_toml_literal(command)}\ntimeout = 30\n'
+            f'[[hooks]]\nevent = "{event}"\ncommand = {_toml_literal(command)}'
+            f"\ntimeout = {surface_timeout():.0f}\n"
         )
     return base.rstrip() + "\n\n" + "\n".join(blocks)
 

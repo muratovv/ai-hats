@@ -16,6 +16,7 @@ from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ai_hats.session_plan import probe_host
 from ai_hats.surfaces import adapt
+from ai_hats.surfaces.hook_channel import surface_timeout
 from ai_hats.surfaces.kimi import KimiSurface
 
 _HOOKED_SKILL_MD = (
@@ -105,7 +106,9 @@ def test_plan_hooks_session_home_config(hooked_plan):
     hooks = parsed["hooks"]
     assert [h["event"] for h in hooks] == ["PreToolUse", "PostToolUse"]
     assert hooks[0]["command"] == str(root / "hooks" / "PreToolUse")
-    assert hooks[0]["timeout"] == 30
+    # Derived, not pinned: the outer bound must always outlive the chain's own
+    # budget, or kimi kills the dispatcher mid-chain and fails open.
+    assert hooks[0]["timeout"] == int(surface_timeout())
 
 
 def test_plan_hooks_credentials_symlink(hooked_plan):
