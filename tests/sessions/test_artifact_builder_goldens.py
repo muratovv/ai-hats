@@ -50,7 +50,15 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     home; an empty Codex home stands where that surface insists on one."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home" / ".codex").mkdir(parents=True)
-    for name in ("AI_HATS_CODEX_BASE_HOME", "CODEX_HOME", "XDG_CONFIG_HOME", "GEMINI_CONFIG_DIR"):
+    for name in (
+        "AI_HATS_CODEX_BASE_HOME",
+        "CODEX_HOME",
+        "XDG_CONFIG_HOME",
+        "GEMINI_CONFIG_DIR",
+        # Inside an ai-hats kimi session this points at the parent's session
+        # home — machine-specific paths no golden can normalize away.
+        "KIMI_CODE_HOME",
+    ):
         monkeypatch.delenv(name, raising=False)
 
     lib = tmp_path / "lib"

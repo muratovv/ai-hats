@@ -32,7 +32,11 @@ from ai_hats.surfaces.kimi.parser import KimiParser
 pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
 
 KIMI = shutil.which("kimi")
-_REAL_HOME = Path(os.environ.get("KIMI_CODE_HOME", Path.home() / ".kimi-code"))
+# The person's REAL home, not an inherited KIMI_CODE_HOME: inside an ai-hats
+# session that variable points at a session home whose config.toml already
+# carries ai-hats [[hooks]] — snapshotting it would drag the parent session's
+# hook chain into the "clean" home this suite builds.
+_REAL_HOME = Path.home() / ".kimi-code"
 _LOGGED_IN = (_REAL_HOME / "credentials").is_dir() and any(
     (_REAL_HOME / "credentials").glob("*.json")
 )
@@ -56,10 +60,14 @@ def _session_home(tmp_path: Path, *, hooks_toml: str = "") -> Path:
 
 def _run_kimi(home: Path, cwd: Path, prompt: str) -> subprocess.CompletedProcess:
     argv = KimiSurface().get_run_command(["kimi"], prompt)
+    # Scrub the parent ai-hats session (if any) from the child's environment —
+    # only the per-session home under test may define this run.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    env["KIMI_CODE_HOME"] = str(home)
     return subprocess.run(  # noqa: S603 — argv from the surface under test
         argv,
         cwd=cwd,
-        env={**os.environ, "KIMI_CODE_HOME": str(home)},
+        env=env,
         capture_output=True,
         text=True,
         timeout=300,
