@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**360 of 360 files catalogued — 368 flows.**
+**362 of 362 files catalogued — 370 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2479,6 +2479,22 @@ as a claim to check, not as evidence.
 - **expect** — the stage passes a completed green run and refuses everything else with exit 1 — a red run names the conclusion and the run url, a run still going names the run to wait on, and every reason the check cannot answer (no gh, gh refusing, unreadable output, no run) names itself as unknown, which is not green; the notice reports the same verdict and exits 0 whatever it is; and no card gate asks for the stage
 - **why** — CI had been red since before 2026-07-28 for an unrelated reason, so the one arm that could see seven of v0.15.0's nine defects went unread for a month. A finished card then sat in review behind a red run it had no part in: the base's verdict is the push road's question, not a card's
 
+## `test_merge_order_chain.py`
+
+*pins HATS-2062*
+
+- **flow** — an agent driving a card through the review road and merging its branch
+- **cmds**
+
+  ```console
+  rack transition HATS-001 execute → ai-hats wt merge task/hats-001  # refused
+        rack transition HATS-001 review  (branch pre-merged)               # refused
+        ai-hats wt merge task/hats-001   (card in review)                  # lands
+  ```
+
+- **expect** — wt:pre-merge refuses the merge while the card is before the review road and names the state; ->review refuses a card whose branch is already contained in master; on the road (review) the merge lands
+- **why** — the PreToolUse guard (test_task_merge_guard_chain.py) only keeps the agent on the managed path; the card-state invariant itself lives at wt:pre-merge and ->review, and only a real merge/transition exercises the resolution, the check and the refusal text together
+
 ## `test_migration_no_replay_without_config.py`
 
 *pins HATS-1123*
@@ -4226,6 +4242,23 @@ as a claim to check, not as evidence.
 
 - **expect** — each concurrent creation command receives a unique task ID and creates a complete card directory without file collisions
 - **why** — task ID allocation must be synchronized across processes to prevent duplicate IDs and corrupted task cards
+
+## `test_task_merge_guard_chain.py`
+
+*pins HATS-2062*
+
+- **flow** — an agent about to blind the supervisor's review diff with a raw merge
+- **cmds**
+
+  ```console
+  git merge task/prox-619                        # on master -> denied
+        git checkout master && git merge task/prox-619 # chained   -> denied
+        git merge task/prox-619                        # on a task branch -> allowed
+        git merge master                               # base into branch -> allowed
+  ```
+
+- **expect** — the composed PreToolUse chain (all Bash hooks, in order) denies a raw merge of a task branch into a base branch with a routing reason naming `ai-hats wt merge`, and lets both harmless commands and task-internal merges through
+- **why** — PROX-619 merged straight into master before review; the review diff is computed against the merge-base, so after the merge it is empty by construction. Single-hook tests cannot see a sibling hook overriding the verdict — the composed chain is the only honest subject.
 
 ## `test_task_ownership_e2e.py`
 
