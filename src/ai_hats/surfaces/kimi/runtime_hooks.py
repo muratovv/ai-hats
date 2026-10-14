@@ -73,11 +73,14 @@ def plan_session_home(
     *,
     layout: ProjectLayout,
     skills_dir: Path,
+    hooks_enabled: bool,
 ) -> tuple[list[MaterializationEntry], dict[str, str], Path]:
     """The per-session kimi home — always: the composed role lands in its
     ``AGENTS.md``, so the home exists with or without a hook chain. Hooks join
-    when the composition carries runtime rows. Returns entries, env, home."""
-    rows = manifest_rows(composition, skills_dir)
+    when the composition carries runtime rows AND the session policy enables
+    them (ADR-0018: session wiring is gated by ``SessionPolicy.hooks``).
+    Returns entries, env, home."""
+    rows = manifest_rows(composition, skills_dir) if hooks_enabled else {}
     hooks = {event: rows[event] for event in BINDABLE_EVENTS if event in rows}
     if "PostToolUse" in hooks:
         logger.warning(

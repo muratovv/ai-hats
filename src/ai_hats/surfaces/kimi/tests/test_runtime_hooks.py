@@ -78,16 +78,20 @@ def hooked_plan(tmp_path, monkeypatch):
         overlays=(),
         diagnostics=[],
     )
-    root = asm.layout.cache.session("sid")
-    plan = KimiSurface().plan(
-        composition,
-        run_mode=RunMode.HITL,
-        policy=SessionPolicy(hooks=True, context=True),
-        root=root,
-        layout=asm.layout,
-        host=probe_host(),
-    )
-    return plan, root, kimi_home
+
+    def _plan(policy: SessionPolicy):
+        root = asm.layout.cache.session("sid")
+        plan = KimiSurface().plan(
+            composition,
+            run_mode=RunMode.HITL,
+            policy=policy,
+            root=root,
+            layout=asm.layout,
+            host=probe_host(),
+        )
+        return plan, root, kimi_home
+
+    return _plan
 
 
 def _written(plan) -> dict[Path, object]:
@@ -95,7 +99,7 @@ def _written(plan) -> dict[Path, object]:
 
 
 def test_plan_hooks_session_home_config(hooked_plan):
-    plan, root, kimi_home = hooked_plan
+    plan, root, kimi_home = hooked_plan(SessionPolicy(hooks=True, context=True))
     session_home = root / "kimi-home"
     assert plan.env["KIMI_CODE_HOME"] == str(session_home)
     config_entry = _written(plan)[session_home / "config.toml"]
@@ -112,14 +116,14 @@ def test_plan_hooks_session_home_config(hooked_plan):
 
 
 def test_plan_hooks_credentials_symlink(hooked_plan):
-    plan, root, kimi_home = hooked_plan
+    plan, root, kimi_home = hooked_plan(SessionPolicy(hooks=True, context=True))
     entry = _written(plan)[root / "kimi-home" / "credentials"]
     assert entry.kind.value == "symlink"
     assert Path(entry.source) == kimi_home / "credentials"
 
 
 def test_plan_hooks_manifest_and_shims(hooked_plan):
-    plan, root, _ = hooked_plan
+    plan, root, _ = hooked_plan(SessionPolicy(hooks=True, context=True))
     written = _written(plan)
     manifest = json.loads(written[root / "hooks.json"].content)
     assert manifest["version"] == 1
@@ -127,3 +131,17 @@ def test_plan_hooks_manifest_and_shims(hooked_plan):
     assert manifest["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
     shim = written[root / "hooks" / "PreToolUse"]
     assert "hook_dispatcher PreToolUse" in shim.content
+
+
+def test_hooks_policy_off_installs_no_chain(hooked_plan):
+    """SessionPolicy(hooks=False) gates session wiring (ADR-0018) — the home
+    still stands (AGENTS.md, kimi's own data), but no shims, no manifest, no
+    [[hooks]] in the session config."""
+    plan, root, _ = hooked_plan(SessionPolicy(hooks=False, context=True))
+    written = _written(plan)
+    assert root / "hooks.json" not in written
+    assert not any(str(t).endswith(("/hooks/PreToolUse", "/hooks/PostToolUse")) for t in written)
+    session_home = root / "kimi-home"
+    assert plan.env["KIMI_CODE_HOME"] == str(session_home)
+    parsed = tomllib.loads(written[session_home / "config.toml"].content)
+    assert "hooks" not in parsed

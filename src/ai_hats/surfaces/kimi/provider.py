@@ -193,7 +193,12 @@ class KimiSurface(Surface):
         if dirs := path_dirs(composition, skills_dir):
             env["PATH"] = os.pathsep.join([*(str(d) for d in dirs), host.path])
         home_entries, home_env, session_home = plan_session_home(
-            composition, root, host, layout=layout, skills_dir=skills_dir
+            composition,
+            root,
+            host,
+            layout=layout,
+            skills_dir=skills_dir,
+            hooks_enabled=policy.hooks,
         )
         entries += home_entries
         env.update(home_env)
