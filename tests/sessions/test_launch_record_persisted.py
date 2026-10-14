@@ -114,6 +114,12 @@ def test_automate_subagent_persists_role_materialization_json(
         "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking",
         lambda *args, **kwargs: None,
     )
+    # Engine stubbed, so the auth probe is stubbed too — the host's login
+    # state is not this test's subject.
+    monkeypatch.setattr(
+        "ai_hats.surfaces.claude.provider.ClaudeSurface.readiness_findings",
+        lambda *args: [],
+    )
 
     payload = build_composition_payload(project_with_maintainer_default, role_override="maintainer")
     session_mgr = SessionManager(

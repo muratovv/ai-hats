@@ -31,6 +31,36 @@ MISSING_MODEL = "claude-nonexistent-model-9"
 TASK_PROMPT = "Reply with just: ok"
 AGENT_TIMEOUT = 90.0
 
+# A host router (ANTHROPIC_BASE_URL → an Anthropic-compatible endpoint) answers
+# a bad model with a warning where the real API refuses — and the refusal is
+# this test's whole premise.
+_ROUTER_ENV_VARS = (
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "CLAUDE_CODE_SUBAGENT_MODEL",
+)
+
+
+@pytest.fixture
+def direct_anthropic_env(tmp_path, monkeypatch):
+    """Scrubbed env: no router vars, a HOME without the host's claude settings.
+
+    Must be listed BEFORE ``requires_claude_auth`` — same-scope fixtures apply
+    in signature order, and the auth probe must run against the scrubbed env.
+    """
+    for key in _ROUTER_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+    home = tmp_path / "home-no-router"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    yield
+
 
 def _envelope(stdout: str) -> dict:
     for line in reversed(stdout.splitlines()):
@@ -54,6 +84,7 @@ def _run(project: Project, *extra: str):
 
 
 def test_the_envelope_says_what_blocked_the_run(
+    direct_anthropic_env,  # noqa: ARG001 — env scrub, must precede the auth probe
     tmp_project: Project,
     requires_claude_auth,  # noqa: ARG001 — skip-marker fixture
 ) -> None:
@@ -74,6 +105,7 @@ def test_the_envelope_says_what_blocked_the_run(
 
 
 def test_the_summary_says_the_run_failed(
+    direct_anthropic_env,  # noqa: ARG001 — env scrub, must precede the auth probe
     tmp_project: Project,
     requires_claude_auth,  # noqa: ARG001 — skip-marker fixture
 ) -> None:

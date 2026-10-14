@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**353 of 353 files catalogued — 361 flows.**
+**354 of 354 files catalogued — 362 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2132,6 +2132,21 @@ as a claim to check, not as evidence.
 
 - **expect** — wheel build produces standalone package wheels for all workspace sub-packages
 - **why** — without proper wheel build configuration, sub-packages fail to package required package data
+
+## `test_kimi_headless.py`
+
+*pins HATS-2059*
+
+- **flow** — ai-hats driving the real `kimi` CLI headless against a per-session KIMI_CODE_HOME (the shape plan_hooks materializes), then reading the session record it left
+- **cmds**
+
+  ```console
+  kimi --output-format=stream-json -p "<prompt>"  (argv built by
+        KimiSurface.get_run_command)
+  ```
+
+- **expect** — exit 0, an assistant answer and a session.resume_hint meta line on stdout; wire.jsonl under the session home; KimiParser reads turns and token telemetry from it. With a deny [[hooks]] guard installed, a Bash call is refused and the model sees the reason.
+- **why** — this is the task's core acceptance — headless first-class — and the parser must prove itself on a record the real harness wrote, not only on fixtures. Gated on a host with the kimi CLI and an OAuth login (Kimi subscription); skips everywhere else, like the codex auth lifecycle e2e.
 
 ## `test_launcher_contract_skew.py`
 

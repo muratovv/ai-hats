@@ -94,6 +94,7 @@ the table below is that dir):
 | **claude** | `--system-prompt-file <cache>/prompt.md`      | `--plugin-dir <cache>/plugin`   | `--settings <cache>/settings.json` (additive) |
 | **agy**    | `--add-dir <cache>/rules` (`rules/GEMINI.md`) | `<cache>/rules/.agents/skills/` | `<cache>/hooks.json` + global dispatcher      |
 | **cline**  | `--config <cache>`                            | `<cache>/skills`                | `<cache>`                                     |
+| **kimi**   | `<cache>/kimi-home/AGENTS.md`                 | `--skills-dir <cache>/skills`   | `<cache>/kimi-home/config.toml` (`[[hooks]]`) |
 
 **The cache is not in the workspace**. `<cache_root>` resolves to
 `$AI_HATS_CACHE_HOME` → `$XDG_CACHE_HOME/ai-hats` → `~/.cache/ai-hats`, plus a
@@ -357,11 +358,16 @@ autonomous invocations in two layers:
    blanks the flag for it (`constants.BYPASS_FLAGS_NOT_INHERITED`).
 
 **Surface asymmetry.** The guard is a runtime hook, so it reaches only a
-surface with a hook channel — claude, codex, cline and opencode each wire the
-composition's runtime-hook rows into their session tree from the plan
+surface with a hook channel — claude, codex, cline, kimi and opencode each wire
+the composition's runtime-hook rows into their session tree from the plan
 (`Surface.plan`); agy has no PreToolUse equivalent, so an agy session gets the
 rule + the git pre-push hook only, and the `gh pr merge` deterministic block is
-not there.
+not there. On kimi the rows land in a per-session `KIMI_CODE_HOME`
+(`<cache>/kimi-home/config.toml`), because kimi reads hooks from its global
+config only — the session home snapshots that config, symlinks credentials
+back, and also carries the session's `AGENTS.md` (kimi injects
+`$KIMI_CODE_HOME/AGENTS.md` into every prompt, which is how the HITL role
+reaches the agent without touching the project tree).
 
 **Skill-declared runtime hooks.** Beyond the built-in guard, any skill can
 declare its own `PreToolUse` / `PostToolUse` hooks via `runtime_hooks:` in its

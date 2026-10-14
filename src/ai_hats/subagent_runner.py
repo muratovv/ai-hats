@@ -421,6 +421,12 @@ class SubAgentRunner:
                         brief=flags.brief,
                         provider_session_id=provider_session_id,
                         event_log=None if event_log is None else event_log.path,
+                        # An engine child outlives a SIGKILLed wrapper (pipes, no
+                        # tty) and keeps reading the session cache — anchor it,
+                        # the same contract the subprocess path below holds.
+                        on_spawn=lambda pid: _claim_surface_child(
+                            self.layout.cache.session(session.session_id), pid
+                        ),
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     surface_session_id = metrics.values.get("claude_session_id")

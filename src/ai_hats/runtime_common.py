@@ -406,7 +406,11 @@ def _finalize_sub_agent(
             # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
             claude_session_id = None
             if extra_metrics:
-                claude_session_id = extra_metrics.get("claude_session_id")
+                # claude_session_id is the historic key; provider_session_id is
+                # the surface-neutral spelling newer surfaces (kimi) record.
+                claude_session_id = extra_metrics.get("claude_session_id") or extra_metrics.get(
+                    "provider_session_id"
+                )
             if layout is not None and (claude_session_id or transcript_resolver):
                 try:
                     _run_finalize_subagent(

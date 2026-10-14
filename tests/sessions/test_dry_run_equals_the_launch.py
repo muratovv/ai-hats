@@ -247,6 +247,12 @@ def _automate_for_real(monkeypatch, project: Path) -> dict:
         "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking",
         _capture,
     )
+    # Engine stubbed, so the auth probe is stubbed too — the host's login
+    # state is not this test's subject.
+    monkeypatch.setattr(
+        "ai_hats.surfaces.claude.provider.ClaudeSurface.readiness_findings",
+        lambda *args: [],
+    )
 
     payload = build_composition_payload(project, role_override="maintainer")
     session_mgr = SessionManager(project, runs_dir=ProjectLayout.at(project).sessions.runs)

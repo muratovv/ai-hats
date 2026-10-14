@@ -589,12 +589,14 @@ class ClaudeSubagentEngine(SubagentEngine):
         brief: str | None,
         provider_session_id: str | None = None,
         event_log: Path | None = None,
+        on_spawn: Callable[[int], None] | None = None,
     ) -> SurfaceRunResult:
         """The option document is the launch: ``automate_launch`` already folded
         the working directory, the model, the env and the minted id into it."""
         from claude_agent_sdk import ClaudeAgentOptions
 
-        del layout, work_dir, session_id, env, model, provider_session_id
+        # In-process (SDK): there is no surface child to anchor.
+        del layout, work_dir, session_id, env, model, provider_session_id, on_spawn
         opts = ClaudeAgentOptions(**(launched.sdk_options or {}))
         run_res = self._run_blocking(
             opts, brief or "", timeout_s=timeout_s, on_message=_stream_signals_to(event_log)

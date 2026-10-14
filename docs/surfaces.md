@@ -1,6 +1,6 @@
 # Surfaces — what works where
 
-Five harnesses ship in-tree. They are not equally capable, and the gaps are not
+Six harnesses ship in-tree. They are not equally capable, and the gaps are not
 failures: each agent CLI exposes a different amount of itself, and ai-hats can
 only use what is exposed. This page says which is which, so a choice of harness
 is made with the trade-off visible rather than discovered three weeks in.
@@ -18,9 +18,10 @@ different thing entirely: it pins the install channel.
 | `agy`      | ask · cancel-after · nudge           | parsed              | subprocess        | **no**           | **none**        |
 | `cline`    | nudge only                           | parsed              | subprocess        | yes              | **none**        |
 | `codex`    | cancel-after · nudge                 | **trace-log only**  | subprocess        | yes              | CLI             |
+| `kimi`     | **none (refusal only)**              | parsed              | subprocess        | yes              | auth · CLI      |
 | `opencode` | nudge only                           | **trace-log only**  | subprocess        | yes              | **none**        |
 
-Every harness receives the composed role — that column would read `yes` five
+Every harness receives the composed role — that column would read `yes` six
 times and is left out. *How* it is delivered differs per harness (a system-prompt
 flag, a rules directory, a config dir); that map is [2] §Materialization.
 
@@ -36,12 +37,17 @@ rows in `surfaces/profiles.py`):
   each surface inventing its own fallback.
 - **cancel-after** — cancel a call that already ran, on `PostToolUse`
   (`can_deny_after`).
-- **nudge** — carry advisory text onward (`can_carry_nudges`). All five can;
-  where it lands differs — usually the model's own context.
+- **nudge** — carry advisory text onward (`can_carry_nudges`). Where it lands
+  differs — usually the model's own context. On `kimi` a non-blockable hook
+  event's stdout never reaches the model at all, so the row reads none: a gate
+  refuses (exit 2) or stays silent, and composed nudge hooks log a plan-time
+  warning instead of pretending to deliver.
 
 Read the rows as sentences: on `cline` and `opencode` a gate can only advise —
 it never puts a question to you and cannot take a call back. On `codex` it can
-undo a call after the fact, but it still cannot ask first.
+undo a call after the fact, but it still cannot ask first. On `kimi` it can
+only refuse before the fact — `PostToolUse` there is observation-only, so what
+a gate says about a call that already ran reaches the gate log, not the model.
 
 **Session log → audit.** `parsed` means the harness writes a structured session
 log and ships a `TranscriptParser` for it, so `audit.md` and `usage.json` are
@@ -50,8 +56,15 @@ derived from what actually happened (`transcript_parser` + `resolve_transcript`)
 own trace log — non-empty, but coarser: no per-turn tool detail, no token usage.
 
 **Sub-agents.** `ai-hats agent <role>` runs everywhere. On `claude` it is a
-native SDK engine, multi-turn in-process (`supports_sdk_engine`). Elsewhere it
-is a real subprocess whose stdout is captured — see [3].
+native SDK engine, multi-turn in-process (`supports_sdk_engine`), and
+`setting_sources: []` keeps the project's own CLAUDE.md out of the child.
+Elsewhere it is a real subprocess whose stdout is captured — on `kimi` the
+engine parses the `stream-json` stream for the answer text and the harness's
+own session id (the `session.resume_hint` meta line), since kimi mints its ids
+itself — see [3]. That subprocess starts in the session's worktree, and kimi
+loads the AGENTS.md chain from git root down to its cwd with no off-switch —
+so a `kimi` automate sub-agent carries the worktree's AGENTS.md on top of the
+inlined role prompt, a context the other surfaces' sub-agents do not see.
 
 **Readiness probe.** What refuses an unattended `ai-hats agent` before it
 takes a worktree (`readiness_findings`): `auth` — the surface is not logged in;
@@ -59,7 +72,9 @@ takes a worktree (`readiness_findings`): `auth` — the surface is not logged in
 `events.jsonl`; a HITL session warns and launches. Codex's login check only
 warns: `codex login status` cannot see `CODEX_API_KEY`, which `codex exec`
 honours. `none` means an unattended run on that harness fails after launch
-instead — see [5] §Readiness probe.
+instead — see [5] §Readiness probe. Kimi's probe reads the credentials
+directory under `$KIMI_CODE_HOME` (default `~/.kimi-code`); international
+(kimi.ai) accounts log in with `KIMI_OAUTH_HOST=https://auth.kimi.ai`.
 
 **Consent wrappers.** Whether a HITL child inherits an authoritative session
 `PATH`, which is what session-local command wrappers ride on
@@ -70,10 +85,12 @@ an unwrapped command — a loud refusal, not a silent hole.
 ## MCP
 
 A skill declares the MCP servers it needs once, in a neutral form, and the
-declaration is compiled to each harness's native channel — `.mcp.json`,
+declaration is compiled to each wired harness's native channel — `.mcp.json`,
 `cline_mcp_settings.json`, `gemini-extension.json`. `codex` takes its servers as
-CLI arguments instead (`mcp_form_cli_args`). The model is the Skill↔tool
-dependency entry in [1]; the frontmatter field you actually write is in [4].
+CLI arguments instead (`mcp_form_cli_args`). `kimi`'s `mcp.json` channel is not
+wired yet — a composed `requires.mcp` binding has no target there. The model is
+the Skill↔tool dependency entry in [1]; the frontmatter field you actually
+write is in [4].
 
 ## Keeping this page honest
 

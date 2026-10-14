@@ -62,7 +62,7 @@ modifiers.
 
 **Two engines, one contract.** On claude the turn runs in-process through the
 Agent SDK and ends when the SDK reports the turn complete; on the CLI surfaces
-(agy, cline, codex, opencode) it is a real subprocess whose stdout is
+(agy, cline, codex, kimi, opencode) it is a real subprocess whose stdout is
 JSON-parsed on a best-effort basis. You do not choose, and you do not need to
 care: both land the same artifacts under `session_<id>/` — `transcript.txt`,
 `reasoning.log`, `metrics.json`, `audit.md` — and the same exit codes

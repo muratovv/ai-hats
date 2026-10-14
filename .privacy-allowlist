@@ -35,3 +35,10 @@ src/ai_hats/surfaces/cline/tests/fixtures/*.messages.json
 # detects, so its examples (home paths, credentialed DB URIs, token prefixes)
 # are pattern-shaped by design — documentation of the scanner, not a real leak.
 library/core/skills/git-mastery/SKILL.md
+
+# HATS-2059: kimi wire.jsonl fixtures for KimiParser, sanitized from spike
+# records (system prompt and tool snapshot replaced by placeholders, prompts
+# are the spike's own "echo" probes, cwd is /tmp) — transcript-shaped by
+# construction, no real content.
+src/ai_hats/surfaces/kimi/tests/fixtures/*.jsonl
+

@@ -38,13 +38,7 @@ PROBE_TASK = "Reply with exactly the four characters: PONG. Nothing else."
 
 @pytest.fixture
 def requires_claude_auth() -> None:
-    """Skip if the bundled ``claude`` binary is missing or unauthenticated.
-
-    Mirrors ``tests/e2e/conftest.py``: ``claude --version`` is a cheap
-    liveness probe that doesn't burn quota. Full auth is detected by
-    the SDK itself surfacing an error during the run — we don't add a
-    second probe here.
-    """
+    """Skip if the bundled ``claude`` binary is missing or unauthenticated."""
     if not shutil.which("claude"):
         pytest.skip("claude binary not in PATH")
     try:
@@ -58,6 +52,18 @@ def requires_claude_auth() -> None:
         pytest.skip(f"claude --version failed: {exc}")
     if cp.returncode != 0:
         pytest.skip(f"claude --version exit {cp.returncode}: {cp.stderr.strip()}")
+    try:
+        status = subprocess.run(
+            ["claude", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        logged_in = json.loads(status.stdout).get("loggedIn") is True
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        logged_in = False
+    if not logged_in:
+        pytest.skip("claude is not authenticated on this host")
 
 
 @pytest.fixture
