@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
-from typing import TYPE_CHECKING, Mapping, Protocol
+from typing import TYPE_CHECKING, Callable, Mapping, Protocol
 
 
 from ai_hats_core import CompositionResult
@@ -144,6 +144,11 @@ class SubagentEngine(abc.ABC):
         # The session's live log, for what only the surface's own stream
         # carries (a quota pre-warning); ``None`` when the session writes none.
         event_log: Path | None = None,
+        # The surface child's pid, reported the moment it exists — the cache
+        # sweep reaps a dead owner's dir, and a child that outlives its wrapper
+        # (pipes, no tty) is still READING that dir. An in-process engine (SDK)
+        # has no child and leaves it None.
+        on_spawn: Callable[[int], None] | None = None,
     ) -> SurfaceRunResult:
         pass
 

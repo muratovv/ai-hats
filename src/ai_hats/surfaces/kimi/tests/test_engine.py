@@ -1,5 +1,5 @@
 """KimiSubagentEngine tests — a recorded NDJSON stream drives an injected
-runner; no real kimi, no auth."""
+spawn seam; no real kimi, no auth."""
 
 from __future__ import annotations
 
@@ -27,31 +27,55 @@ class _Metrics:
         self.values.update(values)
 
 
-def _engine(stdout=_STREAM, returncode=0, stderr=""):
-    def fake_run(*args, **kwargs):
-        return subprocess.CompletedProcess(args[0], returncode, stdout, stderr)
+class _FakeProc:
+    """The Popen handle the engine drives: pid, communicate, kill."""
 
-    return KimiSubagentEngine(run=fake_run)
+    def __init__(self, stdout="", stderr="", returncode=0, *, hang=False):
+        self.pid = 4242
+        self._stdout = stdout
+        self._stderr = stderr
+        self.returncode = returncode
+        self._hang = hang
+        self.killed = False
+
+    def communicate(self, timeout=None):
+        if self._hang and not self.killed:
+            raise subprocess.TimeoutExpired(cmd="kimi", timeout=timeout)
+        return self._stdout, self._stderr
+
+    def kill(self):
+        self.killed = True
 
 
-def _run(engine):
+def _engine(stdout=_STREAM, returncode=0, stderr="", *, hang=False):
+    proc = _FakeProc(stdout, stderr, returncode, hang=hang)
+
+    def fake_popen(*args, **kwargs):
+        return proc
+
+    return KimiSubagentEngine(popen=fake_popen), proc
+
+
+def _run(engine, **overrides):
     metrics = _Metrics()
-    result = engine.run(
-        layout=SimpleNamespace(),
-        work_dir=Path("/wd"),
-        session_id="sid",
-        env={},
-        model=None,
-        timeout_s=30,
-        metrics=metrics,
-        launched=SimpleNamespace(args=("kimi", "-p", "brief")),
-        brief="brief",
-    )
-    return result, metrics
+    kwargs = {
+        "layout": SimpleNamespace(),
+        "work_dir": Path("/wd"),
+        "session_id": "sid",
+        "env": {},
+        "model": None,
+        "timeout_s": 30,
+        "metrics": metrics,
+        "launched": SimpleNamespace(args=("kimi", "-p", "brief")),
+        "brief": "brief",
+        **overrides,
+    }
+    return engine.run(**kwargs), metrics
 
 
 def test_completed_run_extracts_text_and_session_id():
-    result, metrics = _run(_engine())
+    engine, _ = _engine()
+    result, metrics = _run(engine)
     assert result.exit_code == 0
     assert result.stdout == "done"
     assert result.error is None
@@ -62,45 +86,56 @@ def test_completed_run_extracts_text_and_session_id():
 
 
 def test_failed_run_carries_exit_code():
-    result, metrics = _run(_engine(returncode=1, stdout=""))
+    engine, _ = _engine(returncode=1, stdout="")
+    result, metrics = _run(engine)
     assert result.exit_code == 1
     assert result.error
     assert metrics.values["stop_reason"] == "error"
     assert metrics.values["kimi_session_id"] == ""
 
 
-def test_timeout_is_reported():
-    def fake_run(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="kimi", timeout=30)
+def test_spawn_reports_the_child_pid():
+    """The cache sweep reaps on proof of death — a child that outlives its
+    wrapper must be anchored, or a live session loses its gates mid-flight."""
+    engine, proc = _engine()
+    spawned = []
+    _run(engine, on_spawn=spawned.append)
+    assert spawned == [proc.pid]
 
-    result, _ = _run(KimiSubagentEngine(run=fake_run))
+
+def test_timeout_kills_and_reports():
+    engine, proc = _engine(hang=True)
+    result, _ = _run(engine)
+    assert proc.killed is True
     assert result.timed_out is True
     assert result.exit_code == 124
 
 
-def test_timeout_with_partial_bytes_output():
-    """TimeoutExpired.stdout is BYTES even under text=True on POSIX — the
-    partial stream must still yield its assistant text, not crash the branch."""
-
-    def fake_run(*args, **kwargs):
-        raise subprocess.TimeoutExpired(
-            cmd="kimi",
-            timeout=30,
-            output=b'{"role":"assistant","content":"half"}\n',
-            stderr=b"interrupted",
-        )
-
-    result, _ = _run(KimiSubagentEngine(run=fake_run))
+def test_timeout_with_partial_output():
+    """The partial stream still yields its assistant text — no crash, no loss."""
+    engine, proc = _engine(hang=True)
+    proc._stdout = '{"role":"assistant","content":"half"}\n'
+    proc._stderr = "interrupted"
+    result, _ = _run(engine)
     assert result.timed_out is True
-    assert result.exit_code == 124
     assert result.stdout == "half"
     assert result.stderr == "interrupted"
 
 
 def test_malformed_stream_lines_are_skipped():
     noisy = 'not json\n{"role":"assistant","content":"ok"}\n{"broken\n'
-    result, _ = _run(_engine(stdout=noisy))
+    engine, _ = _engine(stdout=noisy)
+    result, _ = _run(engine)
     assert result.stdout == "ok"
+
+
+def test_spawn_oserror_is_exit_127():
+    def fake_popen(*args, **kwargs):
+        raise OSError("kimi: command not found")
+
+    result, _ = _run(KimiSubagentEngine(popen=fake_popen))
+    assert result.exit_code == 127
+    assert "command not found" in result.error
 
 
 def test_child_env_merges_additions_over_inherited(monkeypatch):
@@ -108,23 +143,12 @@ def test_child_env_merges_additions_over_inherited(monkeypatch):
     inherited environment — a wholesale replacement loses the binary itself."""
     seen = {}
 
-    def fake_run(*args, **kwargs):
+    def fake_popen(*args, **kwargs):
         seen.update(kwargs.get("env") or {})
-        return subprocess.CompletedProcess(args[0], 0, _STREAM, "")
+        return _FakeProc(_STREAM, "")
 
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
-    engine = KimiSubagentEngine(run=fake_run)
-    metrics = _Metrics()
-    engine.run(
-        layout=SimpleNamespace(),
-        work_dir=Path("/wd"),
-        session_id="sid",
-        env={"AI_HATS_SESSION_ID": "sid"},
-        model=None,
-        timeout_s=30,
-        metrics=metrics,
-        launched=SimpleNamespace(args=("kimi", "-p", "brief")),
-        brief="brief",
-    )
+    engine = KimiSubagentEngine(popen=fake_popen)
+    _run(engine, env={"AI_HATS_SESSION_ID": "sid"})
     assert seen["AI_HATS_SESSION_ID"] == "sid"
     assert seen["PATH"] == "/usr/bin:/bin"

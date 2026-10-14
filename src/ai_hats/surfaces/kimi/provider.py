@@ -16,7 +16,7 @@ import subprocess
 from pathlib import Path
 
 from ai_hats_core.layout import ProjectLayout
-from typing import TYPE_CHECKING, Mapping
+from typing import TYPE_CHECKING, Callable, Mapping
 
 from ai_hats.materialization import describe_mkdir, describe_write_text
 from ai_hats.surfaces import Surface
@@ -36,10 +36,6 @@ if TYPE_CHECKING:
     from ai_hats.debt import SessionId
 
 READINESS_SOURCE = "kimi/readiness"
-
-
-def subprocess_run(*args, **kwargs):
-    return subprocess.run(*args, **kwargs)  # noqa: S603 — argv from the plan, not a shell
 
 
 def _readiness_findings(
@@ -259,10 +255,10 @@ class KimiSubagentEngine(SubagentEngine):
     stream's ``session.resume_hint`` meta line.
     """
 
-    def __init__(self, *, run=subprocess_run) -> None:
-        # The subprocess call is a seam: a test drives the engine by handing in
+    def __init__(self, *, popen=subprocess.Popen) -> None:
+        # The spawn call is a seam: a test drives the engine by handing in
         # its own, instead of patching the module under test.
-        self._run = run
+        self._popen = popen
 
     def run(
         self,
@@ -278,35 +274,43 @@ class KimiSubagentEngine(SubagentEngine):
         brief: str | None,
         provider_session_id: str | None = None,
         event_log: Path | None = None,
+        on_spawn: Callable[[int], None] | None = None,
     ) -> SurfaceRunResult:
         del layout, session_id, model, brief, provider_session_id, event_log
         cmd = list(launched.args or ())
         try:
-            proc = self._run(
+            proc = self._popen(
                 cmd,
                 cwd=work_dir,
                 # `env` is ai-hats' ADDITIONS, not a whole environment — merge
                 # over the inherited one or the child has no PATH at all.
                 env={**os.environ, **env},
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout_s,
-            )
-        except subprocess.TimeoutExpired as exc:
-            return SurfaceRunResult(
-                exit_code=124,
-                # TimeoutExpired carries BYTES even under text=True on POSIX.
-                stdout=_stream_text(_as_text(exc.stdout)),
-                stderr=_as_text(exc.stderr),
-                timed_out=True,
-                error=f"kimi -p timed out after {timeout_s}s",
             )
         except OSError as exc:
             return SurfaceRunResult(
                 exit_code=127, stdout="", stderr="", timed_out=False, error=str(exc)
             )
+        if on_spawn is not None:
+            # The child outlives a SIGKILLed wrapper (pipes, no tty) and keeps
+            # reading the session cache — the sweep must know its pid.
+            on_spawn(proc.pid)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            return SurfaceRunResult(
+                exit_code=124,
+                stdout=_stream_text(stdout or ""),
+                stderr=stderr or "",
+                timed_out=True,
+                error=f"kimi -p timed out after {timeout_s}s",
+            )
 
-        stream = _stream_lines(proc.stdout or "")
+        stream = _stream_lines(stdout or "")
         found = next(
             (
                 str(obj["session_id"])
@@ -333,16 +337,10 @@ class KimiSubagentEngine(SubagentEngine):
                 for obj in stream
                 if obj.get("role") == "assistant" and isinstance(obj.get("content"), str)
             ),
-            stderr=proc.stderr or "",
+            stderr=stderr or "",
             timed_out=False,
             error=None if proc.returncode == 0 else f"kimi -p exited {proc.returncode}",
         )
-
-
-def _as_text(raw: str | bytes | None) -> str:
-    if isinstance(raw, bytes):
-        return raw.decode("utf-8", errors="replace")
-    return raw or ""
 
 
 def _stream_lines(raw: str) -> list[dict]:
