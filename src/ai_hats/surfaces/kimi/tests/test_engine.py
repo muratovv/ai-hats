@@ -122,6 +122,17 @@ def test_timeout_with_partial_output():
     assert result.stderr == "interrupted"
 
 
+def test_timeout_recovers_the_session_id_from_the_partial_stream():
+    """A timed-out run still wrote a wire.jsonl — recording the id keeps its
+    audit on the exact transcript instead of the mtime guess."""
+    engine, proc = _engine(hang=True)
+    proc._stdout = _STREAM
+    result, metrics = _run(engine)
+    assert result.timed_out is True
+    assert metrics.values["provider_session_id"] == "session_abc123"
+    assert metrics.values["stop_reason"] == "timeout"
+
+
 def test_malformed_stream_lines_are_skipped():
     noisy = 'not json\n{"role":"assistant","content":"ok"}\n{"broken\n'
     engine, _ = _engine(stdout=noisy)

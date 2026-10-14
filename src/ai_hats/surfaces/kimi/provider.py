@@ -302,41 +302,25 @@ class KimiSubagentEngine(SubagentEngine):
         except subprocess.TimeoutExpired:
             proc.kill()
             stdout, stderr = proc.communicate()
+            stream = _stream_lines(stdout or "")
+            # A timed-out run still wrote a wire.jsonl: the partial stream's
+            # resume_hint keeps its audit on the exact transcript.
+            _record_stream_metrics(metrics, stream, stop_reason="timeout")
             return SurfaceRunResult(
                 exit_code=124,
-                stdout=_stream_text(stdout or ""),
+                stdout=_assistant_text(stream),
                 stderr=stderr or "",
                 timed_out=True,
                 error=f"kimi -p timed out after {timeout_s}s",
             )
 
         stream = _stream_lines(stdout or "")
-        found = next(
-            (
-                str(obj["session_id"])
-                for obj in stream
-                if obj.get("role") == "meta"
-                and obj.get("type") == "session.resume_hint"
-                and obj.get("session_id")
-            ),
-            None,
-        )
-        metrics.record(
-            {
-                # the generic key the finalize plumbing reads for the resolver
-                "provider_session_id": found or "",
-                "kimi_session_id": found or "",
-                "num_turns": sum(1 for obj in stream if obj.get("role") == "assistant"),
-                "stop_reason": "completed" if proc.returncode == 0 else "error",
-            }
+        _record_stream_metrics(
+            metrics, stream, stop_reason="completed" if proc.returncode == 0 else "error"
         )
         return SurfaceRunResult(
             exit_code=proc.returncode,
-            stdout="".join(
-                str(obj.get("content") or "")
-                for obj in stream
-                if obj.get("role") == "assistant" and isinstance(obj.get("content"), str)
-            ),
+            stdout=_assistant_text(stream),
             stderr=stderr or "",
             timed_out=False,
             error=None if proc.returncode == 0 else f"kimi -p exited {proc.returncode}",
@@ -360,8 +344,34 @@ def _stream_lines(raw: str) -> list[dict]:
 
 def _stream_text(raw: str) -> str:
     """The assistant text of a stream-json run — what the transcript records."""
+    return _assistant_text(_stream_lines(raw))
+
+
+def _assistant_text(stream: list[dict]) -> str:
     return "".join(
         str(obj.get("content") or "")
-        for obj in _stream_lines(raw)
+        for obj in stream
         if obj.get("role") == "assistant" and isinstance(obj.get("content"), str)
+    )
+
+
+def _record_stream_metrics(metrics: MetricsSink, stream: list[dict], *, stop_reason: str) -> None:
+    found = next(
+        (
+            str(obj["session_id"])
+            for obj in stream
+            if obj.get("role") == "meta"
+            and obj.get("type") == "session.resume_hint"
+            and obj.get("session_id")
+        ),
+        None,
+    )
+    metrics.record(
+        {
+            # the generic key the finalize plumbing reads for the resolver
+            "provider_session_id": found or "",
+            "kimi_session_id": found or "",
+            "num_turns": sum(1 for obj in stream if obj.get("role") == "assistant"),
+            "stop_reason": stop_reason,
+        }
     )
