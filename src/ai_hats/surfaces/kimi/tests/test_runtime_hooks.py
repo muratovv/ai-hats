@@ -133,6 +133,15 @@ def test_plan_hooks_manifest_and_shims(hooked_plan):
     assert "hook_dispatcher PreToolUse" in shim.content
 
 
+def test_hook_timeout_clamps_to_kimi_limit(hooked_plan, monkeypatch):
+    """Kimi rejects a hook timeout outside 1..600, failing the WHOLE config
+    load — an oversized chain budget must clamp, not disarm every gate."""
+    monkeypatch.setenv("AI_HATS_HOOK_TIMEOUT_S", "590")
+    plan, root, _ = hooked_plan(SessionPolicy(hooks=True, context=True))
+    parsed = tomllib.loads(_written(plan)[root / "kimi-home" / "config.toml"].content)
+    assert parsed["hooks"][0]["timeout"] == 600
+
+
 def test_hooks_policy_off_installs_no_chain(hooked_plan):
     """SessionPolicy(hooks=False) gates session wiring (ADR-0018) — the home
     still stands (AGENTS.md, kimi's own data), but no shims, no manifest, no

@@ -40,6 +40,23 @@ MANIFEST_VERSION = 1
 SESSION_HOME_SUBPATH = "kimi-home"
 HOOK_SHIMS: tuple[str, ...] = BINDABLE_EVENTS
 
+#: kimi refuses a hook ``timeout`` outside 1..600, failing the WHOLE config
+#: load — an oversized chain budget must clamp, not disarm every gate.
+KIMI_HOOK_TIMEOUT_LIMIT_S = 600
+
+
+def _hook_timeout() -> float:
+    bound = surface_timeout()
+    if bound > KIMI_HOOK_TIMEOUT_LIMIT_S:
+        logger.warning(
+            "kimi: hook timeout %.0fs exceeds kimi's %ds limit — clamped; "
+            "the chain may be killed mid-flight and fail open",
+            bound,
+            KIMI_HOOK_TIMEOUT_LIMIT_S,
+        )
+        return float(KIMI_HOOK_TIMEOUT_LIMIT_S)
+    return bound
+
 
 def shim_source(name: str) -> str:
     """The packaged shim's bytes — the planner's own code, read like a constant."""
@@ -61,7 +78,7 @@ def _config_with_hooks(base: str, hooks_dir: Path, events: tuple[str, ...]) -> s
         # fail open with no verdict (the lesson surface_timeout() encodes).
         blocks.append(
             f'[[hooks]]\nevent = "{event}"\ncommand = {_toml_literal(command)}'
-            f"\ntimeout = {surface_timeout():.0f}\n"
+            f"\ntimeout = {_hook_timeout():.0f}\n"
         )
     return base.rstrip() + "\n\n" + "\n".join(blocks)
 
