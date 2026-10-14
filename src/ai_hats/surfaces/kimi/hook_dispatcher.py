@@ -23,7 +23,7 @@ from ..hook_channel import (
     undeliverable,
     worded,
 )
-from .claude_hook_adapter import to_claude_hook_calls
+from .claude_hook_adapter import payload_drift_notes, to_claude_hook_calls
 from .profile import PROFILE
 
 
@@ -141,6 +141,8 @@ def dispatch_hook(event: str, *, stdin=None) -> int:
         return _reply(_undeliverable(f"invalid payload: {exc}", bound))
     if not isinstance(payload, dict):
         return _reply(_undeliverable("payload is not an object", bound))
+    for note in payload_drift_notes(payload):
+        sys.stderr.write(f"ai-hats-kimi-hook: payload drift: {note}\n")
     try:
         rows = _rows(_load_manifest(os.environ), bound)
     except _ManifestError as exc:

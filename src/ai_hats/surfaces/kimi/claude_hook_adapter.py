@@ -30,6 +30,25 @@ def _coerce_tool_input(raw: object) -> dict:
     return {}
 
 
+def payload_drift_notes(payload: dict) -> list[str]:
+    """Shape changes the adapter tolerates, as one-line notes.
+
+    Tolerated must not mean invisible: a call with no readable ``tool_name``
+    runs EVERY gate (the fail-safe direction), and a ``tool_input`` the adapter
+    cannot parse hands those gates no arguments — most then allow. The note is
+    the only trace that the kimi envelope drifted."""
+    notes = []
+    if not payload.get("tool_name"):
+        notes.append("no tool_name — matchers cannot filter; kimi may have renamed the field")
+    if "tool_input" not in payload:
+        notes.append("no tool_input — gates see no arguments")
+    else:
+        raw = payload["tool_input"]
+        if isinstance(raw, str) and raw.strip() and "_raw" in _coerce_tool_input(raw):
+            notes.append("tool_input is a string that parses to no object — gates see no arguments")
+    return notes
+
+
 def to_claude_hook_calls(payload: dict, event: str) -> list[HookCall]:
     """One call, already Claude-shaped; only the envelope fields are re-keyed."""
     tool = str(payload.get("tool_name", ""))
@@ -44,4 +63,4 @@ def to_claude_hook_calls(payload: dict, event: str) -> list[HookCall]:
     return [HookCall(adapted, tool)]
 
 
-__all__ = ["matches_claude_hook", "to_claude_hook_calls"]
+__all__ = ["matches_claude_hook", "payload_drift_notes", "to_claude_hook_calls"]

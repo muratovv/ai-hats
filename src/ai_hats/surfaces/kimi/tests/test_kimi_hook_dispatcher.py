@@ -8,7 +8,7 @@ import json
 import shutil
 from pathlib import Path
 
-from ai_hats.surfaces.kimi.claude_hook_adapter import to_claude_hook_calls
+from ai_hats.surfaces.kimi.claude_hook_adapter import payload_drift_notes, to_claude_hook_calls
 from ai_hats.surfaces.kimi.hook_dispatcher import dispatch_hook
 
 
@@ -88,6 +88,17 @@ def test_tool_input_unparseable_kept_raw():
     assert calls[0].payload["tool_input"] == {"_raw": "{oops"}
 
 
+def test_payload_drift_notes_silent_shapes():
+    assert payload_drift_notes({"tool_name": "Bash", "tool_input": {"command": "x"}}) == []
+    assert payload_drift_notes({"tool_name": "Bash", "tool_input": repr({"command": "x"})}) == []
+    notes = payload_drift_notes({"tool_input": {"command": "x"}})
+    assert any("tool_name" in n for n in notes)
+    notes = payload_drift_notes({"tool_name": "Bash", "tool_input": "{oops"})
+    assert any("tool_input" in n for n in notes)
+    notes = payload_drift_notes({"tool_name": "Bash"})
+    assert any("tool_input" in n for n in notes)
+
+
 def test_hook_allow_exits_zero(tmp_path: Path, monkeypatch, capsys) -> None:
     hook = _script(tmp_path / "allow.sh", "exit 0\n")
     cache = tmp_path / "cache"
@@ -144,3 +155,17 @@ def test_non_list_hook_rows_refuse_closed(tmp_path: Path, monkeypatch, capsys) -
 def test_unsupported_event_allows(tmp_path: Path, monkeypatch, capsys) -> None:
     code = dispatch_hook("SessionStart", stdin=io.StringIO("{}"))
     assert code == 0
+
+
+def test_drifted_payload_signals_on_stderr(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A shape change the adapter tolerates must still be SAID — a gate that
+    sees no arguments allows, so the drift note is the only trace."""
+    hook = _script(tmp_path / "allow.sh", "exit 0\n")
+    cache = tmp_path / "cache"
+    _manifest(cache, hook)
+    _set_session_env(monkeypatch, cache)
+    drifted = json.dumps({"hook_event_name": "PreToolUse", "tool_input": "{oops"})
+    code = dispatch_hook("PreToolUse", stdin=io.StringIO(drifted))
+    assert code == 0
+    err = capsys.readouterr().err
+    assert "tool_name" in err and "tool_input" in err
