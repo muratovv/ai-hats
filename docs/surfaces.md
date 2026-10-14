@@ -56,10 +56,15 @@ derived from what actually happened (`transcript_parser` + `resolve_transcript`)
 own trace log — non-empty, but coarser: no per-turn tool detail, no token usage.
 
 **Sub-agents.** `ai-hats agent <role>` runs everywhere. On `claude` it is a
-native SDK engine, multi-turn in-process (`supports_sdk_engine`). Elsewhere it
-is a real subprocess whose stdout is captured — on `kimi` the engine parses the
-`stream-json` stream for the answer text and the harness's own session id (the
-`session.resume_hint` meta line), since kimi mints its ids itself — see [3].
+native SDK engine, multi-turn in-process (`supports_sdk_engine`), and
+`setting_sources: []` keeps the project's own CLAUDE.md out of the child.
+Elsewhere it is a real subprocess whose stdout is captured — on `kimi` the
+engine parses the `stream-json` stream for the answer text and the harness's
+own session id (the `session.resume_hint` meta line), since kimi mints its ids
+itself — see [3]. That subprocess starts in the session's worktree, and kimi
+loads the AGENTS.md chain from git root down to its cwd with no off-switch —
+so a `kimi` automate sub-agent carries the worktree's AGENTS.md on top of the
+inlined role prompt, a context the other surfaces' sub-agents do not see.
 
 **Readiness probe.** What refuses an unattended `ai-hats agent` before it
 takes a worktree (`readiness_findings`): `auth` — the surface is not logged in;
