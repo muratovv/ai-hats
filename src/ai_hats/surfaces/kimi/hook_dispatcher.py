@@ -66,14 +66,15 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
         raise _ManifestError(f"hook manifest at {path} carries no hooks mapping")
+    for event, rows in hooks.items():
+        if not isinstance(rows, list):
+            raise _ManifestError(f"hook rows for {event!r} are {type(rows).__name__}, not a list")
 
     declared = PROFILE.skills_root(Path(cache_dir))
     if declared is None:
         raise _ManifestError(f"{PROFILE.label} declares no session skills mirror")
     skills_root = _resolved(str(declared))
     for entries in hooks.values():
-        if not isinstance(entries, list):
-            continue
         for entry in entries:
             if not isinstance(entry, dict) or not isinstance(entry.get("command"), str):
                 continue
@@ -89,8 +90,10 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
 def _rows(manifest: dict, event: HookEvent) -> list[HookRow]:
     """The composed rows for ``event``, or a manifest error naming what is wrong."""
     raw = manifest["hooks"].get(event.value, [])
+    if not isinstance(raw, list):
+        raise _ManifestError(f"hook rows for {event.value!r} are {type(raw).__name__}, not a list")
     rows: list[HookRow] = []
-    for entry in raw if isinstance(raw, list) else []:
+    for entry in raw:
         if not isinstance(entry, dict):
             raise _ManifestError(f"hook entry is {type(entry).__name__}, not an object")
         command = entry.get("command")

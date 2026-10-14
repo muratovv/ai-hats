@@ -121,6 +121,26 @@ def test_missing_manifest_refuses_closed(tmp_path: Path, monkeypatch, capsys) ->
     assert "ai-hats-kimi-hook" in capsys.readouterr().err
 
 
+def test_non_list_hook_rows_refuse_closed(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A malformed event entry must not read as "no gates" — every other
+    manifest deformation refuses closed, this one was the silent exception."""
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "hooks.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "session": {"id": "sid-kimi", "ai_hats_dir": "/project/.agent/ai-hats"},
+                "hooks": {"PreToolUse": {"matcher": "Bash"}},
+            }
+        )
+    )
+    _set_session_env(monkeypatch, cache)
+    code = dispatch_hook("PreToolUse", stdin=io.StringIO(_payload("echo hi")))
+    assert code == 2
+    assert "ai-hats-kimi-hook" in capsys.readouterr().err
+
+
 def test_unsupported_event_allows(tmp_path: Path, monkeypatch, capsys) -> None:
     code = dispatch_hook("SessionStart", stdin=io.StringIO("{}"))
     assert code == 0
