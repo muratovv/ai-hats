@@ -10,6 +10,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-14
+
+### Added
+
+- **Kimi Code is the sixth surface** (HATS-2059, the HATS-2060 epic's first roll — and this very release is cut from a kimi session: kimi rolls kimi to prod). `ai-hats -p kimi` runs a composed session on the kimi CLI. The role reaches the agent only through the session's own home: a per-session `KIMI_CODE_HOME` carries the session's AGENTS.md and hook manifest, so the person's `~/.kimi-code` is never written. An automate sub-agent runs headless as a real subprocess on kimi's stream-json output, and the session's `wire.jsonl` is parsed into the canonical event log, so the audit, the metrics and `session list` read a kimi run the way they read a claude one; additive wire event types are noise, and a drift in shape is flagged rather than raising. The hook chain stands on kimi's PreToolUse/PostToolUse, gated on the role's `SessionPolicy.hooks` and refusing closed on a malformed row. Kimi's dialect is refusal-only: a central gate's `ask` or `nudge` verdict is downgraded to a refusal rather than silently allowed, and a hook timeout is clamped to the CLI's own 600 s limit. Consent works as on the other surfaces — PATH wrappers around the gated verbs, and the person's `consent` verb issuing the grant (ADR-0029). The kimi CLI itself stays a prerequisite, as with every surface: the readiness probe reads the credentials under `$KIMI_CODE_HOME`, and international (kimi.ai) accounts log in with `KIMI_OAUTH_HOST=https://auth.kimi.ai` (docs/surfaces.md). Known gaps, named rather than hidden: hooks can refuse but not ask, nudge or cancel-after — the matrix in docs/surfaces.md says which surface utters what (ask: HATS-2064, nudge: HATS-2061); `ai-hats headless` still drives claude only (HATS-2067); a kimi automate sub-agent launched in a worktree inherits the worktree's AGENTS.md (HATS-2071); resume is not wired (HATS-2065).
+
+### Fixed
+
+- **Two hermeticity fixes that rode along** (HATS-2059). The automate launch unit tests stub the claude readiness probe instead of probing the host's real claude (6b8c50c76), and the claude SDK smoke is gated on claude being logged in, not just on the binary being present (ab89e1175) — a machine with the binary but no auth ran it and failed where it should have skipped.
+
 ## [0.17.0] - 2026-10-08
 
 ### Added
@@ -2931,7 +2941,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/muratovv/ai-hats/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/muratovv/ai-hats/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/muratovv/ai-hats/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/muratovv/ai-hats/compare/v0.15.0...v0.15.1
