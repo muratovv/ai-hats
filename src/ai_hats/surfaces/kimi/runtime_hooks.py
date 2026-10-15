@@ -4,11 +4,11 @@ Kimi reads hooks only from ``$KIMI_CODE_HOME/config.toml`` and global
 instructions from ``$KIMI_CODE_HOME/AGENTS.md`` — both user-global files, so a
 per-session chain and role need a per-session home (the codex session-home
 pattern): the session's home carries a snapshot of the global config with the
-composed ``[[hooks]]`` appended, copies ``tui.toml`` (status_line) and
-``workspaces.json`` (trust registry) over, and symlinks ``credentials/`` back
-so OAuth keeps working. ``sessions/`` and ``logs/`` also write through symlinks
-into the global home — the wire transcript must outlive the session cache,
-which the runner sweeps at run close.
+composed ``[[hooks]]`` appended, copies ``tui.toml`` (status_line) over, and
+symlinks ``credentials/`` and ``workspace-trust/`` back so OAuth and
+folder-trust decisions survive the session. ``sessions/`` and ``logs/`` also
+write through symlinks into the global home — the wire transcript must outlive
+the session cache, which the runner sweeps at run close.
 """  # comment-length: allow — the per-session-home contract is the module's point
 
 from __future__ import annotations
@@ -151,19 +151,21 @@ def plan_session_home(
     else:
         config = base_config.rstrip() + "\n"
     entries.append(describe_write_text(session_home / "config.toml", config))
-    # tui.toml carries [status_line].command and workspaces.json the trust
-    # registry — kimi recreates both with defaults in a fresh home, so a session
-    # would lose the bar and re-ask trust unless both ride the snapshot.
-    # workspaces.json goes as a COPY, not a symlink: kimi may rewrite it with an
-    # atomic rename, which would replace the symlink in the swept session cache.
-    for name in ("tui.toml", "workspaces.json"):
-        source = global_home / name
-        if source.is_file():
-            entries.append(
-                describe_write_text(session_home / name, source.read_text(encoding="utf-8"))
-            )
-        else:
-            logger.warning("kimi: no global %s at %s — session home goes without", name, source)
+    # tui.toml carries [status_line].command — kimi recreates it with defaults
+    # in a fresh home, so a session would lose the bar unless it rides along.
+    global_tui = global_home / "tui.toml"
+    if global_tui.is_file():
+        entries.append(
+            describe_write_text(session_home / "tui.toml", global_tui.read_text(encoding="utf-8"))
+        )
+    else:
+        logger.warning("kimi: no global tui.toml at %s — session home goes without", global_tui)
+    # workspace-trust/ holds kimi's "Trust this folder?" records — write-through
+    # symlink into the global home, or every session re-asks and a decision taken
+    # inside a session dies with the swept cache.
+    global_trust = global_home / "workspace-trust"
+    entries.append(dataclasses.replace(describe_mkdir(global_trust), escape=True))
+    entries.append(describe_symlink(global_trust, session_home / "workspace-trust"))
     env = {
         KIMI_HOME_ENV: str(session_home),
         ENV_SESSION_CACHE_DIR: str(root),
