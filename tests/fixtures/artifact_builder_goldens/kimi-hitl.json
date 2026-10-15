@@ -136,6 +136,20 @@
       "target": "<cache>/sessions/dry-run/kimi-home/config.toml"
     },
     {
+      "digest": null,
+      "kind": "mkdir",
+      "size": null,
+      "source": null,
+      "target": "<home>/.kimi-code/workspace-trust"
+    },
+    {
+      "digest": null,
+      "kind": "symlink",
+      "size": null,
+      "source": "<home>/.kimi-code/workspace-trust",
+      "target": "<cache>/sessions/dry-run/kimi-home/workspace-trust"
+    },
+    {
       "digest": "c5981cfc631f2074faf408956766f48f34b027c68f9858c5a20f09c3be570d4d",
       "kind": "write_text",
       "size": 36,

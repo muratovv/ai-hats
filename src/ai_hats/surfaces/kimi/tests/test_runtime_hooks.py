@@ -126,27 +126,28 @@ def test_plan_session_home_tui_toml_snapshot(hooked_plan):
     assert parsed["status_line"]["command"] == "bash ~/statusline.sh"
 
 
-def test_plan_session_home_workspaces_json_snapshot(hooked_plan):
-    """workspaces.json holds the trust registry — a copy (never a symlink: kimi
-    may rewrite it with an atomic rename) so a session does not re-ask trust."""
-    kimi_home = Path(os.environ["KIMI_CODE_HOME"])
-    registry = '{"version": 1, "workspaces": {"wd_x": {"root": "/tmp/x"}}}\n'
-    (kimi_home / "workspaces.json").write_text(registry)
-    plan, root, _ = hooked_plan(SessionPolicy(hooks=True, context=True))
-    entry = _written(plan)[root / "kimi-home" / "workspaces.json"]
-    assert entry.kind.value == "write_text"
-    assert entry.content == registry
+def test_plan_session_home_workspace_trust_symlink(hooked_plan):
+    """Trust records live in $KIMI_CODE_HOME/workspace-trust/<wd-key> — a
+    write-through symlink into the global home, or every session re-asks
+    "Trust this folder?" and the decision dies with the swept session cache."""
+    plan, root, kimi_home = hooked_plan(SessionPolicy(hooks=True, context=True))
+    written = _written(plan)
+    entry = written[root / "kimi-home" / "workspace-trust"]
+    assert entry.kind.value == "symlink"
+    assert Path(entry.source) == kimi_home / "workspace-trust"
+    # The global dir is materialized even when absent — a trust decision taken
+    # inside an ai-hats session must have somewhere persistent to land.
+    mkdir = written[kimi_home / "workspace-trust"]
+    assert mkdir.kind.value == "mkdir"
 
 
-def test_plan_session_home_missing_tui_and_workspaces(hooked_plan, caplog):
-    """No global tui.toml / workspaces.json → warn and skip, by the config.toml
-    pattern — a bare kimi install must not fail session planning."""
+def test_plan_session_home_missing_tui_toml(hooked_plan, caplog):
+    """No global tui.toml → warn and skip, by the config.toml pattern — a bare
+    kimi install must not fail session planning."""
     plan, root, _ = hooked_plan(SessionPolicy(hooks=True, context=True))
     written = _written(plan)
     assert root / "kimi-home" / "tui.toml" not in written
-    assert root / "kimi-home" / "workspaces.json" not in written
     assert "no global tui.toml" in caplog.text
-    assert "no global workspaces.json" in caplog.text
 
 
 def test_plan_hooks_credentials_symlink(hooked_plan):
