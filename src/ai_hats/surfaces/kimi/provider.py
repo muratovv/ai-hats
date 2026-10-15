@@ -224,6 +224,47 @@ class KimiSurface(Surface):
             cmd.extend(args)
         return cmd
 
+    #: kimi flags that consume the next token as their value. ``-S``/``--session``
+    #: takes an OPTIONAL value — we mirror kimi's own parse: a following token
+    #: is the id, not a prompt.
+    _VALUE_FLAGS = frozenset(
+        {
+            "-m",
+            "--model",
+            "-S",
+            "--session",
+            "-r",
+            "--resume",
+            "--skills-dir",
+            "--agent",
+            "--agent-file",
+            "--add-dir",
+            "-p",
+            "--prompt",
+            "--output-format",
+        }
+    )
+
+    def split_initial_prompt(self, args: list[str]) -> tuple[str | None, list[str]]:
+        """kimi's CLI has no positional prompt (``kimi <text>`` errors with
+        'unknown command') — peel the first bare token so the runner delivers
+        it through PTY injection instead of argv."""
+        rest: list[str] = []
+        prompt: str | None = None
+        skip_next = False
+        for arg in args:
+            if skip_next:
+                skip_next = False
+                rest.append(arg)
+                continue
+            if prompt is None and not arg.startswith("-"):
+                prompt = arg
+                continue
+            rest.append(arg)
+            if arg in self._VALUE_FLAGS:
+                skip_next = True
+        return prompt, rest
+
     def get_run_command(
         self,
         cmd: list[str],

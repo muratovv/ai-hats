@@ -368,6 +368,16 @@ class Surface(abc.ABC):
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         """Get the CLI command to launch this surface."""
 
+    def split_initial_prompt(self, args: list[str]) -> tuple[str | None, list[str]]:
+        """Peel a bare positional first-turn prompt out of the operator's args.
+
+        Default: nothing peeled — the surface's CLI accepts a positional prompt
+        in argv (claude, codex) or the args are flags only. A surface whose CLI
+        has no positional prompt (kimi) overrides: the peeled token reaches the
+        TUI through PTY injection instead of argv.
+        """
+        return None, args
+
     def get_cli_launch_args(
         self, base_cmd: list[str], session_id: SessionId, is_resume: bool
     ) -> list[str]:

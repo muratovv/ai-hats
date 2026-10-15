@@ -62,7 +62,7 @@ def _launch(project: Path, monkeypatch) -> str:
     monkeypatch.setattr(
         rt.WrapRunner,
         "_pty_spawn",
-        lambda self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None: 0,
+        lambda self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None, initial_input=None: 0,
     )
     monkeypatch.setenv("AI_HATS_STARTUP_HOLD", "0.05")
     monkeypatch.chdir(project)

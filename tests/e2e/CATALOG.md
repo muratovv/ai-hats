@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**358 of 358 files catalogued — 366 flows.**
+**359 of 359 files catalogued — 367 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2194,6 +2194,20 @@ as a claim to check, not as evidence.
 
 - **expect** — exit 0, an assistant answer and a session.resume_hint meta line on stdout; wire.jsonl under the session home; KimiParser reads turns and token telemetry from it. With a deny [[hooks]] guard installed, a Bash call is refused and the model sees the reason.
 - **why** — this is the task's core acceptance — headless first-class — and the parser must prove itself on a record the real harness wrote, not only on fixtures. Needs the kimi CLI and an OAuth login; skips everywhere else. Kept out of the mandatory gate (live_headless) because it needs that login; run it with `-m live_headless`
+
+## `test_kimi_initial_prompt_injection.py`
+
+*pins HATS-2075*
+
+- **flow** — a developer wrapping kimi with a bare positional prompt
+- **cmds**
+
+  ```console
+  ai-hats -p kimi-stub "e2e probe prompt"
+  ```
+
+- **expect** — the prompt never reaches the stub's argv (kimi has no positional); instead the wrap layer types it into the TUI over the PTY master — bracketed-paste blob, then a deferred Enter. A no-prompt run injects nothing (positive control).
+- **why** — kimi's CLI errors 'unknown command' on a positional; without the peel + injection, `ai-hats -p kimi "..."` silently failed to launch the prompt
 
 ## `test_launcher_contract_skew.py`
 

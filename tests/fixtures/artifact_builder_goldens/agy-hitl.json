@@ -58,6 +58,7 @@
     "AI_HATS_SESSION_IDENTITY",
     "TRACE_LOG_PATH"
   ],
+  "initial_prompt": null,
   "launch": [
     "agy",
     "--add-dir",

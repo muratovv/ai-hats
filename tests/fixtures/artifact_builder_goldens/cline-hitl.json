@@ -58,6 +58,7 @@
     "CLINE_HUB_PORT",
     "TRACE_LOG_PATH"
   ],
+  "initial_prompt": null,
   "launch": [
     "cline",
     "-i",

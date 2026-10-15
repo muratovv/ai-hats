@@ -152,11 +152,18 @@ def launch(plan: MaterializationPlan, flags: LaunchFlags, *, layout: ProjectLayo
     env = launch_env(plan, surface, flags, layout=layout)
     if plan.run_mode is RunMode.AUTOMATE:
         return surface.automate_launch(plan, flags, env, layout=layout)
-    cmd = surface.get_cli_command(list(flags.extra_args))
+    initial_prompt, rest = surface.split_initial_prompt(list(flags.extra_args))
+    cmd = surface.get_cli_command(rest)
     cmd.extend(plan.launch.args or ())
     is_resume = _is_resume(flags.extra_args)
     argv = surface.get_cli_launch_args(cmd, flags.provider_session_id or "", is_resume)
-    return Launched(args=tuple(argv), sdk_options=None, env=env, prompt=context_text(plan))
+    return Launched(
+        args=tuple(argv),
+        sdk_options=None,
+        env=env,
+        prompt=context_text(plan),
+        initial_prompt=initial_prompt,
+    )
 
 
 def launch_env(
@@ -231,6 +238,7 @@ def session_record(
             "settings": plan.policy.settings,
         },
         "launch": surface.describe_launch(launched),
+        "initial_prompt": launched.initial_prompt,
         "env_keys": sorted(launched.env),
         "prompt": str(plan.context) if plan.context is not None else None,
         "materialized": materialized,

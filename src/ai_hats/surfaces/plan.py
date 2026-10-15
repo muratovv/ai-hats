@@ -399,6 +399,10 @@ class Launched:
     sdk_options: Mapping[str, object] | None
     env: Mapping[str, str]
     prompt: str
+    #: The operator's first-turn prompt peeled out of argv by
+    #: ``Surface.split_initial_prompt`` — delivered through PTY injection
+    #: (HITL wrap) rather than as an argv token.
+    initial_prompt: str | None = None
 
     def __post_init__(self) -> None:
         if (self.args is None) == (self.sdk_options is None):

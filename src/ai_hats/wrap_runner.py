@@ -26,6 +26,7 @@ from .constants import PINNED_PYTHON
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
+from .initial_input import InitialInputInjector
 from .pipeline import PipelineConfig, warm
 from .pipeline_catalog import FINALIZE_HITL
 from .pty_shutdown import (
@@ -657,7 +658,7 @@ class WrapRunner:
         result = payload.result
         # a resumed conversation goes on under its own id, which claude then writes to
         claude_session_id = resumed_session_id(extra_args or ()) or str(uuid.uuid4())
-        cmd, env_map, meta_prompt, record = self._session_on_the_plan(
+        cmd, env_map, meta_prompt, record, initial_prompt = self._session_on_the_plan(
             session, run, extra_args=extra_args, provider_session_id=claude_session_id
         )
         _claim_session_cache(self.layout.cache.session(session.session_id))
@@ -700,6 +701,7 @@ class WrapRunner:
             builder_notices=builder_notices,
             tags=tags,
             pty_tap_factory=pty_tap_factory,
+            initial_prompt=initial_prompt,
         )
 
     def _session_on_the_plan(
@@ -709,7 +711,7 @@ class WrapRunner:
         *,
         extra_args: list[str] | None,
         provider_session_id: str,
-    ) -> tuple[list[str], dict[str, str], str, dict]:
+    ) -> tuple[list[str], dict[str, str], str, dict, str | None]:
         """plan → apply → claim → launch → record (ADR-0036 D2–D6)."""
         payload = self.payload
         provider = payload.provider
@@ -745,7 +747,13 @@ class WrapRunner:
             cwd=str(self.layout.cwd),  # where the pty child runs, not the root
             notes=[d.render() for d in payload.diagnostics],
         )
-        return list(launched.args or ()), dict(launched.env), launched.prompt, record
+        return (
+            list(launched.args or ()),
+            dict(launched.env),
+            launched.prompt,
+            record,
+            launched.initial_prompt,
+        )
 
     def _launch_after_the_record(
         self,
@@ -760,6 +768,7 @@ class WrapRunner:
         builder_notices: list[StartupNotice],
         tags: dict[str, str] | None,
         pty_tap_factory: PtyTapFactory | None,
+        initial_prompt: str | None = None,
     ) -> tuple[int, Session]:
         payload = self.payload
         provider = payload.provider
@@ -894,6 +903,7 @@ class WrapRunner:
                     on_spawn=lambda pid: _claim_surface_child(
                         self.layout.cache.session(session.session_id), pid
                     ),
+                    initial_prompt=initial_prompt,
                 )
         except KeyboardInterrupt:
             exit_code = 130
@@ -988,13 +998,21 @@ class WrapRunner:
         provider_session_id: str,
         pty_tap_factory: PtyTapFactory | None,
         on_spawn: Callable[[int], None],
+        initial_prompt: str | None = None,
     ) -> int:
         """Run the surface to its exit and return the session's exit code — on a
         PTY here; the headless holder drives it over pipes instead."""
         del session, event_log, provider_session_id
         provider = self.payload.provider
         self._modify_other_keys = provider is not None and provider.name == "grok"
-        return self._pty_spawn(cmd, env, tracer, pty_tap_factory=pty_tap_factory, on_spawn=on_spawn)
+        return self._pty_spawn(
+            cmd,
+            env,
+            tracer,
+            pty_tap_factory=pty_tap_factory,
+            on_spawn=on_spawn,
+            initial_input=initial_prompt,
+        )
 
     def _pty_spawn(
         self,
@@ -1003,6 +1021,7 @@ class WrapRunner:
         tracer: SidecarTracer,
         pty_tap_factory: PtyTapFactory | None = None,
         on_spawn: Callable[[int], None] | None = None,
+        initial_input: str | None = None,
     ) -> int:
         """Spawn a process with PTY for interactive terminal passthrough + sidecar trace.
 
@@ -1147,6 +1166,8 @@ class WrapRunner:
             except Exception:  # noqa: BLE001
                 logger.warning("pty_tap close failed after %s fault", where, exc_info=True)
 
+        injector = InitialInputInjector(initial_input) if initial_input else None
+
         try:
             while True:
                 try:
@@ -1155,10 +1176,23 @@ class WrapRunner:
                     _drop("extra_read_fds", exc)
                     extra = ()
                 sel_fds = [*read_fds, *extra] if extra else read_fds
+                sel_timeout = injector.next_timeout() if injector is not None else None
                 try:
-                    rlist, _, _ = select.select(sel_fds, [], [])
+                    rlist, _, _ = select.select(sel_fds, [], [], sel_timeout)
                 except (OSError, select.error):
                     break
+
+                if injector is not None and injector.pending and not rlist:
+                    # Select timed out for the injector: the TUI went quiet
+                    # (paste the prompt) or the paste just landed (send Enter).
+                    chunk = injector.on_tick()
+                    if chunk is not None:
+                        try:
+                            os.write(master_fd, chunk)
+                        except OSError:
+                            break
+                        if chunk == b"\r":
+                            tracer.log_sys("initial prompt submitted via PTY injection")
 
                 if master_fd in rlist:
                     try:
@@ -1167,6 +1201,8 @@ class WrapRunner:
                         break
                     if not data:
                         break
+                    if injector is not None and injector.pending:
+                        injector.on_output()
                     try:
                         os.write(stdout_fd, data)
                     except OSError:
@@ -1270,6 +1306,15 @@ class WrapRunner:
         # Reported only now: mid-session, stderr would land inside the surface's TUI.
         if tracer.fault is not None:
             print(f"[ai-hats] session trace stopped mid-session: {tracer.fault}", file=sys.stderr)
+        if injector is not None and injector.missed:
+            # Fail-open by contract: the session ran fine, only the typed
+            # first turn never went in — say so where the user can act on it.
+            tracer.log_sys("initial prompt NOT injected: TUI readiness cap expired")
+            print(
+                "[ai-hats] initial prompt was not delivered (TUI never went idle) — "
+                "it was never typed; re-run and enter it manually",
+                file=sys.stderr,
+            )
 
         # The parent escape-hatch fired (triple Ctrl-C against a
         # wedged child). bounded_proc_shutdown (above) already killed the child,

@@ -215,3 +215,25 @@ def test_automate_plan_carries_role_inline_not_on_disk(kimi_project):
     assert not any(e.target == root / "kimi-home" / "AGENTS.md" for e in plan.entries)
     # …but the home still exists: hooks and kimi's own session data need it.
     assert plan.env["KIMI_CODE_HOME"] == str(root / "kimi-home")
+
+
+def test_split_initial_prompt_peels_the_first_bare_token():
+    """kimi's CLI has no positional prompt — it must not reach argv."""
+    surface = KimiSurface()
+    prompt, rest = surface.split_initial_prompt(["fix the flaky test", "--model", "k3"])
+    assert prompt == "fix the flaky test"
+    assert rest == ["--model", "k3"]
+
+
+def test_split_initial_prompt_keeps_flag_values_out_of_the_prompt():
+    surface = KimiSurface()
+    prompt, rest = surface.split_initial_prompt(["-m", "k3", "-S", "abc123", "do the thing"])
+    assert prompt == "do the thing"
+    assert rest == ["-m", "k3", "-S", "abc123"]
+
+
+def test_split_initial_prompt_is_none_without_a_bare_token():
+    surface = KimiSurface()
+    prompt, rest = surface.split_initial_prompt(["--yolo", "-m", "k3"])
+    assert prompt is None
+    assert rest == ["--yolo", "-m", "k3"]

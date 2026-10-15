@@ -103,6 +103,15 @@ the install refusal.
 `apps.consent_gate` fails **before the agent starts**, rather than running with
 an unwrapped command — a loud refusal, not a silent hole.
 
+**First-turn prompt.** `ai-hats "prompt"` hands the bare positional to the
+harness's own argv on `claude` and `codex`, which accept one. `kimi`'s CLI has
+no positional prompt — `kimi "prompt"` exits with `unknown command` — so the
+wrap layer peels the token out of argv
+(`Surface.split_initial_prompt`) and types it into the TUI over the PTY master
+instead: once the boot redraw goes quiet, a bracketed-paste blob (multi-line
+safe), then a deferred Enter. If the TUI never goes idle, the session still
+starts and a post-session notice says the prompt was not delivered.
+
 ## MCP
 
 A skill declares the MCP servers it needs once, in a neutral form, and the

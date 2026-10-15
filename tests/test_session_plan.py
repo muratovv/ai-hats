@@ -111,6 +111,39 @@ def _claude(asm, composition, root: Path, run_mode: RunMode):
     )
 
 
+def test_a_kimi_hitl_launch_peels_the_positional_prompt_out_of_argv(maintainer, tmp_path: Path):
+    """kimi's CLI rejects a positional prompt ('unknown command'), so the bare
+    token leaves argv and rides ``Launched.initial_prompt`` to the PTY
+    injector; claude — which takes a positional — keeps it in argv."""
+    from ai_hats.session_plan import launch
+
+    asm, composition = maintainer
+    root = tmp_path / "sessions" / "s"
+    kimi_plan = get_surface("kimi").plan(
+        composition,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=root,
+        layout=asm.layout,
+        host=probe_host(),
+    )
+    flags = _flags(root, extra_args=("fix the flaky test", "-m", "k3"))
+
+    launched = launch(kimi_plan, flags, layout=asm.layout)
+
+    assert launched.initial_prompt == "fix the flaky test"
+    assert "fix the flaky test" not in launched.args
+    assert list(launched.args)[:3] == ["kimi", "-m", "k3"]
+
+    claude_launched = launch(
+        _claude(asm, composition, root, RunMode.HITL),
+        _flags(root, extra_args=("fix the flaky test",)),
+        layout=asm.layout,
+    )
+    assert claude_launched.initial_prompt is None
+    assert "fix the flaky test" in claude_launched.args
+
+
 @pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
 def test_planning_for_one_root_is_the_same_before_and_after_it_is_applied(
     maintainer, tmp_path: Path, run_mode: RunMode
@@ -310,6 +343,7 @@ def test_the_record_names_what_application_did_only_when_it_did(maintainer, tmp_
         "cwd",
         "policy",
         "launch",
+        "initial_prompt",
         "env_keys",
         "prompt",
         "materialized",

@@ -59,6 +59,7 @@
     "CODEX_SQLITE_HOME",
     "TRACE_LOG_PATH"
   ],
+  "initial_prompt": null,
   "launch": [
     "codex",
     "-c",

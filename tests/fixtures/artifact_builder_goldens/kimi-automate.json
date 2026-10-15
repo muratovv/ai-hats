@@ -84,6 +84,7 @@
     "KIMI_CODE_HOME",
     "TRACE_LOG_PATH"
   ],
+  "initial_prompt": null,
   "launch": [
     "kimi",
     "--skills-dir",
