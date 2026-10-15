@@ -4,6 +4,7 @@ config snapshot + composed [[hooks]], credentials symlink, manifest, env."""
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from pathlib import Path
 
@@ -113,6 +114,39 @@ def test_plan_hooks_session_home_config(hooked_plan):
     # Derived, not pinned: the outer bound must always outlive the chain's own
     # budget, or kimi kills the dispatcher mid-chain and fails open.
     assert hooks[0]["timeout"] == int(surface_timeout())
+
+
+def test_plan_session_home_tui_toml_snapshot(hooked_plan):
+    """tui.toml carries [status_line].command — kimi creates it with defaults in
+    a fresh home, so the bar never reaches a session unless we snapshot it."""
+    kimi_home = Path(os.environ["KIMI_CODE_HOME"])  # pinned by the fixture
+    (kimi_home / "tui.toml").write_text('[status_line]\ncommand = "bash ~/statusline.sh"\n')
+    plan, root, _ = hooked_plan(SessionPolicy(hooks=True, context=True))
+    parsed = tomllib.loads(_written(plan)[root / "kimi-home" / "tui.toml"].content)
+    assert parsed["status_line"]["command"] == "bash ~/statusline.sh"
+
+
+def test_plan_session_home_workspaces_json_snapshot(hooked_plan):
+    """workspaces.json holds the trust registry — a copy (never a symlink: kimi
+    may rewrite it with an atomic rename) so a session does not re-ask trust."""
+    kimi_home = Path(os.environ["KIMI_CODE_HOME"])
+    registry = '{"version": 1, "workspaces": {"wd_x": {"root": "/tmp/x"}}}\n'
+    (kimi_home / "workspaces.json").write_text(registry)
+    plan, root, _ = hooked_plan(SessionPolicy(hooks=True, context=True))
+    entry = _written(plan)[root / "kimi-home" / "workspaces.json"]
+    assert entry.kind.value == "write_text"
+    assert entry.content == registry
+
+
+def test_plan_session_home_missing_tui_and_workspaces(hooked_plan, caplog):
+    """No global tui.toml / workspaces.json → warn and skip, by the config.toml
+    pattern — a bare kimi install must not fail session planning."""
+    plan, root, _ = hooked_plan(SessionPolicy(hooks=True, context=True))
+    written = _written(plan)
+    assert root / "kimi-home" / "tui.toml" not in written
+    assert root / "kimi-home" / "workspaces.json" not in written
+    assert "no global tui.toml" in caplog.text
+    assert "no global workspaces.json" in caplog.text
 
 
 def test_plan_hooks_credentials_symlink(hooked_plan):
