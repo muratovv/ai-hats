@@ -69,9 +69,13 @@ loads the AGENTS.md chain from git root down to its cwd with no off-switch —
 so a `kimi` automate sub-agent carries the worktree's AGENTS.md on top of the
 inlined role prompt, a context the other surfaces' sub-agents do not see. On
 `grok` the engine parses `streaming-messages-json` and passes `--session-id`
-(a fresh UUID only; a resume flag already names the session). Grok still loads
-project `AGENTS.md`, `.grok/skills`, and by default `~/.claude/skills` — there
-is no flag that replaces that discovery.
+(a fresh UUID only; a resume flag already names the session). The session home
+writes `config.toml` with the compat cells off, so `~/.claude` and `~/.cursor`
+skills, rules, agents, MCP and hooks are disabled, and `[skills] ignore` hides
+the project's `.grok/skills` and `.grok/commands` at the checkout and the cwd.
+`grok inspect` keeps a disabled compat file in the listing and marks it
+disabled. Grok still loads project `AGENTS.md` (and the other instruction
+filenames) and `<dir>/.grok/rules/` — there is no key that stops that walk.
 
 **Readiness probe.** What refuses an unattended `ai-hats agent` before it
 takes a worktree (`readiness_findings`): `auth` — the surface is not logged in;

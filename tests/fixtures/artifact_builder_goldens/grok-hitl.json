@@ -141,6 +141,13 @@
       "target": "<cache>/sessions/dry-run/grok-home/logs"
     },
     {
+      "digest": "<path-embedding bytes>",
+      "kind": "write_text",
+      "size": "<path-embedding bytes>",
+      "source": null,
+      "target": "<cache>/sessions/dry-run/grok-home/config.toml"
+    },
+    {
       "digest": "c5981cfc631f2074faf408956766f48f34b027c68f9858c5a20f09c3be570d4d",
       "kind": "write_text",
       "size": 36,

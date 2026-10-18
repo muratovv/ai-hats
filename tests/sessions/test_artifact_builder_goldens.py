@@ -40,6 +40,7 @@ UPDATE = os.environ.get("AI_HATS_UPDATE_GOLDENS") == "1"
 #: their digest and size cannot match across two machines by construction.
 PATH_EMBEDDING = {
     "codex": {".ai-hats-session.json"},
+    "grok": {"config.toml"},
     "opencode": {"opencode.json", "hooks.json"},
 }
 

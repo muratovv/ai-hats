@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tomllib
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -176,7 +177,22 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch)
     assert home / "skills" in targets
     assert home / "hooks" / "ai-hats.json" in targets
     assert root / "hooks" / "PreToolUse" in targets
-    assert not any(entry.target == home / "config.toml" for entry in plan.entries)
+    assert home / "rules" / "role.md" in targets
+    config = tomllib.loads(
+        next(entry.content for entry in plan.entries if entry.target == home / "config.toml")
+    )
+    cells = ("skills", "rules", "agents", "mcps", "hooks", "sessions")
+    for vendor in ("claude", "cursor", "codex"):
+        assert config["compat"][vendor] == dict.fromkeys(cells, False)
+    assert "paths" not in config
+    expected_ignore = []
+    for base in (asm.layout.root, asm.layout.cwd):
+        for name in ("skills", "commands"):
+            text = str(Path(base).resolve() / ".grok" / name)
+            if text not in expected_ignore:
+                expected_ignore.append(text)
+    assert config["skills"]["ignore"] == expected_ignore
+    assert str(home / "skills") not in config["skills"]["ignore"]
     hook_file = next(
         entry for entry in plan.entries if entry.target == home / "hooks" / "ai-hats.json"
     )
@@ -185,6 +201,23 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch)
     assert command["command"] == str(root / "hooks" / "PreToolUse")
     assert "matcher" not in document["hooks"]["PreToolUse"][0]
     assert command["timeout"] > 5
+
+
+def test_session_config_ignores_root_and_cwd_and_roundtrips_quotes(tmp_path: Path):
+    from ai_hats.surfaces.grok.runtime_hooks import _session_config
+
+    weird = tmp_path / 'a"b\\c'
+    root = str(tmp_path.resolve())
+    same = tomllib.loads(_session_config(SimpleNamespace(root=tmp_path, cwd=tmp_path)))
+    assert same["skills"]["ignore"] == [f"{root}/.grok/skills", f"{root}/.grok/commands"]
+    other = str(weird.resolve())
+    both = tomllib.loads(_session_config(SimpleNamespace(root=tmp_path, cwd=weird)))
+    assert both["skills"]["ignore"] == [
+        f"{root}/.grok/skills",
+        f"{root}/.grok/commands",
+        f"{other}/.grok/skills",
+        f"{other}/.grok/commands",
+    ]
 
 
 def test_automate_plan_keeps_the_role_inline(tmp_path: Path, monkeypatch):
@@ -215,6 +248,11 @@ def test_automate_plan_keeps_the_role_inline(tmp_path: Path, monkeypatch):
     )
     assert plan.context is None
     assert plan.launch.args == ()
+    home = asm.layout.cache.session("sid") / "grok-home"
+    config = tomllib.loads(
+        next(entry.content for entry in plan.entries if entry.target == home / "config.toml")
+    )
+    assert config["compat"]["claude"]["hooks"] is False
 
 
 class _Metrics:
