@@ -42,3 +42,9 @@ library/core/skills/git-mastery/SKILL.md
 # construction, no real content.
 src/ai_hats/surfaces/kimi/tests/fixtures/*.jsonl
 
+# HATS-2076: grok updates.jsonl and usage.json for GrokParser. Cut from a
+# headless "pong" probe: session and prompt ids replaced, the prompt is
+# that probe's own sentence, token counts kept. The sessionId field is
+# what the privacy hook flags; the values are not a live session.
+src/ai_hats/surfaces/grok/tests/fixtures/headless-pong/*
+

@@ -11,11 +11,13 @@ from .agy.profile import PROFILE as AGY
 from .claude.profile import PROFILE as CLAUDE
 from .cline.profile import PROFILE as CLINE
 from .codex.profile import PROFILE as CODEX
+from .grok.profile import PROFILE as GROK
 from .hook_channel import SurfaceProfile
+from .kimi.profile import PROFILE as KIMI
 from .opencode.profile import PROFILE as OPENCODE
 
 #: Every in-process channel, for a check that must hold across all of them.
-ALL: tuple[SurfaceProfile, ...] = (AGY, CLAUDE, CLINE, CODEX, OPENCODE)
+ALL: tuple[SurfaceProfile, ...] = (AGY, CLAUDE, CLINE, CODEX, GROK, KIMI, OPENCODE)
 
 
 def by_label(label: str) -> SurfaceProfile | None:
@@ -31,4 +33,15 @@ def hook_profile(label: str) -> SurfaceProfile:
     return profile
 
 
-__all__ = ["AGY", "ALL", "CLAUDE", "CLINE", "CODEX", "OPENCODE", "by_label", "hook_profile"]
+__all__ = [
+    "AGY",
+    "ALL",
+    "CLAUDE",
+    "CLINE",
+    "CODEX",
+    "GROK",
+    "KIMI",
+    "OPENCODE",
+    "by_label",
+    "hook_profile",
+]

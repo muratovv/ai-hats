@@ -58,6 +58,10 @@ def project(tmp_path: Path, monkeypatch) -> Path:
         # Inside an ai-hats kimi session this points at the parent's session
         # home — machine-specific paths no golden can normalize away.
         "KIMI_CODE_HOME",
+        # This process may be a grok session: GROK_HOME is that session's
+        # home, and XAI_API_KEY would be copied into the golden's env.
+        "GROK_HOME",
+        "XAI_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
 

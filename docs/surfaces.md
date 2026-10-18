@@ -1,6 +1,6 @@
 # Surfaces — what works where
 
-Six harnesses ship in-tree. They are not equally capable, and the gaps are not
+Seven harnesses ship in-tree. They are not equally capable, and the gaps are not
 failures: each agent CLI exposes a different amount of itself, and ai-hats can
 only use what is exposed. This page says which is which, so a choice of harness
 is made with the trade-off visible rather than discovered three weeks in.
@@ -18,10 +18,11 @@ different thing entirely: it pins the install channel.
 | `agy`      | ask · cancel-after · nudge           | parsed              | subprocess        | **no**           | **none**        |
 | `cline`    | nudge only                           | parsed              | subprocess        | yes              | **none**        |
 | `codex`    | cancel-after · nudge                 | **trace-log only**  | subprocess        | yes              | CLI             |
+| `grok`     | ask · nudge                          | parsed              | subprocess        | yes              | auth · CLI      |
 | `kimi`     | **none (refusal only)**              | parsed              | subprocess        | yes              | auth · CLI      |
 | `opencode` | nudge only                           | **trace-log only**  | subprocess        | yes              | **none**        |
 
-Every harness receives the composed role — that column would read `yes` six
+Every harness receives the composed role — that column would read `yes` seven
 times and is left out. *How* it is delivered differs per harness (a system-prompt
 flag, a rules directory, a config dir); that map is [2] §Materialization.
 
@@ -48,6 +49,8 @@ it never puts a question to you and cannot take a call back. On `codex` it can
 undo a call after the fact, but it still cannot ask first. On `kimi` it can
 only refuse before the fact — `PostToolUse` there is observation-only, so what
 a gate says about a call that already ran reaches the gate log, not the model.
+On `grok` a gate can ask and can nudge, including about a call that already
+ran, and cannot cancel that call: a late refusal is said as a nudge.
 
 **Session log → audit.** `parsed` means the harness writes a structured session
 log and ships a `TranscriptParser` for it, so `audit.md` and `usage.json` are
@@ -64,7 +67,11 @@ own session id (the `session.resume_hint` meta line), since kimi mints its ids
 itself — see [3]. That subprocess starts in the session's worktree, and kimi
 loads the AGENTS.md chain from git root down to its cwd with no off-switch —
 so a `kimi` automate sub-agent carries the worktree's AGENTS.md on top of the
-inlined role prompt, a context the other surfaces' sub-agents do not see.
+inlined role prompt, a context the other surfaces' sub-agents do not see. On
+`grok` the engine parses `streaming-messages-json` and passes `--session-id`
+(a fresh UUID only; a resume flag already names the session). Grok still loads
+project `AGENTS.md`, `.grok/skills`, and by default `~/.claude/skills` — there
+is no flag that replaces that discovery.
 
 **Readiness probe.** What refuses an unattended `ai-hats agent` before it
 takes a worktree (`readiness_findings`): `auth` — the surface is not logged in;
@@ -74,7 +81,9 @@ warns: `codex login status` cannot see `CODEX_API_KEY`, which `codex exec`
 honours. `none` means an unattended run on that harness fails after launch
 instead — see [5] §Readiness probe. Kimi's probe reads the credentials
 directory under `$KIMI_CODE_HOME` (default `~/.kimi-code`); international
-(kimi.ai) accounts log in with `KIMI_OAUTH_HOST=https://auth.kimi.ai`.
+(kimi.ai) accounts log in with `KIMI_OAUTH_HOST=https://auth.kimi.ai`. Grok's
+probe accepts `~/.grok/auth.json` or `XAI_API_KEY`; a missing `grok` binary is
+the install refusal.
 
 **Consent wrappers.** Whether a HITL child inherits an authoritative session
 `PATH`, which is what session-local command wrappers ride on
@@ -88,15 +97,15 @@ A skill declares the MCP servers it needs once, in a neutral form, and the
 declaration is compiled to each wired harness's native channel — `.mcp.json`,
 `cline_mcp_settings.json`, `gemini-extension.json`. `codex` takes its servers as
 CLI arguments instead (`mcp_form_cli_args`). `kimi`'s `mcp.json` channel is not
-wired yet — a composed `requires.mcp` binding has no target there. The model is
-the Skill↔tool dependency entry in [1]; the frontmatter field you actually
-write is in [4].
+wired yet — a composed `requires.mcp` binding has no target there. `grok`'s
+launch takes no MCP form either. The model is the Skill↔tool dependency entry
+in [1]; the frontmatter field you actually write is in [4].
 
 ## Keeping this page honest
 
 The values above were read out of the classes themselves — which method a
 surface overrides, what its profile row says — not recalled. They are still
-maintained by hand, and a sixth harness will not add its own row: that is what
+maintained by hand, and a new harness will not add its own row: that is what
 happened to the per-surface table in [2], which sat at three rows of five for
 several releases. Automating this page is filed as its own task.
 

@@ -10,6 +10,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Grok is the seventh surface** (HATS-2076). `ai-hats -p grok` runs a composed session on the grok CLI. The role reaches the agent through a per-session `GROK_HOME`: HITL writes it to `rules/role.md`, and hooks land as Claude-shaped matcher groups under `$GROK_HOME/hooks/`. The person's `~/.grok` is not written except for `sessions/` and `logs/`, which are write-through so the transcript outlives the session cache and the parent resolver can find it. An automate sub-agent runs headless as a real subprocess (`--output-format streaming-messages-json --always-approve -p`), and `updates.jsonl` plus the sibling `usage.json` are parsed into the canonical usage so `metrics.json` carries tokens. `inputTokens` on disk is the full prompt; canonical `input_tokens` is the uncached remainder. The dialect can ask and nudge, including about a call that already ran, and cannot cancel that call — a late refusal becomes a nudge, and the dispatcher answers with JSON at exit 0 because exit 2 drops `updatedInput` and `additionalContext`. Known gaps, named rather than hidden: the session home does not load the person's `config.toml`, `~/.grok/rules`, or personal hooks; grok still loads project `AGENTS.md`, `.grok/skills`, and by default `~/.claude/skills`; whether a multi-turn `turn_completed.usage` is per-turn or cumulative is unproven, so the parser trusts `usage.json` and does not sum those turns on top of it.
+
 ## [0.18.0] - 2026-10-14
 
 ### Added

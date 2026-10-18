@@ -31,7 +31,7 @@ HEAVY = (
 DISPATCHERS = (
     *(
         f"ai_hats.surfaces.{surface}.hook_dispatcher"
-        for surface in ("agy", "cline", "codex", "opencode")
+        for surface in ("agy", "cline", "codex", "grok", "opencode")
     ),
     "ai_hats.surfaces.claude.channel",
 )
