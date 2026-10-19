@@ -77,6 +77,10 @@ the project's `.grok/skills` and `.grok/commands` at the checkout and the cwd.
 `grok inspect` keeps a disabled compat file in the listing and marks it
 disabled. Grok still loads project `AGENTS.md` (and the other instruction
 filenames) and `<dir>/.grok/rules/` — there is no key that stops that walk.
+An Always allow grant is written in the session home, so the next ai-hats
+launch asks again; inside that session grok still swallows a repeat of the
+same prefix. The transcript directory is created under `~/.grok/sessions` and
+linked into the session home. `logs/` stays write-through.
 
 **Readiness probe.** What refuses an unattended `ai-hats agent` before it
 takes a worktree (`readiness_findings`): `auth` — the surface is not logged in;

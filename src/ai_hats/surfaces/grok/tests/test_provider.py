@@ -4,23 +4,28 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 import tomllib
 import uuid
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import quote
 
 from ai_hats.assembler import Assembler
+from ai_hats.materialization import WriteKind
 from ai_hats.materialize import compose_to_run
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.session_artifacts import RunMode, SessionPolicy
-from ai_hats.session_plan import probe_host
+from ai_hats.session_artifacts import AT_LAUNCH, RunMode, SessionPolicy
+from ai_hats.session_plan import launch, probe_host
 from ai_hats.surface_registry import get_surface
 from ai_hats.surfaces import adapt
 from ai_hats.surfaces.grok import GrokSurface
 from ai_hats.surfaces.grok.provider import GrokSubagentEngine, _readiness_findings
+from ai_hats.surfaces.grok.runtime_hooks import bind_session_store
+from ai_hats.surfaces.plan import LaunchFlags
 from ai_hats.surfaces.profiles import ALL
 
 
@@ -223,6 +228,183 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch,
     assert command["command"] == str(root / "hooks" / "PreToolUse")
     assert "matcher" not in document["hooks"]["PreToolUse"][0]
     assert command["timeout"] > 5
+    sessions = next(entry for entry in plan.entries if entry.target == home / "sessions")
+    assert sessions.kind is WriteKind.MKDIR and sessions.escape is False
+    logs = next(entry for entry in plan.entries if entry.target == home / "logs")
+    assert logs.kind is WriteKind.SYMLINK and logs.source == real / "logs"
+    assert any(entry.escape and entry.target == real / "logs" for entry in plan.entries)
+    assert not any(entry.target == real / "sessions" for entry in plan.entries)
+
+
+def _encoded(path: Path) -> str:
+    return quote(str(path.resolve()), safe="")
+
+
+def test_bind_hides_grants_and_keeps_the_transcript_in_the_real_home(tmp_path: Path, monkeypatch):
+    home_root = tmp_path / "home"
+    home_root.mkdir()
+    monkeypatch.setenv("HOME", str(home_root))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    encoded = _encoded(cwd)
+    remote = home_root / ".grok" / "sessions" / encoded
+    old = remote / "old-session"
+    old.mkdir(parents=True)
+    (old / "updates.jsonl").write_text("old\n")
+    (remote / "permission_grok-pager.toml").write_text('allowed = ["echo"]\n')
+    session_home = tmp_path / "session-home"
+    fresh = str(uuid.uuid4())
+
+    bind_session_store(session_home, cwd, fresh, fresh=True)
+
+    local = session_home / "sessions" / encoded
+    assert not (local / "permission_grok-pager.toml").exists()
+    assert (local / "old-session").resolve() == old.resolve()
+    assert (local / fresh).is_symlink()
+    assert (local / fresh).resolve().is_relative_to((home_root / ".grok").resolve())
+    (local / fresh / "updates.jsonl").write_text("{}\n")
+    (local / "permission_new.toml").write_text("session\n")
+    assert not (remote / "permission_new.toml").exists()
+    assert 'allowed = ["echo"]\n' == (remote / "permission_grok-pager.toml").read_text()
+    shutil.rmtree(session_home)  # safe-delete: ok session-cache
+    found = GrokSurface().resolve_transcript(Path("/anywhere"), "sid", provider_session_id=fresh)
+    assert [path.read_text() for path in found] == ["{}\n"]
+
+
+def test_bind_resume_links_an_existing_transcript_instead_of_replacing_it(
+    tmp_path: Path, monkeypatch
+):
+    home_root = tmp_path / "home"
+    home_root.mkdir()
+    monkeypatch.setenv("HOME", str(home_root))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    existing = str(uuid.uuid4())
+    remote = home_root / ".grok" / "sessions" / _encoded(cwd) / existing
+    remote.mkdir(parents=True)
+    (remote / "updates.jsonl").write_text("kept\n")
+    session_home = tmp_path / "session-home"
+
+    bind_session_store(session_home, cwd, existing, fresh=False)
+
+    visible = session_home / "sessions" / _encoded(cwd) / existing
+    assert visible.is_symlink()
+    assert visible.joinpath("updates.jsonl").read_text() == "kept\n"
+
+    missing = str(uuid.uuid4())
+    GrokSurface().prepare_launch(
+        SimpleNamespace(env={"GROK_HOME": str(session_home)}),
+        LaunchFlags(
+            session_id="sid",
+            session_dir=session_home,
+            trace_path="t",
+            root_pid="1",
+            provider_session_id=missing,
+            extra_args=("--resume", missing),
+        ),
+        layout=SimpleNamespace(cwd=cwd),
+    )
+    assert not (home_root / ".grok" / "sessions" / _encoded(cwd) / missing).exists()
+
+
+def test_bind_uses_the_git_root_and_refuses_to_link_a_directory_onto_itself(
+    tmp_path: Path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    sub = repo / "sub"
+    sub.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    home_root = tmp_path / "home"
+    home_root.mkdir()
+    monkeypatch.setenv("HOME", str(home_root))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    session_home = tmp_path / "session-home"
+    fresh = str(uuid.uuid4())
+
+    bind_session_store(session_home, sub, fresh, fresh=True)
+
+    encoded = _encoded(repo)
+    assert (session_home / "sessions" / encoded / fresh).is_symlink()
+    assert not (session_home / "sessions" / _encoded(sub)).exists()
+
+    before = {path.relative_to(session_home) for path in session_home.rglob("*")}
+    monkeypatch.setenv("GROK_HOME", str(session_home))
+    bind_session_store(session_home, sub, str(uuid.uuid4()), fresh=True)
+    assert {path.relative_to(session_home) for path in session_home.rglob("*")} == before
+
+
+def test_launch_publishes_a_known_id_and_a_preview_publishes_nothing(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    real = tmp_path / "home" / ".grok"
+    real.mkdir()
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    project = tmp_path / "proj"
+    project.mkdir()
+    lib = _library(tmp_path)
+    ProjectConfig(provider="grok", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    composition = adapt(
+        compose_to_run(asm, "test-role"),
+        identity="test-role",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
+    )
+    root = asm.layout.cache.session("sid")
+    plan = GrokSurface().plan(
+        composition,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(hooks=False, context=False),
+        root=root,
+        layout=asm.layout,
+        host=probe_host(),
+    )
+    fresh = str(uuid.uuid4())
+    flags = LaunchFlags(
+        session_id="sid",
+        session_dir=root,
+        trace_path="t",
+        root_pid="1",
+        provider_session_id=fresh,
+        claim=False,
+    )
+    launch(plan, flags, layout=asm.layout)
+    encoded = _encoded(asm.layout.cwd)
+    assert not (real / "sessions" / encoded).exists()
+
+    launch(
+        plan,
+        LaunchFlags(
+            session_id="sid",
+            session_dir=root,
+            trace_path="t",
+            root_pid="1",
+            provider_session_id=AT_LAUNCH,
+        ),
+        layout=asm.layout,
+    )
+    assert not (real / "sessions" / encoded).exists()
+
+    launch(
+        plan,
+        LaunchFlags(
+            session_id="sid",
+            session_dir=root,
+            trace_path="t",
+            root_pid="1",
+            provider_session_id=fresh,
+        ),
+        layout=asm.layout,
+    )
+    published = real / "sessions" / encoded / fresh
+    assert published.is_dir() and not published.is_symlink()
+    visible = Path(plan.env["GROK_HOME"]) / "sessions" / encoded / fresh
+    assert visible.is_symlink() and visible.resolve() == published.resolve()
 
 
 def test_session_config_ignores_root_and_cwd_and_roundtrips_quotes(tmp_path: Path):

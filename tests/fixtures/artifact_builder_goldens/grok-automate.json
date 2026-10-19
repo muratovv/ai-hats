@@ -145,13 +145,6 @@
       "kind": "mkdir",
       "size": null,
       "source": null,
-      "target": "<home>/.grok/sessions"
-    },
-    {
-      "digest": null,
-      "kind": "symlink",
-      "size": null,
-      "source": "<home>/.grok/sessions",
       "target": "<cache>/sessions/dry-run/grok-home/sessions"
     },
     {

@@ -436,6 +436,16 @@ class Surface(abc.ABC):
         del layout, session_id, environ
         return None
 
+    def prepare_launch(
+        self,
+        plan: MaterializationPlan,
+        flags: LaunchFlags,
+        *,
+        layout: ProjectLayout,
+    ) -> None:
+        """What a real launch binds once the session id exists. A preview does not call it."""
+        del plan, flags, layout
+
     def claim_launch_env(self, session_dir: Path, layout: ProjectLayout) -> dict[str, str]:
         """Env values a launch must claim for real — ``{}`` for most surfaces.
 
