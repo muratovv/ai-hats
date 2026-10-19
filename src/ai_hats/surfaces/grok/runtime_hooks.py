@@ -16,6 +16,7 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import quote
 
+from ai_hats_core.git_env import scrubbed_git_env
 from ai_hats_core.layout import ProjectLayout
 
 from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
@@ -74,6 +75,7 @@ def _scope_root(cwd: Path) -> Path:
             capture_output=True,
             text=True,
             timeout=30,
+            env=scrubbed_git_env(),
         )
     except subprocess.CalledProcessError:
         return Path(cwd).resolve()
