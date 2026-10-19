@@ -28,7 +28,11 @@ from .constants import PINNED_PYTHON
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline import PipelineConfig, warm
 from .pipeline_catalog import FINALIZE_HITL
-from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
+from .pty_shutdown import (
+    _MODIFY_OTHER_KEYS_MODE_2,
+    bounded_proc_shutdown,
+    emit_terminal_reset,
+)
 from .pty_tap import NullPtyTap
 from .session_identity import SessionIdentity
 from .session_artifacts import RunMode, consumed_session_id
@@ -988,6 +992,8 @@ class WrapRunner:
         """Run the surface to its exit and return the session's exit code — on a
         PTY here; the headless holder drives it over pipes instead."""
         del session, event_log, provider_session_id
+        provider = self.payload.provider
+        self._modify_other_keys = provider is not None and provider.name == "grok"
         return self._pty_spawn(cmd, env, tracer, pty_tap_factory=pty_tap_factory, on_spawn=on_spawn)
 
     def _pty_spawn(
@@ -1044,6 +1050,9 @@ class WrapRunner:
         # then treats Enter as Shift+Enter and inserts a newline instead of
         # submitting. Idempotent on a clean terminal.
         sys.stdout.write(_TERM_RESET_PRELUDE)
+        if getattr(self, "_modify_other_keys", False):
+            # Nested PTY fails grok's tmux device check; mode 2 keeps Enter as CR.
+            sys.stdout.write(_MODIFY_OTHER_KEYS_MODE_2)
         sys.stdout.flush()
 
         # NOTE: os.get_terminal_size() returns (columns, lines), NOT (rows, cols).

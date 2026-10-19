@@ -46,6 +46,9 @@ _POLL_INTERVAL_S = 0.05
 #   \x1b[?25h     — show cursor (in case a crashed TUI hid it).
 _TERM_RESET_PRELUDE = "\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
 
+# Shift+Enter under a nested PTY. Not part of the exit reset: that must leave mode 0.
+_MODIFY_OTHER_KEYS_MODE_2 = "\x1b[>4;2m"
+
 # DECRST mouse-tracking off. Emitted by emit_terminal_reset() after a
 # PTY child terminates so any mouse-tracking enabled by the child (and
 # not turned off because the child crashed / hung mid-exit) does not
