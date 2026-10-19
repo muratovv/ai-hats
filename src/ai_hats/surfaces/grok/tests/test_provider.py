@@ -67,6 +67,22 @@ def test_launch_args_add_a_fresh_uuid_and_skip_resume():
     assert surface.get_cli_launch_args(["grok"], "<assigned at launch>", False) == ["grok"]
 
 
+def test_launch_args_put_session_id_before_the_positional_prompt():
+    surface = GrokSurface()
+    fresh = str(uuid.uuid4())
+    prompt = "первый промпт"
+    hitl = surface.get_cli_launch_args(["grok", prompt], fresh, False)
+    assert hitl == ["grok", "--session-id", fresh, prompt]
+    with_model = surface.get_cli_launch_args(
+        ["grok", "--model", "grok-test", prompt], fresh, False
+    )
+    assert with_model == ["grok", "--session-id", fresh, "--model", "grok-test", prompt]
+    assert surface.get_cli_launch_args(["grok", prompt], fresh, True) == ["grok", prompt]
+    assert "-p" not in hitl and "--single" not in hitl
+    automate = surface.get_run_command(["grok"], "say pong")
+    assert automate[automate.index("-p") + 1] == "say pong"
+
+
 def test_readiness_install_when_binary_missing():
     findings = _readiness_findings({"PATH": ""}, which=lambda *a, **k: None)
     assert [item.reason for item in findings] == ["install"]
