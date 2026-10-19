@@ -1947,7 +1947,6 @@ def update(
                     role_name = cfg.active_role or cfg.default_role
                     bump_result = compose_to_heal(asm, role_name) if role_name else None
                     asm._refresh(install_time=True, result=bump_result)
-                    asm._run_diagnostics()
                     # End-of-bump smoke-assert.
                     # Mirrors do_bump's final step. Failure surfaces
                     # via the outer AssemblyError/OSError except handler
@@ -1957,6 +1956,7 @@ def update(
                         project_dir,
                         backup_path=inproc_backup,
                     )
+                asm._run_diagnostics()  # a piped spinner sends this print to stdout
                 if bump_result:
                     after_rules = {r.name for r in bump_result.rules}
                     after_skills = {s.name for s in bump_result.skills}

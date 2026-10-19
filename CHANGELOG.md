@@ -18,6 +18,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **`self update` names a leftover hook skill again** (HATS-2090). On a no-version-change update the warning was printed inside the refresh spinner. A print to stderr inside that spinner lands on stdout when stderr is a pipe, so the captured stream kept only the migration-backup line and a scripted update looked clean. The scan now runs after the spinner. The remedy is unchanged: move the hook keys into `SKILL.md` frontmatter under `ai_hats:` and delete `metadata.yaml`.
+
 - **The python security lint names an `S` finding again** (HATS-2091). Ruff 0.16.2 colors a piped concise report even when `NO_COLOR` is set, so the hook matched an escape sequence instead of the colon before the `S` code and the nudge stayed empty. The hook now passes `--color never`. A rule the project excludes is still unreported.
 
 - **A grok Always allow grant stays in the session** (HATS-2085). `sessions/` in the session home is no longer a symlink of the whole tree, so `permission*.toml` from `~/.grok` is not visible and a grant written this session is not copied back. The transcript directory is created under `~/.grok/sessions` and linked into the session home: the parent resolver still finds `updates.jsonl`, and the file remains after the session cache is removed. `logs/` is unchanged. A repeat ask inside the same session is still swallowed by grok.
