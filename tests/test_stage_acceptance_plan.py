@@ -64,8 +64,8 @@ def maintainer(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(tmp_path / "gemini-home"))
     # kimi snapshots the person's config into the session home — pin it too.
     monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "kimi-home"))
-    # grok write-throughs sessions/ and logs/ into the real home. Pin it
-    # before any apply: an unset GROK_HOME makes describe_mkdir touch ~/.grok.
+    # grok write-throughs logs/ into the real home. Pin it before any apply:
+    # an unset GROK_HOME makes describe_mkdir touch ~/.grok.
     monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok-home"))
     project = tmp_path / "proj"
     project.mkdir()

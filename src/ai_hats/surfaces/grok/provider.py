@@ -27,7 +27,7 @@ from ai_hats.surfaces import Surface
 from .. import MetricsSink, SubagentEngine, SurfaceRunResult
 from ..mirror import mirror_entries, path_dirs
 from ..plan import CompositionPlan, Host, Launch, Launched, MaterializationPlan, context_text
-from .home import grok_home
+from .home import GROK_HOME_ENV, grok_home
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -139,8 +139,8 @@ class GrokSurface(Surface):
     ) -> list[Path]:
         from ai_hats.paths import resolve_transcript
 
-        # sessions/ is a symlink into the real home, so the parent — which does
-        # not inherit the child's GROK_HOME — finds the same updates.jsonl.
+        # The transcript directory is published under the real home. The parent
+        # does not inherit the child's GROK_HOME.
         del cwd
         sessions_dir = grok_home() / "sessions"
         exact = None
@@ -243,6 +243,32 @@ class GrokSurface(Surface):
         if args:
             cmd.extend(args)
         return cmd
+
+    def prepare_launch(
+        self,
+        plan: MaterializationPlan,
+        flags: "LaunchFlags",
+        *,
+        layout: ProjectLayout,
+    ) -> None:
+        """Publish this session's transcript directory. Grant files stay in the session home."""
+        from .runtime_hooks import bind_session_store
+
+        home = plan.env.get(GROK_HOME_ENV)
+        if not home:
+            return
+        session_id = flags.provider_session_id or ""
+        known = _is_uuid(session_id)
+        resume = _is_resume(flags.extra_args)
+        if not known and not resume:
+            return
+        cwd = flags.work_dir if flags.work_dir is not None else layout.cwd
+        bind_session_store(
+            Path(home),
+            Path(cwd),
+            session_id if known else None,
+            fresh=known and not resume,
+        )
 
     def get_cli_launch_args(
         self, base_cmd: list[str], session_id: str, is_resume: bool

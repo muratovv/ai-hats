@@ -1,20 +1,20 @@
 """Session-scoped home delivery for the grok surface.
 
-Grok reads global hooks from ``$GROK_HOME/hooks/*.json`` and user rules from
-``$GROK_HOME/rules/*.md``. Both are the person's own files, so a per-session
-chain and role need a per-session home. ``sessions/`` and ``logs/`` write
-through into the real home: the parent resolver does not inherit the child's
-``GROK_HOME``, and the transcript has to outlive the session-cache sweep.
-Shims stay beside the manifest, not in ``hooks/`` — grok loads every ``*.json``
-there, and a script in that directory is not a hook file.
+Grok reads hooks and rules from ``$GROK_HOME``, so a session needs its own home.
+``logs/`` writes through. ``sessions/`` does not: the grant file sits beside the
+transcript, and only that directory is created in the real home — the session
+cache is removed at the end — then linked into the session home.
+Shims stay beside the manifest, not in ``hooks/``.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import json
+import subprocess
 from importlib.resources import files
 from pathlib import Path
+from urllib.parse import quote
 
 from ai_hats_core.layout import ProjectLayout
 
@@ -65,6 +65,59 @@ def _grok_hooks(hooks_dir: Path, events: tuple[str, ...]) -> str:
     return render_json(document)
 
 
+def _scope_root(cwd: Path) -> Path:
+    """Git toplevel of ``cwd``; the resolved cwd when this directory is not a repo."""
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.CalledProcessError:
+        return Path(cwd).resolve()
+    text = completed.stdout.strip()
+    return Path(text).resolve() if text else Path(cwd).resolve()
+
+
+def bind_session_store(
+    session_home: Path,
+    cwd: Path,
+    session_id: str | None,
+    *,
+    fresh: bool,
+) -> None:
+    """Link prior transcripts in. A fresh transcript dir is created in the real home."""
+    encoded = quote(str(_scope_root(cwd)), safe="")
+    local = session_home / "sessions" / encoded
+    remote = grok_home() / "sessions" / encoded
+    if local.resolve() == remote.resolve():
+        return
+    local.mkdir(parents=True, exist_ok=True)
+    remote.mkdir(parents=True, exist_ok=True)
+    skip = session_id if fresh else None
+    for child in remote.iterdir():
+        if child.name.startswith("permission") or child.name == skip:
+            continue
+        dest = local / child.name
+        if dest.exists() or dest.is_symlink():
+            continue
+        dest.symlink_to(child, target_is_directory=child.is_dir())
+    if fresh and session_id:
+        _publish_transcript(local, remote, session_id)
+
+
+def _publish_transcript(local: Path, remote: Path, session_id: str) -> None:
+    """The real directory lives in the person's home; the session home only links it."""
+    durable = remote / session_id
+    visible = local / session_id
+    if durable.is_symlink() or visible.exists() or visible.is_symlink():
+        return
+    durable.mkdir(exist_ok=True)
+    visible.symlink_to(durable, target_is_directory=True)
+
+
 def plan_session_home(
     composition: CompositionPlan,
     root: Path,
@@ -96,10 +149,10 @@ def plan_session_home(
     trust = global_home / "trusted_folders.toml"
     if trust.is_file():
         entries.append(describe_symlink(trust, session_home / "trusted_folders.toml"))
-    for sub in ("sessions", "logs"):
-        global_sub = global_home / sub
-        entries.append(dataclasses.replace(describe_mkdir(global_sub), escape=True))
-        entries.append(describe_symlink(global_sub, session_home / sub))
+    entries.append(describe_mkdir(session_home / "sessions"))
+    global_logs = global_home / "logs"
+    entries.append(dataclasses.replace(describe_mkdir(global_logs), escape=True))
+    entries.append(describe_symlink(global_logs, session_home / "logs"))
     person_config = global_home / "config.toml"
     entries.append(
         describe_write_text(
@@ -145,6 +198,7 @@ __all__ = [
     "HOOK_SHIMS",
     "MANIFEST_VERSION",
     "SESSION_HOME_SUBPATH",
+    "bind_session_store",
     "plan_session_home",
     "shim_source",
 ]

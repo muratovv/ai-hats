@@ -147,6 +147,8 @@ def launch(plan: MaterializationPlan, flags: LaunchFlags, *, layout: ProjectLayo
     from .surface_registry import get_surface
 
     surface = get_surface(plan.surface)
+    if flags.claim:
+        surface.prepare_launch(plan, flags, layout=layout)
     env = launch_env(plan, surface, flags, layout=layout)
     if plan.run_mode is RunMode.AUTOMATE:
         return surface.automate_launch(plan, flags, env, layout=layout)
