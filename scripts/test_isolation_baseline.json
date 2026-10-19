@@ -16,6 +16,7 @@
   "src/ai_hats/pipeline/tests/test_pipeline_registry.py": 4,
   "src/ai_hats/pipeline/tests/test_pipeline_trace.py": 1,
   "src/ai_hats/surfaces/cline/tests/test_provider.py": 5,
+  "src/ai_hats/surfaces/grok/tests/test_provider.py": 1,
   "tests/conftest.py": 2,
   "tests/e2e/conftest.py": 2,
   "tests/e2e/test_broken_hook_ref_startup_warn.py": 2,

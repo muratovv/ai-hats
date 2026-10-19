@@ -32,12 +32,11 @@ from ..hook_channel import BINDABLE_EVENTS, surface_timeout
 from ..mirror import manifest_rows
 from ..plan import CompositionPlan, Host
 from .home import GROK_HOME_ENV, grok_home
+from .session_config import session_config
 
 MANIFEST_VERSION = 1
 SESSION_HOME_SUBPATH = "grok-home"
 HOOK_SHIMS: tuple[str, ...] = BINDABLE_EVENTS
-_COMPAT_VENDORS = ("claude", "cursor", "codex")
-_COMPAT_CELLS = ("skills", "rules", "agents", "mcps", "hooks", "sessions")
 
 
 def shim_source(name: str) -> str:
@@ -64,37 +63,6 @@ def _grok_hooks(hooks_dir: Path, events: tuple[str, ...]) -> str:
         }
     }
     return render_json(document)
-
-
-def _toml_quote(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _ignore_paths(layout: ProjectLayout) -> tuple[str, ...]:
-    """Project ``.grok/skills`` and ``.grok/commands`` at the checkout and the cwd."""
-    found: list[str] = []
-    for base in (layout.root, layout.cwd):
-        resolved = Path(base).resolve()
-        for name in ("skills", "commands"):
-            text = str(resolved / ".grok" / name)
-            if text not in found:
-                found.append(text)
-    return tuple(found)
-
-
-def _session_config(layout: ProjectLayout) -> str:
-    """Session allowlist. Not a copy of the person's config."""
-    lines: list[str] = []
-    for vendor in _COMPAT_VENDORS:
-        lines.append(f"[compat.{vendor}]")
-        for cell in _COMPAT_CELLS:
-            lines.append(f"{cell} = false")
-        lines.append("")
-    lines.append("[skills]")
-    ignores = ", ".join(_toml_quote(path) for path in _ignore_paths(layout))
-    lines.append(f"ignore = [{ignores}]")
-    lines.append("")
-    return "\n".join(lines)
 
 
 def plan_session_home(
@@ -132,7 +100,13 @@ def plan_session_home(
         global_sub = global_home / sub
         entries.append(dataclasses.replace(describe_mkdir(global_sub), escape=True))
         entries.append(describe_symlink(global_sub, session_home / sub))
-    entries.append(describe_write_text(session_home / "config.toml", _session_config(layout)))
+    person_config = global_home / "config.toml"
+    entries.append(
+        describe_write_text(
+            session_home / "config.toml",
+            session_config(layout, person_config),
+        )
+    )
     if hooks:
         entries += [
             describe_write_executable(hooks_dir / name, shim_source(name)) for name in HOOK_SHIMS

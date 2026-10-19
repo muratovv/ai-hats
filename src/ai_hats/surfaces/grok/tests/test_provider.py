@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import tomllib
 import uuid
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -149,14 +151,16 @@ def _library(root: Path) -> Path:
     return lib
 
 
-def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch):
+def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch, caplog):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()
     real = tmp_path / "home" / ".grok"
     real.mkdir()
     (real / "auth.json").write_text("{}\n")
     (real / "trusted_folders.toml").write_text("\n")
-    monkeypatch.delenv("GROK_HOME", raising=False)
+    # grok_home() is $GROK_HOME or Path.home(); HOME does not move Path.home().
+    monkeypatch.setenv("GROK_HOME", str(real))
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     project = tmp_path / "proj"
     project.mkdir()
     lib = _library(tmp_path)
@@ -207,6 +211,10 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch)
                 expected_ignore.append(text)
     assert config["skills"]["ignore"] == expected_ignore
     assert str(home / "skills") not in config["skills"]["ignore"]
+    assert set(config) == {"compat", "skills"}
+    assert not [
+        record for record in caplog.records if record.name == "ai_hats.surfaces.grok.session_config"
+    ]
     hook_file = next(
         entry for entry in plan.entries if entry.target == home / "hooks" / "ai-hats.json"
     )
@@ -218,14 +226,14 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch)
 
 
 def test_session_config_ignores_root_and_cwd_and_roundtrips_quotes(tmp_path: Path):
-    from ai_hats.surfaces.grok.runtime_hooks import _session_config
+    from ai_hats.surfaces.grok.session_config import session_config
 
     weird = tmp_path / 'a"b\\c'
     root = str(tmp_path.resolve())
-    same = tomllib.loads(_session_config(SimpleNamespace(root=tmp_path, cwd=tmp_path)))
+    same = tomllib.loads(session_config(SimpleNamespace(root=tmp_path, cwd=tmp_path)))
     assert same["skills"]["ignore"] == [f"{root}/.grok/skills", f"{root}/.grok/commands"]
     other = str(weird.resolve())
-    both = tomllib.loads(_session_config(SimpleNamespace(root=tmp_path, cwd=weird)))
+    both = tomllib.loads(session_config(SimpleNamespace(root=tmp_path, cwd=weird)))
     assert both["skills"]["ignore"] == [
         f"{root}/.grok/skills",
         f"{root}/.grok/commands",
@@ -234,10 +242,264 @@ def test_session_config_ignores_root_and_cwd_and_roundtrips_quotes(tmp_path: Pat
     ]
 
 
+def _hitl_plan(tmp_path: Path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    lib = _library(tmp_path)
+    ProjectConfig(provider="grok", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    composition = adapt(
+        compose_to_run(asm, "test-role"),
+        identity="test-role",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
+    )
+    root = asm.layout.cache.session("sid")
+    plan = GrokSurface().plan(
+        composition,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(hooks=False, context=False),
+        root=root,
+        layout=asm.layout,
+        host=probe_host(),
+    )
+    return plan, asm
+
+
+def _session_document(plan, asm) -> tuple[str, dict]:
+    home = asm.layout.cache.session("sid") / "grok-home"
+    text = next(entry.content for entry in plan.entries if entry.target == home / "config.toml")
+    return text, tomllib.loads(text)
+
+
+def _plant_grok_home(monkeypatch, home: Path, text: str | None) -> Path:
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("GROK_HOME", str(home))
+    config = home / "config.toml"
+    if text is not None:
+        config.write_text(text, encoding="utf-8")
+    return config
+
+
+def _grok_warnings(caplog):
+    return [
+        record for record in caplog.records if record.name == "ai_hats.surfaces.grok.session_config"
+    ]
+
+
+def _expected_ignore(layout, prefix: list[str] | None = None) -> list[str]:
+    found = list(prefix or [])
+    for base in (layout.root, layout.cwd):
+        for name in ("skills", "commands"):
+            item = str(Path(base).resolve() / ".grok" / name)
+            if item not in found:
+                found.append(item)
+    return found
+
+
+def _allowlist_document(layout) -> dict:
+    from ai_hats.surfaces.grok.session_config import session_config
+
+    return tomllib.loads(session_config(layout))
+
+
+_PERSON_CONFIG = """\
+[ui]
+permission_mode = "auto"
+max_thoughts_width = 40
+yolo = false
+opened = 1979-05-27T07:32:00Z
+ratio = 1.5
+whole = 1.0
+birthday = 1979-05-27
+alarm = 07:32:00
+flags = [1, 2]
+mixed = [1, {x = 1}]
+"weird key" = "kept"
+note = "say \\"hi\\"\\n"
+
+[[marketplace.sources]]
+name = "local"
+
+[compat.claude]
+skills = true
+nickname = "kept"
+
+[skills]
+ignore = ["/opt/mine", "/opt/mine"]
+custom = "stay"
+"""
+
+
+def test_plan_seeds_person_config_and_forces_session_policy(tmp_path: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
+    project_skill = str((tmp_path / "proj").resolve() / ".grok" / "skills")
+    text = _PERSON_CONFIG.replace(
+        'ignore = ["/opt/mine", "/opt/mine"]',
+        f'ignore = ["/opt/mine", "/opt/mine", "{project_skill}"]',
+    )
+    _plant_grok_home(monkeypatch, tmp_path / "grok", text)
+    plan, asm = _hitl_plan(tmp_path)
+    _text, config = _session_document(plan, asm)
+    assert config["ui"]["permission_mode"] == "auto"
+    assert config["ui"]["max_thoughts_width"] == 40
+    assert isinstance(config["ui"]["max_thoughts_width"], int)
+    assert config["ui"]["yolo"] is False
+    assert config["ui"]["opened"] == datetime(1979, 5, 27, 7, 32, tzinfo=timezone.utc)
+    assert config["ui"]["ratio"] == 1.5
+    assert isinstance(config["ui"]["whole"], float)
+    assert config["ui"]["whole"] == 1.0
+    assert config["ui"]["birthday"] == date(1979, 5, 27)
+    assert config["ui"]["alarm"] == time(7, 32)
+    assert config["ui"]["flags"] == [1, 2]
+    assert config["ui"]["mixed"] == [1, {"x": 1}]
+    assert config["ui"]["weird key"] == "kept"
+    assert config["ui"]["note"] == 'say "hi"\n'
+    assert config["marketplace"]["sources"] == [{"name": "local"}]
+    assert config["compat"]["claude"]["nickname"] == "kept"
+    cells = ("skills", "rules", "agents", "mcps", "hooks", "sessions")
+    for vendor in ("claude", "cursor", "codex"):
+        for cell in cells:
+            assert config["compat"][vendor][cell] is False
+    assert config["skills"]["ignore"] == _expected_ignore(asm.layout, ["/opt/mine", project_skill])
+    assert config["skills"]["ignore"].count(project_skill) == 1
+    assert config["skills"]["custom"] == "stay"
+    assert plan.launch.args == ()
+    assert not _grok_warnings(caplog)
+
+
+def test_plan_reads_grok_home_env_not_the_tilde_file(tmp_path: Path, monkeypatch):
+    tilde = tmp_path / "tilde"
+    tilde.mkdir()
+    decoy = tilde / ".grok"
+    decoy.mkdir()
+    (decoy / "config.toml").write_text(
+        '[ui]\npermission_mode = "from-tilde"\n',
+        encoding="utf-8",
+    )
+    # pathlib.Path.home reads passwd, not HOME, so the decoy ~/.grok replaces that call.
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "ai-hats-user"))
+    (tmp_path / "ai-hats-user").mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tilde))
+    _plant_grok_home(
+        monkeypatch,
+        tmp_path / "env-grok",
+        '[ui]\npermission_mode = "from-env"\n',
+    )
+    plan, asm = _hitl_plan(tmp_path)
+    text, config = _session_document(plan, asm)
+    assert config["ui"]["permission_mode"] == "from-env"
+    assert "from-tilde" not in text
+
+
+def test_plan_warns_and_uses_the_allowlist_when_the_config_does_not_parse(
+    tmp_path: Path, monkeypatch, caplog
+):
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
+    path = _plant_grok_home(monkeypatch, tmp_path / "grok", "[\n")
+    plan, asm = _hitl_plan(tmp_path)
+    _text, config = _session_document(plan, asm)
+    assert config == _allowlist_document(asm.layout)
+    warnings = _grok_warnings(caplog)
+    assert len(warnings) == 1
+    assert warnings[0].levelno == logging.WARNING
+    message = warnings[0].getMessage()
+    assert str(path) in message
+    assert "cannot parse" in message
+
+
+def test_plan_warns_when_the_person_config_is_unreadable(tmp_path: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
+    path = _plant_grok_home(monkeypatch, tmp_path / "grok", None)
+    path.write_bytes(b"\xff")
+    plan, asm = _hitl_plan(tmp_path)
+    _text, config = _session_document(plan, asm)
+    assert config == _allowlist_document(asm.layout)
+    warnings = _grok_warnings(caplog)
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert str(path) in message
+    assert "cannot read" in message
+
+
+def test_plan_replaces_ignore_that_is_not_a_list_of_strings(tmp_path: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
+    path = _plant_grok_home(
+        monkeypatch,
+        tmp_path / "grok",
+        '[ui]\npermission_mode = "auto"\n\n[skills]\nignore = [1, "/opt/mine"]\ncustom = "stay"\n',
+    )
+    plan, asm = _hitl_plan(tmp_path)
+    _text, config = _session_document(plan, asm)
+    assert config["ui"]["permission_mode"] == "auto"
+    assert config["skills"]["custom"] == "stay"
+    assert config["skills"]["ignore"] == _expected_ignore(asm.layout)
+    assert "/opt/mine" not in config["skills"]["ignore"]
+    warnings = _grok_warnings(caplog)
+    assert len(warnings) == 1
+    assert str(path) in warnings[0].getMessage()
+    assert "ignore" in warnings[0].getMessage()
+
+
+def test_plan_adds_session_ignore_when_the_person_omits_it(tmp_path: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
+    _plant_grok_home(
+        monkeypatch,
+        tmp_path / "grok",
+        '[ui]\npermission_mode = "auto"\n\n[skills]\ncustom = "stay"\n',
+    )
+    plan, asm = _hitl_plan(tmp_path)
+    _text, config = _session_document(plan, asm)
+    assert config["ui"]["permission_mode"] == "auto"
+    assert config["skills"]["custom"] == "stay"
+    assert config["skills"]["ignore"] == _expected_ignore(asm.layout)
+    assert not _grok_warnings(caplog)
+
+
+def test_plan_rewrites_compat_and_skills_that_are_not_tables(tmp_path: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
+    _plant_grok_home(
+        monkeypatch,
+        tmp_path / "grok",
+        'compat = "nope"\nskills = "nope"\n\n[ui]\npermission_mode = "auto"\n',
+    )
+    plan, asm = _hitl_plan(tmp_path)
+    _text, config = _session_document(plan, asm)
+    assert config["ui"]["permission_mode"] == "auto"
+    assert config["compat"]["claude"]["skills"] is False
+    assert config["skills"]["ignore"] == _expected_ignore(asm.layout)
+    messages = [record.getMessage() for record in _grok_warnings(caplog)]
+    assert len(messages) == 2
+    assert any("[compat]" in message for message in messages)
+    assert any("[skills]" in message for message in messages)
+
+
+def test_plan_rewrites_a_compat_vendor_that_is_not_a_table(tmp_path: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
+    _plant_grok_home(
+        monkeypatch,
+        tmp_path / "grok",
+        '[ui]\npermission_mode = "auto"\n\n[compat]\nclaude = true\n',
+    )
+    plan, asm = _hitl_plan(tmp_path)
+    _text, config = _session_document(plan, asm)
+    assert config["ui"]["permission_mode"] == "auto"
+    assert config["compat"]["claude"]["skills"] is False
+    warnings = _grok_warnings(caplog)
+    assert len(warnings) == 1
+    assert "[compat.claude]" in warnings[0].getMessage()
+
+
 def test_automate_plan_keeps_the_role_inline(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-    monkeypatch.delenv("GROK_HOME", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    grok_home = home / ".grok"
+    grok_home.mkdir()
+    monkeypatch.setenv("GROK_HOME", str(grok_home))
     project = tmp_path / "proj"
     project.mkdir()
     lib = _library(tmp_path)
