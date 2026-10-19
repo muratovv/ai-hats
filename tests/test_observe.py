@@ -256,6 +256,64 @@ def test_wrap_runner_pty_spawn_emits_term_reset_prelude(tmp_path, capsys):
 
     captured = capsys.readouterr().out
     assert _TERM_RESET_PRELUDE in captured
+    assert "\x1b[>4;2m" not in captured
+
+
+@pytest.mark.integration
+def test_wrap_runner_pty_spawn_requests_modify_other_keys_when_asked(tmp_path, capsys):
+    """Mode 2 follows the prelude so Shift+Enter is CSI-u and bare Enter stays CR."""
+    from ai_hats.pty_shutdown import _MODIFY_OTHER_KEYS_MODE_2
+    from ai_hats.runtime import _TERM_RESET_PRELUDE, WrapRunner
+
+    session_dir = tmp_path / "s"
+    session_dir.mkdir()
+    session = Session(session_id="t", session_dir=session_dir)
+    tracer = SidecarTracer(session)
+
+    runner = object.__new__(WrapRunner)
+    runner._modify_other_keys = True
+    runner._pty_spawn(["true"], {}, tracer)
+
+    captured = capsys.readouterr().out
+    assert captured.index(_TERM_RESET_PRELUDE) < captured.index(_MODIFY_OTHER_KEYS_MODE_2)
+
+
+def test_spawn_surface_requests_modify_other_keys_only_for_grok():
+    from types import SimpleNamespace
+
+    from ai_hats.runtime import WrapRunner
+
+    runner = object.__new__(WrapRunner)
+
+    def _record(*_args, **_kwargs) -> int:
+        return 0
+
+    runner._pty_spawn = _record  # type: ignore[method-assign]
+    runner.payload = SimpleNamespace(provider=SimpleNamespace(name="grok"))
+    runner._spawn_surface(
+        [],
+        {},
+        None,  # type: ignore[arg-type]
+        session=None,  # type: ignore[arg-type]
+        event_log=None,
+        provider_session_id="",
+        pty_tap_factory=None,
+        on_spawn=lambda _pid: None,
+    )
+    assert runner._modify_other_keys is True
+
+    runner.payload = SimpleNamespace(provider=SimpleNamespace(name="claude"))
+    runner._spawn_surface(
+        [],
+        {},
+        None,  # type: ignore[arg-type]
+        session=None,  # type: ignore[arg-type]
+        event_log=None,
+        provider_session_id="",
+        pty_tap_factory=None,
+        on_spawn=lambda _pid: None,
+    )
+    assert runner._modify_other_keys is False
 
 
 @pytest.mark.integration
