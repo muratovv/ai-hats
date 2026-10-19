@@ -247,11 +247,11 @@ class GrokSurface(Surface):
     def get_cli_launch_args(
         self, base_cmd: list[str], session_id: str, is_resume: bool
     ) -> list[str]:
-        # ``--session-id`` creates a session and only accepts a fresh UUID.
-        # A resume flag already names one; pairing the two is an error.
+        # Fresh UUID only, before the positional: usage is [OPTIONS] [PROMPT].
+        # Resume already names a session; pairing --session-id with it is an error.
         if is_resume or not _is_uuid(session_id):
             return base_cmd
-        return [*base_cmd, "--session-id", session_id]
+        return [base_cmd[0], "--session-id", session_id, *base_cmd[1:]]
 
     def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
         # Flags first, ``-p`` last: a value that looks like a flag is the prompt.

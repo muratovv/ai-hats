@@ -16,6 +16,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **A grok HITL session takes the positional prompt as its first turn** (HATS-2084). `ai-hats -p grok "prompt"` already forwarded the token; `--session-id` now sits with the other options, before that prompt, matching `grok [OPTIONS] [PROMPT]`. `-p` stays the automate single-turn flag.
+
 - **A grok session turns compat discovery off** (HATS-2081). The session home writes `config.toml` with the claude, cursor and codex compat cells off, and `[skills] ignore` names the project's `.grok/skills` and `.grok/commands` at the checkout and the cwd. `~/.claude` and `~/.cursor` skills, rules, agents, MCP and hooks are disabled; `grok inspect` still lists such a file and marks it disabled. The person's `config.toml` is still not copied, and the session skill mirror is not on the ignore list.
 
 ## [0.18.0] - 2026-10-14
