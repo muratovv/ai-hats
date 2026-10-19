@@ -73,9 +73,7 @@ def test_launch_args_put_session_id_before_the_positional_prompt():
     prompt = "первый промпт"
     hitl = surface.get_cli_launch_args(["grok", prompt], fresh, False)
     assert hitl == ["grok", "--session-id", fresh, prompt]
-    with_model = surface.get_cli_launch_args(
-        ["grok", "--model", "grok-test", prompt], fresh, False
-    )
+    with_model = surface.get_cli_launch_args(["grok", "--model", "grok-test", prompt], fresh, False)
     assert with_model == ["grok", "--session-id", fresh, "--model", "grok-test", prompt]
     assert surface.get_cli_launch_args(["grok", prompt], fresh, True) == ["grok", prompt]
     assert "-p" not in hitl and "--single" not in hitl
