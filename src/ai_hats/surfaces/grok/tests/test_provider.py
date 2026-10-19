@@ -160,7 +160,7 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch,
     (real / "trusted_folders.toml").write_text("\n")
     # grok_home() is $GROK_HOME or Path.home(); HOME does not move Path.home().
     monkeypatch.setenv("GROK_HOME", str(real))
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     project = tmp_path / "proj"
     project.mkdir()
     lib = _library(tmp_path)
@@ -213,7 +213,7 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch,
     assert str(home / "skills") not in config["skills"]["ignore"]
     assert set(config) == {"compat", "skills"}
     assert not [
-        record for record in caplog.records if record.name == "ai_hats.surfaces.grok.runtime_hooks"
+        record for record in caplog.records if record.name == "ai_hats.surfaces.grok.session_config"
     ]
     hook_file = next(
         entry for entry in plan.entries if entry.target == home / "hooks" / "ai-hats.json"
@@ -226,14 +226,14 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch,
 
 
 def test_session_config_ignores_root_and_cwd_and_roundtrips_quotes(tmp_path: Path):
-    from ai_hats.surfaces.grok.runtime_hooks import _session_config
+    from ai_hats.surfaces.grok.session_config import session_config
 
     weird = tmp_path / 'a"b\\c'
     root = str(tmp_path.resolve())
-    same = tomllib.loads(_session_config(SimpleNamespace(root=tmp_path, cwd=tmp_path)))
+    same = tomllib.loads(session_config(SimpleNamespace(root=tmp_path, cwd=tmp_path)))
     assert same["skills"]["ignore"] == [f"{root}/.grok/skills", f"{root}/.grok/commands"]
     other = str(weird.resolve())
-    both = tomllib.loads(_session_config(SimpleNamespace(root=tmp_path, cwd=weird)))
+    both = tomllib.loads(session_config(SimpleNamespace(root=tmp_path, cwd=weird)))
     assert both["skills"]["ignore"] == [
         f"{root}/.grok/skills",
         f"{root}/.grok/commands",
@@ -286,7 +286,7 @@ def _plant_grok_home(monkeypatch, home: Path, text: str | None) -> Path:
 
 def _grok_warnings(caplog):
     return [
-        record for record in caplog.records if record.name == "ai_hats.surfaces.grok.runtime_hooks"
+        record for record in caplog.records if record.name == "ai_hats.surfaces.grok.session_config"
     ]
 
 
@@ -301,9 +301,9 @@ def _expected_ignore(layout, prefix: list[str] | None = None) -> list[str]:
 
 
 def _allowlist_document(layout) -> dict:
-    from ai_hats.surfaces.grok.runtime_hooks import _session_config
+    from ai_hats.surfaces.grok.session_config import session_config
 
-    return tomllib.loads(_session_config(layout))
+    return tomllib.loads(session_config(layout))
 
 
 _PERSON_CONFIG = """\
@@ -335,7 +335,7 @@ custom = "stay"
 
 
 def test_plan_seeds_person_config_and_forces_session_policy(tmp_path: Path, monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     project_skill = str((tmp_path / "proj").resolve() / ".grok" / "skills")
     text = _PERSON_CONFIG.replace(
         'ignore = ["/opt/mine", "/opt/mine"]',
@@ -398,7 +398,7 @@ def test_plan_reads_grok_home_env_not_the_tilde_file(tmp_path: Path, monkeypatch
 def test_plan_warns_and_uses_the_allowlist_when_the_config_does_not_parse(
     tmp_path: Path, monkeypatch, caplog
 ):
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     path = _plant_grok_home(monkeypatch, tmp_path / "grok", "[\n")
     plan, asm = _hitl_plan(tmp_path)
     _text, config = _session_document(plan, asm)
@@ -412,7 +412,7 @@ def test_plan_warns_and_uses_the_allowlist_when_the_config_does_not_parse(
 
 
 def test_plan_warns_when_the_person_config_is_unreadable(tmp_path: Path, monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     path = _plant_grok_home(monkeypatch, tmp_path / "grok", None)
     path.write_bytes(b"\xff")
     plan, asm = _hitl_plan(tmp_path)
@@ -426,7 +426,7 @@ def test_plan_warns_when_the_person_config_is_unreadable(tmp_path: Path, monkeyp
 
 
 def test_plan_replaces_ignore_that_is_not_a_list_of_strings(tmp_path: Path, monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     path = _plant_grok_home(
         monkeypatch,
         tmp_path / "grok",
@@ -445,7 +445,7 @@ def test_plan_replaces_ignore_that_is_not_a_list_of_strings(tmp_path: Path, monk
 
 
 def test_plan_adds_session_ignore_when_the_person_omits_it(tmp_path: Path, monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     _plant_grok_home(
         monkeypatch,
         tmp_path / "grok",
@@ -460,7 +460,7 @@ def test_plan_adds_session_ignore_when_the_person_omits_it(tmp_path: Path, monke
 
 
 def test_plan_rewrites_compat_and_skills_that_are_not_tables(tmp_path: Path, monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     _plant_grok_home(
         monkeypatch,
         tmp_path / "grok",
@@ -478,7 +478,7 @@ def test_plan_rewrites_compat_and_skills_that_are_not_tables(tmp_path: Path, mon
 
 
 def test_plan_rewrites_a_compat_vendor_that_is_not_a_table(tmp_path: Path, monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     _plant_grok_home(
         monkeypatch,
         tmp_path / "grok",
