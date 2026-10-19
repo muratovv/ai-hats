@@ -3,6 +3,10 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.10.2
+
+- **`py-security-lint` passes `--color never`** (HATS-2091). Ruff 0.16.2 colors a piped concise report even when `NO_COLOR` is set, so the hook matched an escape sequence instead of the colon before the `S` code and the nudge stayed empty. A rule the project excludes is still unreported.
+
 ## 0.10.1
 
 - **Every trait that carries `safety-guard` declares `fs.remove`** (HATS-2054).

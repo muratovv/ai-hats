@@ -202,7 +202,7 @@ def test_installed_wheel_delivers_a_startable_server(tmp_path, monkeypatch):
         metadata = archive.read(
             next(name for name in archive.namelist() if name.endswith("/METADATA"))
         ).decode()
-        assert "Requires-Dist: mcp==1.28.1" in metadata
+        assert "Requires-Dist: mcp==1.30.0" in metadata
     for member in sorted((source / "packages").glob("*/pyproject.toml")):
         run(["uv", "build", "--out-dir", str(wheels), str(member.parent)])
     venv = tmp_path / "installed"
