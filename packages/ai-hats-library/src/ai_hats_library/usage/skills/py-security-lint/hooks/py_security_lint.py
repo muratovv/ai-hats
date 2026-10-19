@@ -92,7 +92,8 @@ def main() -> int:
 
     try:
         proc = subprocess.run(
-            [ruff, "check", "--output-format", "concise", "--quiet", file_path],
+            # ruff colors a pipe even under NO_COLOR; the S-code match needs a raw colon.
+            [ruff, "check", "--output-format", "concise", "--quiet", "--color", "never", file_path],
             capture_output=True,
             text=True,
             timeout=10,
