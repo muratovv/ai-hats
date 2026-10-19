@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**354 of 354 files catalogued — 362 flows.**
+**355 of 355 files catalogued — 363 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2737,6 +2737,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the installed dist advertises `claude` under `ai_hats.providers`, the registry resolves it, and the probe proves it read the wheel built here rather than some release resolved from the index
 - **why** — `claude` used to self-register in `providers._register_builtins` before entry-point discovery ran, so its declaration in pyproject.toml was never exercised, and a broken or missing one would have gone unnoticed in every tier. The other half of the claim — that NOTHING registers claude behind the declaration's back — is structural and lives in tests/test_area_boundary.py, whose surfaces pin is empty: no shipped module may name a surface implementation at all (HATS-1826)
+
+## `test_provider_grok.py`
+
+*pins HATS-2076*
+
+- **flow** — a developer lists providers, then a headless grok session runs against a stand-in binary that writes the on-disk ledger
+- **cmds**
+
+  ```console
+  ai-hats list providers
+  grok --output-format streaming-messages-json --always-approve -p <prompt>
+  ```
+
+- **expect** — grok is listed beside claude; the fake session's updates.jsonl resolves and GrokParser reads tokens from the sibling usage.json, not from a second copy of the same turn
+- **why** — a surface reaches the binary only through the ai_hats.providers group, and a grok session with no parser is blind. The fake binary keeps the gate off the live API.
 
 ## `test_provider_hints_projectless.py`
 

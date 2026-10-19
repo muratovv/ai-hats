@@ -18,7 +18,9 @@ from ai_hats.surfaces import profiles
 from ai_hats.surfaces.agy import claude_hook_adapter as agy_adapter
 from ai_hats.surfaces.cline import claude_hook_adapter as cline_adapter
 from ai_hats.surfaces.codex import claude_hook_adapter as codex_adapter
+from ai_hats.surfaces.grok import claude_hook_adapter as grok_adapter
 from ai_hats.surfaces.hook_channel import HookCall, matches
+from ai_hats.surfaces.kimi import claude_hook_adapter as kimi_adapter
 
 _LIBRARY = Path(__file__).resolve().parents[1] / "packages/ai-hats-library/src/ai_hats_library"
 
@@ -68,6 +70,18 @@ def _codex_call(native: str) -> HookCall:
     return calls[0] if calls else HookCall({}, native)
 
 
+def _grok_call(native: str) -> HookCall:
+    payload = {"tool_name": native, "tool_input": {"command": "true"}, "cwd": "/tmp"}
+    calls = grok_adapter.to_claude_hook_calls(payload, "PreToolUse")
+    return calls[0] if calls else HookCall({}, native)
+
+
+def _kimi_call(native: str) -> HookCall:
+    payload = {"tool_name": native, "tool_input": {"command": "true"}, "cwd": "/tmp"}
+    calls = kimi_adapter.to_claude_hook_calls(payload, "PreToolUse")
+    return calls[0] if calls else HookCall({}, native)
+
+
 def _opencode_call(native: str) -> HookCall:
     from ai_hats.surfaces.opencode.hook_dispatcher import _spoken
 
@@ -83,6 +97,8 @@ LIVE = {
     "claude": _claude_call,
     "cline": _cline_call,
     "codex": _codex_call,
+    "grok": _grok_call,
+    "kimi": _kimi_call,
     "opencode": _opencode_call,
 }
 
@@ -93,6 +109,8 @@ TERMINAL = {
     "claude": ("Bash",),
     "cline": ("bash", "execute_command", "run_commands"),
     "codex": ("exec", "shell", "local_shell"),
+    "grok": ("run_terminal_command",),
+    "kimi": ("Bash",),
     "opencode": ("bash",),
 }
 
@@ -102,6 +120,8 @@ FILE_MUTATION = {
     "claude": ("Edit", "Write", "MultiEdit"),
     "cline": ("write_to_file", "replace_in_file", "editor", "apply_patch"),
     "codex": ("apply_patch",),
+    "grok": ("search_replace", "write"),
+    "kimi": ("Edit", "Write"),
     "opencode": ("edit", "write", "patch"),
 }
 

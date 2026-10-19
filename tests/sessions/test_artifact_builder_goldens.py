@@ -40,6 +40,7 @@ UPDATE = os.environ.get("AI_HATS_UPDATE_GOLDENS") == "1"
 #: their digest and size cannot match across two machines by construction.
 PATH_EMBEDDING = {
     "codex": {".ai-hats-session.json"},
+    "grok": {"config.toml"},
     "opencode": {"opencode.json", "hooks.json"},
 }
 
@@ -58,6 +59,10 @@ def project(tmp_path: Path, monkeypatch) -> Path:
         # Inside an ai-hats kimi session this points at the parent's session
         # home — machine-specific paths no golden can normalize away.
         "KIMI_CODE_HOME",
+        # This process may be a grok session: GROK_HOME is that session's
+        # home, and XAI_API_KEY would be copied into the golden's env.
+        "GROK_HOME",
+        "XAI_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
 

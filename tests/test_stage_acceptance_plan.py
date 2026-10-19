@@ -37,6 +37,10 @@ REWORDED_PROMPT_WRITES = {
     # carries it in the argv token.
     ("kimi", RunMode.HITL): ["write_bytes"],
     ("kimi", RunMode.AUTOMATE): [],
+    # grok: HITL writes the prompt into the session home's rules/role.md
+    # (describe_write_text lands as write_bytes); AUTOMATE inlines it.
+    ("grok", RunMode.HITL): ["write_bytes"],
+    ("grok", RunMode.AUTOMATE): [],
 }
 
 
@@ -60,6 +64,9 @@ def maintainer(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(tmp_path / "gemini-home"))
     # kimi snapshots the person's config into the session home — pin it too.
     monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "kimi-home"))
+    # grok write-throughs sessions/ and logs/ into the real home. Pin it
+    # before any apply: an unset GROK_HOME makes describe_mkdir touch ~/.grok.
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok-home"))
     project = tmp_path / "proj"
     project.mkdir()
     asm = Assembler(project)

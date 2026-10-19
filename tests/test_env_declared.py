@@ -148,7 +148,14 @@ UNDECLARED: dict[str, frozenset[str]] = {
         {"AI_HATS_AGY_HOOK_TIMEOUT_S"}
     ),
     "the platform's own environment: read, never defined here, no default of ours to state": frozenset(
-        {"NO_COLOR", "PATH", "PYTHONDONTWRITEBYTECODE", "PYTHONPATH"}
+        {
+            "NO_COLOR",
+            "PATH",
+            "PYTHONDONTWRITEBYTECODE",
+            "PYTHONPATH",
+            # grok's own credential. We forward it into the child; we do not default it.
+            "XAI_API_KEY",
+        }
     ),
     "a switch that exists for a test to hold a run still": frozenset(
         {"AI_HATS_TEST_PAUSE_AFTER_COMPLETE"}

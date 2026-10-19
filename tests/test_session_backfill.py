@@ -62,7 +62,9 @@ def project(tmp_path):
             layout=lambda: ProjectLayout(root=tmp_path, base=tmp_path / ".agent"),
             tag_filter_parser=STANDALONE.tag_filter_parser,
             provider_adapter=_adapter(tmp_path),
-            console=Console(width=200),
+            # height too: on a non-tty rich ignores width alone and falls back
+            # to 80, which wraps the note the assertions search for.
+            console=Console(width=200, height=50),
             liveness=lambda sid: ALIVE.get(sid, True),
         )
     )

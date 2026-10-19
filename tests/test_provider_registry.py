@@ -182,6 +182,7 @@ def test_pyproject_declares_provider_entry_point_group():
         # the integrator now declares their entry points too.
         "cline": "ai_hats.surfaces.cline.provider:ClineSurface",
         "codex": "ai_hats.surfaces.codex.provider:CodexSurface",
+        "grok": "ai_hats.surfaces.grok.provider:GrokSurface",
         "kimi": "ai_hats.surfaces.kimi.provider:KimiSurface",
         "opencode": "ai_hats.surfaces.opencode.provider:OpenCodeSurface",
     }

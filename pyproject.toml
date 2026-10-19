@@ -99,6 +99,7 @@ agy = "ai_hats.surfaces.agy.provider:AgySurface"
 claude = "ai_hats.surfaces.claude.provider:ClaudeSurface"
 cline = "ai_hats.surfaces.cline.provider:ClineSurface"
 codex = "ai_hats.surfaces.codex.provider:CodexSurface"
+grok = "ai_hats.surfaces.grok.provider:GrokSurface"
 kimi = "ai_hats.surfaces.kimi.provider:KimiSurface"
 opencode = "ai_hats.surfaces.opencode.provider:OpenCodeSurface"
 
