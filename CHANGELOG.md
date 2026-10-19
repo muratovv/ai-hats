@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-10-19
+
 ### Security
 
 - **`mcp` is pinned to 1.30.0** (HATS-2093). 1.28.1 is CVE-2026-59951: a stateful Streamable HTTP server keeps a session entry after DELETE, a refused open, and a finished session, with no idle expiry and no count cap, so a client that can reach it grows the process until restart. Stdio, SSE, and stateless HTTP are not that transport. The consent server speaks stdio. `pip-audit` still fails the pin, and 1.30.0 is the fix on the 1.x line.
@@ -2971,7 +2973,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/muratovv/ai-hats/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/muratovv/ai-hats/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/muratovv/ai-hats/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/muratovv/ai-hats/compare/v0.16.0...v0.17.0
