@@ -71,9 +71,12 @@ inlined role prompt, a context the other surfaces' sub-agents do not see. On
 `grok` the engine parses `streaming-messages-json` and passes `--session-id`
 (a fresh UUID only; a resume flag already names the session). A HITL positional (`ai-hats -p grok "prompt"`) is that session's first turn,
 and `-p` on the grok argv is the automate single-turn flag. The session home
-writes `config.toml` with the compat cells off, so `~/.claude` and `~/.cursor`
-skills, rules, agents, MCP and hooks are disabled, and `[skills] ignore` hides
+writes `config.toml` seeded from the person's file, then forces the compat cells
+off, so `~/.claude` and `~/.cursor`
+skills, rules, agents, MCP and hooks are disabled, and `[skills] ignore` keeps
+the person's strings and hides
 the project's `.grok/skills` and `.grok/commands` at the checkout and the cwd.
+No file, or one that does not parse or cannot be read, writes the allowlist instead.
 `grok inspect` keeps a disabled compat file in the listing and marks it
 disabled. Grok still loads project `AGENTS.md` (and the other instruction
 filenames) and `<dir>/.grok/rules/` — there is no key that stops that walk.

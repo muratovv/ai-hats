@@ -10,17 +10,23 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-19
+
 ### Added
 
-- **Grok is the seventh surface** (HATS-2076). `ai-hats -p grok` runs a composed session on the grok CLI. The role reaches the agent through a per-session `GROK_HOME`: HITL writes it to `rules/role.md`, and hooks land as Claude-shaped matcher groups under `$GROK_HOME/hooks/`. The person's `~/.grok` is not written except for `logs/`, which is write-through, and this session's transcript directory, which is created there so it outlives the session cache and the parent resolver can find it. An Always allow grant stays in the session home. An automate sub-agent runs headless as a real subprocess (`--output-format streaming-messages-json --always-approve -p`), and `updates.jsonl` plus the sibling `usage.json` are parsed into the canonical usage so `metrics.json` carries tokens. `inputTokens` on disk is the full prompt; canonical `input_tokens` is the uncached remainder. The dialect can ask and nudge, including about a call that already ran, and cannot cancel that call — a late refusal becomes a nudge, and the dispatcher answers with JSON at exit 0 because exit 2 drops `updatedInput` and `additionalContext`. Known gaps, named rather than hidden: the session home writes its own `config.toml` and does not copy the person's file, `~/.grok/rules`, or personal hooks; grok still loads project `AGENTS.md` and `<dir>/.grok/rules/` (no key stops that walk); whether a multi-turn `turn_completed.usage` is per-turn or cumulative is unproven, so the parser trusts `usage.json` and does not sum those turns on top of it.
+- **Grok is the seventh surface** (HATS-2076). `ai-hats -p grok` runs a composed session on the grok CLI. The role reaches the agent through a per-session `GROK_HOME`: HITL writes it to `rules/role.md`, and hooks land as Claude-shaped matcher groups under `$GROK_HOME/hooks/`. The person's `~/.grok` is not written except for `logs/`, which is write-through, and this session's transcript directory, which is created there so it outlives the session cache and the parent resolver can find it. An Always allow grant stays in the session home. The session `config.toml` is seeded from the person's file, with the compat cells forced off. An automate sub-agent runs headless as a real subprocess (`--output-format streaming-messages-json --always-approve -p`), and `updates.jsonl` plus the sibling `usage.json` are parsed into the canonical usage so `metrics.json` carries tokens. `inputTokens` on disk is the full prompt; canonical `input_tokens` is the uncached remainder. The dialect can ask and nudge, including about a call that already ran, and cannot cancel that call — a late refusal becomes a nudge, and the dispatcher answers with JSON at exit 0 because exit 2 drops `updatedInput` and `additionalContext`. Known gaps, named rather than hidden: `~/.grok/rules` and personal hooks are not copied; grok still loads project `AGENTS.md` and `<dir>/.grok/rules/` (no key stops that walk); whether a multi-turn `turn_completed.usage` is per-turn or cumulative is unproven, so the parser trusts `usage.json` and does not sum those turns on top of it.
 
 ### Fixed
 
 - **A grok Always allow grant stays in the session** (HATS-2085). `sessions/` in the session home is no longer a symlink of the whole tree, so `permission*.toml` from `~/.grok` is not visible and a grant written this session is not copied back. The transcript directory is created under `~/.grok/sessions` and linked into the session home: the parent resolver still finds `updates.jsonl`, and the file remains after the session cache is removed. `logs/` is unchanged. A repeat ask inside the same session is still swallowed by grok.
 
+- **A grok session seeds `config.toml` from the person's file** (HATS-2083). The session home still writes its own `config.toml`. When the file under `grok_home()` reads, that document is the seed, so `[ui]` (including `permission_mode` and `status_line`) and the rest of the keys arrive. Session policy is applied on top: every `compat` cell for claude, cursor and codex is `false`, and `[skills].ignore` keeps the person's strings and adds the project's `.grok/skills` and `.grok/commands` at the checkout and the cwd. No file, or a file that does not parse or cannot be read, writes the allowlist the session wrote before this; a missing file warns nothing, a bad read or parse warns once. A `[compat]` or `[skills]` that is not a table, or an `ignore` that is not a list of strings, is replaced and the rest of the document stays. Comments do not survive the rewrite. The launch argv is unchanged.
+
 - **A grok HITL session takes the positional prompt as its first turn** (HATS-2084). `ai-hats -p grok "prompt"` already forwarded the token; `--session-id` now sits with the other options, before that prompt, matching `grok [OPTIONS] [PROMPT]`. `-p` stays the automate single-turn flag.
 
-- **A grok session turns compat discovery off** (HATS-2081). The session home writes `config.toml` with the claude, cursor and codex compat cells off, and `[skills] ignore` names the project's `.grok/skills` and `.grok/commands` at the checkout and the cwd. `~/.claude` and `~/.cursor` skills, rules, agents, MCP and hooks are disabled; `grok inspect` still lists such a file and marks it disabled. The person's `config.toml` is still not copied, and the session skill mirror is not on the ignore list.
+- **A grok session turns compat discovery off** (HATS-2081). The session home writes `config.toml` with the claude, cursor and codex compat cells off, and `[skills] ignore` names the project's `.grok/skills` and `.grok/commands` at the checkout and the cwd. `~/.claude` and `~/.cursor` skills, rules, agents, MCP and hooks are disabled; `grok inspect` still lists such a file and marks it disabled. The session skill mirror is not on the ignore list. The person's file is the seed of that document (HATS-2083).
+
+- **A kimi session keeps the status line and the folder trust** (HATS-2074). The session home copies the global `tui.toml`, so the bar is the person's and not one kimi recreates in a fresh home. `workspace-trust/` is a write-through symlink into the global home, so a folder already trusted is not asked again and a decision taken in the session outlives the cache. No global `tui.toml` — one warning, and the session starts without the bar.
 
 ## [0.18.0] - 2026-10-14
 
@@ -2953,7 +2959,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/muratovv/ai-hats/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/muratovv/ai-hats/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/muratovv/ai-hats/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/muratovv/ai-hats/compare/v0.15.1...v0.16.0
