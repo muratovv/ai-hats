@@ -372,8 +372,6 @@ def test_plan_seeds_person_config_and_forces_session_policy(tmp_path: Path, monk
 
 
 def test_plan_reads_grok_home_env_not_the_tilde_file(tmp_path: Path, monkeypatch):
-    import ai_hats.paths._discovery as discovery
-
     tilde = tmp_path / "tilde"
     tilde.mkdir()
     decoy = tilde / ".grok"
@@ -382,14 +380,10 @@ def test_plan_reads_grok_home_env_not_the_tilde_file(tmp_path: Path, monkeypatch
         '[ui]\npermission_mode = "from-tilde"\n',
         encoding="utf-8",
     )
-
-    class _RedirectedHome(type(Path())):
-        @classmethod
-        def home(cls):
-            return tilde
-
-    # tool_home resolves ~/.grok through this module's Path, not user_home().
-    monkeypatch.setattr(discovery, "Path", _RedirectedHome)
+    # pathlib.Path.home reads passwd, not HOME, so the decoy ~/.grok replaces that call.
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "ai-hats-user"))
+    (tmp_path / "ai-hats-user").mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tilde))
     _plant_grok_home(
         monkeypatch,
         tmp_path / "env-grok",
