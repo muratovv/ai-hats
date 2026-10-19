@@ -20,13 +20,26 @@ Open the HTML in a browser (agents: use the browser/screenshot tool) and actuall
 
 import argparse
 import html
+import importlib.util
 import os
 import random
 import sys
 
 sys.dont_write_bytecode = True  # keep the skill folder clean (no __pycache__)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import svglib  # noqa: E402
+
+
+def _sibling(name):
+    # This directory is not a package. A bare import is a third-party edge.
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"_logo_design_{name}", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+svglib = _sibling("svglib")
 
 SIZES = [16, 20, 24, 32, 48, 64, 96, 128, 256]
 

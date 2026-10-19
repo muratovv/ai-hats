@@ -24,6 +24,7 @@ Usage:
 import argparse
 import base64
 import contextlib
+import importlib.util
 import os
 import re
 import shutil
@@ -34,8 +35,20 @@ import tempfile
 import time
 
 sys.dont_write_bytecode = True  # keep the skill folder clean (no __pycache__)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import svglib  # noqa: E402,F401  (sets UTF-8 console output)
+
+
+def _sibling(name):
+    # This directory is not a package. A bare import is a third-party edge.
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"_logo_design_{name}", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_sibling("svglib")  # sets UTF-8 console output
 
 CHROME_CANDIDATES = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -108,8 +121,7 @@ def find_chrome():
 def available_backends():
     out = []
     try:
-        import cairosvg  # noqa: F401
-
+        importlib.import_module("cairosvg")
         out.append("cairosvg")
     except ImportError:  # noqa: S110  cairosvg is optional; the next backend is the result
         pass
@@ -128,9 +140,9 @@ def available_backends():
 
 
 def _cairosvg(svg_file, png, w, h):
-    import cairosvg  # type: ignore
-
-    cairosvg.svg2png(url=svg_file, write_to=png, output_width=w, output_height=h)
+    importlib.import_module("cairosvg").svg2png(
+        url=svg_file, write_to=png, output_width=w, output_height=h
+    )
 
 
 def _rsvg(svg_file, png, w, h):
@@ -291,7 +303,7 @@ def _qlmanage(svg_file, png, w, h, want_alpha=True):
     with tempfile.TemporaryDirectory() as tmp:
         white = _qlmanage_once(square, w, h, tmp, "white")
         try:
-            from PIL import Image  # type: ignore
+            Image = importlib.import_module("PIL.Image")
         except ImportError:
             shutil.copy(white, png)
             print(

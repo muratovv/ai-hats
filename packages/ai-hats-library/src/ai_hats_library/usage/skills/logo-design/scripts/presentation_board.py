@@ -37,6 +37,7 @@ Missing ones fall back sensibly
 import argparse
 import datetime
 import html
+import importlib.util
 import json
 import os
 import re
@@ -44,8 +45,20 @@ import sys
 import unicodedata
 
 sys.dont_write_bytecode = True  # keep the skill folder clean (no __pycache__)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import svglib  # noqa: E402
+
+
+def _sibling(name):
+    # This directory is not a package. A bare import is a third-party edge.
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"_logo_design_{name}", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+svglib = _sibling("svglib")
 
 PRESETS = {
     "software": ["readme", "app-icon", "website", "terminal", "sticker", "social"],
@@ -546,7 +559,8 @@ def main():
     print(f"wrote {a.out} ({len(slides)} slides; mockups: {', '.join(mockups)})")
     if a.png_dir:
         import tempfile
-        import render_png
+
+        render_png = _sibling("render_png")
 
         os.makedirs(a.png_dir, exist_ok=True)
         solo_css = CSS + "body{background:#fff}.slide{margin:0;box-shadow:none;min-height:800px}"
