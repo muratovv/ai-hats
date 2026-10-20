@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import subprocess
+import tomllib
 from importlib.resources import files
 from pathlib import Path
 from urllib.parse import quote
@@ -23,6 +25,7 @@ from ai_hats.env import ENV_AI_HATS_PYTHON, ENV_SESSION_CACHE_DIR
 from ai_hats.materialization import (
     MaterializationEntry,
     describe_mkdir,
+    describe_private_text,
     describe_symlink,
     describe_write_executable,
     describe_write_text,
@@ -33,7 +36,9 @@ from ..hook_channel import BINDABLE_EVENTS, surface_timeout
 from ..mirror import manifest_rows
 from ..plan import CompositionPlan, Host
 from .home import GROK_HOME_ENV, grok_home
-from .session_config import session_config
+from .session_config import _emit_toml, session_config
+
+logger = logging.getLogger(__name__)
 
 MANIFEST_VERSION = 1
 SESSION_HOME_SUBPATH = "grok-home"
@@ -120,6 +125,86 @@ def _publish_transcript(local: Path, remote: Path, session_id: str) -> None:
     visible.symlink_to(durable, target_is_directory=True)
 
 
+def _trust_copies(session_root: Path) -> list[Path]:
+    """Regular files only. A symlink is the person's store, not a saved decision."""
+    sessions = session_root.parent
+    homes = [sessions]
+    if sessions.name == "sessions":
+        cache = sessions.parent.parent
+        if cache.is_dir():
+            homes = [path for path in cache.glob("*/sessions") if path.is_dir()]
+    found: list[Path] = []
+    for home in homes:
+        for path in home.glob("*/grok-home/trusted_folders.toml"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            found.append(path)
+    found.sort(key=lambda path: path.stat().st_mtime)
+    return found
+
+
+def _read_trust(path: Path) -> dict | None:
+    try:
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        logger.warning("grok: cannot read folder trust %s: %s", path, exc)
+        return None
+    if not isinstance(document, dict):
+        logger.warning("grok: %s is not a trust table", path)
+        return None
+    return document
+
+
+def _folder_rows(document: dict, path: Path) -> dict[str, dict]:
+    folders = document.get("folders")
+    if folders is None:
+        return {}
+    if not isinstance(folders, dict):
+        logger.warning("grok: %s [folders] is not a table", path)
+        return {}
+    rows: dict[str, dict] = {}
+    for folder, row in folders.items():
+        trusted = row.get("trusted") if isinstance(row, dict) else None
+        if isinstance(folder, str) and isinstance(trusted, bool):
+            rows[folder] = row
+            continue
+        logger.warning("grok: %s folder %s has no boolean trusted", path, folder)
+    return rows
+
+
+def _decided_at(row: dict) -> int:
+    value = row.get("decided_at")
+    return value if isinstance(value, int) else 0
+
+
+def folded_trust_text(global_path: Path, session_root: Path) -> str | None:
+    """Text for the person's trust file when a session copy is ahead of it."""
+    current = (
+        _read_trust(global_path)
+        if global_path.is_file() and not global_path.is_symlink()
+        else None
+    )
+    merged: dict[str, dict] = {}
+    if current is not None:
+        merged.update(_folder_rows(current, global_path))
+    for path in _trust_copies(session_root):
+        document = _read_trust(path)
+        if document is None:
+            continue
+        for folder, row in _folder_rows(document, path).items():
+            held = merged.get(folder)
+            if held is None or _decided_at(row) >= _decided_at(held):
+                merged[folder] = row
+    if current is not None and _folder_rows(current, global_path) == merged:
+        return None
+    if not merged and current is None:
+        return None
+    base = {key: value for key, value in (current or {}).items() if key != "folders"}
+    if merged:
+        base["folders"] = merged
+    return _emit_toml(base)
+
+
 def plan_session_home(
     composition: CompositionPlan,
     root: Path,
@@ -149,7 +234,11 @@ def plan_session_home(
     if auth.is_file():
         entries.append(describe_symlink(auth, session_home / "auth.json"))
     trust = global_home / "trusted_folders.toml"
-    if trust.is_file():
+    # Grok replaces this file on save, so the symlink never updates the home.
+    folded = folded_trust_text(trust, root)
+    if folded is not None:
+        entries.append(dataclasses.replace(describe_private_text(trust, folded), escape=True))
+    if trust.is_file() or folded is not None:
         entries.append(describe_symlink(trust, session_home / "trusted_folders.toml"))
     entries.append(describe_mkdir(session_home / "sessions"))
     global_logs = global_home / "logs"

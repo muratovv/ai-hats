@@ -516,6 +516,79 @@ custom = "stay"
 """
 
 
+def test_plan_folds_replaced_folder_trust(tmp_path: Path, monkeypatch, caplog):
+    """A decision grok saved by replacing the session symlink is ahead of the home."""
+    caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.runtime_hooks")
+    home = tmp_path / "grok"
+    _plant_grok_home(monkeypatch, home, None)
+    trust = home / "trusted_folders.toml"
+    trust.write_text(
+        '[folders."/proj/old"]\ntrusted = true\ndecided_at = 5\n',
+        encoding="utf-8",
+    )
+    project = tmp_path / "proj"
+    project.mkdir()
+    lib = _library(tmp_path)
+    ProjectConfig(provider="grok", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    def plant(session: Path, text: str) -> Path:
+        folder = session / "grok-home"
+        folder.mkdir(parents=True)
+        path = folder / "trusted_folders.toml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    plant(
+        asm.layout.cache.session("prev"),
+        '[folders."/proj/old"]\ntrusted = false\ndecided_at = 1\n'
+        '[folders."/proj/new"]\ntrusted = true\ndecided_at = 2\n',
+    )
+    plant(
+        asm.layout.cache.root.parent / "other" / "sessions" / "s",
+        '[folders."/proj/elsewhere"]\ntrusted = true\ndecided_at = 3\n',
+    )
+    plant(asm.layout.cache.session("bad"), "not toml [[[\n")
+    linked = asm.layout.cache.session("linked") / "grok-home"
+    linked.mkdir(parents=True)
+    (linked / "trusted_folders.toml").symlink_to(trust)
+    composition = adapt(
+        compose_to_run(asm, "test-role"),
+        identity="test-role",
+        layout=asm.layout,
+        resolver=asm.resolver,
+        overlays=(),
+        diagnostics=[],
+    )
+    root = asm.layout.cache.session("sid")
+    plan = GrokSurface().plan(
+        composition,
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(hooks=False, context=False),
+        root=root,
+        layout=asm.layout,
+        host=probe_host(),
+    )
+    write = next(entry for entry in plan.entries if entry.target == trust)
+    assert write.kind is WriteKind.WRITE_TEXT
+    assert write.private is True
+    assert write.escape is True
+    folders = tomllib.loads(write.content)["folders"]
+    assert folders["/proj/old"]["trusted"] is True
+    assert folders["/proj/new"]["trusted"] is True
+    assert folders["/proj/elsewhere"]["trusted"] is True
+    link_entry = next(
+        entry
+        for entry in plan.entries
+        if entry.target == root / "grok-home" / "trusted_folders.toml"
+    )
+    assert link_entry.kind is WriteKind.SYMLINK
+    assert link_entry.source == trust
+    assert plan.entries.index(write) < plan.entries.index(link_entry)
+    assert "cannot read folder trust" in caplog.text
+
+
 def test_plan_seeds_person_config_and_forces_session_policy(tmp_path: Path, monkeypatch, caplog):
     caplog.set_level(logging.WARNING, logger="ai_hats.surfaces.grok.session_config")
     project_skill = str((tmp_path / "proj").resolve() / ".grok" / "skills")
