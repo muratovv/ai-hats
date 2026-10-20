@@ -19,3 +19,12 @@ licensed.
 - License: MIT — Copyright (c) 2025 Jesse Vincent
 - Bundled as: disciplines adapted into `library/core/skills/devils-advocate`,
   `library/core/skills/scope-guard`, and `library/usage/skills/skill-template`.
+
+## kaankiziltug/logo-design-skill
+
+- Source: https://github.com/kaankiziltug/logo-design-skill
+- Commit: 0ecf52e9a4b3ac92b714f7cc6e3148ab8c774134
+- License: MIT — Copyright (c) 2026 kaankiziltug
+- Bundled as: the seven scripts under
+  `packages/ai-hats-library/src/ai_hats_library/usage/skills/logo-design/scripts/`.
+  The skill text is written for this catalog. `assets/library/svg` is not included.
