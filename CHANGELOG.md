@@ -10,6 +10,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Role `designer` ships in the library** (HATS-2095). `ai-hats-library` 0.11.0 adds the role and the mark scripts. This package requires `ai-hats-library>=0.11.0`.
+
 ## [0.19.1] - 2026-10-19
 
 ### Security
