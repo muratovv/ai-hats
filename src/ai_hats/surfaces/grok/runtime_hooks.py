@@ -180,9 +180,7 @@ def _decided_at(row: dict) -> int:
 def folded_trust_text(global_path: Path, session_root: Path) -> str | None:
     """Text for the person's trust file when a session copy is ahead of it."""
     current = (
-        _read_trust(global_path)
-        if global_path.is_file() and not global_path.is_symlink()
-        else None
+        _read_trust(global_path) if global_path.is_file() and not global_path.is_symlink() else None
     )
     merged: dict[str, dict] = {}
     if current is not None:
