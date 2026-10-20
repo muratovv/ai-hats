@@ -28,7 +28,7 @@ A page that needs a logo placed is not this skill. If the mark is already a file
 2. Name the category clichés in a sentence. The source is the brief and general knowledge. Mark the sentence unchecked against a corpus of marks: this skill ships none.
 3. Draw three concepts that differ in idea. Render each as black SVG on a grid, no live `<text>`, no embedded raster.
 4. Run `svg_audit.py` resolved against this skill's directory, `--json`, on each concept. Revise a concept that reports `live-text` or `near-miss-angle` before showing it. Show the audit with the concept.
-5. Show the three SVGs and stop. A kit, a favicon set, or a guidelines page waits until the person names one concept. Silence is not a pick.
+5. Number the three concepts 1, 2, and 3. Show the three SVGs and stop. The supervisor names the pick by number. A kit, a favicon set, or a guidelines page waits until that pick. Silence is not a pick.
 6. After the pick, build the kit with `export_variants.py` and `presentation_board.py` from the same directory.
 
 Show the sheet with `concept_sheet.py` or `preview_sheet.py` from the same directory. When no PNG renderer is available, say so in the same message as the SVG and do not claim you looked at a picture. Do not pass `--refs-industry`: the reference library is not part of this skill, and the flag exits non-zero for that reason.

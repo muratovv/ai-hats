@@ -1,30 +1,30 @@
 ---
 name: design-direction
 description: >
-  Record a page's visual direction from its brief and hold it until
-  someone has seen it. Use when starting or redesigning a screen, and
-  when a first pass would look the same on any similar brief.
+  Show a numbered prototype and hold it until the supervisor picks.
+  Use when starting or redesigning a screen, and when a first pass
+  would look the same on any similar brief.
 license: MIT
 ---
 
 # Design Direction
 
-Write the direction the page is built from, and wait until a person has answered.
+Turn a description into a numbered prototype, and wait until the supervisor picks.
 
 ## When to Use
 
-- A mark is `logo-design`. Filing the accepted lines into the project file is `design-system`. The quality pass is `ui-ux-review`.
+- Filing the picked prototype is `design-system`. The quality pass is `ui-ux-review`.
 - A named taste (`high-end-visual-design`, brutalist, minimalist) is a separate call, and only when the brief asks for that style by name.
-- Skip when the person handed you an accepted direction and asked you to build the page.
+- Skip when the supervisor already picked a prototype and the task is to file it.
 
 ## Procedure
 
-1. Name the subject, who it is for, and the job of this page. One sentence each. When the brief does not say, ask before filling the gap.
-2. Write five lines: palette; one or two typefaces and the job of each; the layout move; the one bold element; what stays quiet.
-3. Keep a line when the brief is the reason it is there. Replace a line that would have come out the same for any similar brief, or mark it as the brief itself asking for that move.
-4. Show the five lines and wait. The page is unwritten until the person accepts them or names the change.
+1. Write the description: the subject, who it is for, and the job of this piece. One sentence each. When the brief does not say, ask before filling the gap.
+2. Make a prototype of the element you reworked. Name the additions it uses. Palette and type are the usual ones; name any other addition the piece actually rests on.
+3. Put a number on the prototype. When you show more than one, number each. The supervisor refers to a prototype by that number.
+4. Show the prototype and stop. Integration into the product waits until the supervisor picks a number or names the change. Silence is not a pick.
 
-The lines live in the working message until they are accepted. `design-system` files them after that.
+The prototype stays the proposal until that pick. `design-system` files the pick.
 
 Open these when a line needs the source, and leave them as links:
 
@@ -36,17 +36,18 @@ The anti-list this role applies is `ui-ux-review`. `craft/anti-ai-slop.md` is th
 
 ## Completion
 
-- Five lines are written, each tied to this brief or replaced.
-- The person has accepted them or named a change. Silence is not acceptance.
-- No page file was written in this pass.
+- A numbered prototype is shown, with the reworked element and the additions it uses.
+- The supervisor has picked a number or named a change. Silence is not a pick.
+- The product was not changed in this pass.
 
-**Validation scenario (RED).** Asked for a settings screen on an accounting board, the agent produces a cream editorial hero, a small-caps pill over the title, and a reveal on every section, then starts the HTML. The brief never asked for an editorial landing. GREEN: five lines about the board, the accountant, and the job of the screen, then a stop, with no page file yet.
+**Validation scenario (RED).** Asked for a settings screen on an accounting board, the agent produces a cream editorial hero, a small-caps pill over the title, and a reveal on every section, and integrates that into the product. The brief never asked for an editorial landing. GREEN: prototype 1, the settings screen with the element reworked for the board, the palette and type named, then a stop. No integration yet.
 
 ## Anti-Patterns
 
-- Opening the page file and calling the first palette the direction.
-- Treating the pause as optional because the direction looks finished.
-- Shipping the cream editorial, the pill over the headline, or a reveal on every section as the look of a finished page. Those are the common unchosen defaults, not the whole set.
+- Integrating into the product and calling that the prototype.
+- Showing several prototypes and not numbering them.
+- Treating the pause as optional because the prototype looks finished.
+- Shipping the cream editorial, the pill over the headline, or a reveal on every section as the look of a finished piece. Those are the common unchosen defaults, not the whole set.
 
 ## Attribution
 
