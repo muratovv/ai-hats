@@ -2193,7 +2193,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — exit 0, an assistant answer and a session.resume_hint meta line on stdout; wire.jsonl under the session home; KimiParser reads turns and token telemetry from it. With a deny [[hooks]] guard installed, a Bash call is refused and the model sees the reason.
-- **why** — this is the task's core acceptance — headless first-class — and the parser must prove itself on a record the real harness wrote, not only on fixtures. Gated on a host with the kimi CLI and an OAuth login (Kimi subscription); skips everywhere else, like the codex auth lifecycle e2e.
+- **why** — this is the task's core acceptance — headless first-class — and the parser must prove itself on a record the real harness wrote, not only on fixtures. Needs the kimi CLI and an OAuth login; skips everywhere else. Kept out of the mandatory gate (live_headless) because it needs that login; run it with `-m live_headless`
 
 ## `test_launcher_contract_skew.py`
 
