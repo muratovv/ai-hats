@@ -29,12 +29,6 @@ injection: |
   work is done here, beyond the generic agent baseline. It binds every role
   that edits this checkout — code, library content or docs alike.
 
-  ### E2E gate
-  A change to code running **outside the Python process** — the CLI, a
-  `scripts/*.sh`, the install/venv flow, any installed hook — owes an e2e test
-  named in the plan by path. Expand skill **quality-gate** for the
-  full trigger surface and what counts; it is a `done` gate, not advice.
-
   ### Branches and commits
   - Branch names: `task/hats-NNN` for tracked work, `fix/<slug>` and
     `feat/<slug>` for ad-hoc, `docs/<slug>` for docs-only.
@@ -51,12 +45,6 @@ injection: |
     if composition changed. For projects with isolated venv, call the venv
     interpreter explicitly (no `bin/ai-hats` console script):
     `~/<project>/.venv/bin/python -m ai_hats self update`.
-  - **Backlog ops:** every change to `tasks/<ID>/**` through your composed
-    backlog manager (CLI) — never direct file edits (see `rule_backlog_discipline §1`).
-  - **Plan files:** edit `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`
-    directly via Write/Edit (scaffold created when the task transitions to `plan`).
-    This is the one canonical plan home — no `.claude/plans` round-trip, no
-    `plan-sync` step. See your composed backlog manager skill for the full flow.
 
   ### What NOT to commit
   - Real Claude / Gemini session recordings (JSONL dumps carry sessionId,
@@ -73,13 +61,6 @@ injection: |
   - **Glossary-first**: when adding a named visual block, role, skill, or
     user-facing concept, update `docs/glossary.md` BEFORE the code. Names
     must be locked at plan stage, not post-hoc.
-  - **Numbered-refs convention**: for cross-doc / cross-file /
-    fixture links use `[N]` in body + visible `## References` section at the
-    end. In-doc anchors (`#section`) and CLI strings stay inline. Full rules:
-    `CONTRIBUTING.md#documentation-references`.
-  - **Doc work**: at plan stage surface style forks (refs / voice / comments /
-    precedent-doc / terminology source / code blocks). Pre-commit: grep every
-    named code-artifact in the doc against source.
 
   ### Reflexive loop (map: `docs/reflect.md`)
   The framework audits its own sessions. These components EXIST — name them,
@@ -110,4 +91,3 @@ injection: |
   ### Anti-patterns to refuse
   - **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (There is a consolidation precedent.)
   - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see skill `quality-gate`).
-  - **HYP-as-technical-risk**: HYP is for agent-behaviour hypotheses. Code / migration / harness risks belong in `rack transition <FOLLOW_UP_ID> --log "…"`, not in a new HYP (see `rule_backlog_discipline §5`).
