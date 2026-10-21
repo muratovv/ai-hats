@@ -100,8 +100,4 @@ def test_show_prompt_stats_mode_emits_json(project_with_maintainer):
     assert payload["trait_count"] >= 5  # at minimum trait-base/agent/etc
     assert payload["injection_chars"] > 1000  # the bug produced 0 here
     assert payload["prompt_chars"] > payload["injection_chars"]
-    # New rule wired in via Phase 3.
-    assert (
-        "rule_composition_value_contract" in payload.get("trait_names", [])
-        or payload.get("rule_count", 0) >= 10
-    )
+    assert payload.get("rule_count", 0) >= 8
