@@ -175,9 +175,7 @@ def test_maintainer_role_injection_contains() -> None:
     ],
 )
 def test_d2_diagrams_skill_holds_the_craft(needle: str) -> None:
-    text = (
-        LIBRARY / "ai-hats-dev/skills/d2-diagrams/SKILL.md"
-    ).read_text()
+    text = (LIBRARY / "ai-hats-dev/skills/d2-diagrams/SKILL.md").read_text()
     assert needle in text, needle
 
 
