@@ -68,7 +68,7 @@ def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
     # HATS-1493: check_update_async is step 1 of the real human pipeline and
     # would fire a detached network probe from a test that spawns nothing else.
@@ -116,7 +116,7 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
     )
 
     # Suppress the "(re-)assembling …" stdout chatter from
-    # Assembler.bootstrap_role and friends — keeps test output clean.
+    # Assembler.set_role and friends — keeps test output clean.
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
 

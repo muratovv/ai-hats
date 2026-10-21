@@ -79,8 +79,8 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_role
     # Initialise project on host (active_role mirrors host's skills = empty).
     asm = Assembler(project)
     asm.init()
-    asm.bootstrap_role("host", provider_name="claude")
-    asm.bootstrap_role("guest", provider_name="claude")
+    asm.set_role("host", provider_name="claude")
+    asm.set_role("guest", provider_name="claude")
 
     captured: dict = {}
     lifecycle: list[str] = []

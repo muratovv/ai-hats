@@ -60,7 +60,7 @@ def ensure_gitignore_entry(project_dir: Path, ai_hats_dir: str | None) -> None:
     """One-shot: ensure `.agent/ai-hats/` (or current `<ai_hats_dir>/`) is in .gitignore.
 
     A prior migration removed the dynamic managed-block generator. The new policy
-    is a single static line written once at ``init`` time. ``bootstrap_role``
+    is a single static line written once at ``init`` time. ``set_role``
     and ``bump`` do not touch .gitignore — the user owns the file.
     Idempotent: re-running ``init`` is a no-op if the line is present.
     """

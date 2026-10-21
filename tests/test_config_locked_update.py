@@ -23,11 +23,12 @@ from ai_hats.paths import PROJECT_CONFIG
 SRC = Path(__file__).resolve().parent.parent / "src" / "ai_hats"
 
 
-class _DefaultProviderWriteVisitor(ast.NodeVisitor):
-    def __init__(self, path: Path) -> None:
-        self.path = path
+class _ProviderFieldWriteVisitor(ast.NodeVisitor):
+    """Writers of the persisted ``provider`` field inside ``assembler.py``."""
+
+    def __init__(self) -> None:
         self.functions: list[str] = []
-        self.writers: set[tuple[str, str]] = set()
+        self.writers: set[str] = set()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.functions.append(node.name)
@@ -37,16 +38,16 @@ class _DefaultProviderWriteVisitor(ast.NodeVisitor):
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        if any(self._is_default_provider_subscript(target) for target in node.targets):
+        if any(self._is_provider_subscript(target) for target in node.targets):
             self._record()
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
         if isinstance(node.func, ast.Attribute) and node.func.attr == "save_config":
             if any(
-                keyword.arg == "default_provider"
+                keyword.arg == "provider"
                 or any(
-                    isinstance(child, ast.Constant) and child.value == "default_provider"
+                    isinstance(child, ast.Constant) and child.value == "provider"
                     for child in ast.walk(keyword.value)
                 )
                 for keyword in node.keywords
@@ -55,16 +56,15 @@ class _DefaultProviderWriteVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     @staticmethod
-    def _is_default_provider_subscript(node: ast.expr) -> bool:
+    def _is_provider_subscript(node: ast.expr) -> bool:
         return (
             isinstance(node, ast.Subscript)
             and isinstance(node.slice, ast.Constant)
-            and node.slice.value == "default_provider"
+            and node.slice.value == "provider"
         )
 
     def _record(self) -> None:
-        function = self.functions[-1] if self.functions else "<module>"
-        self.writers.add((self.path.name, function))
+        self.writers.add(self.functions[-1] if self.functions else "<module>")
 
 
 def test_no_whole_object_project_config_saves_left() -> None:
@@ -82,18 +82,17 @@ def test_no_whole_object_project_config_saves_left() -> None:
     assert not offenders, f"direct whole-object saves reintroduced: {offenders}"
 
 
-def test_default_provider_writes_stay_behind_explicit_intent_apis() -> None:
-    writers: set[tuple[str, str]] = set()
-    for path in SRC.rglob("*.py"):
-        visitor = _DefaultProviderWriteVisitor(path)
-        visitor.visit(ast.parse(path.read_text()))
-        writers.update(visitor.writers)
+def test_provider_writes_stay_behind_explicit_intent_apis() -> None:
+    """Persisted ``provider`` is written only by the explicit-intent APIs.
 
-    assert writers == {
-        ("assembler.py", "init"),
-        ("assembler.py", "set_default_provider"),
-        ("assembler.py", "set_default_role"),
-    }
+    The scan stays in ``assembler.py``. Other modules assign ``["provider"]``
+    on dicts that are not this field.
+    """
+    path = SRC / "assembler.py"
+    visitor = _ProviderFieldWriteVisitor()
+    visitor.visit(ast.parse(path.read_text()))
+
+    assert visitor.writers == {"init", "set_default_provider", "set_default_role"}
 
 
 def _write_marker(config_path: Path) -> None:
@@ -149,7 +148,7 @@ def test_init_preserves_concurrent_customization(project: Path) -> None:
     asm.init(provider="agy")
 
     on_disk = ProjectConfig.from_yaml(asm.config_path)
-    assert on_disk.default_provider == "agy"
+    assert on_disk.provider == "agy"
     _assert_marker_alive(asm.config_path)
 
 
@@ -159,7 +158,7 @@ def test_set_default_provider_preserves_concurrent_customization(project: Path) 
 
     asm.set_default_provider("agy")
 
-    assert ProjectConfig.from_yaml(asm.config_path).default_provider == "agy"
+    assert ProjectConfig.from_yaml(asm.config_path).provider == "agy"
     _assert_marker_alive(asm.config_path)
 
 

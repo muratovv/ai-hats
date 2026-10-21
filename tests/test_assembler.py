@@ -114,15 +114,15 @@ def test_init_is_idempotent(tmp_path):
     assert (ProjectLayout.compute(project, os.environ).library.rules).is_dir()
 
 
-def test_bootstrap_role(project_with_library):
-    """HATS-407: bootstrap_role is runtime-bootstrap — composes, writes active_role,
+def test_set_role(project_with_library):
+    """HATS-407: set_role is runtime-bootstrap — composes, writes active_role,
     ensures provider scaffold, installs hooks, regenerates user-rules
     aggregator. No more _copy_components materialization of rules/skills."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
 
-    result = asm.bootstrap_role("test-role")
+    result = asm.set_role("test-role")
 
     assert result.name == "test-role"
     assert len(result.errors) == 0
@@ -136,12 +136,12 @@ def test_bootstrap_role(project_with_library):
     assert not (ProjectLayout.compute(project, os.environ).library.skills / "test_skill").exists()
 
 
-def test_bootstrap_role_with_claude(project_with_library):
+def test_set_role_with_claude(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
 
-    asm.bootstrap_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
     # HATS-1170: Root CLAUDE.md scaffold is no longer written (native-by-default clean-root invariant).
     assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
@@ -159,7 +159,7 @@ def test_status(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     status = asm.status()
     assert status["role"] == "test-role"
@@ -173,7 +173,7 @@ def test_bump(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     result = bump_pipeline(asm)
     assert result is not None
@@ -237,7 +237,7 @@ def test_bump_refuses_on_v06_user_edits(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     canonical = project / ".agent" / "ai-hats"
     # A v0.6 file with content that won't match any baseline → classified
@@ -265,7 +265,7 @@ def test_bump_force_v07_migration_overwrites_user_edits(project_with_library, ca
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     canonical = project / ".agent" / "ai-hats"
     (canonical / "priorities.md").write_text("# Priorities\n\n1. user-edited\n")
@@ -306,7 +306,7 @@ def test_run_v07_migration_composes_role_once(project_with_library, monkeypatch)
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     import ai_hats.materialize as materialize_mod
 
@@ -442,7 +442,7 @@ def test_bump_skips_normalize_when_v07_migration_refuses(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     config_path = project / PROJECT_CONFIG
     # Re-write with v0.6-shape yaml (deprecated field + empty default_role).
@@ -466,7 +466,7 @@ def test_bump_skips_normalize_when_v07_migration_refuses(project_with_library):
     assert config_path.read_bytes() == pre_bytes
 
 
-def test_bootstrap_role_then_switch_provider(project_with_library):
+def test_set_role_then_switch_provider(project_with_library):
     """Switching provider must regenerate system prompt for the new provider.
 
     Regression: setting role with agy created GEMINI.md, then wrapping
@@ -477,12 +477,12 @@ def test_bootstrap_role_then_switch_provider(project_with_library):
     asm.init()
 
     # Set role for agy (default)
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
     assert (project / "GEMINI.md").exists()
     assert "Role injection" in (project / "GEMINI.md").read_text()
 
     # Now switch to claude — clean-root invariant (HATS-1170)
-    asm.bootstrap_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
     assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
@@ -490,7 +490,7 @@ def test_bootstrap_role_then_switch_provider(project_with_library):
     from ai_hats.models import ProjectConfig
 
     profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert profile.default_provider == "agy"
+    assert profile.provider == "agy"
     assert profile.active_role == "test-role"
 
 
@@ -499,24 +499,24 @@ def test_runtime_bootstrap_on_provider_mismatch_keeps_default(project_with_libra
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")  # provider=agy
+    asm.set_role("test-role")  # provider=agy
 
     # Simulate what WrapRunner.run() does on provider mismatch
     from ai_hats.models import ProjectConfig
 
     profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert profile.default_provider == "agy"
+    assert profile.provider == "agy"
 
     target_provider = "claude"
-    if profile.active_role and profile.default_provider != target_provider:
-        asm.bootstrap_role(profile.active_role, provider_name=target_provider)
+    if profile.active_role and profile.provider != target_provider:
+        asm.set_role(profile.active_role, provider_name=target_provider)
 
     assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
     # The runtime bootstrap leaves the project default unchanged.
     profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert profile.default_provider == "agy"
+    assert profile.provider == "agy"
 
 
 def test_wrap_uses_default_role_when_no_active_role(project_with_library):
@@ -531,7 +531,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    # Don't call bootstrap_role — simulate fresh project with only default_role
+    # Don't call set_role — simulate fresh project with only default_role
 
     from ai_hats.models import ProjectConfig
 
@@ -543,7 +543,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     assert effective_role == "test-role"
 
     # Apply it (as WrapRunner would)
-    asm.bootstrap_role(effective_role, provider_name="claude")
+    asm.set_role(effective_role, provider_name="claude")
     assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
@@ -553,7 +553,7 @@ def test_preserve_local_rules(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     # Add a project-local rule
     local_rule = ProjectLayout.compute(project, os.environ).library.rules / "my_local_rule"
@@ -561,7 +561,7 @@ def test_preserve_local_rules(project_with_library):
     (local_rule / "rule.md").write_text("# My Local Rule")
 
     # Re-set role
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     # Local rule should still exist
     assert (
@@ -596,7 +596,7 @@ def test_claude_plan_writes_the_override_prompt_file(project_with_library):
     asm.init()
 
     # Set base role
-    asm.bootstrap_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
 
     # Plan the other-role
     plan = _session_of(asm, ClaudeSurface(), "other-role")
@@ -626,7 +626,7 @@ def test_claude_plan_mirrors_role_skills_in_plugin_dir(project_with_library):
     asm.init()
     # Active role has NO skills (other-role); the spawned role (test-role)
     # composes test_skill — exactly the HATS-307 scenario.
-    asm.bootstrap_role("other-role", provider_name="claude")
+    asm.set_role("other-role", provider_name="claude")
 
     plan = _session_of(asm, ClaudeSurface(), "test-role")
     args = list(plan.launch.args)
@@ -644,7 +644,7 @@ def test_claude_plan_does_not_modify_project_claude_md(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
 
     user_claude = project / "CLAUDE.md"
     user_claude.write_text("# User hand-written CLAUDE.md\nRules here.\n")
@@ -664,7 +664,7 @@ def test_agy_plan_creates_rules_dir(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")  # sets up .agent/rules/
+    asm.set_role("test-role")  # sets up .agent/rules/
 
     plan = _session_of(asm, AgySurface(), "other-role")
     args = list(plan.launch.args)
@@ -737,13 +737,13 @@ def test_gitignore_init_preserves_user_content(project_with_library):
         assert fragment in content
 
 
-def test_gitignore_bootstrap_role_does_not_touch_gitignore(project_with_library):
-    """`bootstrap_role` is a no-op on .gitignore (HATS-317 removed the dynamic block)."""
+def test_gitignore_set_role_does_not_touch_gitignore(project_with_library):
+    """`set_role` is a no-op on .gitignore (HATS-317 removed the dynamic block)."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     before = (project / ".gitignore").read_text()
-    asm.bootstrap_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
     after = (project / ".gitignore").read_text()
     assert before == after
 
@@ -1045,11 +1045,11 @@ def test_bump_invokes_legacy_block_sweep(project_with_library):
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
     gi = project / ".gitignore"
     gi.write_text(gi.read_text() + "\n" + _LEGACY_BLOCK)
 
-    # Rewind again — init/bootstrap_role may have advanced migration_step.
+    # Rewind again — init/set_role may have advanced migration_step.
     raw = _yaml.safe_load(config_path.read_text())
     raw["migration_step"] = 1  # past step=1 (yaml normalize), still before step=2
     config_path.write_text(_yaml.safe_dump(raw))
@@ -1067,20 +1067,20 @@ def test_bump_invokes_legacy_block_sweep(project_with_library):
 # --------------------------------------------------------------------- #
 
 
-# HATS-407: _copy_components removed — bootstrap_role no longer materializes
+# HATS-407: _copy_components removed — set_role no longer materializes
 # rules/skills/hooks under the canonical library tree. Library overlay tests
 # (managed-manifest, library-sourced skill survival) are retired; per-session
 # compose resolves these in memory.
 
 
-def test_managed_manifest_absent_after_bootstrap_role(project_with_library):
-    """HATS-407: with _copy_components removed, bootstrap_role no longer writes
+def test_managed_manifest_absent_after_set_role(project_with_library):
+    """HATS-407: with _copy_components removed, set_role no longer writes
     .ai-hats-managed for skills/hooks/rules — composition resolves them in
     memory via library_paths and the canonical tree stays minimal."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     assert not (
         ProjectLayout.compute(project, os.environ).library.skills / ".ai-hats-managed"
@@ -1095,7 +1095,7 @@ def test_user_hook_survives_bump(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     # Ensure the dir exists (post-HATS-407 it may be empty until the user
     # drops a file in it — _copy_components no longer pre-populates).
@@ -1114,7 +1114,7 @@ def test_user_skill_dir_survives_bump(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role")
+    asm.set_role("test-role")
 
     ProjectLayout.compute(project, os.environ).library.skills.mkdir(parents=True, exist_ok=True)
     user_skill = ProjectLayout.compute(project, os.environ).library.skills / "my_local_skill"
@@ -1220,7 +1220,7 @@ def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_libra
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("ph-role", provider_name="claude")
+    asm.set_role("ph-role", provider_name="claude")
 
     canonical = project / ".agent" / "ai-hats"
     _assert_no_literal_placeholder(*canonical.rglob("*"))
@@ -1229,11 +1229,11 @@ def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_libra
 def test_agy_inline_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
-    """`./GEMINI.md` injection block (Agy's bootstrap_role path) must be expanded."""
+    """`./GEMINI.md` injection block (Agy's set_role path) must be expanded."""
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("ph-role", provider_name="agy")
+    asm.set_role("ph-role", provider_name="agy")
 
     gemini_md = project / "GEMINI.md"
     assert gemini_md.exists()
@@ -1269,7 +1269,7 @@ def test_claude_plan_has_no_literal_placeholder(
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("ph-role", provider_name="claude")
+    asm.set_role("ph-role", provider_name="claude")
 
     plan = _session_of(asm, ClaudeSurface(), "ph-role")
     args = list(plan.launch.args)
@@ -1317,7 +1317,7 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("ph-role", provider_name="claude")
+    asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
     meta_prompt = _sdk_audit(get_surface("claude"), project, result, task="")
@@ -1339,7 +1339,7 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("ph-role", provider_name="claude")
+    asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
     # STATE.md exists with real backlog content — the thing we must NOT inject.
@@ -1363,7 +1363,7 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("ph-role", provider_name="claude")
+    asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
     ProjectLayout.compute(project, os.environ).state_md.write_text(

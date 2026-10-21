@@ -98,7 +98,7 @@ def minimal_claude_project(tmp_path: Path) -> Path:
 
     asm = Assembler(project)
     asm.init()
-    asm.bootstrap_role("probe", provider_name="claude")
+    asm.set_role("probe", provider_name="claude")
     return project
 
 

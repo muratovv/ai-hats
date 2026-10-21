@@ -269,7 +269,7 @@ def test_get_env_names_the_port_without_taking_one(tmp_path, monkeypatch) -> Non
 
 
 def test_update_system_prompt_is_noop(tmp_path) -> None:
-    # Inline-only surface: bootstrap_role must not litter a CLINE.md cline ignores.
+    # Inline-only surface: set_role must not litter a CLINE.md cline ignores.
     ClineSurface().update_system_prompt(ProjectLayout.at(tmp_path), "role body")
     assert not (tmp_path / "CLINE.md").exists()
 

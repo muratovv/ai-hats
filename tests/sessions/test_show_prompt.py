@@ -44,7 +44,7 @@ def project_with_maintainer(tmp_path: Path, monkeypatch) -> Path:
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIB_CORE, LIB_USAGE])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
     # bootstrap_or_die does a self-update probe — stub for offline / CI.
     import ai_hats._bootstrap as boot

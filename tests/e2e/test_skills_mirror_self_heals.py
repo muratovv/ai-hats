@@ -77,7 +77,7 @@ def test_session_start_heals_stale_skills_mirror(tmp_path: Path, monkeypatch):
     project, lib = _make_project(tmp_path)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("mirror-role", provider_name="claude")
+    asm.set_role("mirror-role", provider_name="claude")
 
     # Plant the legacy state: marker + listed stale dir + a user-authored
     # neighbour the marker does NOT list.

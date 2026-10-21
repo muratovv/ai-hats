@@ -66,7 +66,7 @@ def project_with_library(tmp_path):
 def _composed(project: Path, lib: Path):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
     result = asm.composer.compose("test-role")
     return asm, composition_of(result, layout=asm.layout, resolver=asm.resolver)
 

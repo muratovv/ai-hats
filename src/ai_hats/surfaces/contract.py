@@ -476,7 +476,7 @@ class Surface(abc.ABC):
         Used by surfaces without a scaffold (e.g. Agy) to maintain the
         AI-HATS-managed section of `./GEMINI.md` between `INJECTION_START` /
         `INJECTION_END` markers. For surfaces that declare a scaffold
-        (Claude), this method is dormant: `Assembler.bootstrap_role`
+        (Claude), this method is dormant: `Assembler.set_role`
         skips the call entirely, and the lowercase-marker early
         return below provides a defense-in-depth no-op if it is invoked
         anyway.

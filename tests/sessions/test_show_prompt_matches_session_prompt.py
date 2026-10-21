@@ -8,7 +8,7 @@ provider.build_system_prompt``:
 
   1. ``WrapRunner.run_session``      — HITL (this test exercises this path)
   2. ``SubAgentRunner._run_attempt`` — Automate (out-of-scope here)
-  3. ``Assembler.bootstrap_role.build``    — on-disk write (out-of-scope here)
+  3. ``Assembler.set_role.build``    — on-disk write (out-of-scope here)
   4. ``MaterializeSystemPrompt.run`` — preview (this test exercises this path)
 
 If sites 1 and 4 diverge, ``show-prompt`` lies about what the agent
@@ -68,7 +68,7 @@ def project_with_maintainer(tmp_path: Path, monkeypatch) -> Path:
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
     # HATS-1493: check_update_async is step 1 of the real human pipeline and
     # would fire a detached network probe from a test that spawns nothing else.

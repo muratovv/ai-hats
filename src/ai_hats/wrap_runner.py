@@ -612,7 +612,7 @@ class WrapRunner:
         literal trap that made this necessary. Callers needing an explicit
         prompt use ``SubAgentRunner`` (Automate path).
 
-        Role resolution, the first-run ``bootstrap_role`` side effect,
+        Role resolution, the first-run ``set_role`` side effect,
         and the ONE composition all happened at the integrator compose seam
         (``composition_seam.build_composition_payload``) — this runner only
         delivers ``self.payload``.

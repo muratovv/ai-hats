@@ -101,12 +101,12 @@ def test_agy_clean_root_sentinel(
     # Positive control: init created .agent/ai-hats
     assert (project / ".agent" / "ai-hats").is_dir()
 
-    # bootstrap_role for agy provider triggers system prompt update (writing ./GEMINI.md into project root)
-    Assembler(project).bootstrap_role("assistant", "agy")
+    # set_role for agy provider triggers system prompt update (writing ./GEMINI.md into project root)
+    Assembler(project).set_role("assistant", "agy")
 
     after_session = _root_entries(project)
     disallowed = after_session - _ALLOWLIST
 
     assert not disallowed, (
-        f"project root contains unexpected entries after agy bootstrap_role: {sorted(disallowed)}"
+        f"project root contains unexpected entries after agy set_role: {sorted(disallowed)}"
     )

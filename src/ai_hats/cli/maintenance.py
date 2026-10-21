@@ -2005,7 +2005,7 @@ def update(
 
 
 # `ai-hats self migrate` removed. Migration is transparent inside
-# `Assembler.bootstrap_role` / `Assembler._refresh(install_time=True)` (
+# `Assembler.set_role` / `Assembler._refresh(install_time=True)` (
 # the latter is reached via init and the do_bump CLI pipeline). Yaml-side
 # migration lives in `ProjectConfig.from_yaml`. Cleanup of obsolete files
 # is registry step=3.

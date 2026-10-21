@@ -42,7 +42,7 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     ).save(proj / PROJECT_CONFIG)
     asm = Assembler(proj, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(proj)
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     monkeypatch.setenv("AI_HATS_QUIET", "1")

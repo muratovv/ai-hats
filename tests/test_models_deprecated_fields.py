@@ -33,7 +33,7 @@ def test_imports_order_stripped_and_warned(tmp_path, capsys):
 
     cfg = ProjectConfig.from_yaml(path)
 
-    assert cfg.default_provider == "claude"
+    assert cfg.provider == "claude"
     assert cfg.active_role == "dev"
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -97,7 +97,7 @@ def test_unknown_non_deprecated_key_stripped_with_warn(tmp_path, capsys):
 
     cfg = ProjectConfig.from_yaml(path)
 
-    assert cfg.default_provider == "claude"
+    assert cfg.provider == "claude"
     assert not hasattr(cfg, "mystery_flag")
     err = capsys.readouterr().err
     assert "dropping unknown field 'mystery_flag'" in err

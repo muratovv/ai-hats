@@ -14,6 +14,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **Role `designer` ships in the library** (HATS-2095). `ai-hats-library` 0.11.0 adds the role and the mark scripts. This package requires `ai-hats-library>=0.11.0`.
 
+### Fixed
+
+- **A one-shot `-p <provider>` no longer replaces the project default** (HATS-1745). The session starts on the surface you passed, and `provider:` in `ai-hats.yaml` stays put. The key changes only through `init` and `config set` (`-p`, or `-r` when a provider is passed). A launch persists `active_role` only.
+
 ## [0.19.1] - 2026-10-19
 
 ### Security
@@ -554,8 +558,6 @@ since the latest tag lives under **Unreleased** until the next release.
 - **`leader` and `worker` traits for paired sessions** (HATS-1491). Two `usage/` traits that split one card between two live sessions: the leader owns the plan and a two-contour review (completeness first, then discipline) and writes no code; the worker owns every mechanical step, sleeps on `ai-hats wait --until execute --until done`, and hands work back with the artifacts that settle each claim. Mix onto any base role — `ai-hats -r "maintainer + leader"`, `ai-hats -p agy -r "maintainer + worker"`. Until now the `leader` / `worker` examples in the docs named components that did not exist, so a command copied from them exited 2.
 
 ### Fixed
-
-- **A one-shot `-p <provider>` no longer replaces the project default** (HATS-1745). The persisted intent is now named `ProjectConfig.default_provider` internally while the compatible YAML key stays `provider:`. Runtime selection remains on `CompositionPayload.provider` and `SessionIdentity.provider`; `Assembler.bootstrap_role` persists only `active_role`, while `init` and `Assembler.set_default_provider` are explicit default writers.
 
 - **Editable installs now repair stale built-in step metadata before the CLI starts** (HATS-1810). A checkout whose `[project.entry-points."ai_hats.steps"]` declarations changed after installation no longer fails pipeline resolution while `uv sync --check` reports no work: bootstrap detects the exact name-to-target drift, reinstalls the checkout, verifies the refreshed entry points, and re-execs the requested command. Local `ai-hats self update` now runs the same post-install integrity check and fails loudly if a first-party step target cannot load.
 

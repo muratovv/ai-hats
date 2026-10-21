@@ -258,11 +258,11 @@ def test_write_canonical_ignores_priorities_role_traits_rules_skills(
     assert on_disk == {USER_RULES_SUBDIR, CANONICAL_MANIFEST, LAUNCHER_CONTRACT_FILE}
 
 
-def test_bootstrap_role_writes_canonical(project_with_library: Path) -> None:
-    """``bootstrap_role`` triggers ``write_canonical`` — sanity check the wiring."""
+def test_set_role_writes_canonical(project_with_library: Path) -> None:
+    """``set_role`` triggers ``write_canonical`` — sanity check the wiring."""
     asm, _ = _compose(project_with_library)
     asm.init()
-    asm.bootstrap_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
 
     canonical = _canonical(project_with_library)
     assert (canonical / USER_RULES_SUBDIR).is_dir()

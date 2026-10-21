@@ -661,7 +661,7 @@ def set_role(
             "ai-hats content — use `ai-hats execute` for role + user-rules.[/]"
         )
 
-    console.print(f"  Provider: [bold]{provider or asm.project_config.default_provider}[/]")
+    console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
 
 
 def _apply_overlay_edits(

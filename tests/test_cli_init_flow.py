@@ -220,7 +220,7 @@ def test_set_unknown_provider_only_fails_loud(cli_project):
     from ai_hats.models import ProjectConfig
 
     cfg_before = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert cfg_before.default_provider == "claude"
+    assert cfg_before.provider == "claude"
 
     result = runner.invoke(main, ["config", "set", "-p", "bogus-provider"])
 
@@ -228,7 +228,7 @@ def test_set_unknown_provider_only_fails_loud(cli_project):
     assert "bogus-provider" in result.output
     # Surface in ai-hats.yaml must not have been overwritten.
     cfg_after = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert cfg_after.default_provider == "claude"
+    assert cfg_after.provider == "claude"
 
 
 def test_set_idempotent_via_cli(cli_project):

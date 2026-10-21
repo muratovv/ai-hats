@@ -119,7 +119,7 @@ def project_with_assistant_default(tmp_path):
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("assistant", provider_name="claude")
+    asm.set_role("assistant", provider_name="claude")
     return project
 
 

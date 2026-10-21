@@ -322,7 +322,7 @@ def _launch_session(
         SessionRunParams(
             layout=layout,
             # Compose ONCE here (effective-role resolution + the
-            # first-run bootstrap_role side effect live in the seam) and seed the
+            # first-run set_role side effect live in the seam) and seed the
             # payload into the funnel; the launch step hands it to WrapRunner.
             role=MaterializedRole(
                 name=role,

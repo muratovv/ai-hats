@@ -122,7 +122,7 @@ def maintainer_project(tmp_path: Path) -> Assembler:
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
     return asm
 
 

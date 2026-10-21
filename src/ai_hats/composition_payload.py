@@ -46,7 +46,7 @@ class CompositionPayload:
     # Provider-owned transcript path discovery (WHERE the session log
     # lives) — paired with audit_writer_factory's parser (HOW to parse it).
     transcript_resolver: "TranscriptResolver | None" = None
-    # Hooks warnings from the first-run bootstrap_role side effect, routed to
+    # Hooks warnings from the first-run set_role side effect, routed to
     # the HITL read-hold instead of a bare pre-launch print.
     startup_warnings: tuple[str, ...] = ()
     # What the COMPOSITION itself found — carried typed, so the level

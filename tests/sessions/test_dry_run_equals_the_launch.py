@@ -67,7 +67,7 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     ).save(proj / PROJECT_CONFIG)
     asm = Assembler(proj, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(proj)
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     return proj
@@ -376,7 +376,7 @@ def agy_project(tmp_path: Path, monkeypatch) -> Path:
     ).save(proj / PROJECT_CONFIG)
     asm = Assembler(proj, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("role-judge", provider_name="agy")
+    asm.set_role("role-judge", provider_name="agy")
     monkeypatch.chdir(proj)
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(tmp_path / "gemini-home"))
@@ -429,7 +429,7 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
     ).save(proj / PROJECT_CONFIG)
     asm = Assembler(proj, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="cline")
+    asm.set_role("maintainer", provider_name="cline")
     monkeypatch.chdir(proj)
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
 

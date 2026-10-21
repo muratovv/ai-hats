@@ -47,13 +47,13 @@ def test_role_swap_never_creates_root_claude_md(project_two_roles: Path) -> None
     """HATS-1170: no swap, in either direction, materializes a root CLAUDE.md."""
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
-    asm.bootstrap_role("role-a", provider_name="claude")
+    asm.set_role("role-a", provider_name="claude")
     assert not (project_two_roles / "CLAUDE.md").exists()
 
-    asm.bootstrap_role("role-b", provider_name="claude")
+    asm.set_role("role-b", provider_name="claude")
     assert not (project_two_roles / "CLAUDE.md").exists()
 
-    asm.bootstrap_role("role-a", provider_name="claude")
+    asm.set_role("role-a", provider_name="claude")
     assert not (project_two_roles / "CLAUDE.md").exists()
 
 
@@ -68,17 +68,17 @@ def test_role_swap_tracks_active_role_in_profile(
 
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
-    asm.bootstrap_role("role-a", provider_name="claude")
+    asm.set_role("role-a", provider_name="claude")
     profile = ProjectConfig.from_yaml(project_two_roles / PROJECT_CONFIG)
     assert profile.active_role == "role-a"
     assert "Role A injection." in asm.composer.compose("role-a").role_injection
 
-    asm.bootstrap_role("role-b", provider_name="claude")
+    asm.set_role("role-b", provider_name="claude")
     profile = ProjectConfig.from_yaml(project_two_roles / PROJECT_CONFIG)
     assert profile.active_role == "role-b"
     assert "Role B injection." in asm.composer.compose("role-b").role_injection
 
-    asm.bootstrap_role("role-a", provider_name="claude")
+    asm.set_role("role-a", provider_name="claude")
     profile = ProjectConfig.from_yaml(project_two_roles / PROJECT_CONFIG)
     assert profile.active_role == "role-a"
 
@@ -89,7 +89,7 @@ def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
     """
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
-    asm.bootstrap_role("role-a", provider_name="claude")
+    asm.set_role("role-a", provider_name="claude")
 
     canonical = project_two_roles / ".agent" / "ai-hats"
     manifest = canonical / CANONICAL_MANIFEST
@@ -102,7 +102,7 @@ def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
     assert not (canonical / "imports.md").exists()
 
 
-def test_bootstrap_role_agy_still_inline(tmp_path: Path) -> None:
+def test_set_role_agy_still_inline(tmp_path: Path) -> None:
     """Agy path is unchanged — update_system_prompt still runs (no scaffold)."""
     project = tmp_path / "proj"
     project.mkdir()
@@ -114,17 +114,17 @@ def test_bootstrap_role_agy_still_inline(tmp_path: Path) -> None:
     )
     (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: agy\n")
 
-    Assembler(project).bootstrap_role("r1", provider_name="agy")
+    Assembler(project).set_role("r1", provider_name="agy")
     body = (project / "GEMINI.md").read_text()
     assert "Agy role text." in body
     assert "<!-- AI-HATS:START -->" in body  # legacy markers, used by Agy path
 
 
-def test_bootstrap_role_claude_skips_inline_update(project_two_roles: Path) -> None:
+def test_set_role_claude_skips_inline_update(project_two_roles: Path) -> None:
     """Claude's update_system_prompt is a no-op — the role never hits the root."""
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
-    asm.bootstrap_role("role-a", provider_name="claude")
+    asm.set_role("role-a", provider_name="claude")
 
     assert not (project_two_roles / "CLAUDE.md").exists()
     # Nor anywhere in the canonical tree — the role is composed per session.

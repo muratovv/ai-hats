@@ -82,7 +82,7 @@ def test_session_start_warns_on_deprecated_write_rule(tmp_path: Path, monkeypatc
     project, lib = _make_project(tmp_path)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.bootstrap_role("lint-role", provider_name="claude")
+    asm.set_role("lint-role", provider_name="claude")
     # Isolate from the developer's real user-global settings.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-cfg"))
 

@@ -64,7 +64,7 @@ def _write_project(project: Path) -> None:
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
 
 
 def _add_user_rule(project: Path, stem: str = RULE_STEM, body: str = RULE_BODY) -> Path:

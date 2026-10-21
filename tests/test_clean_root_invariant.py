@@ -8,7 +8,7 @@ Verifies:
 3. User-owned files inside parent directories (.agy/user_file) are preserved.
 4. Symlinked legacy directories are swept safely.
 5. Sweeper ProcSurface handles directory markers (.agent/ai-hats).
-6. Assembler.init and bootstrap_role trigger legacy sweeps.
+6. Assembler.init and set_role trigger legacy sweeps.
 """
 
 from __future__ import annotations
@@ -134,8 +134,8 @@ def test_sweeper_proc_surface_handles_directory_marker(tmp_path: Path) -> None:
     assert not agy_skills.exists()
 
 
-def test_assembler_cleanup_on_init_and_bootstrap_role(tmp_path: Path) -> None:
-    """Corner case 6: Assembler.init and bootstrap_role trigger legacy sweeps."""
+def test_assembler_cleanup_on_init_and_set_role(tmp_path: Path) -> None:
+    """Corner case 6: Assembler.init and set_role trigger legacy sweeps."""
     from ai_hats.assembler import Assembler
 
     agy_skills = tmp_path / ".agy" / "skills"
@@ -155,7 +155,7 @@ def test_assembler_cleanup_on_init_and_bootstrap_role(tmp_path: Path) -> None:
         patch("ai_hats.materialize.compose_for_role", return_value=mock_res),
     ):
         asm = Assembler(tmp_path)
-        asm.bootstrap_role("maintainer")
+        asm.set_role("maintainer")
 
     assert not agy_skills.exists()
     assert not (tmp_path / ".agy").exists()

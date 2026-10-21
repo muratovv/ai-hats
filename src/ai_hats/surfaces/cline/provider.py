@@ -91,7 +91,7 @@ class ClineSurface(Surface):
         return None
 
     def update_system_prompt(self, layout: ProjectLayout, content: str) -> Path | None:
-        # Inline-only surface: bootstrap_role must not write a CLINE.md cline would ignore.
+        # Inline-only surface: set_role must not write a CLINE.md cline would ignore.
         del layout, content
         return None
 

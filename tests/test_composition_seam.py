@@ -115,7 +115,7 @@ def test_seam_lenient_mode_skips_the_existence_raise(tmp_path: Path):
 def _provider_less_assembler(project_dir: Path) -> MagicMock:
     """Assembler whose cfg carries an explicitly emptied ``provider:``."""
     asm = _fake_assembler(["judge"], project_dir)
-    asm.project_config.default_provider = ""
+    asm.project_config.provider = ""
     asm.project_config.active_role = "judge"
     asm.project_config.default_role = "judge"
     return asm
@@ -156,7 +156,7 @@ def _provider_seam_assembler(project_dir: Path) -> MagicMock:
     isolate provider resolution from the ``set_role`` side effect.
     """
     asm = _fake_assembler(["judge"], project_dir)
-    asm.project_config.default_provider = "claude"
+    asm.project_config.provider = "claude"
     asm.project_config.active_role = "judge"
     asm.project_config.default_role = "judge"
     return asm
@@ -177,9 +177,9 @@ def _resolved_provider(tmp_path: Path, **kwargs) -> str:
 
 @pytest.mark.parametrize("interactive", [False, True])
 def test_seam_explicit_provider_wins_over_cfg(tmp_path: Path, interactive: bool):
-    """HATS-1218 R4: an explicit override beats ``cfg.default_provider`` on BOTH paths.
+    """HATS-1218 R4: an explicit override beats ``cfg.provider`` on BOTH paths.
 
-    Pre-fix the batch arm hard-read ``cfg.default_provider``, so ``ai-hats execute -p agy
+    Pre-fix the batch arm hard-read ``cfg.provider``, so ``ai-hats execute -p agy
     --batch`` accepted the flag and ran the configured surface in silence.
     """
     assert (
@@ -194,7 +194,7 @@ def test_seam_explicit_provider_wins_over_cfg(tmp_path: Path, interactive: bool)
 
 @pytest.mark.parametrize("interactive", [False, True])
 def test_seam_absent_override_falls_back_to_cfg(tmp_path: Path, interactive: bool):
-    """HATS-1218 R4, other half: no override resolves ``cfg.default_provider``."""
+    """HATS-1218 R4, other half: no override still resolves ``cfg.provider``."""
     assert (
         _resolved_provider(
             tmp_path,
@@ -211,7 +211,7 @@ def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
     fix is that ``interactive`` keeps meaning (a) and stops meaning (b)."""
     fake_result = MagicMock(errors=[], lost=(), merged_injection="ROLE PROMPT")
     asm = _fake_assembler([], tmp_path)
-    asm.project_config.default_provider = "claude"
+    asm.project_config.provider = "claude"
     asm.project_config.active_role = ""  # would be a first run, were it HITL
     asm.project_config.default_role = "judge"
     with (
@@ -220,7 +220,7 @@ def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
         patch("ai_hats.surface_registry.get_surface", return_value=MagicMock()),
     ):
         build_composition_payload(tmp_path, provider_name="agy", interactive=False)
-    asm.bootstrap_role.assert_not_called()
+    asm.set_role.assert_not_called()
 
 
 def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
@@ -230,13 +230,13 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
     asm = _fake_assembler(["judge"], tmp_path)
     asm.project_config.active_role = ""  # first-run → set_role fires
     asm.project_config.default_role = "judge"
-    asm.project_config.default_provider = "agy"
+    asm.project_config.provider = "agy"
 
-    def _bootstrap_role(role, provider, *, warnings_sink=None, result=None):
+    def _set_role(role, provider, *, warnings_sink=None, result=None):
         if warnings_sink is not None:
             warnings_sink.append("core.hooksPath is already set to 'x' — not overwriting")
 
-    asm.bootstrap_role.side_effect = _bootstrap_role
+    asm.set_role.side_effect = _set_role
 
     with (
         patch("ai_hats.assembler.Assembler", return_value=asm),
@@ -246,7 +246,7 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
         payload = build_composition_payload(tmp_path, interactive=True)
 
     assert any("core.hooksPath is already set" in w for w in payload.startup_warnings)
-    assert "warnings_sink" in asm.bootstrap_role.call_args.kwargs
+    assert "warnings_sink" in asm.set_role.call_args.kwargs
 
 
 # --------------------------------------------------------------------- #

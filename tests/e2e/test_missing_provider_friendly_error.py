@@ -25,7 +25,7 @@ def provider_less_project(tmp_project):
 
     config_path = tmp_project.path / PROJECT_CONFIG
     cfg = ProjectConfig.from_yaml(config_path)
-    cfg.default_provider = ""
+    cfg.provider = ""
     cfg.save(config_path)
     return tmp_project
 

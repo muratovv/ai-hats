@@ -80,7 +80,7 @@ def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.bootstrap_role("maintainer", provider_name="claude")
+    asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
     # HATS-1493: check_update_async is step 1 of the real human pipeline and
     # would fire a detached network probe from a test that spawns nothing else.
