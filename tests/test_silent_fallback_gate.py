@@ -21,10 +21,11 @@ def run():
 """
 
 
-def _run(payload: dict) -> subprocess.CompletedProcess[str]:
+def _run(payload: dict, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(HOOK)],
         input=json.dumps(payload),
+        cwd=cwd,
         capture_output=True,
         text=True,
         timeout=20,
@@ -64,6 +65,41 @@ def test_an_edit_that_misses_the_handler_is_allowed(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert result.stdout.strip() == ""
+
+
+def test_a_python_write_with_no_source_is_silent(tmp_path: Path) -> None:
+    target = tmp_path / "mod.py"
+    result = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(target)},
+        },
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert "fail-open" not in result.stderr
+
+
+def test_an_edit_that_does_not_apply_fails_open(tmp_path: Path) -> None:
+    target = tmp_path / "mod.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    result = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Edit",
+            "tool_input": {
+                "file_path": str(target),
+                "old_string": "missing\n",
+                "new_string": "present\n",
+            },
+        },
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert "fail-open" in result.stderr
 
 
 def test_a_markdown_write_is_silent(tmp_path: Path) -> None:

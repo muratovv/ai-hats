@@ -109,6 +109,7 @@ GUARDED = (
     ("Bash", "wt_git_gate.py"),
     ("EnterWorktree", "wt_entry_gate.py"),
     ("Write", "backlog_write_gate.py"),
+    ("Write", "silent_fallback_gate.py"),
     ("Write", "wt_gate.py"),
 )
 

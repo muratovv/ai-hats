@@ -101,6 +101,11 @@ def _in_scope(file_path: str) -> bool:
     return path.suffix == ".py" and "tests" not in path.parts
 
 
+def _has_source(tool_input: dict) -> bool:
+    """The payload carries a body or an edit hunk, not only a path."""
+    return any(key in tool_input for key in ("content", "contents", "old_string", "edits"))
+
+
 def _apply(text: str, edits: list[dict]) -> str | None:
     for edit in edits:
         old = edit.get("old_string")
@@ -157,9 +162,10 @@ def main() -> int:
         journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook=_HOOK)
         return 0
 
-    file_path = str((payload.get("tool_input") or {}).get("file_path") or "")
-    if not _in_scope(file_path):
-        return 0
+    tool_input = payload.get("tool_input") or {}
+    file_path = str(tool_input.get("file_path") or "")
+    if not _in_scope(file_path) or not _has_source(tool_input):
+        return 0  # a path with no source is not an edit we failed to read
 
     after = _prospective(payload, file_path)
     if after is None:
