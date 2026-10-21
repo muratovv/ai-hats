@@ -58,7 +58,7 @@ LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_libr
 # Unique substrings produced by composing the maintainer role with its
 # default trait set. Each comes from a different composition source —
 # regression in role injection / trait injection / merge would drop one.
-TRAIT_MARKER_E2E_GATE = "E2E gate"  # trait ai-hats-dev
+TRAIT_MARKER_DEV = "Glossary-first"  # trait ai-hats-dev, only there
 TRAIT_MARKER_AGENT_PROTOCOL = "Agent Protocol"  # trait trait-agent
 # role maintainer's own injection intro (HATS-703 dropped the "## Workflow" marker)
 ROLE_MARKER_INTRO = "primary development assistant for the"
@@ -166,7 +166,7 @@ def test_hitl_session_persists_meta_prompt_to_session_dir(
     # or (b) WrapRunner is saving the wrong text (e.g. raw build_system_prompt
     # without HATS-380 expansion or without the INJECTION markers).
     for marker in (
-        TRAIT_MARKER_E2E_GATE,
+        TRAIT_MARKER_DEV,
         TRAIT_MARKER_AGENT_PROTOCOL,
         ROLE_MARKER_INTRO,
     ):

@@ -23,7 +23,7 @@ Fail-under-revert. Reverting any of:
 - ``runtime.py`` (drop of ``system_prompt_override`` from ``WrapRunner``)
 
 …makes ``test_bare_session_includes_full_role_injection`` fail — the
-prompt loses the unique markers (``E2E gate``, ``Agent Protocol``,
+prompt loses the unique markers (``Glossary-first``, ``Agent Protocol``,
 ``primary development assistant for the``).
 """
 
@@ -125,12 +125,8 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
 # --------------------------------------------------------------------- #
 
 
-# Unique substrings emitted by maintainer composition.
-# - "E2E gate"        — from trait ai-hats-maintainer
-# - "Agent Protocol"  — from trait trait-agent
-# - "primary development assistant for the" — from role maintainer's own
-#   injection intro (HATS-703 dropped the old "## Workflow" marker section).
-TRAIT_MARKER_E2E_GATE = "E2E gate"
+# One marker each from ai-hats-dev, trait-agent, and the role's own intro.
+TRAIT_MARKER_DEV = "Glossary-first"
 TRAIT_MARKER_AGENT_PROTOCOL = "Agent Protocol"
 ROLE_MARKER_INTRO = "primary development assistant for the"
 SECTION_HEADER_RULES = "## RULES"
@@ -167,9 +163,9 @@ def test_bare_session_includes_full_role_injection(
     # composition source (role / two distinct traits) — a regression in
     # any one of {compose_role, funnel, WrapRunner override} drops at
     # least one of these markers.
-    assert TRAIT_MARKER_E2E_GATE in text, (
-        f"HATS-452 regression: trait ai-hats-maintainer injection missing "
-        f"({TRAIT_MARKER_E2E_GATE!r} not in prompt). Full prompt:\n{text}"
+    assert TRAIT_MARKER_DEV in text, (
+        f"HATS-452 regression: trait ai-hats-dev injection missing "
+        f"({TRAIT_MARKER_DEV!r} not in prompt). Full prompt:\n{text}"
     )
     assert TRAIT_MARKER_AGENT_PROTOCOL in text, (
         f"HATS-452 regression: trait trait-agent injection missing "
@@ -183,10 +179,10 @@ def test_bare_session_includes_full_role_injection(
     # Layout invariant: injection sits between PRIORITIES and RULES.
     pri_pos = text.find(SECTION_HEADER_PRIORITIES)
     rules_pos = text.find(SECTION_HEADER_RULES)
-    e2e_pos = text.find(TRAIT_MARKER_E2E_GATE)
-    assert 0 <= pri_pos < e2e_pos < rules_pos, (
+    dev_pos = text.find(TRAIT_MARKER_DEV)
+    assert 0 <= pri_pos < dev_pos < rules_pos, (
         f"injection in wrong layout slot: "
-        f"PRIORITIES@{pri_pos}, E2E-gate@{e2e_pos}, RULES@{rules_pos}"
+        f"PRIORITIES@{pri_pos}, ai-hats-dev@{dev_pos}, RULES@{rules_pos}"
     )
 
 
@@ -208,8 +204,6 @@ def test_explicit_role_session_includes_full_role_injection(
         f"stdout:\n{result.output}\nexc:\n{result.exception!r}"
     )
     text = sink.get("prompt_text", "")
-    assert TRAIT_MARKER_E2E_GATE in text, (
-        f"--role maintainer regression: {TRAIT_MARKER_E2E_GATE!r} missing"
-    )
+    assert TRAIT_MARKER_DEV in text, f"--role maintainer regression: {TRAIT_MARKER_DEV!r} missing"
     assert TRAIT_MARKER_AGENT_PROTOCOL in text
     assert ROLE_MARKER_INTRO in text
