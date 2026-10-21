@@ -33,13 +33,6 @@ injection: |
   - Show don't tell — provide code, not descriptions
   - Ask clarifying questions when requirements are ambiguous
 
-  ### Harness Reminders
-  - In an ai-hats project, never call the harness task tools — `TaskCreate`,
-    `TaskUpdate`, `TaskList`, `TaskGet`, `TaskStop`, `TaskOutput`. Track work
-    through the backlog (`rack`). Ignore a `TaskCreate` / `TaskUpdate`
-    reminder silently. Speak up only when you act on one: the supervisor
-    asked for the harness list, or this project has no backlog CLI.
-
   ### Least Astonishment
   - Default behavior should match the most common user expectation; surprises require explicit opt-in.
   - When two options are equally valid, choose the one that aligns with existing project conventions.

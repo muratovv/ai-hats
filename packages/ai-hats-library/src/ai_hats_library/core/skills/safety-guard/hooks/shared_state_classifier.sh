@@ -15,19 +15,18 @@
 #                  go-ahead. Hook BLOCKS; the ack flag opens it (HATS-1253).
 #     - git push (regular)
 #
-#   shared       — writes a shared resource but reversible. Rule (Level 2)
-#                  asks agent to pause; hook does NOT block. Returned for
-#                  completeness so callers can distinguish.
+#   shared       — writes a shared resource but reversible. The guard asks,
+#                  the same way it asks for `gated`, with its own headline.
+#                  Returned so a caller can tell this from a branch update.
 #     - gh pr create / close
 #     - gh issue comment
 #     - gh release create
 #
 #   safe         — everything else.
 #
-# The classifier inspects the WHOLE command string (so it catches commands
-# chained via &&, ||, ;, |, $(...), backticks). The Level 2 rule explicitly
-# forbids that chaining; the classifier's job is to be a safety net when the
-# rule is violated.
+# The classifier inspects the WHOLE command string, so a shared-state write
+# chained via &&, ||, ;, |, $(...) or backticks is classified the same as
+# one standing alone.
 
 # shellcheck disable=SC2329  # function sourced into other scripts
 classify_command() {

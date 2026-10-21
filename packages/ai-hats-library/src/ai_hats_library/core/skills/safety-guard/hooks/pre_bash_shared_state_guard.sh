@@ -10,8 +10,8 @@
 #
 # Levels of intervention:
 #   classification == safe          -> exit 0 (allow)
-#   classification == shared        -> exit 0 (allow; Level 2 rule covers it)
-#   classification == gated
+#   classification == shared
+#                  | gated
 #                  | irreversible   -> refuse, per caller:
 #       payload has hook_event_name -> exit 0 + permissionDecision "ask"
 #                                      (harness prompts the user; blocks when
@@ -140,11 +140,10 @@ source "$CLASSIFIER"
 verdict="$(classify_command "$cmd")"
 
 case "$verdict" in
-    safe|shared)
-        # Level 2 rule covers `shared`; hook does not interrupt.
+    safe)
         exit 0
         ;;
-    gated|irreversible)
+    shared|gated|irreversible)
         : # fallthrough to gating below
         ;;
     *)
@@ -177,6 +176,8 @@ fi
 # bash 3.2 at /bin/bash, which a restricted PATH will select.
 if [[ "$verdict" == "gated" ]]; then
     headline="updates a shared branch others build on (HATS-1253)"
+elif [[ "$verdict" == "shared" ]]; then
+    headline="publishes a reversible shared-state write (a pull request, an issue comment, or a release)"
 else
     headline="is irreversible and has no undo path (HATS-437)"
 fi

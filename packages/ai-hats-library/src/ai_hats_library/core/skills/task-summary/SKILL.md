@@ -69,8 +69,8 @@ Result: <done | failed>
 
    The file is copied to `tasks/<ID>/summary.md` — a document, discovered live by
    `rack context` (name + digest computed on the fly, fs-as-truth). `--attach` is
-   the sanctioned way in: `rule_backlog_discipline §1` guards the whole
-   `tasks/<ID>/**` subtree, carving out `plan.md` alone. Re-attaching the same
+   the sanctioned way in: the backlog gate refuses a hand edit under
+   `tasks/<ID>/**`, carving out `plan.md` alone. Re-attaching the same
    name overwrites (the op notes it); `--freeze summary.md` pins its digest.
 
 ## What NOT to Include
@@ -92,5 +92,5 @@ Result: <done | failed>
 - Missing the WHY — a list of facts without reasoning helps nobody
 - Writing the summary without reading the task's work_log first — you'll miss context
 - Writing the summary under `tasks/<ID>/` by hand — `summary.md` there, or a
-  `summary_file:` key in task.yaml. Both break `rule_backlog_discipline §1`, and no
+  `summary_file:` key in task.yaml. Both break the backlog gate, and no
   CLI writes either. `rack transition <ID> --attach` is the door

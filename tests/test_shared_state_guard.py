@@ -1,9 +1,7 @@
 """Behavioural tests for the shared-state PreToolUse guard (HATS-1294).
 
-The guard shipped with no behavioural coverage: the existing
-``test_rule_pause_before_shared_state_write.py`` only asserts the rule file
-exists and composes, which is why a deny message advertising an unreachable
-escape survived unnoticed.
+The always-on pause rule is gone. These tests drive the hook: a reversible
+shared write is asked, and the reason must not call it irreversible.
 """
 
 from __future__ import annotations
@@ -20,11 +18,6 @@ HOOKS_DIR = (
 )
 GUARD = HOOKS_DIR / "pre_bash_shared_state_guard.sh"
 CLASSIFIER = HOOKS_DIR / "shared_state_classifier.sh"
-RULE = (
-    Path(__file__).resolve().parents[1]
-    / "packages/ai-hats-library/src/ai_hats_library/core/rules"
-    / "rule_pause_before_shared_state_write/rule.md"
-)
 
 # The prefix form the hook used to instruct and then refuse (HATS-1294).
 DEAD_ESCAPE = "AI_HATS_SHARED_STATE_ACK=1 <command>"
@@ -212,6 +205,30 @@ def test_gated_command_also_asks(_run_guard) -> None:
     assert decision == "ask"
 
 
+def test_shared_command_asks_and_names_a_reversible_write(_run_guard) -> None:
+    """A pull request is reversible. The ask must not call it irreversible."""
+    result = _run_guard("gh pr create --fill")
+    assert result.returncode == 0, result.stderr
+    reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "reversible" in reason
+    assert "irreversible" not in reason
+    assert "do not retry" in reason.lower()
+
+
+def test_shared_command_honours_the_same_ack(_run_guard) -> None:
+    result = _run_guard("gh pr create --fill", ack=True)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_non_claude_shared_command_is_a_hard_block(_run_guard) -> None:
+    result = _run_guard("gh issue comment 4 --body hi", claude=False)
+    assert result.returncode == 2
+    assert "BLOCKED" in result.stderr
+    assert "reversible" in result.stderr
+    assert "irreversible" not in result.stderr
+
+
 def test_safe_command_passes_silently(_run_guard) -> None:
     result = _run_guard("ls -la")
     assert result.returncode == 0
@@ -275,26 +292,17 @@ def test_refusal_text_names_no_specific_provider(_run_guard, claude: bool) -> No
         assert token not in text, f"provider-specific token leaked: {token}"
 
 
-def test_rule_names_the_dead_prefix_only_to_warn_against_it() -> None:
-    """The rule *should* mention the form agents instinctively reach for.
+def test_the_pause_rule_is_gone_and_a_remaining_rule_is_still_there() -> None:
+    """The hook holds the policy. The always-on copy must not come back.
 
-    Deleting it silently would leave the instinct unaddressed, so the assertion
-    is about framing, not absence: the string must appear, and must be marked
-    non-functional, alongside a channel that does work.
+    The second assertion is the sample: a pattern that matches nothing, because
+    the resolver is broken, would also pass the absence check.
     """
-    body = RULE.read_text()
-    assert DEAD_ESCAPE in body, "name the trap agents fall into"
-    assert "does **nothing**" in body, "and mark it as non-functional"
-    assert "environment that launched" in body, "point at a channel that works"
-    assert "set it only on a command" not in body, "the old false guidance is gone"
-
-
-def test_rule_stays_provider_agnostic() -> None:
-    """This rule ships to every harness, so it must not name one.
-
-    Reviewer's catch on the first cut: `.claude/settings.json` had leaked into a
-    core rule that gemini and cline sessions read too.
-    """
-    body = RULE.read_text()
-    for token in (".claude/", "Claude Code", "settings.json"):
-        assert token not in body, f"provider-specific token leaked: {token}"
+    library = (
+        Path(__file__).resolve().parents[1]
+        / "packages/ai-hats-library/src/ai_hats_library"
+    )
+    assert not (library / "core/rules/rule_pause_before_shared_state_write").exists()
+    trait = (library / "core/traits/trait-agent/config.yaml").read_text()
+    assert "rule_pause_before_shared_state_write" not in trait
+    assert "rule_backlog_discipline" in trait

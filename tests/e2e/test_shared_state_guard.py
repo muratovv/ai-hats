@@ -8,14 +8,14 @@ cmds:
     git push origin :branch                        # deletion -> allowed
     AI_HATS_SHARED_STATE_ACK=1 git push --force    # ack -> allowed
 expect: a fast-forward, a branch deletion, a brand-new branch and an empty stdin
-        all pass; a non-fast-forward exits 1, and the refusal names
-        `rule_pause_before_shared_state_write` and says "Do NOT retry" rather
-        than failing bare; the env ack overrides the block
+        all pass; a non-fast-forward exits 1, and the refusal names safety-guard
+        and says "Do NOT retry" rather than failing bare; the env ack overrides
+        the block
 why:    the hook is pure bash driven by git over stdin, so nothing in-process
         reaches it — and a hook that blocks a legal fast-forward is as broken as
         one that waves a force-push through. The PreToolUse half is unit-tested
         in tests/test_shared_state_guard.py; only this half needs a real repo.
-"""
+"""  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
 from _helpers.git import git as _git_helper
@@ -114,7 +114,7 @@ def test_prepush_block_carries_recovery_guidance(repo_with_two_commits: Path):
         env={**os.environ, "AI_HATS_SHARED_STATE_ACK": ""},
     )
     assert res.returncode == 1, res.stderr
-    assert "rule_pause_before_shared_state_write" in res.stderr
+    assert "safety-guard" in res.stderr
     assert "Do NOT retry" in res.stderr
 
 

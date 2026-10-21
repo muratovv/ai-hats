@@ -47,13 +47,11 @@ def _lib_text(*parts: str) -> str:
 
 
 @pytest.mark.parametrize("trait", ["trait-base", "trait-analyst-base"])
-def test_harness_reminder_essence_delivered_in_both_base_traits(trait):
+def test_harness_reminder_left_both_base_traits(trait):
     cfg = _lib_text("core", "traits", trait, "config.yaml")
-    assert "Harness Reminders" in cfg, f"{trait} missing the harness-reminder bullet"
-    assert "TaskCreate" in cfg
-    assert "silently" in cfg
-    assert "asked for the harness list" in cfg
+    assert "Harness Reminders" not in cfg
     assert "rule_harness_reminder_hygiene" not in cfg
+    assert "Least Astonishment" in cfg, f"{trait} render is empty — absence is not evidence"
 
 
 def test_edit_efficiency_folded_into_skill_and_rule_removed():
@@ -75,14 +73,14 @@ def test_edit_efficiency_folded_into_skill_and_rule_removed():
     assert "3+ Edits" in skill
 
 
-def test_maintainer_prompt_delivers_harness_bullet_not_edit_efficiency():
+def test_maintainer_prompt_drops_the_harness_copy_and_keeps_backlog_discipline():
     result = Composer(_resolver()).compose("maintainer")
     assert result.errors == []
     prompt = ClaudeSurface().build_system_prompt(result)
-    assert "Harness Reminders" in prompt
-    assert "TaskCreate" in prompt
+    assert "Harness Reminders" not in prompt
     assert "rule_harness_reminder_hygiene" not in prompt
     assert "rule_harness_reminder_hygiene" not in {r.name for r in result.rules}
+    assert "### rule_backlog_discipline" in prompt
     assert "dev_rule_edit_efficiency" not in {r.name for r in result.rules}
 
 

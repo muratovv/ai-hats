@@ -2,7 +2,6 @@
 
 Applies to all three backlog item types — **tasks** (`HATS-NNN`), **hypotheses** (`HYP-NNN`), and **proposals** (`PROP-NNN`).
 
-1. **CLI-only.** All backlog operations via the `rack` CLI — lifecycle / reads / links (`rack transition` / `rack create` / `rack context` / `rack ls`), field edits (`rack transition --set`), documents (`rack transition --attach`/`--rm`/`--freeze`), and the `rack hyp …` / `rack proposal …` groups. Never read or edit `<ai_hats_dir>/tracker/backlog/**` directly. This covers the whole `tasks/<ID>/**` subtree — task.yaml AND its documents. Direct `mkdir`/`mv`/`echo > task.yaml`/`sed -i` under the backlog are violations. **Carve-out for `plan.md`:** `tasks/<ID>/plan.md` is editable directly via Write/Edit — it is the role's primary plan-stage deliverable, not a state mutation (parallel to the `base-judge §L0 carve-out` for analyst reports). The scaffold is created by `rack transition <ID> plan`; the content is the agent's responsibility. The plan of record is `tasks/<ID>/plan.md`, never `.claude/plans` — a plan-mode draft there is scratch, transferred on exit per skill **plan-discipline**.
 2. **Work log cadence.** Log after every significant action on a task: approach changes, file deletions, branch operations, milestone completions. For HYP/PROP, append to `validation_log` / `votes` via CLI.
 3. **State transitions immediate.** Transition state when work changes phase — no stale states. Applies to task lifecycle (`brainstorm → … → done`), HYP status (`active → confirmed | refuted | stalled`), and PROP status (`open → accepted | rejected | deferred | duplicate`).
 4. **Completion gate & review stop.** A task is moved to `review` when execution and documentation are finished. The executing agent MUST stop at `review` and await reviewer/user approval — agents MUST NOT self-advance from `review` to `done`. The reviewer drives `review → done`.
@@ -11,8 +10,8 @@ Applies to all three backlog item types — **tasks** (`HATS-NNN`), **hypotheses
 
 ## Scope
 
-§1 applies to every role that touches the backlog (filing, lifecycle, or read).
+A hand edit under the tracker backlog is refused by the backlog gate. The refusal names `rack` and the one file you may write directly, `tasks/<ID>/plan.md`. That refusal applies to every role that touches the backlog.
 
-§§2–4 and §6 apply only to roles that **own a backlog item's lifecycle** — the fix author / lead / primary agent. Roles whose protocol skill whitelists only `rack create` (e.g. L1 analyst roles like `role-judge`) follow §1 only; they never enter the lifecycle-owner obligations because they never own a lifecycle.
+§§2–4 and §6 apply only to roles that **own a backlog item's lifecycle** — the fix author / lead / primary agent. Roles whose protocol skill whitelists only `rack create` (e.g. L1 analyst roles like `role-judge`) do not take those obligations, because they never own a lifecycle.
 
 For CLI commands, lifecycle details, and plan-flow procedures → skill **hatrack**.

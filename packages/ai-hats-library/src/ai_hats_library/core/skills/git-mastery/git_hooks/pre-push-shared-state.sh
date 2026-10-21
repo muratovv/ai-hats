@@ -74,7 +74,7 @@ if [[ $blocked -eq 1 ]]; then
 
 This rewrites shared history with no clean undo path (HATS-437).
 
-Recover without wasting turns (rule_pause_before_shared_state_write):
+Recover without wasting turns (safety-guard):
   1. Do NOT retry or re-issue the push — the block is deliberate, not a
      transient error, and will deny again.
   2. In your NEXT turn, show the user the exact push and ask for explicit
