@@ -657,6 +657,13 @@ class Assembler:
                 provenance["skills"][name] = label
         return provenance
 
+    def set_default_provider(self, provider_name: str) -> str:
+        """Persist an explicitly selected project default provider."""
+        provider = get_surface(provider_name)
+        if self.project_config.provider != provider.name:
+            self.save_config(provider=provider.name)
+        return provider.name
+
     def set_default_role(
         self, role_name: str, provider_name: str | None = None
     ) -> CompositionResult:
@@ -684,7 +691,7 @@ class Assembler:
         result = compose_to_install(self, role_name)
 
         cfg = self.project_config
-        new_provider = provider_name or cfg.provider
+        new_provider = get_surface(provider_name).name if provider_name else cfg.provider
         if cfg.default_role == role_name and cfg.provider == new_provider:
             return result  # idempotent no-op
 
@@ -699,28 +706,11 @@ class Assembler:
         warnings_sink: list[str] | None = None,
         result: CompositionResult | None = None,
     ) -> CompositionResult:
-        """Runtime-bootstrap: sync ``active_role`` + materialize per-session deps.
+        """Materialize one runtime selection. Persists ``active_role`` only.
 
-        Called by :class:`Runtime` on the first session of a fresh project (or
-        on provider switch) to bring on-disk state into a usable shape: the
-        canonical user-rules aggregator and skill-contributed git hooks.
-        NOT invoked by the CLI surface — use
-        :meth:`set_default_role` for that.
-
-        Delegated to :meth:`_refresh` (install_time=False — runtime
-        bootstrap does not re-run migrations; init/bump already did). The
-        Agy inline-prompt path and ``active_role``/``provider`` persist
-        stay here as set_role-only concerns.
-
-        Backup/clean/copy_components/verify side-effects were
-        removed; per-session compose means framework content is
-        never materialized into the canonical tree. The Agy inline-prompt
-        path is retained as a known asymmetry (no scaffold-template
-        equivalent for bare-agy in project_dir).
-
-        Fails loudly on unknown role/provider: the project must not end up
-        in a half-applied state where active_role is saved but composition
-        is broken.
+        First HITL session, or the selected provider differs from the persisted
+        default. Not the CLI surface — :meth:`set_default_role`. Unknown role
+        or provider fails before any side effect.
         """
         # Validate before doing any work so we fail fast with a clear message.
         self._validate_role(role_name)
@@ -749,8 +739,7 @@ class Assembler:
         prompt_content = expand_path_placeholders(prompt_content, self.layout)
         provider.update_system_prompt(self.layout, prompt_content)
 
-        # Persist active_role + provider.
-        self.save_config(active_role=role_name, provider=provider.name)
+        self.save_config(active_role=role_name)
 
         return result
 

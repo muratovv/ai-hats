@@ -14,6 +14,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **Role `designer` ships in the library** (HATS-2095). `ai-hats-library` 0.11.0 adds the role and the mark scripts. This package requires `ai-hats-library>=0.11.0`.
 
+### Fixed
+
+- **A one-shot `-p <provider>` no longer replaces the project default** (HATS-1745). The session starts on the surface you passed, and `provider:` in `ai-hats.yaml` stays put. The key changes only through `init` and `config set` (`-p`, or `-r` when a provider is passed). A launch persists `active_role` only.
+
 ## [0.19.1] - 2026-10-19
 
 ### Security

@@ -486,16 +486,16 @@ def test_set_role_then_switch_provider(project_with_library):
     assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
-    # Profile must track the new provider
+    # Runtime provider selection must not replace the project default.
     from ai_hats.models import ProjectConfig
 
     profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert profile.provider == "claude"
+    assert profile.provider == "agy"
     assert profile.active_role == "test-role"
 
 
-def test_wrap_reassembles_on_provider_mismatch(project_with_library):
-    """WrapRunner must auto-reassemble when provider differs from profile."""
+def test_runtime_bootstrap_on_provider_mismatch_keeps_default(project_with_library):
+    """A runtime provider mismatch rebuilds provider state without changing intent."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
@@ -514,9 +514,9 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
-    # Profile updated
+    # The runtime bootstrap leaves the project default unchanged.
     profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert profile.provider == "claude"
+    assert profile.provider == "agy"
 
 
 def test_wrap_uses_default_role_when_no_active_role(project_with_library):
