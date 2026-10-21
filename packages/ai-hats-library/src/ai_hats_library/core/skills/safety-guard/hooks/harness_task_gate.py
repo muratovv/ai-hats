@@ -35,9 +35,7 @@ except ImportError:  # helper absent -> say so; never skip quietly
 
 _HOOK = "harness_task_gate.py"
 _KILL_SWITCH = "AI_HATS_HARNESS_TASKS_OFF"
-_TOOLS = frozenset(
-    {"TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TaskStop", "TaskOutput"}
-)
+_TOOLS = frozenset({"TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TaskStop", "TaskOutput"})
 
 DENY_REASON = (
     "GUARDRAIL (safety-guard): blocked — {tool} is the harness task list. "

@@ -298,10 +298,7 @@ def test_the_pause_rule_is_gone_and_a_remaining_rule_is_still_there() -> None:
     The second assertion is the sample: a pattern that matches nothing, because
     the resolver is broken, would also pass the absence check.
     """
-    library = (
-        Path(__file__).resolve().parents[1]
-        / "packages/ai-hats-library/src/ai_hats_library"
-    )
+    library = Path(__file__).resolve().parents[1] / "packages/ai-hats-library/src/ai_hats_library"
     assert not (library / "core/rules/rule_pause_before_shared_state_write").exists()
     trait = (library / "core/traits/trait-agent/config.yaml").read_text()
     assert "rule_pause_before_shared_state_write" not in trait

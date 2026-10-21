@@ -12,13 +12,13 @@ HOOK = (
     / "silent-fallback-gate/hooks/silent_fallback_gate.py"
 )
 
-_BEFORE = '''\
+_BEFORE = """\
 def run():
     try:
         work()
     except Exception:
         return []
-'''
+"""
 
 
 def _run(payload: dict) -> subprocess.CompletedProcess[str]:

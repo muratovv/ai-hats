@@ -175,8 +175,7 @@ def main() -> int:
 
     reason = (
         "GUARDRAIL (silent-fallback-gate): blocked — this edit adds a broad except "
-        "whose body cannot report the failure.\n"
-        + "\n".join(str(item) for item in fresh)
+        "whose body cannot report the failure.\n" + "\n".join(str(item) for item in fresh)
     )
     journal_catch("silent_fallback_gate", "deny", hook=_HOOK, cmd=file_path)
     print(
