@@ -68,14 +68,15 @@ def test_show_prompt_text_mode_active_role(project_with_maintainer):
     # native --plugin-dir registry, not the system prompt).
     assert "## AVAILABLE SKILLS" not in out
     # Injection bodies between PRIORITIES and RULES (the HATS-452 fix).
-    assert "E2E gate" in out, "ai-hats-maintainer trait injection missing"
+    # Glossary-first lives only in the ai-hats-dev injection.
+    assert "Glossary-first" in out, "ai-hats-dev trait injection missing"
     assert "Agent Protocol" in out, "trait-agent injection missing"
     assert "primary development assistant for the" in out, "role maintainer's own injection missing"
     # Layout: injection sits in the PRIORITIES..RULES band.
     pri = out.find("## PRIORITIES")
     rules = out.find("## RULES")
-    e2e = out.find("E2E gate")
-    assert 0 <= pri < e2e < rules
+    dev = out.find("Glossary-first")
+    assert 0 <= pri < dev < rules
 
 
 def test_show_prompt_explicit_role(project_with_maintainer):
@@ -83,10 +84,9 @@ def test_show_prompt_explicit_role(project_with_maintainer):
     res = CliRunner().invoke(main, ["config", "show-prompt", "--role", "assistant"])
     assert res.exit_code == 0, f"exit={res.exit_code}, output:\n{res.output}"
     out = res.output
-    # Assistant role doesn't have the maintainer-specific E2E gate, but
-    # DOES carry trait-agent's Agent Protocol.
+    # Assistant does not compose ai-hats-dev, but DOES carry trait-agent.
     assert "Agent Protocol" in out
-    assert "E2E gate" not in out, "assistant should not carry maintainer-specific markers"
+    assert "Glossary-first" not in out, "assistant should not carry maintainer-specific markers"
 
 
 def test_show_prompt_stats_mode_emits_json(project_with_maintainer):

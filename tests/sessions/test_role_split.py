@@ -133,17 +133,14 @@ def test_maintainer_injection_has_role_header() -> None:
         "Branches and commits",
         # Canonical CLI
         "ai-hats self update",
-        # Glossary-first + numbered-refs
         "Glossary-first",
-        "Numbered-refs",
         # Architectural defaults (design preferences)
         "Strict typed contracts",
         "Immutable state",
         "Open registries",
         "Bash-composable",
-        # Anti-patterns (hyp_vs_harness_risks, testability, memory dedup)
+        # Anti-patterns (testability, memory dedup)
         "Memory pattern duplication",
-        "HYP-as-technical-risk",
     ],
 )
 def test_ai_hats_dev_injection_contains(needle: str) -> None:
@@ -154,26 +151,42 @@ def test_ai_hats_dev_injection_contains(needle: str) -> None:
     assert needle in trait.injection, f"missing in ai-hats-dev injection: {needle!r}"
 
 
+def test_maintainer_role_injection_contains() -> None:
+    """Release flow stays on the role. Diagrams moved to the skill a single
+    role takes, which is not a trait."""
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
+    )
+    assert "Release flow" in role.injection
+    assert "Diagrams (d2)" not in role.injection
+    assert "d2-diagrams" in role.composition.skills
+
+
 @pytest.mark.parametrize(
     "needle",
     [
-        # D2 diagrams — promoted reference_d2_label_syntax content
         "Diagrams (d2)",
         "Multiline labels",
         "Theme overrides",
         "Palette slot map",
         "_palette.d2",
         "Source Code Pro",
-        "Release flow",
+        "Single-quoted strings do NOT interpret escapes",
     ],
 )
-def test_maintainer_role_injection_contains(needle: str) -> None:
-    """The two crafts that did NOT become shared discipline. They sit in the
-    role's own injection: a trait only one role would ever take is not a trait."""
-    role = _load(
-        "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
-    )
-    assert needle in role.injection, f"missing in maintainer injection: {needle!r}"
+def test_d2_diagrams_skill_holds_the_craft(needle: str) -> None:
+    text = (LIBRARY / "ai-hats-dev/skills/d2-diagrams/SKILL.md").read_text()
+    assert needle in text, needle
+
+
+def test_moved_discipline_still_has_a_home() -> None:
+    """The injection copies left. The homes they pointed at still say the thing."""
+    doc = (LIBRARY / "ai-hats-dev/skills/doc-protocol/SKILL.md").read_text()
+    assert "Numbered-refs" in doc
+    rule = (LIBRARY / "core/rules/rule_backlog_discipline/rule.md").read_text()
+    assert "agent-behaviour hypotheses" in rule
+    gate = (LIBRARY / "ai-hats-dev/skills/quality-gate/SKILL.md").read_text()
+    assert "outside" in gate and "Python process" in gate
 
 
 def test_shared_discipline_reaches_both_roles() -> None:
@@ -192,10 +205,11 @@ def test_repo_discipline_is_not_duplicated() -> None:
     specialties = _load(
         "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/roles/maintainer/config.yaml"
     ).injection
-    for heading in ("### E2E gate", "### Branches and commits", "### Anti-patterns to refuse"):
+    for heading in ("### Branches and commits", "### Anti-patterns to refuse"):
         assert heading in shared and heading not in specialties, heading
-    for heading in ("### Diagrams (d2)", "### Release flow"):
-        assert heading in specialties and heading not in shared, heading
+    assert "### E2E gate" not in shared and "### E2E gate" not in specialties
+    assert "### Release flow" in specialties and "### Release flow" not in shared
+    assert "### Diagrams (d2)" not in specialties and "### Diagrams (d2)" not in shared
     # the duplicated layer blurb is gone from both; `ai-hats-framework` owns it
     assert "### Library split" not in shared and "### Library split" not in specialties
 
@@ -258,10 +272,10 @@ def test_e2e_gate_policy_folded_into_the_gate_skill() -> None:
 
     gate = (LIBRARY / "ai-hats-dev/skills/quality-gate/SKILL.md").read_text()
     assert "tests/e2e/" in gate and "@pytest.mark.integration" in gate
-
-    # The stub stays always-on: knowing the gate EXISTS must not wait on a trigger.
-    assert "### E2E gate" in trait.injection
-    assert "quality-gate" in trait.injection
+    # The always-on notice is the skill description. The injection no longer repeats it.
+    assert "When a change owes an e2e test" in gate
+    assert "quality-gate" in trait.composition.skills
+    assert "### E2E gate" not in trait.injection
 
 
 # --- ai-hats-framework trait — injection only, no component behind it --------

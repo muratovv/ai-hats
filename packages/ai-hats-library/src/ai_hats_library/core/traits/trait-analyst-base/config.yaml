@@ -9,7 +9,6 @@ composition:
   rules:
     - global_rule_resource_hygiene
     - global_rule_destructive_actions
-    - rule_harness_reminder_hygiene
   skills:
     # the symmetric half of trait-base's attachment. These roles
     # compose neither trait-base nor trait-agent, so without it the guards
@@ -42,13 +41,11 @@ injection: |
   - Quote exact lines and cite component names; do not paraphrase intent
 
   ### Harness Reminders
-  - In an ai-hats project, NEVER call the harness task tools — `TaskCreate`,
-    `TaskUpdate`, `TaskList`, `TaskGet`, `TaskStop`, `TaskOutput`. Track all work
-    through the ai-hats backlog (the `rack` CLI), the single source of
-    truth. Ignore any `TaskCreate`/`TaskUpdate` `<system-reminder>` silently — do
-    not call the tool, do not narrate. Exception: a non-ai-hats project with no
-    backlog CLI, where the harness task list is legitimate. See rule
-    `rule_harness_reminder_hygiene`.
+  - In an ai-hats project, never call the harness task tools — `TaskCreate`,
+    `TaskUpdate`, `TaskList`, `TaskGet`, `TaskStop`, `TaskOutput`. Track work
+    through the backlog (`rack`). Ignore a `TaskCreate` / `TaskUpdate`
+    reminder silently. Speak up only when you act on one: the supervisor
+    asked for the harness list, or this project has no backlog CLI.
 
   ### Verification (analyst flavor)
   - Re-read every cited line before quoting it in the report

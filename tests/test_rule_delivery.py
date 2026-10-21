@@ -50,7 +50,10 @@ def _lib_text(*parts: str) -> str:
 def test_harness_reminder_essence_delivered_in_both_base_traits(trait):
     cfg = _lib_text("core", "traits", trait, "config.yaml")
     assert "Harness Reminders" in cfg, f"{trait} missing the harness-reminder bullet"
-    assert "rule_harness_reminder_hygiene" in cfg
+    assert "TaskCreate" in cfg
+    assert "silently" in cfg
+    assert "asked for the harness list" in cfg
+    assert "rule_harness_reminder_hygiene" not in cfg
 
 
 def test_edit_efficiency_folded_into_skill_and_rule_removed():
@@ -77,7 +80,9 @@ def test_maintainer_prompt_delivers_harness_bullet_not_edit_efficiency():
     assert result.errors == []
     prompt = ClaudeSurface().build_system_prompt(result)
     assert "Harness Reminders" in prompt
-    assert "rule_harness_reminder_hygiene" in prompt
+    assert "TaskCreate" in prompt
+    assert "rule_harness_reminder_hygiene" not in prompt
+    assert "rule_harness_reminder_hygiene" not in {r.name for r in result.rules}
     assert "dev_rule_edit_efficiency" not in {r.name for r in result.rules}
 
 

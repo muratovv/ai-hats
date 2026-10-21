@@ -39,9 +39,9 @@ injection: |
   Before writing a rule or a skill, ask: can a machine hold this invariant?
   Always-on tokens per turn, measured on this library
   (re-derive with `ai-hats list tokens <role>` — never quote from memory):
-  - **automation** (PreToolUse / git hook / CLI gate / pipeline step) — **0**
-  - **skill** — ~70 (only its description is resident; the body loads on trigger)
-  - **rule** — ~571 (full body, every turn, in every composing role) ≈ 8x a skill
+  - **automation** (PreToolUse / git hook / CLI gate / pipeline step) — nothing resident
+  - **skill** — its description only; the body loads on trigger
+  - **rule** — the full body, every turn, in every composing role
 
   Cost ranks the mechanisms; it does not choose one. **A prohibition works the
   automation first** — a rule a hook could hold is a candidate for REPLACEMENT,
@@ -84,17 +84,11 @@ injection: |
   - Every trait used in at least one role
   - No redundancy between components
   - Injection text is minimal — details go into rules/skills
-  - Skill `description` carries triggers + one capability phrase, never a procedure-body summary (a body-summary is a shortcut the selector acts on instead of loading the skill) — see **skill-template**
-  - New/edited skill ships a validation scenario (a RED baseline the skill fixes) — see **skill-template**
-  - When a role injection carries a `## Guardrails` section, its bullets are role-specific — not restatements of global rules or the role's own workflow (omit the section if the role has nothing role-specific to add)
 
   ### Confirm it reached the prompt
-  A component the composer failed to resolve is missing from the prompt while
-  the file on disk looks perfect. Verify by reading the RENDER —
-  `ai-hats config show-prompt --role <role>` — never by re-reading the file you just
-  edited. Skill bodies and descriptions never enter the prompt, so a zero from
-  grepping the render says nothing about a skill. Full procedure, including the
-  positive control every zero needs: skill **composition-verification**.
+  Read the render — `ai-hats config show-prompt --role <role>` — not the file
+  you edited. The procedure, including the positive control a zero needs:
+  skill **composition-verification**.
 
   ### Obsolescence Criteria
   - Component references removed tools or workflows
