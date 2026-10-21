@@ -16,8 +16,8 @@
 # how the skill trees do it (HATS-1268), and a contract test enforces it.
 
 # ai_hats_journal_bypass <kind> <reason> [cmd] [session_id]
-#   kind   : hatch | fail_open
-#   reason : the env var name (hatch) or the missing prerequisite (fail_open)
+#   kind   : hatch | fail-open  (fail_open is stored as fail-open)
+#   reason : the env var name (hatch) or the missing prerequisite (fail-open)
 ai_hats_journal_bypass() {
     local kind="${1:-unknown}" reason="${2:-unspecified}" cmd_arg="${3:-}" session_arg="${4:-}"
     local helper_dir py_script hook_name

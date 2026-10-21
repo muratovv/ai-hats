@@ -138,6 +138,8 @@ UNDECLARED: dict[str, frozenset[str]] = {
     ),
     "a shipped hook's own non-numeric knob: it runs where ai_hats is not installed": frozenset(
         {
+            "AI_HATS_JOURNAL_DIR",
+            "AI_HATS_JOURNAL_LIVE_GIT",
             "AI_HATS_RULE_DELIVERY_CMD",
             "AI_HATS_SKILL_LINT_CMD",
             "AI_HATS_TICKET_PREFIX",

@@ -193,7 +193,7 @@ def record_fail_open(
                 str(writer),
                 "record",
                 "--kind",
-                "fail_open",
+                "fail-open",
                 "--reason",
                 reason,
                 "--hook",
