@@ -384,15 +384,18 @@ def _real_cache_home_tripwire():
 @pytest.fixture(scope="session", autouse=True)
 def _journal_sandbox(tmp_path_factory):
     """Point this checkout's guard journal aside when the process is inside one."""
-    common = subprocess.run(  # noqa: S603
-        ["git", "rev-parse", "--git-common-dir"],  # noqa: S607
-        cwd=_SESSION_CWD,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if common.returncode != 0 or not common.stdout.strip():
-        yield None  # pytester's cwd is not a git repo, so there is no journal to guard
+    try:
+        common = subprocess.run(  # noqa: S603
+            ["git", "rev-parse", "--git-common-dir"],  # noqa: S607
+            cwd=_SESSION_CWD,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        common = None  # the offline seam empties PATH, so git is absent on purpose
+    if common is None or common.returncode != 0 or not common.stdout.strip():
+        yield None  # no git dir, so there is no journal to guard
         return
     sandbox = tmp_path_factory.mktemp("journal-sandbox")
     live = Path(common.stdout.strip())
