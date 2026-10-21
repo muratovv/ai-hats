@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**355 of 355 files catalogued — 363 flows.**
+**356 of 356 files catalogued — 364 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2132,6 +2132,20 @@ as a claim to check, not as evidence.
 
 - **expect** — wheel build produces standalone package wheels for all workspace sub-packages
 - **why** — without proper wheel build configuration, sub-packages fail to package required package data
+
+## `test_journal_isolation.py`
+
+*pins HATS-1671*
+
+- **flow** — a developer runs the hook tests in a checkout that already has a guard journal
+- **cmds**
+
+  ```console
+  python -m pytest tests/e2e/test_py_security_lint_hook.py
+  ```
+
+- **expect** — the checkout's .git/ai-hats/bypasses.jsonl is byte-identical afterwards
+- **why** — a hook whose process cwd is the checkout used to append a row with the real branch and HEAD
 
 ## `test_kimi_headless.py`
 

@@ -618,7 +618,7 @@ def test_a_gate_the_dispatcher_could_not_run_is_recorded_as_fail_open(gated_repo
     assert len(lines) == 1, f"the skip left no journal line: {lines}"
     entry = lines[0]
     assert set(entry) == EXPECTED_FIELDS, f"field drift: {sorted(entry)}"
-    assert entry["kind"] == "fail_open"
+    assert entry["kind"] == "fail-open"
     assert entry["event"] == "pre-commit"
     assert "not executable" in entry["reason"] and "g.sh" in entry["reason"]
 

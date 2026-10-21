@@ -53,6 +53,13 @@ SESSION_PREFIX = "session_"
 RUNS_REL = "sessions/runs"
 AI_HATS_REL = ".agent/ai-hats"
 
+#: A test points the journals here. Spelled once: a second spelling of the key
+#: is how ``fail-open`` and ``fail_open`` drifted apart.
+ENV_JOURNAL_DIR = "AI_HATS_JOURNAL_DIR"
+ENV_JOURNAL_LIVE = "AI_HATS_JOURNAL_LIVE_GIT"  # set: redirect only this checkout's git dir
+ENV_SESSION_IDENTITY = "AI_HATS_SESSION_IDENTITY"
+IDENTITY_VERSION = 1
+
 
 def _git(*args: str, cwd: Path | str | None = None) -> str:
     """Run a read-only git command; empty string when git cannot answer."""
@@ -85,6 +92,49 @@ def _git_common_dir(cwd: Path | str | None = None) -> Path | None:
     return path.resolve()
 
 
+def _identity() -> dict:
+    """The session envelope, or {} when this writer cannot trust one.
+
+    Read by hand: this file ships where ``ai_hats`` is not importable.
+    """
+    raw = os.environ.get(ENV_SESSION_IDENTITY, "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        print(f"[bypass-journal] identity ignored — unreadable: {exc}", file=sys.stderr)
+        return {}
+    if not isinstance(data, dict):
+        print("[bypass-journal] identity ignored — not an object", file=sys.stderr)
+        return {}
+    if data.get("v") != IDENTITY_VERSION:
+        print(
+            f"[bypass-journal] identity ignored — v={data.get('v')!r}, "
+            f"this writer reads v={IDENTITY_VERSION}",
+            file=sys.stderr,
+        )
+        return {}
+    return data
+
+
+def _redirect_dir(cwd: Path | str | None) -> Path | None:
+    """Sandbox directory, when this call would otherwise hit the guarded checkout."""
+    if cwd is not None:
+        return None
+    redirect = os.environ.get(ENV_JOURNAL_DIR, "").strip()
+    if not redirect:
+        return None
+    live = os.environ.get(ENV_JOURNAL_LIVE, "").strip()
+    if not live:
+        return Path(redirect)
+    git_dir = _git_common_dir(None)
+    # No git dir is not this checkout: the loud "NOT RECORDED" is the contract there.
+    if git_dir is not None and git_dir.resolve() == Path(live).resolve():
+        return Path(redirect)
+    return None
+
+
 def session_id_from_hook_path(path: str) -> str:
     """Session id a materialized hook's own path encodes; '' when it does not.
 
@@ -112,6 +162,7 @@ def _journal_path(
 ) -> tuple[Path | None, bool]:
     """Where a record belongs: (path, attributed_to_a_session).
 
+    ``AI_HATS_JOURNAL_DIR``, when set, wins unless the caller passed ``cwd``.
     A record that knows its session lands beside that session's ``audit.md``, so
     everything about one session is in one directory. One that does not keeps the
     repo-wide journal under ``.git`` — the address every session-less git-tier
@@ -119,6 +170,9 @@ def _journal_path(
     start, so its absence means this is not that session's tree, and guessing
     would file the record under a session that never ran.
     """
+    redirect = _redirect_dir(cwd)
+    if redirect is not None:
+        return redirect / filename, False
     git_dir = _git_common_dir(cwd)
     if git_dir is None:
         return None, False
@@ -132,17 +186,20 @@ def _journal_path(
 
 
 def _resolve_session(session_id: str, hook_path: str) -> str:
-    """The session a record belongs to, by the three channels that can know it.
+    """The session a record belongs to.
 
-    The path is what makes runtime attribution work at all: the harness spawns a
-    PreToolUse hook with an environment that does not carry AI_HATS_SESSION_ID
-    (measured: 5 of 3898 rows), but it invokes the hook by its absolute path
-    inside the session tree, and that path names the session.
+    The envelope is what a git gate receives. The path is what a runtime hook
+    has instead: the harness spawns it without ``AI_HATS_SESSION_ID``, but by
+    its absolute path inside the session tree. The scalar stays last — a second
+    producer emits it with no envelope.
     """
-    return (
-        session_id
-        or session_id_from_hook_path(hook_path or sys.argv[0])
-        or os.environ.get("AI_HATS_SESSION_ID", "")
+    if session_id:
+        return session_id
+    envelope_id = _identity().get("id", "")
+    if isinstance(envelope_id, str) and envelope_id:
+        return envelope_id
+    return session_id_from_hook_path(hook_path or sys.argv[0]) or os.environ.get(
+        "AI_HATS_SESSION_ID", ""
     )
 
 
@@ -217,6 +274,8 @@ def journal_bypass(
     Never raises: a hook must not die because the journal is unwritable. It must
     not go quiet either — an unrecorded bypass is the defect this file removes.
     """
+    if kind == "fail_open":
+        kind = "fail-open"  # shell twins still pass the underscore; readers count one form
     own_path = hook_path or sys.argv[0]
     hook_name = hook or Path(own_path).name or "unknown"
     resolved_id = _resolve_session(session_id, own_path)

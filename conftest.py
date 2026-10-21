@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import tempfile
 import warnings
@@ -23,6 +24,7 @@ sys.dont_write_bytecode = True
 # role, whose bindings then refuse every transition (D9 clause 4). Dropped at
 # import, as a unit — the envelope alone leaves a half-session `from_env` rejects.
 from ai_hats.session_identity import drop_identity  # noqa: E402
+from ai_hats_library.hooks.bypass_journal import ENV_JOURNAL_DIR, ENV_JOURNAL_LIVE  # noqa: E402
 
 drop_identity(os.environ)
 
@@ -377,6 +379,32 @@ def _real_cache_home_tripwire():
             f"{REAL_CACHE_HOME} (HATS-1473):\n  " + "\n  ".join(owned),
             pytrace=False,
         )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _journal_sandbox(tmp_path_factory):
+    """Point this checkout's guard journal aside when the process is inside one."""
+    common = subprocess.run(  # noqa: S603
+        ["git", "rev-parse", "--git-common-dir"],  # noqa: S607
+        cwd=_SESSION_CWD,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if common.returncode != 0 or not common.stdout.strip():
+        yield None  # pytester's cwd is not a git repo, so there is no journal to guard
+        return
+    sandbox = tmp_path_factory.mktemp("journal-sandbox")
+    live = Path(common.stdout.strip())
+    if not live.is_absolute():
+        live = Path(_SESSION_CWD) / live
+    mp = pytest.MonkeyPatch()
+    mp.setenv(ENV_JOURNAL_DIR, str(sandbox))
+    mp.setenv(ENV_JOURNAL_LIVE, str(live.resolve()))
+    try:
+        yield sandbox
+    finally:
+        mp.undo()
 
 
 @pytest.fixture(scope="session", autouse=True)
