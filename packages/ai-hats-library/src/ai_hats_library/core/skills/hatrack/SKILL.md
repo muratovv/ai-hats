@@ -173,7 +173,7 @@ completes** — never batch every transition at the end. Finished work left in
 **Before `plan → execute`, re-validate the premise:** scan the card for a
 retracted/superseded driver since the plan was authored; if the justification is
 stale, bounce to `brainstorm` instead of building on a dead premise
-(`rule_backlog_discipline §6`).
+(`rule_backlog_discipline §5`).
 
 ### Completion
 
