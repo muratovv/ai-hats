@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**359 of 359 files catalogued — 367 flows.**
+**360 of 360 files catalogued — 368 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
