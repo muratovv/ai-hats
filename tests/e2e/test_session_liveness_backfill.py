@@ -39,7 +39,7 @@ def _ai_hats(project, env, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(project.ai_hats_binary), *args],
         cwd=project.path,
-        env={**env, "COLUMNS": "250"},  # rich wraps a narrow table's note mid-phrase
+        env={**env, "COLUMNS": "250", "LINES": "50"},  # dumb terminal ignores COLUMNS unless LINES is set
         capture_output=True,
         text=True,
         timeout=120,

@@ -82,7 +82,8 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     env[ENV_LAUNCHER_DEST] = str(launcher)
     env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
     env["AI_HATS_BUMP_BACKUP_DIR"] = str(tmp_path / "backups")
-    env["COLUMNS"] = "400"  # rich folds a long path at 80 columns when not a tty
+    env["COLUMNS"] = "400"
+    env["LINES"] = "50"  # a dumb terminal ignores COLUMNS unless LINES is set too
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     _run([str(launcher), "self", "update", "--force-downgrade"], cwd=project, env=env, timeout=300)
@@ -124,7 +125,7 @@ def test_local_channel_without_a_source_is_healed_and_named(tmp_path: Path) -> N
         env=env,
         timeout=300,
     )
-    combined = res.stdout + res.stderr
+    combined = " ".join((res.stdout + res.stderr).split())
     assert "has no pyproject.toml" in combined and "the project root" in combined, combined
     assert "installing edge" in combined, combined
     assert FIX in combined, combined
@@ -151,8 +152,9 @@ def test_local_channel_without_a_source_is_healed_and_named(tmp_path: Path) -> N
         env=env,
         timeout=300,
     )
-    assert f"uv pip install -e {env[ENV_REPO_URL]}" in res_ok.stdout + res_ok.stderr, (
-        f"expected the editable reinstall of the configured path:\n{res_ok.stdout}\n{res_ok.stderr}"
+    flat_reinstall = " ".join((res_ok.stdout + res_ok.stderr).split())
+    assert f"uv pip install -e {env[ENV_REPO_URL]}" in flat_reinstall, (
+        f"expected the editable reinstall of the configured path:\n{flat_reinstall}"
     )
     check_ok = _run([str(launcher), "self", "update", "--check"], cwd=project, env=env, timeout=120)
     flat_ok = " ".join(check_ok.stdout.split())
