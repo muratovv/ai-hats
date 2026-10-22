@@ -102,6 +102,104 @@ def test_an_edit_that_does_not_apply_fails_open(tmp_path: Path) -> None:
     assert "fail-open" in result.stderr
 
 
+def test_an_apply_patch_that_adds_an_inert_except_is_denied(tmp_path: Path) -> None:
+    target = tmp_path / "mod.py"
+    target.write_text("def work():\n    return 1\n", encoding="utf-8")
+    patch = (
+        "*** Begin Patch\n"
+        "*** Update File: mod.py\n"
+        "@@\n"
+        " def work():\n"
+        "-    return 1\n"
+        "+    try:\n"
+        "+        return 1\n"
+        "+    except Exception:\n"
+        "+        return []\n"
+        "*** End Patch\n"
+    )
+    result = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Edit",
+            "cwd": str(tmp_path),
+            "tool_input": {"file_path": str(target), "command": patch},
+        },
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "except Exception" in reason
+
+
+def test_a_cline_patch_that_adds_an_inert_except_is_denied(tmp_path: Path) -> None:
+    target = tmp_path / "mod.py"
+    patch = (
+        "*** Begin Patch\n"
+        "*** Add File: mod.py\n"
+        "+def work():\n"
+        "+    try:\n"
+        "+        return 1\n"
+        "+    except Exception:\n"
+        "+        return []\n"
+        "*** End Patch\n"
+    )
+    result = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "cwd": str(tmp_path),
+            "tool_input": {"file_path": str(target), "patch": patch},
+        },
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "except Exception" in reason
+
+
+def test_an_apply_patch_that_misses_the_handler_is_allowed(tmp_path: Path) -> None:
+    target = tmp_path / "mod.py"
+    target.write_text(_BEFORE + "\ndef other():\n    return 0\n", encoding="utf-8")
+    patch = (
+        "*** Begin Patch\n"
+        "*** Update File: mod.py\n"
+        "@@\n"
+        " def other():\n"
+        "-    return 0\n"
+        "+    return 2\n"
+        "*** End Patch\n"
+    )
+    result = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Edit",
+            "cwd": str(tmp_path),
+            "tool_input": {"file_path": str(target), "command": patch},
+        },
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_an_apply_patch_that_does_not_apply_fails_open(tmp_path: Path) -> None:
+    target = tmp_path / "mod.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    patch = "*** Begin Patch\n*** Update File: mod.py\n@@\n-missing\n+present\n*** End Patch\n"
+    result = _run(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Edit",
+            "cwd": str(tmp_path),
+            "tool_input": {"file_path": str(target), "command": patch},
+        },
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert "fail-open" in result.stderr
+
+
 def test_a_markdown_write_is_silent(tmp_path: Path) -> None:
     target = tmp_path / "notes.md"
     result = _run(

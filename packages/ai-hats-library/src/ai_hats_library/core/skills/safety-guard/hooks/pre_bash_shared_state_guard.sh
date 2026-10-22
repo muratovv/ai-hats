@@ -27,9 +27,9 @@
 # advertise exactly that form and then deny it (HATS-1294) — hence "ask", which
 # routes consent through the user instead of through a string the agent writes.
 #
-# The hook does NOT crash the agent on classifier errors or missing jq —
-# safe defaults favour the user's flow: when we cannot classify, we allow
-# and emit a stderr warning. The Level 2 rule remains the primary line.
+# The hook does NOT crash the agent on classifier errors or missing jq.
+# When we cannot classify, we allow and emit a stderr warning. Nothing
+# else asks on that path.
 
 set -uo pipefail
 
@@ -128,8 +128,7 @@ session_id="$(extract_session_id)"
 
 # --- 3. Classify -------------------------------------------------------
 if [[ ! -f "$CLASSIFIER" ]]; then
-    # Classifier missing — emit a stderr breadcrumb and allow. The Level 2
-    # rule still warns the agent; we refuse to break the user's flow.
+    # Classifier missing — allow and say so. No other line asks.
     echo "[shared-state-guard] classifier not found at $CLASSIFIER — allowing" >&2
     ai_hats_journal_bypass fail_open "classifier not found" "$cmd" "$session_id"
     exit 0

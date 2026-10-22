@@ -81,6 +81,10 @@ def _run_guard(hook_repo):
         ("git push --dry-run origin master", "safe"),
         ("gh pr create --fill", "shared"),
         ("gh issue comment 4 --body hi", "shared"),
+        ("git push origin master && gh pr create --fill", "gated"),
+        ("gh pr create --fill && git push origin master", "gated"),
+        ("git push --dry-run origin master && gh pr create --fill", "shared"),
+        ("git push --force origin master && gh pr create --fill", "irreversible"),
         ("ls -la", "safe"),
     ],
 )
@@ -213,6 +217,15 @@ def test_shared_command_asks_and_names_a_reversible_write(_run_guard) -> None:
     assert "reversible" in reason
     assert "irreversible" not in reason
     assert "do not retry" in reason.lower()
+
+
+def test_a_push_chained_with_a_pull_request_names_the_branch_update(_run_guard) -> None:
+    """The push is the stricter write. The headline must name it, not the PR."""
+    result = _run_guard("git push origin master && gh pr create --fill")
+    assert result.returncode == 0, result.stderr
+    reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "shared branch" in reason
+    assert "reversible" not in reason
 
 
 def test_shared_command_honours_the_same_ack(_run_guard) -> None:

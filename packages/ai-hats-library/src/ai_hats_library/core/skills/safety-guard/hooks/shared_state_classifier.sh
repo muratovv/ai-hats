@@ -24,9 +24,9 @@
 #
 #   safe         — everything else.
 #
-# The classifier inspects the WHOLE command string, so a shared-state write
-# chained via &&, ||, ;, |, $(...) or backticks is classified the same as
-# one standing alone.
+# The classifier inspects the WHOLE command string, so a chained write is
+# found wherever it sits. Two classes in one string keep the stricter:
+# irreversible, then a push that writes the remote, then shared.
 
 # shellcheck disable=SC2329  # function sourced into other scripts
 classify_command() {
@@ -87,6 +87,21 @@ classify_command() {
         fi
     fi
 
+    # A push that updates the remote outranks a reversible shared write in
+    # the same string. Dry-run is judged on the push's own segment, so a
+    # flag on a later command cannot hide it. Irreversible already returned.
+    local segment chunks
+    chunks="${cmd//&&/$'\n'}"
+    chunks="${chunks//||/$'\n'}"
+    chunks="${chunks//;/$'\n'}"
+    while IFS= read -r segment; do
+        if [[ "$segment" =~ $git_push ]] \
+            && [[ ! "$segment" =~ (^|[[:space:]])--dry-run([[:space:]]|$) ]]; then
+            echo gated
+            return 0
+        fi
+    done <<<"$chunks"
+
     # --- shared ---
     if [[ "$cmd" =~ $gh_pr_open_close ]]; then
         echo shared
@@ -98,18 +113,6 @@ classify_command() {
     fi
     if [[ "$cmd" =~ $gh_release_create ]]; then
         echo shared
-        return 0
-    fi
-    # --- gated ---
-    if [[ "$cmd" =~ $git_push ]]; then
-        # --dry-run contacts the remote but writes nothing. Checked HERE, not
-        # globally: the irreversible patterns above have already returned, so
-        # a chained `git push --dry-run && gh pr merge` cannot mask itself.
-        if [[ "$cmd" =~ (^|[[:space:]])--dry-run([[:space:]]|$) ]]; then
-            echo safe
-            return 0
-        fi
-        echo gated
         return 0
     fi
 
