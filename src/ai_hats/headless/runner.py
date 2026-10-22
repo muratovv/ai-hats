@@ -134,6 +134,7 @@ class HeadlessRunner(WrapRunner):
         provider_session_id: str,
         pty_tap_factory=None,
         on_spawn: Callable[[int], None],
+        initial_prompt: str | None = None,
     ) -> int:
         del tracer, pty_tap_factory
         if self._signal is not None:
@@ -143,6 +144,16 @@ class HeadlessRunner(WrapRunner):
             session.log_sys("headless: the session has no event log; the surface is not started")
             sys.stderr.write("ai-hats headless: this session has no event log — not starting\n")
             return 1
+        first_prompt = self._first_prompt
+        if initial_prompt:
+            # A bare positional peeled by the surface (kimi) rides the headless
+            # stdin feed — the same channel as --prompt.
+            if first_prompt:
+                session.log_sys(
+                    "headless: extra positional prompt dropped — first prompt already set"
+                )
+            else:
+                first_prompt = initial_prompt
         log = session.session_dir / EVENT_LOG_JSONL
         child = subprocess.Popen(
             cmd,
@@ -180,7 +191,7 @@ class HeadlessRunner(WrapRunner):
         follower = threading.Thread(target=relay.follow, name="headless-follow", daemon=True)
         feeder = threading.Thread(
             target=relay.feed,
-            args=(self._stdin_fd, self._first_prompt),
+            args=(self._stdin_fd, first_prompt),
             name="headless-feed",
             daemon=True,
         )

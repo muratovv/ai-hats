@@ -81,7 +81,7 @@ def _launch_for_real(monkeypatch, project: Path) -> dict:
     monkeypatch.setattr(
         rt.WrapRunner,
         "_pty_spawn",
-        lambda _self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None: (
+        lambda _self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None, initial_input=None: (
             sink.update(env=dict(env)) or 0
         ),
     )

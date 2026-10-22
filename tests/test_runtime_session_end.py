@@ -407,7 +407,9 @@ def wrap_runner_factory(tmp_path, monkeypatch):
             tracer_factory=SidecarTracer,
         )
 
-        def _stub_spawn(self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):
+        def _stub_spawn(
+            self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None, initial_input=None
+        ):
             if while_running is not None:
                 while_running()  # what the surface does while it runs
             return pty_exit_code

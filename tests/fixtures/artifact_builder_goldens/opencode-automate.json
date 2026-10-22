@@ -86,6 +86,7 @@
     "TRACE_LOG_PATH",
     "XDG_CONFIG_HOME"
   ],
+  "initial_prompt": null,
   "launch": [
     "opencode",
     "run",

@@ -139,6 +139,11 @@ def render_report(d: dict, *, full: bool = False, prompt_text: str | None = None
         "launch    " + " ".join(shown),
         "env       " + (", ".join(d["env_keys"]) or "(none)"),
     ]
+    if d.get("initial_prompt"):
+        shown_prompt = d["initial_prompt"]
+        if len(shown_prompt) > 160:
+            shown_prompt = f"{shown_prompt[:80]}… <{_human_size(len(shown_prompt.encode()))} total>"
+        lines.append(f"inject    {shown_prompt}  (typed into the TUI after boot, not argv)")
 
     if d["prompt"]:
         lines += ["", f"prompt    {d['prompt']}"]

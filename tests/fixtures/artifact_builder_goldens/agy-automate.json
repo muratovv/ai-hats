@@ -83,6 +83,7 @@
     "AI_HATS_YOLO",
     "TRACE_LOG_PATH"
   ],
+  "initial_prompt": null,
   "launch": [
     "agy",
     "--output-format",

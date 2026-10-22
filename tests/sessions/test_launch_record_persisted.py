@@ -50,7 +50,7 @@ def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
 def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
     from ai_hats import runtime as rt
 
-    def _capture(_self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):  # noqa: ARG001
+    def _capture(_self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None, initial_input=None):  # noqa: ARG001
         sink["cmd"] = list(cmd)
         return 0
 
