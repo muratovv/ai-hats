@@ -70,7 +70,7 @@ injection: |
   - Disconfirming evidence outranks consistency with earlier reasoning — switch direction explicitly, do not retrofit.
 
   ### Authoring Prose
-  A claim you write whose truth is settled by **unrolling** it — a name, a glob, a quantifier, a count — gets unrolled before you commit it, in docs, injections and `SKILL.md` alike. See rule `rule_verify_authored_claims`.
+  Unroll a glob, a quantifier, and a count before committing the claim. Names and paths in library prose are `prose-refs`' job. See rule `rule_verify_authored_claims`.
 
   ### Tool-Call Hygiene
-  Default to dedicated tools (Read/Grep/Glob/Edit) over Bash — see rule `dev_rule_tool_call_hygiene` + skill `tool-call-hygiene`. Independent reads → single parallel block.
+  Default to dedicated tools (Read/Grep/Glob/Edit) over Bash — see rule `dev_rule_tool_call_hygiene` + skill `tool-call-hygiene`.

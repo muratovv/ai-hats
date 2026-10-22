@@ -86,8 +86,6 @@ injection: |
   cold-reread discipline can fix without bias.
 
   ### Anti-Anchoring
-  - Disconfirming evidence outranks consistency with earlier reasoning —
-    switch direction explicitly, do not retrofit.
   - In L2 mode, cold-reread (§L2 Step 1) is the operational mitigation.
 
   Tool-call hygiene is governed by rule `dev_rule_tool_call_hygiene` +
