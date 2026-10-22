@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**357 of 357 files catalogued — 365 flows.**
+**358 of 358 files catalogued — 366 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1398,6 +1398,25 @@ as a claim to check, not as evidence.
 - **expect** — the bash-only spelling is nudged (in zsh it returns 0 for every run) and the zsh-correct spelling is not
 - **why** — the guard exempted any command containing PIPESTATUS, so it stayed silent on a form that reads a red run as green, and nudged the only spelling that works here — the exemption has to know which shell it is guarding
 
+## `test_expectation_gates.py`
+
+*pins HATS-2100*
+
+- **flow** — an agent opens a pull request, calls the harness task list, or adds a Python except that swallows the error
+- **cmds**
+
+  ```console
+  gh pr create --fill
+  ls
+  # TaskCreate — the harness task list; the session tracker is rack
+  # Write src/mod.py — a new module whose except returns []
+  # Write src/clean.py — a module with no handler
+  # Edit src/already.py — a line away from a handler the file already has
+  ```
+
+- **expect** — the pull request is asked and the reason says the write is reversible; ls passes; TaskCreate is denied and the reason names rack; the new silent except is denied and names the silent-ok mark; the clean module and the unrelated edit pass
+- **why** — those prohibitions used to sit in the standing prompt, where a hook already held them. A chain test is the only place a second hook can override the verdict this change just moved
+
 ## `test_gate_primitive.py`
 
 *pins HATS-1604, HATS-1878*
@@ -2174,7 +2193,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — exit 0, an assistant answer and a session.resume_hint meta line on stdout; wire.jsonl under the session home; KimiParser reads turns and token telemetry from it. With a deny [[hooks]] guard installed, a Bash call is refused and the model sees the reason.
-- **why** — this is the task's core acceptance — headless first-class — and the parser must prove itself on a record the real harness wrote, not only on fixtures. Gated on a host with the kimi CLI and an OAuth login (Kimi subscription); skips everywhere else, like the codex auth lifecycle e2e.
+- **why** — this is the task's core acceptance — headless first-class — and the parser must prove itself on a record the real harness wrote, not only on fixtures. Needs the kimi CLI and an OAuth login; skips everywhere else. Kept out of the mandatory gate (live_headless) because it needs that login; run it with `-m live_headless`
 
 ## `test_launcher_contract_skew.py`
 
@@ -3963,7 +3982,7 @@ as a claim to check, not as evidence.
   AI_HATS_SHARED_STATE_ACK=1 git push --force    # ack -> allowed
   ```
 
-- **expect** — a fast-forward, a branch deletion, a brand-new branch and an empty stdin all pass; a non-fast-forward exits 1, and the refusal names `rule_pause_before_shared_state_write` and says "Do NOT retry" rather than failing bare; the env ack overrides the block
+- **expect** — a fast-forward, a branch deletion, a brand-new branch and an empty stdin all pass; a non-fast-forward exits 1, and the refusal names safety-guard and says "Do NOT retry" rather than failing bare; the env ack overrides the block
 - **why** — the hook is pure bash driven by git over stdin, so nothing in-process reaches it — and a hook that blocks a legal fast-forward is as broken as one that waves a force-push through. The PreToolUse half is unit-tested in tests/test_shared_state_guard.py; only this half needs a real repo.
 
 ## `test_shellcheck_stage.py`

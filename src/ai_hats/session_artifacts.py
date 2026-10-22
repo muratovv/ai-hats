@@ -47,7 +47,7 @@ def withheld_from_child() -> dict[str, str]:
     """The approvals a sub-agent does not inherit from the session that spawned it.
 
     An approval is scoped to the session it was given in — the export "pre-approves
-    the whole session" (`rule_pause_before_shared_state_write`) — and a sub-agent is
+    the whole session" (the shared-state guard) — and a sub-agent is
     a different session: own id, own dir, own composition.
 
     Two sources, and only the second one holds the line: the named roster keeps the

@@ -327,26 +327,20 @@ skill sources (third-party skill packages).
 
 ### Shared-state guard
 
-Some operations write shared state with no undo path — `gh pr merge` and
-`git push --force` chief among them. The framework defends against
-autonomous invocations in two layers:
+Some operations write shared state. The framework asks before they run:
 
-1. **Rule** `rule_pause_before_shared_state_write` — injected
-   via `trait-agent` into every agent role so it ships inline in the provider system prompt
-   on every session. Requires the agent to pause and name the command
-   before any shared-state write (PR/issue/release/push/TaskCreate), and
-   forbids chaining such commands with other Bash calls in one
-   invocation.
+1. **`pre_bash_shared_state_guard.sh`** asks before the command runs.
+   Wired into the session by `ClaudeSurface.plan` — a runtime-hook row of the plan (ADR-0036 D2).
+   `irreversible` (`gh pr merge`, `git push --force` and the other force spellings),
+   `gated` (an ordinary `git push`) and `shared` (`gh pr create` / `close`,
+   `gh issue comment`, `gh release create`) all take that ask. `shared` says the
+   write is reversible. The always-on rule that used to restate this is gone:
+   the refusal is the policy.
 
-2. **Deterministic hooks** on the irreversible subset:
-   - `pre_bash_shared_state_guard.sh` — Claude Code PreToolUse hook (in session tree plugin skills).
-     Wired into the session's `settings.json` by `ClaudeSurface.plan` — a runtime-hook row of the plan (ADR-0036 D2).
-     Blocks `gh pr merge` and `git push --force` when run without a controlling TTY
-     (i.e. agent context).
-   - `packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
-     — git pre-push hook installed via the managed git-hook mechanism. Detects
-     non-fast-forward pushes and blocks them; branch creations and
-     deletions short-circuit so benign cleanup is not affected.
+2. **`pre-push-shared-state.sh`**
+   (`packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`)
+   is the git backstop for a non-fast-forward push that never went through the
+   PreToolUse hook. Branch creations and deletions short-circuit.
 
    `AI_HATS_SHARED_STATE_ACK=1` overrides both, but it does NOT reach them the
    same way. The git hook runs inside the `git push` process, so a per-command

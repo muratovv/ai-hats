@@ -1,6 +1,6 @@
 ---
 name: safety-guard
-description: PreToolUse hooks that refuse destructive commands, hold the pause before an irreversible shared-state write, refuse a gate flag the agent writes for itself, keep the tracker writable only through `rack`, and turn a consent-declared move into a question for the supervisor. Infrastructure — read it to diagnose a block, not to invoke it.
+description: PreToolUse hooks that refuse destructive commands, ask before a shared-state write, refuse a gate flag the agent writes for itself, keep the tracker writable only through `rack`, refuse the harness task list, and turn a consent-declared move into a question for the supervisor. Infrastructure — read it to diagnose a block, not to invoke it.
 ai_hats:
   runtime_hooks:
     PreToolUse:
@@ -12,6 +12,8 @@ ai_hats:
         script: hooks/ack_prefix_guard.py
       - matcher: Edit|Write|MultiEdit
         script: hooks/backlog_write_gate.py
+      - matcher: TaskCreate|TaskUpdate|TaskList|TaskGet|TaskStop|TaskOutput
+        script: hooks/harness_task_gate.py
 license: MIT
 ---
 
@@ -45,9 +47,10 @@ A hook runs before the command it judges is a process, so a prefix on that comma
 reaches nothing — the hint that once advertised one was measured denying the very
 line it told the agent to write.
 
-`git push` is **not** handled here — `pre_bash_shared_state_guard.sh` owns it
-(`rule_pause_before_shared_state_write`). Two gates on one concern means the
-coarser one silently wins.
+`git push` and a reversible shared write (`gh pr create`, `gh issue comment`,
+`gh release create`) are **not** handled here — `pre_bash_shared_state_guard.sh`
+asks before each of them. Two gates on one concern means the coarser one
+silently wins.
 
 ## An approval you write yourself is not one
 
@@ -101,18 +104,25 @@ directory, or an operand holding `$` or a backtick. Where the removal can be
 narrowed, narrow it: name the literal path under the working directory rather
 than `"$DIR"/*`. Where it cannot, run it bare and wait for the answer.
 
+## The harness task list is `rack`-only
+
+`harness_task_gate.py` denies `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`,
+`TaskStop` and `TaskOutput`. The refusal names `rack`. A harness without those
+tools never matches, so the hook stays quiet. The supervisor exports
+`AI_HATS_HARNESS_TASKS_OFF=1` for a session that has no backlog CLI.
+
 ## The tracker backlog is `rack`-only
 
 `backlog_write_gate.py` (Edit/Write/MultiEdit) and a matching predicate in
-`safety_gate.py` (Bash) deny writes under `<ai_hats_dir>/tracker/backlog/**` —
-`rule_backlog_discipline` §1. A hand-edited card desynchronises the state
+`safety_gate.py` (Bash) deny writes under `<ai_hats_dir>/tracker/backlog/**`.
+A hand-edited card desynchronises the state
 machine from its locks and audit trail, so the card moves with
 `rack transition <ID> <state> --log "..."`, fields change with
 `rack transition <ID> --set <field>=<value>`, and a document (`summary.md`,
 `audit.md`, …) is written outside the tracker and brought in with
 `rack transition <ID> --attach /tmp/summary.md:summary.md`. Reads (`cat`,
 `grep`) are not touched, and `tasks/<ID>/plan.md` stays directly writable
-(§1b) — it is the agent's own deliverable, not FSM-owned state.
+— it is the agent's own deliverable, not FSM-owned state.
 
 `ai_hats_dir` is resolved from the TARGET path's own `ai-hats.yaml`, never from
 `$AI_HATS_DIR`: that variable leaks between checkouts, and a worktree session

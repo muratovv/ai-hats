@@ -82,9 +82,8 @@ print(ti.get("command") or "")
 
 if ! fields="$(extract_fields)" || [[ -z "$fields" ]]; then
     # Fail OPEN — a guard that cannot read the payload must not wedge the
-    # session. Silently, though, is what dev_rule_silent_fallback forbids: the
-    # journal line is the only thing that separates "nothing to flag" from
-    # "this gate has been dark for a week".
+    # session. A silent open hides a dark gate: the journal line is the only
+    # thing that separates "nothing to flag" from "this gate has been dark".
     ai_hats_journal_bypass fail-open "no JSON parser (jq/python3) — command-lifetime checks skipped"
     exit 0
 fi

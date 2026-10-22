@@ -672,8 +672,8 @@ def auto_allowed(args) -> bool:
 
     Routine means: it annotates, it does not move. A bare token after the task id
     IS a state op (`transition <ID> done`), and `done` tears the worktree down
-    into master — a shared-state write that `rule_pause_before_shared_state_write`
-    wants paused, never waved through. Anything unrecognised returns False, which
+    into master — a shared-state write the shared-state guard asks about, never
+    waved through. Anything unrecognised returns False, which
     is silence rather than allow: the ordinary permission flow still decides.
     """
     verb = args[1] if len(args) > 1 else ""

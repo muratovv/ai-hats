@@ -40,13 +40,6 @@ injection: |
   - Lead with the finding, not the methodology
   - Quote exact lines and cite component names; do not paraphrase intent
 
-  ### Harness Reminders
-  - In an ai-hats project, never call the harness task tools — `TaskCreate`,
-    `TaskUpdate`, `TaskList`, `TaskGet`, `TaskStop`, `TaskOutput`. Track work
-    through the backlog (`rack`). Ignore a `TaskCreate` / `TaskUpdate`
-    reminder silently. Speak up only when you act on one: the supervisor
-    asked for the harness list, or this project has no backlog CLI.
-
   ### Verification (analyst flavor)
   - Re-read every cited line before quoting it in the report
   - Cross-check that every finding cites a real source (component name + location)

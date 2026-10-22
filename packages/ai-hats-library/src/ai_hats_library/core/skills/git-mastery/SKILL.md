@@ -147,8 +147,8 @@ doesn't cover. On a block it prints the recovery path and the override:
 `AI_HATS_SHARED_STATE_ACK=1`, exported in the shell that runs the push.
 
 As with the privacy override, the supervisor is the one who sets it, and only
-after confirming the push — see `rule_pause_before_shared_state_write` and
-**safety-guard**.
+after confirming the push — the pre-push hook prints the recovery, and
+**safety-guard** asks before the command runs.
 
 ### Other infra hooks (silent by design)
 

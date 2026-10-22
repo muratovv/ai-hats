@@ -11,9 +11,9 @@ expect: exit 0, an assistant answer and a session.resume_hint meta line on
         call is refused and the model sees the reason.
 why:    this is the task's core acceptance — headless first-class — and the
         parser must prove itself on a record the real harness wrote, not only
-        on fixtures. Gated on a host with the kimi CLI and an OAuth login
-        (Kimi subscription); skips everywhere else, like the codex auth
-        lifecycle e2e.
+        on fixtures. Needs the kimi CLI and an OAuth login; skips everywhere
+        else. Kept out of the mandatory gate (live_headless) because it
+        needs that login; run it with `-m live_headless`
 """  # comment-length: allow — the e2e flow/cmds/expect/why header is the contract
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import pytest
 from ai_hats.surfaces.kimi import KimiSurface
 from ai_hats.surfaces.kimi.parser import KimiParser
 
-pytestmark = [pytest.mark.integration, pytest.mark.surfaces]
+pytestmark = [pytest.mark.integration, pytest.mark.surfaces, pytest.mark.live_headless]
 
 KIMI = shutil.which("kimi")
 # The person's REAL home, not an inherited KIMI_CODE_HOME: inside an ai-hats

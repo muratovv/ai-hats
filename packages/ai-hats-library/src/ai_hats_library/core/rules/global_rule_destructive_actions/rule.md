@@ -5,14 +5,10 @@
 **Protected = anything that cannot be regenerated from the repository plus the
 toolchain** — persistent state, secrets, captured runs, human-authored notes.
 Being untracked or gitignored makes a file *more* at risk, not less: nothing
-can restore it. The names below are a fast path, not the definition; when a
-path is not on the list, apply the test.
+can restore it. The hook already refuses the fast path; when a refusal does
+not name the path, apply the test.
 
-- `.db`, `.sqlite`, `.sqlite3`, `.sql`, `.dump`
-- `volumes/`, `data/`, `storage/`, `runs/` directories
-- `terraform.tfstate`, `.env`
-
-**Mandatory Action**: NEVER delete, overwrite, or move these files without explicit written confirmation from the user.
+**Mandatory Action**: NEVER delete, overwrite, or move a protected file without explicit written confirmation from the user.
 
 ## 2. Before Destructive Operations
 

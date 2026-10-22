@@ -105,9 +105,8 @@ if command -v sed >/dev/null 2>&1 && command -v tr >/dev/null 2>&1; then
         | sed -E "s/'[^']*'|\"[^\"]*\"//g" 2>/dev/null \
         | tr '\001' '\n')"
 else
-    # Degrading to silence is right; degrading SILENTLY is not
-    # (dev_rule_silent_fallback) — without this line the exit-code checks just
-    # stop and no log ever says why.
+    # Degrading is right; degrading without a trace is not — without this
+    # line the exit-code checks just stop and no log ever says why.
     ai_hats_journal_bypass fail-open "sed or tr absent — exit-code checks skipped"
     cmd_bare=""
 fi

@@ -127,6 +127,7 @@ FILE_MUTATION = {
 
 _TERMINAL_MATCHERS = ("Bash", "Bash|run_command|execute")
 _MUTATION_MATCHER = "Edit|Write|MultiEdit"
+_HARNESS_MATCHER = "TaskCreate|TaskUpdate|TaskList|TaskGet|TaskStop|TaskOutput"
 
 
 def _fires(surface: str, matcher: str, native: str) -> bool:
@@ -211,6 +212,12 @@ class TestAnEmptyToolTableIsRightByCheck:
         for native in ("Bash", "Edit", "EnterWorktree"):
             assert profiles.CLAUDE.spoken_name(native) in profiles.CLAUDE.matcher_names(native)
 
+    def test_the_harness_task_matcher_reaches_its_tools_and_not_bash(self) -> None:
+        """These tools exist on one harness. The matcher must not catch Bash."""
+        assert matches(profiles.CLAUDE, _HARNESS_MATCHER, "TaskCreate")
+        assert matches(profiles.CLAUDE, _HARNESS_MATCHER, "TaskOutput")
+        assert not matches(profiles.CLAUDE, _HARNESS_MATCHER, "Bash")
+
     def test_the_claude_only_matcher_still_reaches_its_tool(self) -> None:
         """`EnterWorktree` is deliverable on this surface alone, and the harness
         matched it until now. Under one dispatcher entry the matching moves
@@ -226,7 +233,7 @@ class TestAnEmptyToolTableIsRightByCheck:
 
 def test_every_shipped_matcher_is_covered_by_this_test() -> None:
     """A new shipped matcher must not join the library unnoticed by this file."""
-    covered = {*_TERMINAL_MATCHERS, _MUTATION_MATCHER, "EnterWorktree"}
+    covered = {*_TERMINAL_MATCHERS, _MUTATION_MATCHER, _HARNESS_MATCHER, "EnterWorktree"}
     shipped = {m for matchers in _shipped_matchers().values() for m in matchers}
     assert shipped, "no shipped matchers found — the reader, not the library, is broken"
     assert shipped <= covered, (
