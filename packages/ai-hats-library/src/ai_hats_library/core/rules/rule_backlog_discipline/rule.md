@@ -10,7 +10,7 @@ Applies to all three backlog item types — **tasks** (`HATS-NNN`), **hypotheses
 
 ## Scope
 
-A hand edit under the tracker backlog is refused by the backlog gate. The refusal names `rack` and the one file you may write directly, `tasks/<ID>/plan.md`. That refusal applies to every role that touches the backlog.
+A hand edit under `<ai_hats_dir>/tracker/backlog/**` is refused by the backlog gate. The refusal names `rack` and the one file you may write directly, `tasks/<ID>/plan.md`. That refusal applies to every role that touches the backlog.
 
 §§2–4 and §6 apply only to roles that **own a backlog item's lifecycle** — the fix author / lead / primary agent. Roles whose protocol skill whitelists only `rack create` (e.g. L1 analyst roles like `role-judge`) do not take those obligations, because they never own a lifecycle.
 
