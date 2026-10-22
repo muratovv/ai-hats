@@ -14,7 +14,6 @@ from __future__ import annotations
 from ai_hats_core.layout import ProjectLayout
 
 import os
-import shutil
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -59,43 +58,7 @@ DECISIVENESS_VISIBLE: <YES or NO — whether the priorities list starting with
 """
 
 
-# --------------------------------------------------------------------- #
-# Skip helpers
-# --------------------------------------------------------------------- #
-
-
-def _claude_available() -> bool:
-    return shutil.which("claude") is not None
-
-
-def _claude_authenticated() -> bool:
-    """Cheap probe: claude rejects unauthenticated --print with stderr/stdout
-    containing 'Not logged in'. We do a 1-token probe to check.
-    """
-    if not _claude_available():
-        return False
-    try:
-        r = subprocess.run(
-            ["claude", "--print", "--model", PROBE_MODEL, "-p", "."],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except Exception:
-        return False
-    blob = (r.stdout + r.stderr).lower()
-    return "not logged in" not in blob and "please run /login" not in blob
-
-
 pytestmark = [pytest.mark.integration, pytest.mark.library]
-
-
-@pytest.fixture(scope="module")
-def auth_gate():
-    if not _claude_available():
-        pytest.skip("claude binary not found in PATH")
-    if not _claude_authenticated():
-        pytest.skip("claude CLI not authenticated (run /login)")
 
 
 # --------------------------------------------------------------------- #
@@ -234,7 +197,7 @@ def _parse_probe(text: str) -> dict[str, str]:
 # --------------------------------------------------------------------- #
 
 
-def test_role_override_no_default_leak(auth_gate, project_with_assistant_default):
+def test_role_override_no_default_leak(requires_claude_auth, project_with_assistant_default):
     """``--role judge`` → agent sees ONLY judge content. F5+F6 must NOT
     reproduce: no PRIMARY ASSISTANT block, no Reliability priorities list.
     """
@@ -252,7 +215,7 @@ def test_role_override_no_default_leak(auth_gate, project_with_assistant_default
 
 
 def test_default_role_session_sees_default_role(
-    auth_gate,
+    requires_claude_auth,
     project_with_assistant_default,
 ):
     """Default-role session (no --role override) → agent sees the assistant
@@ -268,7 +231,7 @@ def test_default_role_session_sees_default_role(
 
 
 def test_parallel_different_roles_isolated_with_barrier(
-    auth_gate,
+    requires_claude_auth,
     project_with_assistant_default,
     tmp_path,
 ):

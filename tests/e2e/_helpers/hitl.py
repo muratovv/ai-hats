@@ -30,14 +30,11 @@ Public surface::
 
 from __future__ import annotations
 
-import fcntl
-import json
 import os
 import re
 import subprocess
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ai_hats.constants import ENV_SKIP_RETRO
@@ -221,27 +218,22 @@ def _seed_folder_trust(project_path: str) -> None:
     unless ``projects[<abspath>].hasTrustDialogAccepted`` is set in the REAL
     ``~/.claude.json`` — a fresh tmp dir never is, so the driver hangs. Auth is
     bound to the default config dir (a relocated ``CLAUDE_CONFIG_DIR`` reports
-    "Not logged in"), so trust MUST be seeded in place. Safe: the ``live_claude``
-    cohort is one serial xdist group, and claude rewrites this file every run.
+    "Not logged in"), so trust MUST be seeded in place — under claude's own
+    lock; the session-end sweep takes the key out again.
     """
-    # comment-length: allow — records the auth-binding constraint that forces
-    # the in-place write (see HATS-945 plan for the PoC).
-    cfg = Path.home() / ".claude.json"
+    from tests._claude_traces import ClaudeHome, update_claude_config
+
     key = os.path.realpath(project_path)
-    with open(cfg.with_name(".claude.json.ai-hats-trust.lock"), "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        try:
-            data = json.loads(cfg.read_text()) if cfg.exists() else {}
-        except (json.JSONDecodeError, OSError):
-            data = {}
+
+    def trust(data: dict) -> bool:
         entry = data.setdefault("projects", {}).setdefault(key, {})
         if entry.get("hasTrustDialogAccepted") is True:
-            return  # already trusted — no rewrite
+            return False
         entry["hasTrustDialogAccepted"] = True
         data.setdefault("hasCompletedOnboarding", True)
-        tmp = cfg.with_name(f".claude.json.ai-hats-{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(data))
-        os.replace(tmp, cfg)  # atomic in-place swap
+        return True
+
+    update_claude_config(ClaudeHome.of_environ(os.environ).config, trust)
 
 
 def drive_bare_hitl(

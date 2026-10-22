@@ -43,6 +43,9 @@ for _pinned in (
 ):
     os.environ.pop(_pinned, None)
 
+# Registered by name: they keep claude's traces of a live test out of the person's home.
+from tests._claude_traces import pytest_sessionfinish, pytest_sessionstart  # noqa: E402, F401
+
 
 _EntryPointFingerprint = tuple[tuple[str, int, int], ...]
 
