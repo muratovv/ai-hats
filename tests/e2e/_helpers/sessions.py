@@ -218,35 +218,56 @@ def wait_for_file(
     )
 
 
-def relocate_library_for_checks(
-    env: dict[str, str], project: Path, session_id: str, dest: Path
-) -> None:
-    """Copy the library out of a worktree and plant safety-guard in the mirror.
+_LIBRARY_COPY: Path | None = None
 
-    Call after ``stand_in_session``. A worktree cannot be a check's resolution root.
+
+def _inside_linked_worktree(path: Path) -> bool:
+    for parent in (path, *path.parents):
+        marker = parent / ".git"
+        if marker.is_file():
+            return True
+        if marker.is_dir():
+            return False
+    return False
+
+
+def _shipped_library_copy() -> Path:
+    """One copy per process, outside every checkout. A worktree is not a legal root."""
+    global _LIBRARY_COPY
+    import shutil
+    import tempfile
+
+    if _LIBRARY_COPY is not None and _LIBRARY_COPY.is_dir():
+        return _LIBRARY_COPY
+    src = Path(__file__).resolve().parents[3] / "packages/ai-hats-library/src/ai_hats_library"
+    dest = Path(tempfile.mkdtemp(prefix="ai-hats-lib-"))
+    shutil.copytree(src, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    _LIBRARY_COPY = dest
+    return dest
+
+
+def _prepare_check_resolution(env: dict[str, str], skills_dir: Path) -> None:
+    """Plant safety-guard where the stand-in mirror is read, from a legal root.
+
+    trait-agent binds a script. The mirror is otherwise empty, and a root inside
+    a linked worktree is refused before the script can run.
     """
+    import os
     import shutil
 
     repo = Path(__file__).resolve().parents[3]
-    src = repo / "packages/ai-hats-library/src/ai_hats_library"
-    if dest.exists():
-        shutil.rmtree(dest)
-    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
-    env["AI_HATS_LIBRARY_ROOT"] = str(dest)
-    mirror = (
-        project
-        / ".agent"
-        / "ai-hats"
-        / "sessions"
-        / "runs"
-        / session_id
-        / "skills"
-        / "safety-guard"
-    )
+    pinned = env.get("AI_HATS_LIBRARY_ROOT")
+    root = Path(pinned) if pinned else repo / "packages/ai-hats-library/src/ai_hats_library"
+    if _inside_linked_worktree(root):
+        root = _shipped_library_copy()
+        env["AI_HATS_LIBRARY_ROOT"] = str(root)
+        os.environ["AI_HATS_LIBRARY_ROOT"] = str(root)
+    guard = root / "core" / "skills" / "safety-guard"
+    mirror = skills_dir / "safety-guard"
     mirror.parent.mkdir(parents=True, exist_ok=True)
     if mirror.exists():
         shutil.rmtree(mirror)
-    shutil.copytree(dest / "core" / "skills" / "safety-guard", mirror)
+    shutil.copytree(guard, mirror)
 
 
 def stand_in_session(
@@ -266,9 +287,8 @@ def stand_in_session(
     A test that sets the id alone is therefore standing in for a session no
     launch produces, and gets refused for exactly the right reason.
 
-    ``skills_root`` defaults to a path under the session that does not exist —
-    correct for a sandbox that binds no check. A test whose bindings must
-    resolve passes the root it actually planted into.
+    ``skills_root`` defaults to the session skills dir. safety-guard is planted
+    there: a stand-in that leaves the mirror empty cannot resolve a bound check.
     """  # comment-length: allow — why setting the id alone stopped working
     from ai_hats.env import ENV_HOOK_SOCKET
     from ai_hats.session_identity import SessionIdentity
@@ -278,13 +298,15 @@ def stand_in_session(
     # ambient one aims the fixture's gates at the live session that launched it.
     env.pop(ENV_HOOK_SOCKET, None)
     session_dir = project / ".agent" / "ai-hats" / "sessions" / "runs" / session_id
+    skills_dir = Path(skills_root) if skills_root is not None else session_dir / "skills"
+    _prepare_check_resolution(env, skills_dir)
     identity = SessionIdentity(
         id=session_id,
         role=role,
         provider=provider,
         project_dir=project,
         session_dir=session_dir,
-        skills_root=str(skills_root if skills_root is not None else session_dir / "skills"),
+        skills_root=str(skills_dir),
         # The consent store lives under it (HATS-1735). Through the production
         # function, never spelled here — a hand-built path in a fixture is the
         # copy the published field exists to prevent.
