@@ -234,7 +234,14 @@ def relocate_library_for_checks(
     shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
     env["AI_HATS_LIBRARY_ROOT"] = str(dest)
     mirror = (
-        project / ".agent" / "ai-hats" / "sessions" / "runs" / session_id / "skills" / "safety-guard"
+        project
+        / ".agent"
+        / "ai-hats"
+        / "sessions"
+        / "runs"
+        / session_id
+        / "skills"
+        / "safety-guard"
     )
     mirror.parent.mkdir(parents=True, exist_ok=True)
     if mirror.exists():
