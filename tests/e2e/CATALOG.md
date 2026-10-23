@@ -2492,7 +2492,7 @@ as a claim to check, not as evidence.
         ai-hats wt merge task/hats-001   (card in review)                  # lands
   ```
 
-- **expect** — wt:pre-merge refuses the merge while the card is before the review road and names the state; ->review refuses a card whose branch is already contained in master; on the road (review) the merge lands
+- **expect** — wt:pre-merge refuses the merge while the card is before the review road and names the state; ->review refuses a card whose branch is already merged into master; on the road (review) the merge lands
 - **why** — the PreToolUse guard (test_task_merge_guard_chain.py) only keeps the agent on the managed path; the card-state invariant itself lives at wt:pre-merge and ->review, and only a real merge/transition exercises the resolution, the check and the refusal text together
 
 ## `test_migration_no_replay_without_config.py`
