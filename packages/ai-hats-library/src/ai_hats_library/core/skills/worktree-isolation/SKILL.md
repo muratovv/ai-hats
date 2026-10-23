@@ -80,16 +80,22 @@ Isolated development using git worktrees. Each task gets its own working copy �
    consent operation and therefore gets its own question.
 
    **The merge happens only on the review→done road.** The review diff is
-   computed against the merge-base with the base branch, so merging the task
-   branch into it before review empties the diff by construction — merge-base
-   becomes the branch tip (PROX-619). Two guards hold the invariant, and
-   neither has an agent-reachable hatch:
-   - a raw `git merge` of a task branch into master/main is hard-denied at
-     PreToolUse, with `ai-hats wt merge` named as the road;
-   - `ai-hats wt merge` itself refuses while the card is before `review`
-     (wt:pre-merge), and a card cannot ENTER `review` once that branch was
-     merged into the base (`--no-ff`, the road `wt merge` takes). A branch
-     that never carried a commit is not a merge and still enters review.
+   computed against the merge-base with the base branch, so a `--no-ff` merge
+   of the task branch into that base before review empties the diff — merge-base
+   becomes the branch tip.
+
+   - A raw `git merge` of a `task/<prefix>-<n>` ref is hard-denied at PreToolUse
+     when the checkout that merge runs in is `master` or `main`. `git -C` and a
+     leading `cd` count. The refusal names `ai-hats wt merge`. Merging one task
+     branch into another is allowed.
+   - `ai-hats wt merge` refuses while the card is before `review`. A card cannot
+     enter `review` when its tip is already a non-first parent of a merge on the
+     base recorded at worktree create (`--no-ff`, the road `wt merge` takes). A
+     branch that never carried a commit still enters review.
+
+   These two do not catch a command that hides the branch name in a variable, a
+   cherry-pick, a fast-forward that already happened outside the guard, or a
+   human merging from their own terminal.
 
    If `wt merge` refuses with `Refused (drift)`, the base holds commits
    your branch never took in (another agent's worktree merged, or

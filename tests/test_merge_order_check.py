@@ -5,6 +5,7 @@ fails closed (ADR-0019 D4). Driven as a script against a real rack backlog.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -154,8 +155,28 @@ def _seed_task_branch(project: Path, *, merge: bool) -> None:
         )
 
 
+def _record_base(project: Path, base: str = "master") -> None:
+    state = project / ".agent/ai-hats/sessions/worktrees"
+    state.mkdir(parents=True)
+    (state / "task-test-001.json").write_text(
+        json.dumps({"branch": "task/test-001", "original_branch": base}),
+        encoding="utf-8",
+    )
+
+
 def test_review_edge_refuses_a_pre_merged_branch(project: Path) -> None:
     _seed_task_branch(project, merge=True)
+    _record_base(project)
+    run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
+    assert run.returncode == 2
+    assert "was already merged" in run.stdout
+
+
+def test_review_edge_refuses_when_head_has_wandered(project: Path) -> None:
+    """The merge landed on the recorded base; a later checkout must not hide it."""
+    _seed_task_branch(project, merge=True)
+    _record_base(project)
+    _git(project, "checkout", "-q", "-b", "wander")
     run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
     assert run.returncode == 2
     assert "was already merged" in run.stdout
@@ -163,8 +184,17 @@ def test_review_edge_refuses_a_pre_merged_branch(project: Path) -> None:
 
 def test_review_edge_passes_a_live_branch(project: Path) -> None:
     _seed_task_branch(project, merge=False)
+    _record_base(project)
+    _git(project, "checkout", "-q", "-b", "wander")
     run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+def test_review_edge_fails_closed_without_a_recorded_base(project: Path) -> None:
+    _seed_task_branch(project, merge=False)
+    run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
+    assert run.returncode == 2
+    assert "cannot read the base branch" in run.stdout
 
 
 def test_review_edge_passes_a_branchless_card(project: Path) -> None:
@@ -176,6 +206,7 @@ def test_review_edge_passes_a_branch_without_commits(project: Path) -> None:
     """A task branch with no work is contained in the base by definition, and
     such cards (investigations, .agent-local docs) legitimately review empty."""
     _git(project, "branch", "task/test-001")
+    _record_base(project)
     run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
     assert run.returncode == 0, run.stdout + run.stderr
 
@@ -188,9 +219,8 @@ def test_review_edge_passes_a_non_git_project(tmp_path: Path) -> None:
     assert run.returncode == 0, run.stdout + run.stderr
 
 
-def test_review_edge_passes_when_no_base_is_nameable(tmp_path: Path) -> None:
-    """A repo whose base is neither HEAD nor master/main gets no verdict here —
-    the pre-merge state check holds the invariant without the base's name."""
+def test_review_edge_passes_a_branchless_repo_with_no_recorded_base(tmp_path: Path) -> None:
+    """No task branch — nothing was merged, so a missing state file is not a blind review."""
     repo = tmp_path / "proj"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "dev")
@@ -198,7 +228,6 @@ def test_review_edge_passes_when_no_base_is_nameable(tmp_path: Path) -> None:
     _git(repo, "checkout", "-q", "--detach")
     run = _run(_env(repo, "document->review", AI_HATS_TASK_ID="TEST-001"))
     assert run.returncode == 0, run.stdout + run.stderr
-    assert "no base branch nameable" in run.stderr
 
 
 def test_unknown_point_fails_closed(project: Path) -> None:

@@ -9,11 +9,10 @@
 #                  PROX-619) and skips the reviewer. The supervisor's consent
 #                  covers "may I merge", this check covers "is it time".
 #   *->review    — may this card ENTER review? Not when the branch was already
-#                  merged into the base: a --no-ff merge (what `wt merge` does)
-#                  leaves the tip as a non-first parent, and the review diff is
-#                  then empty. A branch that never carried a commit is contained
-#                  too, and is not a merge — those cards review empty on purpose.
-#                  A fast-forward leaves no parent and stays a residual.
+#                  --no-ff merged into the base recorded at worktree create
+#                  (original_branch), not whatever HEAD is now. That parent is
+#                  what empties the review diff. A branch with no commit is not
+#                  a merge. A fast-forward leaves no parent and stays a residual.
 #
 # D2 verdict contract (hook_exec._classify): exit 0 = pass, exit 2 = refuse
 # with the reason ON STDOUT (a refusal spoken on stdout stands alone), any
@@ -23,7 +22,7 @@
 #
 # Env the channel hands in (hook_exec._hook_env + wt extra_env):
 #   AI_HATS_HOOK_POINT, AI_HATS_PROJECT_DIR, AI_HATS_TASK_ID (rack channel),
-#   AI_HATS_BRANCH_NAME (wt channel).
+#   AI_HATS_TASKS_DIR (where the recorded base lives), AI_HATS_BRANCH_NAME.
 
 set -uo pipefail
 
@@ -73,6 +72,35 @@ except Exception:
     echo "$out"
 }
 
+# original_branch from the worktree state `wt merge` itself reads, or empty.
+recorded_base() {
+    local key hats state out
+    key="${branch//\//-}"
+    if [[ -n "${AI_HATS_TASKS_DIR:-}" ]]; then
+        hats="$(dirname -- "$AI_HATS_TASKS_DIR")"
+        hats="$(dirname -- "$hats")"
+        hats="$(dirname -- "$hats")"
+        state="$hats/sessions/worktrees/${key}.json"
+    else
+        state="$project_dir/.agent/ai-hats/sessions/worktrees/${key}.json"
+    fi
+    [[ -f "$state" ]] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        out="$(jq -r '.original_branch // empty' "$state" 2>/dev/null)" || out=""
+    elif command -v python3 >/dev/null 2>&1; then
+        out="$(STATE="$state" python3 -c '
+import json, os
+try:
+    print(json.load(open(os.environ["STATE"])).get("original_branch") or "")
+except Exception:
+    pass
+')" || out=""
+    else
+        out=""
+    fi
+    printf '%s' "$out"
+}
+
 # --- wt:pre-merge ----------------------------------------------------------
 if [[ "$point" == *pre-merge* ]]; then
     branch="${AI_HATS_BRANCH_NAME:-}"
@@ -104,27 +132,16 @@ if [[ "$point" == *'->review' ]]; then
     # A non-git project has no merge mechanics at all — nothing to blind.
     git -C "$project_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
-    # The base is what `wt merge` lands into (HATS-942): the checkout's current
-    # HEAD branch, master/main as the fallback for a detached HEAD. A repo with
-    # no nameable base gets no verdict here — the pre-merge state check above
-    # holds the primary invariant and does not depend on the base's name.
-    base="$(git -C "$project_dir" symbolic-ref --short HEAD 2>/dev/null || true)"
-    if [[ -z "$base" ]]; then
-        for candidate in master main; do
-            if git -C "$project_dir" show-ref --verify --quiet "refs/heads/$candidate"; then
-                base="$candidate"
-                break
-            fi
-        done
-    fi
-    if [[ -z "$base" ]]; then
-        echo "merge-order check: no base branch nameable in $project_dir — the containment test does not apply" >&2
-        exit 0
-    fi
-
     if ! git -C "$project_dir" show-ref --verify --quiet "refs/heads/$branch"; then
         # No task branch at all — nothing to blind (docs-only card, etc.).
         exit 0
+    fi
+
+    # What `wt merge` lands into is the base captured at create, not the
+    # checkout's HEAD now — HEAD wanders, and the diff is against that base.
+    base="$(recorded_base)"
+    if [[ -z "$base" ]] || ! git -C "$project_dir" show-ref --verify --quiet "refs/heads/$base"; then
+        refuse "cannot read the base branch recorded for $branch (worktree state missing or its original_branch is not a branch) — a review whose diff cannot be verified does not open (fail-closed)."
     fi
     # "Was merged" ≠ "is contained": a branch that never carried work is also
     # contained in the base, and such cards (investigations, .agent-local docs)

@@ -19,9 +19,11 @@
 #
 # Verdict handling:
 #   safe            -> exit 0 (allow)
-#   task-merge      -> resolve the cwd's current branch (one read-only
-#                      `git symbolic-ref`); refuse on master/main, allow
-#                      otherwise (task→task merges keep the review diff alive)
+#   task-merge      -> the merge's own checkout, not the payload cwd: peel
+#                      `git -C` and a leading `cd` (shell_walk). Refuse when
+#                      THAT HEAD is master/main. A target that cannot be read
+#                      is a refuse — guessing would let the merge through.
+#                      task→task stays allowed.
 #   task-merge-base -> the command itself switches to a base branch first;
 #                      refuse without any git call
 #
@@ -81,6 +83,109 @@ if [[ -z "$cmd" ]]; then
     exit 0
 fi
 
+# Directory the task-branch `git merge` actually runs in, or empty when the
+# line cannot be read (a lost `cd`, a bare `git -C`). Empty is a refuse.
+# Inlined rather than imported: a materialized hook does not sit next to shell_walk.
+merge_checkout() {
+    local cwd="$1" line
+    line="$(
+        TASK_MERGE_CMD="$cmd" TASK_MERGE_CWD="$cwd" python3 - <<'PY' || true
+import os
+import re
+import shlex
+from pathlib import Path
+
+SEPARATORS = ("&&", "||", ";", "|", "&")
+TASK_REF = re.compile(r"^task/[A-Za-z]+-[0-9]+$")
+ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def tokens(command):
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+def segments(words):
+    out = [[]]
+    for word in words:
+        if word in SEPARATORS:
+            out.append([])
+        else:
+            out[-1].append(word)
+    return [seg for seg in out if seg]
+
+
+def strip_prefix(segment):
+    i = 0
+    while i < len(segment):
+        word = segment[i]
+        if word == "env" or ENV_ASSIGN.match(word):
+            i += 1
+            continue
+        break
+    return segment[i:]
+
+
+def peel(args, cwd):
+    i = 0
+    while i < len(args):
+        if args[i] == "-C":
+            if i + 1 >= len(args):
+                return None
+            try:
+                cwd = (cwd / args[i + 1]).resolve()
+            except (OSError, ValueError):
+                return None
+            i += 2
+            continue
+        if args[i] == "-c" and i + 1 < len(args):
+            i += 2
+            continue
+        if args[i].startswith("-"):
+            i += 1
+            continue
+        break
+    return cwd, args[i:]
+
+
+try:
+    words = tokens(os.environ["TASK_MERGE_CMD"])
+except ValueError:
+    print("UNRESOLVED")
+    raise SystemExit(0)
+
+effective = Path(os.environ["TASK_MERGE_CWD"])
+for raw in segments(words):
+    segment = strip_prefix(raw)
+    if not segment:
+        continue
+    if segment[0] == "cd" and len(segment) > 1:
+        try:
+            effective = (effective / segment[1]).resolve()
+        except (OSError, ValueError):
+            print("UNRESOLVED")
+            raise SystemExit(0)
+        continue
+    if Path(segment[0]).name != "git" or len(segment) < 2:
+        continue
+    peeled = peel(segment[1:], effective)
+    if peeled is None:
+        print("UNRESOLVED")
+        raise SystemExit(0)
+    target, args = peeled
+    if args and args[0] == "merge" and any(TASK_REF.match(arg) for arg in args[1:]):
+        print("DIR\t" + str(target))
+        raise SystemExit(0)
+print("NONE")
+PY
+    )"
+    case "$line" in
+        DIR$'\t'*) printf '%s' "${line#DIR$'\t'}" ;;
+        *) printf '' ;;
+    esac
+}
+
 # --- 3. Classify -------------------------------------------------------
 if [[ ! -f "$CLASSIFIER" ]]; then
     echo "[task-merge-guard] classifier not found at $CLASSIFIER — allowing" >&2
@@ -97,27 +202,29 @@ case "$verdict" in
         exit 0
         ;;
     task-merge)
-        # The command names no target branch — resolve the cwd's. The payload's
-        # `cwd` key is where the harness will run it; fall back to our PWD.
+        # The payload cwd is where the agent stands, not where the merge lands.
         cwd="$(extract_field '.cwd // empty' 'data.get("cwd")')"
         cwd="${cwd:-$PWD}"
-        branch="$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null || true)"
-        case "$branch" in
-            master|main)
-                : # refuse below
-                ;;
-            "")
-                # Not a repo / detached / git missing — the merge would fail
-                # anyway; allow with a breadcrumb.
-                echo "[task-merge-guard] cannot resolve branch in $cwd — allowing" >&2
-                exit 0
-                ;;
-            *)
-                # Merging a task branch into a non-base branch keeps the
-                # review diff intact — allow.
-                exit 0
-                ;;
-        esac
+        target="$(merge_checkout "$cwd")"
+        if [[ -z "$target" ]]; then
+            : # unreadable command — refuse below rather than guess
+        else
+            branch="$(git -C "$target" symbolic-ref --short HEAD 2>/dev/null || true)"
+            case "$branch" in
+                master|main)
+                    : # refuse below
+                    ;;
+                "")
+                    # Resolved, but not a branch (no repo, detached). The merge
+                    # cannot update master; allow with a breadcrumb.
+                    echo "[task-merge-guard] no branch at $target — allowing" >&2
+                    exit 0
+                    ;;
+                *)
+                    exit 0
+                    ;;
+            esac
+        fi
         ;;
     task-merge-base)
         : # refuse below

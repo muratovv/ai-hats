@@ -138,6 +138,25 @@ def test_allow_merge_into_a_task_branch(repo_on_master: Path) -> None:
     assert run.stdout == "", run.stderr
 
 
+def test_deny_dash_c_into_master_from_a_task_branch(repo_on_master: Path, tmp_path: Path) -> None:
+    wt = tmp_path / "wt"
+    _git(repo_on_master, "worktree", "add", "-q", "-b", "task/hats-2062", str(wt))
+    reason = _deny_reason(_run_guard(f"git -C {repo_on_master} merge task/prox-619", cwd=wt))
+    assert "ai-hats wt merge" in reason
+
+
+def test_deny_cd_into_master_from_a_task_branch(repo_on_master: Path, tmp_path: Path) -> None:
+    wt = tmp_path / "wt"
+    _git(repo_on_master, "worktree", "add", "-q", "-b", "task/hats-2062", str(wt))
+    reason = _deny_reason(_run_guard(f"cd {repo_on_master} && git merge task/prox-619", cwd=wt))
+    assert "ai-hats wt merge" in reason
+
+
+def test_unreadable_merge_command_is_refused(repo_on_master: Path) -> None:
+    reason = _deny_reason(_run_guard("git merge task/prox-619 'unterminated", cwd=repo_on_master))
+    assert "ai-hats wt merge" in reason
+
+
 def test_allow_merge_of_base(repo_on_master: Path) -> None:
     run = _run_guard("git merge master", cwd=repo_on_master)
     assert run.returncode == 0
