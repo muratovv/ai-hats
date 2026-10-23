@@ -75,14 +75,7 @@ def env(project: Path, tmp_path: Path, checkout_bin: Path) -> dict:
     e["PATH"] = os.pathsep.join(
         [str(checkout_bin), str(Path(sys.executable).parent), e.get("PATH", "")]
     )
-    planted = stand_in_wrapped_session(e, project, SESSION)
-    # A stand-in does not materialize the session mirror; the check rows
-    # trait-agent binds resolve against it, so plant the one skill they name.
-    shutil.copytree(
-        tmp_path / "library/core/skills/safety-guard",
-        project / ".agent/ai-hats/sessions/runs" / SESSION / "skills/safety-guard",
-    )
-    return planted
+    return stand_in_wrapped_session(e, project, SESSION)
 
 
 def _run(env: dict, cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:

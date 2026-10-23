@@ -82,17 +82,7 @@ def env(project: Path, tmp_path: Path, checkout_bin: Path) -> dict:
     # The approved command line says `ai-hats`, so a real one has to be on PATH:
     # the console script is no longer built (HATS-790), the shim is it.
     e["PATH"] = os.pathsep.join([str(checkout_bin), e.get("PATH", "")])
-    planted = stand_in_wrapped_session(e, project, "e2e-wt-merge-consent")
-    # trait-agent now binds real check scripts at wt:pre-merge (HATS-2062), and
-    # check resolution reads the session mirror, which a stand-in does not
-    # materialize — plant the one skill the rows name, as a launch would.
-    import shutil
-
-    shutil.copytree(
-        tmp_path / "library/core/skills/safety-guard",
-        project / ".agent/ai-hats/sessions/runs/e2e-wt-merge-consent/skills/safety-guard",
-    )
-    return planted
+    return stand_in_wrapped_session(e, project, "e2e-wt-merge-consent")
 
 
 @pytest.fixture
