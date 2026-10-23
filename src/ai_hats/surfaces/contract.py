@@ -213,6 +213,15 @@ class Surface(abc.ABC):
         del environ
         return None
 
+    def probe_project(self, environ: Mapping[str, str], cwd: Path) -> Digested | None:
+        """What this surface reads from the PROJECT's own configuration, probed
+        before planning and handed in as ``Host.project`` (ADR-0036 D2) — the
+        sibling of ``probe_home`` for a fact no environment names, such as
+        claude's ``.claude/settings.json``. ``None``: this surface projects none.
+        """
+        del environ, cwd
+        return None
+
     def plan(
         self,
         composition: CompositionPlan,
