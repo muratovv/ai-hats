@@ -49,16 +49,17 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
       2. ``git init``, initial commit.
       3. Create a task, walk brainstorm → plan → execute (worktree from base).
       4. Commit work on the worktree branch.
-      5. Merge the branch into base in the main repo (`--no-ff`) — work is
-         now fully integrated; branch is an ancestor of base.
-      6. Remove the auto-worktree by hand AND delete its ai-hats state JSON
+      5. Walk execute → document → review (branch still live — entering review
+         merged is refused).
+      6. Merge the branch into base in the main repo (`--no-ff`) — what the
+         sanctioned on-road merge leaves behind.
+      7. Remove the auto-worktree by hand AND delete its ai-hats state JSON
          so `load_for_task` resolves to None (the lost-state condition).
-      7. Walk execute → document → review.
       8. ``rack transition <ID> done`` MUST exit 0 (finalize without
          re-merge — NOT a false `worktree state lost` refusal).
       9. Task reaches ``done``; the now-merged branch is cleaned up.
      10. No double-merge: base ref unchanged since the manual merge.
-    """
+    """  # comment-length: allow — the scenario IS the map of the steps below
     launcher_dest, env, venv = shared_launcher
     rack_bin = venv / "bin" / "rack"
     project = tmp_path / "project"
@@ -172,7 +173,13 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
         "wt-work",
     )
 
-    # ---- 4. INCIDENT setup: merge branch into base (work integrated) ----
+    # ---- 4. walk execute → document → review (the branch must still be live
+    #         here — entering review with a merged branch is refused) ----
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
+
+    # ---- 5. INCIDENT setup: merge branch into base (work integrated). On the
+    #         review road this is what the sanctioned merge leaves behind. ----
     _git(
         project,
         "-c",
@@ -186,7 +193,7 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     )
     base_sha_after_merge = _git(project, "rev-parse", base_branch).stdout.strip()
 
-    # ---- 5. lose the worktree state: remove the worktree by hand AND
+    # ---- 6. lose the worktree state: remove the worktree by hand AND
     #         delete its ai-hats state JSON so load_for_task → None. ----
     _git(project, "worktree", "remove", "--force", str(wt_path))
     assert not wt_path.exists(), f"worktree dir not removed: {wt_path}"
@@ -199,10 +206,6 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
         f"no worktree state JSON found to delete under {state_dir}:\n"
         f"{[p.name for p in state_dir.glob('*')] if state_dir.is_dir() else 'dir absent'}"
     )
-
-    # ---- 6. walk execute → document → review ----
-    rack("transition", task_id, "document")
-    rack("transition", task_id, "review")
 
     # ---- 7. transition done MUST SUCCEED (the fix) ----
     # HATS-1682: `review -> done` is a consent point the role declares. The

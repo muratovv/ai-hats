@@ -158,7 +158,7 @@ def test_review_edge_refuses_a_pre_merged_branch(project: Path) -> None:
     _seed_task_branch(project, merge=True)
     run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
     assert run.returncode == 2
-    assert "already fully contained" in run.stdout
+    assert "was already merged" in run.stdout
 
 
 def test_review_edge_passes_a_live_branch(project: Path) -> None:
@@ -168,6 +168,14 @@ def test_review_edge_passes_a_live_branch(project: Path) -> None:
 
 
 def test_review_edge_passes_a_branchless_card(project: Path) -> None:
+    run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
+    assert run.returncode == 0, run.stdout + run.stderr
+
+
+def test_review_edge_passes_a_branch_without_commits(project: Path) -> None:
+    """A task branch with no work is contained in the base by definition, and
+    such cards (investigations, .agent-local docs) legitimately review empty."""
+    _git(project, "branch", "task/test-001")
     run = _run(_env(project, "document->review", AI_HATS_TASK_ID="TEST-001"))
     assert run.returncode == 0, run.stdout + run.stderr
 

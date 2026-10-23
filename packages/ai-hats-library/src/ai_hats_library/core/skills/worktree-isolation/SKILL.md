@@ -87,8 +87,9 @@ Isolated development using git worktrees. Each task gets its own working copy â€
    - a raw `git merge` of a task branch into master/main is hard-denied at
      PreToolUse, with `ai-hats wt merge` named as the road;
    - `ai-hats wt merge` itself refuses while the card is before `review`
-     (wt:pre-merge), and a card cannot ENTER `review` with its branch already
-     contained in the base.
+     (wt:pre-merge), and a card cannot ENTER `review` once that branch was
+     merged into the base (`--no-ff`, the road `wt merge` takes). A branch
+     that never carried a commit is not a merge and still enters review.
 
    If `wt merge` refuses with `Refused (drift)`, the base holds commits
    your branch never took in (another agent's worktree merged, or

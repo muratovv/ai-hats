@@ -8,10 +8,12 @@
 #                  blinds the review diff (merge-base becomes the branch tip,
 #                  PROX-619) and skips the reviewer. The supervisor's consent
 #                  covers "may I merge", this check covers "is it time".
-#   *->review    — may this card ENTER review? Only with a live review diff:
-#                  the task branch must not already be contained in the base
-#                  branch. Catches merges that happened by any road, including
-#                  ones predating the pre-merge guard.
+#   *->review    — may this card ENTER review? Not when the branch was already
+#                  merged into the base: a --no-ff merge (what `wt merge` does)
+#                  leaves the tip as a non-first parent, and the review diff is
+#                  then empty. A branch that never carried a commit is contained
+#                  too, and is not a merge — those cards review empty on purpose.
+#                  A fast-forward leaves no parent and stays a residual.
 #
 # D2 verdict contract (hook_exec._classify): exit 0 = pass, exit 2 = refuse
 # with the reason ON STDOUT (a refusal spoken on stdout stands alone), any
@@ -124,8 +126,16 @@ if [[ "$point" == *'->review' ]]; then
         # No task branch at all — nothing to blind (docs-only card, etc.).
         exit 0
     fi
-    if [[ "$branch" != "$base" ]] && git -C "$project_dir" merge-base --is-ancestor "$branch" "$base"; then
-        refuse "$branch is already fully contained in $base — the review diff vs merge-base is empty by construction (PROX-619). The card cannot enter review blind; un-merge (or rebase the branch onto $base with new changes) first."
+    # "Was merged" ≠ "is contained": a branch that never carried work is also
+    # contained in the base, and such cards (investigations, .agent-local docs)
+    # legitimately enter review with an empty diff. A --no-ff merge (what
+    # `wt merge` does) leaves the tip as a non-first parent of a merge on the
+    # base. Read the parents first: grep -q under pipefail exits the producer
+    # with SIGPIPE and the match is then reported as a miss.
+    tip="$(git -C "$project_dir" rev-parse "refs/heads/$branch")"
+    merged_parents="$(git -C "$project_dir" log --merges --format=%P "$base")"
+    if grep -q "[[:space:]]${tip}" <<<"$merged_parents"; then
+        refuse "$branch was already merged into $base — the review diff vs merge-base is empty by construction (PROX-619). The card cannot enter review blind; un-merge (or rebase the branch onto $base with new changes) first."
     fi
     exit 0
 fi

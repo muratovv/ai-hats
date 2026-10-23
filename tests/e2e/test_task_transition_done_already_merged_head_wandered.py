@@ -173,9 +173,15 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
         "wt-work",
     )
 
-    # ---- 4. INCIDENT setup: merge branch into base, THEN wander HEAD ----
+    # ---- 4. walk execute → document → review (the branch must still be live
+    #         here — entering review with a merged branch is refused) ----
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
+
+    # ---- 5. INCIDENT setup: merge branch into base, THEN wander HEAD ----
     # The work is now fully integrated into base (as in the HATS-593
-    # finalize where the branch was merged into master + pushed).
+    # finalize where the branch was merged into master + pushed) — on the
+    # review road this is what the sanctioned merge leaves behind.
     _git(
         project,
         "-c",
@@ -191,10 +197,6 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
     # Main checkout wanders to a foreign feature branch with uncommitted WIP.
     _git(project, "checkout", "-b", "wandered-feature")
     (project / "foreign-wip.txt").write_text("concurrent WIP\n")  # untracked
-
-    # ---- 5. walk execute → document → review ----
-    rack("transition", task_id, "document")
-    rack("transition", task_id, "review")
 
     # ---- 6. transition done MUST SUCCEED (the fix) ----
     # HATS-1682: `review -> done` is a consent point the role declares. The

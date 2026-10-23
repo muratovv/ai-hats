@@ -154,7 +154,7 @@ def test_review_edge_refuses_a_pre_merged_branch(project: Path, env: dict) -> No
     refused = _rack(consented(env), project, "transition", card, "review")
 
     assert refused.returncode != 0, f"a blind card entered review:\n{refused}"
-    assert "already fully contained" in refused.stdout + refused.stderr
+    assert "was already merged" in refused.stdout + refused.stderr
 
 
 def test_the_review_road_merges(project: Path, env: dict) -> None:
