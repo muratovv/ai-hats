@@ -35,7 +35,7 @@ def _rack(*args: str, cwd: Path, session: str, root_pid: int) -> subprocess.Comp
     """Run the backlog CLI (HATS-1263). No ``rack`` console script on this tier;
     PYTHONPATH puts the checkout in reach of ``python -m``."""
     from _helpers.env import checkout_pythonpath
-    from _helpers.sessions import stand_in_session
+    from _helpers.sessions import relocate_library_for_checks, stand_in_session
 
     env = dict(os.environ)
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
@@ -43,6 +43,7 @@ def _rack(*args: str, cwd: Path, session: str, root_pid: int) -> subprocess.Comp
     env["AI_HATS_ROOT_PID"] = str(root_pid)
     # HATS-1594: a session is its envelope; the bare id reads as an older build.
     stand_in_session(env, cwd, session)
+    relocate_library_for_checks(env, cwd, session, cwd.parent / "library")
     # plan->execute is consent-gated on rack; ownership is what these tests probe.
     env["AI_HATS_PLAN_ACK"] = "1"
     return subprocess.run(

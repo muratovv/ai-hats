@@ -66,7 +66,7 @@ def project(tmp_path: Path) -> Path:
 @pytest.fixture
 def env(project: Path, checkout_bin: Path) -> dict:
     from _helpers.env import checkout_pythonpath
-    from _helpers.sessions import stand_in_wrapped_session
+    from _helpers.sessions import relocate_library_for_checks, stand_in_wrapped_session
 
     e = os.environ.copy()
     for stale in ("AI_HATS_PLAN_ACK", "AI_HATS_CONSENT_ACK", "AI_HATS_CONSENT_TICKET"):
@@ -74,7 +74,9 @@ def env(project: Path, checkout_bin: Path) -> dict:
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
     e["PATH"] = os.pathsep.join([str(checkout_bin), e.get("PATH", "")])
-    return stand_in_wrapped_session(e, project, SESSION_ID)
+    stood = stand_in_wrapped_session(e, project, SESSION_ID)
+    relocate_library_for_checks(stood, project, SESSION_ID, project.parent / "library")
+    return stood
 
 
 @pytest.fixture

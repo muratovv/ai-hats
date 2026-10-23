@@ -218,6 +218,30 @@ def wait_for_file(
     )
 
 
+def relocate_library_for_checks(
+    env: dict[str, str], project: Path, session_id: str, dest: Path
+) -> None:
+    """Copy the library out of a worktree and plant safety-guard in the mirror.
+
+    Call after ``stand_in_session``. A worktree cannot be a check's resolution root.
+    """
+    import shutil
+
+    repo = Path(__file__).resolve().parents[3]
+    src = repo / "packages/ai-hats-library/src/ai_hats_library"
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
+    env["AI_HATS_LIBRARY_ROOT"] = str(dest)
+    mirror = (
+        project / ".agent" / "ai-hats" / "sessions" / "runs" / session_id / "skills" / "safety-guard"
+    )
+    mirror.parent.mkdir(parents=True, exist_ok=True)
+    if mirror.exists():
+        shutil.rmtree(mirror)
+    shutil.copytree(dest / "core" / "skills" / "safety-guard", mirror)
+
+
 def stand_in_session(
     env: dict[str, str],
     project: Path,
