@@ -159,6 +159,34 @@ def test_refusal_names_executable_consent_operation(tmp_path: Path, capsys):
     assert "consent execute" not in stderr
 
 
+def test_no_agent_refusal_does_not_name_a_grant(tmp_path: Path, capsys):
+    config = WrapperConfig(
+        project_dir=tmp_path,
+        originals={"rack": "/original/rack"},
+        policy={"rack.transition": ("->done",)},
+    )
+
+    exit_code = run_wrapped(
+        "rack",
+        ["transition", "HATS-2018", "done"],
+        config,
+        environ={},
+        check_grant=lambda operation, target_dir: Verdict(
+            Outcome.NO_AGENT, "not inside an ai-hats session"
+        ),
+        peek_ticket=lambda task_id, argv: False,
+        consume_ticket=lambda task_id, argv: False,
+        resolve_transition_source=lambda original, task_id, argv, environ: "review",
+    )
+
+    assert exit_code == 2
+    stderr = capsys.readouterr().err
+    assert "not inside an ai-hats session" in stderr
+    assert "AI_HATS_SESSION_IDENTITY" in stderr
+    assert "consent rack.transition" not in stderr
+    assert "Human:" not in stderr
+
+
 def test_bad_config_refuses_recursive_wrapper_before_spawn(tmp_path: Path, capsys):
     wrapper = tmp_path / "outer" / "consent-wrapper" / "bin" / "rack"
     spawned: list[list[str]] = []
