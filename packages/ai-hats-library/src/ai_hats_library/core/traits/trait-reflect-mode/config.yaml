@@ -25,6 +25,5 @@ injection: |
   How the verdicts are *reported* depends on your role:
   - `reflect-session` / `session-reviewer` → emit a single
     `hats-reflect-session/v1` document (see **review-session**).
-  - `judge` → write a judge report at
-    `<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md`
+  - `judge` → the report path is that role's output contract
     (see **judge-protocol**).
