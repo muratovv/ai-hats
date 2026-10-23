@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 from ai_hats_library.hooks.consent_gate import Operation, Outcome, Verdict, operations
 from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
 
+from .session_identity import IDENTITY_ENV_KEYS
+
 if TYPE_CHECKING:
     from .surfaces import ExternalHook, Host, MaterializationPlan, Surface
 
@@ -219,6 +221,21 @@ def _record_legacy(flag: str, operation: Operation, project_dir: Path) -> bool:
     )
 
 
+def _refusal_line(answer: Verdict, operation: Operation) -> str:
+    """One sentence for a non-grant. ``NO_AGENT`` has no store, so it names no grant command."""
+    detail = answer.reason or "no live authorization covers this operation"
+    if answer.outcome is Outcome.NO_AGENT:
+        names = ", ".join(IDENTITY_ENV_KEYS)
+        return (
+            f"consent: {detail}. Re-run this command with the session envelope "
+            f"intact ({names}). A consent grant does not cover a command that has left the session."
+        )
+    return (
+        f"consent: requires supervisor approval; {detail}. Human: run "
+        f"`consent {operation.type} {DEFAULT_WINDOW_MINUTES}` in this session"
+    )
+
+
 def _record_request(request_id: str, operation: Operation, project_dir: Path) -> bool:
     from ai_hats_library.hooks.bypass_journal import journal_bypass
 
@@ -281,12 +298,7 @@ def run_wrapped(
         if legacy_flag is None:
             ticket = peek_ticket(matched.ticket_subject, argv)
             if not ticket:
-                detail = answer.reason or "no live authorization covers this operation"
-                print(
-                    f"consent: requires supervisor approval; {detail}. Human: run "
-                    f"`consent {matched.operation.type} {DEFAULT_WINDOW_MINUTES}` in this session",
-                    file=sys.stderr,
-                )
+                print(_refusal_line(answer, matched.operation), file=sys.stderr)
                 return REFUSED
 
     child_env = dict(env)
