@@ -1,6 +1,6 @@
 ---
 name: safety-guard
-description: PreToolUse hooks that refuse destructive commands, ask before a shared-state write, refuse a gate flag the agent writes for itself, keep the tracker writable only through `rack`, refuse the harness task list, and turn a consent-declared move into a question for the supervisor. Infrastructure — read it to diagnose a block, not to invoke it.
+description: PreToolUse hooks that refuse destructive commands, ask before a shared-state write, block raw merges of task branches into a base branch outside the review flow, refuse a gate flag the agent writes for itself, keep the tracker writable only through `rack`, refuse the harness task list, and turn a consent-declared move into a question for the supervisor. Infrastructure — read it to diagnose a block, not to invoke it.
 ai_hats:
   runtime_hooks:
     PreToolUse:
@@ -8,6 +8,8 @@ ai_hats:
         script: hooks/safety_gate.py
       - matcher: Bash
         script: hooks/pre_bash_shared_state_guard.sh
+      - matcher: Bash
+        script: hooks/pre_bash_task_merge_guard.sh
       - matcher: Bash
         script: hooks/ack_prefix_guard.py
       - matcher: Edit|Write|MultiEdit

@@ -153,6 +153,9 @@ def _scenario_already_merged_state_lost(rack, project: Path) -> None:
     (wt / "work.txt").write_text("work\n")
     _git(wt, "add", "work.txt")
     _git_clean(wt, "commit", "-m", "work")
+    # Review while the branch is live: entering review after the merge is refused.
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
     _git_clean(project, "merge", "--no-ff", "--no-edit", task_branch)
     base_sha = _git(project, "rev-parse", base).stdout.strip()
 
@@ -164,8 +167,6 @@ def _scenario_already_merged_state_lost(rack, project: Path) -> None:
         removed = True
     assert removed, "precondition: a worktree state JSON should have existed"
 
-    rack("transition", task_id, "document")
-    rack("transition", task_id, "review")
     # HATS-1682: `review -> done` is a declared consent point; the answer is
     # scaffolding, and the worktree invariant below is the subject.
     res = rack("transition", task_id, "done", expect_exit=0, extra_env=consent_grant())
@@ -214,13 +215,13 @@ def _scenario_null_original_branch_typed(rack, project: Path) -> None:
     task_id, _wt = _walk_to_execute(rack, project)
     state_path = _state_json(project, task_id)
     assert state_path.is_file(), f"state JSON missing: {state_path}"
+    # Review first: a null recorded base is itself a blind review and is refused.
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
     data = json.loads(state_path.read_text())
     assert data.get("original_branch"), "precondition: real original_branch"
     data["original_branch"] = None
     state_path.write_text(json.dumps(data, indent=2))
-
-    rack("transition", task_id, "document")
-    rack("transition", task_id, "review")
     # HATS-1682: `review -> done` is a declared consent point; the answer is
     # scaffolding, and the worktree invariant below is the subject.
     res = rack("transition", task_id, "done", expect_exit=1, extra_env=consent_grant())

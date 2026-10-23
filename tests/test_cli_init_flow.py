@@ -887,9 +887,22 @@ def test_task_create_explicit_id(cli_project):
     ).exists()
 
 
-def test_task_list_table_filters(cli_project):
+def test_task_list_table_filters(cli_project, monkeypatch, tmp_path):
     """ai-hats task list shows table, hides done, supports filters."""
     project, runner = cli_project
+    # trait-agent now binds check scripts; a session-less transition resolving
+    # them from a linked-worktree checkout is refused (ADR-0019 D9 clause 4), so
+    # hand composition a legal root. The walk below is scaffolding, not subject.
+    import shutil
+    from pathlib import Path
+
+    lib = tmp_path / "library"
+    shutil.copytree(
+        Path(__file__).resolve().parents[1] / "packages/ai-hats-library/src/ai_hats_library",
+        lib,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    monkeypatch.setenv("AI_HATS_LIBRARY_ROOT", str(lib))
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     # Create tasks with different states and priorities

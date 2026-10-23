@@ -30,6 +30,17 @@ composition:
   # the path below consent_gate; `at` is the selector its adapter matches.
   # Rack, wt and their gate rows never read this policy (ADR-0030 D3).
   apps:
+    rack:
+      tasks:
+        # A card enters review only with a live review diff.
+        - run: safety-guard/hooks/merge_order_check.sh
+          at: ['->review']
+          on_error: refuse
+    wt:
+      # A task branch merges only on the review road.
+      - run: safety-guard/hooks/merge_order_check.sh
+        at: [pre-merge]
+        on_error: refuse
     consent_gate:
       rack.transition:
         - at: ['plan->execute', '->done']
@@ -51,6 +62,7 @@ injection: |
   ### Agent Protocol
   - Task cards follow the state machine `brainstorm → plan → execute → document → review → done`; never skip states.
   - **Stop at `review`**: Upon completing execution and docs, transition task to `review` and STOP. The reviewer/user drives `review → done`; never self-advance to `done`.
+  - **Merge point**: never merge a task branch into the base branch before the reviewer approves — a pre-review `--no-ff` merge empties the supervisor's review diff (merge-base becomes the branch tip). The merge runs on the `review → done` road via `ai-hats wt merge`, which checks the card state and asks the supervisor. A raw `git merge` of a `task/<prefix>-<n>` ref is hard-denied when that command's checkout is `master` or `main` (`git -C` and a leading `cd` count). Merging one task branch into another is allowed.
   - **Explicit Task IDs**: Always identify and output tasks by their full ID (e.g., `PROJ-042`) or full path to card (`.../tasks/PROJ-042/task.yaml`). Never refer to a task card using the generic filename "task.yaml" alone.
     - ✅ Correct: "Working on task PROJ-042", "Created card `.agent/ai-hats/tracker/backlog/tasks/PROJ-042/task.yaml`", "Tasks PROJ-101 and PROJ-102"
     - ❌ Incorrect: "Working on task.yaml", "Updated task.yaml", "The task.yaml card"
