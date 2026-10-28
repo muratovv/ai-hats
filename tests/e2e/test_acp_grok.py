@@ -1,4 +1,4 @@
-"""e2e
+"""e2e (HATS-2114)
 
 flow:   an ACP client runs one grok session through `ai-hats acp`. The child
         is a stand-in that speaks ACP on stdio.
