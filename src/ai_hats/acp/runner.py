@@ -1,0 +1,147 @@
+"""The holder for `ai-hats acp`: a WrapRunner whose surface speaks ACP on pipes."""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import signal
+import subprocess
+from typing import TYPE_CHECKING, Callable
+
+from ai_hats_observe.artifacts import EVENT_LOG_JSONL
+
+from ..wrap_runner import WrapRunner
+from .argv import grok_acp_argv
+from .relay import Relay
+
+if TYPE_CHECKING:
+    from ai_hats_observe import Session
+    from ai_hats_observe.event_log_writer import EventLogWriter
+
+
+class AcpRunner(WrapRunner):
+    """One ACP client, one grok child, the journal on disk."""
+
+    follows_main_record = False  # the ACP stream is the main agent's record
+    refuses_unready = True  # no terminal to run a login in
+
+    def __init__(self, *args, stdout_fd: int, stdin_fd: int = 0, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._stdout_fd = stdout_fd
+        self._stdin_fd = stdin_fd
+        self._child: subprocess.Popen[bytes] | None = None
+        self._signal: int | None = None
+
+    def _stdin_is_terminal(self) -> bool:
+        return False  # stdin is the client's ACP, never a keyboard
+
+    def run(self, extra_args=None, tags=None, pty_tap_factory=None):
+        del pty_tap_factory
+        previous = {
+            sig: signal.signal(sig, self._on_signal) for sig in (signal.SIGINT, signal.SIGTERM)
+        }
+        try:
+            return super().run(extra_args=extra_args, tags=tags)
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+
+    def _on_signal(self, signum: int, _frame) -> None:
+        if self._signal is None:
+            self._signal = signum
+        self._terminate_child()
+
+    def _terminate_child(self, sig: int = signal.SIGTERM) -> None:
+        child = self._child
+        if child is not None and child.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(child.pid, sig)
+
+    def _spawn_surface(
+        self,
+        cmd: list[str],
+        env: dict[str, str],
+        tracer,
+        *,
+        session: Session,
+        event_log: EventLogWriter | None,
+        provider_session_id: str,
+        pty_tap_factory=None,
+        on_spawn: Callable[[int], None],
+        initial_prompt: str | None = None,
+    ) -> int:
+        del tracer, pty_tap_factory, initial_prompt
+        # The minted id is on the planned argv so a surface that has a reader can
+        # follow sub-agents. grok has no reader; the journal below is the ACP stream.
+        _release_minted_transcript(self.layout.cwd, provider_session_id)
+        if self._signal is not None:
+            return 128 + self._signal
+        own_journal = event_log is None
+        journal = event_log if event_log is not None else _open_journal(session)
+        child = subprocess.Popen(
+            grok_acp_argv(cmd),
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            start_new_session=True,
+        )
+        self._child = child
+        on_spawn(child.pid)
+        log = session.session_dir / EVENT_LOG_JSONL
+        relay = Relay(
+            client_in=self._stdin_fd,
+            client_out=self._stdout_fd,
+            child=child,
+            event_log=journal,
+            log_path=str(log),
+            on_session=session.record_provider_session_moved,
+        )
+        code = 1
+        try:
+            code = relay.run()
+            return code
+        finally:
+            if child.poll() is None:
+                self._terminate_child()
+            if own_journal:
+                # The shared starter writes no file for a surface with no reader.
+                # This holder is the reader, so it closes the file itself.
+                journal.close(exit_code=child.returncode if child.returncode is not None else code)
+
+
+def _open_journal(session: Session):
+    """A writer that records only what this holder emits. Nothing is followed."""
+    from ai_hats_observe.event_log_writer import EventLogWriter
+
+    def locate():
+        return []
+
+    def reader_factory(path: object):
+        raise RuntimeError(f"acp follows no surface record ({path})")
+
+    return EventLogWriter(
+        locate=locate,
+        reader_factory=reader_factory,
+        path=session.session_dir / EVENT_LOG_JSONL,
+        report=session.log_sys,
+    ).start()
+
+
+def _release_minted_transcript(cwd, session_id: str) -> None:
+    """Remove the empty transcript directory the minted id published, if it is empty."""
+    from urllib.parse import quote
+
+    from ai_hats.surfaces.grok.home import grok_home
+    from ai_hats.surfaces.grok.runtime_hooks import _scope_root
+
+    if not session_id:
+        return
+    remote = grok_home() / "sessions" / quote(str(_scope_root(cwd)), safe="") / session_id
+    if not remote.is_dir() or remote.is_symlink():
+        return
+    try:
+        if any(remote.iterdir()):
+            return
+        remote.rmdir()  # safe-delete: ok empty-dir
+    except OSError:
+        return
