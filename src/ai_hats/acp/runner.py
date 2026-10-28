@@ -106,11 +106,13 @@ class AcpRunner(WrapRunner):
             child=child,
             event_log=journal,
             log_path=str(log),
-            on_session=session.record_provider_session_moved,
+            on_session=session.record_provider_session_id,
+            skill_names=_installed_skills(self.layout, session.session_id),
         )
         code = 1
         try:
             code = relay.run()
+            _retain_grok_transcript(env, self.layout.cwd, session)
             return code
         finally:
             if child.poll() is None:
@@ -119,6 +121,27 @@ class AcpRunner(WrapRunner):
                 # The shared starter writes no file for a surface with no reader.
                 # This holder is the reader, so it closes the file itself.
                 journal.close(exit_code=child.returncode if child.returncode is not None else code)
+
+
+def _installed_skills(layout, session_id: str) -> set[str]:
+    """Skill directory names this session mirrored. Grok lists them as commands."""
+    root = layout.cache.session(session_id) / "skills"
+    if not root.is_dir():
+        return set()
+    return {path.name for path in root.iterdir() if not path.name.startswith(".")}
+
+
+def _retain_grok_transcript(env: dict[str, str], cwd, session: Session) -> None:
+    """The id arrives from session/new, so the launch-time bind never published the file."""
+    ids = session.provider_session_ids()
+    home = env.get("GROK_HOME")
+    if not ids or not home:
+        return
+    from pathlib import Path
+
+    from ..surface_registry import get_surface
+
+    get_surface("grok").retain_transcript(Path(home), Path(cwd), ids[-1])
 
 
 def _open_journal(session: Session):

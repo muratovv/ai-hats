@@ -207,15 +207,26 @@ def forward_update(update: dict[str, Any], person_texts: set[str]) -> bool:
     return any(text == person or text in person for person in person_texts)
 
 
-def project_commands(update: dict[str, Any]) -> dict[str, Any]:
-    """Keep slash commands on the update. A name without a slash is a skill key."""
+def classify_commands(update: dict[str, Any], skill_names: set[str]) -> tuple[list[str], list[str]]:
+    """Grok commands stay commands. A name is a skill only when this session installed it."""
+    commands: list[str] = []
     skills: list[str] = []
     for command in update.get("availableCommands") or []:
         if not isinstance(command, dict):
             continue
         name = command.get("name")
-        if isinstance(name, str) and name and not name.startswith("/"):
+        if not isinstance(name, str) or not name:
+            continue
+        if not name.startswith("/") and name in skill_names:
             skills.append(name)
+        else:
+            commands.append(name)
+    return commands, skills
+
+
+def project_commands(update: dict[str, Any], *, skill_names: set[str]) -> dict[str, Any]:
+    """The update, plus the installed skill names under their own meta key."""
+    _commands, skills = classify_commands(update, skill_names)
     if not skills:
         return update
     meta = dict(update.get("_meta") or {})
@@ -234,14 +245,29 @@ def child_id_from_update(update: dict[str, Any]) -> str | None:
     return None
 
 
-def decorate_permission(message: dict[str, Any], child_id: str) -> dict[str, Any]:
-    """The permission a client sees after the parent turn, carrying the journal's child id."""
+def permission_for_client(
+    message: dict[str, Any],
+    *,
+    known_ids: set[str],
+    by_call: dict[str, str],
+) -> dict[str, Any]:
+    """Drop the untrusted child id. Attach one only when a tool result already named it."""
     params = dict(message.get("params") or {})
     tool = dict(params.get("toolCall") or {})
     meta = dict(tool.get("_meta") or {})
-    meta.pop(UNTRUSTED_CHILD_KEY, None)
-    meta[AGENT_KEY] = child_id
-    tool["_meta"] = meta
+    claimed = meta.pop(UNTRUSTED_CHILD_KEY, None)
+    call_id = tool.get("toolCallId")
+    trusted = by_call.get(call_id) if isinstance(call_id, str) else None
+    if trusted is None and isinstance(claimed, str) and claimed in known_ids:
+        trusted = claimed
+    if isinstance(trusted, str) and trusted:
+        meta[AGENT_KEY] = trusted
+    elif meta.get(AGENT_KEY) not in known_ids:
+        meta.pop(AGENT_KEY, None)
+    if meta:
+        tool["_meta"] = meta
+    else:
+        tool.pop("_meta", None)
     params["toolCall"] = tool
     return {**message, "params": params}
 

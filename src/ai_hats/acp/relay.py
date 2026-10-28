@@ -31,12 +31,13 @@ from .translate import (
     ReplyToChild,
     answer_for_child,
     child_id_from_update,
-    decorate_permission,
+    classify_commands,
     elicitation_declared,
     forward_update,
     message_kind,
     mode_options,
     our_config,
+    permission_for_client,
     present_question,
     project_commands,
     prompt_id,
@@ -62,6 +63,7 @@ class Relay:
         event_log: Any,
         log_path: str,
         on_session: Any = None,
+        skill_names: set[str] | None = None,
     ) -> None:
         self._client_in = client_in
         self._client_out = client_out
@@ -82,8 +84,9 @@ class Relay:
         self._session_id: str | None = None
         self._window: int | None = None
         self._elicitation = False
-        self._child_id: str | None = None
-        self._parent_idle = False
+        self._known_children: set[str] = set()
+        self._child_by_call: dict[str, str] = {}
+        self._skill_names = set(skill_names or ())
         self._plan = "off"
         self._permission_mode = "default"
         self._model: str | None = None
@@ -204,13 +207,14 @@ class Relay:
         decision = present_question(message, elicitation=self._elicitation)
         if not isinstance(decision, AskClient):
             return decision
-        if (
-            decision.message.get("method") == "session/request_permission"
-            and self._parent_idle
-            and self._child_id
-        ):
+        if decision.message.get("method") == "session/request_permission":
             return AskClient(
-                decorate_permission(decision.message, self._child_id), decision.original
+                permission_for_client(
+                    decision.message,
+                    known_ids=self._known_children,
+                    by_call=self._child_by_call,
+                ),
+                decision.original,
             )
         return decision
 
@@ -225,7 +229,10 @@ class Relay:
             return
         child = child_id_from_update(update)
         if child:
-            self._child_id = child
+            self._known_children.add(child)
+            call_id = update.get("toolCallId")
+            if isinstance(call_id, str) and call_id:
+                self._child_by_call[call_id] = child
             self._emit(
                 [
                     ToolResultReceived(
@@ -239,9 +246,12 @@ class Relay:
             )
         if not forward_update(update, self._person_texts):
             return
-        update = project_commands(update)
         if update.get("sessionUpdate") == "available_commands_update":
-            self._note_commands(update)
+            commands, skills = classify_commands(update, self._skill_names)
+            update = project_commands(update, skill_names=self._skill_names)
+            self._commands = tuple(commands)
+            self._skills = tuple(skills)
+            self._emit_configured()
         self._write_client({**message, "params": {**params, "update": update}})
 
     def _on_child_response(self, message: dict[str, Any]) -> None:
@@ -268,7 +278,6 @@ class Relay:
             self._window = window_size(result) or self._window
             self._emit_configured()
         elif method == "session/prompt":
-            self._parent_idle = True
             used = used_tokens(result)
             if used is not None and self._window is not None and self._session_id:
                 self._write_client(usage_update(self._session_id, used, self._window))
@@ -293,7 +302,6 @@ class Relay:
         pid = prompt_id(params)
         self._prompt_open = message.get("id")
         self._prompt_ids[message.get("id")] = pid
-        self._parent_idle = False
         if text:
             self._person_texts.add(text)
         self._emit(
@@ -359,26 +367,6 @@ class Relay:
             }
         )
         return True
-
-    def _note_commands(self, update: dict[str, Any]) -> None:
-        names: list[str] = []
-        skills: list[str] = []
-        for command in update.get("availableCommands") or []:
-            if not isinstance(command, dict):
-                continue
-            name = command.get("name")
-            if not isinstance(name, str) or not name:
-                continue
-            if name.startswith("/"):
-                names.append(name)
-            else:
-                skills.append(name)
-        self._commands = tuple(names)
-        meta_skills = (update.get("_meta") or {}).get("ai-hats/skills")
-        if isinstance(meta_skills, list):
-            skills = [item for item in meta_skills if isinstance(item, str)]
-        self._skills = tuple(skills)
-        self._emit_configured()
 
     def _emit_configured(self) -> None:
         from ai_hats_observe.canonical.types import ModelName

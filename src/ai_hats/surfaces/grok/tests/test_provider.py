@@ -309,6 +309,24 @@ def test_bind_resume_links_an_existing_transcript_instead_of_replacing_it(
     assert not (home_root / ".grok" / "sessions" / _encoded(cwd) / missing).exists()
 
 
+def test_retain_transcript_copies_updates_into_the_real_home(tmp_path: Path, monkeypatch):
+    home_root = tmp_path / "home"
+    home_root.mkdir()
+    monkeypatch.setenv("HOME", str(home_root))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    session_id = "01a1836c-4ffa-7390-80ef-7b4092e93ec1"
+    source = tmp_path / "session-home" / "sessions" / "encoded" / session_id
+    source.mkdir(parents=True)
+    (source / "updates.jsonl").write_text("{}\n")
+
+    GrokSurface().retain_transcript(tmp_path / "session-home", cwd, session_id)
+
+    found = list((home_root / ".grok" / "sessions").glob(f"*/{session_id}/updates.jsonl"))
+    assert [path.read_text() for path in found] == ["{}\n"]
+
+
 def test_bind_uses_the_git_root_and_refuses_to_link_a_directory_onto_itself(
     tmp_path: Path, monkeypatch
 ):

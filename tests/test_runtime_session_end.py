@@ -193,6 +193,17 @@ def test_basic_keeps_the_chain_of_a_session_the_surface_moved(basic_kwargs):
     )
 
 
+def test_basic_keeps_an_id_the_surface_reported_after_launch(basic_kwargs):
+    """session/new arrives after the launch argument was fixed empty."""
+    basic_kwargs["session"].record_provider_session_id("01a1836c-4ffa-7390-80ef-7b4092e93ec1")
+
+    _finalize_session_basic(**basic_kwargs)
+
+    metrics = json.loads(basic_kwargs["session"].metrics_path.read_text())
+    assert metrics["claude_session_id"] == "01a1836c-4ffa-7390-80ef-7b4092e93ec1"
+    assert "claude_session_ids" not in metrics
+
+
 def test_basic_writes_no_chain_for_a_session_that_never_moved(basic_kwargs):
     basic_kwargs["session"].record_provider_session_id("sid-1")
 

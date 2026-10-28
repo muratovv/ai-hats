@@ -129,6 +129,34 @@ class GrokSurface(Surface):
     def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
         return layout.cache.session(session_id) / "skills"
 
+    def retain_transcript(self, session_home: Path, cwd: Path, provider_session_id: str) -> None:
+        """Copy the ACP transcript into the real grok home before the session cache goes."""
+        if not provider_session_id:
+            return
+        from urllib.parse import quote
+
+        from .runtime_hooks import _scope_root
+
+        matches = [
+            path
+            for path in (session_home / "sessions").glob(f"*/{provider_session_id}/updates.jsonl")
+            if path.is_file()
+        ]
+        if not matches:
+            return
+        source = matches[0]
+        remote = (
+            grok_home() / "sessions" / quote(str(_scope_root(cwd)), safe="") / provider_session_id
+        )
+        remote.mkdir(parents=True, exist_ok=True)
+        target = remote / "updates.jsonl"
+        if not target.exists():
+            shutil.copy2(source, target)
+        usage = source.with_name("usage.json")
+        kept = remote / "usage.json"
+        if usage.is_file() and not kept.exists():
+            shutil.copy2(usage, kept)
+
     def resolve_transcript(
         self,
         cwd: Path,

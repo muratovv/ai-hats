@@ -49,10 +49,10 @@ def _prompt(message: dict, mode: str) -> None:
         return
     if mode == "child":
         _send(_spawned(message))
-        _send(_stopped(message, "end_turn"))
-        _send(_permission(message, untrusted="untrusted"))
+        _send(_permission(message, untrusted="child-from-journal"))
         answer = _next()
         _log(os.environ.get("STUB_GROK_LOG"), {"saw": answer})
+        _send(_stopped(message, "end_turn"))
         return
     _send(_commands())
     _send(_user("skill body"))

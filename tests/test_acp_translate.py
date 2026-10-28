@@ -13,8 +13,9 @@ from ai_hats.acp.translate import (
     ReplyToChild,
     answer_for_child,
     child_id_from_update,
-    decorate_permission,
+    classify_commands,
     elicitation_declared,
+    permission_for_client,
     forward_update,
     mode_options,
     present_question,
@@ -182,45 +183,68 @@ def test_elicitation_is_used_when_the_client_declared_it() -> None:
     assert decision.message["method"] == "elicitation/create"
 
 
-def test_child_id_comes_from_the_tool_result_not_the_permission_meta() -> None:
-    update = {"toolCallId": "call-1", "rawOutput": {"subagent_id": "child-from-journal"}}
-    permission = {
+def _permission(call_id: str, claimed: str) -> dict:
+    return {
         "jsonrpc": "2.0",
         "id": 9,
         "method": "session/request_permission",
         "params": {
             "sessionId": "s",
             "toolCall": {
-                "toolCallId": "call-2",
+                "toolCallId": call_id,
                 "title": "rm",
-                "_meta": {UNTRUSTED_CHILD_KEY: "untrusted"},
+                "_meta": {UNTRUSTED_CHILD_KEY: claimed},
             },
             "options": [],
         },
     }
 
-    shown = decorate_permission(permission, child_id_from_update(update) or "")
 
-    meta = shown["params"]["toolCall"]["_meta"]
-    assert meta[AGENT_KEY] == "child-from-journal"
-    assert UNTRUSTED_CHILD_KEY not in meta
-    assert child_id_from_update({"_meta": {UNTRUSTED_CHILD_KEY: "untrusted"}}) is None
-
-
-def test_a_skill_without_a_slash_name_lands_in_meta() -> None:
-    update = project_commands(
-        {
-            "sessionUpdate": "available_commands_update",
-            "availableCommands": [
-                {"name": "/compact", "description": "compact"},
-                {"name": "ship-it", "description": "a skill"},
-            ],
-        }
+def test_an_untrusted_child_id_is_omitted_until_a_tool_result_names_it() -> None:
+    stranger = permission_for_client(
+        _permission("call-2", "untrusted"), known_ids=set(), by_call={}
     )
+    assert UNTRUSTED_CHILD_KEY not in (stranger["params"]["toolCall"].get("_meta") or {})
+    assert AGENT_KEY not in (stranger["params"]["toolCall"].get("_meta") or {})
 
-    names = [command["name"] for command in update["availableCommands"]]
-    assert names == ["/compact", "ship-it"]
-    assert update["_meta"][SKILLS_KEY] == ["ship-it"]
+    update = {"toolCallId": "spawn-1", "rawOutput": {"subagent_id": "child-from-journal"}}
+    known = {child_id_from_update(update) or ""}
+    by_call = {"spawn-1": "child-from-journal"}
+    matched = permission_for_client(
+        _permission("call-2", "child-from-journal"), known_ids=known, by_call=by_call
+    )
+    meta = matched["params"]["toolCall"]["_meta"]
+    assert meta == {AGENT_KEY: "child-from-journal"}
+
+    same_call = permission_for_client(
+        _permission("spawn-1", "untrusted"), known_ids=known, by_call=by_call
+    )
+    assert same_call["params"]["toolCall"]["_meta"][AGENT_KEY] == "child-from-journal"
+
+
+def test_builtin_grok_commands_stay_commands() -> None:
+    update = {
+        "sessionUpdate": "available_commands_update",
+        "availableCommands": [
+            {"name": "compact"},
+            {"name": "flush"},
+            {"name": "hatrack"},
+            {"name": "/compact"},
+        ],
+    }
+
+    commands, skills = classify_commands(update, {"hatrack"})
+    projected = project_commands(update, skill_names={"hatrack"})
+
+    assert commands == ["compact", "flush", "/compact"]
+    assert skills == ["hatrack"]
+    assert projected["_meta"][SKILLS_KEY] == ["hatrack"]
+    assert [item["name"] for item in projected["availableCommands"]] == [
+        "compact",
+        "flush",
+        "hatrack",
+        "/compact",
+    ]
 
 
 def test_mode_options_name_plan_and_the_permission_word() -> None:

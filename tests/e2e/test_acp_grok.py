@@ -70,7 +70,8 @@ def test_e2e_one_prompt_ends_and_the_next_one_waits(tmp_project, tmp_path: Path)
             if (message.get("params") or {}).get("update", {}).get("sessionUpdate")
             == "available_commands_update"
         ]
-        assert commands[-1]["params"]["update"]["_meta"]["ai-hats/skills"] == ["ship-it"]
+        wire = commands[-1]["params"]["update"]
+        assert "ai-hats/skills" not in (wire.get("_meta") or {})
 
         second = _until(proc, lambda message: message.get("id") == 4)
         assert second["result"]["stopReason"] == "end_turn"
