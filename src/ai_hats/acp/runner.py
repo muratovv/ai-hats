@@ -35,6 +35,21 @@ class AcpRunner(WrapRunner):
     def _stdin_is_terminal(self) -> bool:
         return False  # stdin is the client's ACP, never a keyboard
 
+    def _session_on_the_plan(
+        self,
+        session: Session,
+        run,
+        *,
+        extra_args: list[str] | None,
+        provider_session_id: str,
+    ):
+        """Skip the minted id. grok names the session in session/new, and a fresh
+        UUID here would publish an empty directory in the person's grok home."""
+        del provider_session_id
+        return super()._session_on_the_plan(
+            session, run, extra_args=extra_args, provider_session_id=""
+        )
+
     def run(self, extra_args=None, tags=None, pty_tap_factory=None):
         del pty_tap_factory
         previous = {
@@ -70,10 +85,7 @@ class AcpRunner(WrapRunner):
         on_spawn: Callable[[int], None],
         initial_prompt: str | None = None,
     ) -> int:
-        del tracer, pty_tap_factory, initial_prompt
-        # The minted id is on the planned argv so a surface that has a reader can
-        # follow sub-agents. grok has no reader; the journal below is the ACP stream.
-        _release_minted_transcript(self.layout.cwd, provider_session_id)
+        del tracer, pty_tap_factory, provider_session_id, initial_prompt
         if self._signal is not None:
             return 128 + self._signal
         own_journal = event_log is None
@@ -125,23 +137,3 @@ def _open_journal(session: Session):
         path=session.session_dir / EVENT_LOG_JSONL,
         report=session.log_sys,
     ).start()
-
-
-def _release_minted_transcript(cwd, session_id: str) -> None:
-    """Remove the empty transcript directory the minted id published, if it is empty."""
-    from urllib.parse import quote
-
-    from ai_hats.surfaces.grok.home import grok_home
-    from ai_hats.surfaces.grok.runtime_hooks import _scope_root
-
-    if not session_id:
-        return
-    remote = grok_home() / "sessions" / quote(str(_scope_root(cwd)), safe="") / session_id
-    if not remote.is_dir() or remote.is_symlink():
-        return
-    try:
-        if any(remote.iterdir()):
-            return
-        remote.rmdir()  # safe-delete: ok empty-dir
-    except OSError:
-        return
