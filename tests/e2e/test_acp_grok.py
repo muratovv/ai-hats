@@ -7,6 +7,8 @@ expect: session/new names the journal; one prompt ends with stopReason; the
         journal has prompt_received origin person; a second prompt waits; the
         process exits with the child's code. A later permission carries the
         child id from the journal and an empty reject records the holder's phrase.
+why:    an ACP client has no other way to drive a composed grok role, and a
+        stdout that is still the log copy is not a session it can speak
 """
 
 from __future__ import annotations
