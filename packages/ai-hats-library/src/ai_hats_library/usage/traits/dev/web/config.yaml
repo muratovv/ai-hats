@@ -3,6 +3,7 @@ composition:
   traits: []
   rules: []
   skills:
+    - platform-ui
     - ui-ux-review
     - webapp-testing
 injection: |
@@ -23,11 +24,26 @@ injection: |
     label. Keyboard-reachable, visible focus, no keyboard traps. Respect
     `prefers-reduced-motion`.
 
+  ### Platform UI
+  - The platform element comes before a custom widget. A modal is a
+    `dialog`, a non-modal overlay is a `popover`, a disclosure is
+    `details`, and data collection is a `form`.
+  - Size a component from its container and from the user's font size
+    (`rem`). The viewport and `px` do not set that size.
+  - Declare the color scheme on the root before first paint, and only
+    the schemes the design named.
+  - The first screen's image and font are in the initial HTML and are
+    not deferred.
+
   ### Tooling
   - eslint + prettier; typecheck in CI. Use the package manager the repo's
     lockfile already implies (npm / pnpm / yarn) — match it, don't switch.
 
-  ### Two loaded skills
+  ### Loaded skills
+  - `platform-ui` — the branch the bullets above do not hold: focus and
+    dismiss, form shape, container layout, scheme declaration, first
+    paint, and when a field error is announced. Open it when building a
+    control, a layout, or the first screen.
   - `ui-ux-review` — UI *quality*: cognitive UX rules + P0/P1/P2 review.
   - `webapp-testing` — UI *correctness* in a real browser (Playwright); the
     task_complete gate for UI changes. Compiling is not working.

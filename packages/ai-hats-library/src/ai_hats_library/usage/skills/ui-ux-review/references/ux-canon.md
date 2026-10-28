@@ -11,7 +11,8 @@ the 10 hard rules in SKILL.md are the operational summary.
 - **Spacing scale.** Pick a scale (4, 8, 12, 16, 24, 32, 48, 64…) and use only
   those steps. Consistent rhythm reads as "designed"; arbitrary px reads as noise.
 - **Type scale.** A small fixed set of sizes (e.g. 12/14/16/20/24/30/36). Vary
-  weight and color for hierarchy more than size. Body 16px, line-height ~1.5,
+  weight and color for hierarchy more than size. The body size sits on that
+  scale and is set in `rem`, so the user's font size applies. Line-height ~1.5,
   line length 45–75 characters.
 - **Emphasize by de-emphasizing.** To make something stand out, mute its
   neighbors rather than shouting louder everywhere.

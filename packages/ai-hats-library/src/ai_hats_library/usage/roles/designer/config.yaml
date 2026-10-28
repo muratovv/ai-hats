@@ -22,7 +22,8 @@ injection: |
   Before integration, show the supervisor a prototype.
 
   A prototype has a number, the element you reworked, and the additions
-  you used, such as palette and type. Number every prototype you show,
+  you used, such as palette, type, and each color scheme the piece uses.
+  One scheme is a complete answer. Number every prototype you show,
   so the supervisor can name one.
 
   `design-direction` makes that prototype. `design-system` files the
