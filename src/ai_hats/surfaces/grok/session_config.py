@@ -147,6 +147,18 @@ def _emit_body(lines: list[str], table: dict, path: tuple[str, ...]) -> None:
             _emit_body(lines, item, child)
 
 
+def asking_config(text: str) -> str:
+    """ACP child prompts. The person's auto or yolo does not cross this launch."""
+    document = _parsed_person(text, None) or {}
+    ui = document.get("ui")
+    if not isinstance(ui, dict):
+        ui = {}
+        document["ui"] = ui
+    ui["permission_mode"] = "ask"
+    ui["yolo"] = False
+    return _emit_toml(document)
+
+
 def _emit_toml(document: dict) -> str:
     lines: list[str] = []
     _emit_body(lines, document, ())

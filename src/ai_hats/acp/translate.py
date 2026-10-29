@@ -174,6 +174,18 @@ def with_mode_options(
     return {**result, "configOptions": existing}
 
 
+def kept_options(options: object) -> list[dict[str, Any]]:
+    """Child options, without the two the holder answers itself."""
+    if not isinstance(options, list):
+        return []
+    return [item for item in options if isinstance(item, dict) and item.get("id") not in _OURS]
+
+
+def full_config(child: list[dict[str, Any]], *, plan: str, permission_mode: str) -> dict[str, Any]:
+    """The complete list a set_config_option response carries."""
+    return {"configOptions": [*child, *mode_options(plan=plan, permission_mode=permission_mode)]}
+
+
 def our_config(config_id: object) -> bool:
     """A config id the holder answers itself, because the child has no such option."""
     return config_id in _OURS

@@ -34,8 +34,9 @@ from .translate import (
     classify_commands,
     elicitation_declared,
     forward_update,
+    full_config,
+    kept_options,
     message_kind,
-    mode_options,
     our_config,
     permission_for_client,
     present_question,
@@ -92,10 +93,12 @@ class Relay:
         self._model: str | None = None
         self._commands: tuple[str, ...] = ()
         self._skills: tuple[str, ...] = ()
+        self._child_options: list[dict[str, Any]] = []
+        self._stdout_open = child.stdout is not None
 
     def run(self) -> int:
         """Talk until the child exits. Return the child's code."""
-        while self._child.poll() is None or self._child_buf:
+        while self._child.poll() is None or self._stdout_open or self._child_buf:
             if not self._pump():
                 break
         self._close_child_stdin()
@@ -120,7 +123,7 @@ class Relay:
         watch: list[int] = []
         if self._client_open:
             watch.append(self._client_in)
-        if self._child.stdout is not None and self._child.poll() is None:
+        if self._child.stdout is not None and self._stdout_open:
             watch.append(self._child.stdout.fileno())
         if not watch:
             return None
@@ -143,9 +146,15 @@ class Relay:
     def _read_child(self) -> bool:
         stdout = self._child.stdout
         if stdout is None:
+            self._stdout_open = False
             return False
         chunk = self._read_fd(stdout.fileno())
         if chunk is None:
+            self._stdout_open = False
+            messages, self._child_buf = _drain(self._child_buf)
+            for message in messages:
+                self._on_child(message)
+            self._child_buf = b""
             return False
         messages, self._child_buf = _drain(self._child_buf + chunk)
         for message in messages:
@@ -266,6 +275,7 @@ class Relay:
             self._window = window_size(result) or self._window
         elif method in ("session/new", "session/resume"):
             # A resumed process is a new journal. The old turns are not copied in.
+            self._child_options = kept_options(result.get("configOptions"))
             result = with_log_path(result, self._log_path)
             result = with_mode_options(
                 result, plan=self._plan, permission_mode=self._permission_mode
@@ -359,11 +369,9 @@ class Relay:
             {
                 "jsonrpc": "2.0",
                 "id": message.get("id"),
-                "result": {
-                    "configOptions": mode_options(
-                        plan=self._plan, permission_mode=self._permission_mode
-                    )
-                },
+                "result": full_config(
+                    self._child_options, plan=self._plan, permission_mode=self._permission_mode
+                ),
             }
         )
         return True

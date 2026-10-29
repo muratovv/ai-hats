@@ -46,9 +46,11 @@ class AcpRunner(WrapRunner):
         """Skip the minted id. grok names the session in session/new, and a fresh
         UUID here would publish an empty directory in the person's grok home."""
         del provider_session_id
-        return super()._session_on_the_plan(
+        launched = super()._session_on_the_plan(
             session, run, extra_args=extra_args, provider_session_id=""
         )
+        _ask_before_spawn(launched[1])
+        return launched
 
     def run(self, extra_args=None, tags=None, pty_tap_factory=None):
         del pty_tap_factory
@@ -121,6 +123,21 @@ class AcpRunner(WrapRunner):
                 # The shared starter writes no file for a surface with no reader.
                 # This holder is the reader, so it closes the file itself.
                 journal.close(exit_code=child.returncode if child.returncode is not None else code)
+
+
+def _ask_before_spawn(env: dict[str, str]) -> None:
+    """The session file asks. A person's auto would skip session/request_permission."""
+    home = env.get("GROK_HOME")
+    if not home:
+        return
+    from pathlib import Path
+
+    from ..surfaces.grok.session_config import asking_config
+
+    path = Path(home) / "config.toml"
+    if not path.is_file():
+        return
+    path.write_text(asking_config(path.read_text(encoding="utf-8")), encoding="utf-8")
 
 
 def _installed_skills(layout, session_id: str) -> set[str]:

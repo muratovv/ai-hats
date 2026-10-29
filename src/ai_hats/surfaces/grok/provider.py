@@ -279,7 +279,7 @@ class GrokSurface(Surface):
         *,
         layout: ProjectLayout,
     ) -> None:
-        """Publish this session's transcript directory. Grant files stay in the session home."""
+        """Link transcripts already in the real home. A fresh directory needs a uuid."""
         from .runtime_hooks import bind_session_store
 
         home = plan.env.get(GROK_HOME_ENV)
@@ -288,8 +288,6 @@ class GrokSurface(Surface):
         session_id = flags.provider_session_id or ""
         known = _is_uuid(session_id)
         resume = _is_resume(flags.extra_args)
-        if not known and not resume:
-            return
         cwd = flags.work_dir if flags.work_dir is not None else layout.cwd
         bind_session_store(
             Path(home),
