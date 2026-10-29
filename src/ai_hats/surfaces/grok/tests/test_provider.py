@@ -309,6 +309,73 @@ def test_bind_resume_links_an_existing_transcript_instead_of_replacing_it(
     assert not (home_root / ".grok" / "sessions" / _encoded(cwd) / missing).exists()
 
 
+def test_prepare_launch_without_an_id_links_prior_transcripts(tmp_path: Path, monkeypatch):
+    """An ACP launch has no uuid yet. The next process still has to see the last one."""
+    home_root = tmp_path / "home"
+    home_root.mkdir()
+    monkeypatch.setenv("HOME", str(home_root))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    session_id = "01a1836c-4ffa-7390-80ef-7b4092e93ec1"
+    remote = home_root / ".grok" / "sessions" / _encoded(cwd) / session_id
+    remote.mkdir(parents=True)
+    (remote / "updates.jsonl").write_text("kept\n")
+    session_home = tmp_path / "session-home"
+    before = {path.name for path in remote.parent.iterdir()}
+
+    GrokSurface().prepare_launch(
+        SimpleNamespace(env={"GROK_HOME": str(session_home)}),
+        LaunchFlags(
+            session_id="sid",
+            session_dir=session_home,
+            trace_path="t",
+            root_pid="1",
+            provider_session_id="",
+        ),
+        layout=SimpleNamespace(cwd=cwd),
+    )
+
+    visible = session_home / "sessions" / _encoded(cwd) / session_id
+    assert visible.is_symlink()
+    assert visible.joinpath("updates.jsonl").read_text() == "kept\n"
+    assert {path.name for path in remote.parent.iterdir()} == before
+
+
+def test_asking_config_prompts_when_the_person_is_on_auto() -> None:
+    from ai_hats.surfaces.grok.session_config import asking_config
+
+    text = '[ui]\npermission_mode = "auto"\nyolo = true\nkept = 1\n\n[skills]\ncustom = "stay"\n'
+
+    document = tomllib.loads(asking_config(text))
+
+    assert document["ui"]["permission_mode"] == "default"
+    assert document["ui"]["yolo"] is False
+    assert document["ui"]["kept"] == 1
+    assert document["skills"]["custom"] == "stay"
+
+
+def test_retain_transcript_copies_updates_into_the_real_home(tmp_path: Path, monkeypatch):
+    home_root = tmp_path / "home"
+    home_root.mkdir()
+    monkeypatch.setenv("HOME", str(home_root))
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    session_id = "01a1836c-4ffa-7390-80ef-7b4092e93ec1"
+    source = tmp_path / "session-home" / "sessions" / "encoded" / session_id
+    source.mkdir(parents=True)
+    (source / "updates.jsonl").write_text("{}\n")
+    (source / "summary.json").write_text("{}\n")
+
+    GrokSurface().retain_transcript(tmp_path / "session-home", cwd, session_id)
+
+    found = list((home_root / ".grok" / "sessions").glob(f"*/{session_id}/updates.jsonl"))
+    assert [path.read_text() for path in found] == ["{}\n"]
+    summaries = list((home_root / ".grok" / "sessions").glob(f"*/{session_id}/summary.json"))
+    assert [path.read_text() for path in summaries] == ["{}\n"]
+
+
 def test_bind_uses_the_git_root_and_refuses_to_link_a_directory_onto_itself(
     tmp_path: Path, monkeypatch
 ):

@@ -4,6 +4,15 @@ All notable changes to `ai-hats-observe` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [0.24.1]
+
+A session that learned its provider id after launch still resolves that transcript.
+
+### Fixed
+
+- `Session.transcripts` uses the one recorded id when the caller passes none.
+  An empty launch id was dropping it and discovering another record.
+
 ## [0.24.0]
 
 A record can be followed from where an earlier run left it.

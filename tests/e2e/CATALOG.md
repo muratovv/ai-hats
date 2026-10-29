@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**363 of 363 files catalogued — 371 flows.**
+**364 of 364 files catalogued — 372 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -28,6 +28,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the composed PreToolUse chain refuses the grant and leaves the grep alone
 - **why** — gate flags read by a script inside `make` or a git hook are reached by an inline prefix (unlike hook-read flags), so the hatch `master-ci` once carried was self-servable and the smoke gate's was skipped on four commits that way
+
+## `test_acp_grok.py`
+
+*pins HATS-2114*
+
+- **flow** — an ACP client runs one grok session through `ai-hats acp`. The child is a stand-in that speaks ACP on stdio.
+- **cmds**
+
+  ```console
+  ai-hats acp -p grok -r assistant
+  ```
+
+- **expect** — session/new names the journal; one prompt ends with stopReason; the journal has prompt_received origin person; a second prompt waits; the process exits with the child's code. A later permission carries the child id from the journal and an empty reject records the holder's phrase.
+- **why** — an ACP client has no other way to drive a composed grok role, and a stdout that is still the log copy is not a session it can speak
 
 ## `test_adr_integrity_gate.py`
 

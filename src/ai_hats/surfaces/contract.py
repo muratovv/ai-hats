@@ -278,6 +278,10 @@ class Surface(abc.ABC):
         """
         return TraceParser()
 
+    def acp_child(self) -> object | None:
+        """The process an ACP holder drives. None: this surface has no ACP session."""
+        return None
+
     def event_reader(self) -> EventReaderFactory | None:
         """Builds the reader that follows ONE of this surface's transcripts as
         canonical events while the session runs — same rule as

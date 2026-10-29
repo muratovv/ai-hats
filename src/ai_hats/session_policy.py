@@ -80,6 +80,14 @@ class Headless(Hitl):
 
 
 @dataclass(frozen=True)
+class Acp(Hitl):
+    """HITL whose channel is ACP on this process's stdin/stdout."""
+
+    # The client's JSON-RPC stream: fd 1 before it was pointed at stderr.
+    stdout_fd: int = 1
+
+
+@dataclass(frozen=True)
 class Automate(HarnessParams):
     """Non-interactive: a captured subprocess, reported when it exits.
 
@@ -169,6 +177,8 @@ class SessionRunParams:
             state["extra_args"] = list(harness.extra_args)
         if isinstance(harness, Headless):
             state["headless_stdout_fd"] = harness.stdout_fd
+        if isinstance(harness, Acp):
+            state["acp_stdout_fd"] = harness.stdout_fd
         if isinstance(harness, Automate):
             state["model"] = harness.model
             state["isolation"] = harness.isolation.value

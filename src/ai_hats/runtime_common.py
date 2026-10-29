@@ -819,6 +819,13 @@ def _close_event_log(event_log: "EventLogWriter", session: "Session", *, exit_co
     session.log_sys(f"events.jsonl: {outcome.events_written} events{detail}")
 
 
+def settled_provider_session_id(launch_id: str | None, recorded: tuple[str, ...]) -> str:
+    """The id finalize keeps: the launch's, else the one the surface reported later."""
+    if launch_id:
+        return launch_id
+    return recorded[0] if recorded else ""
+
+
 def _finalize_session_basic(
     session: "Session",
     *,
@@ -866,15 +873,13 @@ def _finalize_session_basic(
             "role": active_role,
             "provider": provider_name,
         }
-        # The link back to the provider's transcript. Only the sub-agent path
-        # used to persist it, so a HITL session's metrics could never be
-        # re-derived later — 947 sessions are permanently unmeasurable for want
-        # of this one field.
-        if claude_session_id:
-            metrics["claude_session_id"] = claude_session_id
         from ai_hats_observe.session import PROVIDER_SESSION_IDS
 
         chain = session.provider_session_ids()
+        # The launch argument is empty when the surface names itself later.
+        claude_session_id = settled_provider_session_id(claude_session_id, chain)
+        if claude_session_id:
+            metrics["claude_session_id"] = claude_session_id
         if len(chain) > 1:  # the surface moved (claude's /clear): every transcript is ours
             metrics[PROVIDER_SESSION_IDS] = list(chain)
         if tags:

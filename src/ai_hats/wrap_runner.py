@@ -51,6 +51,7 @@ from .runtime_common import (
     _print_session_start,
     _print_session_end,
     _finalize_session_basic,
+    settled_provider_session_id,
     _flag_sensor_error,
     _run_finalize_hitl,
     FinalizeAborted,
@@ -915,6 +916,9 @@ class WrapRunner:
                 # stray Ctrl-C would land inside whichever step is running.
                 with sigint_shield():
                     try:
+                        settled_id = settled_provider_session_id(
+                            claude_session_id, session.provider_session_ids()
+                        )
                         trace_stats = _finalize_session_basic(
                             session,
                             exit_code=exit_code,
@@ -922,14 +926,14 @@ class WrapRunner:
                             provider_name=provider_name,
                             event_log=event_log,
                             tags=tags,
-                            claude_session_id=claude_session_id,
+                            claude_session_id=settled_id,
                             duration_s=duration_s,
                         )
                         try:
                             _run_finalize_hitl(
                                 session,
                                 config=self.finalize,
-                                claude_session_id=claude_session_id,
+                                claude_session_id=settled_id,
                                 layout=self.layout,
                                 exit_code=exit_code,
                                 static_cost_analyzer=payload.static_cost_analyzer,

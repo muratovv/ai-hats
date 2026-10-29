@@ -77,6 +77,8 @@ class Provider(Step):
                     # Present only for `ai-hats headless`: the holder's machine
                     # stdout. Its presence is what picks the headless runner.
                     "headless_stdout_fd",
+                    # Present only for `ai-hats acp`. Its presence picks that runner.
+                    "acp_stdout_fd",
                 }
             ),
             produces=frozenset(
@@ -105,6 +107,7 @@ class Provider(Step):
         extra_args: list[str] | None = None,
         pty_tap_factory: Any = None,
         headless_stdout_fd: int | None = None,
+        acp_stdout_fd: int | None = None,
         **_: Any,
     ) -> dict[str, Any]:
         from ...harness.guard import apply_post_run_guard
@@ -117,6 +120,29 @@ class Provider(Step):
                 from ...pty_tap import load_pty_tap_factory
 
                 pty_tap_factory = load_pty_tap_factory()
+
+        if interactive and acp_stdout_fd is not None:
+            from ...acp.runner import AcpRunner
+
+            acp_child = composition.provider.acp_child()
+            if acp_child is None:
+                raise RuntimeError(f"ai-hats acp cannot drive {composition.provider.name}")
+            holder = AcpRunner(
+                layout,
+                composition,
+                session_mgr=session_mgr,
+                tracer_factory=tracer_factory,
+                stdout_fd=acp_stdout_fd,
+                acp_child=acp_child,
+            )
+            exit_code, session = holder.run(extra_args=list(extra_args or []), tags=tags)
+            apply_post_run_guard(session, self.harness_policy)
+            return {
+                "session_id": session.session_id,
+                "session_dir": session.session_dir,
+                "transcript_path": session.trace_path,
+                "exit_code": int(exit_code),
+            }
 
         if interactive and headless_stdout_fd is not None:
             from ...headless.runner import HeadlessRunner

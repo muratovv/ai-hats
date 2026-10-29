@@ -352,6 +352,7 @@ def _launch_session(
 # ordering is explicit and a single place to add/remove commands.
 
 from . import (  # noqa: E402
+    acp as acp_mod,
     agent as agent_mod,
     assembly,
     config as config_mod,
@@ -410,6 +411,9 @@ main.add_command(agent_mod.run_subagent)
 
 # Headless — a role's session driven over stdin/stdout (ADR-0038).
 main.add_command(headless_mod.headless_cmd)
+
+# ACP — the same session, spoken as JSON-RPC instead of a log copy.
+main.add_command(acp_mod.acp_cmd)
 
 # Worktree
 main.add_command(worktree.wt)

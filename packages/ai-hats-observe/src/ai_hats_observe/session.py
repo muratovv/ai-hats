@@ -283,7 +283,14 @@ class Session:
         the surface moved it (claude's ``/clear``); else the one
         ``provider_session_id`` names, or the resolver's own discovery with no id."""
         chain = self.provider_session_ids()
-        ids = chain if len(chain) > 1 else (provider_session_id or None,)
+        if len(chain) > 1:
+            ids: tuple[str | None, ...] = chain
+        elif provider_session_id:
+            ids = (provider_session_id,)
+        elif chain:
+            ids = (chain[0],)
+        else:
+            ids = (None,)
         return [
             Path(path)
             for sid in ids

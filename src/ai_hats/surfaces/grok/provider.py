@@ -110,6 +110,12 @@ class GrokSurface(Surface):
 
         return GrokParser()
 
+    def acp_child(self) -> object:
+        """Grok's ACP process. The holder does not import this module."""
+        from .acp_child import GrokAcpChild
+
+        return GrokAcpChild(retain=self.retain_transcript)
+
     def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
         """Probe the real grok home, not the per-session one this surface builds."""
         return _readiness_findings(environ)
@@ -128,6 +134,29 @@ class GrokSurface(Surface):
 
     def session_skills_root(self, layout: ProjectLayout, session_id: str) -> Path:
         return layout.cache.session(session_id) / "skills"
+
+    def retain_transcript(self, session_home: Path, cwd: Path, provider_session_id: str) -> None:
+        """Copy the session directory into the real grok home before the cache goes."""
+        if not provider_session_id:
+            return
+        from urllib.parse import quote
+
+        from .runtime_hooks import _scope_root
+
+        matches = [
+            path
+            for path in (session_home / "sessions").glob(f"*/{provider_session_id}/updates.jsonl")
+            if path.is_file()
+        ]
+        if not matches:
+            return
+        source = matches[0].parent
+        remote = (
+            grok_home() / "sessions" / quote(str(_scope_root(cwd)), safe="") / provider_session_id
+        )
+        if source.resolve() == remote.resolve():
+            return
+        _copy_missing(source, remote)
 
     def resolve_transcript(
         self,
@@ -251,7 +280,7 @@ class GrokSurface(Surface):
         *,
         layout: ProjectLayout,
     ) -> None:
-        """Publish this session's transcript directory. Grant files stay in the session home."""
+        """Link transcripts already in the real home. A fresh directory needs a uuid."""
         from .runtime_hooks import bind_session_store
 
         home = plan.env.get(GROK_HOME_ENV)
@@ -260,7 +289,8 @@ class GrokSurface(Surface):
         session_id = flags.provider_session_id or ""
         known = _is_uuid(session_id)
         resume = _is_resume(flags.extra_args)
-        if not known and not resume:
+        # "<assigned at launch>" is not a session. An empty id is ACP: link what exists.
+        if not known and not resume and session_id:
             return
         cwd = flags.work_dir if flags.work_dir is not None else layout.cwd
         bind_session_store(
@@ -268,6 +298,7 @@ class GrokSurface(Surface):
             Path(cwd),
             session_id if known else None,
             fresh=known and not resume,
+            create_remote=known or resume,
         )
 
     def get_cli_launch_args(
@@ -431,6 +462,22 @@ def _assistant_text(stream: list[dict]) -> str:
         if isinstance(obj.get("text"), str):
             return str(obj["text"])
     return ""
+
+
+def _copy_missing(source: Path, remote: Path) -> None:
+    """Copy files the real home does not have yet. An existing file stays."""
+    for path in source.rglob("*"):
+        target = remote / path.relative_to(source)
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink():
+            target.symlink_to(path.readlink())
+            continue
+        shutil.copy2(path, target)
 
 
 def _session_id(stream: list[dict], fallback: str | None) -> str:
