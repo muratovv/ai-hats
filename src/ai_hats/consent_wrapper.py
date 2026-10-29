@@ -231,8 +231,10 @@ def _refusal_line(answer: Verdict, operation: Operation) -> str:
             f"intact ({names}). A consent grant does not cover a command that has left the session."
         )
     return (
-        f"consent: requires supervisor approval; {detail}. Human: run "
-        f"`consent {operation.type} {DEFAULT_WINDOW_MINUTES}` in this session"
+        f"consent: this command did not run; requires supervisor approval; {detail}. "
+        "Stop. A reply in chat does not open it, and neither does a flag or another "
+        f"binary. The supervisor types `consent {operation.type} "
+        f"{DEFAULT_WINDOW_MINUTES}` in this session."
     )
 
 

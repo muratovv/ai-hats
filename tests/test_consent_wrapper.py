@@ -157,6 +157,9 @@ def test_refusal_names_executable_consent_operation(tmp_path: Path, capsys):
     stderr = capsys.readouterr().err
     assert f"consent rack.transition {DEFAULT_WINDOW_MINUTES}" in stderr
     assert "consent execute" not in stderr
+    assert "Stop." in stderr
+    assert "AI_HATS_" not in stderr
+    assert "Human:" not in stderr
 
 
 def test_no_agent_refusal_does_not_name_a_grant(tmp_path: Path, capsys):

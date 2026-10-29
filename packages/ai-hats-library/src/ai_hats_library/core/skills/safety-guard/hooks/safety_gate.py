@@ -416,16 +416,16 @@ def check_sql(cmd_bin: str, args) -> str:
 #: a surface without runtime hooks — this is the channel (HATS-1642 fork 2).
 CONSENT_ACK = "AI_HATS_CONSENT_ACK"
 
-# Consent flags the target PROCESS reads, so an inline prefix reaches them. Hook-read
-# flags (AI_HATS_SHARED_STATE_ACK) need no entry — HATS-1639. The consent ticket is
-# here too (HATS-1642): this guard mints it, so an agent typing one is forging it.
+# A prefix is visible to the process that reads the flag, so it is refused here.
+# Flags a hook reads from the launching environment are not listed. The consent
+# ticket is here too: this guard mints it, so an agent typing one is forging it.
 SELF_GRANT_FORBIDDEN = (
     "AI_HATS_YOLO", "AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK", CONSENT_ACK, TICKET_ENV,
 )  # fmt: skip
 
 
 def check_self_grant(args) -> str:
-    """The agent must not hand itself consent inline; exporting it is the user's call."""
+    """Refuse an approval flag written on the command itself."""
     for call in command_slices(args):
         if _is_interpreter(get_bin(call)) and protected_server_launch(call[1:]):
             return "Stopped: use the registered MCP tool; do not launch its consent server."
@@ -441,7 +441,7 @@ def check_self_grant(args) -> str:
                 )
             return (
                 f"Stopped: {flag} cannot be granted inline — a guard the agent can "
-                "switch off is not a guard. Export it in the environment instead."
+                "switch off is not a guard. Run the command without it and stop if it refuses."
             )
     return ""
 
@@ -991,9 +991,9 @@ def consent_requirement(cmd: str) -> ConsentQuestion | None:
         # — asking again is the click the grant was issued to remove (HATS-1735).
         if grant_covers("rack.transition", task_id, cmd):
             return None
-        # The env channel stands in wherever no question can be asked — `claude -p`,
-        # cron, a surface without runtime hooks — where an `ask` blocks; `ai-hats
-        # headless` puts the ask to its stdin owner instead.
+        # A flag already in the launching environment is the headless channel.
+        # This command does not set it. `ai-hats headless` puts the ask to its
+        # stdin owner instead.
         for flag in (CONSENT_ACK, LEGACY_ACK_BY_TARGET.get(target, "")):
             if flag and os.environ.get(flag) == "1":
                 journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)

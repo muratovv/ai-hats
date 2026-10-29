@@ -311,7 +311,10 @@ def test_the_edge_into_master_refuses_without_consent_and_moves_with_it(
 
     refused = _rack(project, "transition", task_id, "done", env=env)
     assert refused.returncode != 0, f"the edge into master was not gated:\n{refused.stdout}"
-    assert "requires supervisor approval" in refused.stdout + refused.stderr
+    combined = refused.stdout + refused.stderr
+    assert "requires supervisor approval" in combined
+    assert "Stop." in combined
+    assert "AI_HATS_" not in refused.stderr
 
     verdict = _ask_for(project, settings, env, task_id, f"rack transition {task_id} done")
     moved = run_approved(project, verdict, env=env)

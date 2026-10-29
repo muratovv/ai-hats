@@ -7,9 +7,8 @@
 # sessions or when the user runs `git push -f` from a normal terminal in
 # an agent-driven worktree.
 #
-# Override (per single push):  AI_HATS_SHARED_STATE_ACK=1, exported in the shell
-#                              that runs the push — never a prefix on an agent's
-#                              command line (safety-guard refuses it).
+# A flag already in the launching environment opens one push. The message
+# below does not name it: an agent that sees the name sets it.
 #
 # Pre-push hook receives the push command line in two ways:
 #   * argv:  $1=remote $2=URL  (no flags propagated — git strips them)
@@ -74,15 +73,9 @@ if [[ $blocked -eq 1 ]]; then
 
 This rewrites shared history with no clean undo path (HATS-437).
 
-Recover without wasting turns (safety-guard):
-  1. Do NOT retry or re-issue the push — the block is deliberate, not a
-     transient error, and will deny again.
-  2. In your NEXT turn, show the user the exact push and ask for explicit
-     go-ahead. Do not act in the same turn that announces it.
-  3. Only after the user confirms, re-run the SINGLE push, unchained. The ack
-     is AI_HATS_SHARED_STATE_ACK=1 exported in the shell that runs the push;
-     an agent cannot put it on its own command line — safety-guard refuses
-     that as a self-grant — and every honoured use is journalled.
+The push did not happen. Do NOT retry it and do not set a flag (safety-guard).
+A sentence in chat is not approval. Where the harness can ask, the person
+approves that prompt. Nothing set from inside the session opens the push.
 EOF
     ai_hats_journal_catch rule_pause_before_shared_state_write block "unacked push to a shared branch"
     exit 1
