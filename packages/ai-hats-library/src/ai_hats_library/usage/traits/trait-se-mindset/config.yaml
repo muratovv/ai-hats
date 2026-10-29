@@ -31,6 +31,7 @@ injection: |
   - Integration tests over excessive mocking for critical paths.
   - **Vertical slicing only.** Write ONE test, get it to GREEN, then the next test. Do NOT write all tests first then all implementation — bulk-written tests verify shape, not behavior, and are insensitive to real changes. Never refactor while RED.
   - **Confirm the RED.** Name the missing behavior, run that one test, and read the failure before any production edit. It is RED only when that behavior is what failed. A collection error, an import error, or a typo is a broken test: fix the test and see the real failure first.
+  - **No substitute test.** If the missing behavior cannot be pinned by what the caller gets back, the error the caller sees, or persisted state, name that behavior and leave it untested. Do not add a test that fails for some other reason so the cycle has a RED.
 
   ### Reading a test run
   The exit code you act on must be the **runner's** — not a filter's, a trailing command's, or a wrapper script's, each of which reports whatever ran last. Report the number, never an adjective, and only from an artefact this run produced.
