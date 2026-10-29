@@ -20,7 +20,7 @@ Turn a description into a numbered prototype, and wait until the supervisor pick
 ## Procedure
 
 1. Write the description: the subject, who it is for, and the job of this piece. One sentence each. When the brief does not say, ask before filling the gap.
-2. Make a prototype of the element you reworked. Name the additions it uses. Palette and type are the usual ones; name any other addition the piece actually rests on.
+2. Make a prototype of the element you reworked. Name the additions it uses. Palette, type, and each color scheme the piece uses are the usual ones. One scheme is a complete answer. Name any other addition the piece actually rests on.
 3. Put a number on the prototype. When you show more than one, number each. The supervisor refers to a prototype by that number.
 4. Show the prototype and stop. Integration into the product waits until the supervisor picks a number or names the change. Silence is not a pick.
 

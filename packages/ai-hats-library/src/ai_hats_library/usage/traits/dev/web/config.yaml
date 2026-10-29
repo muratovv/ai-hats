@@ -3,6 +3,7 @@ composition:
   traits: []
   rules: []
   skills:
+    - platform-ui
     - ui-ux-review
     - webapp-testing
 injection: |
@@ -27,7 +28,9 @@ injection: |
   - eslint + prettier; typecheck in CI. Use the package manager the repo's
     lockfile already implies (npm / pnpm / yarn) — match it, don't switch.
 
-  ### Two loaded skills
+  ### Loaded skills
+  - `platform-ui` — open it when building a control, a layout, a theme,
+    or the first screen.
   - `ui-ux-review` — UI *quality*: cognitive UX rules + P0/P1/P2 review.
   - `webapp-testing` — UI *correctness* in a real browser (Playwright); the
     task_complete gate for UI changes. Compiling is not working.
