@@ -1,6 +1,8 @@
 ---
 name: silent-fallback-gate
-description: PreToolUse hook — refuses an Edit or Write that adds an inert broad except. Use when a Python edit was blocked for a silent fallback.
+description: >-
+  PreToolUse hook — refuses an Edit or Write that adds an inert broad
+  except. Use when a Python edit was blocked for a silent fallback.
 ai_hats:
   runtime_hooks:
     PreToolUse:

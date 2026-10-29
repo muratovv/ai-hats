@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**362 of 362 files catalogued — 370 flows.**
+**363 of 363 files catalogued — 371 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1509,6 +1509,22 @@ as a claim to check, not as evidence.
 
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] prose-refs`, states on every run what it does NOT cover, and is named in the merge-gate composition. Whether the live corpus is INTACT belongs to the stage, not here (HATS-1714/1716) — the refusal is proved instead against a planted tree, which no sibling session can change
 - **why** — the checker's own silence is the thing under test. HATS-1823 measured 21 references in this library that did not resolve, and every gate in the repo stayed green through all of them, because none reads prose. A checker that is wired but never refuses anything reproduces exactly that.
+
+## `test_gates_skill_desc.py`
+
+*pins HATS-2117*
+
+- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a library skill description is not a folded strip scalar
+- **cmds**
+
+  ```console
+  bash scripts/gates.sh skill-desc       # announces the stage it dispatched to
+  bash scripts/gates.sh no-such-stage    # exit 2, and the usage names the stage
+  hooks/merge-gate.sh --stages           # the stage is part of a gate
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] skill-desc`, states on every run what it does not cover, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
+- **why** — a checker that is wired but never refuses anything leaves the next skill free to bring back a quoted description. The one spelling this tree keeps is the reason a blanket "no matches ever" assertion would not show that the judge can still see the other spellings.
 
 ## `test_gates_stage_leads_path_with_its_interpreter.py`
 

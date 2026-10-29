@@ -1,6 +1,10 @@
 ---
 name: task-summary
-description: Focused post-task summary covering architectural decisions, decision forks, pitfalls, and plan deviations. Use at `document → review`, before handing the card to the reviewer, on a task that failed, or when the supervisor asks what happened with a task.
+description: >-
+  Focused post-task summary covering architectural decisions, decision
+  forks, pitfalls, and plan deviations. Use at `document → review`, before
+  handing the card to the reviewer, on a task that failed, or when the
+  supervisor asks what happened with a task.
 license: MIT
 ---
 

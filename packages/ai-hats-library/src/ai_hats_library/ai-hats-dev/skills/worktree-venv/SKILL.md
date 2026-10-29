@@ -1,6 +1,8 @@
 ---
 name: worktree-venv
-description: Provisions a Python venv inside every freshly created worktree — infrastructure only, no agent-side decision logic
+description: >-
+  Provisions a Python venv inside every freshly created worktree —
+  infrastructure only, no agent-side decision logic
 ai_hats:
   # hook-carrier skill. The lifecycle bundle spawns this script in
   # place from the skill dir after `git worktree add` (a migration retired the

@@ -1,6 +1,10 @@
 ---
 name: review-hypothesis
-description: Vote on one active hypothesis (HYP-NNN) against session evidence — pick confirmed/refuted/inconclusive/n-a + a recommendation and persist via `rack hyp`. Use when sweeping active hypotheses during a session review (reflect-session, session-reviewer, or judge).
+description: >-
+  Vote on one active hypothesis (HYP-NNN) against session evidence — pick
+  confirmed/refuted/inconclusive/n-a + a recommendation and persist via
+  `rack hyp`. Use when sweeping active hypotheses during a session review
+  (reflect-session, session-reviewer, or judge).
 ai_hats:
   requires:
     cli:

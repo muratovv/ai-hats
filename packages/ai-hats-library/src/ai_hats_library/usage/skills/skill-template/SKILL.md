@@ -1,6 +1,9 @@
 ---
 name: skill-template
-description: Canonical template and validation guide for ai-hats skills. Use when creating a new skill, reviewing an existing one for structural compliance, or deciding which pattern fits a new behavior.
+description: >-
+  Canonical template and validation guide for ai-hats skills. Use when
+  creating a new skill, reviewing an existing one for structural
+  compliance, or deciding which pattern fits a new behavior.
 license: MIT
 ---
 
@@ -91,7 +94,10 @@ frontmatter declares **hooks** under a top-level `ai_hats:` key — `git_hooks`
 ```yaml
 ---
 name: migration-freeze
-description: PreToolUse hook — refuses edits under `db/migrations/` while a release branch is open, and records the attempt. Use when diagnosing why a migration edit was blocked.
+description: >-
+  PreToolUse hook — refuses edits under `db/migrations/` while a release
+  branch is open, and records the attempt. Use when diagnosing why a
+  migration edit was blocked.
 ai_hats:
   runtime_hooks:
     PreToolUse:
@@ -169,6 +175,10 @@ writing-skills, MIT.)
       in the always-on index is a shortcut the selector acts on *instead of*
       loading the skill, so the procedure gets skipped. (CSO discipline adapted
       from obra/superpowers, MIT.)
+- [ ] **Description is a folded strip scalar** — `description: >-`. A plain
+      or quoted line is the same string in a second spelling, and clip `>`
+      keeps a trailing newline, so the skill index wraps the path. The gate
+      is `bash scripts/gates.sh skill-desc`.
 - [ ] **Validation scenario present** — one named RED baseline (an agent
       *without* the skill fails) that the skill demonstrably fixes; see
       "Validation scenario" above

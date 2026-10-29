@@ -457,6 +457,20 @@ Two escapes, both announced on every run:
 Reach for the second only when the sentence is genuinely about the past. A
 reference that is merely stale is a finding, and the fix is the reference.
 
+### Skill description form
+
+`bash scripts/gates.sh skill-desc` requires every library `SKILL.md`
+description to be a folded strip scalar, `description: >-`. A plain line
+and a quoted line parse to the same string, and the next edit copies
+whichever spelling it saw. Clip (`>`) keeps a trailing newline, and the
+skill index then puts the `SKILL.md` path on the following line.
+
+The parsed value has to stay one line. A blank line inside the fold is a
+newline in the value, and that wraps the index the same way. A line of the
+fold whose backticks do not close hides a reference from `prose-refs`, so
+that is refused too. The stage does not judge the body, role and trait
+injections, or a skill outside this repository's library.
+
 ### Tracker ids
 
 `bash scripts/gates.sh ticket-ids` looks for a different fault: a

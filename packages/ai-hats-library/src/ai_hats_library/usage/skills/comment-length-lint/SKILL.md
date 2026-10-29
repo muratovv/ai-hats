@@ -1,6 +1,9 @@
 ---
 name: comment-length-lint
-description: PostToolUse hook — flags oversized comment blocks and docstrings on every `.py` you Edit/Write and forwards them non-blockingly; fail-open, no manual invocation.
+description: >-
+  PostToolUse hook — flags oversized comment blocks and docstrings on
+  every `.py` you Edit/Write and forwards them non-blockingly; fail-open,
+  no manual invocation.
 ai_hats:
   runtime_hooks:
     PostToolUse:

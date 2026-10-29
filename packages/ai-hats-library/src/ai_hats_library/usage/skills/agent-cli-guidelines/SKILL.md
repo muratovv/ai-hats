@@ -1,6 +1,9 @@
 ---
 name: agent-cli-guidelines
-description: Design a CLI, gate or hook whose reader is another agent. Use when building or changing one, and when a tool of yours was ignored, misread, or worked around.
+description: >-
+  Design a CLI, gate or hook whose reader is another agent. Use when
+  building or changing one, and when a tool of yours was ignored, misread,
+  or worked around.
 license: MIT
 ---
 

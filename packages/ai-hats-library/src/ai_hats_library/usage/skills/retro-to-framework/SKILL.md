@@ -1,6 +1,13 @@
 ---
 name: retro-to-framework
-description: Convert an observation about agent behavior — from a retrospective or from a single incident — into a framework-level change (hook, rule, skill, skill update). Use after a retrospective identifies problems that are not project-specific, after an incident where an agent misapplied a component it had read, when CLAUDE.md band-aids accumulate (more than 3 per-project rules that could be generic), or when the same problem recurs across multiple projects.
+description: >-
+  Convert an observation about agent behavior — from a retrospective or
+  from a single incident — into a framework-level change (hook, rule,
+  skill, skill update). Use after a retrospective identifies problems that
+  are not project-specific, after an incident where an agent misapplied a
+  component it had read, when CLAUDE.md band-aids accumulate (more than 3
+  per-project rules that could be generic), or when the same problem
+  recurs across multiple projects.
 license: MIT
 ---
 

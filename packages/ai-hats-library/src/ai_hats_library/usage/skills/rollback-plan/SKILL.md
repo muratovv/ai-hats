@@ -1,6 +1,9 @@
 ---
 name: rollback-plan
-description: Explicit revert paths for infrastructure and configuration changes. Use before applying any infrastructure or configuration change, before database migrations, or before any change with production impact.
+description: >-
+  Explicit revert paths for infrastructure and configuration changes. Use
+  before applying any infrastructure or configuration change, before
+  database migrations, or before any change with production impact.
 license: MIT
 ---
 # Rollback Plan

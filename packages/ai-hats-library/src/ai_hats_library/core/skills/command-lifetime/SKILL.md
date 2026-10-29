@@ -1,6 +1,9 @@
 ---
 name: command-lifetime
-description: Diagnose a shell command refused or flagged for having no bound on its lifetime — an unbounded while/until loop, an unbounded background launch, or a long-running command with no timeout.
+description: >-
+  Diagnose a shell command refused or flagged for having no bound on its
+  lifetime — an unbounded while/until loop, an unbounded background
+  launch, or a long-running command with no timeout.
 ai_hats:
   runtime_hooks:
     PreToolUse:

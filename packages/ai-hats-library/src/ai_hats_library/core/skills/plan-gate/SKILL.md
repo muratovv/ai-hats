@@ -1,6 +1,11 @@
 ---
 name: plan-gate
-description: The single entry point for the brainstorm→plan quality gate — a table of contents mapping each required plan section to the skill that fills it. Use when a task enters brainstorm→plan or when drafting/revising plan.md, to route each section to its owning skill before requesting plan→execute.
+description: >-
+  The single entry point for the brainstorm→plan quality gate — a table of
+  contents mapping each required plan section to the skill that fills it.
+  Use when a task enters brainstorm→plan or when drafting/revising
+  plan.md, to route each section to its owning skill before requesting
+  plan→execute.
 license: MIT
 ---
 

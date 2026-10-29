@@ -1,6 +1,11 @@
 ---
 name: library-change-hypothesis-protocol
-description: After execute-stage commits land (diff finalized) and BEFORE the task transitions to done, file a companion HYP with an explicit verification_protocol — or record an explicit "no behavior change" note for refactors at plan-stage. NEVER file the HYP at plan-stage (precommitment anti-pattern).
+description: >-
+  After execute-stage commits land (diff finalized) and BEFORE the task
+  transitions to done, file a companion HYP with an explicit
+  verification_protocol — or record an explicit "no behavior change" note
+  for refactors at plan-stage. NEVER file the HYP at plan-stage
+  (precommitment anti-pattern).
 license: MIT
 ---
 

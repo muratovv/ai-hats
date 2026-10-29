@@ -1,6 +1,10 @@
 ---
 name: rack-advanced
-description: "Advanced rack beyond day-to-day lifecycle: authoring a new custom backlog, and cross-project work. Use when defining a backlog beyond the built-in tasks/HYP/PROP, or registering and searching backlogs across several projects."
+description: >-
+  Advanced rack beyond day-to-day lifecycle: authoring a new custom
+  backlog, and cross-project work. Use when defining a backlog beyond the
+  built-in tasks/HYP/PROP, or registering and searching backlogs across
+  several projects.
 license: MIT
 ---
 

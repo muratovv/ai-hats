@@ -1,6 +1,10 @@
 ---
 name: requirements-interview
-description: The Requirements stage of the plan-gate — fills plan.md's Requirements section via structured Q&A where the agent proposes a cited best-guess per question and the supervisor reviews. Reached through plan-gate (which owns the brainstorm→plan entry), not as an independent trigger.
+description: >-
+  The Requirements stage of the plan-gate — fills plan.md's Requirements
+  section via structured Q&A where the agent proposes a cited best-guess
+  per question and the supervisor reviews. Reached through plan-gate
+  (which owns the brainstorm→plan entry), not as an independent trigger.
 license: MIT
 ---
 

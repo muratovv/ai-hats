@@ -1,6 +1,10 @@
 ---
 name: prose-review
-description: Editor's report on a finished text — findings by axis, each quoting the line it is about, before any edit. Use when a draft (article, doc page, report, README section) is ready for review, when asked to improve or shorten a text, or before handing any text back to its author.
+description: >-
+  Editor's report on a finished text — findings by axis, each quoting the
+  line it is about, before any edit. Use when a draft (article, doc page,
+  report, README section) is ready for review, when asked to improve or
+  shorten a text, or before handing any text back to its author.
 license: MIT
 ---
 

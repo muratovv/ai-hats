@@ -1,6 +1,10 @@
 ---
 name: composition-verification
-description: Prove a role/trait/rule/skill edit reached the composed prompt. Use after editing any library component, before reporting a composition change landed, and when a rule or skill looks absent from a role that should carry it.
+description: >-
+  Prove a role/trait/rule/skill edit reached the composed prompt. Use
+  after editing any library component, before reporting a composition
+  change landed, and when a rule or skill looks absent from a role that
+  should carry it.
 license: MIT
 ---
 

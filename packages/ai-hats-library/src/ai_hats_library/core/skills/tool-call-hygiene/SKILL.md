@@ -1,6 +1,10 @@
 ---
 name: tool-call-hygiene
-description: Choose between Bash and dedicated Claude Code tools (Grep/Glob/Read/Edit) and edit files efficiently. Triggers on intent to grep/find/cat/sed/rg, multiple sequential reads, session-start context restore, codebase discovery, or multiple sequential Edits to one file.
+description: >-
+  Choose between Bash and dedicated Claude Code tools
+  (Grep/Glob/Read/Edit) and edit files efficiently. Triggers on intent to
+  grep/find/cat/sed/rg, multiple sequential reads, session-start context
+  restore, codebase discovery, or multiple sequential Edits to one file.
 ai_hats:
   runtime_hooks:
     PreToolUse:

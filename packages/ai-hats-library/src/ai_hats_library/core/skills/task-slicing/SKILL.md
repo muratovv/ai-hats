@@ -1,6 +1,10 @@
 ---
 name: task-slicing
-description: Wire a work breakdown into the tracker — depends_on edges, frontier, expand–contract for wide refactors. Use when filling plan.md's Steps section (routed from plan-gate), decomposing an epic into child tasks, or carving a mid-execute remainder into successor tasks.
+description: >-
+  Wire a work breakdown into the tracker — depends_on edges, frontier,
+  expand–contract for wide refactors. Use when filling plan.md's Steps
+  section (routed from plan-gate), decomposing an epic into child tasks,
+  or carving a mid-execute remainder into successor tasks.
 license: MIT
 ---
 

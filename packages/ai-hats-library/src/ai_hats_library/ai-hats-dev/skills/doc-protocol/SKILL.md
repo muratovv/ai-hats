@@ -1,6 +1,9 @@
 ---
 name: doc-protocol
-description: Use when a task changes `docs/*.md`, `README.md` or `CONTRIBUTING.md`, lifts structure from a precedent doc, enumerates six or more items to document, or adds or renames a code-side name (skill, role, path, CLI).
+description: >-
+  Use when a task changes `docs/*.md`, `README.md` or `CONTRIBUTING.md`,
+  lifts structure from a precedent doc, enumerates six or more items to
+  document, or adds or renames a code-side name (skill, role, path, CLI).
 license: MIT
 ---
 

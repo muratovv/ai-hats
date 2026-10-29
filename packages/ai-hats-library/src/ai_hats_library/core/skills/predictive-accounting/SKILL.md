@@ -1,6 +1,8 @@
 ---
 name: predictive-accounting
-description: For shrink/refactor/optimize/cleanup tasks — present baseline + predicted delta + dependency cost BEFORE implementation, not after
+description: >-
+  For shrink/refactor/optimize/cleanup tasks — present baseline +
+  predicted delta + dependency cost BEFORE implementation, not after
 license: MIT
 ---
 

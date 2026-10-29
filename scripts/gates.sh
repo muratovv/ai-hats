@@ -83,6 +83,7 @@ test-isolation   | the suite patches its own units no more than the recorded bas
 prose-refs       | paths, library prefixes, sections and symbols named in library prose resolve
 ticket-ids       | no tracker id in library prose, a doc a reader opens, or src/
 consumer-refs    | no library component names a component that composes it
+skill-desc       | every library SKILL.md description is a folded strip scalar
 env-reference    | docs/reference-env.md matches the env declarations the code reads
 gate-table       | ADR-0023's stage and gate tables match this file and the gates
 adr-integrity    | every ADR citation resolves and a number names exactly one file
@@ -255,6 +256,14 @@ ci_ticket_ids() {
 ci_consumer_refs() {
     echo "[gates] consumer-refs (no component names a component that composes it)" >&2
     run_py scripts/check_consumer_refs.py
+}
+
+# One spelling for a skill description. Clip keeps a trailing newline, and the
+# skill index then wraps the path; a quoted line parses the same and teaches
+# the next edit a second form.
+ci_skill_desc() {
+    echo "[gates] skill-desc (every library SKILL.md description is a folded strip scalar)" >&2
+    run_py scripts/check_skill_desc.py
 }
 
 # The env reference page is rendered from the declarations the code reads. A
@@ -1301,6 +1310,7 @@ case "$verb" in
         ci_adr_integrity
         ci_ticket_ids
         ci_consumer_refs
+        ci_skill_desc
         ci_unit
         ci_coverage
         ci_merge_smoke

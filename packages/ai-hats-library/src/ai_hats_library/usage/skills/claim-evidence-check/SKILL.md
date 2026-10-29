@@ -1,6 +1,11 @@
 ---
 name: claim-evidence-check
-description: Claims table for a text — every checkable statement gets a source you saw or an honest mark, and every link is checked by script. Use when a draft states facts, numbers, dates, names, versions, tool behaviour or quotes; before a text is handed back or published; or when asked whether a text is accurate.
+description: >-
+  Claims table for a text — every checkable statement gets a source you
+  saw or an honest mark, and every link is checked by script. Use when a
+  draft states facts, numbers, dates, names, versions, tool behaviour or
+  quotes; before a text is handed back or published; or when asked whether
+  a text is accurate.
 license: MIT
 ---
 

@@ -1,6 +1,9 @@
 ---
 name: positive-control
-description: Distinguish a failed subject from a broken verification path. Use before relying on search or grep output, logs, composed prompts, stored artifacts, or before/after measurements to support a verdict.
+description: >-
+  Distinguish a failed subject from a broken verification path. Use before
+  relying on search or grep output, logs, composed prompts, stored
+  artifacts, or before/after measurements to support a verdict.
 license: MIT
 ---
 
