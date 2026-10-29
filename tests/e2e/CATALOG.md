@@ -2062,8 +2062,8 @@ as a claim to check, not as evidence.
   git -C <main-checkout> push --force origin master
   ```
 
-- **expect** — unapproved pushes block and display consent flags — with a git global option between `git` and `push` just the same — while approved pushes and mandated resource cleanup commands execute cleanly
-- **why** — permission guards must provide actionable consent flags on denial without blocking non-destructive or rule-mandated cleanup operations
+- **expect** — an unapproved push is gated and does not name a flag, a `git -C` push included. An approval already in the launching environment lets that push through. A denial that has a flag still names it. Mandated cleanup still runs.
+- **why** — naming the flag in the ask is how an agent granted it to itself. The question is the instruction. Cleanup the rules require must not be blocked.
 
 ## `test_hook_materialization_self_heals.py`
 
