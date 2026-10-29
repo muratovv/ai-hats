@@ -123,15 +123,17 @@ class Provider(Step):
 
         if interactive and acp_stdout_fd is not None:
             from ...acp.runner import AcpRunner
-            from ...surfaces.grok.acp_child import GrokAcpChild
 
+            acp_child = composition.provider.acp_child()
+            if acp_child is None:
+                raise RuntimeError(f"ai-hats acp cannot drive {composition.provider.name}")
             holder = AcpRunner(
                 layout,
                 composition,
                 session_mgr=session_mgr,
                 tracer_factory=tracer_factory,
                 stdout_fd=acp_stdout_fd,
-                acp_child=GrokAcpChild(),
+                acp_child=acp_child,
             )
             exit_code, session = holder.run(extra_args=list(extra_args or []), tags=tags)
             apply_post_run_guard(session, self.harness_policy)

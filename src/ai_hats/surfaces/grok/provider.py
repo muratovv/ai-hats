@@ -110,6 +110,12 @@ class GrokSurface(Surface):
 
         return GrokParser()
 
+    def acp_child(self) -> object:
+        """Grok's ACP process. The holder does not import this module."""
+        from .acp_child import GrokAcpChild
+
+        return GrokAcpChild()
+
     def readiness_findings(self, environ: Mapping[str, str]) -> "list[Signal]":
         """Probe the real grok home, not the per-session one this surface builds."""
         return _readiness_findings(environ)
