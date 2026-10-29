@@ -437,6 +437,11 @@ def load_config(path: Path) -> WrapperConfig:
     )
 
 
+def _ticket_start() -> Path:
+    """The checkout this process is in. The hook minted the ticket there."""
+    return Path.cwd()
+
+
 def main(surface: str) -> int:
     """Run one materialized command wrapper."""
     config_path = os.environ.get(CONFIG_ENV)
@@ -460,10 +465,10 @@ def main(surface: str) -> int:
         config,
         check_grant=lambda operation, target: verdict(operation, target_dir=target),
         peek_ticket=lambda subject, command: consent_ticket.peek(
-            subject, start=config.project_dir, argv=command
+            subject, start=_ticket_start(), argv=command
         ),
         consume_ticket=lambda subject, command: consent_ticket.consume(
-            subject, start=config.project_dir, argv=command
+            subject, start=_ticket_start(), argv=command
         ),
     )
 

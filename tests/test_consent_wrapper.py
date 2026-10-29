@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from ai_hats_core.layout import ProjectLayout
 
+import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,14 +12,17 @@ from ai_hats_library.hooks.consent_gate import Outcome, Verdict
 from ai_hats_library.hooks.consent_gate.issue import DEFAULT_WINDOW_MINUTES
 
 from ai_hats.consent_wrapper import (
+    CONFIG_ENV,
     ConsentPolicyError,
     _is_consent_wrapper_path,
     WrapperConfig,
+    main,
     match_operation,
     plan_consent,
     policy_of,
     run_wrapped,
 )
+from ai_hats_library.hooks import consent_ticket as ct
 from ai_hats.materialization import WriteKind, describe_mkdir
 from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ai_hats.session_plan import probe_host
@@ -301,6 +306,78 @@ def test_legacy_launch_ack_is_recorded_and_removed_before_spawn(tmp_path: Path):
     assert exit_code == 0
     assert recorded == [("AI_HATS_PLAN_ACK", "rack.transition")]
     assert spawned == [{"KEEP": "yes"}]
+
+
+def _checkout(path: Path) -> None:
+    (path / ".git").mkdir(parents=True)
+
+
+def _wrapper_config(path: Path, original: Path, project_dir: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "project_dir": str(project_dir),
+                "originals": {"rack": str(original)},
+                "policy": {"rack.transition": ["->execute"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_a_ticket_in_the_cwd_repo_opens_the_command(tmp_path: Path, monkeypatch) -> None:
+    session = tmp_path / "hai"
+    target = tmp_path / "infield"
+    _checkout(session)
+    _checkout(target)
+    marker = tmp_path / "ran"
+    original = tmp_path / "rack"
+    original.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    original.chmod(0o755)
+    config = tmp_path / "config.json"
+    _wrapper_config(config, original, session)
+    argv = ["transition", "INF-038", "execute"]
+    monkeypatch.setenv(ct.SESSION_ENV, "session-a")
+    monkeypatch.delenv(ct.TICKET_ENV, raising=False)
+    nonce = ct.mint("INF-038", start=target, argv=argv)
+    assert nonce
+    monkeypatch.setenv(ct.TICKET_ENV, nonce)
+    monkeypatch.setenv(CONFIG_ENV, str(config))
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(sys, "argv", ["rack", *argv])
+
+    assert main("rack") == 0
+    assert marker.is_file()
+    assert ct.peek("INF-038", start=target, nonce=nonce, argv=argv) is False
+
+
+def test_a_ticket_only_in_the_session_repo_does_not_open_the_command(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    session = tmp_path / "hai"
+    target = tmp_path / "infield"
+    _checkout(session)
+    _checkout(target)
+    marker = tmp_path / "ran"
+    original = tmp_path / "rack"
+    original.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    original.chmod(0o755)
+    config = tmp_path / "config.json"
+    _wrapper_config(config, original, session)
+    argv = ["transition", "INF-038", "execute"]
+    monkeypatch.setenv(ct.SESSION_ENV, "session-a")
+    monkeypatch.delenv(ct.TICKET_ENV, raising=False)
+    nonce = ct.mint("INF-038", start=session, argv=argv)
+    assert nonce
+    monkeypatch.setenv(ct.TICKET_ENV, nonce)
+    monkeypatch.setenv(CONFIG_ENV, str(config))
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(sys, "argv", ["rack", *argv])
+
+    assert main("rack") == 2
+    assert not marker.exists()
+    assert "ticket already spent or never issued" in capsys.readouterr().err
+    assert ct.peek("INF-038", start=session, nonce=nonce, argv=argv) is True
 
 
 def test_ticket_must_be_consumed_before_original_starts(tmp_path: Path):

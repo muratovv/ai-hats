@@ -20,11 +20,11 @@ PROFILE = SurfaceProfile(
     arg_names={},
     manifest_subpath=(),
     skills_subpath=("skills",),
-    # Measured on the hooks guide: PreToolUse accepts deny, ask, and updatedInput.
-    # PostToolUse can nudge and cannot un-run a call. A ticketed ask is one reply.
+    # A client that approves prompts itself runs a ticketed ask in the same turn,
+    # so that reply is refused. A question with no rewrite is still asked.
     speaks=Dialect(
         can_ask=True,
-        can_ask_with_ticket=True,
+        can_ask_with_ticket=False,
         can_deny_after=False,
         can_carry_nudges=True,
     ),
