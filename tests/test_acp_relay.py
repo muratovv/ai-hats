@@ -161,6 +161,61 @@ def _until(fd: int, request_id: int) -> dict:
     raise AssertionError(f"no reply {request_id}")
 
 
+def test_resume_keeps_the_session_id_the_child_omitted(tmp_path) -> None:
+    script = textwrap.dedent(
+        """
+        import json, sys
+
+        def send(message):
+            sys.stdout.write(json.dumps(message) + "\\n")
+            sys.stdout.flush()
+
+        for line in sys.stdin:
+            message = json.loads(line)
+            method = message.get("method")
+            if method == "initialize":
+                send({"jsonrpc": "2.0", "id": message["id"], "result": {"protocolVersion": 1}})
+            elif method == "session/resume":
+                send({"jsonrpc": "2.0", "id": message["id"], "result": {"configOptions": []}})
+        """
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
+    client_r, client_w = os.pipe()
+    out_r, out_w = os.pipe()
+    relay = Relay(
+        client_in=client_r,
+        client_out=out_w,
+        child=child,
+        event_log=None,
+        log_path=str(tmp_path / "log"),
+    )
+    threading.Thread(target=relay.run, daemon=True).start()
+    try:
+        _send(client_w, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        _until(out_r, 1)
+        _send(
+            client_w,
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "session/resume",
+                "params": {"sessionId": "sess-kept", "cwd": "/tmp"},
+            },
+        )
+        resumed = _until(out_r, 2)
+    finally:
+        os.close(client_w)
+        os.close(out_r)
+        if child.poll() is None:
+            child.kill()
+    assert resumed["result"]["sessionId"] == "sess-kept"
+    assert resumed["result"]["_meta"]["ai-hats/log"].endswith("log")
+
+
 def test_setting_plan_keeps_the_childs_options(tmp_path) -> None:
     child = subprocess.Popen(
         [sys.executable, "-c", _CHILD],

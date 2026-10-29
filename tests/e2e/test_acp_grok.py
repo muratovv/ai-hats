@@ -85,7 +85,7 @@ def test_e2e_one_prompt_ends_and_the_next_one_waits(tmp_project, tmp_path: Path)
     assert [event["text"] for event in prompts] == ["ping", "second"]
     assert {event["origin"] for event in prompts} == {"person"}
     argv = _rows(log)[0]["argv"]
-    assert argv[:3] == ["agent", "--no-leader", "stdio"]
+    assert argv[:5] == ["--permission-mode", "default", "agent", "--no-leader", "stdio"]
     assert "--always-approve" not in argv
 
 

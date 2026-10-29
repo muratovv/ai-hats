@@ -36,7 +36,8 @@ def grok_acp_argv(planned: list[str]) -> list[str]:
             index += 1
             continue
         index += 1
-    argv = [binary, "agent", "--no-leader", "stdio"]
+    # `default` prompts, and a flag beats the person's config.toml mode.
+    argv = [binary, "--permission-mode", "default", "agent", "--no-leader", "stdio"]
     if model:
         argv.extend(["--model", model])
     return argv

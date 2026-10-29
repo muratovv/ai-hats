@@ -349,7 +349,7 @@ def test_asking_config_prompts_when_the_person_is_on_auto() -> None:
 
     document = tomllib.loads(asking_config(text))
 
-    assert document["ui"]["permission_mode"] == "ask"
+    assert document["ui"]["permission_mode"] == "default"
     assert document["ui"]["yolo"] is False
     assert document["ui"]["kept"] == 1
     assert document["skills"]["custom"] == "stay"
@@ -366,11 +366,14 @@ def test_retain_transcript_copies_updates_into_the_real_home(tmp_path: Path, mon
     source = tmp_path / "session-home" / "sessions" / "encoded" / session_id
     source.mkdir(parents=True)
     (source / "updates.jsonl").write_text("{}\n")
+    (source / "summary.json").write_text("{}\n")
 
     GrokSurface().retain_transcript(tmp_path / "session-home", cwd, session_id)
 
     found = list((home_root / ".grok" / "sessions").glob(f"*/{session_id}/updates.jsonl"))
     assert [path.read_text() for path in found] == ["{}\n"]
+    summaries = list((home_root / ".grok" / "sessions").glob(f"*/{session_id}/summary.json"))
+    assert [path.read_text() for path in summaries] == ["{}\n"]
 
 
 def test_bind_uses_the_git_root_and_refuses_to_link_a_directory_onto_itself(

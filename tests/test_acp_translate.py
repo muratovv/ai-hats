@@ -44,6 +44,8 @@ def test_argv_is_the_session_child_and_drops_the_one_shot_flags() -> None:
 
     assert grok_acp_argv(planned) == [
         "grok",
+        "--permission-mode",
+        "default",
         "agent",
         "--no-leader",
         "stdio",

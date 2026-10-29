@@ -130,7 +130,7 @@ class GrokSurface(Surface):
         return layout.cache.session(session_id) / "skills"
 
     def retain_transcript(self, session_home: Path, cwd: Path, provider_session_id: str) -> None:
-        """Copy the ACP transcript into the real grok home before the session cache goes."""
+        """Copy the session directory into the real grok home before the cache goes."""
         if not provider_session_id:
             return
         from urllib.parse import quote
@@ -144,18 +144,13 @@ class GrokSurface(Surface):
         ]
         if not matches:
             return
-        source = matches[0]
+        source = matches[0].parent
         remote = (
             grok_home() / "sessions" / quote(str(_scope_root(cwd)), safe="") / provider_session_id
         )
-        remote.mkdir(parents=True, exist_ok=True)
-        target = remote / "updates.jsonl"
-        if not target.exists():
-            shutil.copy2(source, target)
-        usage = source.with_name("usage.json")
-        kept = remote / "usage.json"
-        if usage.is_file() and not kept.exists():
-            shutil.copy2(usage, kept)
+        if source.resolve() == remote.resolve():
+            return
+        _copy_missing(source, remote)
 
     def resolve_transcript(
         self,
@@ -288,12 +283,16 @@ class GrokSurface(Surface):
         session_id = flags.provider_session_id or ""
         known = _is_uuid(session_id)
         resume = _is_resume(flags.extra_args)
+        # "<assigned at launch>" is not a session. An empty id is ACP: link what exists.
+        if not known and not resume and session_id:
+            return
         cwd = flags.work_dir if flags.work_dir is not None else layout.cwd
         bind_session_store(
             Path(home),
             Path(cwd),
             session_id if known else None,
             fresh=known and not resume,
+            create_remote=known or resume,
         )
 
     def get_cli_launch_args(
@@ -457,6 +456,22 @@ def _assistant_text(stream: list[dict]) -> str:
         if isinstance(obj.get("text"), str):
             return str(obj["text"])
     return ""
+
+
+def _copy_missing(source: Path, remote: Path) -> None:
+    """Copy files the real home does not have yet. An existing file stays."""
+    for path in source.rglob("*"):
+        target = remote / path.relative_to(source)
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink():
+            target.symlink_to(path.readlink())
+            continue
+        shutil.copy2(path, target)
 
 
 def _session_id(stream: list[dict], fallback: str | None) -> str:

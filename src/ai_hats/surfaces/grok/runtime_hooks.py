@@ -94,6 +94,7 @@ def bind_session_store(
     session_id: str | None,
     *,
     fresh: bool,
+    create_remote: bool = True,
 ) -> None:
     """Link prior transcripts in. A fresh transcript dir is created in the real home."""
     encoded = quote(str(_scope_root(cwd)), safe="")
@@ -101,8 +102,11 @@ def bind_session_store(
     remote = grok_home() / "sessions" / encoded
     if local.resolve() == remote.resolve():
         return
+    if not remote.is_dir():
+        if not create_remote:
+            return
+        remote.mkdir(parents=True, exist_ok=True)
     local.mkdir(parents=True, exist_ok=True)
-    remote.mkdir(parents=True, exist_ok=True)
     skip = session_id if fresh else None
     for child in remote.iterdir():
         if child.name.startswith("permission") or child.name == skip:

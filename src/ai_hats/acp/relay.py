@@ -83,6 +83,7 @@ class Relay:
         self._prompt_ids: dict[Any, str] = {}
         self._person_texts: set[str] = set()
         self._session_id: str | None = None
+        self._resume_id: str | None = None
         self._window: int | None = None
         self._elicitation = False
         self._known_children: set[str] = set()
@@ -174,6 +175,11 @@ class Relay:
         if method == "session/set_config_option" and kind == "request":
             if self._answer_our_config(message):
                 return
+        if method == "session/resume" and kind == "request":
+            params = message.get("params") or {}
+            named = params.get("sessionId")
+            if isinstance(named, str) and named:
+                self._resume_id = named
         if method == "session/prompt" and kind == "request":
             if self._prompt_open is not None:
                 self._prompt_queue.append(message)
@@ -275,6 +281,14 @@ class Relay:
             self._window = window_size(result) or self._window
         elif method in ("session/new", "session/resume"):
             # A resumed process is a new journal. The old turns are not copied in.
+            # grok 1.0.70 omits sessionId here; the request already named it.
+            named = result.get("sessionId")
+            if (
+                method == "session/resume"
+                and not (isinstance(named, str) and named)
+                and self._resume_id
+            ):
+                result = {**result, "sessionId": self._resume_id}
             self._child_options = kept_options(result.get("configOptions"))
             result = with_log_path(result, self._log_path)
             result = with_mode_options(

@@ -154,7 +154,7 @@ def asking_config(text: str) -> str:
     if not isinstance(ui, dict):
         ui = {}
         document["ui"] = ui
-    ui["permission_mode"] = "ask"
+    ui["permission_mode"] = "default"
     ui["yolo"] = False
     return _emit_toml(document)
 
