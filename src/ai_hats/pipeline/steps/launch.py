@@ -123,6 +123,7 @@ class Provider(Step):
 
         if interactive and acp_stdout_fd is not None:
             from ...acp.runner import AcpRunner
+            from ...surfaces.grok.acp_child import GrokAcpChild
 
             holder = AcpRunner(
                 layout,
@@ -130,6 +131,7 @@ class Provider(Step):
                 session_mgr=session_mgr,
                 tracer_factory=tracer_factory,
                 stdout_fd=acp_stdout_fd,
+                acp_child=GrokAcpChild(),
             )
             exit_code, session = holder.run(extra_args=list(extra_args or []), tags=tags)
             apply_post_run_guard(session, self.harness_policy)

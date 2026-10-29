@@ -12,6 +12,7 @@ import threading
 import time
 
 from ai_hats.acp.relay import Relay
+from ai_hats.surfaces.grok.acp_child import GrokAcpChild
 
 
 def _relay(child: subprocess.Popen[bytes], log_path: str) -> tuple[Relay, int, int]:
@@ -24,6 +25,7 @@ def _relay(child: subprocess.Popen[bytes], log_path: str) -> tuple[Relay, int, i
         child=child,
         event_log=None,
         log_path=log_path,
+        acp_child=GrokAcpChild(),
     )
     return relay, client_w, out_r
 
@@ -192,6 +194,7 @@ def test_resume_keeps_the_session_id_the_child_omitted(tmp_path) -> None:
         child=child,
         event_log=None,
         log_path=str(tmp_path / "log"),
+        acp_child=GrokAcpChild(),
     )
     threading.Thread(target=relay.run, daemon=True).start()
     try:
@@ -230,6 +233,7 @@ def test_setting_plan_keeps_the_childs_options(tmp_path) -> None:
         child=child,
         event_log=None,
         log_path=str(tmp_path / "log"),
+        acp_child=GrokAcpChild(),
     )
     threading.Thread(target=relay.run, daemon=True).start()
     try:

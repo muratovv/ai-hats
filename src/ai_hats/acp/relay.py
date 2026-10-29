@@ -1,4 +1,4 @@
-"""The loop between an ACP client and the grok child.
+"""The loop between an ACP client and the child.
 
 One thread, two pipes. A second prompt stays here until the first one's result
 has been written to the client. Stdout of this process is the client's ACP,
@@ -29,8 +29,6 @@ from ai_hats_observe.canonical.types import now
 from .translate import (
     AskClient,
     ReplyToChild,
-    answer_for_child,
-    child_id_from_update,
     classify_commands,
     elicitation_declared,
     forward_update,
@@ -39,7 +37,6 @@ from .translate import (
     message_kind,
     our_config,
     permission_for_client,
-    present_question,
     project_commands,
     prompt_id,
     prompt_text,
@@ -63,12 +60,14 @@ class Relay:
         child: subprocess.Popen[bytes],
         event_log: Any,
         log_path: str,
+        acp_child: Any,
         on_session: Any = None,
         skill_names: set[str] | None = None,
     ) -> None:
         self._client_in = client_in
         self._client_out = client_out
         self._child = child
+        self._acp_child = acp_child
         self._event_log = event_log
         self._log_path = log_path
         self._on_session = on_session
@@ -219,13 +218,15 @@ class Relay:
         self._write_client(shown.message)
 
     def _show_to_client(self, message: dict[str, Any]) -> AskClient | ReplyToChild:
-        decision = present_question(message, elicitation=self._elicitation)
+        decision = self._acp_child.present_question(message, elicitation=self._elicitation)
         if not isinstance(decision, AskClient):
             return decision
         if decision.message.get("method") == "session/request_permission":
+            stripped, claimed = self._acp_child.untrusted_child(decision.message)
             return AskClient(
                 permission_for_client(
-                    decision.message,
+                    stripped,
+                    claimed=claimed,
                     known_ids=self._known_children,
                     by_call=self._child_by_call,
                 ),
@@ -242,19 +243,19 @@ class Relay:
         if not isinstance(update, dict):
             self._write_client(message)
             return
-        child = child_id_from_update(update)
-        if child:
-            self._known_children.add(child)
+        child_id = self._acp_child.child_id_from_update(update)
+        if child_id:
+            self._known_children.add(child_id)
             call_id = update.get("toolCallId")
             if isinstance(call_id, str) and call_id:
-                self._child_by_call[call_id] = child
+                self._child_by_call[call_id] = child_id
             self._emit(
                 [
                     ToolResultReceived(
-                        call_id=ToolCallId(str(update.get("toolCallId") or child)),
+                        call_id=ToolCallId(str(update.get("toolCallId") or child_id)),
                         ok=True,
-                        content={"subagent_id": child},
-                        agent=AgentId(child),
+                        content=self._acp_child.child_result_content(child_id),
+                        agent=AgentId(child_id),
                         ts=now(),
                     )
                 ]
@@ -281,14 +282,7 @@ class Relay:
             self._window = window_size(result) or self._window
         elif method in ("session/new", "session/resume"):
             # A resumed process is a new journal. The old turns are not copied in.
-            # grok 1.0.70 omits sessionId here; the request already named it.
-            named = result.get("sessionId")
-            if (
-                method == "session/resume"
-                and not (isinstance(named, str) and named)
-                and self._resume_id
-            ):
-                result = {**result, "sessionId": self._resume_id}
+            result = self._acp_child.session_result(method, result, self._resume_id)
             self._child_options = kept_options(result.get("configOptions"))
             result = with_log_path(result, self._log_path)
             result = with_mode_options(
@@ -356,7 +350,7 @@ class Relay:
         if not isinstance(result, dict):
             result = {}
         # A permission result has no text field. It goes to the child unchanged.
-        body = answer_for_child(original, result)
+        body = self._acp_child.answer_for_child(original, result)
         verdict = rejection_verdict(original, result)
         if verdict is not None:
             self._emit([verdict])

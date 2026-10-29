@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-from ai_hats.acp.argv import grok_acp_argv
 from ai_hats.acp.translate import (
     AGENT_KEY,
     DENIAL_PHRASE,
     LOG_KEY,
     SKILLS_KEY,
-    UNTRUSTED_CHILD_KEY,
-    AskClient,
-    ReplyToChild,
-    answer_for_child,
-    child_id_from_update,
     classify_commands,
     elicitation_declared,
     permission_for_client,
     forward_update,
     mode_options,
-    present_question,
     project_commands,
     prompt_text,
     rejection_verdict,
@@ -28,30 +21,6 @@ from ai_hats.acp.translate import (
     with_log_path,
     with_mode_options,
 )
-
-
-def test_argv_is_the_session_child_and_drops_the_one_shot_flags() -> None:
-    planned = [
-        "grok",
-        "--session-id",
-        "11111111-1111-1111-1111-111111111111",
-        "--model",
-        "grok-4.7",
-        "--always-approve",
-        "-p",
-        "hello",
-    ]
-
-    assert grok_acp_argv(planned) == [
-        "grok",
-        "--permission-mode",
-        "default",
-        "agent",
-        "--no-leader",
-        "stdio",
-        "--model",
-        "grok-4.7",
-    ]
 
 
 def test_session_new_carries_the_log_and_the_mode_words() -> None:
@@ -134,92 +103,43 @@ def test_empty_reject_is_the_holders_phrase_and_allow_is_not() -> None:
     assert allowed is None
 
 
-def test_free_text_without_elicitation_is_refused_without_asking() -> None:
-    request = {
-        "jsonrpc": "2.0",
-        "id": 7,
-        "method": "_x.ai/ask_user_question",
-        "params": {"questions": [{"question": "Why?", "options": []}]},
-    }
-
-    decision = present_question(request, elicitation=False)
-
-    assert isinstance(decision, ReplyToChild)
-    assert decision.result == {"outcome": "declined"}
-
-
-def test_options_without_elicitation_become_a_permission() -> None:
-    request = {
-        "jsonrpc": "2.0",
-        "id": 7,
-        "method": "_x.ai/ask_user_question",
-        "params": {
-            "sessionId": "s",
-            "toolCallId": "q1",
-            "questions": [
-                {"question": "Which color?", "options": [{"label": "red"}, {"label": "blue"}]}
-            ],
-        },
-    }
-
-    decision = present_question(request, elicitation=False)
-
-    assert isinstance(decision, AskClient)
-    assert decision.message["method"] == "session/request_permission"
-    answer = answer_for_child(decision.original, {"outcome": "selected", "optionId": "red"})
-    assert answer == {"outcome": "accepted", "answers": {"Which color?": ["red"]}}
-
-
-def test_elicitation_is_used_when_the_client_declared_it() -> None:
+def test_elicitation_is_the_clients_declared_capability() -> None:
     assert elicitation_declared({"clientCapabilities": {"elicitation": {"form": True}}})
-    request = {
-        "jsonrpc": "2.0",
-        "id": 7,
-        "method": "_x.ai/ask_user_question",
-        "params": {"questions": [{"question": "Why?", "options": []}]},
-    }
-
-    decision = present_question(request, elicitation=True)
-
-    assert isinstance(decision, AskClient)
-    assert decision.message["method"] == "elicitation/create"
+    assert not elicitation_declared({})
 
 
-def _permission(call_id: str, claimed: str) -> dict:
+def _permission(call_id: str) -> dict:
     return {
         "jsonrpc": "2.0",
         "id": 9,
         "method": "session/request_permission",
         "params": {
             "sessionId": "s",
-            "toolCall": {
-                "toolCallId": call_id,
-                "title": "rm",
-                "_meta": {UNTRUSTED_CHILD_KEY: claimed},
-            },
+            "toolCall": {"toolCallId": call_id, "title": "rm"},
             "options": [],
         },
     }
 
 
-def test_an_untrusted_child_id_is_omitted_until_a_tool_result_names_it() -> None:
+def test_a_child_id_is_attached_only_when_it_is_already_known() -> None:
     stranger = permission_for_client(
-        _permission("call-2", "untrusted"), known_ids=set(), by_call={}
+        _permission("call-2"), claimed="untrusted", known_ids=set(), by_call={}
     )
-    assert UNTRUSTED_CHILD_KEY not in (stranger["params"]["toolCall"].get("_meta") or {})
     assert AGENT_KEY not in (stranger["params"]["toolCall"].get("_meta") or {})
 
-    update = {"toolCallId": "spawn-1", "rawOutput": {"subagent_id": "child-from-journal"}}
-    known = {child_id_from_update(update) or ""}
-    by_call = {"spawn-1": "child-from-journal"}
     matched = permission_for_client(
-        _permission("call-2", "child-from-journal"), known_ids=known, by_call=by_call
+        _permission("call-2"),
+        claimed="child-from-journal",
+        known_ids={"child-from-journal"},
+        by_call={},
     )
-    meta = matched["params"]["toolCall"]["_meta"]
-    assert meta == {AGENT_KEY: "child-from-journal"}
+    assert matched["params"]["toolCall"]["_meta"] == {AGENT_KEY: "child-from-journal"}
 
     same_call = permission_for_client(
-        _permission("spawn-1", "untrusted"), known_ids=known, by_call=by_call
+        _permission("spawn-1"),
+        claimed="untrusted",
+        known_ids={"child-from-journal"},
+        by_call={"spawn-1": "child-from-journal"},
     )
     assert same_call["params"]["toolCall"]["_meta"][AGENT_KEY] == "child-from-journal"
 
