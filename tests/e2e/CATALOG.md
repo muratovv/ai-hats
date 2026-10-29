@@ -1520,10 +1520,10 @@ as a claim to check, not as evidence.
   ```console
   bash scripts/gates.sh skill-desc       # announces the stage it dispatched to
   bash scripts/gates.sh no-such-stage    # exit 2, and the usage names the stage
-  hooks/merge-gate.sh --stages           # the stage is part of a gate
+  git_hooks/pre-push-e2e-master.sh --stages # the push gate names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] skill-desc`, states on every run what it does not cover, and is named in the merge-gate composition. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[gates] skill-desc`, states on every run what it does not cover, and is named in the push-gate composition. The card gates do not name it. Whether the live corpus is clean belongs to the stage; the refusal is proved against a planted tree instead, which no sibling session can change under us.
 - **why** — a checker that is wired but never refuses anything leaves the next skill free to bring back a quoted description. The one spelling this tree keeps is the reason a blanket "no matches ever" assertion would not show that the judge can still see the other spellings.
 
 ## `test_gates_stage_leads_path_with_its_interpreter.py`

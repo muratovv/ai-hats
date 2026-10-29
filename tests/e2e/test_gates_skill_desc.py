@@ -5,12 +5,13 @@ flow:   a maintainer runs the pre-push bundle, which must refuse the push when
 cmds:
     bash scripts/gates.sh skill-desc       # announces the stage it dispatched to
     bash scripts/gates.sh no-such-stage    # exit 2, and the usage names the stage
-    hooks/merge-gate.sh --stages           # the stage is part of a gate
+    git_hooks/pre-push-e2e-master.sh --stages # the push gate names the stage
 expect: the stage is reachable through the dispatcher, announces itself as
         `[gates] skill-desc`, states on every run what it does not cover, and
-        is named in the merge-gate composition. Whether the live corpus is
-        clean belongs to the stage; the refusal is proved against a planted
-        tree instead, which no sibling session can change under us.
+        is named in the push-gate composition. The card gates do not name it.
+        Whether the live corpus is clean belongs to the stage; the refusal is
+        proved against a planted tree instead, which no sibling session can
+        change under us.
 why:    a checker that is wired but never refuses anything leaves the next
         skill free to bring back a quoted description. The one spelling this
         tree keeps is the reason a blanket "no matches ever" assertion would
@@ -69,20 +70,28 @@ def test_unknown_stage_lists_the_description_stage():
     assert listed and "skill-desc" in listed[0], combined
 
 
-def test_the_stage_is_part_of_the_merge_gate():
-    """Wired but ungated is a stage nothing runs."""
-    gate = (
-        REPO_ROOT
-        / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
-        / "hooks/merge-gate.sh"
+def test_only_the_push_gate_names_the_stage():
+    """A card gate that names it refuses a branch the push has not reached."""
+    skill = (
+        REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/ai-hats-dev/skills/quality-gate"
     )
-    composition = subprocess.run(
-        ["bash", str(gate), "--stages"],
+    push = subprocess.run(  # noqa: S603
+        ["bash", str(skill / "git_hooks/pre-push-e2e-master.sh"), "--stages"],
         capture_output=True,
         text=True,
+        timeout=60,
         check=True,
     )
-    assert "skill-desc" in composition.stdout.split(), composition.stdout
+    assert "skill-desc" in push.stdout.split(), push.stdout
+    for name in ("review-gate.sh", "merge-gate.sh", "done-gate.sh"):
+        card = subprocess.run(  # noqa: S603
+            ["bash", str(skill / "hooks" / name), "--stages"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+        assert "skill-desc" not in card.stdout.split(), card.stdout
 
 
 def test_the_checker_refuses_a_planted_quoted_description(tmp_path: Path):

@@ -77,7 +77,7 @@ hook-подложкой и контрактом кодов возврата. **A
 | `prose-refs`       | review-gate done-gate merge-gate push-gate                                               | paths, library prefixes, sections and symbols named in library prose resolve                                            |
 | `ticket-ids`       | review-gate done-gate merge-gate push-gate                                               | no tracker id in library prose, a doc a reader opens, or src/                                                           |
 | `consumer-refs`    | review-gate done-gate merge-gate                                                         | no library component names a component that composes it                                                                 |
-| `skill-desc`       | review-gate done-gate merge-gate push-gate                                               | every library SKILL.md description is a folded strip scalar                                                             |
+| `skill-desc`       | push-gate                                                                                | every library SKILL.md description is a folded strip scalar                                                             |
 | `env-reference`    | review-gate done-gate merge-gate push-gate                                               | docs/reference-env.md matches the env declarations the code reads                                                       |
 | `gate-table`       | review-gate done-gate merge-gate push-gate                                               | ADR-0023's stage and gate tables match this file and the gates                                                          |
 | `adr-integrity`    | push-gate                                                                                | every ADR citation resolves and a number names exactly one file                                                         |
@@ -247,12 +247,12 @@ flowchart TD
 
 <!-- gate-table:gates -->
 
-| гейт          | где применяется          | стадии                                                                                                                                                                                                                |
-| ------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs skill-desc env-reference gate-table wheel-contents unit merge-smoke                                   |
-| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog tmp-sweep lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs skill-desc env-reference gate-table wheel-contents unit integration merge-smoke e2e-default |
-| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs skill-desc env-reference gate-table wheel-contents unit merge-smoke                                   |
-| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids skill-desc env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe      |
+| гейт          | где применяется          | стадии                                                                                                                                                                                                           |
+| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review-gate` | `rack.tasks`: `->review` | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                                         |
+| `done-gate`   | `rack.tasks`: `->done`   | e2e-catalog tmp-sweep lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default       |
+| `merge-gate`  | `wt`: `pre-merge`        | e2e-catalog lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit merge-smoke                                         |
+| `push-gate`   | `git pre-push`           | e2e-catalog lint prose-refs ticket-ids skill-desc env-reference gate-table adr-integrity bidi unit e2e-default e2e-rack e2e-guards e2e-gates e2e-wt e2e-install e2e-surfaces e2e-consent e2e-library e2e-observe |
 
 <!-- /gate-table:gates -->
 

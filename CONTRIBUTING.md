@@ -463,7 +463,8 @@ reference that is merely stale is a finding, and the fix is the reference.
 description to be a folded strip scalar, `description: >-`. A plain line
 and a quoted line parse to the same string, and the next edit copies
 whichever spelling it saw. Clip (`>`) keeps a trailing newline, and the
-skill index then puts the `SKILL.md` path on the following line.
+skill index then puts the `SKILL.md` path on the following line. The push
+to master is the gate that requires the stage.
 
 The parsed value has to stay one line. A blank line inside the fold is a
 newline in the value, and that wraps the index the same way. A line of the

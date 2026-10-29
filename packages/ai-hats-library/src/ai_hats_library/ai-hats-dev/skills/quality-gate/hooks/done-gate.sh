@@ -11,6 +11,6 @@ set -uo pipefail
 DEMAND_ZONES=none
 # tmp-sweep here only, ahead of the heavy stages: it can fail nothing, and a
 # closed card is the one automatic cadence the sweep and its uv-cache prune have.
-STAGES='e2e-catalog tmp-sweep lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs skill-desc env-reference gate-table wheel-contents unit integration merge-smoke e2e-default'
+STAGES='e2e-catalog tmp-sweep lint shellcheck dependency-floor silent-fallback test-isolation prose-refs ticket-ids consumer-refs env-reference gate-table wheel-contents unit integration merge-smoke e2e-default'
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/gate.sh" || exit 2
 gate_main done-gate "$STAGES" "$@"

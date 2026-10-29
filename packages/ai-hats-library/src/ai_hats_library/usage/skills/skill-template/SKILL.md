@@ -177,8 +177,8 @@ writing-skills, MIT.)
       from obra/superpowers, MIT.)
 - [ ] **Description is a folded strip scalar** — `description: >-`. A plain
       or quoted line is the same string in a second spelling, and clip `>`
-      keeps a trailing newline, so the skill index wraps the path. The gate
-      is `bash scripts/gates.sh skill-desc`.
+      keeps a trailing newline, so the skill index wraps the path. The push
+      to master runs `bash scripts/gates.sh skill-desc`.
 - [ ] **Validation scenario present** — one named RED baseline (an agent
       *without* the skill fails) that the skill demonstrably fixes; see
       "Validation scenario" above
