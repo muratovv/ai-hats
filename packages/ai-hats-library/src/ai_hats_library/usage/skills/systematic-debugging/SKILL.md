@@ -56,4 +56,5 @@ If there's no running-system urgency, you're in the right place.
 ## Anti-Patterns
 - Guess-and-check — changing things randomly hoping it works
 - Fixing symptoms instead of root cause — the bug will return
+- Swallowing the failure, returning a default, or skipping the crashing case, while the cause stays. That handler is not the fix. The fix is the change that makes the failing test green because the cause is gone.
 - Skipping regression check — fix one bug, introduce two more

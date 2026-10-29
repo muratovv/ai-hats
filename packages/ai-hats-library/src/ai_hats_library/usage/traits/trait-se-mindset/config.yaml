@@ -19,15 +19,18 @@ injection: |
 
   ### Architecture
   - Separate domain logic from infrastructure (DB, API, external services).
-  - Rely on abstractions over concrete implementations for modularity.
+  - An abstraction earns its place when a second production implementation already exists. Logic that is already clear and local stays concrete — do not wrap it in an interface or a new module.
   - Design for testability — if a component is hard to test, its design is flawed.
   - Document non-obvious architectural decisions (ADR).
+  - One owner mutates each piece of shared state, and that owner is the code that already holds the value — not a new manager created to collect the writes. Callers ask the owner. Two call sites that both assign into the same object are two writers: give each its own value, or move both assignments into the owner.
 
   ### Testing
   - Given-When-Then structure: setup → action → assertion.
+  - A test asserts what the caller gets back, the error the caller sees, or the persisted state that changed. If the code under test returned nothing and touched nothing and the test would still pass, delete it — it pins no behavior.
   - Always test edge cases, error conditions, and empty/null states. Not just happy path.
   - Integration tests over excessive mocking for critical paths.
   - **Vertical slicing only.** Write ONE test, get it to GREEN, then the next test. Do NOT write all tests first then all implementation — bulk-written tests verify shape, not behavior, and are insensitive to real changes. Never refactor while RED.
+  - **Confirm the RED.** Name the missing behavior, run that one test, and read the failure before any production edit. It is RED only when that behavior is what failed. A collection error, an import error, or a typo is a broken test: fix the test and see the real failure first.
 
   ### Reading a test run
   The exit code you act on must be the **runner's** — not a filter's, a trailing command's, or a wrapper script's, each of which reports whatever ran last. Report the number, never an adjective, and only from an artefact this run produced.
