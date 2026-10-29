@@ -442,7 +442,12 @@ def _ticket_start() -> Path:
     return Path.cwd()
 
 
-def main(surface: str) -> int:
+def main(
+    surface: str,
+    *,
+    argv: Sequence[str] | None = None,
+    ticket_start: Path | None = None,
+) -> int:
     """Run one materialized command wrapper."""
     config_path = os.environ.get(CONFIG_ENV)
     if not config_path:
@@ -458,17 +463,20 @@ def main(surface: str) -> int:
 
     from .consent_port import verdict
 
-    argv = sys.argv[1:]
+    # Resolved here, at the entry point: a test passes the checkout instead of
+    # patching cwd or argv under the function that reads them.
+    args = list(sys.argv[1:] if argv is None else argv)
+    start = _ticket_start() if ticket_start is None else ticket_start
     return run_wrapped(
         surface,
-        argv,
+        args,
         config,
         check_grant=lambda operation, target: verdict(operation, target_dir=target),
         peek_ticket=lambda subject, command: consent_ticket.peek(
-            subject, start=_ticket_start(), argv=command
+            subject, start=start, argv=command
         ),
         consume_ticket=lambda subject, command: consent_ticket.consume(
-            subject, start=_ticket_start(), argv=command
+            subject, start=start, argv=command
         ),
     )
 

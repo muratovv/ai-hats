@@ -4,7 +4,6 @@ from ai_hats_core.layout import ProjectLayout
 
 import json
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -343,10 +342,8 @@ def test_a_ticket_in_the_cwd_repo_opens_the_command(tmp_path: Path, monkeypatch)
     assert nonce
     monkeypatch.setenv(ct.TICKET_ENV, nonce)
     monkeypatch.setenv(CONFIG_ENV, str(config))
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(sys, "argv", ["rack", *argv])
 
-    assert main("rack") == 0
+    assert main("rack", argv=argv, ticket_start=target) == 0
     assert marker.is_file()
     assert ct.peek("INF-038", start=target, nonce=nonce, argv=argv) is False
 
@@ -371,10 +368,8 @@ def test_a_ticket_only_in_the_session_repo_does_not_open_the_command(
     assert nonce
     monkeypatch.setenv(ct.TICKET_ENV, nonce)
     monkeypatch.setenv(CONFIG_ENV, str(config))
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(sys, "argv", ["rack", *argv])
 
-    assert main("rack") == 2
+    assert main("rack", argv=argv, ticket_start=target) == 2
     assert not marker.exists()
     assert "ticket already spent or never issued" in capsys.readouterr().err
     assert ct.peek("INF-038", start=session, nonce=nonce, argv=argv) is True
