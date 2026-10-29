@@ -1,6 +1,6 @@
 ---
 name: platform-ui
-description: >
+description: >-
   Choose the platform element, the layout, the color scheme, and the
   first paint when building a web UI. Use when adding or changing a
   control, a layout, a theme, or the first screen of a page.
