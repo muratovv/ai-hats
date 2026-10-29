@@ -1,6 +1,9 @@
 ---
 name: judge-auditor-protocol
-description: Read-only audit protocol for the judge-auditor role (Phase 1 of the two-phase judge split) — produces a draft report with proposed verdicts and mutations for the HITL judge to consume.
+description: >-
+  Read-only audit protocol for the judge-auditor role (Phase 1 of the
+  two-phase judge split) — produces a draft report with proposed verdicts
+  and mutations for the HITL judge to consume.
 ai_hats:
   requires:
     cli:

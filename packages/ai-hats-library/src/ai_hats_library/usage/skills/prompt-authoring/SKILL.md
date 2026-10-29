@@ -1,6 +1,9 @@
 ---
 name: prompt-authoring
-description: Choose the mechanism before the wording, then write prose that holds. Use before wording or rewording any rule, injection or skill body, and when a written instruction has failed to change behaviour.
+description: >-
+  Choose the mechanism before the wording, then write prose that holds.
+  Use before wording or rewording any rule, injection or skill body, and
+  when a written instruction has failed to change behaviour.
 license: MIT
 ---
 

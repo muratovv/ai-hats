@@ -1,6 +1,6 @@
 ---
 name: design-direction
-description: >
+description: >-
   Show a numbered prototype and hold it until the supervisor picks.
   Use when starting or redesigning a screen, and when a first pass
   would look the same on any similar brief.

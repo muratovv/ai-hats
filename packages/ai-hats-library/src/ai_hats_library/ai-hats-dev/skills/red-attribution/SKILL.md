@@ -1,6 +1,10 @@
 ---
 name: red-attribution
-description: Decide whose failure a red stage is before acting on it. Use when a gate stage, test tier or CI run goes red and the change may not be its cause, when the push road reports a red master, and before reporting a suite green.
+description: >-
+  Decide whose failure a red stage is before acting on it. Use when a gate
+  stage, test tier or CI run goes red and the change may not be its cause,
+  when the push road reports a red master, and before reporting a suite
+  green.
 license: MIT
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: logo-design
-description: >
+description: >-
   Take a mark from a brief to three different concepts and stop there.
   Use when drawing a new mark, critiquing one, redesigning one, or
   exporting assets from a mark the person has already picked.

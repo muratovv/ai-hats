@@ -1,6 +1,8 @@
 ---
 name: judge-role-protocol
-description: HITL dialogue + CLI ops contract for role-judge — file-fix tasks instead of editing role/skill/rule sources
+description: >-
+  HITL dialogue + CLI ops contract for role-judge — file-fix tasks instead
+  of editing role/skill/rule sources
 license: MIT
 ---
 

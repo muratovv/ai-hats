@@ -1,6 +1,9 @@
 ---
 name: go-trait-fit
-description: Match a Go role's `dev::go-*` traits to what the module actually requires, read from `go.mod`. Use when picking or customizing a role in a repository whose root carries a `go.mod`.
+description: >-
+  Match a Go role's `dev::go-*` traits to what the module actually
+  requires, read from `go.mod`. Use when picking or customizing a role in
+  a repository whose root carries a `go.mod`.
 license: MIT
 ---
 

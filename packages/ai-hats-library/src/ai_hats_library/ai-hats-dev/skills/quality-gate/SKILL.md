@@ -1,6 +1,10 @@
 ---
 name: quality-gate
-description: When a change owes an e2e test, and the gates that enforce it — pre-push e2e+smoke to master plus the ->review, ->merge and ->done gates. Use when changing the CLI, a shell script, the install flow or any installed hook, and when handing over, merging or closing a card.
+description: >-
+  When a change owes an e2e test, and the gates that enforce it — pre-push
+  e2e+smoke to master plus the ->review, ->merge and ->done gates. Use
+  when changing the CLI, a shell script, the install flow or any installed
+  hook, and when handing over, merging or closing a card.
 ai_hats:
   # hook-carrier skill. `ai-hats self init` installs one
   # dispatcher per event in `.githooks/`; the script below is resolved from this

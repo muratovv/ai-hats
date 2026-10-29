@@ -1,6 +1,9 @@
 ---
 name: plan-discipline
-description: Put a plan in its one canonical home, the tracker `plan.md`, never `.claude/plans`. Use on entering plan mode, on any plan draft including ExitPlanMode output, or when a task enters brainstorm→plan.
+description: >-
+  Put a plan in its one canonical home, the tracker `plan.md`, never
+  `.claude/plans`. Use on entering plan mode, on any plan draft including
+  ExitPlanMode output, or when a task enters brainstorm→plan.
 license: MIT
 ---
 

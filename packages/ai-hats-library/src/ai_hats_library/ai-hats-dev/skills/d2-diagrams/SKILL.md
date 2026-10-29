@@ -1,6 +1,9 @@
 ---
 name: d2-diagrams
-description: How a d2 diagram in this repo is drawn and rendered. Use when editing a `.d2` file, `docs/assets/diagrams/_palette.d2`, or `docs/assets/diagrams/render.sh`.
+description: >-
+  How a d2 diagram in this repo is drawn and rendered. Use when editing a
+  `.d2` file, `docs/assets/diagrams/_palette.d2`, or
+  `docs/assets/diagrams/render.sh`.
 license: MIT
 ---
 

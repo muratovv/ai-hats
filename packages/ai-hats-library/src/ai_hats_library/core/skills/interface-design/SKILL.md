@@ -1,6 +1,10 @@
 ---
 name: interface-design
-description: Shape a public contract so a reader with none of your context can use it. Use on any CRUD to a public interface — a field, method, type or enum member added, retyped, renamed or removed — and when reviewing a diff that touches one.
+description: >-
+  Shape a public contract so a reader with none of your context can use
+  it. Use on any CRUD to a public interface — a field, method, type or
+  enum member added, retyped, renamed or removed — and when reviewing a
+  diff that touches one.
 license: MIT
 ---
 

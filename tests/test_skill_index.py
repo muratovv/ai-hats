@@ -78,6 +78,30 @@ def test_the_block_renders_the_bytes_the_index_always_had(tmp_path: Path):
     assert [m.name for m in block.members] == ["opencode::skill-index"]
 
 
+def test_a_folded_strip_stays_on_one_index_line_and_clip_wraps_the_path(tmp_path: Path):
+    """Clip keeps the linebreak before the next key, so the path leaves the line."""
+    documents = {
+        "strip": "---\nname: strip\ndescription: >-\n  does one thing\nlicense: MIT\n---\n",
+        "clip": "---\nname: clip\ndescription: >\n  does one thing\nlicense: MIT\n---\n",
+    }
+    skills = []
+    for name, document in documents.items():
+        source = tmp_path / name
+        source.mkdir()
+        (source / "SKILL.md").write_text(document)
+        skills.append(Skill(f"skills::{name}", source, "d", document=document))
+
+    text = (
+        skill_index_block(_composition(skills), tmp_path / "root", surface="opencode")
+        .members[0]
+        .text
+    )
+
+    assert "- **strip** — does one thing (`" in text
+    assert "- **clip** — does one thing (`" not in text
+    assert "- **clip** — does one thing\n" in text
+
+
 def test_no_skills_is_no_block(tmp_path: Path):
     assert skill_index_block(_composition(()), tmp_path / "skills", surface="codex") is None
 

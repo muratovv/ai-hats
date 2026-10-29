@@ -1,6 +1,10 @@
 ---
 name: article-outline
-description: Outline before draft — the text's purpose, its Diátaxis type, audience, style forks and sections, agreed before a word of body text. Use when a text (article, doc page, guide, report) is being planned, or when a draft is about to start without an agreed type and reader.
+description: >-
+  Outline before draft — the text's purpose, its Diátaxis type, audience,
+  style forks and sections, agreed before a word of body text. Use when a
+  text (article, doc page, guide, report) is being planned, or when a
+  draft is about to start without an agreed type and reader.
 license: MIT
 ---
 

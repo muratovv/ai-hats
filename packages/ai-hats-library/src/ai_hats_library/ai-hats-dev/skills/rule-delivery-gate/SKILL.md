@@ -1,6 +1,9 @@
 ---
 name: rule-delivery-gate
-description: Pre-commit gate over staged trait and role injections. Use when composing a role that carries the `ai-hats-dev` trait, or when diagnosing why the rule-delivery hook blocked a commit.
+description: >-
+  Pre-commit gate over staged trait and role injections. Use when
+  composing a role that carries the `ai-hats-dev` trait, or when
+  diagnosing why the rule-delivery hook blocked a commit.
 ai_hats:
   # hook-carrier skill. The assembler installs the script below
   # into `.githooks/pre-commit.d/` at composition time. On a staged

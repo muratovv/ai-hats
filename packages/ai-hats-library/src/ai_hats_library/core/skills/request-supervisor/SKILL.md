@@ -1,6 +1,9 @@
 ---
 name: request-supervisor
-description: Decision protocol for when to act autonomously vs escalate to supervisor. Use before any communication with the user or parent-agent, or whenever uncertain whether to act autonomously or escalate.
+description: >-
+  Decision protocol for when to act autonomously vs escalate to
+  supervisor. Use before any communication with the user or parent-agent,
+  or whenever uncertain whether to act autonomously or escalate.
 license: MIT
 ---
 

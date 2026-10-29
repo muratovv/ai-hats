@@ -1,6 +1,10 @@
 ---
 name: self-retrospective
-description: Turn what went wrong into a systemic fix. Use when the supervisor asks for a retro, after a failed task (mandatory), after a task with backtracks, or when wrapping up a multi-task session. Not the automated audit that runs after a session closes.
+description: >-
+  Turn what went wrong into a systemic fix. Use when the supervisor asks
+  for a retro, after a failed task (mandatory), after a task with
+  backtracks, or when wrapping up a multi-task session. Not the automated
+  audit that runs after a session closes.
 license: MIT
 ---
 

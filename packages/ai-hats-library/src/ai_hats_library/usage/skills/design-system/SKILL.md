@@ -1,6 +1,6 @@
 ---
 name: design-system
-description: >
+description: >-
   File an accepted visual direction into the project's one system file,
   and let a page override only itself. Use when a direction has been
   accepted, when the project already has a system file, or when the next

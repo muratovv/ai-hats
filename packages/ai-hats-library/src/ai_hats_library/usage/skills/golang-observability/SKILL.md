@@ -1,6 +1,17 @@
 ---
 name: golang-observability
-description: "Golang everyday observability — the always-on signals in production. Covers structured logging with slog, Prometheus metrics, OpenTelemetry distributed tracing, continuous profiling with pprof/Pyroscope, server-side RUM event tracking, alerting, and Grafana dashboards. Apply when instrumenting Go services for production monitoring, setting up metrics or alerting, adding OpenTelemetry tracing, correlating logs with traces, migrating legacy loggers (zap/logrus/zerolog) to slog, adding observability to new features, or implementing GDPR/CCPA-compliant tracking with Customer Data Platforms (CDP). Not for temporary deep-dive performance investigation (→ See golang-benchmark and golang-performance skills)."
+description: >-
+  Golang everyday observability — the always-on signals in production.
+  Covers structured logging with slog, Prometheus metrics, OpenTelemetry
+  distributed tracing, continuous profiling with pprof/Pyroscope,
+  server-side RUM event tracking, alerting, and Grafana dashboards. Apply
+  when instrumenting Go services for production monitoring, setting up
+  metrics or alerting, adding OpenTelemetry tracing, correlating logs with
+  traces, migrating legacy loggers (zap/logrus/zerolog) to slog, adding
+  observability to new features, or implementing GDPR/CCPA-compliant
+  tracking with Customer Data Platforms (CDP). Not for temporary deep-dive
+  performance investigation (→ See golang-benchmark and golang-performance
+  skills).
 user-invocable: true
 license: MIT
 compatibility: Designed for Claude Code or similar AI coding agents, and for projects using Golang.

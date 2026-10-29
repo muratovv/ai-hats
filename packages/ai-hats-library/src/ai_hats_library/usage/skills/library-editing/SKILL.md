@@ -1,6 +1,9 @@
 ---
 name: library-editing
-description: Put a component where this project reads it, and wire it to a role. Use before adding or removing a trait, rule or skill, and when a component you wrote is not reaching the agent.
+description: >-
+  Put a component where this project reads it, and wire it to a role. Use
+  before adding or removing a trait, rule or skill, and when a component
+  you wrote is not reaching the agent.
 license: MIT
 ---
 

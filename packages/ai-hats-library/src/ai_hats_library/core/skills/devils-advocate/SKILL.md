@@ -1,6 +1,10 @@
 ---
 name: devils-advocate
-description: The Approach & counter stage of the plan-gate — a skeptic value-counter that steelmans the value, then challenges whether the work is worth doing (needed? missed anything? another way?) before scoping. Reached through plan-gate, not as an independent trigger.
+description: >-
+  The Approach & counter stage of the plan-gate — a skeptic value-counter
+  that steelmans the value, then challenges whether the work is worth
+  doing (needed? missed anything? another way?) before scoping. Reached
+  through plan-gate, not as an independent trigger.
 license: MIT
 ---
 

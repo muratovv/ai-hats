@@ -1,6 +1,11 @@
 ---
 name: context-reset
-description: Clean context reset protocol covering commit work, write handoff, update task card, and inform supervisor. Use when the context window is approaching its limit (system signals compression), when switching to a fundamentally different task domain, or when explicitly requested by the supervisor.
+description: >-
+  Clean context reset protocol covering commit work, write handoff, update
+  task card, and inform supervisor. Use when the context window is
+  approaching its limit (system signals compression), when switching to a
+  fundamentally different task domain, or when explicitly requested by the
+  supervisor.
 license: MIT
 ---
 

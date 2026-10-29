@@ -1,6 +1,9 @@
 ---
 name: py-security-lint
-description: PostToolUse hook — reports the project's own ruff security (`S`) findings on every `.py` you Edit/Write, non-blockingly; fail-open, no manual invocation.
+description: >-
+  PostToolUse hook — reports the project's own ruff security (`S`)
+  findings on every `.py` you Edit/Write, non-blockingly; fail-open, no
+  manual invocation.
 ai_hats:
   runtime_hooks:
     PostToolUse:

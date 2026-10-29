@@ -1,6 +1,10 @@
 ---
 name: design-minimalism
-description: The Scope & Out-of-scope stage of the plan-gate — every primitive (class, abstraction, option, new step) in plan.md must be justified by a concrete current-epic use case; speculative additions go to Out of scope. Reached through plan-gate, not as an independent trigger.
+description: >-
+  The Scope & Out-of-scope stage of the plan-gate — every primitive
+  (class, abstraction, option, new step) in plan.md must be justified by a
+  concrete current-epic use case; speculative additions go to Out of
+  scope. Reached through plan-gate, not as an independent trigger.
 license: MIT
 ---
 
