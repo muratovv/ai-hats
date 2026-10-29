@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from ai_hats.acp.translate import AskClient, ReplyToChild
 
@@ -24,6 +24,9 @@ UNTRUSTED_CHILD_KEY = "x.ai/requestingSessionId"
 
 class GrokAcpChild:
     """What the ACP holder asks grok, and only grok, to do."""
+
+    def __init__(self, retain: Callable[[Path, Path, str], None] | None = None) -> None:
+        self._retain = retain
 
     def argv(self, planned: list[str]) -> list[str]:
         """Session argv plus a model from the plan. One-shot flags and `--session-id` are dropped."""
@@ -73,11 +76,9 @@ class GrokAcpChild:
         """The id arrives from session/new, so the launch-time bind never published the file."""
         ids = session.provider_session_ids()
         home = env.get(GROK_HOME_ENV)
-        if not ids or not home:
+        if not ids or not home or self._retain is None:
             return
-        from .provider import GrokSurface
-
-        GrokSurface().retain_transcript(Path(home), Path(cwd), ids[-1])
+        self._retain(Path(home), Path(cwd), ids[-1])
 
     def session_result(
         self, method: str, result: dict[str, Any], resume_id: str | None
