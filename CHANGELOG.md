@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-10-30
+
 ### Changed
 
 - **A surface reads the project's own configuration through its own accessor** (HATS-2018). `Host` carried `status_line`, a claude fact on the value every surface's planner is handed — added the same week master added `Surface.probe_home` for exactly that class of fact. Claude now implements `Surface.probe_project(environ, cwd)` and returns a `ClaudeProject`, the way codex and opencode return their homes, so `Host` names no surface: a **home** is what an environment says (`~/.codex`, `~/.config/opencode`), a **project** fact is what no environment can say (`.claude/settings.json` and its `settings.local.json`, where the person's status line is named). `probe_home` is untouched — widening it to take the project directory would break an out-of-tree surface that overrides it (ADR-0019 D9). Handed no project directory, `probe_host` now runs no project probe at all rather than falling back to the process's own working directory, which read whichever tree the caller happened to stand in. No behaviour change: the session's `settings.json` names the same `statusLine` entry with the person's `padding` and `refreshInterval`, `AI_HATS_STATUSLINE_INNER` carries the same command, and the launch goldens do not move.
@@ -17,6 +19,7 @@ since the latest tag lives under **Unreleased** until the next release.
 ### Added
 
 - **Role `designer` ships in the library** (HATS-2095). `ai-hats-library` 0.11.0 adds the role and the mark scripts. This package requires `ai-hats-library>=0.11.0`.
+- **`ai-hats acp` drives a grok session over JSON-RPC** (HATS-2114). `ai-hats acp -p grok` speaks one JSON-RPC message per line on stdin/stdout. The session journal stays on disk; `ai-hats headless` still copies its log to stdout and still drives only claude. Any other provider is refused.
 
 ### Fixed
 
@@ -2985,7 +2988,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.2...HEAD
+[0.19.2]: https://github.com/muratovv/ai-hats/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/muratovv/ai-hats/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/muratovv/ai-hats/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/muratovv/ai-hats/compare/v0.17.0...v0.18.0
