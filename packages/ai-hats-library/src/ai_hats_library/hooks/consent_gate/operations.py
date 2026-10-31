@@ -214,7 +214,7 @@ REGISTRY: dict[str, OperationSpec] = {
         read=_read_transition,
         selector_reason=_arrow_selector_reason,
         admits=_arrow_admits,
-        # HATS-1743: the older per-move flag is still honoured on the way in.
+        # A session launched with the older per-edge flag still passes.
         legacy_flags=lambda r: (_ACK, "AI_HATS_PLAN_ACK") if r.target == "execute" else (_ACK,),
         binds_ticket=True,
         value_flags=RACK_VALUE_FLAGS,

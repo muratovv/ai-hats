@@ -145,14 +145,10 @@ commit — see **safety-guard** for why you cannot write it yourself.
 ## Pre-Push Force-Push Guard
 
 The `pre-push-shared-state.sh` hook blocks a **non-fast-forward (force) push** —
-an irreversible history rewrite — unless acknowledged. Provider-agnostic: it nets
-Gemini sessions and direct-terminal pushes that Claude's stronger PreToolUse block
-doesn't cover. On a block it prints the recovery path and the override:
-`AI_HATS_SHARED_STATE_ACK=1`, exported in the shell that runs the push.
-
-As with the privacy override, the supervisor is the one who sets it, and only
-after confirming the push — the pre-push hook prints the recovery, and
-**safety-guard** asks before the command runs.
+an irreversible history rewrite. On a block, its message is the whole
+instruction: the push did not happen, do not retry it, and do not set a flag.
+A sentence in chat is not approval. **safety-guard** asks before the command
+runs, where the harness can ask.
 
 ### Other infra hooks (silent by design)
 

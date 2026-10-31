@@ -22,8 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: clean library and nobody would know.
 KNOWN_RECIPE = "       AI_HATS_PRIVACY_ACK=1 git commit ..."
 
-#: The sanctioned prose, verbatim from `pre_bash_shared_state_guard.sh` — same
-#: flag, no instruction. It is what the swept files now say instead.
+#: A sentence that names the flag and binds no command. The scanner must let it
+#: through: the guard's own parser would not treat it as a prefix either.
 SANCTIONED = "  2. AI_HATS_SHARED_STATE_ACK=1 is present in the environment that launched the"
 
 

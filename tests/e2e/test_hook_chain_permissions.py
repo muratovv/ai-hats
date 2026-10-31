@@ -5,11 +5,13 @@ flow:   an agent executing git push or file cleanup commands under hook permissi
 cmds:
     git push origin master
     git -C <main-checkout> push --force origin master
-expect: unapproved pushes block and display consent flags — with a git global
-        option between `git` and `push` just the same — while approved pushes
-        and mandated resource cleanup commands execute cleanly
-why:    permission guards must provide actionable consent flags on denial without
-        blocking non-destructive or rule-mandated cleanup operations
+expect: an unapproved push is gated and does not name a flag, a `git -C`
+        push included. An approval already in the launching environment lets
+        that push through. A denial that has a flag still names it. Mandated
+        cleanup still runs.
+why:    naming the flag in the ask is how an agent granted it to itself. The
+        question is the instruction. Cleanup the rules require must not be
+        blocked.
 """
 
 from __future__ import annotations
@@ -86,19 +88,19 @@ def test_approved_push_completes_with_ack(hooked_project):
     ],
 )
 @pytest.mark.integration
-def test_unapproved_push_is_gated_and_names_its_hatch(hooked_project, command):
-    """An unapproved push is gated, and the refusal says how to proceed.
+def test_unapproved_push_is_gated_without_naming_a_flag(hooked_project, command):
+    """An unapproved push is gated, and the ask does not name a flag.
 
-    The second half is the deny-names-its-hatch invariant (P4): ``check_git``
-    denied with "requires explicit permission" and named no flag, leaving the
-    agent nowhere to go but blunt instruments.
+    The approved twin above is the sample that the channel still exists:
+    the same flag, set in the launching environment, lets the push through.
+    Printing the name is how the last agent found a hatch.
     """
     project, env, settings = hooked_project
     verdict = run_chain(project, command, settings=settings, env=env)
     assert verdict.gated, f"an unapproved push must be gated; got {verdict}"
-    assert verdict.names_ack_flag, (
-        f"refusal must name the consent flag that unblocks it; got {verdict}"
-    )
+    assert not verdict.names_ack_flag, f"the ask must not name a flag; got {verdict}"
+    assert "do not retry" in verdict.reason
+    assert "environment that launched" in verdict.reason
 
 
 # --- No false denials (R-3) -------------------------------------------------

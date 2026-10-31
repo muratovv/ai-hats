@@ -137,6 +137,7 @@ def test_the_block_names_no_remedy_the_guard_refuses(repo_with_two_commits: Path
     )
     assert res.returncode == 1, res.stderr
     assert not findings(res.stderr), res.stderr
+    assert "AI_HATS_SHARED_STATE_ACK" not in res.stderr
 
 
 @pytest.mark.integration

@@ -105,7 +105,7 @@ def test_deny_is_json_and_exits_zero(tmp_path: Path, monkeypatch, capsys) -> Non
     assert "no way" in spoken["permissionDecisionReason"]
 
 
-def test_ask_carries_the_ticket(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_a_ticketed_ask_is_refused_without_the_rewrite(tmp_path: Path, monkeypatch, capsys) -> None:
     hook = _script(
         tmp_path / "ask.sh",
         "python3 -c 'import json,sys; json.load(sys.stdin); "
@@ -119,8 +119,27 @@ def test_ask_carries_the_ticket(tmp_path: Path, monkeypatch, capsys) -> None:
     code = dispatch_hook("PreToolUse", stdin=io.StringIO(_payload()))
     assert code == 0
     spoken = _said(capsys)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "deny"
+    assert "updatedInput" not in spoken
+    assert "cannot carry the consent" in spoken["permissionDecisionReason"]
+
+
+def test_an_ask_without_a_rewrite_is_still_asked(tmp_path: Path, monkeypatch, capsys) -> None:
+    hook = _script(
+        tmp_path / "ask.sh",
+        "python3 -c 'import json,sys; json.load(sys.stdin); "
+        'print(json.dumps({"hookSpecificOutput":{"permissionDecision":"ask",'
+        '"permissionDecisionReason":"confirm this push"}}))\'\n',
+    )
+    cache = tmp_path / "cache"
+    _manifest(cache, hook)
+    _env(monkeypatch, cache)
+    code = dispatch_hook("PreToolUse", stdin=io.StringIO(_payload()))
+    assert code == 0
+    spoken = _said(capsys)["hookSpecificOutput"]
     assert spoken["permissionDecision"] == "ask"
-    assert spoken["updatedInput"] == {"command": "TICKET=1 echo hi"}
+    assert "confirm this push" in spoken["permissionDecisionReason"]
+    assert "updatedInput" not in spoken
 
 
 def test_post_tool_use_deny_becomes_a_nudge(tmp_path: Path, monkeypatch, capsys) -> None:

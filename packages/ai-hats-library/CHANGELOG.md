@@ -3,6 +3,10 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.11.1
+
+- **Consent refusals no longer name the ack flag** (HATS-2120). `hatrack`, the shared-state ask, and the pre-push recovery tell the agent to stop. A flag already in the launching environment still opens the command. The inline-grant denial no longer says to export one.
+
 ## 0.11.0
 
 - **Role `designer`** (HATS-2095). `trait-base`, `trait-agent`, and the skills `logo-design`, `design-direction`, `design-system`, `ui-ux-review`. The mark scripts live under `logo-design/scripts/`, from `kaankiziltug/logo-design-skill`. `assets/library/svg` is not included, so `--refs-industry` exits.

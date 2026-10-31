@@ -289,6 +289,7 @@ def test_reason_does_not_advertise_the_unreachable_prefix(_run_guard) -> None:
     reason = json.loads(_run_guard("git push --force origin master").stdout)
     reason = reason["hookSpecificOutput"]["permissionDecisionReason"]
     assert DEAD_ESCAPE not in reason
+    assert "AI_HATS_SHARED_STATE_ACK" not in reason
     assert "environment that launched" in reason, "must name a channel that works"
 
 

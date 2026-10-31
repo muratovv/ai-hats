@@ -181,22 +181,18 @@ else
     headline="is irreversible and has no undo path (HATS-437)"
 fi
 
-# Consent channels, in the order a reader should try them. Deliberately does NOT
-# name a provider-specific file: this text is read under every harness.
-consent="Consent reaches this hook in exactly two ways, and neither is available
-to the agent — that is the point:
-  1. The user approves the prompt this hook raises (where the harness supports
-     an interactive decision).
-  2. AI_HATS_SHARED_STATE_ACK=1 is present in the environment that launched the
-     agent, pre-approving the session.
-Prefixing the assignment onto the agent's own command does nothing: this hook
-runs before that command exists as a process, so it never reaches us."
+# One instruction for the agent, under every harness. The launching-environment
+# channel stays nameless here: printing the flag is how the last agent found a hatch.
+consent="Agent: do not retry, rephrase, or set a flag. A sentence in chat is not
+approval.
+  1. Where the harness can ask, the person approves that prompt.
+  2. An approval already present in the environment that launched the agent
+     also covers the command. Nothing set from inside the session does."
 
 reason="This command ${headline}:
   ${cmd}
 
 Approve only if this exact command is what you intended.
-Agent: this is the user's call to make — do not retry, rephrase or re-issue it.
 
 ${consent}"
 

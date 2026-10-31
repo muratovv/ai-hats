@@ -20,6 +20,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **The published library wheel carries the consent refusal wording** (HATS-2120). `ai-hats-library` 0.11.0 was already on PyPI when refusals stopped naming the ack flag, so a resolver kept serving the wheel that does. 0.11.1 publishes that text. This package requires `ai-hats-library>=0.11.1`.
+
 - **A one-shot `-p <provider>` no longer replaces the project default** (HATS-1745). The session starts on the surface you passed, and `provider:` in `ai-hats.yaml` stays put. The key changes only through `init` and `config set` (`-p`, or `-r` when a provider is passed). A launch persists `active_role` only.
 
 ## [0.19.1] - 2026-10-19
