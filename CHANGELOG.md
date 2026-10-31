@@ -10,6 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-10-31
+
+### Added
+
+- **`ai-hats acp` has a page** (HATS-2121). `docs/how-to-acp.md` says what `ai-hats acp -p grok` drives, that stdout is one JSON-RPC message per line, and that `session/new` names the journal path in `_meta` under `ai-hats/log`. The command itself shipped in 0.19.2.
+
+### Changed
+
+- **The shipped engineering prompt pins a test to something the caller can see** (HATS-2119). `ai-hats-library` 0.11.1. An abstraction waits until a second production implementation exists. One owner writes each piece of shared state, and that owner is the code that already holds the value. A test that would still pass if the code returned nothing and stored nothing is not a test of that code. Swallowing the failure and returning a default is named as not the fix. This package requires `ai-hats-library>=0.11.1`.
+
+### Fixed
+
+- **The published library wheel carries the consent refusal wording** (HATS-2120). `ai-hats-library` 0.11.0 was already on PyPI when refusals stopped naming the ack flag, so a resolver kept serving the wheel that does. 0.11.1 publishes that text. This package requires `ai-hats-library>=0.11.1`.
+
+## [0.19.2] - 2026-10-30
+
 ### Changed
 
 - **A surface reads the project's own configuration through its own accessor** (HATS-2018). `Host` carried `status_line`, a claude fact on the value every surface's planner is handed — added the same week master added `Surface.probe_home` for exactly that class of fact. Claude now implements `Surface.probe_project(environ, cwd)` and returns a `ClaudeProject`, the way codex and opencode return their homes, so `Host` names no surface: a **home** is what an environment says (`~/.codex`, `~/.config/opencode`), a **project** fact is what no environment can say (`.claude/settings.json` and its `settings.local.json`, where the person's status line is named). `probe_home` is untouched — widening it to take the project directory would break an out-of-tree surface that overrides it (ADR-0019 D9). Handed no project directory, `probe_host` now runs no project probe at all rather than falling back to the process's own working directory, which read whichever tree the caller happened to stand in. No behaviour change: the session's `settings.json` names the same `statusLine` entry with the person's `padding` and `refreshInterval`, `AI_HATS_STATUSLINE_INNER` carries the same command, and the launch goldens do not move.
@@ -17,10 +33,9 @@ since the latest tag lives under **Unreleased** until the next release.
 ### Added
 
 - **Role `designer` ships in the library** (HATS-2095). `ai-hats-library` 0.11.0 adds the role and the mark scripts. This package requires `ai-hats-library>=0.11.0`.
+- **`ai-hats acp` drives a grok session over JSON-RPC** (HATS-2114). `ai-hats acp -p grok` speaks one JSON-RPC message per line on stdin/stdout. The session journal stays on disk; `ai-hats headless` still copies its log to stdout and still drives only claude. Any other provider is refused.
 
 ### Fixed
-
-- **The published library wheel carries the consent refusal wording** (HATS-2120). `ai-hats-library` 0.11.0 was already on PyPI when refusals stopped naming the ack flag, so a resolver kept serving the wheel that does. 0.11.1 publishes that text. This package requires `ai-hats-library>=0.11.1`.
 
 - **A one-shot `-p <provider>` no longer replaces the project default** (HATS-1745). The session starts on the surface you passed, and `provider:` in `ai-hats.yaml` stays put. The key changes only through `init` and `config set` (`-p`, or `-r` when a provider is passed). A launch persists `active_role` only.
 
@@ -2987,7 +3002,9 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.3...HEAD
+[0.19.3]: https://github.com/muratovv/ai-hats/compare/v0.19.2...v0.19.3
+[0.19.2]: https://github.com/muratovv/ai-hats/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/muratovv/ai-hats/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/muratovv/ai-hats/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/muratovv/ai-hats/compare/v0.17.0...v0.18.0
