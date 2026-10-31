@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**364 of 364 files catalogued — 372 flows.**
+**367 of 367 files catalogued — 375 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2525,6 +2525,22 @@ as a claim to check, not as evidence.
 - **expect** — wt:pre-merge refuses the merge while the card is before the review road and names the state; ->review refuses a card whose branch is already merged into master; on the road (review) the merge lands
 - **why** — the PreToolUse guard (test_task_merge_guard_chain.py) only keeps the agent on the managed path; the card-state invariant itself lives at wt:pre-merge and ->review, and only a real merge/transition exercises the resolution, the check and the refusal text together
 
+## `test_migrate_experimental.py`
+
+*pins HATS-2009*
+
+- **flow** — a maintainer regenerates the candidate copy of the shipped library for the closure of two composites, twice, and feeds the script a root it must refuse
+- **cmds**
+
+  ```console
+  python scripts/migrate_experimental.py --root <copy> --only hypothesis-intake worker
+  python scripts/migrate_experimental.py --root <copy> --only hypothesis-intake worker
+  python scripts/migrate_experimental.py --root <synthetic> --only oddball
+  ```
+
+- **expect** — the copy's experimental/ is byte-equal to the committed one, prompts and skills only — no hooks payload, a skill's symlink out of its tree left out and reported; the second run changes nothing; a config.yaml key outside the ADR-0034 D6 table refuses naming the file, and a composition.apps row is reported as deferred
+- **why** — experimental/ is a derived artifact: what is committed must be what the script produces, or the candidate reads a hand-edited library (ADR-0034 D6)
+
 ## `test_migration_no_replay_without_config.py`
 
 *pins HATS-1123*
@@ -3133,6 +3149,39 @@ as a claim to check, not as evidence.
 
 - **expect** — STATE.md is refreshed on card creation and a git worktree is provisioned when transitioning to execute
 - **why** — module-level rack execution must bind the full kernel extensions rather than falling back to a bare un-wired state
+
+## `test_re_dry_run.py`
+
+*pins HATS-2009*
+
+- **flow** — a maintainer projects the plan of an expression over the candidate library and reads the prompt of a bare trait, which the reference path refuses
+- **cmds**
+
+  ```console
+  ai-hats -re dry-run "hypothesis-intake + worker" --json
+  ai-hats -re show-prompt worker
+  ai-hats config show-prompt --role worker
+  ```
+
+- **expect** — the record's composition names the canonical expression, the prompt members in term order with the worker's prose last, the skills with their trees and digests, no hooks; the trait's prompt prints at exit 0 while the reference exits 2 on the same trait
+- **why** — the two projections are the only readers of the candidate plan until a session runs from it; the trait that could not be shown is the measured baseline the flat model exists to remove
+
+## `test_re_projections.py`
+
+*pins HATS-2009*
+
+- **flow** — a maintainer compares the two projections of one candidate plan
+- **cmds**
+
+  ```console
+  ai-hats -re dry-run "hypothesis-intake + worker" --full
+  ai-hats -re dry-run "hypothesis-intake + worker" --json
+  ai-hats -re show-prompt "hypothesis-intake + worker"
+  ai-hats -re dry-run "safety-guard + worker" --json
+  ```
+
+- **expect** — show-prompt prints the prompt body dry-run --full dumps; the text and json renderings carry one record; a processing warning lands in the notes of dry-run and on the stderr of show-prompt
+- **why** — both projections read one plan value (ADR-0036 D5); this test grows with every slice so a later stage cannot make them disagree unnoticed
 
 ## `test_readonly_cli_reads_worktree_library.py`
 

@@ -275,12 +275,16 @@ def preview(
     model: str | None = None,
     policy: SessionPolicy | None = None,
     materialize: bool = False,
+    experimental: bool = False,
 ) -> Preview:
     """Plan for a stub root and launch with placeholder flags; write nothing
-    unless ``materialize``, which applies the plan to the fixed dry-run root."""
+    unless ``materialize``, which applies the plan to the fixed dry-run root.
+    ``experimental`` selects the candidate processing (``-re``)."""
     from .composition_seam import build_preview_payload
 
-    payload = build_preview_payload(layout.root, role=role, provider=provider)
+    payload = build_preview_payload(
+        layout.root, role=role, provider=provider, experimental=experimental
+    )
     surface = payload.provider
     if payload.plan is None:
         raise RuntimeError("the seam adapted no composition")

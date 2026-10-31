@@ -1,0 +1,5 @@
+schema_version: 1
+type: composite
+expr: >-
+  hypothesis-intake::prompt + hypothesis-intake::priorities + trait-base
+tags: [role, automate]

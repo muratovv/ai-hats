@@ -30,7 +30,9 @@ class CompositionPayload:
     """One composition per execution path (ADR-0005 D1) — built by the compose
     seam (:mod:`ai_hats.composition_seam`), consumed by runners and pipeline."""
 
-    result: CompositionResult
+    #: The composer's own value; ``None`` under the candidate processing, which
+    #: has no such intermediate — its output is ``plan`` (ADR-0036 D8).
+    result: CompositionResult | None
     provider: "Surface"
     effective_role: str
     # What the session composed, operators included. `effective_role`

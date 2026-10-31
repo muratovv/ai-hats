@@ -59,6 +59,7 @@
   "tests/test_clean_root_invariant.py": 2,
   "tests/test_cli_bare_positional_prompt.py": 4,
   "tests/test_cli_broken_install.py": 14,
+  "tests/test_cli_candidate.py": 1,
   "tests/test_cli_config.py": 1,
   "tests/test_cli_config_set_advanced.py": 1,
   "tests/test_cli_customize_global.py": 4,

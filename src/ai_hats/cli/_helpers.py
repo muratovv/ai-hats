@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..libraries.models import CheckBindingError
     from ..paths import ProjectConfigError
+    from ..processing import ProcessingError
     from ..rack_workspace import NotAnAiHatsProjectError
     from ..surface_registry import UnknownSurfaceError
     from ..role_spec import RoleSpecError
@@ -185,6 +186,13 @@ def _handle_role_spec_error(exc: "RoleSpecError") -> NoReturn:
     sys.exit(2)
 
 
+def _handle_processing_error(exc: "ProcessingError") -> NoReturn:
+    """A refusal of the candidate processing (ADR-0035 D8) — the message
+    already names the term, the candidates or the file."""
+    click.echo(f"Error: {exc}", err=True)
+    sys.exit(2)
+
+
 def _handle_check_binding_error(exc: "CheckBindingError") -> NoReturn:
     """A binding that cannot be installed refuses in words, not in a stack.
 
@@ -209,12 +217,14 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         from ai_hats_core.layout import ProjectNotFoundError
 
         from ..paths import ProjectConfigError
+        from ..processing import ProcessingError
         from ..rack_workspace import NotAnAiHatsProjectError
         from ..surface_registry import UnknownSurfaceError
         from ..role_spec import RoleSpecError
 
     return (
         (RoleSpecError, _handle_role_spec_error),
+        (ProcessingError, _handle_processing_error),
         (RoleNotFoundError, _handle_role_not_found),
         (CompositionIncompleteError, _handle_composition_incomplete),
         (UnknownSurfaceError, _handle_unknown_provider),
