@@ -22,6 +22,7 @@ from typing import NamedTuple
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
 # The hooks are stdlib-only, so the journal arrives as a flattened sibling.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from consent_gate.critical_paths import critical_target
 from consent_gate.questions import ConsentQuestion, present_question, protected_server_launch
 
 try:
@@ -415,16 +416,16 @@ def check_sql(cmd_bin: str, args) -> str:
 #: a surface without runtime hooks — this is the channel (HATS-1642 fork 2).
 CONSENT_ACK = "AI_HATS_CONSENT_ACK"
 
-# Consent flags the target PROCESS reads, so an inline prefix reaches them. Hook-read
-# flags (AI_HATS_SHARED_STATE_ACK) need no entry — HATS-1639. The consent ticket is
-# here too (HATS-1642): this guard mints it, so an agent typing one is forging it.
+# A prefix is visible to the process that reads the flag, so it is refused here.
+# Flags a hook reads from the launching environment are not listed. The consent
+# ticket is here too: this guard mints it, so an agent typing one is forging it.
 SELF_GRANT_FORBIDDEN = (
     "AI_HATS_YOLO", "AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK", CONSENT_ACK, TICKET_ENV,
 )  # fmt: skip
 
 
 def check_self_grant(args) -> str:
-    """The agent must not hand itself consent inline; exporting it is the user's call."""
+    """Refuse an approval flag written on the command itself."""
     for call in command_slices(args):
         if _is_interpreter(get_bin(call)) and protected_server_launch(call[1:]):
             return "Stopped: use the registered MCP tool; do not launch its consent server."
@@ -440,7 +441,7 @@ def check_self_grant(args) -> str:
                 )
             return (
                 f"Stopped: {flag} cannot be granted inline — a guard the agent can "
-                "switch off is not a guard. Export it in the environment instead."
+                "switch off is not a guard. Run the command without it and stop if it refuses."
             )
     return ""
 
@@ -671,8 +672,8 @@ def auto_allowed(args) -> bool:
 
     Routine means: it annotates, it does not move. A bare token after the task id
     IS a state op (`transition <ID> done`), and `done` tears the worktree down
-    into master — a shared-state write that `rule_pause_before_shared_state_write`
-    wants paused, never waved through. Anything unrecognised returns False, which
+    into master — a shared-state write the shared-state guard asks about, never
+    waved through. Anything unrecognised returns False, which
     is silence rather than allow: the ordinary permission flow still decides.
     """
     verb = args[1] if len(args) > 1 else ""
@@ -956,15 +957,21 @@ def consent_ask(cmd: str, tool_input: dict, *, payload: dict | None = None) -> d
     bypass = _wrapper_bypass_verdict(cmd)
     if bypass:
         return bypass
-    question = consent_requirement(cmd)
+    # Separately, not inside: a grant or an ack that silences the rack call in the
+    # same line must not silence the removal next to it (ADR-0039 D3).
+    question = consent_requirement(cmd) or removal_question(cmd, payload)
     if question is None:
         return {}
     return present_question(
         question,
         provider=_envelope().get("provider", ""),
         transport_id=(payload or {}).get("ai_hats_consent_transport", ""),
-        issue=lambda q: _ask_for(
-            cmd, tool_input, q.args, q.anchor, q.ordinal, q.total, q.subject, q.headline
+        issue=lambda q: (
+            _plain_ask(q)
+            if _hook_only(q.operation)
+            else _ask_for(
+                cmd, tool_input, q.args, q.anchor, q.ordinal, q.total, q.subject, q.headline
+            )
         ),
     )
 
@@ -984,9 +991,9 @@ def consent_requirement(cmd: str) -> ConsentQuestion | None:
         # — asking again is the click the grant was issued to remove (HATS-1735).
         if grant_covers("rack.transition", task_id, cmd):
             return None
-        # The env channel stands in wherever no question can be asked — `claude -p`,
-        # cron, a surface without runtime hooks — where an `ask` blocks; `ai-hats
-        # headless` puts the ask to its stdin owner instead.
+        # A flag already in the launching environment is the headless channel.
+        # This command does not set it. `ai-hats headless` puts the ask to its
+        # stdin owner instead.
         for flag in (CONSENT_ACK, LEGACY_ACK_BY_TARGET.get(target, "")):
             if flag and os.environ.get(flag) == "1":
                 journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
@@ -1025,6 +1032,94 @@ def consent_requirement(cmd: str) -> ConsentQuestion | None:
                 headline.format(subject=subject),
             )
     return None
+
+
+#: The binaries `fs.remove` reads — the registry's `binaries`, named here for the lexer.
+REMOVAL_BINARIES = ("rm", "rmdir")
+
+#: An `rm` word in a line the lexer could not split: what it removes is unreadable.
+_REMOVAL_WORD = re.compile(r"(?<![\w./-])(?:rm|rmdir)(?=\s|$)")
+
+#: Settings files that may name `permissions.additionalDirectories`, project-relative.
+_PROJECT_SETTINGS = (".claude/settings.json", ".claude/settings.local.json")
+
+
+def removal_question(cmd: str, payload: dict | None = None) -> ConsentQuestion | None:
+    """`fs.remove` at `critical-path`, asked with no grant or ack consulted (ADR-0039 D3)."""
+    if "critical-path" not in _operation_points("fs.remove"):
+        return None
+    if not parse_commands(cmd):
+        if not _REMOVAL_WORD.search(cmd):
+            return None
+        return ConsentQuestion(
+            "fs.remove", (), "", 0, 0, cmd,
+            "this line removes files and the guard cannot read which — it needs your consent.",
+        )  # fmt: skip
+    context = None
+    for name in REMOVAL_BINARIES:
+        for anchor, ordinal, total, args in anchored_calls(cmd, name):
+            reading = _read_operation("fs.remove", name, args)
+            if reading is None:
+                continue
+            context = context or _removal_context(cmd, payload or {})
+            target = critical_target(reading.operands, **context)
+            if target is not None:
+                return ConsentQuestion(
+                    "fs.remove", tuple(args), anchor, ordinal, total, target,
+                    f"removing {target} needs your consent — it is a critical path.",
+                )  # fmt: skip
+    return None
+
+
+def _removal_context(cmd: str, payload: dict) -> dict:
+    """Where the removal runs and what counts as the session's own directories."""
+    project = _envelope().get("project_dir") or ""  # declared points exist only in a session
+    working = [Path.cwd(), *(Path(p) for p in (payload.get("cwd"), project) if p)]
+    return {
+        "base": target_cwd(cmd),
+        "working": working,
+        "home": Path.home(),
+        "extra": _additional_directories(project),
+    }
+
+
+def _additional_directories(project: str) -> list[Path]:
+    """`permissions.additionalDirectories` from the settings files; `/add-dir` is not in them."""
+    files = [Path.home() / ".claude" / "settings.json"]
+    files += [Path(project) / rel for rel in _PROJECT_SETTINGS] if project else []
+    found: list[Path] = []
+    for path in files:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as exc:
+            journal_bypass("fail-open", f"{path} unreadable: {exc!r}", hook="safety_gate.py")
+            continue
+        permissions = data.get("permissions") if isinstance(data, dict) else None
+        dirs = permissions.get("additionalDirectories") if isinstance(permissions, dict) else None
+        for entry in dirs if isinstance(dirs, list) else []:
+            if isinstance(entry, str):
+                where = Path(os.path.expanduser(entry))
+                found.append(where if where.is_absolute() or not project else Path(project) / where)
+    return found
+
+
+def _hook_only(operation: str) -> bool:
+    """No shim stands behind this operation, so no ticket has anyone to redeem it."""
+    spec = _operations.spec_for(operation) if _operations is not None else None
+    return spec is not None and spec.surface is None
+
+
+#: The question for a hook-only operation: no ticket, the command runs as written.
+_PLAIN_TERMS = "The question does not expire: answer when you have read what you are approving."
+
+
+def _plain_ask(question: ConsentQuestion) -> dict:
+    return {
+        "permissionDecision": "ask",
+        "permissionDecisionReason": f"{question.headline} {_PLAIN_TERMS}",
+    }
 
 
 #: Said once, so the two questions cannot drift into describing different tickets.

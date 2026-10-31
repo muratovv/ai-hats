@@ -53,7 +53,7 @@ _AI_HATS_DIR_RE = re.compile(r"^ai_hats_dir:[ \t]*[\"']?([^\"'\s]+)", re.MULTILI
 
 DENY_REASON = (
     "GUARDRAIL (safety-guard): blocked — {rel} sits under the tracker backlog, and "
-    "`rack` is its only sanctioned writer (rule_backlog_discipline §1): a hand-edited "
+    "`rack` is its only sanctioned writer: a hand-edited "
     "card desynchronises the state machine from its locks and audit trail. Move the "
     'card with `rack transition <ID> <state> --log "..."`, edit a field with '
     "`rack transition <ID> --set <field>=<value>`, and read it with `rack context <ID>`. "

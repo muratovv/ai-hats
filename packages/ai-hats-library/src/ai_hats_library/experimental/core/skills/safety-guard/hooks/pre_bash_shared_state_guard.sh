@@ -10,8 +10,8 @@
 #
 # Levels of intervention:
 #   classification == safe          -> exit 0 (allow)
-#   classification == shared        -> exit 0 (allow; Level 2 rule covers it)
-#   classification == gated
+#   classification == shared
+#                  | gated
 #                  | irreversible   -> refuse, per caller:
 #       payload has hook_event_name -> exit 0 + permissionDecision "ask"
 #                                      (harness prompts the user; blocks when
@@ -27,9 +27,9 @@
 # advertise exactly that form and then deny it (HATS-1294) — hence "ask", which
 # routes consent through the user instead of through a string the agent writes.
 #
-# The hook does NOT crash the agent on classifier errors or missing jq —
-# safe defaults favour the user's flow: when we cannot classify, we allow
-# and emit a stderr warning. The Level 2 rule remains the primary line.
+# The hook does NOT crash the agent on classifier errors or missing jq.
+# When we cannot classify, we allow and emit a stderr warning. Nothing
+# else asks on that path.
 
 set -uo pipefail
 
@@ -128,8 +128,7 @@ session_id="$(extract_session_id)"
 
 # --- 3. Classify -------------------------------------------------------
 if [[ ! -f "$CLASSIFIER" ]]; then
-    # Classifier missing — emit a stderr breadcrumb and allow. The Level 2
-    # rule still warns the agent; we refuse to break the user's flow.
+    # Classifier missing — allow and say so. No other line asks.
     echo "[shared-state-guard] classifier not found at $CLASSIFIER — allowing" >&2
     ai_hats_journal_bypass fail_open "classifier not found" "$cmd" "$session_id"
     exit 0
@@ -140,11 +139,10 @@ source "$CLASSIFIER"
 verdict="$(classify_command "$cmd")"
 
 case "$verdict" in
-    safe|shared)
-        # Level 2 rule covers `shared`; hook does not interrupt.
+    safe)
         exit 0
         ;;
-    gated|irreversible)
+    shared|gated|irreversible)
         : # fallthrough to gating below
         ;;
     *)
@@ -177,26 +175,24 @@ fi
 # bash 3.2 at /bin/bash, which a restricted PATH will select.
 if [[ "$verdict" == "gated" ]]; then
     headline="updates a shared branch others build on (HATS-1253)"
+elif [[ "$verdict" == "shared" ]]; then
+    headline="publishes a reversible shared-state write (a pull request, an issue comment, or a release)"
 else
     headline="is irreversible and has no undo path (HATS-437)"
 fi
 
-# Consent channels, in the order a reader should try them. Deliberately does NOT
-# name a provider-specific file: this text is read under every harness.
-consent="Consent reaches this hook in exactly two ways, and neither is available
-to the agent — that is the point:
-  1. The user approves the prompt this hook raises (where the harness supports
-     an interactive decision).
-  2. AI_HATS_SHARED_STATE_ACK=1 is present in the environment that launched the
-     agent, pre-approving the session.
-Prefixing the assignment onto the agent's own command does nothing: this hook
-runs before that command exists as a process, so it never reaches us."
+# One instruction for the agent, under every harness. The launching-environment
+# channel stays nameless here: printing the flag is how the last agent found a hatch.
+consent="Agent: do not retry, rephrase, or set a flag. A sentence in chat is not
+approval.
+  1. Where the harness can ask, the person approves that prompt.
+  2. An approval already present in the environment that launched the agent
+     also covers the command. Nothing set from inside the session does."
 
 reason="This command ${headline}:
   ${cmd}
 
 Approve only if this exact command is what you intended.
-Agent: this is the user's call to make — do not retry, rephrase or re-issue it.
 
 ${consent}"
 
