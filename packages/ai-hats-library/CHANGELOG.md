@@ -3,6 +3,10 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.11.2
+
+- **The candidate library copy ships in the package** (HATS-2009). `experimental/` holds the flat-form closure of `hypothesis-intake` and `worker` — prompts and skills. 0.11.1 was already on PyPI without those files, so the same version would have served the wheel that lacks them.
+
 ## 0.11.1
 
 - **The engineering prompt pins a test to something the caller can see** (HATS-2119). An abstraction waits until a second production implementation exists. One owner writes each piece of shared state. A test that would still pass if the code returned nothing and stored nothing is not a test of that code. `systematic-debugging` names swallowing the failure and returning a default as not the fix.
