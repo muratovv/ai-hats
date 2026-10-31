@@ -5,6 +5,7 @@ on the library **format schema** (see README § Versioning).
 
 ## 0.11.1
 
+- **The engineering prompt pins a test to something the caller can see** (HATS-2119). An abstraction waits until a second production implementation exists. One owner writes each piece of shared state. A test that would still pass if the code returned nothing and stored nothing is not a test of that code. `systematic-debugging` names swallowing the failure and returning a default as not the fix.
 - **Consent refusals no longer name the ack flag** (HATS-2120). `hatrack`, the shared-state ask, and the pre-push recovery tell the agent to stop. A flag already in the launching environment still opens the command. The inline-grant denial no longer says to export one.
 
 ## 0.11.0
