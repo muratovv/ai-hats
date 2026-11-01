@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from urllib.parse import quote
 
 from ai_hats.assembler import Assembler
+from ai_hats.env import ENV_RUN_MODE, ENV_RUN_MODE_HITL
 from ai_hats.materialization import WriteKind
 from ai_hats.materialize import compose_to_run
 from ai_hats.models import ProjectConfig
@@ -194,6 +195,7 @@ def test_plan_writes_the_role_into_the_session_home(tmp_path: Path, monkeypatch,
     role = next(entry for entry in plan.entries if entry.target == plan.context)
     assert "## ROLE" in role.content
     assert plan.env["GROK_HOME"] == str(home)
+    assert plan.env[ENV_RUN_MODE] == ENV_RUN_MODE_HITL
     targets = {entry.target for entry in plan.entries}
     assert home / "auth.json" in targets
     assert home / "trusted_folders.toml" in targets
@@ -846,6 +848,7 @@ def test_automate_plan_keeps_the_role_inline(tmp_path: Path, monkeypatch):
     )
     assert plan.context is None
     assert plan.launch.args == ()
+    assert ENV_RUN_MODE not in plan.env
     home = asm.layout.cache.session("sid") / "grok-home"
     config = tomllib.loads(
         next(entry.content for entry in plan.entries if entry.target == home / "config.toml")

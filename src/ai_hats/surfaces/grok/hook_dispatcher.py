@@ -12,15 +12,17 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Mapping
 
-from ai_hats.env import ENV_AI_HATS_DIR, ENV_SESSION_CACHE_DIR
+from ai_hats.env import ENV_AI_HATS_DIR, ENV_RUN_MODE, ENV_RUN_MODE_HITL, ENV_SESSION_CACHE_DIR
 from ai_hats_observe.trace import ENV_SESSION_ID
 
 from ..hook_channel import (
     ChainDecision,
     ChainVerdict,
+    Dialect,
     HookEvent,
     HookRow,
     project_dir_from,
@@ -130,8 +132,14 @@ def _emit(verdict: ChainVerdict, native_event: str) -> None:
         sys.stderr.write(worded(verdict) + "\n")
 
 
+def _speaks() -> Dialect:
+    if os.environ.get(ENV_RUN_MODE) == ENV_RUN_MODE_HITL:
+        return replace(PROFILE.speaks, can_ask_with_ticket=True)
+    return PROFILE.speaks
+
+
 def _reply(raw: ChainVerdict, native_event: str) -> int:
-    verdict = reduce_to(PROFILE.speaks, raw)
+    verdict = reduce_to(_speaks(), raw)
     relay_stderr(verdict)
     _emit(verdict, native_event)
     return 0
