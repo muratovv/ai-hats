@@ -188,9 +188,7 @@ def test_e2e_a_child_permission_uses_the_journal_id_and_records_the_phrase(
     assert denied[-1]["decision"] == "deny"
 
 
-def test_e2e_caller_flags_reach_the_child_unchanged(
-    tmp_project, tmp_path: Path
-) -> None:
+def test_e2e_caller_flags_reach_the_child_unchanged(tmp_project, tmp_path: Path) -> None:
     """HATS-2125: the caller's tail reaches the child unchanged, after default."""
     log = tmp_path / "child.jsonl"
     proc = _start(
