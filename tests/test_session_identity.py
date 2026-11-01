@@ -41,6 +41,22 @@ def test_round_trips_through_the_environment():
     assert SessionIdentity.from_env(identity.to_env()) == identity
 
 
+def test_the_dsl_marker_round_trips_and_an_old_envelope_reads_empty():
+    """A bare name is both a role and an expression; the marker is what says which.
+    An envelope written before the key existed is still that session."""
+    marked = _identity(dsl="re")
+    restored = SessionIdentity.from_env(marked.to_env())
+
+    assert restored.dsl == "re"
+    assert json.loads(marked.to_env()[ENV_SESSION_IDENTITY])["v"] == IDENTITY_VERSION
+
+    old = json.loads(_identity().to_env()[ENV_SESSION_IDENTITY])
+    old.pop("dsl", None)
+    env = _identity().to_env()
+    env[ENV_SESSION_IDENTITY] = json.dumps(old)
+    assert SessionIdentity.from_env(env).dsl == ""
+
+
 def test_role_carries_the_whole_expression_not_the_base_name():
     """A runtime overlay declares checks too; the base name would drop them."""
     identity = _identity(role="judge + audit-reviewer")

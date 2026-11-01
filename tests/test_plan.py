@@ -137,6 +137,15 @@ def test_the_rendering_rule_matches_todays_sections():
     )
 
 
+def test_the_reference_plan_carries_no_dsl_marker(maintainer):
+    """The adapter leaves the marker empty; only candidate emit writes it."""
+    from ai_hats.surfaces.plan import composition_record
+
+    _asm, _result, plan = maintainer
+    assert plan.dsl == ""
+    assert composition_record(plan)["dsl"] == ""
+
+
 def test_skills_carry_full_names_paths_and_tree_digests(maintainer):
     from ai_hats.fs_digest import dir_digest
 
