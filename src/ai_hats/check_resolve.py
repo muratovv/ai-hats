@@ -387,7 +387,11 @@ def _compose_role(project_dir: Path, identity: SessionIdentity | None) -> Compos
     """  # comment-length: allow — which half is frozen is the contract
     from .composition_seam import compose_for_checks
 
-    return compose_for_checks(project_dir, role=identity.role if identity else None)
+    return compose_for_checks(
+        project_dir,
+        role=identity.role if identity else None,
+        dsl=identity.dsl if identity else "",
+    )
 
 
 def _compose_fail_closed(

@@ -145,7 +145,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # The seam, not a composition of our own: a session role may be an
         # expression (`role + trait`), and only the seam reads one.
-        composition = compose_for_checks(project_dir, identity.role if identity else None)
+        composition = compose_for_checks(
+            project_dir,
+            identity.role if identity else None,
+            dsl=identity.dsl if identity else "",
+        )
         resolution = None if composition is None else resolve_git_gates(composition, args.event)
     except Exception as exc:  # noqa: BLE001 — a hook must never raise at a human
         # A composition refusal (removed script, unknown point name) renders

@@ -184,6 +184,7 @@ def launch_env(
         session_dir=flags.session_dir,
         skills_root=str(surface.session_skills_root(layout, flags.session_id) or ""),
         session_cache_dir=str(plan.root),
+        dsl=plan.composition.dsl or "",
     )
     withheld = withheld_from_child() if plan.run_mode is RunMode.AUTOMATE else {}
     return {

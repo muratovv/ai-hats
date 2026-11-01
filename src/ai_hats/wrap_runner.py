@@ -11,6 +11,7 @@ import select
 import sys
 import time
 import uuid
+from types import SimpleNamespace
 from collections import deque
 from pathlib import Path
 
@@ -65,6 +66,7 @@ from .runtime_common import (
 )
 from .startup_notices import (
     StartupNotice,
+    candidate_session_notice,
     save_session_diagnostics,
     show_and_hold_startup_notices,
     notices_from_diagnostics,
@@ -76,7 +78,6 @@ from .startup_notices import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from ai_hats_core import CompositionResult
     from ai_hats_observe import Session, SessionManager, SidecarTracer
     from ai_hats_observe.canonical.signals import Blocking, Signal
     from ai_hats_observe.event_log_writer import EventLogWriter
@@ -294,7 +295,20 @@ class WrapRunner:
             managed=_venv_is_ai_hats_managed(self.layout.base),
         )
 
-    def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
+    def _plan_skills(self) -> list[tuple[str, Path]]:
+        """Bare skill name and its tree, from the plan. The composer value is absent on -re."""
+        plan = self.payload.plan
+        if plan is None:
+            return []
+        leaves: list[tuple[str, Path]] = []
+        for skill in plan.skills:
+            prefix = "skills::"
+            if not skill.name.startswith(prefix):
+                raise ValueError(f"not a skill name: {skill.name!r}")
+            leaves.append((skill.name[len(prefix) :], skill.path))
+        return leaves
+
+    def _check_skill_collisions(self, session: Session) -> list[StartupNotice]:
         """WARN when a composed skill will double-register this session;
         a marker-proven project-scope mirror is auto-healed instead.
 
@@ -304,7 +318,7 @@ class WrapRunner:
 
         try:
             collisions = duplicate_skill_registrations(
-                [s.name for s in result.skills],
+                [name for name, _path in self._plan_skills()],
                 project_dir=self.project_dir,
                 plugin_skills_root=self.layout.cache.session(session.session_id)
                 / "plugin"
@@ -507,9 +521,7 @@ class WrapRunner:
         if dropped:
             session.log_sys(f"consent store: {dropped} stale ticket(s) swept")
 
-    def _check_skill_script_collisions(
-        self, session: "Session", result: "CompositionResult"
-    ) -> list[StartupNotice]:
+    def _check_skill_script_collisions(self, session: "Session") -> list[StartupNotice]:
         """WARN when composed skills contain script filename collisions.
         Returns startup warnings so the hold banner surfaces them to the human before
         the TUI launch.
@@ -517,7 +529,11 @@ class WrapRunner:
         try:
             from .skills_dir import find_skill_script_collisions
 
-            collisions = find_skill_script_collisions(result.skills)
+            # The finder reads ``source_path``; a plan skill's tree is ``path``.
+            leaves = [
+                SimpleNamespace(name=name, source_path=path) for name, path in self._plan_skills()
+            ]
+            collisions = find_skill_script_collisions(leaves)
         except Exception as exc:
             logger.warning("skill script collision check at session start failed", exc_info=True)
             session.log_sys(f"skill collision check FAILED — {type(exc).__name__}: {exc}")
@@ -781,8 +797,12 @@ class WrapRunner:
         startup_notices: list[StartupNotice] = []
         startup_notices.extend(builder_notices)
         startup_notices.extend(self._resync_managed_hooks(session, result))
-        startup_notices.extend(self._check_skill_collisions(session, result))
-        startup_notices.extend(self._check_skill_script_collisions(session, result))
+        startup_notices.extend(self._check_skill_collisions(session))
+        startup_notices.extend(self._check_skill_script_collisions(session))
+        if payload.plan is not None:
+            spoken = candidate_session_notice(payload.plan.dsl, payload.plan.hooks)
+            if spoken is not None:
+                startup_notices.append(spoken)
         startup_notices.extend(self._payload_startup_notices())
         startup_notices.extend(notices_from_diagnostics(session.startup_diagnostics))
         startup_notices.extend(self._lint_provider_settings(session))
@@ -799,6 +819,8 @@ class WrapRunner:
         # LAST here on purpose: unlike its fail-open neighbours a
         # refusal does not return, so everything above must speak first. And
         # after the launch record, which is what the gate reads.
+        from .composition_seam import startup_compose
+
         startup_notices.extend(
             run_startup_checks(
                 self.project_dir,
@@ -808,7 +830,7 @@ class WrapRunner:
                 # composition is handed over rather than composed a second time.
                 identity=SessionIdentity.from_env(env_map),
                 extra_env=env_map,
-                compose=lambda _project_dir: result,
+                compose=startup_compose(payload),
             )
         )
 

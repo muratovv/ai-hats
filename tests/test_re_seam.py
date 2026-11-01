@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composition_seam import build_preview_payload
+from ai_hats.composition_seam import (
+    build_composition_payload,
+    build_preview_payload,
+    compose_for_carry,
+    compose_for_checks,
+)
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.processing import ProcessingError
@@ -43,6 +48,89 @@ def test_the_candidate_payload_carries_the_plan_and_no_composer_value(project: P
         "rules::rule-one",
     ]
     assert [d.text for d in payload.diagnostics if "README" not in str(d.where)] == []
+
+
+def test_the_launch_payload_is_the_candidate_plan_and_leaves_the_config(project: Path):
+    """A session from an expression must not persist that expression as the project's role."""
+    before = (project / PROJECT_CONFIG).read_text()
+    payload = build_composition_payload(
+        project,
+        role_override="  alpha   +   bare ",
+        provider_name="claude",
+        interactive=True,
+        experimental=True,
+    )
+
+    assert payload.result is None
+    assert payload.plan is not None
+    assert payload.plan.identity == "alpha + bare"
+    assert payload.plan.dsl == "re"
+    assert payload.plan.hooks.runtime == () and payload.plan.hooks.external == ()
+    assert payload.effective_role == payload.role_expression == "alpha + bare"
+    assert payload.session_factory is not None
+    assert payload.audit_writer_factory is not None
+    assert payload.transcript_resolver is not None
+    assert (project / PROJECT_CONFIG).read_text() == before
+
+
+def test_an_empty_candidate_says_so_and_one_hook_does_not():
+    from types import SimpleNamespace
+
+    from ai_hats.startup_notices import candidate_session_notice
+
+    empty = SimpleNamespace(runtime=(), external=())
+    notice = candidate_session_notice("re", empty)
+    assert notice is not None and notice.level == "note"
+    assert notice.text == "candidate session: 0 hooks, 0 consent points"
+    hooked = SimpleNamespace(runtime=(), external=(object(),))
+    assert candidate_session_notice("re", hooked) is None
+    assert candidate_session_notice("", empty) is None
+
+
+def test_the_marker_keeps_the_channels_off_the_composer(project: Path):
+    """Under re the expression is a plan. Under the empty marker it is a role name, and this one is not."""
+    assert compose_for_checks(project, "alpha + bare", dsl="re") is None
+    assert compose_for_carry(project, "alpha + bare", dsl="re") is None
+    with pytest.raises(Exception, match="not a known trait"):
+        compose_for_checks(project, "alpha + bare", dsl="")
+
+
+def test_a_candidate_gate_does_not_need_a_configured_provider(project: Path):
+    """A -p launch stores no provider in the config; the child's gate must still read the plan."""
+    bare = project.parent / "no-provider"
+    bare.mkdir()
+    ProjectConfig(provider="", library_paths=[]).save(bare / PROJECT_CONFIG)
+    write_root(bare / "libraries" / "experimental")
+
+    assert compose_for_checks(bare, "alpha + bare", dsl="re") is None
+    assert compose_for_carry(bare, "alpha + bare", dsl="re") is None
+
+
+def test_startup_checks_ask_the_dispatcher_the_child_asks(project: Path):
+    """Returning payload.result can never refuse: a candidate session has no composer value."""
+    import dataclasses
+
+    from ai_hats.composition_seam import startup_compose
+
+    payload = build_composition_payload(
+        project, role_override="alpha + bare", provider_name="claude", experimental=True
+    )
+    assert startup_compose(payload)(project) is None
+    with pytest.raises(ProcessingError, match="unknown name 'nope'"):
+        startup_compose(dataclasses.replace(payload, effective_role="nope"))(project)
+    reference = dataclasses.replace(payload, plan=dataclasses.replace(payload.plan, dsl=None))
+    assert startup_compose(reference)(project) is payload.result
+
+
+def test_a_candidate_session_is_priced_from_its_plan(project: Path):
+    from ai_hats.costs import analyze_plan
+
+    payload = build_composition_payload(
+        project, role_override="alpha + bare", provider_name="claude", experimental=True
+    )
+    priced = payload.static_cost_analyzer("alpha + bare")
+    assert priced["total_tokens"] == analyze_plan(payload.plan, exact=False).total_tokens
+    assert priced["role"] == "alpha + bare"
 
 
 def test_the_candidate_needs_an_expression(project: Path):
@@ -86,6 +174,14 @@ def test_the_preview_projects_the_candidate_plan(project: Path):
     assert shown.record["consent"] == [] and shown.record["checks"] == []
     assert shown.prompt.startswith("<!-- AI-HATS:START -->\nALPHA\n"), "the surface's own frame"
     assert "BARE\n" in shown.prompt and "## PRIORITIES" in shown.prompt
+
+
+def test_compose_role_reads_the_plan_when_there_is_no_composer_value(project: Path):
+    from ai_hats.pipeline.steps.compose import ComposeRole
+
+    payload = build_composition_payload(project, role_override="alpha", experimental=True)
+    out = ComposeRole().run(composition=payload)
+    assert out["system_prompt"].startswith("ALPHA\n")
 
 
 def test_the_prompt_step_prices_a_payload_without_a_composer_value(project: Path):

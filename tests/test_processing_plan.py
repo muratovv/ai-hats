@@ -26,6 +26,14 @@ def root(tmp_path: Path) -> Path:
     return write_root(tmp_path / "lib")
 
 
+def test_a_candidate_plan_names_the_re_marker(root: Path, layout: ProjectLayout):
+    """The record and the child both read the marker off the plan; a bare name cannot say it."""
+    plan = compose("alpha", [Root(root)], layout=layout, diagnostics=[])
+
+    assert plan.dsl == "re"
+    assert composition_record(plan)["dsl"] == "re"
+
+
 def test_the_sample_role_yields_a_plan(root: Path, layout: ProjectLayout):
     diagnostics: list[Diagnostic] = []
     plan = compose("alpha", [Root(root)], layout=layout, diagnostics=diagnostics)

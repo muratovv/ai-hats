@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from ai_hats_core.layout import ProjectLayout
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -99,6 +100,37 @@ def test_the_launch_records_the_provider_that_actually_runs(tmp_path: Path):
     """The defect: the channel re-read ``ProjectConfig.provider``, so a session
     started with ``-p`` resolved against a surface it was not running."""
     assert _envelope(_env(tmp_path, tmp_path / "m"))["provider"] == "stub"
+
+
+def test_the_launch_copies_the_plans_marker(tmp_path: Path):
+    """The child cannot re-derive which composer built a bare name."""
+    composition = dataclasses.replace(composition_with("worker"), dsl="re")
+    plan = MaterializationPlan(
+        composition=composition,
+        prompt=composition.prompt,
+        surface="stub",
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(),
+        root=ProjectLayout.at(tmp_path).cache.session("sess-a"),
+        entries=(),
+        env={},
+        launch=Launch(args=(), sdk_options=None),
+    )
+    env = launch_env(
+        plan,
+        _Surface(tmp_path / "m"),
+        LaunchFlags(
+            session_id="sess-a",
+            session_dir=tmp_path / "session",
+            trace_path=str(tmp_path / "trace.log"),
+            root_pid="4242",
+            provider_session_id=None,
+        ),
+        layout=ProjectLayout.at(tmp_path),
+    )
+
+    assert _envelope(env)["dsl"] == "re"
+    assert SessionIdentity.from_env(env).dsl == "re"
 
 
 def test_the_role_expression_reaches_the_envelope_whole(tmp_path: Path):

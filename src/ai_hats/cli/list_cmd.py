@@ -133,6 +133,10 @@ def list_tokens(name: str, as_trait: bool, approx: bool):
     from ..costs import analyze_composition, analyze_plan
 
     project_dir = resolve_project().layout.root
+    experimental = bool(click.get_current_context().find_root().params.get("experimental"))
+    if experimental and as_trait:
+        console.print("[red]Error[/]: -re list tokens prices an expression, not a trait")
+        return
     if as_trait:
         from ..composer import Composer
 
@@ -141,12 +145,17 @@ def list_tokens(name: str, as_trait: bool, approx: bool):
             Composer(asm.resolver), name, as_trait=True, exact=not approx
         )
     else:
-        from ..composition_seam import build_plan_preview
+        from ..composition_seam import build_plan_preview, build_preview_payload
         from ..diagnostics import emit_to_stderr
+        from ..processing import ProcessingError
 
         try:
-            preview = build_plan_preview(project_dir, role=name)
-        except RuntimeError as exc:
+            preview = (
+                build_preview_payload(project_dir, role=name, experimental=True)
+                if experimental
+                else build_plan_preview(project_dir, role=name)
+            )
+        except (RuntimeError, ProcessingError) as exc:
             console.print(f"[red]Error[/]: {exc}")
             return
         emit_to_stderr(preview.diagnostics)

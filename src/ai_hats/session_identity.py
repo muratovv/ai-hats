@@ -131,6 +131,7 @@ class SessionIdentity:
     #: Carried, never recomputed: the path runs through a hashed ``project_key()``
     #: that a stdlib hook could only copy, and a copy drifts.
     session_cache_dir: str = ""
+    dsl: str = ""  # empty is the reference path; a bare name is also an expression
 
     def to_env(self) -> dict[str, str]:
         """The envelope plus its scalar projections — one writer, so no drift."""
@@ -145,6 +146,7 @@ class SessionIdentity:
                     "session_dir": str(self.session_dir),
                     "skills_root": self.skills_root,
                     "session_cache_dir": self.session_cache_dir,
+                    "dsl": self.dsl,
                 },
                 separators=(",", ":"),
                 sort_keys=True,
@@ -199,6 +201,7 @@ class SessionIdentity:
                 # be added without bumping the version.
                 skills_root=str(data.get("skills_root", "")),
                 session_cache_dir=str(data.get("session_cache_dir", "")),
+                dsl=str(data.get("dsl", "")),
             )
         except SessionIdentityError:
             raise

@@ -51,7 +51,7 @@ from ai_hats_core.deadline import Deadline
 from . import ownership
 from .constants import ENV_ROOT_PID
 from .session_identity import SessionIdentity, SessionIdentityError
-from .wt_effects import WtWorktreeEffects, carry_role
+from .wt_effects import WtWorktreeEffects, carry_session
 
 TERMINAL_STATES = ("done", "failed", "cancelled")
 
@@ -297,12 +297,13 @@ class WorktreeExtension:
             return Delta(work_log=("Forced → execute: no worktree created (manual override)",))
         # The session's role, never the card's: the card names who should do
         # the task, the session who is entering the tree the hooks provision.
-        role = carry_role(self.project_dir, os.environ)
+        role, dsl = carry_session(self.project_dir, os.environ)
         wt_path = self._effects.setup(
             ctx.task.id,
             role,
             caller_cwd=ctx.caller_cwd,
             outer_deadline=_rack_lock_deadline(ctx),
+            dsl=dsl,
         )
         if wt_path is not None:
             # `Worktree: <path>` is parsed as-is by readers; the role gets its own line.

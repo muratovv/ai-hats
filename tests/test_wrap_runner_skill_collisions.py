@@ -14,12 +14,23 @@ from ai_hats_core.layout import ProjectLayout
 
 def _runner(project):
     """WrapRunner with a minimal payload + REAL HooksManager (HATS-865) so
-    class-level ``binary_behind_source`` monkeypatches still bite."""
+    class-level ``binary_behind_source`` monkeypatches still bite.
+
+    The skill lives on the plan, which is what the check reads."""
+    from pathlib import Path
+
     from ai_hats.composition_payload import CompositionPayload
     from ai_hats.hooks_manager import HooksManager
     from ai_hats.models import ProjectConfig
+    from ai_hats.surfaces.plan import (
+        CompositionPlan,
+        Hooks,
+        Prompt,
+        PromptBlock,
+        PromptMember,
+        Skill,
+    )
     from ai_hats_observe import SessionManager, SidecarTracer
-    from ai_hats_core import CompositionResult
 
     hooks = HooksManager(
         project,
@@ -27,16 +38,17 @@ def _runner(project):
         resolve_provider=lambda name: None,
     )
     payload = CompositionPayload(
-        result=CompositionResult(
-            name="t",
-            priorities=[],
-            rules=[],
-            skills=[],
-            injections=[],
-        ),
+        result=None,
         provider=None,
         effective_role="t",
         hooks=hooks,
+        plan=CompositionPlan(
+            identity="t",
+            prompt=Prompt((PromptBlock(None, (PromptMember("t::prompt", "t\n", None),)),)),
+            skills=(Skill("skills::alpha", Path("/skills/alpha"), "d"),),
+            hooks=Hooks((), ()),
+            trace=(),
+        ),
     )
     return WrapRunner(
         ProjectLayout.at(project),
@@ -63,8 +75,7 @@ def _setup(project, tmp_path, monkeypatch, sid="sess-1"):
         log_sub=lambda msg: traces.append(msg),
         log_res=lambda msg: traces.append(msg),
     )
-    result = SimpleNamespace(skills=[SimpleNamespace(name="alpha")])
-    return session, result, fake_home, traces
+    return session, fake_home, traces
 
 
 def _plant_managed_mirror(base):
@@ -82,12 +93,12 @@ def test_markerless_project_mirror_auto_heals(tmp_path, monkeypatch):
     the marker-proven case, no marker required."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, _, traces = _setup(project, tmp_path, monkeypatch)
+    session, _, traces = _setup(project, tmp_path, monkeypatch)
     stale = project / ".claude" / "skills" / "alpha"
     stale.mkdir(parents=True)
     (stale / "SKILL.md").write_text("# stale export\n")
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["note"]
     assert "alpha" in notices[0].text
@@ -101,12 +112,12 @@ def test_home_scope_markerless_differs_stays_warn(tmp_path, monkeypatch):
     catalog — a home marker-less collision still only warns and is left in place."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, fake_home, _ = _setup(project, tmp_path, monkeypatch)
+    session, fake_home, _ = _setup(project, tmp_path, monkeypatch)
     stale = fake_home / ".claude" / "skills" / "alpha"
     stale.mkdir(parents=True)
     (stale / "SKILL.md").write_text("# user copy\n")
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["warn"]
     assert stale.exists()
@@ -115,9 +126,9 @@ def test_home_scope_markerless_differs_stays_warn(tmp_path, monkeypatch):
 def test_clean_project_yields_no_notice(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
-    session, result, _, _ = _setup(project, tmp_path, monkeypatch)
+    session, _, _ = _setup(project, tmp_path, monkeypatch)
 
-    assert _runner(project)._check_skill_collisions(session, result) == []
+    assert _runner(project)._check_skill_collisions(session) == []
 
 
 def test_managed_project_mirror_auto_heals(tmp_path, monkeypatch):
@@ -125,10 +136,10 @@ def test_managed_project_mirror_auto_heals(tmp_path, monkeypatch):
     skills + trash path, no CLI verb instructed (HATS-906 pin successor)."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, _, traces = _setup(project, tmp_path, monkeypatch)
+    session, _, traces = _setup(project, tmp_path, monkeypatch)
     mirror = _plant_managed_mirror(project)
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["note"]
     assert "alpha" in notices[0].text
@@ -145,13 +156,13 @@ def test_managed_heal_gated_on_version_skew(tmp_path, monkeypatch):
     real CLI verb (HATS-906 pin successor)."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, _, _ = _setup(project, tmp_path, monkeypatch)
+    session, _, _ = _setup(project, tmp_path, monkeypatch)
     mirror = _plant_managed_mirror(project)
     monkeypatch.setattr(
         "ai_hats.hooks_manager.HooksManager.binary_behind_source", lambda self: True
     )
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["warn"]
     assert "self update" in notices[0].text
@@ -164,11 +175,11 @@ def test_managed_heal_gated_in_hard_delete_mode(tmp_path, monkeypatch):
     """AI_HATS_TRASH_DIR=- → removal would be unrecoverable → WARN, no heal."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, _, _ = _setup(project, tmp_path, monkeypatch)
+    session, _, _ = _setup(project, tmp_path, monkeypatch)
     mirror = _plant_managed_mirror(project)
     monkeypatch.setenv("AI_HATS_TRASH_DIR", "-")
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["warn"]
     assert (
@@ -182,10 +193,10 @@ def test_home_scope_managed_stays_warn(tmp_path, monkeypatch):
     no ai-hats verb (the old 'self init removes it' was factually wrong here)."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, fake_home, _ = _setup(project, tmp_path, monkeypatch)
+    session, fake_home, _ = _setup(project, tmp_path, monkeypatch)
     mirror = _plant_managed_mirror(fake_home)
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["warn"]
     assert "self init" not in notices[0].text
@@ -197,7 +208,7 @@ def test_heal_failure_fails_open(tmp_path, monkeypatch):
     """Exception inside the sweep → WARN naming it, launch proceeds."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, _, _ = _setup(project, tmp_path, monkeypatch)
+    session, _, _ = _setup(project, tmp_path, monkeypatch)
     _plant_managed_mirror(project)
 
     def boom(project_dir, names=None):
@@ -205,7 +216,7 @@ def test_heal_failure_fails_open(tmp_path, monkeypatch):
 
     monkeypatch.setattr("ai_hats.plugin_dir.drop_legacy_skills_mirror", boom)
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["warn"]
     assert "disk on fire" in notices[0].text
@@ -216,13 +227,13 @@ def test_mixed_verdicts_heal_plus_warn(tmp_path, monkeypatch):
     warns — one notice per concern."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, fake_home, _ = _setup(project, tmp_path, monkeypatch)
+    session, fake_home, _ = _setup(project, tmp_path, monkeypatch)
     _plant_managed_mirror(project)
     stale = fake_home / ".claude" / "skills" / "alpha"
     stale.mkdir(parents=True)
     (stale / "SKILL.md").write_text("# old copy\n")
 
-    notices = _runner(project)._check_skill_collisions(session, result)
+    notices = _runner(project)._check_skill_collisions(session)
 
     assert [n.level for n in notices] == ["note", "warn"]
     assert str(stale) in notices[1].text

@@ -56,4 +56,5 @@ def emit(
         skills=tuple(skills),
         hooks=Hooks(runtime=(), external=()),
         trace=folded.trace,
+        dsl="re",
     )

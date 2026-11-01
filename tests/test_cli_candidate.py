@@ -88,11 +88,46 @@ def test_the_projections_refuse_without_the_flag():
     assert "ai-hats config show-prompt --role <role>" in result.output
 
 
-def test_a_bare_flag_names_the_projections_until_a_session_exists(project: Path):
-    result = CliRunner().invoke(main, ["-re", "alpha + bare"])
-    assert result.exit_code == 2
-    assert 'ai-hats -re dry-run "<expr>"' in result.output
-    assert "role_materialization" not in result.output and "launch" not in result.output
+def test_a_bare_flag_dry_run_is_the_candidate_record(project: Path):
+    result = CliRunner().invoke(main, ["-re", "--dry-run-json", "alpha + bare"])
+    assert result.exit_code == 0, result.output
+    record = json.loads(result.output)
+    assert record["composition"]["identity"] == "alpha + bare"
+    assert record["composition"]["dsl"] == "re"
+    assert record["composition"]["hooks"] == {"runtime": [], "external": []}
+
+
+def test_re_combined_with_a_role_is_refused(project: Path):
+    result = CliRunner().invoke(main, ["-re", "-r", "alpha"])
+    assert result.exit_code == 2, result.output
+    assert "-re" in result.output and "-r" in result.output
+
+
+def test_re_without_an_expression_names_the_forms(project: Path):
+    result = CliRunner().invoke(main, ["-re"])
+    assert result.exit_code == 2, result.output
+    assert 'ai-hats -re "<expr>"' in result.output
+    assert "dry-run" in result.output
+
+
+def test_agent_dry_run_under_re_matches_the_hitl_record(project: Path):
+    runner = CliRunner()
+    hitl = runner.invoke(main, ["-re", "dry-run", "alpha + bare", "--json"])
+    agent = runner.invoke(main, ["-re", "agent", "alpha + bare", "--dry-run", "--json"])
+    assert hitl.exit_code == 0, hitl.output
+    assert agent.exit_code == 0, agent.output
+    assert json.loads(hitl.output)["composition"] == json.loads(agent.output)["composition"]
+
+
+def test_list_tokens_under_re_prices_the_candidate_plan(project: Path):
+    from ai_hats.composition_seam import build_preview_payload
+    from ai_hats.costs import analyze_plan
+
+    plan = build_preview_payload(project, role="alpha", experimental=True).plan
+    total = f"{analyze_plan(plan, exact=False).total_tokens:,}"
+    result = CliRunner().invoke(main, ["-re", "list", "tokens", "alpha", "--approx"])
+    assert result.exit_code == 0, result.output
+    assert total in result.output
 
 
 def test_the_reference_role_flag_is_untouched(project: Path):
