@@ -3173,7 +3173,7 @@ as a claim to check, not as evidence.
   ai-hats config show-prompt --role worker
   ```
 
-- **expect** — the record's composition names the canonical expression, the prompt members in term order with the worker's prose last, the skills with their trees and digests, no hooks; the trait's prompt prints at exit 0 while the reference exits 2 on the same trait
+- **expect** — the record's composition names the canonical expression, the prompt members in term order with the worker's prose last, the skills with their trees and digests, the safety-guard hooks and the fs.remove consent point; the trait's prompt prints at exit 0 while the reference exits 2 on the same trait
 - **why** — the two projections are the only readers of the candidate plan until a session runs from it; the trait that could not be shown is the measured baseline the flat model exists to remove
 
 ## `test_re_dry_run_hooks.py`
