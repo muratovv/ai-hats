@@ -151,6 +151,14 @@ def test_the_preview_projects_the_candidate_plan(project: Path):
     assert "BARE\n" in shown.prompt and "## PRIORITIES" in shown.prompt
 
 
+def test_compose_role_reads_the_plan_when_there_is_no_composer_value(project: Path):
+    from ai_hats.pipeline.steps.compose import ComposeRole
+
+    payload = build_composition_payload(project, role_override="alpha", experimental=True)
+    out = ComposeRole().run(composition=payload)
+    assert out["system_prompt"].startswith("ALPHA\n")
+
+
 def test_the_prompt_step_prices_a_payload_without_a_composer_value(project: Path):
     from ai_hats.pipeline.steps.materialize import MaterializeSystemPrompt
 

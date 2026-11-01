@@ -34,4 +34,11 @@ class ComposeRole(Step):
         # An absent/empty composition OMITS the key (never "").
         if composition is None:
             return {}
-        return {"system_prompt": composition.result.merged_injection or None}
+        result = composition.result
+        if result is not None:
+            text = result.merged_injection
+        elif composition.plan is not None:
+            text = composition.plan.prompt.text
+        else:
+            return {}
+        return {"system_prompt": text or None}

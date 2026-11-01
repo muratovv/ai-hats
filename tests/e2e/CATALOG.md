@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**367 of 367 files catalogued — 376 flows.**
+**368 of 368 files catalogued — 377 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3192,6 +3192,24 @@ as a claim to check, not as evidence.
 
 - **expect** — show-prompt prints the prompt body dry-run --full dumps; the text and json renderings carry one record; a processing warning lands in the notes of dry-run and on the stderr of show-prompt
 - **why** — both projections read one plan value (ADR-0036 D5); this test grows with every slice so a later stage cannot make them disagree unnoticed
+
+## `test_re_session_stripped.py`
+
+*pins HATS-2010*
+
+- **flow** — a person launches a session from an expression and reads it back
+- **cmds**
+
+  ```console
+  ai-hats -re dry-run "hypothesis-intake + worker" --json
+  ai-hats -re agent "hypothesis-intake + worker" --dry-run --json
+  ai-hats -re show-prompt "hypothesis-intake + worker"
+  ai-hats -re list tokens "hypothesis-intake + worker" --approx
+  ai-hats -re "hypothesis-intake + worker"
+  ```
+
+- **expect** — the agent dry-run and the HITL dry-run carry one composition; show-prompt sits inside the framed prompt; list tokens prices that plan; a live session writes that prompt, names the marker, arms no hooks, and says so
+- **why** — the projections already printed the plan, and a session that composed the expression as a role would arm the wrong gates or refuse in silence
 
 ## `test_readonly_cli_reads_worktree_library.py`
 
