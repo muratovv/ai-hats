@@ -88,19 +88,13 @@ def test_the_projections_refuse_without_the_flag():
     assert "ai-hats config show-prompt --role <role>" in result.output
 
 
-def test_a_bare_flag_launches_the_expression(project: Path, monkeypatch):
-    seen: dict = {}
-
-    def fake(**kwargs):
-        seen.update(kwargs)
-
-    monkeypatch.setattr("ai_hats.cli._launch_session", fake)
-    result = CliRunner().invoke(main, ["-re", "alpha + bare", "--verbose"])
-
+def test_a_bare_flag_dry_run_is_the_candidate_record(project: Path):
+    result = CliRunner().invoke(main, ["-re", "--dry-run-json", "alpha + bare"])
     assert result.exit_code == 0, result.output
-    assert seen["role"] == "alpha + bare"
-    assert seen["experimental"] is True
-    assert seen["extra_args"] == ["--verbose"]
+    record = json.loads(result.output)
+    assert record["composition"]["identity"] == "alpha + bare"
+    assert record["composition"]["dsl"] == "re"
+    assert record["composition"]["hooks"] == {"runtime": [], "external": []}
 
 
 def test_re_combined_with_a_role_is_refused(project: Path):

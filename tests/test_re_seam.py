@@ -87,25 +87,12 @@ def test_an_empty_candidate_says_so_and_one_hook_does_not():
     assert candidate_session_notice("", empty) is None
 
 
-def test_the_marker_keeps_the_channels_off_the_composer(project: Path, monkeypatch):
-    """Under re the expression is not a role; under the empty marker the composer still runs."""
-    calls: list[str] = []
-
-    def composer(*_args, **_kwargs):
-        calls.append("composer")
-        return "reference"
-
-    monkeypatch.setattr("ai_hats.materialize.compose_to_arm", composer)
-    monkeypatch.setattr("ai_hats.materialize.compose_to_carry", composer)
-
-    assert compose_for_checks(project, "alpha", dsl="") == "reference"
-    assert compose_for_carry(project, "alpha", dsl="") == "reference"
-    assert calls == ["composer", "composer"]
-
-    calls.clear()
+def test_the_marker_keeps_the_channels_off_the_composer(project: Path):
+    """Under re the expression is a plan. Under the empty marker it is a role name, and this one is not."""
     assert compose_for_checks(project, "alpha + bare", dsl="re") is None
     assert compose_for_carry(project, "alpha + bare", dsl="re") is None
-    assert calls == []
+    with pytest.raises(Exception, match="not a known trait"):
+        compose_for_checks(project, "alpha + bare", dsl="")
 
 
 def test_the_candidate_needs_an_expression(project: Path):
