@@ -76,6 +76,66 @@ def session_identity_for(project_dir: Path) -> SessionIdentity | None:
         raise CheckResolutionError(f"checks: {exc}") from exc
 
 
+def _plan_checks(
+    project_dir: Path,
+    identity: SessionIdentity | None | Any,
+    app: str,
+    point: str | None,
+) -> tuple[ResolvedCheck, ...] | None:
+    """Candidate rows, or ``None`` when this call is not a ``-re`` session.
+
+    An empty plan returns ``()`` so the tripwire is not asked about a session that armed nothing.
+    """
+    if identity is None or identity is FROM_ENV or getattr(identity, "dsl", "") != "re":
+        return None
+    from .composition_seam import armed_plan
+
+    plan = armed_plan(project_dir, identity.role)
+    if plan is None:
+        return ()
+    return _checks_from_plan(plan, app, point, identity if identity is not FROM_ENV else None)
+
+
+def _checks_from_plan(plan, app: str, point: str | None, identity) -> tuple[ResolvedCheck, ...]:
+    from ai_hats_core import ResolvedCheck
+
+    from .surfaces.plan import home_of, mirror_name
+
+    rows: list[ResolvedCheck] = []
+    for hook in plan.hooks.external:
+        if hook.on_error is None or hook.run is None or hook.app != app:
+            continue
+        if point is not None and hook.at != point:
+            continue
+        home = home_of(hook.run, plan.skills)
+        if home is None:
+            run = hook.run.path.name
+        else:
+            skill, inside = home
+            run = f"{mirror_name(skill)}/{inside.as_posix()}"
+        rows.append(
+            ResolvedCheck(
+                app=hook.app,
+                path=(hook.object,) if hook.object else (),
+                run=run,
+                at=(hook.at,),
+                cargo={},
+                on_error=hook.on_error.value,
+                script_path=hook.run.path,
+                declared_by=hook.declared_by,
+            )
+        )
+    for check in rows:
+        reject_worktree_root(check.script_path, check)
+    if identity is None or not rows:
+        return tuple(rows)
+    mirror = _Mirror(
+        root=_mirror_root(identity),
+        leaf={mirror_name(skill): mirror_name(skill) for skill in plan.skills},
+    )
+    return tuple(rebase_onto_mirror(check, mirror) for check in rows)
+
+
 def resolve_carried_checks(
     project_dir: Path,
     app: str,
@@ -91,6 +151,9 @@ def resolve_carried_checks(
     never handed to this one — and a broken row of one app cannot abort
     another's event.
     """
+    planned = _plan_checks(project_dir, identity, app, None)
+    if planned is not None:
+        return planned
     result, identity = _composed(project_dir, identity, compose)
     if result is None:
         return ()
@@ -118,6 +181,9 @@ def resolve_checks_at(
     because ai-hats now fires two apps and nothing stops them from
     spelling a point alike — filtering on ``at`` alone would cross the wires.
     """
+    planned = _plan_checks(project_dir, identity, app, point)
+    if planned is not None:
+        return planned
     result, identity = _composed(project_dir, identity, compose)
     if result is None:
         return ()

@@ -86,6 +86,43 @@ def _keep_row(result, skill_name: str, hook, resolve) -> bool:
     return False
 
 
+def carry_from_plan(plan) -> dict[str, list[dict[str, object]]]:
+    """The lifecycle's ``{wt_in, wt_out}`` record, read off the plan's ``wt`` rows."""
+    from .surfaces.plan import home_of, mirror_name
+
+    wt_in: list[dict[str, object]] = []
+    wt_out: dict[tuple[str, str], list[str]] = {}
+    for hook in plan.hooks.external:
+        if hook.app != "wt" or hook.run is None:
+            continue
+        home = home_of(hook.run, plan.skills)
+        if home is None:
+            logger.warning(
+                "worktree hooks: dropping %s — its script is outside every composed skill",
+                hook.at,
+            )
+            continue
+        skill, inside = home
+        name, script = mirror_name(skill), inside.as_posix()
+        if hook.at == "create":
+            wt_in.append({"skill": name, "script": script})
+            continue
+        if hook.at.startswith("teardown[") and hook.at.endswith("]"):
+            event = hook.at[len("teardown[") : -1]
+            wt_out.setdefault((name, script), [])
+            if event not in wt_out[(name, script)]:
+                wt_out[(name, script)].append(event)
+    out: dict[str, list[dict[str, object]]] = {}
+    if wt_in:
+        out["wt_in"] = wt_in
+    if wt_out:
+        out["wt_out"] = [
+            {"skill": name, "script": script, "on": events}
+            for (name, script), events in wt_out.items()
+        ]
+    return out
+
+
 def serialize_collected_hooks(
     collected: dict[str, list[tuple[str, object]]],
 ) -> dict[str, list[dict[str, object]]]:

@@ -18,8 +18,8 @@ from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
-    from ..composition_seam import compose_for_checks
-    from ..githooks_resolve import resolve_git_gates
+    from ..composition_seam import armed_plan, compose_for_checks
+    from ..githooks_resolve import resolve_git_gates, resolve_git_gates_from_plan
     from ..githooks_run import (
         GATE_BROKEN_ACK_ENV,
         GATE_BROKEN_EXIT,
@@ -145,12 +145,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # The seam, not a composition of our own: a session role may be an
         # expression (`role + trait`), and only the seam reads one.
-        composition = compose_for_checks(
-            project_dir,
-            identity.role if identity else None,
-            dsl=identity.dsl if identity else "",
-        )
-        resolution = None if composition is None else resolve_git_gates(composition, args.event)
+        role = identity.role if identity else None
+        dsl = identity.dsl if identity else ""
+        plan = armed_plan(project_dir, role) if dsl == "re" else None
+        if plan is not None:
+            resolution = resolve_git_gates_from_plan(plan, args.event)
+        else:
+            composition = compose_for_checks(project_dir, role, dsl=dsl)
+            resolution = None if composition is None else resolve_git_gates(composition, args.event)
     except Exception as exc:  # noqa: BLE001 — a hook must never raise at a human
         # A composition refusal (removed script, unknown point name) renders
         # friendly only in the click layer, which a git hook never enters —

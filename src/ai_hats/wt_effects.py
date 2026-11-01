@@ -70,9 +70,13 @@ def collect_carry_for_project(
     Compose lives in ``composition_seam.compose_for_carry``; the chokepoint
     receives the ready result.
     """
-    from .composition_seam import compose_for_carry
-    from .wt_carry import collect_carry_for_role
+    from .composition_seam import armed_plan, compose_for_carry
+    from .wt_carry import carry_from_plan, collect_carry_for_role
 
+    if dsl == "re":
+        plan = armed_plan(project_dir, role or None)
+        if plan is not None:
+            return carry_from_plan(plan)
     return collect_carry_for_role(compose_for_carry(project_dir, role, dsl=dsl))
 
 

@@ -87,6 +87,30 @@ def test_an_empty_candidate_says_so_and_one_hook_does_not():
     assert candidate_session_notice("", empty) is None
 
 
+def test_a_git_hook_in_the_plan_arms_the_gate_and_the_tripwire_stays(project: Path):
+    """One external git row becomes one gate. Asking for a CompositionResult still refuses."""
+    root = project / "libraries" / "experimental"
+    script = root / "skills" / "tool" / "scripts" / "run.sh"
+    script.chmod(0o755)
+    (root / "gate.yaml").write_text(
+        "schema_version: 1\ntype: hook\nkind: git\nat: pre-push\nrun: skills/tool/scripts/run.sh\n"
+    )
+    (root / "gated.yaml").write_text("schema_version: 1\ntype: composite\nexpr: gate\n")
+    from ai_hats.composition_seam import armed_plan
+    from ai_hats.githooks_resolve import resolve_git_gates_from_plan
+
+    plan = armed_plan(project, "gated")
+    assert plan is not None
+    resolution = resolve_git_gates_from_plan(plan, "pre-push")
+    assert [gate.path for gate in resolution.gates] == [script.resolve()]
+    assert resolution.refusals == ()
+    with pytest.raises(RuntimeError, match="cannot arm"):
+        compose_for_checks(project, "gated", dsl="re")
+    with pytest.raises(RuntimeError, match="cannot arm"):
+        compose_for_carry(project, "gated", dsl="re")
+    assert armed_plan(project, "alpha + bare") is None
+
+
 def test_the_marker_keeps_the_channels_off_the_composer(project: Path):
     """Under re the expression is a plan. Under the empty marker it is a role name, and this one is not."""
     assert compose_for_checks(project, "alpha + bare", dsl="re") is None
