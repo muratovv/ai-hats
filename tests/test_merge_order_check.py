@@ -42,6 +42,8 @@ def _env(repo: Path, point: str, **extra: str) -> dict[str, str]:
         "AI_HATS_HOOK_POINT": point,
         "AI_HATS_PROJECT_DIR": str(repo),
         "AI_HATS_USER_HOME": str(repo.parent / "cache-home"),
+        # Not os.environ: rack's kernel-factory entry point imports src/ai_hats.
+        "PYTHONDONTWRITEBYTECODE": "1",
     }
     env.update(extra)
     return env

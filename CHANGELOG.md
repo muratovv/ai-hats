@@ -10,9 +10,14 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-11-01
+
 ### Changed
 
 - **The library floor follows the candidate copy** (HATS-2009). `ai-hats-library` 0.11.2. This package requires `ai-hats-library>=0.11.2`.
+- **Flags after `ai-hats acp`'s own options reach the grok child unchanged** (HATS-2125). ai-hats keeps `-p`, `-r`, `-m` and `--tag`. It does not read the rest and does not add `--permission-mode`. With no tail the child is `grok agent --no-leader stdio`.
+- **`ai-hats -re "<expr>"` starts a session from the expression** (HATS-2010). `ai-hats -re dry-run` and `ai-hats -re show-prompt` still only project it. `-r` stays a role name.
+- **A grok HITL launch carries a ticketed ask** (HATS-2126). An automate launch still self-approves, so the same ask stays a deny there.
 
 ## [0.19.3] - 2026-10-31
 
@@ -3006,7 +3011,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.3...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.4...HEAD
+[0.19.4]: https://github.com/muratovv/ai-hats/compare/v0.19.3...v0.19.4
 [0.19.3]: https://github.com/muratovv/ai-hats/compare/v0.19.2...v0.19.3
 [0.19.2]: https://github.com/muratovv/ai-hats/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/muratovv/ai-hats/compare/v0.19.0...v0.19.1

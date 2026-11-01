@@ -89,6 +89,9 @@ def hook_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "hook-cwd"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", str(repo)], check=True, timeout=10)
+    # Runners have no git identity; a commit without a local one exits 128.
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True, timeout=10)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True, timeout=10)
     return repo
 
 
