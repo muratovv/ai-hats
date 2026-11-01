@@ -1,0 +1,5 @@
+schema_version: 1
+type: hook
+kind: git
+at: pre-commit
+run: ../../skills/git-mastery/git_hooks/pre-commit-privacy.sh

@@ -1,0 +1,5 @@
+schema_version: 1
+type: hook
+kind: git
+at: post-commit
+run: ../../skills/git-mastery/git_hooks/post-commit-bypass-stamp.sh

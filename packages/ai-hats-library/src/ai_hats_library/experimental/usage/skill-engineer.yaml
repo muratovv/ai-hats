@@ -1,0 +1,7 @@
+schema_version: 1
+type: composite
+expr: >-
+  skill-engineer::prompt + dev_rule_comment_discipline + skill-optimization
+  + skill-template + retro-to-framework + library-editing + prompt-authoring
+  + agent-cli-guidelines + composition-verification
+  + library-change-hypothesis-protocol

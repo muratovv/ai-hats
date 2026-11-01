@@ -1,0 +1,6 @@
+schema_version: 1
+type: hook
+kind: runtime
+at: PreToolUse
+matcher: Bash
+run: ../../skills/safety-guard/hooks/pre_bash_shared_state_guard.sh

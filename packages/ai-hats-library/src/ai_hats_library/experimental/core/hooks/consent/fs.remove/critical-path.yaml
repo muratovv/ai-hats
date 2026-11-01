@@ -1,0 +1,5 @@
+schema_version: 1
+type: hook
+kind: consent
+operation: fs.remove
+at: critical-path

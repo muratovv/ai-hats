@@ -106,6 +106,60 @@ def list_skills():
         console.print(f"  [cyan]{name}[/]")
 
 
+def _require_re(what: str) -> None:
+    if not click.get_current_context().find_root().params.get("experimental"):
+        raise click.UsageError(f"`list {what}` reads the candidate library and runs under -re")
+
+
+@list_cmd.command("hooks")
+@click.argument("expr")
+def list_hooks(expr: str) -> None:
+    """Print the hooks a candidate expression arms."""
+    from ..composition_seam import build_preview_payload
+    from ..diagnostics import emit_to_stderr
+    from ..processing import ProcessingError
+
+    _require_re("hooks")
+    try:
+        payload = build_preview_payload(resolve_project().layout.root, role=expr, experimental=True)
+    except (RuntimeError, ProcessingError) as exc:
+        console.print(f"[red]Error[/]: {exc}")
+        raise SystemExit(2) from exc
+    emit_to_stderr(payload.diagnostics)
+    plan = payload.plan
+    if plan is None:
+        raise click.ClickException("the candidate preview carried no plan")
+    for hook in plan.hooks.external:
+        click.echo(f"{hook.app}\t{hook.object or '-'}\t{hook.at}\t{hook.declared_by}")
+    for hook in plan.hooks.runtime:
+        click.echo(f"runtime\t{hook.at.value}\t{hook.matcher}")
+
+
+@list_cmd.command("operations")
+def list_operations() -> None:
+    """Print the operation entities the candidate library declares."""
+    from ..assembler import Assembler
+    from ..paths import builtin_library_root
+    from ..processing import candidate_roots, read_roots
+    from ..processing.parse import entity_type
+
+    _require_re("operations")
+    project = resolve_project().layout.root
+    asm = Assembler(project, prefer_cwd=True)
+    roots = candidate_roots(
+        asm.library_paths, builtin_root=builtin_library_root(project, prefer_cwd=True)
+    )
+    library = read_roots(roots, [])
+    names = sorted(
+        entity.name.split("::")[-1]
+        for layer in library.layers
+        for entity in layer.entities
+        if entity_type(entity) == "operation"
+    )
+    for name in names:
+        click.echo(name)
+
+
 @list_cmd.command("tokens")
 @click.argument("name")
 @click.option(

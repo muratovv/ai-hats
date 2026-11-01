@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**368 of 368 files catalogued — 377 flows.**
+**369 of 369 files catalogued — 378 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -2539,16 +2539,16 @@ as a claim to check, not as evidence.
 
 *pins HATS-2009*
 
-- **flow** — a maintainer regenerates the candidate copy of the shipped library for the closure of two composites, twice, and feeds the script a root it must refuse
+- **flow** — a maintainer regenerates the candidate copy of the shipped library for the closure this slice commits, twice, and feeds the script a root it must refuse
 - **cmds**
 
   ```console
-  python scripts/migrate_experimental.py --root <copy> --only hypothesis-intake worker
-  python scripts/migrate_experimental.py --root <copy> --only hypothesis-intake worker
+  python scripts/migrate_experimental.py --root <copy> --only hypothesis-intake worker maintainer
+  python scripts/migrate_experimental.py --root <copy> --only hypothesis-intake worker maintainer
   python scripts/migrate_experimental.py --root <synthetic> --only oddball
   ```
 
-- **expect** — the copy's experimental/ is byte-equal to the committed one, prompts and skills only — no hooks payload, a skill's symlink out of its tree left out and reported; the second run changes nothing; a config.yaml key outside the ADR-0034 D6 table refuses naming the file, and a composition.apps row is reported as deferred
+- **expect** — the copy's experimental/ is byte-equal to the committed one, including hook files and the shared hooks payload; a symlink that stays inside the library root is kept; the second run changes nothing; a config.yaml key outside the ADR-0034 D6 table refuses naming the file; an apps row becomes a hook file the composite names
 - **why** — experimental/ is a derived artifact: what is committed must be what the script produces, or the candidate reads a hand-edited library (ADR-0034 D6)
 
 ## `test_migration_no_replay_without_config.py`
@@ -3176,6 +3176,27 @@ as a claim to check, not as evidence.
 - **expect** — the record's composition names the canonical expression, the prompt members in term order with the worker's prose last, the skills with their trees and digests, no hooks; the trait's prompt prints at exit 0 while the reference exits 2 on the same trait
 - **why** — the two projections are the only readers of the candidate plan until a session runs from it; the trait that could not be shown is the measured baseline the flat model exists to remove
 
+## `test_re_dry_run_hooks.py`
+
+*pins HATS-1969*
+
+- **flow** — a person previews a candidate role and lists what it arms
+- **cmds**
+
+  ```console
+  ai-hats -re dry-run maintainer --json
+  ai-hats -re dry-run maintainer
+  ai-hats -re dry-run trait-agent --json
+  ai-hats -re dry-run "trait-agent - rack.transition::done" --json
+  ai-hats -re show-prompt "trait-agent - rack.transition::done"
+  ai-hats -re list hooks maintainer
+  ai-hats -re list operations
+  ai-hats -re show-prompt maintainer
+  ```
+
+- **expect** — the done gate and the consent points are visible, a removal is a note, show-prompt stays the prompt, and list prints the same gate and the four operations
+- **why** — hooks are not in the prompt, so the preview is the only place they show
+
 ## `test_re_projections.py`
 
 *pins HATS-2009*
@@ -3208,7 +3229,7 @@ as a claim to check, not as evidence.
   ai-hats -re "hypothesis-intake + worker"
   ```
 
-- **expect** — the agent dry-run and the HITL dry-run carry one composition; show-prompt sits inside the framed prompt; list tokens prices that plan; a live session writes that prompt, names the marker, arms no hooks, and says so
+- **expect** — the agent dry-run and the HITL dry-run carry one composition; show-prompt sits inside the framed prompt; list tokens prices that plan; a live session writes that prompt and names the marker. The expression arms safety-guard's runtime hooks through trait-base, and no rack gate.
 - **why** — the projections already printed the plan, and a session that composed the expression as a role would arm the wrong gates or refuse in silence
 
 ## `test_readonly_cli_reads_worktree_library.py`

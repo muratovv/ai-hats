@@ -1,0 +1,6 @@
+schema_version: 1
+type: operation
+surface: none
+reader: fs_remove
+binds_ticket: false
+hook_only_because: a shim under rm would sit under every script and the person's own shell

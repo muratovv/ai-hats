@@ -1,0 +1,5 @@
+schema_version: 1
+type: operation
+surface: ai-hats
+reader: wt_discard
+binds_ticket: false

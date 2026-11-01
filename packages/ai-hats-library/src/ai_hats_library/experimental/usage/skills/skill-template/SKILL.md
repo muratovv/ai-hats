@@ -1,0 +1,236 @@
+---
+name: skill-template
+description: >-
+  Canonical template and validation guide for ai-hats skills. Use when
+  creating a new skill, reviewing an existing one for structural
+  compliance, or deciding which pattern fits a new behavior.
+license: MIT
+ai_hats:
+  schema_version: 1
+  type: skill
+---
+
+# Skill Template
+
+Guide for creating and validating skills in the ai-hats library.
+
+## When to Use
+
+- Creating a new skill
+- Reviewing an existing skill for structural compliance
+- Deciding which pattern fits a new behavior
+
+## Canonical Structure
+
+Every SKILL.md follows this layout:
+
+```
+# <Skill Name>
+
+<One-line purpose.>
+
+## When to Use
+<Boundaries & disambiguation the one-line description can't carry:
+when NOT to use, which sibling skill to prefer, scope edges.
+Complements the description's triggers — does not restate them.>
+
+## <Main Section>
+<Core content. Section name depends on pattern (see below).>
+
+## Completion                ← required for protocol/checklist; optional for reference
+<Done-criteria and expected artifacts; include the validation scenario.>
+
+## Anti-Patterns             ← recommended
+<Common mistakes, 2-5 bullets.>
+```
+
+### `description` vs `## When to Use` — two lifecycle stages
+
+They are read at different moments, so they carry different content:
+
+- **`description`** is in the always-on skill index (selection-time). It
+  is the *only* thing the selector sees, so it holds the **triggers** —
+  "what it does. Use when <X>". It must NOT summarize the procedure body:
+  a step-by-step summary in the index is a shortcut the selector acts on
+  *instead of* loading the skill, so the actual procedure never runs.
+- **`## When to Use`** loads only *after* the skill is invoked
+  (post-load). The "should I use this" call is already made by then, so
+  restating triggers adds nothing. Use it for **boundaries &
+  disambiguation**: when NOT to use, which sibling skill to prefer,
+  scope edges — the nuance a one-line description can't hold.
+
+## Patterns
+
+Choose the main section heading by pattern:
+
+| Pattern      | Main Heading | Used When                                 |
+| ------------ | ------------ | ----------------------------------------- |
+| protocol     | Procedure    | Step-by-step process with ordered phases  |
+| checklist    | Checklist    | Verification / audit with pass/fail items |
+| orchestrator | Workflow     | State machine coordinating other skills   |
+| reference    | Conventions  | Declarative guidelines, no procedure      |
+| template     | Format       | Prescribes a specific output structure    |
+
+## Scripts vs prose
+
+Add a `scripts/` utility (rather than prose the agent re-generates) when
+the operation is **deterministic, repeatable, and benefits from explicit
+error handling**. A committed script saves tokens and is more reliable
+than code regenerated from a description each time. Keep ad-hoc, one-off,
+or judgment-heavy steps as prose.
+
+**Name the script so the agent can resolve it.** A `hooks/` script is wired by
+the engine, which knows where it lives; a `scripts/` one is run by the agent,
+whose cwd is the project root. A bare `scripts/<name>` therefore reads as the
+*project's* `scripts/` — a directory most repos already have. Say which
+directory you mean, in the step that invokes it: `scripts/<name>` **resolved
+against this skill's own directory**. `references/` paths are read, not
+executed, and carry no such collision.
+
+## Declaring a hook from a skill
+
+This is how the ladder's top rung is actually built: a skill's `SKILL.md`
+frontmatter declares **hooks** under a top-level `ai_hats:` key — `git_hooks`
+(git events), `runtime_hooks` (`PreToolUse` / `PostToolUse`), and `worktree`
+(`wt_in` / `wt_out` lifecycle). The skill directory carries the script:
+
+```yaml
+---
+name: migration-freeze
+description: >-
+  PreToolUse hook — refuses edits under `db/migrations/` while a release
+  branch is open, and records the attempt. Use when diagnosing why a
+  migration edit was blocked.
+ai_hats:
+  runtime_hooks:
+    PreToolUse:
+      - matcher: Bash             # tool name or regex
+        script: hooks/guard.sh    # path relative to THIS skill's directory
+    PostToolUse:
+      - matcher: Edit|Write|MultiEdit
+        script: hooks/audit.py
+---
+```
+
+Two rules that are not guessable:
+
+- **Name the tool in Claude's vocabulary, always** — `Bash`,
+  `Edit|Write|MultiEdit` — even on another surface. Each surface translates at
+  spawn, so enumerating other surfaces' tool names guards nothing extra.
+- **Your script reads ONE dialect**: `tool_name`, `tool_input.command`,
+  `tool_input.file_path`. Do not add a second reading for another surface's
+  payload shape; the adapter has already mapped it.
+
+A shipped example to copy: `usage/skills/py-security-lint/` — frontmatter plus
+`hooks/`. Fuller contract, when you have the ai-hats checkout at hand:
+`docs/how-to-extend.md` § "Declaring hooks from a skill".
+
+## When your edit takes effect
+
+**No command.** Roles are composed fresh at every session launch, so editing a
+`SKILL.md` body is live for the next session. The same holds for `ai-hats.yaml`
+— it is re-read at launch, so adding your skill to a trait or role also lands on
+its own. `ai-hats self init` validates the config and refreshes the project
+scaffold; it is not how composition changes take effect — with one exception, a
+skill declaring a git hook on an event that has no `.githooks/<event>`
+dispatcher yet (`library-editing` §4).
+
+Skills materialize into the per-session cache under
+`<cache_root>/sessions/<sid>/` — outside the project, default
+`~/.cache/ai-hats/`; the exact subpath is provider-specific
+(claude `plugin/`, agy `rules/.agents/skills/`, cline `skills/`).
+
+**Never `cp` skill files by hand** into `.claude/skills/` or
+`<ai_hats_dir>/library/skills/`. Neither is a root the resolver reads: the
+first is retired, the second is created empty by `ai-hats init` as the landing
+spot for a legacy `.agent/skills/` and nothing composes from it. A skill
+**you** author lives in `<project>/libraries/skills/<name>/` (the other roots:
+`library-editing` §1). A hand-made copy in either place drifts from
+source-of-truth and never reaches a prompt.
+
+Confirm what a launch would actually compose with `ai-hats config status` or
+`ai-hats --dry-run`.
+
+## Validation scenario (RED → GREEN → REFACTOR)
+
+A skill is not done until one **named baseline scenario** shows it changes
+behaviour — the same discipline we already apply to code:
+
+- **RED** — name a concrete task where an agent *without* this skill gets it
+  wrong (the failure the skill exists to prevent). If you can't name one, the
+  skill has no demonstrable value — stop and reconsider.
+- **GREEN** — the skill's guidance makes that same task come out right.
+- **REFACTOR** — tighten wording to close rationalization loopholes: an agent
+  should not be able to read the skill and still talk itself out of compliance.
+
+Prose-level, not an eval harness: one scenario named in the skill body or its
+task card — no `evals.json`, no scoring. (Adapted from obra/superpowers
+writing-skills, MIT.)
+
+## Validation Checklist
+
+- [ ] H1 + one-liner present
+- [ ] **Description includes BOTH capability AND trigger conditions** — it
+      is the *only* thing the skill selector sees. "What it does. Use when
+      <specific triggers>."
+- [ ] **Description does NOT summarize the procedure body** — one capability
+      phrase is fine; enumerating the skill's steps/method is not. A body-summary
+      in the always-on index is a shortcut the selector acts on *instead of*
+      loading the skill, so the procedure gets skipped. (CSO discipline adapted
+      from obra/superpowers, MIT.)
+- [ ] **Description is a folded strip scalar** — `description: >-`. A plain
+      or quoted line is the same string in a second spelling, and clip `>`
+      keeps a trailing newline, so the skill index wraps the path. The push
+      to master runs `bash scripts/gates.sh skill-desc`.
+- [ ] **Validation scenario present** — one named RED baseline (an agent
+      *without* the skill fails) that the skill demonstrably fixes; see
+      "Validation scenario" above
+- [ ] `## When to Use` adds boundary/disambiguation value beyond the
+      description (when NOT to use, sibling-skill preference, scope edges) —
+      not a restatement of the description's triggers
+- [ ] Main body uses the correct heading for its pattern
+- [ ] `## Completion` present (unless reference/template pattern)
+- [ ] `## Anti-Patterns` present (unless trivially small)
+- [ ] Frontmatter declares `name` + `description` (single-file SKILL.md — no
+      `metadata.yaml` sidecar; any hooks go under a top-level `ai_hats:` key)
+- [ ] **References one level deep** — `SKILL.md → references/*.md`, never
+      `references/*.md → references/sub/*.md`. No reference pyramids.
+- [ ] **Length policy:** `≤50` lines ideal · `50–150` warning (justify in
+      the skill or split) · `>150` must split — move content into
+      `references/` or sibling skills. If a skill cleanly divides into two
+      domains, split it.
+- [ ] **Target behavior stated positively** — a prohibition survives only as
+      a hard guardrail on behavior that can't be phrased positively, and then
+      paired with its replacement ("Redirect instead: …"). Naming the
+      forbidden move drags it into context and makes it *more* available.
+- [ ] **Every omission is a decision** — read the draft for silences: each
+      thing the component doesn't say is delegated to model priors; fill it,
+      or leave it open deliberately. (Both lenses adapted from
+      mattpocock/skills `writing-great-skills`, MIT.)
+
+## References
+
+For detailed guidance on success metrics, testing, and troubleshooting,
+see `references/anthropic-skills-guide.md`.
+
+For external frameworks (skillcreator, Anthropic skill-creator),
+see `references/external-skill-frameworks.md`.
+
+## Anti-Patterns
+
+- Dumping hundreds of lines into one SKILL.md — split heavy content into `references/`
+- `## When to Use` that merely restates the description — once the skill
+  is loaded the selection decision is already made; give boundaries /
+  disambiguation / when-NOT instead
+- Vague triggers in the `description` that match everything — be specific
+- **`description` that summarizes the procedure body** — enumerating the
+  skill's steps in the always-on index lets the agent act on the summary and
+  skip loading the skill; keep it triggers + one capability phrase
+- Mixing multiple domains in one skill — split into focused skills
+- Omitting completion criteria — the agent won't know when to stop
+- **Shipping a skill with no validation scenario** — if no RED baseline shows
+  an agent failing without it, the skill's value is unproven
+- Prohibition-led wording with no positive replacement — "never X" alone
+  half-reads as an instruction to X; state what to do instead
+- Silent defaults — the component omits a decision (location, format, edge
+  case) and every agent fills the gap differently from priors

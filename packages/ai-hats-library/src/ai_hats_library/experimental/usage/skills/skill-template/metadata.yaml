@@ -1,0 +1,16 @@
+name: skill-template
+description: Canonical template and validation guide for ai-hats skills. Use when creating a new skill, reviewing an existing one for structural compliance, or deciding which pattern fits a new behavior.
+author: ai-hats
+pattern: reference
+
+# === upstream provenance (preparation for future plugin system) ===
+upstream:
+  source: obra/superpowers
+  url: https://github.com/obra/superpowers
+  commit: d884ae04edebef577e82ff7c4e143debd0bbec99
+  commit_url: https://github.com/obra/superpowers/commit/d884ae04edebef577e82ff7c4e143debd0bbec99
+  path: "skills/writing-skills — skill-authoring/CSO discipline"
+  fetched_at: 2026-07-09
+  license: MIT
+  license_file: LICENSE
+  attribution: "Adapted from Jesse Vincent (obra) and contributors"

@@ -1,0 +1,6 @@
+schema_version: 1
+type: composite
+expr: >-
+  dev::python::prompt + py-security-lint + comment-length-lint
+  + silent-fallback-gate + py_security_lint + comment_length_lint
+  + silent_fallback_gate

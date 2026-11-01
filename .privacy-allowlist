@@ -35,6 +35,12 @@ src/ai_hats/surfaces/cline/tests/fixtures/*.messages.json
 # detects, so its examples (home paths, credentialed DB URIs, token prefixes)
 # are pattern-shaped by design — documentation of the scanner, not a real leak.
 library/core/skills/git-mastery/SKILL.md
+packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/SKILL.md
+packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-privacy.sh
+
+# The candidate copy is that same catalogue and scanner, byte for byte.
+packages/ai-hats-library/src/ai_hats_library/experimental/core/skills/git-mastery/SKILL.md
+packages/ai-hats-library/src/ai_hats_library/experimental/core/skills/git-mastery/git_hooks/pre-commit-privacy.sh
 
 # HATS-2059: kimi wire.jsonl fixtures for KimiParser, sanitized from spike
 # records (system prompt and tool snapshot replaced by placeholders, prompts

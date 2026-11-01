@@ -1,0 +1,6 @@
+schema_version: 1
+type: composite
+expr: >-
+  trait-se-mindset::prompt + dev_rule_secure_coding
+  + dev_rule_comment_discipline + systematic-debugging + interface-design
+  + predictive-accounting

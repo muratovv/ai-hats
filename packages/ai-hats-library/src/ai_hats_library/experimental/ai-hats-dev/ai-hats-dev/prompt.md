@@ -1,0 +1,73 @@
+---
+schema_version: 1
+type: prompt
+block: body
+---
+## AI-HATS REPOSITORY DISCIPLINE
+
+You are working inside the ai-hats repository itself. What follows is how
+work is done here, beyond the generic agent baseline. It binds every role
+that edits this checkout — code, library content or docs alike.
+
+### Branches and commits
+- Branch names: `task/hats-NNN` for tracked work, `fix/<slug>` and
+  `feat/<slug>` for ad-hoc, `docs/<slug>` for docs-only.
+- **Conventional Commits**: `<type>(<scope>): <subject>`. Types: `feat`,
+  `fix`, `docs`, `refactor`, `test`, `chore`, `security`.
+- Reference the backlog ID in the subject when applicable:
+  `feat(launcher): venv-first wrapper`.
+- One logical change per commit. Squash WIP before PR.
+- **No `Co-Authored-By` trailers** — commits are authored solely by the user.
+
+### Canonical CLI (do not invent equivalents)
+- **Update ai-hats in a consuming project:** `ai-hats self update` (NOT raw
+  `pip install --force-reinstall git+...`). Follow with `ai-hats self init`
+  if composition changed. For projects with isolated venv, call the venv
+  interpreter explicitly (no `bin/ai-hats` console script):
+  `~/<project>/.venv/bin/python -m ai_hats self update`.
+
+### What NOT to commit
+- Real Claude / Gemini session recordings (JSONL dumps carry sessionId,
+  cwd, subscription markers, unredacted prompts — personal data).
+- `/cost` or quota output captured during a session.
+- Absolute paths with your username (`/Users/<name>/...`, `/home/<name>/...`).
+- `ai-hats.yaml` exports with personal customizations.
+- API keys, bearer tokens, `.env` files — the privacy pre-commit hook
+  blocks these; the supervisor's `AI_HATS_PRIVACY_ACK=1` is the only way past
+  it, and only with explicit justification.
+- Binary fixtures larger than ~5 KB under `tests/fixtures/`.
+
+### Documentation discipline (see skill `doc-protocol`)
+- **Glossary-first**: when adding a named visual block, role, skill, or
+  user-facing concept, update `docs/glossary.md` BEFORE the code. Names
+  must be locked at plan stage, not post-hoc.
+
+### Reflexive loop (map: `docs/reflect.md`)
+The framework audits its own sessions. These components EXIST — name them,
+do not invent a replacement when reasoning about "an LLM auditor":
+- `session-reviewer` — the per-session LLM auditor (`ai-hats reflect
+  session`); writes `sessions/retros/sessions/<id>.md`. The non-`n/a`
+  verdicts in that doc are what land in each HYP's `validation_log`.
+- `judge-auditor` -> `judge` — two-phase bulk triage of HYP + PROP
+  (`ai-hats reflect hypothesis`, ADR-0007).
+- `role-judge` — role-coherence audit (`ai-hats reflect role`).
+- `hypothesis-intake` — observation intake (`ai-hats reflect issue`).
+
+Anything you touch under session artifacts, retro storage, metrics, or a
+task's `audit.md` feeds these — that file IS the reviewer's input, so
+trimming it silently blinds the loop. Read `docs/reflect.md`
+before changing the contour; setup + policies: `docs/how-to-feedback-loop.md`.
+
+### Architectural defaults (project conventions)
+- **Strict typed contracts** > loose dict access. Explicit `requires/optional/produces` in pipeline steps, explicit field lists in config schemas.
+- **Immutable state + deltas** > mutable envelopes. Steps return deltas; runtime composes. Tests pass dict in, assert dict out.
+- **Open registries** > closed central schemas. Each component owns its keys; no canonical enumeration tables.
+- **Value-driven phasing** > technical layering. Phase = user-deliverable value, not "next architectural layer".
+- **Bash-composable primitives** > YAML manifests / DSLs. `ai-hats agent <role> --task ... --json | jq`, not YAML pipeline files.
+- **Composability through recursion** — `Pipeline = Step`. Composite steps (Parallel, Branch) implement the Step interface — extension without core edits.
+- **No child-tasks before design approval.** File child task IDs at the start of the phase, when the design is stable; not earlier.
+- **Persistence (`Path.write_text`) is not a Step** — until there is a use case like declarative pipeline manifests, persistence stays in handlers.
+
+### Anti-patterns to refuse
+- **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (There is a consolidation precedent.)
+- **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see skill `quality-gate`).

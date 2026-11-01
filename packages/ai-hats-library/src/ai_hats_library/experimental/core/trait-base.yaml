@@ -2,4 +2,6 @@ schema_version: 1
 type: composite
 expr: >-
   trait-base::prompt + global_rule_resource_hygiene
-  + global_rule_destructive_actions + safety-guard
+  + global_rule_destructive_actions + safety-guard + safety_gate
+  + pre_bash_shared_state_guard + pre_bash_task_merge_guard + ack_prefix_guard
+  + backlog_write_gate + harness_task_gate + fs.remove::critical-path

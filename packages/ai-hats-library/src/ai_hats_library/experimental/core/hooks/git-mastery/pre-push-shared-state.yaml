@@ -1,0 +1,5 @@
+schema_version: 1
+type: hook
+kind: git
+at: pre-push
+run: ../../skills/git-mastery/git_hooks/pre-push-shared-state.sh
