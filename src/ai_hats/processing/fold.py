@@ -105,7 +105,12 @@ def expand(program: Program, identity: str) -> tuple[Signed, ...]:
     return tuple(out)
 
 
-def fold(signed: tuple[Signed, ...], diagnostics: list[Diagnostic]) -> Folded:
+def fold(
+    signed: tuple[Signed, ...],
+    diagnostics: list[Diagnostic],
+    *,
+    consent: frozenset[str] = frozenset(),
+) -> Folded:
     members: list[str] = []
     brought_by: dict[str, str] = {}
     first_top: dict[str, int] = {}
@@ -140,7 +145,15 @@ def fold(signed: tuple[Signed, ...], diagnostics: list[Diagnostic]) -> Folded:
                 )
             )
         members.remove(term.name)
-        removed.append(TraceEntry(term.name, brought_by.pop(term.name), removed_by=term.carrier))
+        who = brought_by.pop(term.name)
+        if term.name in consent:
+            diagnostics.append(
+                Diagnostic(
+                    Level.WARN,
+                    f"{term.carrier} disarms consent {term.name}, which {who} armed",
+                )
+            )
+        removed.append(TraceEntry(term.name, who, removed_by=term.carrier))
         first_top.pop(term.name, None)
         contributors.pop(term.name, None)
 
@@ -154,4 +167,11 @@ def fold(signed: tuple[Signed, ...], diagnostics: list[Diagnostic]) -> Folded:
 
 
 def expand_and_fold(program: Program, identity: str, diagnostics: list[Diagnostic]) -> Folded:
-    return fold(expand(program, identity), diagnostics)
+    from .parse import Hook
+
+    consent = frozenset(
+        name
+        for name, entity in program.tree.entities.items()
+        if isinstance(entity, Hook) and entity.kind == "consent"
+    )
+    return fold(expand(program, identity), diagnostics, consent=consent)

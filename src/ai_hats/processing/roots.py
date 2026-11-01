@@ -14,7 +14,7 @@ from pathlib import Path
 from ..diagnostics import Diagnostic, Level
 from ..paths.constants import LIBRARY_LAYERS
 from .errors import ProcessingError
-from .parse import Entity, parse_md, parse_skill, parse_yaml
+from .parse import Entity, Hook, parse_md, parse_skill, parse_yaml, place_payload
 
 EXPERIMENTAL_DIRNAME = "experimental"
 _SKIPPED = frozenset({"__pycache__"})
@@ -123,6 +123,8 @@ def _walk(root: Root, diagnostics: list[Diagnostic]) -> tuple[Entity, ...]:
                     )
                 )
             else:
+                if isinstance(entity, Hook):
+                    entity = place_payload(entity, root.path)
                 entities.append(entity)
 
     visit(root.path, ())

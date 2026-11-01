@@ -5,7 +5,7 @@ of the wrong shape refuses; a file without a ``type`` is payload."""
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
@@ -18,8 +18,8 @@ SCHEMA_VERSION = 1
 _FENCE = "---"
 
 #: Per type: the keys an author may write beyond ``type`` / ``schema_version``,
-#: and which of them are required. Hook fields are the union over its kinds;
-#: the per-kind check arrives with the hook stage.
+#: and which of them are required. A hook's keys are the union here; the kind
+#: narrows them in ``_check_hook``.
 SCHEMAS: Mapping[str, tuple[frozenset[str], frozenset[str]]] = {
     "composite": (frozenset({"expr"}), frozenset({"tags", "summary"})),
     "prompt": (frozenset({"block"}), frozenset({"heading"})),
@@ -70,8 +70,30 @@ class SkillEntity:
 
 
 @dataclass(frozen=True)
+class Hook:
+    """One hook file. ``run`` is the payload inside the layer root; consent has none."""
+
+    name: str
+    path: Path
+    kind: str
+    at: str
+    #: The ``run`` text as written, relative to the file. ``None`` for consent.
+    run_text: str | None
+    #: Absolute payload, set once the root is known. ``None`` until then, and for consent.
+    run: Path | None
+    #: Payload path from the layer root — the join identity. ``None`` for consent.
+    run_key: str | None
+    matcher: str | None
+    app: str | None
+    object: str | None
+    on_error: str | None
+    on: tuple[str, ...]
+    operation: str | None
+
+
+@dataclass(frozen=True)
 class Declared:
-    """A ``hook`` / ``operation`` / ``override``: schema-checked, not yet consumed."""
+    """An ``operation`` or ``override``: schema-checked, not yet consumed."""
 
     name: str
     path: Path
@@ -79,7 +101,7 @@ class Declared:
     fields: Mapping[str, object]
 
 
-Entity = Composite | PromptEntity | SkillEntity | Declared
+Entity = Composite | PromptEntity | SkillEntity | Hook | Declared
 
 
 def entity_type(entity: Entity) -> str:
@@ -89,6 +111,8 @@ def entity_type(entity: Entity) -> str:
         return "prompt"
     if isinstance(entity, SkillEntity):
         return "skill"
+    if isinstance(entity, Hook):
+        return "hook"
     return entity.type
 
 
@@ -157,6 +181,73 @@ def _expr(path: Path, data: Mapping[str, object]) -> Expr:
         raise ProcessingError(f"{path}: expr: {exc}") from exc
 
 
+#: Required keys, then optional ones, beyond ``kind``.
+_HOOK_KINDS: Mapping[str, tuple[frozenset[str], frozenset[str]]] = {
+    "git": (frozenset({"at", "run"}), frozenset()),
+    "runtime": (frozenset({"at", "matcher", "run"}), frozenset()),
+    "workflow": (frozenset({"app", "at", "run", "on_error"}), frozenset({"object"})),
+    "worktree": (frozenset({"at", "run"}), frozenset({"on"})),
+    "consent": (frozenset({"operation", "at"}), frozenset()),
+}
+_ALWAYS = frozenset({"type", "schema_version", "kind"})
+
+
+def _check_hook(path: Path, data: Mapping[str, object]) -> None:
+    kind = data.get("kind")
+    if not isinstance(kind, str) or kind not in _HOOK_KINDS:
+        listed = ", ".join(sorted(_HOOK_KINDS))
+        raise ProcessingError(f"{path}: hook kind {kind!r} is not one of {listed}")
+    required, optional = _HOOK_KINDS[kind]
+    for key in data:
+        if key not in required and key not in optional and key not in _ALWAYS:
+            raise ProcessingError(f"{path}: {key!r} is not a field of a {kind} hook")
+    for key in required:
+        if key not in data:
+            raise ProcessingError(f"{path}: a {kind} hook requires {key!r}")
+    if kind == "workflow" and data["on_error"] not in ("refuse", "warn"):
+        raise ProcessingError(f"{path}: on_error {data['on_error']!r} is not 'refuse' or 'warn'")
+    if kind == "worktree" and data["at"] not in ("wt_in", "wt_out"):
+        raise ProcessingError(f"{path}: worktree at {data['at']!r} is not 'wt_in' or 'wt_out'")
+    if kind == "worktree" and data["at"] == "wt_in" and "on" in data:
+        raise ProcessingError(f"{path}: wt_in takes no 'on'")
+
+
+def _hook(path: Path, name: str, data: Mapping[str, object]) -> Hook:
+    _check_hook(path, data)
+    return Hook(
+        name=name,
+        path=path,
+        kind=_string(path, data, "kind"),
+        at=_string(path, data, "at"),
+        run_text=_optional_string(path, data, "run"),
+        run=None,
+        run_key=None,
+        matcher=_optional_string(path, data, "matcher"),
+        app=_optional_string(path, data, "app"),
+        object=_optional_string(path, data, "object"),
+        on_error=_optional_string(path, data, "on_error"),
+        on=_string_list(path, data, "on"),
+        operation=_optional_string(path, data, "operation"),
+    )
+
+
+def place_payload(hook: Hook, root: Path) -> Hook:
+    """Resolve ``run`` inside the layer root; a path that leaves it or is missing refuses."""
+    if hook.kind == "consent":
+        return hook
+    if hook.run_text is None:
+        raise ProcessingError(f"{hook.path}: missing 'run'")
+    root_real = root.resolve()
+    target = (hook.path.parent / hook.run_text).resolve()
+    if target != root_real and root_real not in target.parents:
+        raise ProcessingError(
+            f"{hook.path}: run {hook.run_text!r} is outside the library root {root_real}"
+        )
+    if not target.is_file():
+        raise ProcessingError(f"{hook.path}: run {hook.run_text!r} does not exist")
+    return replace(hook, run=target, run_key=target.relative_to(root_real).as_posix())
+
+
 def parse_yaml(path: Path, name: str) -> Entity | None:
     """A ``.yaml`` file: an entity by its ``type``, or ``None`` for payload."""
     try:
@@ -181,6 +272,8 @@ def parse_yaml(path: Path, name: str) -> Entity | None:
         )
     if type_ in ("prompt", "skill"):
         raise ProcessingError(f"{path}: type {type_!r} is written as a .md file, not .yaml")
+    if type_ == "hook":
+        return _hook(path, name, data)
     return Declared(name=name, path=path, type=type_, fields=dict(data))
 
 

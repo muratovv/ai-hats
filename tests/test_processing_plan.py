@@ -1,5 +1,5 @@
 """Emission (ADR-0035 D9): processing hands back the plan's composition half
-(ADR-0036 D1) — identity, prompt, skills with their trees, empty hooks, trace."""
+(ADR-0036 D1) — identity, prompt, skills with their trees, hooks, trace."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from ai_hats_core.layout import ProjectLayout
 
 from ai_hats.diagnostics import Diagnostic
-from ai_hats.processing import ProcessingError, Root, compose
+from ai_hats.processing import Root, compose
 from ai_hats.surfaces.plan import CompositionPlan, Hooks, TraceEntry, composition_record
 from tests._flat_library import write_root
 
@@ -88,12 +88,16 @@ def test_placeholders_are_expanded_for_the_layout(root: Path, layout: ProjectLay
     assert plan.skills[0].document.endswith("read .agent/ai-hats/tracker\n")
 
 
-def test_a_hook_term_is_refused_until_hooks_reach_the_plan(root: Path, layout: ProjectLayout):
+def test_a_hook_term_reaches_the_plan(root: Path, layout: ProjectLayout):
+    script = root / "skills" / "tool" / "scripts" / "run.sh"
+    script.chmod(0o755)
     (root / "gate.yaml").write_text(
         "schema_version: 1\ntype: hook\nkind: git\nat: pre-push\nrun: skills/tool/scripts/run.sh\n"
     )
-    with pytest.raises(ProcessingError, match="gate is a hook: hooks reach the plan in a later"):
-        compose("alpha + gate", [Root(root)], layout=layout, diagnostics=[])
+    plan = compose("alpha + gate", [Root(root)], layout=layout, diagnostics=[])
+    (git,) = [hook for hook in plan.hooks.external if hook.app == "git"]
+    assert git.at == "pre-push"
+    assert git.run is not None and git.run.path == script.resolve()
 
 
 def test_two_roots_compose_last_wins(root: Path, layout: ProjectLayout, tmp_path: Path):
