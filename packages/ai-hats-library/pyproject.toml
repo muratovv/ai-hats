@@ -55,3 +55,6 @@ packages = ["src/ai_hats_library"]
 # then picks it up on its own, which is why only the sdist declares it.
 [tool.hatch.build.targets.sdist.force-include]
 "src/ai_hats_library/hooks/consent_gate" = "src/ai_hats_library/hooks/consent_gate"
+# The candidate copy is the same directory reached by a skill symlink. The sdist
+# records those files once, under the link, and drops this real path.
+"src/ai_hats_library/experimental/hooks/consent_gate" = "src/ai_hats_library/experimental/hooks/consent_gate"
