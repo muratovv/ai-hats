@@ -6,27 +6,39 @@ from ai_hats.acp.translate import AGENT_KEY, AskClient, ReplyToChild, permission
 from ai_hats.surfaces.grok.acp_child import GrokAcpChild, UNTRUSTED_CHILD_KEY
 
 
-def test_argv_is_the_session_child_and_drops_the_one_shot_flags() -> None:
-    planned = [
+def test_argv_is_the_session_child_and_keeps_the_launch_tail() -> None:
+    assert GrokAcpChild().argv(["grok", "--model", "grok-4.7"]) == [
         "grok",
-        "--session-id",
-        "11111111-1111-1111-1111-111111111111",
         "--model",
         "grok-4.7",
+        "agent",
+        "--no-leader",
+        "stdio",
+    ]
+
+
+def test_caller_flags_pass_through_unchanged_ahead_of_agent() -> None:
+    planned = [
+        "grok",
+        "--permission-mode",
+        "auto",
+        "--foo",
+        "bar",
+        "--permission-mode=auto",
         "--always-approve",
         "-p",
         "hello",
+        "--print",
+        "--session-id",
+        "11111111-1111-1111-1111-111111111111",
     ]
 
     assert GrokAcpChild().argv(planned) == [
         "grok",
-        "--permission-mode",
-        "default",
+        *planned[1:],
         "agent",
         "--no-leader",
         "stdio",
-        "--model",
-        "grok-4.7",
     ]
 
 

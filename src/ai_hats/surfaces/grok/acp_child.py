@@ -13,11 +13,6 @@ from .session_config import asking_config
 if TYPE_CHECKING:
     from ai_hats_observe import Session
 
-_MODEL = {"--model", "-m"}
-# Flags the one-shot launch uses. This child is a session, so none of them belong.
-_DROP_WITH_VALUE = {"--session-id"}
-_DROP = {"--always-approve", "-p", "--print"}
-
 QUESTION_METHOD = "_x.ai/ask_user_question"
 UNTRUSTED_CHILD_KEY = "x.ai/requestingSessionId"
 
@@ -29,33 +24,9 @@ class GrokAcpChild:
         self._retain = retain
 
     def argv(self, planned: list[str]) -> list[str]:
-        """Session argv plus a model from the plan. One-shot flags and `--session-id` are dropped."""
+        """Session child. The launch tail is the harness's and is not rewritten."""
         binary = planned[0] if planned else "grok"
-        model: str | None = None
-        args = planned[1:]
-        index = 0
-        while index < len(args):
-            arg = args[index]
-            if arg in _MODEL and index + 1 < len(args):
-                model = args[index + 1]
-                index += 2
-                continue
-            if arg.startswith("--model="):
-                model = arg.split("=", 1)[1]
-                index += 1
-                continue
-            if arg in _DROP_WITH_VALUE and index + 1 < len(args):
-                index += 2
-                continue
-            if arg in _DROP or arg in _DROP_WITH_VALUE:
-                index += 1
-                continue
-            index += 1
-        # `default` prompts, and a flag beats the person's config.toml mode.
-        argv = [binary, "--permission-mode", "default", "agent", "--no-leader", "stdio"]
-        if model:
-            argv.extend(["--model", model])
-        return argv
+        return [binary, *planned[1:], "agent", "--no-leader", "stdio"]
 
     def planned_session_id(self, minted: str) -> str:
         """Empty: grok names the session in session/new, and a minted id publishes an empty directory."""
@@ -63,7 +34,7 @@ class GrokAcpChild:
         return ""
 
     def prepare_spawn(self, env: dict[str, str]) -> None:
-        """The session file asks. A person's auto would skip session/request_permission."""
+        """The session file asks, and yolo stays off. A caller's flag still beats the file."""
         home = env.get(GROK_HOME_ENV)
         if not home:
             return

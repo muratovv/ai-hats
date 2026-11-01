@@ -22,18 +22,26 @@ def _machine_stdout() -> int:
     return machine
 
 
-@click.command("acp")
+@click.command(
+    "acp",
+    context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
+)
 @session_options
+@click.argument("passthrough", nargs=-1, type=click.UNPROCESSED, metavar="[PROVIDER_ARGS]...")
 def acp_cmd(
     provider: str | None,
     role: str | None,
     model: str | None,
     tags_raw: tuple[str, ...],
+    passthrough: tuple[str, ...],
 ) -> None:
     """Run a role's session as an ACP agent on stdin/stdout.
 
+    Flags after the options are the provider's and are passed through unchanged.
+
     \b
         ai-hats acp -p grok -r maintainer
+        ai-hats acp -p grok -r maintainer --permission-mode auto
     """
     machine = _machine_stdout()
 
@@ -50,7 +58,7 @@ def acp_cmd(
     from ..tags import TagValidationError, parse_tags
     from ._entry import resolve_project
 
-    extra = with_model_flag(model, [])
+    extra = with_model_flag(model, list(passthrough))
     try:
         tags = parse_tags(tags_raw)
     except TagValidationError as exc:
