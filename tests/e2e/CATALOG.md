@@ -40,7 +40,7 @@ as a claim to check, not as evidence.
   ai-hats acp -p grok -r assistant
   ```
 
-- **expect** — session/new names the journal; one prompt ends with stopReason; the journal has prompt_received origin person; a second prompt waits; the process exits with the child's code. A later permission carries the child id from the journal and an empty reject records the holder's phrase. With no provider flags the child starts in permission-mode default.
+- **expect** — session/new names the journal; one prompt ends with stopReason; the journal has prompt_received origin person; a second prompt waits; the process exits with the child's code. A later permission carries the child id from the journal and an empty reject records the holder's phrase. With no provider flags the child argv is agent, --no-leader, stdio.
 - **why** — an ACP client has no other way to drive a composed grok role, and a stdout that is still the log copy is not a session it can speak
 
 - **flow** — a caller puts the stand's permission mode and other provider flags after the acp options, plus the flags a one-shot launch uses
@@ -50,7 +50,7 @@ as a claim to check, not as evidence.
   ai-hats acp -p grok -r assistant --permission-mode auto --foo bar --always-approve -p hello --print --session-id 11111111-1111-1111-1111-111111111111  # no-resolve: provider flags, click owns none of them
   ```
 
-- **expect** — the child argv starts with permission-mode default, then the tail in the order given, including permission-mode auto, --foo bar and the one-shot flags, then agent --no-leader stdio
+- **expect** — the child argv is the tail in the order given, then agent --no-leader stdio. ai-hats adds no permission-mode of its own
 - **why** — the chat launches acp with the stand's flags, and a filter that knows the harness would drop or rewrite them
 
 ## `test_adr_integrity_gate.py`

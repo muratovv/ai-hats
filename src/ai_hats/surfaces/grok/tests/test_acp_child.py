@@ -9,8 +9,6 @@ from ai_hats.surfaces.grok.acp_child import GrokAcpChild, UNTRUSTED_CHILD_KEY
 def test_argv_is_the_session_child_and_keeps_the_launch_tail() -> None:
     assert GrokAcpChild().argv(["grok", "--model", "grok-4.7"]) == [
         "grok",
-        "--permission-mode",
-        "default",
         "--model",
         "grok-4.7",
         "agent",
@@ -37,8 +35,6 @@ def test_caller_flags_pass_through_unchanged_ahead_of_agent() -> None:
 
     assert GrokAcpChild().argv(planned) == [
         "grok",
-        "--permission-mode",
-        "default",
         *planned[1:],
         "agent",
         "--no-leader",

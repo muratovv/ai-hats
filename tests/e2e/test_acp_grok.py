@@ -7,16 +7,15 @@ expect: session/new names the journal; one prompt ends with stopReason; the
         journal has prompt_received origin person; a second prompt waits; the
         process exits with the child's code. A later permission carries the
         child id from the journal and an empty reject records the holder's phrase.
-        With no provider flags the child starts in permission-mode default.
+        With no provider flags the child argv is agent, --no-leader, stdio.
 why:    an ACP client has no other way to drive a composed grok role, and a
         stdout that is still the log copy is not a session it can speak
 
 flow:   a caller puts the stand's permission mode and other provider flags
         after the acp options, plus the flags a one-shot launch uses
 cmds:   ai-hats acp -p grok -r assistant --permission-mode auto --foo bar --always-approve -p hello --print --session-id 11111111-1111-1111-1111-111111111111  # no-resolve: provider flags, click owns none of them
-expect: the child argv starts with permission-mode default, then the tail
-        in the order given, including permission-mode auto, --foo bar and the
-        one-shot flags, then agent --no-leader stdio
+expect: the child argv is the tail in the order given, then agent
+        --no-leader stdio. ai-hats adds no permission-mode of its own
 why:    the chat launches acp with the stand's flags, and a filter that knows
         the harness would drop or rewrite them
 """  # comment-length: allow — the e2e catalog header format
@@ -95,7 +94,8 @@ def test_e2e_one_prompt_ends_and_the_next_one_waits(tmp_project, tmp_path: Path)
     assert [event["text"] for event in prompts] == ["ping", "second"]
     assert {event["origin"] for event in prompts} == {"person"}
     argv = _rows(log)[0]["argv"]
-    assert argv[:5] == ["--permission-mode", "default", "agent", "--no-leader", "stdio"]
+    assert argv[:3] == ["agent", "--no-leader", "stdio"]
+    assert "--permission-mode" not in argv
     assert "--always-approve" not in argv
 
 
@@ -189,7 +189,7 @@ def test_e2e_a_child_permission_uses_the_journal_id_and_records_the_phrase(
 
 
 def test_e2e_caller_flags_reach_the_child_unchanged(tmp_project, tmp_path: Path) -> None:
-    """HATS-2125: the caller's tail reaches the child unchanged, after default."""
+    """HATS-2125: the caller's tail reaches the child unchanged. No mode is added."""
     log = tmp_path / "child.jsonl"
     proc = _start(
         tmp_project,
@@ -214,8 +214,6 @@ def test_e2e_caller_flags_reach_the_child_unchanged(tmp_project, tmp_path: Path)
         _stop(proc)
 
     assert argv == [
-        "--permission-mode",
-        "default",
         "--permission-mode",
         "auto",
         "--foo",

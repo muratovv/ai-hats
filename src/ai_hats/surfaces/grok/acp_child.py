@@ -26,15 +26,7 @@ class GrokAcpChild:
     def argv(self, planned: list[str]) -> list[str]:
         """Session child. The launch tail is the harness's and is not rewritten."""
         binary = planned[0] if planned else "grok"
-        return [
-            binary,
-            "--permission-mode",
-            "default",
-            *planned[1:],
-            "agent",
-            "--no-leader",
-            "stdio",
-        ]
+        return [binary, *planned[1:], "agent", "--no-leader", "stdio"]
 
     def planned_session_id(self, minted: str) -> str:
         """Empty: grok names the session in session/new, and a minted id publishes an empty directory."""
