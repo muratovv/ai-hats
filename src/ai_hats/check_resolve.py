@@ -99,7 +99,7 @@ def _plan_checks(
 def _checks_from_plan(plan, app: str, point: str | None, identity) -> tuple[ResolvedCheck, ...]:
     from ai_hats_core import ResolvedCheck
 
-    from .surfaces.plan import home_of, mirror_name
+    from .surfaces import home_of, mirror_name
 
     rows: list[ResolvedCheck] = []
     for hook in plan.hooks.external:

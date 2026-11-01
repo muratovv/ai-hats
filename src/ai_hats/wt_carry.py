@@ -88,7 +88,7 @@ def _keep_row(result, skill_name: str, hook, resolve) -> bool:
 
 def carry_from_plan(plan) -> dict[str, list[dict[str, object]]]:
     """The lifecycle's ``{wt_in, wt_out}`` record, read off the plan's ``wt`` rows."""
-    from .surfaces.plan import home_of, mirror_name
+    from .surfaces import home_of, mirror_name
 
     wt_in: list[dict[str, object]] = []
     wt_out: dict[tuple[str, str], list[str]] = {}

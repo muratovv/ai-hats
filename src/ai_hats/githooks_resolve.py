@@ -96,7 +96,7 @@ def resolve_git_gates(result: CompositionResult, event: str) -> Resolution:
 
 def resolve_git_gates_from_plan(plan, event: str) -> Resolution:
     """The same gate set, read off a candidate plan's ``git`` rows."""
-    from .surfaces.plan import home_of, mirror_name
+    from .surfaces import home_of, mirror_name
 
     gates: list[ResolvedGate] = []
     refusals: list[str] = []

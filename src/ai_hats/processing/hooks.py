@@ -10,8 +10,7 @@ from pathlib import Path
 from ai_hats_wt import WT_TEARDOWN_EVENTS
 
 from ..diagnostics import Diagnostic, Level
-from ..surfaces.hook_channel import HookEvent
-from ..surfaces.plan import Executable, ExternalHook, Hooks, OnError, RuntimeHook
+from ..surfaces import Executable, ExternalHook, HookEvent, Hooks, OnError, RuntimeHook
 from .errors import ProcessingError
 from .fold import Folded
 from .names import Tree, resolve
