@@ -1,4 +1,4 @@
-"""e2e (HATS-2114)
+"""e2e (HATS-2114, HATS-2125)
 
 flow:   an ACP client runs one grok session through `ai-hats acp`. The child
         is a stand-in that speaks ACP on stdio.
@@ -7,9 +7,19 @@ expect: session/new names the journal; one prompt ends with stopReason; the
         journal has prompt_received origin person; a second prompt waits; the
         process exits with the child's code. A later permission carries the
         child id from the journal and an empty reject records the holder's phrase.
+        With no provider flags the child starts in permission-mode default.
 why:    an ACP client has no other way to drive a composed grok role, and a
         stdout that is still the log copy is not a session it can speak
-"""
+
+flow:   a caller puts the stand's permission mode and other provider flags
+        after the acp options, plus the flags a one-shot launch uses
+cmds:   ai-hats acp -p grok -r assistant --permission-mode auto --foo bar --always-approve -p hello --print --session-id 11111111-1111-1111-1111-111111111111  # no-resolve: provider flags, click owns none of them
+expect: the child argv is permission-mode auto, then --foo bar, then agent
+        --no-leader stdio. always-approve, -p, --print and --session-id are
+        absent, and so is the positional that followed -p
+why:    the chat launches acp with the stand's mode, and a dropped flag would
+        leave that launch in default
+"""  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
 
@@ -178,7 +188,50 @@ def test_e2e_a_child_permission_uses_the_journal_id_and_records_the_phrase(
     assert denied[-1]["decision"] == "deny"
 
 
-def _start(project, tmp_path: Path, extra: dict[str, str]) -> subprocess.Popen[str]:
+def test_e2e_caller_flags_reach_the_child_and_one_shot_flags_do_not(
+    tmp_project, tmp_path: Path
+) -> None:
+    """HATS-2125: a mode and a provider flag reach the child; one-shot flags do not."""
+    log = tmp_path / "child.jsonl"
+    proc = _start(
+        tmp_project,
+        tmp_path,
+        {"STUB_GROK_LOG": str(log)},
+        [
+            "--permission-mode",
+            "auto",
+            "--foo",
+            "bar",
+            "--always-approve",
+            "-p",
+            "hello",
+            "--print",
+            "--session-id",
+            "11111111-1111-1111-1111-111111111111",
+        ],
+    )
+    try:
+        argv = _child_argv(proc, log)
+    finally:
+        _stop(proc)
+
+    assert argv == [
+        "--permission-mode",
+        "auto",
+        "--foo",
+        "bar",
+        "agent",
+        "--no-leader",
+        "stdio",
+    ]
+
+
+def _start(
+    project,
+    tmp_path: Path,
+    extra: dict[str, str],
+    provider_args: list[str] | None = None,
+) -> subprocess.Popen[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     target = bin_dir / "grok"
@@ -195,7 +248,15 @@ def _start(project, tmp_path: Path, extra: dict[str, str]) -> subprocess.Popen[s
     env["GROK_HOME"] = str(tmp_path / "grok-home")
     env.update(extra)
     return subprocess.Popen(
-        [str(project.ai_hats_binary), "acp", "-p", "grok", "-r", "assistant"],
+        [
+            str(project.ai_hats_binary),
+            "acp",
+            "-p",
+            "grok",
+            "-r",
+            "assistant",
+            *(provider_args or []),
+        ],
         cwd=project.path,
         env=env,
         stdin=subprocess.PIPE,
@@ -235,6 +296,22 @@ def _until(proc: subprocess.Popen[str], pred) -> dict:
             return message
         seen.append(message)
     raise AssertionError(f"timed out; last={seen[-5:]}")
+
+
+def _child_argv(proc: subprocess.Popen[str], log: Path) -> list[str]:
+    """The argv the stub logged. A dead process is the failure, not a 90s wait."""
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        rows = _rows(log)
+        if rows and isinstance(rows[0].get("argv"), list):
+            return rows[0]["argv"]
+        if proc.poll() is not None:
+            err = proc.stderr.read() if proc.stderr else ""
+            raise AssertionError(
+                f"acp exited {proc.returncode} before the child logged argv\n{err[-2000:]}"
+            )
+        time.sleep(0.05)
+    raise AssertionError(f"stub log never matched: {_rows(log)[-5:]}")
 
 
 def _stop(proc: subprocess.Popen[str]) -> None:

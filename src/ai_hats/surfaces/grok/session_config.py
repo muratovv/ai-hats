@@ -148,7 +148,7 @@ def _emit_body(lines: list[str], table: dict, path: tuple[str, ...]) -> None:
 
 
 def asking_config(text: str) -> str:
-    """ACP child asks unless the launch passed a mode. Yolo stays off."""
+    """Session file stays on default with yolo off. A launch flag beats it from outside."""
     document = _parsed_person(text, None) or {}
     ui = document.get("ui")
     if not isinstance(ui, dict):
