@@ -7,6 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
+from ai_hats.env import ENV_RUN_MODE, ENV_RUN_MODE_HITL
 from ai_hats.surfaces.grok.claude_hook_adapter import payload_drift_notes, to_claude_hook_calls
 from ai_hats.surfaces.grok.hook_dispatcher import dispatch_hook
 
@@ -46,6 +47,7 @@ def _env(monkeypatch, cache: Path) -> None:
     monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-grok")
     monkeypatch.setenv("AI_HATS_DIR", "/project/.agent/ai-hats")
     monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(cache))
+    monkeypatch.delenv(ENV_RUN_MODE, raising=False)
 
 
 def _payload(**extra) -> str:
@@ -122,6 +124,26 @@ def test_a_ticketed_ask_is_refused_without_the_rewrite(tmp_path: Path, monkeypat
     assert spoken["permissionDecision"] == "deny"
     assert "updatedInput" not in spoken
     assert "cannot carry the consent" in spoken["permissionDecisionReason"]
+
+
+def test_a_ticketed_ask_is_carried_for_a_hitl_launch(tmp_path: Path, monkeypatch, capsys) -> None:
+    hook = _script(
+        tmp_path / "ask.sh",
+        "python3 -c 'import json,sys; json.load(sys.stdin); "
+        'print(json.dumps({"hookSpecificOutput":{"permissionDecision":"ask",'
+        '"permissionDecisionReason":"consent",'
+        '"updatedInput":{"command":"TICKET=1 echo hi"}}}))\'\n',
+    )
+    cache = tmp_path / "cache"
+    _manifest(cache, hook)
+    _env(monkeypatch, cache)
+    monkeypatch.setenv(ENV_RUN_MODE, ENV_RUN_MODE_HITL)
+    code = dispatch_hook("PreToolUse", stdin=io.StringIO(_payload()))
+    assert code == 0
+    spoken = _said(capsys)["hookSpecificOutput"]
+    assert spoken["permissionDecision"] == "ask"
+    assert spoken["updatedInput"] == {"command": "TICKET=1 echo hi"}
+    assert "cannot carry the consent" not in spoken["permissionDecisionReason"]
 
 
 def test_an_ask_without_a_rewrite_is_still_asked(tmp_path: Path, monkeypatch, capsys) -> None:

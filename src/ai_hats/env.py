@@ -38,6 +38,9 @@ ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
 # absent on purpose — its home is `ai_hats_observe.trace`.
 ENV_ROLE = "AI_HATS_ROLE"
 ENV_ROOT_PID = "AI_HATS_ROOT_PID"
+#: Grok carries a ticketed ask only for this value: automate self-approves.
+ENV_RUN_MODE = "AI_HATS_RUN_MODE"
+ENV_RUN_MODE_HITL = "hitl"
 #: The session process's own interpreter. A second pin beside ENV_AI_HATS_VENV
 #: because the agy global hook is invoked by the surface, not by our launcher.
 ENV_AI_HATS_PYTHON = "AI_HATS_PYTHON"
@@ -425,6 +428,8 @@ __all__ = [
     "ENV_SESSION_CACHE_DIR",
     "ENV_ROLE",
     "ENV_ROOT_PID",
+    "ENV_RUN_MODE",
+    "ENV_RUN_MODE_HITL",
     "ENV_AI_HATS_PYTHON",
     "ENV_HOOK_SOCKET",
     "ENV_STATUSLINE_INNER",

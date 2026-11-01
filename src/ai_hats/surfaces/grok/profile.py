@@ -20,8 +20,7 @@ PROFILE = SurfaceProfile(
     arg_names={},
     manifest_subpath=(),
     skills_subpath=("skills",),
-    # A client that approves prompts itself runs a ticketed ask in the same turn,
-    # so that reply is refused. A question with no rewrite is still asked.
+    # Ticketed ask stays refused until a HITL launch sets the run-mode bit.
     speaks=Dialect(
         can_ask=True,
         can_ask_with_ticket=False,

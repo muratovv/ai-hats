@@ -20,6 +20,7 @@ from pathlib import Path
 from ai_hats_core.layout import ProjectLayout
 from typing import TYPE_CHECKING, Callable, Mapping, Sequence
 
+from ai_hats.env import ENV_RUN_MODE, ENV_RUN_MODE_HITL
 from ai_hats.materialization import describe_mkdir, describe_write_text
 from ai_hats.session_artifacts import RunMode, SessionPolicy, working_directory_section
 from ai_hats.surfaces import Surface
@@ -219,6 +220,8 @@ class GrokSurface(Surface):
             context = session_home / "rules" / "role.md"
             entries.append(describe_write_text(context, prompt.text))
         env.update(self.get_env(root, layout))
+        if mode is RunMode.HITL:
+            env[ENV_RUN_MODE] = ENV_RUN_MODE_HITL
         return MaterializationPlan(
             composition=composition,
             prompt=prompt,
