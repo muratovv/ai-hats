@@ -300,9 +300,13 @@ class WrapRunner:
         plan = self.payload.plan
         if plan is None:
             return []
-        from .surfaces.plan import mirror_name
-
-        return [(mirror_name(skill), skill.path) for skill in plan.skills]
+        leaves: list[tuple[str, Path]] = []
+        for skill in plan.skills:
+            prefix = "skills::"
+            if not skill.name.startswith(prefix):
+                raise ValueError(f"not a skill name: {skill.name!r}")
+            leaves.append((skill.name[len(prefix) :], skill.path))
+        return leaves
 
     def _check_skill_collisions(self, session: Session) -> list[StartupNotice]:
         """WARN when a composed skill will double-register this session;

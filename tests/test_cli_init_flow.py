@@ -260,7 +260,7 @@ def _capture_launch(monkeypatch):
 
     calls: list[dict] = []
 
-    def _record(provider=None, role=None, extra_args=None, tags=None):
+    def _record(provider=None, role=None, extra_args=None, tags=None, experimental=False):
         calls.append(
             {
                 "provider": provider,

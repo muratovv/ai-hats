@@ -142,8 +142,8 @@ def test_the_reference_plan_carries_no_dsl_marker(maintainer):
     from ai_hats.surfaces.plan import composition_record
 
     _asm, _result, plan = maintainer
-    assert plan.dsl == ""
-    assert composition_record(plan)["dsl"] == ""
+    assert plan.dsl is None
+    assert "dsl" not in composition_record(plan)
 
 
 def test_skills_carry_full_names_paths_and_tree_digests(maintainer):

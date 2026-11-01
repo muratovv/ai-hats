@@ -295,7 +295,7 @@ class CompositionPlan(Digested):
     skills: tuple[Skill, ...]
     hooks: Hooks
     trace: tuple[TraceEntry, ...]
-    dsl: str = ""  # empty is the reference path; a bare name is also an expression
+    dsl: str | None = None  # None is the reference path; "re" is the candidate
 
 
 # ── what planning is told about the machine ──────────────────── ADR-0036 D2
@@ -826,7 +826,7 @@ def composition_record(plan: CompositionPlan) -> dict:
     hooks = plan.hooks
     return {
         "identity": plan.identity,
-        "dsl": plan.dsl,
+        **({"dsl": plan.dsl} if plan.dsl is not None else {}),
         "digest": plan.digest,
         "prompt": {
             "blocks": [
