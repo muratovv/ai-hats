@@ -21,12 +21,49 @@ def test_argv_is_the_session_child_and_drops_the_one_shot_flags() -> None:
     assert GrokAcpChild().argv(planned) == [
         "grok",
         "--permission-mode",
-        "auto",
+        "default",
         "agent",
         "--no-leader",
         "stdio",
         "--model",
         "grok-4.7",
+    ]
+
+
+def test_a_caller_permission_mode_and_other_flags_reach_the_child() -> None:
+    planned = [
+        "grok",
+        "--permission-mode",
+        "auto",
+        "--foo",
+        "bar",
+        "--always-approve",
+        "-p",
+        "hello",
+        "--session-id",
+        "11111111-1111-1111-1111-111111111111",
+    ]
+
+    assert GrokAcpChild().argv(planned) == [
+        "grok",
+        "--permission-mode",
+        "auto",
+        "--foo",
+        "bar",
+        "agent",
+        "--no-leader",
+        "stdio",
+    ]
+
+
+def test_a_permission_mode_glued_to_its_flag_reaches_the_child() -> None:
+    assert GrokAcpChild().argv(["grok", "--permission-mode=auto"]) == [
+        "grok",
+        "--permission-mode",
+        "auto",
+        "agent",
+        "--no-leader",
+        "stdio",
     ]
 
 

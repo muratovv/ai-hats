@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ai_hats_observe import Session
 
 _MODEL = {"--model", "-m"}
+_PERMISSION = "--permission-mode"
 # Flags the one-shot launch uses. This child is a session, so none of them belong.
 _DROP_WITH_VALUE = {"--session-id"}
 _DROP = {"--always-approve", "-p", "--print"}
@@ -32,6 +33,8 @@ class GrokAcpChild:
         """Session argv plus a model from the plan. One-shot flags and `--session-id` are dropped."""
         binary = planned[0] if planned else "grok"
         model: str | None = None
+        permission: str | None = None
+        forwarded: list[str] = []
         args = planned[1:]
         index = 0
         while index < len(args):
@@ -44,15 +47,38 @@ class GrokAcpChild:
                 model = arg.split("=", 1)[1]
                 index += 1
                 continue
+            if arg == _PERMISSION and index + 1 < len(args):
+                permission = args[index + 1]
+                index += 2
+                continue
+            if arg.startswith(f"{_PERMISSION}="):
+                permission = arg.split("=", 1)[1]
+                index += 1
+                continue
             if arg in _DROP_WITH_VALUE and index + 1 < len(args):
                 index += 2
                 continue
             if arg in _DROP or arg in _DROP_WITH_VALUE:
                 index += 1
                 continue
+            if arg.startswith("-"):
+                forwarded.append(arg)
+                nxt = index + 1
+                if nxt < len(args) and not args[nxt].startswith("-"):
+                    forwarded.append(args[nxt])
+                    index += 2
+                    continue
             index += 1
-        # `auto` reviews, and a flag beats the person's config.toml mode.
-        argv = [binary, "--permission-mode", "auto", "agent", "--no-leader", "stdio"]
+        # A caller's mode wins. Without one the child asks, and the flag beats config.toml.
+        argv = [
+            binary,
+            _PERMISSION,
+            permission or "default",
+            *forwarded,
+            "agent",
+            "--no-leader",
+            "stdio",
+        ]
         if model:
             argv.extend(["--model", model])
         return argv
@@ -63,7 +89,7 @@ class GrokAcpChild:
         return ""
 
     def prepare_spawn(self, env: dict[str, str]) -> None:
-        """The session file is auto and yolo stays off. A person's yolo would skip review."""
+        """The session file asks, and yolo stays off. A caller's flag still beats the file."""
         home = env.get(GROK_HOME_ENV)
         if not home:
             return

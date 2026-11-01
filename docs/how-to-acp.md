@@ -10,19 +10,21 @@ disk. [1]
 
 ```bash
 ai-hats acp -p grok -r maintainer
+ai-hats acp -p grok -r maintainer --permission-mode auto
 ```
 
 The command drives grok. Any other provider is a usage error, and no session
 starts.
 
-The child process is:
+Flags after the options are the provider's. The child process, with none, is:
 
 ```bash
-grok --permission-mode auto agent --no-leader stdio
+grok --permission-mode default agent --no-leader stdio
 ```
 
-A `--model` on the launch is appended. `--always-approve`, `-p`, `--print` and
-`--session-id` are left off.
+A `--permission-mode` on the command replaces `default`. Any other flag is
+forwarded ahead of `agent`. A `--model` on the launch is appended.
+`--always-approve`, `-p`, `--print` and `--session-id` are left off.
 
 When the child exits, this process exits with that code.
 
@@ -42,9 +44,14 @@ child. The file is `events.jsonl` in the session directory. ai-hats writes it.
 
 ## Permissions and questions
 
-The child starts with `--permission-mode auto`. The session `config.toml`
-sets `permission_mode` to `auto` and `yolo` to false, so a person's mode
-and a person's `yolo` do not apply to this launch.
+With no `--permission-mode` on the command, the child starts in `default`.
+The session `config.toml` sets `permission_mode` to `default` and `yolo` to
+false, so a person's `auto` does not apply to this launch. A flag on the
+command beats that file.
+
+Measured on grok 1.0.70, `echo` and `touch` do not raise
+`session/request_permission`. `rm` does. A bare
+`grok --permission-mode default` behaves the same way.
 
 A later `session/set_config_option` for `permission_mode` changes the word the
 holder records. The child keeps the mode it started with.
