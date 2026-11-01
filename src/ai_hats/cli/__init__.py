@@ -173,8 +173,8 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     "-re",
     "experimental",
     is_flag=True,
-    help="Candidate path (ADR-0033): the flat DSL under experimental/ and its "
-    'processing. Projections: `-re dry-run "<expr>"`, `-re show-prompt "<expr>"`.',
+    help="Candidate path (ADR-0033): launch `<expr>`, or project it with "
+    '`dry-run` / `show-prompt`. Example: ai-hats -re "alpha + bare".',
 )
 @click.option(
     "--dry-run",
@@ -235,14 +235,21 @@ def main(
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
 
-        if experimental:
-            # A session from an expression arrives with the next slice; until
-            # then the flag reaches its two projections only.
+        if experimental and role:
             raise click.UsageError(
-                "a session under -re is not available yet; the projections are:\n"
-                '       ai-hats -re dry-run "<expr>" [--json]\n'
-                '       ai-hats -re show-prompt "<expr>"'
+                "-re takes the expression as its argument; do not combine it with -r:\n"
+                '       ai-hats -re "<expr>"'
             )
+        if experimental:
+            if not ctx.args:
+                raise click.UsageError(
+                    "a session under -re needs an expression:\n"
+                    '       ai-hats -re "<expr>"\n'
+                    '       ai-hats -re dry-run "<expr>" [--json]\n'
+                    '       ai-hats -re show-prompt "<expr>"'
+                )
+            role = ctx.args[0]
+            ctx.args = ctx.args[1:]
 
         if "+" in ctx.args:
             raise click.UsageError(
@@ -263,6 +270,7 @@ def main(
                 as_json=dry_run_json,
                 full=dry_run_full,
                 materialize=materialize,
+                experimental=experimental,
             )
             return
 
@@ -275,6 +283,7 @@ def main(
             role=role,
             extra_args=ctx.args,
             tags=tags or None,
+            experimental=experimental,
         )
 
 
@@ -286,6 +295,7 @@ def _dry_run_plan(
     as_json: bool,
     full: bool,
     materialize: bool = False,
+    experimental: bool = False,
 ) -> None:
     """Print the record of the plan a launch would apply — the plan's own
     projection (ADR-0036 D5); spawn nothing, write nothing unless materialize is set."""
@@ -304,6 +314,7 @@ def _dry_run_plan(
         run_mode=RunMode.HITL,
         extra_args=list(extra_args or []),
         materialize=materialize,
+        experimental=experimental,
     )
     if as_json:
         click.echo(_json.dumps(shown.record, indent=2))
@@ -316,6 +327,7 @@ def _launch_session(
     role: str | None = None,
     extra_args: list[str] | None = None,
     tags: dict[str, str] | None = None,
+    experimental: bool = False,
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ai_hats_observe import SidecarTracer
@@ -350,6 +362,7 @@ def _launch_session(
                     role_override=role,
                     provider_name=provider,
                     interactive=True,
+                    experimental=experimental,
                 ),
             ),
             # The CLI (integrator) injects the observe writer

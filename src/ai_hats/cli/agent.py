@@ -82,6 +82,7 @@ def run_subagent(
     from ._batch_launch import run_batch
     from ._entry import resolve_project
 
+    experimental = bool(click.get_current_context().find_root().params.get("experimental"))
     if dry_run or materialize:
         import json as _json
 
@@ -99,6 +100,7 @@ def run_subagent(
             brief=assemble_brief(layout, task=task or "", ticket_id=ticket or ""),
             model=model or None,
             materialize=materialize,
+            experimental=experimental,
         )
         click.echo(
             _json.dumps(shown.record, indent=2)
@@ -118,6 +120,7 @@ def run_subagent(
         role=role,
         task=task,
         provider=provider,
+        experimental=experimental,
         model=model or "",
         isolation=isolation,
         ticket=ticket or "",

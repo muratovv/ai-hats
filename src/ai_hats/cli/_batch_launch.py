@@ -41,6 +41,7 @@ def run_batch(
     ticket: str = "",
     tags: dict[str, str] | None = None,
     as_json: bool = False,
+    experimental: bool = False,
 ) -> NoReturn:
     """Run one Automate session, report it, and exit with the sub-agent's code.
 
@@ -65,6 +66,7 @@ def run_batch(
                     role_override=role,
                     provider_name=provider,
                     interactive=False,
+                    experimental=experimental,
                 ),
             ),
             # The CLI (integrator) injects the observe writer handles —
