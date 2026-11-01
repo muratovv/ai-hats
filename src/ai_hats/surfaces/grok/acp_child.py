@@ -13,12 +13,6 @@ from .session_config import asking_config
 if TYPE_CHECKING:
     from ai_hats_observe import Session
 
-_MODEL = {"--model", "-m"}
-_PERMISSION = "--permission-mode"
-# Flags the one-shot launch uses. This child is a session, so none of them belong.
-_DROP_WITH_VALUE = {"--session-id"}
-_DROP = {"--always-approve", "-p", "--print"}
-
 QUESTION_METHOD = "_x.ai/ask_user_question"
 UNTRUSTED_CHILD_KEY = "x.ai/requestingSessionId"
 
@@ -30,58 +24,17 @@ class GrokAcpChild:
         self._retain = retain
 
     def argv(self, planned: list[str]) -> list[str]:
-        """Session argv plus a model from the plan. One-shot flags and `--session-id` are dropped."""
+        """Session child. The launch tail is the harness's and is not rewritten."""
         binary = planned[0] if planned else "grok"
-        model: str | None = None
-        permission: str | None = None
-        forwarded: list[str] = []
-        args = planned[1:]
-        index = 0
-        while index < len(args):
-            arg = args[index]
-            if arg in _MODEL and index + 1 < len(args):
-                model = args[index + 1]
-                index += 2
-                continue
-            if arg.startswith("--model="):
-                model = arg.split("=", 1)[1]
-                index += 1
-                continue
-            if arg == _PERMISSION and index + 1 < len(args):
-                permission = args[index + 1]
-                index += 2
-                continue
-            if arg.startswith(f"{_PERMISSION}="):
-                permission = arg.split("=", 1)[1]
-                index += 1
-                continue
-            if arg in _DROP_WITH_VALUE and index + 1 < len(args):
-                index += 2
-                continue
-            if arg in _DROP or arg in _DROP_WITH_VALUE:
-                index += 1
-                continue
-            if arg.startswith("-"):
-                forwarded.append(arg)
-                nxt = index + 1
-                if nxt < len(args) and not args[nxt].startswith("-"):
-                    forwarded.append(args[nxt])
-                    index += 2
-                    continue
-            index += 1
-        # A caller's mode wins. Without one the child asks, and the flag beats config.toml.
-        argv = [
+        return [
             binary,
-            _PERMISSION,
-            permission or "default",
-            *forwarded,
+            "--permission-mode",
+            "default",
+            *planned[1:],
             "agent",
             "--no-leader",
             "stdio",
         ]
-        if model:
-            argv.extend(["--model", model])
-        return argv
 
     def planned_session_id(self, minted: str) -> str:
         """Empty: grok names the session in session/new, and a minted id publishes an empty directory."""

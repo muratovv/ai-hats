@@ -22,9 +22,9 @@ Flags after the options are the provider's. The child process, with none, is:
 grok --permission-mode default agent --no-leader stdio
 ```
 
-A `--permission-mode` on the command replaces `default`. Any other flag is
-forwarded ahead of `agent`. A `--model` on the launch is appended.
-`--always-approve`, `-p`, `--print` and `--session-id` are left off.
+Flags after the options are placed after that `default`, before `agent`,
+in the order given. ai-hats does not read them. `-p`, `-r`, `-m` and `--tag`
+are its own and never reach this tail.
 
 When the child exits, this process exits with that code.
 
@@ -44,10 +44,9 @@ child. The file is `events.jsonl` in the session directory. ai-hats writes it.
 
 ## Permissions and questions
 
-With no `--permission-mode` on the command, the child starts in `default`.
-The session `config.toml` sets `permission_mode` to `default` and `yolo` to
-false, so a person's `auto` does not apply to this launch. A flag on the
-command beats that file.
+The child starts with `--permission-mode default`. The session `config.toml`
+sets `permission_mode` to `default` and `yolo` to false, so a person's `auto`
+does not apply to this launch. A later flag in the tail beats that file.
 
 Measured on grok 1.0.70, `echo` and `touch` do not raise
 `session/request_permission`. `rm` does. A bare

@@ -14,11 +14,11 @@ why:    an ACP client has no other way to drive a composed grok role, and a
 flow:   a caller puts the stand's permission mode and other provider flags
         after the acp options, plus the flags a one-shot launch uses
 cmds:   ai-hats acp -p grok -r assistant --permission-mode auto --foo bar --always-approve -p hello --print --session-id 11111111-1111-1111-1111-111111111111  # no-resolve: provider flags, click owns none of them
-expect: the child argv is permission-mode auto, then --foo bar, then agent
-        --no-leader stdio. always-approve, -p, --print and --session-id are
-        absent, and so is the positional that followed -p
-why:    the chat launches acp with the stand's mode, and a dropped flag would
-        leave that launch in default
+expect: the child argv starts with permission-mode default, then the tail
+        in the order given, including permission-mode auto, --foo bar and the
+        one-shot flags, then agent --no-leader stdio
+why:    the chat launches acp with the stand's flags, and a filter that knows
+        the harness would drop or rewrite them
 """  # comment-length: allow — the e2e catalog header format
 
 from __future__ import annotations
@@ -188,10 +188,10 @@ def test_e2e_a_child_permission_uses_the_journal_id_and_records_the_phrase(
     assert denied[-1]["decision"] == "deny"
 
 
-def test_e2e_caller_flags_reach_the_child_and_one_shot_flags_do_not(
+def test_e2e_caller_flags_reach_the_child_unchanged(
     tmp_project, tmp_path: Path
 ) -> None:
-    """HATS-2125: a mode and a provider flag reach the child; one-shot flags do not."""
+    """HATS-2125: the caller's tail reaches the child unchanged, after default."""
     log = tmp_path / "child.jsonl"
     proc = _start(
         tmp_project,
@@ -217,9 +217,17 @@ def test_e2e_caller_flags_reach_the_child_and_one_shot_flags_do_not(
 
     assert argv == [
         "--permission-mode",
+        "default",
+        "--permission-mode",
         "auto",
         "--foo",
         "bar",
+        "--always-approve",
+        "-p",
+        "hello",
+        "--print",
+        "--session-id",
+        "11111111-1111-1111-1111-111111111111",
         "agent",
         "--no-leader",
         "stdio",

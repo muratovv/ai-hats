@@ -37,8 +37,7 @@ def acp_cmd(
 ) -> None:
     """Run a role's session as an ACP agent on stdin/stdout.
 
-    Flags after the options are the provider's. ``--permission-mode`` replaces
-    the child's default.
+    Flags after the options are the provider's and are passed through unchanged.
 
     \b
         ai-hats acp -p grok -r maintainer
