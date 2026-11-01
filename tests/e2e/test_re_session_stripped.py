@@ -54,7 +54,9 @@ def test_the_session_projections_agree(tmp_project) -> None:
     assert total in priced.stdout
 
 
-def test_a_live_session_writes_the_plan_and_arms_its_hooks(tmp_project, requires_claude_auth) -> None:
+def test_a_live_session_writes_the_plan_and_arms_its_hooks(
+    tmp_project, requires_claude_auth
+) -> None:
     # HATS-2010 — the session the projections were waiting for.
     driven = (
         drive_bare_hitl(
