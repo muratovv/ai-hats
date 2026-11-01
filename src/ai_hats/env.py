@@ -428,6 +428,8 @@ __all__ = [
     "ENV_SESSION_CACHE_DIR",
     "ENV_ROLE",
     "ENV_ROOT_PID",
+    "ENV_RUN_MODE",
+    "ENV_RUN_MODE_HITL",
     "ENV_AI_HATS_PYTHON",
     "ENV_HOOK_SOCKET",
     "ENV_STATUSLINE_INNER",
