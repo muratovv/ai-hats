@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import json
 import os
-import select
+import queue
 import subprocess
+import sys
+import threading
 import time
 from pathlib import Path
 
@@ -144,6 +146,32 @@ def test_e2e_resume_starts_a_journal_without_the_previous_turns(
     assert texts == []
 
 
+def test_a_second_line_already_in_the_pipe_is_returned(tmp_path: Path) -> None:
+    """A second JSON line already in the pipe is a result, not a wait."""
+    ready = tmp_path / "ready"
+    script = (
+        "import json, pathlib, sys, time\n"
+        "sys.stdout.write(json.dumps({'id': 1}) + '\\n')\n"
+        "sys.stdout.write(json.dumps({'id': 2}) + '\\n')\n"
+        "sys.stdout.flush()\n"
+        f"pathlib.Path({str(ready)!r}).write_text('ok')\n"
+        "time.sleep(30)\n"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, text=True)
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists():
+            if time.monotonic() > deadline:
+                raise AssertionError("child never flushed both lines")
+            time.sleep(0.02)
+        found = _until(proc, lambda message: message.get("id") == 2, timeout=2)
+    finally:
+        proc.kill()
+        proc.wait(timeout=5)
+    assert found["id"] == 2
+    assert [message["id"] for message in found["seen"]] == [1]
+
+
 def _events(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
@@ -251,7 +279,7 @@ def _start(
     env["PYTHONUNBUFFERED"] = "1"
     env["GROK_HOME"] = str(tmp_path / "grok-home")
     env.update(extra)
-    return subprocess.Popen(
+    proc = subprocess.Popen(
         [
             str(project.ai_hats_binary),
             "acp",
@@ -268,6 +296,8 @@ def _start(
         stderr=subprocess.PIPE,
         text=True,
     )
+    _follow(proc)
+    return proc
 
 
 def _send(proc: subprocess.Popen[str], message: dict) -> None:
@@ -276,22 +306,44 @@ def _send(proc: subprocess.Popen[str], message: dict) -> None:
     proc.stdin.flush()
 
 
-def _until(proc: subprocess.Popen[str], pred) -> dict:
+def _follow(proc: subprocess.Popen[str]) -> queue.Queue[str | None]:
+    """One thread owns the text pipe. select misses a line readline already buffered."""
+    existing = getattr(proc, "_acp_lines", None)
+    if existing is not None:
+        return existing
+    lines: queue.Queue[str | None] = queue.Queue()
+
+    def _pump() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=_pump, daemon=True).start()
+    setattr(proc, "_acp_lines", lines)
+    return lines
+
+
+def _until(proc: subprocess.Popen[str], pred, *, timeout: float = 90) -> dict:
     """Read until `pred`. The returned message carries the updates seen since the last result."""
-    assert proc.stdout is not None
+    lines = _follow(proc)
     seen: list[dict] = []
-    deadline = time.monotonic() + 90
-    while time.monotonic() < deadline:
-        ready, _, _ = select.select([proc.stdout], [], [], 0.5)
-        if not ready:
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssertionError(f"timed out; last={seen[-5:]}")
+        try:
+            line = lines.get(timeout=min(0.5, remaining))
+        except queue.Empty:
             if proc.poll() is not None:
                 err = proc.stderr.read() if proc.stderr else ""
                 raise AssertionError(
                     f"acp exited {proc.returncode}\n{err[-2000:]}\nseen={seen[-5:]}"
                 )
             continue
-        line = proc.stdout.readline()
-        if not line:
+        if line is None:
+            lines.put(None)
             err = proc.stderr.read() if proc.stderr else ""
             raise AssertionError(f"stdout closed, exit {proc.wait(timeout=5)}\n{err[-2000:]}")
         message = json.loads(line)
@@ -299,7 +351,6 @@ def _until(proc: subprocess.Popen[str], pred) -> dict:
             message["seen"] = seen
             return message
         seen.append(message)
-    raise AssertionError(f"timed out; last={seen[-5:]}")
 
 
 def _child_argv(proc: subprocess.Popen[str], log: Path) -> list[str]:
