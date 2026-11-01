@@ -25,7 +25,7 @@ your context in proportion to how long you sleep, and on claude a foreground
 shell call is capped at 600 s, so a long one cannot even complete there. In the
 background the cost is one wake-up and does not depend on the wait — measured
 across half an hour of sleep in one measured run (zero events inside the wait windows)
-and a single 79-minute wait in Until you are woken, do nothing at
+and a single 79-minute wait in that run. Until you are woken, do nothing at
 all: no plan, no code, no getting a head start.
 
 ### The round
