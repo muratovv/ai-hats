@@ -99,10 +99,20 @@ def test_e2e_stable_self_update_installs_published_wheel(tmp_path: Path) -> None
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 
-    # self init heals the venv from local source + configures the project on the
-    # stable channel (the documented greenfield default — no harness block).
+    # An editable host seeds channel local, and self update then reinstalls
+    # that checkout. This test is the stable path, so the channel is explicit.
     _run(
-        [str(launcher), "self", "init", "-r", "assistant", "-p", "claude"],
+        [
+            str(launcher),
+            "self",
+            "init",
+            "--channel",
+            "stable",
+            "-r",
+            "assistant",
+            "-p",
+            "claude",
+        ],
         cwd=project,
         env=env,
         timeout=600,
