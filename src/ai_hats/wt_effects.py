@@ -23,6 +23,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def carry_session(project_dir: Path, environ: Mapping[str, str] | None = None) -> tuple[str, str]:
+    """``(role, dsl)`` of the governing session. ``("", "")`` outside one."""
+    identity = _carry_identity(project_dir, environ)
+    if identity is None:
+        return "", ""
+    return identity.role, identity.dsl
+
+
 def carry_role(project_dir: Path, environ: Mapping[str, str] | None = None) -> str:
     """The role a new worktree is provisioned for: the governing session's.
 
@@ -34,11 +42,16 @@ def carry_role(project_dir: Path, environ: Mapping[str, str] | None = None) -> s
     config and says so; any other unreadable envelope propagates — a carry
     composed for a role that cannot be trusted would run hooks nobody asked for.
     """
+    identity = _carry_identity(project_dir, environ)
+    return identity.role if identity is not None else ""
+
+
+def _carry_identity(project_dir: Path, environ: Mapping[str, str] | None):
     from .session_identity import IdentityFault, SessionIdentityError, identity_for_project
 
     env = dict(environ) if environ is not None else None
     try:
-        identity = identity_for_project(project_dir, env)
+        return identity_for_project(project_dir, env)
     except SessionIdentityError as exc:
         if exc.fault is not IdentityFault.TOO_OLD:
             raise
@@ -46,12 +59,11 @@ def carry_role(project_dir: Path, environ: Mapping[str, str] | None = None) -> s
             f"ai-hats: worktree carry composed for the configured role — {exc}",
             file=sys.stderr,
         )
-        return ""
-    return identity.role if identity is not None else ""
+        return None
 
 
 def collect_carry_for_project(
-    project_dir: Path, role: str = ""
+    project_dir: Path, role: str = "", *, dsl: str = ""
 ) -> dict[str, list[dict[str, object]]]:
     """Collect the effective role's worktree carry (fail-open).
 
@@ -61,7 +73,7 @@ def collect_carry_for_project(
     from .composition_seam import compose_for_carry
     from .wt_carry import collect_carry_for_role
 
-    return collect_carry_for_role(compose_for_carry(project_dir, role))
+    return collect_carry_for_role(compose_for_carry(project_dir, role, dsl=dsl))
 
 
 class WtWorktreeEffects:
@@ -106,6 +118,7 @@ class WtWorktreeEffects:
         caller_cwd: Path | None = None,
         *,
         outer_deadline: Deadline | None = None,
+        dsl: str = "",
     ) -> Path | None:
         """Create or adopt the task's isolated worktree on ``→ execute``.
 
@@ -150,7 +163,7 @@ class WtWorktreeEffects:
             worktree_checkouts_dir=self.layout.cache.worktree_checkouts,
             git_timeout=self._git_timeout,
         )
-        wt_hooks = collect_carry_for_project(self.project_dir, role)
+        wt_hooks = collect_carry_for_project(self.project_dir, role, dsl=dsl)
         try:
             path = mgr.create(wt_hooks=wt_hooks, outer_deadline=outer_deadline)
         except WorktreeCreateError:

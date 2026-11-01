@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composition_seam import build_composition_payload, build_preview_payload
+from ai_hats.composition_seam import (
+    build_composition_payload,
+    build_preview_payload,
+    compose_for_carry,
+    compose_for_checks,
+)
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.processing import ProcessingError
@@ -66,6 +71,27 @@ def test_the_launch_payload_is_the_candidate_plan_and_leaves_the_config(project:
     assert payload.audit_writer_factory is not None
     assert payload.transcript_resolver is not None
     assert (project / PROJECT_CONFIG).read_text() == before
+
+
+def test_the_marker_keeps_the_channels_off_the_composer(project: Path, monkeypatch):
+    """Under re the expression is not a role; under the empty marker the composer still runs."""
+    calls: list[str] = []
+
+    def composer(*_args, **_kwargs):
+        calls.append("composer")
+        return "reference"
+
+    monkeypatch.setattr("ai_hats.materialize.compose_to_arm", composer)
+    monkeypatch.setattr("ai_hats.materialize.compose_to_carry", composer)
+
+    assert compose_for_checks(project, "alpha", dsl="") == "reference"
+    assert compose_for_carry(project, "alpha", dsl="") == "reference"
+    assert calls == ["composer", "composer"]
+
+    calls.clear()
+    assert compose_for_checks(project, "alpha + bare", dsl="re") is None
+    assert compose_for_carry(project, "alpha + bare", dsl="re") is None
+    assert calls == []
 
 
 def test_the_candidate_needs_an_expression(project: Path):

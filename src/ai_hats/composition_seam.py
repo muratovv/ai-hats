@@ -513,7 +513,9 @@ def _labelled_overlays(assembler, role_name: str, runtime_overlay: OverlayConfig
     return [(layer, label) for layer, label in layers if layer is not None]
 
 
-def compose_for_checks(project_dir: Path, role: str | None = None) -> CompositionResult | None:
+def compose_for_checks(
+    project_dir: Path, role: str | None = None, *, dsl: str = ""
+) -> CompositionResult | None:
     """Fail-CLOSED compose for both gate channels — ``checks:`` and the git gates.
 
     ``role`` is the session's own role expression when a session is asking, and
@@ -535,6 +537,16 @@ def compose_for_checks(project_dir: Path, role: str | None = None) -> Compositio
     """  # comment-length: allow — the contrast with its neighbour IS the contract
     from .materialize import compose_to_arm
 
+    if dsl == "re":
+        # Empty hooks arm nothing. A plan that already carries hooks must not
+        # read as "no gates" — there is no projection into CompositionResult.
+        _asm, plan, _diagnostics, _surface = _candidate_composed(project_dir, role, None)
+        if plan.hooks.runtime or plan.hooks.external:
+            raise RuntimeError(
+                f"candidate session {plan.identity!r} carries hooks this channel cannot arm"
+            )
+        return None
+
     asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
     if not effective:
         return None
@@ -548,7 +560,7 @@ def compose_for_checks(project_dir: Path, role: str | None = None) -> Compositio
 # lookup left to disagree.
 
 
-def compose_for_carry(project_dir: Path, role: str | None = None):
+def compose_for_carry(project_dir: Path, role: str | None = None, *, dsl: str = ""):
     """Fail-open compose for worktree-carry collection; a ``CompositionResult``
     or ``None``. Tracker-side callers route here — TEMP until this path is
     re-cut through the ``needs_worktree`` effect. An *exception* degrades to
@@ -559,6 +571,15 @@ def compose_for_carry(project_dir: Path, role: str | None = None):
     composed, because only it knows how many carry rows survived.
     """
     try:
+        if dsl == "re":
+            _asm, plan, _diagnostics, _surface = _candidate_composed(project_dir, role, None)
+            if plan.hooks.runtime or plan.hooks.external:
+                logger.warning(
+                    "worktree carry: candidate session %r carries hooks this channel cannot arm"
+                    " — dropping carry",
+                    plan.identity,
+                )
+            return None
         asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
         if not effective:
             return None

@@ -74,8 +74,9 @@ class _RecordingEffects:
     def __init__(self) -> None:
         self.roles: list[str] = []
 
-    def setup(self, task_id, role="", caller_cwd=None, *, outer_deadline=None):
+    def setup(self, task_id, role="", caller_cwd=None, *, outer_deadline=None, dsl=""):
         self.roles.append(role)
+        self.dsl = dsl
         return Path("/nonexistent/wt")
 
     def assert_canonical_base(self):
@@ -106,6 +107,7 @@ def test_execute_edge_provisions_for_the_session_not_the_card(
     )
 
     assert effects.roles == ["role-curator"]
+    assert effects.dsl == ""
     assert delta is not None
     # The path line stays a bare `Worktree: <path>` — readers split on the colon.
     assert delta.work_log[0] == "Worktree: /nonexistent/wt", delta.work_log

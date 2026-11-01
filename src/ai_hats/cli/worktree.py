@@ -227,7 +227,7 @@ def wt_create(branch: str):
     # and raises WorktreeCreateError with a friendly message; we just relay.
     # Thread the session's worktree carry (wt_in/wt_out hooks) in at create;
     # persisted to state for teardown (D3).
-    from ..wt_effects import carry_role, collect_carry_for_project
+    from ..wt_effects import carry_session, collect_carry_for_project
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
     mgr = WorktreeManager(
@@ -239,9 +239,10 @@ def wt_create(branch: str):
         state_dir=layout.sessions.worktrees,
         worktree_checkouts_dir=layout.cache.worktree_checkouts,
     )
+    role, dsl = carry_session(project_dir, os.environ)
     try:
         wt_path = mgr.create(
-            wt_hooks=collect_carry_for_project(project_dir, carry_role(project_dir, os.environ))
+            wt_hooks=collect_carry_for_project(project_dir, role, dsl=dsl),
         )
     except WorktreeCreateError as exc:
         console.print(f"[red]{exc}[/]")
