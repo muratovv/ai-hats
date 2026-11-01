@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composition_seam import build_preview_payload
+from ai_hats.composition_seam import build_composition_payload, build_preview_payload
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.processing import ProcessingError
@@ -43,6 +43,29 @@ def test_the_candidate_payload_carries_the_plan_and_no_composer_value(project: P
         "rules::rule-one",
     ]
     assert [d.text for d in payload.diagnostics if "README" not in str(d.where)] == []
+
+
+def test_the_launch_payload_is_the_candidate_plan_and_leaves_the_config(project: Path):
+    """A session from an expression must not persist that expression as the project's role."""
+    before = (project / PROJECT_CONFIG).read_text()
+    payload = build_composition_payload(
+        project,
+        role_override="  alpha   +   bare ",
+        provider_name="claude",
+        interactive=True,
+        experimental=True,
+    )
+
+    assert payload.result is None
+    assert payload.plan is not None
+    assert payload.plan.identity == "alpha + bare"
+    assert payload.plan.dsl == "re"
+    assert payload.plan.hooks.runtime == () and payload.plan.hooks.external == ()
+    assert payload.effective_role == payload.role_expression == "alpha + bare"
+    assert payload.session_factory is not None
+    assert payload.audit_writer_factory is not None
+    assert payload.transcript_resolver is not None
+    assert (project / PROJECT_CONFIG).read_text() == before
 
 
 def test_the_candidate_needs_an_expression(project: Path):

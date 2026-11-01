@@ -236,6 +236,7 @@ def build_composition_payload(
     provider_name: str | None = None,
     interactive: bool = False,
     strict: bool = True,
+    experimental: bool = False,
 ) -> CompositionPayload:
     """Compose the effective role once and bundle everything runners need.
 
@@ -249,6 +250,9 @@ def build_composition_payload(
     """
     from ai_hats_observe import AuditWriter, Session
     from .surface_registry import get_surface
+
+    if experimental:
+        return _candidate_launch(project_dir, role_override, provider_name)
 
     asm, cfg, effective_role, runtime_overlay, spec = _project_context(project_dir, role_override)
     # Allocated BEFORE the compose it collects from — the hooks
@@ -430,11 +434,9 @@ def build_preview_payload(
     )
 
 
-def _candidate_preview(
-    project_dir: Path, expression: str | None, provider: str | None
-) -> CompositionPayload:
-    """The candidate half of the dispatch: processing over ``experimental/``
-    (ADR-0036 D8). Reads the project the same way the reference preview does."""
+def _candidate_composed(project_dir: Path, expression: str | None, provider: str | None):
+    """The candidate plan over ``experimental/`` (ADR-0036 D8). One compose for
+    the preview and the launch, so the two cannot grow apart."""
     from .assembler import Assembler
     from .paths import builtin_library_root
     from .processing import ProcessingError, candidate_roots, compose
@@ -443,7 +445,6 @@ def _candidate_preview(
     if not expression:
         raise ProcessingError('-re needs an expression: ai-hats -re dry-run "<expr>"')
     asm = Assembler(project_dir, prefer_cwd=True)
-    eff_provider = _effective_provider(asm.project_config, provider)
     roots = candidate_roots(
         asm.library_paths, builtin_root=builtin_library_root(project_dir, prefer_cwd=True)
     )
@@ -454,14 +455,47 @@ def _candidate_preview(
         )
     diagnostics: list[Diagnostic] = []
     plan = compose(expression, roots, layout=asm.layout, diagnostics=diagnostics)
+    surface = get_surface(_effective_provider(asm.project_config, provider))
+    return asm, plan, tuple(diagnostics), surface
+
+
+def _candidate_preview(
+    project_dir: Path, expression: str | None, provider: str | None
+) -> CompositionPayload:
+    """Read-only candidate payload. No session factories: nothing is launched."""
+    asm, plan, diagnostics, surface = _candidate_composed(project_dir, expression, provider)
     return CompositionPayload(
         result=None,
-        provider=get_surface(eff_provider),
+        provider=surface,
         effective_role=plan.identity,
         role_expression=plan.identity,
         plan=plan,
         layout=asm.layout,
-        diagnostics=tuple(diagnostics),
+        diagnostics=diagnostics,
+    )
+
+
+def _candidate_launch(
+    project_dir: Path, expression: str | None, provider: str | None
+) -> CompositionPayload:
+    """Launch payload for an expression. The expression is not written as a role."""
+    from ai_hats_observe import AuditWriter, Session
+
+    asm, plan, diagnostics, surface = _candidate_composed(project_dir, expression, provider)
+    return CompositionPayload(
+        result=None,
+        provider=surface,
+        effective_role=plan.identity,
+        role_expression=plan.identity,
+        plan=plan,
+        layout=asm.layout,
+        hooks=asm.hooks,
+        static_cost_analyzer=_static_cost_analyzer(project_dir),
+        channel=asm.project_config.harness.channel.value,
+        diagnostics=diagnostics,
+        session_factory=Session,
+        audit_writer_factory=partial(AuditWriter, parser=surface.transcript_parser()),
+        transcript_resolver=surface.resolve_transcript,
     )
 
 
