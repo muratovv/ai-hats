@@ -95,6 +95,44 @@ def test_the_marker_keeps_the_channels_off_the_composer(project: Path):
         compose_for_checks(project, "alpha + bare", dsl="")
 
 
+def test_a_candidate_gate_does_not_need_a_configured_provider(project: Path):
+    """A -p launch stores no provider in the config; the child's gate must still read the plan."""
+    bare = project.parent / "no-provider"
+    bare.mkdir()
+    ProjectConfig(provider="", library_paths=[]).save(bare / PROJECT_CONFIG)
+    write_root(bare / "libraries" / "experimental")
+
+    assert compose_for_checks(bare, "alpha + bare", dsl="re") is None
+    assert compose_for_carry(bare, "alpha + bare", dsl="re") is None
+
+
+def test_startup_checks_ask_the_dispatcher_the_child_asks(project: Path):
+    """Returning payload.result can never refuse: a candidate session has no composer value."""
+    import dataclasses
+
+    from ai_hats.composition_seam import startup_compose
+
+    payload = build_composition_payload(
+        project, role_override="alpha + bare", provider_name="claude", experimental=True
+    )
+    assert startup_compose(payload)(project) is None
+    with pytest.raises(ProcessingError, match="unknown name 'nope'"):
+        startup_compose(dataclasses.replace(payload, effective_role="nope"))(project)
+    reference = dataclasses.replace(payload, plan=dataclasses.replace(payload.plan, dsl=None))
+    assert startup_compose(reference)(project) is payload.result
+
+
+def test_a_candidate_session_is_priced_from_its_plan(project: Path):
+    from ai_hats.costs import analyze_plan
+
+    payload = build_composition_payload(
+        project, role_override="alpha + bare", provider_name="claude", experimental=True
+    )
+    priced = payload.static_cost_analyzer("alpha + bare")
+    assert priced["total_tokens"] == analyze_plan(payload.plan, exact=False).total_tokens
+    assert priced["role"] == "alpha + bare"
+
+
 def test_the_candidate_needs_an_expression(project: Path):
     with pytest.raises(ProcessingError, match="needs an expression"):
         build_preview_payload(project, role=None, experimental=True)

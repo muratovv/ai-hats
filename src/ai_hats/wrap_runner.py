@@ -819,6 +819,8 @@ class WrapRunner:
         # LAST here on purpose: unlike its fail-open neighbours a
         # refusal does not return, so everything above must speak first. And
         # after the launch record, which is what the gate reads.
+        from .composition_seam import startup_compose
+
         startup_notices.extend(
             run_startup_checks(
                 self.project_dir,
@@ -828,7 +830,7 @@ class WrapRunner:
                 # composition is handed over rather than composed a second time.
                 identity=SessionIdentity.from_env(env_map),
                 extra_env=env_map,
-                compose=lambda _project_dir: result,
+                compose=startup_compose(payload),
             )
         )
 

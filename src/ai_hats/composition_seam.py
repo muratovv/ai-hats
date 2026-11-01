@@ -434,13 +434,11 @@ def build_preview_payload(
     )
 
 
-def _candidate_composed(project_dir: Path, expression: str | None, provider: str | None):
-    """The candidate plan over ``experimental/`` (ADR-0036 D8). One compose for
-    the preview and the launch, so the two cannot grow apart."""
+def _candidate_plan(project_dir: Path, expression: str | None):
+    """The plan only. A gate reads its hooks and does not need a provider."""
     from .assembler import Assembler
     from .paths import builtin_library_root
     from .processing import ProcessingError, candidate_roots, compose
-    from .surface_registry import get_surface
 
     if not expression:
         raise ProcessingError('-re needs an expression: ai-hats -re dry-run "<expr>"')
@@ -455,8 +453,16 @@ def _candidate_composed(project_dir: Path, expression: str | None, provider: str
         )
     diagnostics: list[Diagnostic] = []
     plan = compose(expression, roots, layout=asm.layout, diagnostics=diagnostics)
+    return asm, plan, tuple(diagnostics)
+
+
+def _candidate_composed(project_dir: Path, expression: str | None, provider: str | None):
+    """The candidate plan plus the surface a launch or a preview renders with."""
+    from .surface_registry import get_surface
+
+    asm, plan, diagnostics = _candidate_plan(project_dir, expression)
     surface = get_surface(_effective_provider(asm.project_config, provider))
-    return asm, plan, tuple(diagnostics), surface
+    return asm, plan, diagnostics, surface
 
 
 def _candidate_preview(
@@ -490,7 +496,7 @@ def _candidate_launch(
         plan=plan,
         layout=asm.layout,
         hooks=asm.hooks,
-        static_cost_analyzer=_static_cost_analyzer(project_dir),
+        static_cost_analyzer=_plan_cost_analyzer(plan),
         channel=asm.project_config.harness.channel.value,
         diagnostics=diagnostics,
         session_factory=Session,
@@ -540,7 +546,7 @@ def compose_for_checks(
     if dsl == "re":
         # Empty hooks arm nothing. A plan that already carries hooks must not
         # read as "no gates" — there is no projection into CompositionResult.
-        _asm, plan, _diagnostics, _surface = _candidate_composed(project_dir, role, None)
+        _asm, plan, _diagnostics = _candidate_plan(project_dir, role)
         if plan.hooks.runtime or plan.hooks.external:
             raise RuntimeError(
                 f"candidate session {plan.identity!r} carries hooks this channel cannot arm"
@@ -572,7 +578,7 @@ def compose_for_carry(project_dir: Path, role: str | None = None, *, dsl: str = 
     """
     try:
         if dsl == "re":
-            _asm, plan, _diagnostics, _surface = _candidate_composed(project_dir, role, None)
+            _asm, plan, _diagnostics = _candidate_plan(project_dir, role)
             if plan.hooks.runtime or plan.hooks.external:
                 logger.warning(
                     "worktree carry: candidate session %r carries hooks this channel cannot arm"
@@ -595,6 +601,49 @@ def compose_for_carry(project_dir: Path, role: str | None = None, *, dsl: str = 
         return None
 
 
+def startup_compose(payload):
+    """Candidate startup asks the dispatcher the child will; -r reuses its result."""
+    plan = payload.plan
+    if plan is not None and plan.dsl == "re":
+        role = payload.effective_role
+        return lambda project_dir: compose_for_checks(project_dir, role, dsl="re")
+    result = payload.result
+    return lambda _project_dir: result
+
+
+def _static_record(role: str, breakdown) -> dict:
+    return {
+        "role": role,
+        "total_tokens": breakdown.total_tokens,
+        # Skill bodies load on demand, not always-on. Split so the
+        # reported "always-on" figure excludes them (they show separately).
+        "always_on_tokens": breakdown.always_on_tokens,
+        "on_demand_tokens": breakdown.on_demand_tokens,
+        "exact": breakdown.exact,
+        "components": [
+            {
+                "name": c.name,
+                "category": c.category,
+                "tokens": c.tokens,
+                "always_on_tokens": c.always_on_tokens,
+                "on_demand_tokens": c.on_demand_tokens,
+            }
+            for c in breakdown.components
+        ],
+    }
+
+
+def _plan_cost_analyzer(plan):
+    """Price the plan the session rendered. The expression is not a role."""
+
+    def analyze(role: str) -> dict | None:
+        from .costs import analyze_plan
+
+        return _static_record(role, analyze_plan(plan, exact=False))
+
+    return analyze
+
+
 def _static_cost_analyzer(project_dir: Path):
     """Finalize learns the role only at run time (from
     transcripts), so the static always-on cross-check stays a late-bound
@@ -606,26 +655,7 @@ def _static_cost_analyzer(project_dir: Path):
         # The same plan the session was rendered from, so the cross-check prices
         # the composed role — overlays included — and not its declared tree.
         preview = build_plan_preview(project_dir, role=role, prefer_cwd=False)
-        breakdown = analyze_plan(preview.plan, exact=False)
-        return {
-            "role": role,
-            "total_tokens": breakdown.total_tokens,
-            # Skill bodies load on demand, not always-on. Split so the
-            # reported "always-on" figure excludes them (they show separately).
-            "always_on_tokens": breakdown.always_on_tokens,
-            "on_demand_tokens": breakdown.on_demand_tokens,
-            "exact": breakdown.exact,
-            "components": [
-                {
-                    "name": c.name,
-                    "category": c.category,
-                    "tokens": c.tokens,
-                    "always_on_tokens": c.always_on_tokens,
-                    "on_demand_tokens": c.on_demand_tokens,
-                }
-                for c in breakdown.components
-            ],
-        }
+        return _static_record(role, analyze_plan(preview.plan, exact=False))
 
     return analyze
 
