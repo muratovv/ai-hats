@@ -342,14 +342,14 @@ def test_prepare_launch_without_an_id_links_prior_transcripts(tmp_path: Path, mo
     assert {path.name for path in remote.parent.iterdir()} == before
 
 
-def test_asking_config_prompts_when_the_person_is_on_auto() -> None:
+def test_asking_config_forces_auto_and_clears_yolo() -> None:
     from ai_hats.surfaces.grok.session_config import asking_config
 
     text = '[ui]\npermission_mode = "auto"\nyolo = true\nkept = 1\n\n[skills]\ncustom = "stay"\n'
 
     document = tomllib.loads(asking_config(text))
 
-    assert document["ui"]["permission_mode"] == "default"
+    assert document["ui"]["permission_mode"] == "auto"
     assert document["ui"]["yolo"] is False
     assert document["ui"]["kept"] == 1
     assert document["skills"]["custom"] == "stay"

@@ -18,7 +18,7 @@ starts.
 The child process is:
 
 ```bash
-grok --permission-mode default agent --no-leader stdio
+grok --permission-mode auto agent --no-leader stdio
 ```
 
 A `--model` on the launch is appended. `--always-approve`, `-p`, `--print` and
@@ -42,13 +42,9 @@ child. The file is `events.jsonl` in the session directory. ai-hats writes it.
 
 ## Permissions and questions
 
-The child starts with `--permission-mode default`. The session `config.toml`
-sets `permission_mode` to `default` and `yolo` to false, so a person's `auto`
-does not apply to this launch.
-
-Measured on grok 1.0.70, `echo` and `touch` do not raise
-`session/request_permission`. `rm` does. A bare
-`grok --permission-mode default` behaves the same way.
+The child starts with `--permission-mode auto`. The session `config.toml`
+sets `permission_mode` to `auto` and `yolo` to false, so a person's mode
+and a person's `yolo` do not apply to this launch.
 
 A later `session/set_config_option` for `permission_mode` changes the word the
 holder records. The child keeps the mode it started with.

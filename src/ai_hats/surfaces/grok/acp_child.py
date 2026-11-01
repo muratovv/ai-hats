@@ -51,8 +51,8 @@ class GrokAcpChild:
                 index += 1
                 continue
             index += 1
-        # `default` prompts, and a flag beats the person's config.toml mode.
-        argv = [binary, "--permission-mode", "default", "agent", "--no-leader", "stdio"]
+        # `auto` reviews, and a flag beats the person's config.toml mode.
+        argv = [binary, "--permission-mode", "auto", "agent", "--no-leader", "stdio"]
         if model:
             argv.extend(["--model", model])
         return argv
@@ -63,7 +63,7 @@ class GrokAcpChild:
         return ""
 
     def prepare_spawn(self, env: dict[str, str]) -> None:
-        """The session file asks. A person's auto would skip session/request_permission."""
+        """The session file is auto and yolo stays off. A person's yolo would skip review."""
         home = env.get(GROK_HOME_ENV)
         if not home:
             return

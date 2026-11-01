@@ -148,13 +148,13 @@ def _emit_body(lines: list[str], table: dict, path: tuple[str, ...]) -> None:
 
 
 def asking_config(text: str) -> str:
-    """ACP child prompts. The person's auto or yolo does not cross this launch."""
+    """ACP child starts in auto. The person's mode does not cross, and yolo stays off."""
     document = _parsed_person(text, None) or {}
     ui = document.get("ui")
     if not isinstance(ui, dict):
         ui = {}
         document["ui"] = ui
-    ui["permission_mode"] = "default"
+    ui["permission_mode"] = "auto"
     ui["yolo"] = False
     return _emit_toml(document)
 
