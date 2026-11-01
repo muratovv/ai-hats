@@ -73,6 +73,20 @@ def test_the_launch_payload_is_the_candidate_plan_and_leaves_the_config(project:
     assert (project / PROJECT_CONFIG).read_text() == before
 
 
+def test_an_empty_candidate_says_so_and_one_hook_does_not():
+    from types import SimpleNamespace
+
+    from ai_hats.startup_notices import candidate_session_notice
+
+    empty = SimpleNamespace(runtime=(), external=())
+    notice = candidate_session_notice("re", empty)
+    assert notice is not None and notice.level == "note"
+    assert notice.text == "candidate session: 0 hooks, 0 consent points"
+    hooked = SimpleNamespace(runtime=(), external=(object(),))
+    assert candidate_session_notice("re", hooked) is None
+    assert candidate_session_notice("", empty) is None
+
+
 def test_the_marker_keeps_the_channels_off_the_composer(project: Path, monkeypatch):
     """Under re the expression is not a role; under the empty marker the composer still runs."""
     calls: list[str] = []

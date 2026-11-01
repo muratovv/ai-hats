@@ -116,6 +116,13 @@ class StartupNotice:
     text: str
 
 
+def candidate_session_notice(dsl: str, hooks) -> StartupNotice | None:
+    """Said aloud when a candidate session armed nothing. A hook, or the reference path, stays quiet."""
+    if dsl != "re" or hooks.runtime or hooks.external:
+        return None
+    return StartupNotice("note", "candidate session: 0 hooks, 0 consent points")
+
+
 def _print_startup_notices(notices: list[StartupNotice]) -> None:
     """Render startup notices before the hold: ✓ notes (green), ⚠ warns (yellow), ✕ fatals (red).
     Generalizes the warnings-only channel.
