@@ -437,6 +437,59 @@ def build_preview_payload(
     )
 
 
+def _candidate_roots(asm, project_dir: Path, diagnostics: list[Diagnostic]):
+    """The candidate chain plus library roots named only in the new config keys."""
+    from pathlib import Path as FilePath
+
+    from .library_paths import user_global_library_paths
+    from .paths import builtin_library_root
+    from .processing import Root, candidate_roots
+    from .processing.roots import root_owner
+    from .processing.slots import read_slots
+    from .provenance import ComponentLayer
+
+    slots = read_slots(project_dir, asm.project_config, diagnostics)
+    project_roots: list[FilePath] = []
+    for configured in asm.project_config.library_paths:
+        path = FilePath(configured).expanduser()
+        project_roots.append(
+            path.resolve() if path.is_absolute() else (project_dir / path).resolve()
+        )
+    local = project_dir / "libraries"
+    if local.is_dir():
+        project_roots.append(local.resolve())
+    project_roots.extend(slots.project_paths)
+    user_roots = user_global_library_paths()
+
+    def owner_of(path: FilePath) -> ComponentLayer:
+        return root_owner(
+            path,
+            project_dir=project_dir,
+            user_roots=user_roots,
+            project_roots=project_roots,
+        )
+
+    roots = candidate_roots(
+        asm.library_paths,
+        builtin_root=builtin_library_root(project_dir, prefer_cwd=True),
+        owner_of=owner_of,
+    )
+    seen = {root.path.resolve() for root in roots}
+    for path, owner in (
+        *((path, ComponentLayer.GLOBAL) for path in slots.user_paths),
+        *((path, ComponentLayer.PROJECT) for path in slots.project_paths),
+    ):
+        candidate = path / "experimental"
+        if not candidate.is_dir():
+            continue
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        roots.append(Root(candidate, owner=owner))
+    return slots, roots
+
+
 def _candidate_plan(
     project_dir: Path,
     expression: str | None,
@@ -446,23 +499,26 @@ def _candidate_plan(
 ):
     """The plan only. A gate reads its hooks and does not need a provider."""
     from .assembler import Assembler
-    from .paths import builtin_library_root
-    from .processing import ProcessingError, candidate_roots, compose
+    from .processing import ProcessingError, compose
 
     if not expression:
         raise ProcessingError('-re needs an expression: ai-hats -re dry-run "<expr>"')
     asm = Assembler(project_dir, prefer_cwd=prefer_cwd, cwd=cwd)
-    roots = candidate_roots(
-        asm.library_paths,
-        builtin_root=builtin_library_root(project_dir, prefer_cwd=prefer_cwd, cwd=cwd),
-    )
+    diagnostics: list[Diagnostic] = []
+    slots, roots = _candidate_roots(asm, project_dir, diagnostics)
     if not roots:
         raise ProcessingError(
             "no experimental/ under any library root — the candidate library is produced by "
             "scripts/migrate_experimental.py"
         )
-    diagnostics: list[Diagnostic] = []
-    plan = compose(expression, roots, layout=asm.layout, diagnostics=diagnostics)
+    plan = compose(
+        expression or None,
+        roots,
+        layout=asm.layout,
+        diagnostics=diagnostics,
+        default=slots.default,
+        active=slots.active,
+    )
     return asm, plan, tuple(diagnostics)
 
 

@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from ..frontmatter import FrontmatterError, parse_frontmatter
+from ..provenance import ComponentLayer
 from .errors import ProcessingError
 from .expr import Expr, parse_expr
 
@@ -47,6 +48,7 @@ class Composite:
     expr: Expr
     tags: tuple[str, ...]
     summary: str | None
+    owner: ComponentLayer = ComponentLayer.BUILT_IN
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,7 @@ class PromptEntity:
     heading: str | None
     #: The bytes after the closing fence, exactly as written.
     text: str
+    owner: ComponentLayer = ComponentLayer.BUILT_IN
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,7 @@ class SkillEntity:
     document: str
     content_digest: str
     on_path: tuple[str, ...]
+    owner: ComponentLayer = ComponentLayer.BUILT_IN
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,7 @@ class Hook:
     on_error: str | None
     on: tuple[str, ...]
     operation: str | None
+    owner: ComponentLayer = ComponentLayer.BUILT_IN
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,7 @@ class Override:
     path: Path
     apply: re.Pattern[str]
     expr: Expr
+    owner: ComponentLayer = ComponentLayer.BUILT_IN
 
 
 @dataclass(frozen=True)
@@ -110,6 +116,7 @@ class Declared:
     path: Path
     type: str
     fields: Mapping[str, object]
+    owner: ComponentLayer = ComponentLayer.BUILT_IN
 
 
 Entity = Composite | PromptEntity | SkillEntity | Hook | Override | Declared

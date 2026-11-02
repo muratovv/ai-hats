@@ -14,12 +14,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..diagnostics import Diagnostic, Level
+from ..provenance import ComponentLayer
 from ..surfaces import TraceEntry
 from .errors import ProcessingError
 from .expr import Expr
 from .names import resolve_term
 from .order import Binding, Program
-from .parse import Composite, Override
+from .parse import Composite, Entity, Override
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,18 @@ class Folded:
     trace: tuple[TraceEntry, ...]
     #: For each member, the top-level term its placing occurrence descends from.
     first_top_index: Mapping[str, int]
+
+
+_RANK = {ComponentLayer.BUILT_IN: 0, ComponentLayer.GLOBAL: 1, ComponentLayer.PROJECT: 2}
+
+
+def _refuse_foreign(referrer: ComponentLayer, entity: Entity, term: str) -> None:
+    """A file may name its own owner and owners below it, never one above."""
+    target = entity.owner
+    if _RANK[target] > _RANK[referrer]:
+        raise ProcessingError(
+            f"{term!r} is owned by {target.value}, and a {referrer.value} file may not name it"
+        )
 
 
 def _matching(program: Program, composite: Composite) -> tuple[Override, ...]:
@@ -80,9 +93,12 @@ def expand(program: Program, identity: str) -> tuple[Signed, ...]:
         defining: Binding | None,
         top_index: int | None,
         stack: tuple[tuple[str, int], ...],
+        referrer: ComponentLayer | None,
     ) -> None:
         for i, term in enumerate(expr.terms):
             entity = resolve_term(program.tree, term.name)
+            if referrer is not None:
+                _refuse_foreign(referrer, entity, term.name)
             here_sign = sign * term.sign
             here_carrier = carrier if sign < 0 else declared_in
             index = i if top_index is None else top_index
@@ -104,6 +120,7 @@ def expand(program: Program, identity: str) -> tuple[Signed, ...]:
                 defining=binding,
                 top_index=index,
                 stack=opened,
+                referrer=binding.composite.owner,
             )
             # The inner binding a self-reference looks down to is not re-armed.
             if binding is program.bindings[entity.name][-1]:
@@ -116,6 +133,7 @@ def expand(program: Program, identity: str) -> tuple[Signed, ...]:
                         defining=binding,
                         top_index=index,
                         stack=opened,
+                        referrer=override.owner,
                     )
 
     visit(
@@ -126,6 +144,7 @@ def expand(program: Program, identity: str) -> tuple[Signed, ...]:
         defining=None,
         top_index=None,
         stack=(),
+        referrer=None,
     )
     return tuple(out)
 

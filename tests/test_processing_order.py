@@ -5,12 +5,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ai_hats.diagnostics import Diagnostic
-from ai_hats.processing.expr import parse_expr
+from ai_hats.processing.errors import ProcessingError
+from ai_hats.processing.expr import canonical, parse_expr
 from ai_hats.processing.fold import expand_and_fold
 from ai_hats.processing.names import merge
 from ai_hats.processing.order import program
 from ai_hats.processing.roots import Root, read_roots
+from ai_hats.provenance import ComponentLayer
 from ai_hats.surfaces.plan import TraceEntry
 from tests._flat_library import write_root
 
@@ -19,9 +23,9 @@ def _prompt(text: str) -> str:
     return f"---\nschema_version: 1\ntype: prompt\nblock: body\n---\n{text}\n"
 
 
-def _fold(roots: list[Path], expr: str, diagnostics: list[Diagnostic] | None = None):
+def _fold(roots: list[Path | Root], expr: str, diagnostics: list[Diagnostic] | None = None):
     sink: list[Diagnostic] = diagnostics if diagnostics is not None else []
-    library = read_roots([Root(r) for r in roots], sink)
+    library = read_roots([r if isinstance(r, Root) else Root(r) for r in roots], sink)
     return expand_and_fold(program(library, merge(library, sink), parse_expr(expr)), expr, sink)
 
 
@@ -104,3 +108,109 @@ def test_redefining_a_composite_replaces_its_tags(tmp_path: Path):
     folded = _fold([lower, upper], "role", diagnostics)
     assert folded.members == ("base",)
     assert [d.text for d in diagnostics] == ["for-hitl selects no composite"]
+
+
+def test_a_user_file_may_not_name_a_project_component(tmp_path: Path):
+    """The same name from the project root resolves; from the user root it refuses."""
+    project = write_root(
+        tmp_path / "project",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: base + secret\n",
+            "base.md": _prompt("BASE"),
+            "secret.md": _prompt("SECRET"),
+        },
+    )
+    user = write_root(
+        tmp_path / "user",
+        {"mine.yaml": "schema_version: 1\ntype: composite\nexpr: secret\n"},
+    )
+    owned = _fold([Root(project, owner=ComponentLayer.PROJECT)], "role")
+    assert owned.members == ("base", "secret")
+    with pytest.raises(ProcessingError, match="owned by project"):
+        _fold(
+            [Root(user, owner=ComponentLayer.GLOBAL), Root(project, owner=ComponentLayer.PROJECT)],
+            "mine",
+        )
+
+
+def test_an_override_may_select_a_project_composite_without_naming_it(tmp_path: Path):
+    """``apply`` is a selector, not a name, so a user file may arm a project role."""
+    user = write_root(
+        tmp_path / "user",
+        {
+            "arm.yaml": 'schema_version: 1\ntype: override\napply: ".*"\nexpr: "+ extra"\n',
+            "extra.md": _prompt("EXTRA"),
+        },
+    )
+    project = write_root(
+        tmp_path / "project",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: base\n",
+            "base.md": _prompt("BASE"),
+        },
+    )
+    folded = _fold(
+        [Root(user, owner=ComponentLayer.GLOBAL), Root(project, owner=ComponentLayer.PROJECT)],
+        "role",
+    )
+    assert folded.members == ("base", "extra")
+
+
+def _slots(root: Path, expr: str | None, *, default: str | None = None, active: str | None = None):
+    library = read_roots([Root(root)], [])
+    prog = program(
+        library,
+        merge(library, []),
+        parse_expr(expr) if expr else None,
+        default=parse_expr(default) if default else None,
+        active=parse_expr(active) if active else None,
+    )
+    return prog, expand_and_fold(prog, canonical(prog.top), [])
+
+
+def test_a_leading_sign_appends_to_active(tmp_path: Path):
+    root = write_root(
+        tmp_path / "lib",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: kept + dropped\n",
+            "kept.md": _prompt("KEPT"),
+            "dropped.md": _prompt("DROPPED"),
+        },
+    )
+    prog, folded = _slots(root, "- dropped", active="role")
+    assert canonical(prog.top) == "role - dropped"
+    assert folded.members == ("kept",)
+    assert TraceEntry("dropped", "role", removed_by="role - dropped") in folded.trace
+
+
+def test_a_bare_expression_replaces_active_and_the_default(tmp_path: Path):
+    root = write_root(
+        tmp_path / "lib",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: kept\n",
+            "bare.yaml": "schema_version: 1\ntype: composite\nexpr: other\n",
+            "kept.md": _prompt("KEPT"),
+            "other.md": _prompt("OTHER"),
+        },
+    )
+    prog, folded = _slots(root, "bare", default="role", active="role")
+    assert canonical(prog.top) == "bare"
+    assert folded.members == ("other",)
+
+
+def test_a_silent_cli_uses_active_and_otherwise_the_default(tmp_path: Path):
+    root = write_root(
+        tmp_path / "lib",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: kept\n",
+            "bare.yaml": "schema_version: 1\ntype: composite\nexpr: other\n",
+            "kept.md": _prompt("KEPT"),
+            "other.md": _prompt("OTHER"),
+        },
+    )
+    active, _ = _slots(root, None, default="bare", active="role")
+    assert canonical(active.top) == "role"
+    default, _ = _slots(root, None, default="bare")
+    assert canonical(default.top) == "bare"
+    with pytest.raises(ProcessingError, match="needs an expression"):
+        _slots(root, None)

@@ -240,14 +240,7 @@ def main(
                 "-re takes the expression as its argument; do not combine it with -r:\n"
                 '       ai-hats -re "<expr>"'
             )
-        if experimental:
-            if not ctx.args:
-                raise click.UsageError(
-                    "a session under -re needs an expression:\n"
-                    '       ai-hats -re "<expr>"\n'
-                    '       ai-hats -re dry-run "<expr>" [--json]\n'
-                    '       ai-hats -re show-prompt "<expr>"'
-                )
+        if experimental and ctx.args:
             role = ctx.args[0]
             ctx.args = ctx.args[1:]
 

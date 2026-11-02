@@ -19,12 +19,18 @@ from .roots import Library, Root, candidate_roots, read_roots
 __all__ = ["ProcessingError", "Root", "candidate_roots", "compose", "plan_from_library"]
 
 
+def _optional_expr(text: str | None):
+    return parse_expr(text) if text else None
+
+
 def plan_from_library(
     library: Library,
-    expression: str,
+    expression: str | None,
     *,
     layout: ProjectLayout,
     diagnostics: list[Diagnostic],
+    default: str | None = None,
+    active: str | None = None,
 ) -> CompositionPlan:
     """The stages after the read, in order: names, order, fold, prompt, emit."""
     from .emit import emit
@@ -32,21 +38,34 @@ def plan_from_library(
     from .names import merge
     from .order import program
 
-    expr = parse_expr(expression)
-    identity = canonical(expr)
     tree = merge(library, diagnostics)
-    folded = expand_and_fold(program(library, tree, expr), identity, diagnostics)
+    prog = program(
+        library,
+        tree,
+        _optional_expr(expression),
+        default=_optional_expr(default),
+        active=_optional_expr(active),
+    )
+    identity = canonical(prog.top)
+    folded = expand_and_fold(prog, identity, diagnostics)
     return emit(folded, tree, identity=identity, layout=layout, diagnostics=diagnostics)
 
 
 def compose(
-    expression: str,
+    expression: str | None,
     roots: Sequence[Root],
     *,
     layout: ProjectLayout,
     diagnostics: list[Diagnostic],
+    default: str | None = None,
+    active: str | None = None,
 ) -> CompositionPlan:
     """The whole of processing for one CLI expression over the candidate roots."""
     return plan_from_library(
-        read_roots(roots, diagnostics), expression, layout=layout, diagnostics=diagnostics
+        read_roots(roots, diagnostics),
+        expression,
+        layout=layout,
+        diagnostics=diagnostics,
+        default=default,
+        active=active,
     )

@@ -711,6 +711,151 @@ def migrate(root: Path, only: Iterable[str]) -> Report:
     return report
 
 
+def _terms(expr: str) -> list[tuple[int, str]]:
+    sign = 1
+    found: list[tuple[int, str]] = []
+    for word in expr.split():
+        if word == "+":
+            sign = 1
+            continue
+        if word == "-":
+            sign = -1
+            continue
+        found.append((sign, word))
+        sign = 1
+    return found
+
+
+def carried_away(root: Path) -> list[str]:
+    """Members a ``- <composite>`` removes that another added composite also brings."""
+    composites: dict[str, list[tuple[int, str]]] = {}
+    for path in sorted(root.rglob("*.yaml")):
+        data = yaml.safe_load(path.read_text()) or {}
+        if not isinstance(data, dict) or data.get("type") != "composite":
+            continue
+        name = "::".join(path.relative_to(root).with_suffix("").parts)
+        composites[name] = _terms(str(data.get("expr") or ""))
+    found: list[str] = []
+    for terms in composites.values():
+        added = {term for sign, term in terms if sign > 0 and term in composites}
+        for sign, term in terms:
+            if sign > 0 or term not in composites:
+                continue
+            brought = {member for member_sign, member in composites[term] if member_sign > 0}
+            for other in added:
+                others = {member for member_sign, member in composites[other] if member_sign > 0}
+                for member in brought & others:
+                    if member not in found:
+                        found.append(member)
+    return found
+
+
+def _put(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file() and path.read_text() == text:
+        return
+    path.write_text(text)
+
+
+def _known_names(root: Path | None) -> set[str] | None:
+    if root is None:
+        return None
+    names: set[str] = set()
+    for path in root.rglob("*.yaml"):
+        data = yaml.safe_load(path.read_text()) or {}
+        if isinstance(data, dict) and data.get("type") == "composite":
+            names.add(path.stem)
+            names.add("::".join(path.relative_to(root).with_suffix("").parts))
+    return names
+
+
+def _stanza_expr(overlay: dict) -> str:
+    parts: list[str] = []
+    for bucket, sign in (("add", "+"), ("remove", "-")):
+        block = overlay.get(bucket) or {}
+        if not isinstance(block, dict):
+            continue
+        for key in ("traits", "rules", "skills"):
+            for name in block.get(key) or []:
+                parts.append(f"{sign} {name}")
+    return " ".join(parts)
+
+
+def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
+    """Turn today's customizations, user rules, paths and dropins into flat files.
+
+    Returns the lines to print: an unknown role, and nothing else. A stanza
+    for a role the known set does not contain is still written — the line is
+    how it is presented.
+    """
+    notes: list[str] = []
+    customs = home / "customizations.yaml"
+    if customs.is_file():
+        data = _load_yaml(customs).get("customizations") or {}
+        for role, overlay in data.items():
+            if known is not None and role not in known:
+                notes.append(f"unknown role: {role}")
+            expr = _stanza_expr(overlay if isinstance(overlay, dict) else {})
+            if not expr:
+                continue
+            _put(
+                out / "overrides" / f"customize-{role}.yaml",
+                f"schema_version: {SCHEMA_VERSION}\ntype: override\n"
+                f'apply: "^{role}$"\nexpr: "{expr}"\n',
+            )
+    rules = sorted((home / "user-rules").glob("*.md")) if (home / "user-rules").is_dir() else []
+    rule_names: list[str] = []
+    for rule in rules:
+        rule_names.append(rule.stem)
+        body = rule.read_text()
+        if not body.endswith("\n"):
+            body += "\n"
+        _put(
+            out / "rules" / f"{rule.stem}.md",
+            f"---\nschema_version: {SCHEMA_VERSION}\ntype: prompt\nblock: RULES\n"
+            f"heading: {rule.stem}\n---\n{body}",
+        )
+    if rule_names:
+        expr = " ".join(f"+ {name}" for name in rule_names)
+        _put(
+            out / "overrides" / "user-rules.yaml",
+            f'schema_version: {SCHEMA_VERSION}\ntype: override\napply: ".*"\nexpr: "{expr}"\n',
+        )
+    paths_file = home / "library_paths.yaml"
+    if paths_file.is_file():
+        paths = _load_yaml(paths_file).get("paths") or []
+        lines = "\n".join(f"    - {item}" for item in paths)
+        _put(out / "config.yaml", f"library:\n  paths:\n{lines}\n")
+    project = home / "ai-hats.yaml"
+    if project.is_file():
+        data = _load_yaml(project)
+        if data.get("default_role"):
+            _put(out / "ai-hats.yaml", f"library:\n  default: {data['default_role']}\n")
+        if data.get("active_role"):
+            _put(out / "local.yaml", f"active: {data['active_role']}\n")
+    dropins: list[tuple[str, str]] = []
+    hooks = home / ".githooks"
+    if hooks.is_dir():
+        for event_dir in sorted(hooks.glob("*.d")):
+            event = event_dir.name[: -len(".d")]
+            for script in sorted(path for path in event_dir.iterdir() if path.is_file()):
+                stem = script.stem
+                dropins.append((event, stem))
+                _put(out / "hooks" / "dropin" / script.name, script.read_text())
+                _put(
+                    out / "hooks" / "dropin" / f"{stem}.yaml",
+                    f"schema_version: {SCHEMA_VERSION}\ntype: hook\nkind: git\n"
+                    f"at: {event}\nrun: {script.name}\n",
+                )
+    if dropins:
+        expr = " ".join(f"+ {stem}" for _, stem in dropins)
+        _put(
+            out / "overrides" / "dropins.yaml",
+            f'schema_version: {SCHEMA_VERSION}\ntype: override\napply: ".*"\nexpr: "{expr}"\n',
+        )
+    return notes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -732,7 +877,22 @@ def main(argv: list[str] | None = None) -> int:
         metavar="COMPOSITE",
         help="roles/traits whose closure to translate",
     )
+    parser.add_argument("--home", type=Path, help="today's user/project dir to translate")
+    parser.add_argument("--out", type=Path, help="where --home writes the flat files")
+    parser.add_argument("--known", type=Path, help="flat root of composites that exist")
+    parser.add_argument("--carried-away", type=Path, help="flat root to scan for - <composite>")
     args = parser.parse_args(argv)
+    if args.carried_away is not None:
+        for name in carried_away(args.carried_away):
+            print(f"carried away: {name}")
+        return 0
+    if args.home is not None:
+        if args.out is None:
+            print("error: --home needs --out", file=sys.stderr)
+            return 2
+        for line in migrate_home(args.home, args.out, _known_names(args.known)):
+            print(line)
+        return 0
     if not all((args.root / layer).is_dir() for layer in LAYERS[:2]):
         print(f"error: {args.root} does not hold core/ and usage/", file=sys.stderr)
         return 2

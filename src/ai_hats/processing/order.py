@@ -1,9 +1,7 @@
 """Layer order and assignment (ADR-0035 D3): every composite file is
-``N = expr`` at its layer, the CLI expression is the unnamed last word.
-
-Overrides of every layer apply after the assignments, ordered by
-``(layer, path)``. ``library.default`` and machine ``active`` are not in
-this order yet, so a leading sign on the CLI still has nothing below it.
+``N = expr`` at its layer, then overrides, then the three unnamed slots
+``library.default``, machine ``active`` and the CLI. A slot without a
+leading sign replaces what is below it; a leading sign appends.
 """
 
 from __future__ import annotations
@@ -36,11 +34,37 @@ class Program:
     top: Expr
 
 
-def program(library: Library, tree: Tree, cli: Expr) -> Program:
-    if cli.leading:
+def unnamed(*slots: Expr | None) -> Expr:
+    """Fold the unnamed slots. A leading sign appends; anything else replaces."""
+    current: Expr | None = None
+    for slot in slots:
+        if slot is None:
+            continue
+        if slot.leading:
+            if current is None:
+                raise ProcessingError(
+                    f"{canonical(slot)!r} starts with a sign, but there is nothing below it "
+                    "to append to"
+                )
+            current = Expr(terms=current.terms + slot.terms, leading=current.leading)
+            continue
+        current = slot
+    if current is None:
         raise ProcessingError(
-            f"{canonical(cli)!r} starts with a sign, but there is nothing below it to append to"
+            '-re needs an expression, an active value, or library.default: ai-hats -re "<expr>"'
         )
+    return current
+
+
+def program(
+    library: Library,
+    tree: Tree,
+    cli: Expr | None,
+    *,
+    default: Expr | None = None,
+    active: Expr | None = None,
+) -> Program:
+    top = unnamed(default, active, cli)
     bindings: dict[str, list[Binding]] = {}
     chosen: dict[str, tuple[int, Override]] = {}
     for index, layer in enumerate(library.layers):
@@ -59,5 +83,5 @@ def program(library: Library, tree: Tree, cli: Expr) -> Program:
         tree=tree,
         bindings={name: tuple(rows) for name, rows in bindings.items()},
         overrides=overrides,
-        top=cli,
+        top=top,
     )
