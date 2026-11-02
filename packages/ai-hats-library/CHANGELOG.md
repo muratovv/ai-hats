@@ -3,6 +3,10 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.11.3
+
+- **The candidate maintainer closure ships in the package** (HATS-1969). `experimental/` now carries that role's hooks, gates and consent points. 0.11.2 was already on PyPI without those files, so the same version would have served the wheel that lacks them.
+
 ## 0.11.2
 
 - **The candidate library copy ships in the package** (HATS-2009). `experimental/` holds the flat-form closure of `hypothesis-intake` and `worker` — prompts and skills. 0.11.1 was already on PyPI without those files, so the same version would have served the wheel that lacks them.
