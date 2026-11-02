@@ -10,11 +10,14 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+
+- **The library floor follows the maintainer candidate** (HATS-1969). `ai-hats-library` 0.11.3. This package requires `ai-hats-library>=0.11.3`.
+
 ## [0.19.4] - 2026-11-01
 
 ### Changed
 
-- **The library floor follows the maintainer candidate** (HATS-1969). `ai-hats-library` 0.11.3. This package requires `ai-hats-library>=0.11.3`.
 - **The library floor follows the candidate copy** (HATS-2009). `ai-hats-library` 0.11.2. This package requires `ai-hats-library>=0.11.2`.
 - **Flags after `ai-hats acp`'s own options reach the grok child unchanged** (HATS-2125). ai-hats keeps `-p`, `-r`, `-m` and `--tag`. It does not read the rest and does not add `--permission-mode`. With no tail the child is `grok agent --no-leader stdio`.
 - **`ai-hats -re "<expr>"` starts a session from the expression** (HATS-2010). `ai-hats -re dry-run` and `ai-hats -re show-prompt` still only project it. `-r` stays a role name.
