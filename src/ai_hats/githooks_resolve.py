@@ -73,6 +73,27 @@ def _script_refusal(label: str, script: str, candidate: Path, root: Path | None)
     return None
 
 
+def _reject_worktree(candidate: Path, label: str, script: str) -> None:
+    """A linked worktree is not a git-gate root either (ADR-0019 D9 clause 4)."""
+    from ai_hats_core import ResolvedCheck
+
+    from .check_resolve import reject_worktree_root
+
+    reject_worktree_root(
+        candidate,
+        ResolvedCheck(
+            app="git",
+            path=(),
+            run=f"{label}/{script}",
+            at=(),
+            cargo={},
+            on_error="refuse",
+            script_path=candidate,
+            declared_by=label,
+        ),
+    )
+
+
 def resolve_git_gates(result: CompositionResult, event: str) -> Resolution:
     """Collect, resolve and order the gates the composed role declares for ``event``."""
     gates: list[ResolvedGate] = []
@@ -113,6 +134,7 @@ def resolve_git_gates_from_plan(plan, event: str) -> Resolution:
         if refusal := _script_refusal(label, script, candidate, root):
             refusals.append(refusal)
             continue
+        _reject_worktree(candidate, label, script)
         gates.append(ResolvedGate(skill=label, script=script, path=candidate))
     gates.sort(key=lambda g: g.sort_key)
     return Resolution(gates=tuple(gates), refusals=tuple(refusals))
