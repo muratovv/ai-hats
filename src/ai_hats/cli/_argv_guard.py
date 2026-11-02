@@ -126,10 +126,14 @@ def classify(
             f"`{flag}` is an ai-hats flag, but here it would reach the provider instead.\n\n{table}"
         )
 
-    # Nothing above resolved, so a LONE bare word is a command the user expected
-    # to exist. Being mounted is what makes a name real, so refuse by default and
-    # let RESERVED add detail — rather than leaning on RESERVED to stay complete.
-    if len(leftover) == 1 and not first.startswith("-") and " " not in first:
+    # A lone bare word is a missing command. `-re` leaves its expression here
+    # (`-r` never arrives: click already ate the value).
+    if (
+        len(leftover) == 1
+        and not first.startswith("-")
+        and " " not in first
+        and "-re" not in raw_argv
+    ):
         return f"`{first}` is not an ai-hats command.\n\n{ways_out}"
 
     return None
