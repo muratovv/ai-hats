@@ -13,13 +13,12 @@ a role or trait becomes ``<name>.yaml`` (``type: composite``) with
 frontmatter. ``--only`` limits the run to the transitive closure of the named
 composites.
 
-Not translated yet — prompts and skills only: ``composition.apps`` rows and the
-``git_hooks`` / ``runtime_hooks`` / ``worktree`` frontmatter channels become
-``hook`` files in a later slice, and the shared ``<root>/hooks`` payload comes
-with them, so a symlink inside a skill that points outside the skill is left
-out; each is dropped and listed in the report. The run is idempotent: same
-input, same bytes. A construct outside the table refuses, naming the file — it
-is a decision for the ADR, not a heuristic here.
+Hook files come from the three frontmatter channels and from ``composition.apps``
+(one file per point). The shared ``<root>/hooks`` payload is copied beside the
+layers, and a skill symlink that stays inside the library root is kept so it
+still resolves. The run is idempotent: same input, same bytes. A construct
+outside the table refuses, naming the file — it is a decision for the ADR, not
+a heuristic here.
 """
 
 from __future__ import annotations
@@ -45,6 +44,7 @@ DEFERRED_CHANNELS = ("git_hooks", "runtime_hooks", "worktree")
 #: human's decision at migration, never a heuristic (ADR-0034 D6).
 RUN_MODE: dict[str, str] = {
     "hypothesis-intake": "automate",
+    "maintainer": "hitl",
 }
 COPY_IGNORE = shutil.ignore_patterns("__pycache__", ".ruff_cache", "*.pyc")
 WRAP = 78
@@ -217,7 +217,9 @@ def _wrap_expr(terms: list[str]) -> str:
     return "\n".join(f"  {line}" for line in lines)
 
 
-def write_composite(out: Path, comp: Composite, names: set[str], report: Report) -> None:
+def write_composite(
+    out: Path, comp: Composite, names: set[str], report: Report, hook_terms: list[tuple[str, str]]
+) -> None:
     composition = comp.data.get("composition") or {}
     terms: list[str] = []
     if (comp.data.get("injection") or "").strip():
@@ -230,14 +232,11 @@ def write_composite(out: Path, comp: Composite, names: set[str], report: Report)
         terms.append(spell(rule, f"rules::{rule}", names))
     for skill in composition.get("skills") or []:
         terms.append(spell(skill, f"skills::{skill}", names))
+    for term, full in hook_terms:
+        terms.append(spell(term, full, names))
     if not terms:
         raise Refusal(
             f"{comp.path}: nothing to compose — no injection, priorities, traits, rules or skills"
-        )
-    if composition.get("apps"):
-        report.note(
-            f"{comp.path}: composition.apps ({', '.join(sorted(composition['apps']))}) not "
-            "translated — hook files arrive in a later slice"
         )
     text = f"schema_version: {SCHEMA_VERSION}\ntype: composite\nexpr: >-\n{_wrap_expr(terms)}\n"
     if comp.kind == "roles":
@@ -278,20 +277,24 @@ def write_rule(out: Path, name: str, layer: str, rule_md: Path, report: Report) 
     )
 
 
-def copy_skill_tree(src: Path, dst: Path, report: Report) -> None:
-    """The tree as is, symlinks kept — except one that leaves the skill: its
-    target is the shared hooks payload, which arrives with the hook files."""
-    root = src.resolve()
+def copy_skill_tree(src: Path, dst: Path, report: Report, library_root: Path) -> None:
+    """The tree as is. A symlink that leaves the library root is dropped and named."""
+    library = library_root.resolve()
 
     def ignore(folder: str, names: list[str]) -> set[str]:
         skipped = set(COPY_IGNORE(folder, names))
         for name in names:
             path = Path(folder) / name
-            if path.is_symlink() and not path.resolve().is_relative_to(root):
+            if not path.is_symlink():
+                continue
+            try:
+                target = path.resolve()
+            except OSError:
+                target = None
+            if target is None or not target.is_relative_to(library):
                 skipped.add(name)
                 report.note(
-                    f"{path}: symlink to {path.readlink()} leaves the skill — not copied; "
-                    "the shared hooks payload arrives with the hook files"
+                    f"{path}: symlink to {path.readlink()} leaves the library root — not copied"
                 )
         return skipped
 
@@ -300,9 +303,11 @@ def copy_skill_tree(src: Path, dst: Path, report: Report) -> None:
     shutil.copytree(src, dst, symlinks=True, ignore=ignore)
 
 
-def write_skill(out: Path, name: str, layer: str, folder: Path, report: Report) -> None:
+def write_skill(
+    out: Path, name: str, layer: str, folder: Path, report: Report, library_root: Path
+) -> None:
     dst = out / layer / "skills" / name.replace("::", "/")
-    copy_skill_tree(folder, dst, report)
+    copy_skill_tree(folder, dst, report, library_root)
     document = dst / "SKILL.md"
     document.write_text(rewrite_skill_frontmatter(document.read_text(), document, report))
     report.written.append(dst)
@@ -322,8 +327,6 @@ def rewrite_skill_frontmatter(raw: str, path: Path, report: Report) -> str:
     ours = before.get("ai_hats") or {}
     if not isinstance(ours, dict):
         raise Refusal(f"{path}: ai_hats is not a mapping")
-    dropped = [k for k in DEFERRED_CHANNELS if k in ours]
-
     head = next((i for i, line in enumerate(front) if line.rstrip("\n") == "ai_hats:"), None)
     if head is None:
         if "ai_hats" in before:
@@ -356,11 +359,323 @@ def rewrite_skill_frontmatter(raw: str, path: Path, report: Report) -> str:
     }
     if after != expected:
         raise Refusal(f"{path}: frontmatter rewrite did not parse back to the expected mapping")
-    if dropped:
-        report.note(
-            f"{path}: frontmatter channel(s) {', '.join(dropped)} dropped — hook files arrive in a later slice"
-        )
     return "".join([lines[0], *front, *lines[close:]])
+
+
+# ── hooks and operations ─────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class HookFile:
+    layer: str
+    rel: str
+    full_name: str
+    term: str
+    text: str
+    owners: frozenset[str]
+
+
+def _frontmatter(path: Path) -> dict:
+    raw = path.read_text()
+    if not raw.startswith("---\n"):
+        return {}
+    lines = raw.splitlines(keepends=True)
+    close = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if close is None:
+        raise Refusal(f"{path}: frontmatter never closes")
+    data = yaml.safe_load("".join(lines[1:close])) or {}
+    if not isinstance(data, dict):
+        raise Refusal(f"{path}: frontmatter is not a mapping")
+    return data
+
+
+def _quote(value: str) -> str:
+    if any(mark in value for mark in (":", ">", "|", "{", "}", "#")) or value.startswith("-"):
+        return "'" + value.replace("'", "''") + "'"
+    return value
+
+
+def _point_stem(at: str) -> str:
+    text = at.replace("->", "-")
+    return text[1:] if text.startswith("-") else text
+
+
+def _yaml_hook(kind: str, fields: list[tuple[str, str]]) -> str:
+    lines = ["schema_version: 1", "type: hook", f"kind: {kind}"]
+    lines.extend(f"{key}: {value}" for key, value in fields)
+    return "\n".join(lines) + "\n"
+
+
+def _hook(
+    *,
+    layer: str,
+    rel: str,
+    term: str,
+    text: str,
+    owners: frozenset[str],
+) -> HookFile:
+    full = "::".join(Path(rel).with_suffix("").parts)
+    return HookFile(layer, rel, full, term, text, owners)
+
+
+def _run_from(hook_rel: str, script: str) -> str:
+    """``script`` is ``<skill>/<rest>`` with slashes; the hook file sits under ``hooks/``."""
+    if "/" not in script:
+        raise Refusal(f"{script!r} is not '<skill>/<path>'")
+    up = "/".join([".."] * len(Path(hook_rel).parent.parts))
+    return f"{up}/skills/{script}"
+
+
+def _skill_hooks(layer: str, name: str, folder: Path, owners: frozenset[str]) -> list[HookFile]:
+    ours = (_frontmatter(folder / "SKILL.md").get("ai_hats")) or {}
+    if not isinstance(ours, dict):
+        raise Refusal(f"{folder / 'SKILL.md'}: ai_hats is not a mapping")
+    found: list[HookFile] = []
+    git = ours.get("git_hooks") or {}
+    if git:
+        if not isinstance(git, dict):
+            raise Refusal(f"{folder / 'SKILL.md'}: git_hooks is not a mapping")
+        for event, scripts in git.items():
+            if not isinstance(scripts, list) or not all(isinstance(s, str) for s in scripts):
+                raise Refusal(f"{folder / 'SKILL.md'}: git_hooks.{event} is not a list of paths")
+            for script in scripts:
+                stem = Path(script).stem
+                rel = f"hooks/{name.replace('::', '/')}/{stem}.yaml"
+                found.append(
+                    _hook(
+                        layer=layer,
+                        rel=rel,
+                        term=stem,
+                        owners=owners,
+                        text=_yaml_hook(
+                            "git",
+                            [
+                                ("at", _quote(str(event))),
+                                ("run", _run_from(rel, f"{name.replace('::', '/')}/{script}")),
+                            ],
+                        ),
+                    )
+                )
+    runtime = ours.get("runtime_hooks") or {}
+    if runtime:
+        if not isinstance(runtime, dict):
+            raise Refusal(f"{folder / 'SKILL.md'}: runtime_hooks is not a mapping")
+        for event, rows in runtime.items():
+            if not isinstance(rows, list):
+                raise Refusal(f"{folder / 'SKILL.md'}: runtime_hooks.{event} is not a list")
+            for row in rows:
+                if not isinstance(row, dict) or not isinstance(row.get("script"), str):
+                    raise Refusal(f"{folder / 'SKILL.md'}: a runtime hook needs script and matcher")
+                script = row["script"]
+                matcher = row.get("matcher", "")
+                if not isinstance(matcher, str):
+                    raise Refusal(f"{folder / 'SKILL.md'}: runtime matcher is not a string")
+                stem = Path(script).stem
+                rel = f"hooks/{name.replace('::', '/')}/{stem}.yaml"
+                found.append(
+                    _hook(
+                        layer=layer,
+                        rel=rel,
+                        term=stem,
+                        owners=owners,
+                        text=_yaml_hook(
+                            "runtime",
+                            [
+                                ("at", _quote(str(event))),
+                                ("matcher", _quote(matcher)),
+                                ("run", _run_from(rel, f"{name.replace('::', '/')}/{script}")),
+                            ],
+                        ),
+                    )
+                )
+    worktree = ours.get("worktree") or {}
+    if worktree:
+        if not isinstance(worktree, dict):
+            raise Refusal(f"{folder / 'SKILL.md'}: worktree is not a mapping")
+        for at, rows in worktree.items():
+            if at not in ("wt_in", "wt_out"):
+                raise Refusal(f"{folder / 'SKILL.md'}: worktree.{at} is not wt_in or wt_out")
+            if not isinstance(rows, list):
+                raise Refusal(f"{folder / 'SKILL.md'}: worktree.{at} is not a list")
+            for row in rows:
+                if not isinstance(row, dict) or not isinstance(row.get("script"), str):
+                    raise Refusal(f"{folder / 'SKILL.md'}: a worktree hook needs a script")
+                script = row["script"]
+                stem = Path(script).stem
+                rel = f"hooks/{name.replace('::', '/')}/{stem}.yaml"
+                fields = [
+                    ("at", at),
+                    ("run", _run_from(rel, f"{name.replace('::', '/')}/{script}")),
+                ]
+                on = row.get("on")
+                if on:
+                    if not isinstance(on, list) or not all(isinstance(item, str) for item in on):
+                        raise Refusal(f"{folder / 'SKILL.md'}: worktree on is not a list of events")
+                    fields.append(("on", "[" + ", ".join(on) + "]"))
+                found.append(
+                    _hook(
+                        layer=layer,
+                        rel=rel,
+                        term=stem,
+                        owners=owners,
+                        text=_yaml_hook("worktree", fields),
+                    )
+                )
+    return found
+
+
+def _apps_hooks(comp: Composite) -> list[HookFile]:
+    apps = (comp.data.get("composition") or {}).get("apps") or {}
+    if not apps:
+        return []
+    if not isinstance(apps, dict):
+        raise Refusal(f"{comp.path}: composition.apps is not a mapping")
+    found: list[HookFile] = []
+    owners = frozenset({comp.name})
+
+    def walk(node: object, path: tuple[str, ...]) -> None:
+        label = f"{comp.path}: composition.apps.{'.'.join(path)}"
+        if isinstance(node, list):
+            for item in node:
+                if not isinstance(item, dict):
+                    raise Refusal(f"{label}: a row is not a mapping")
+                emit_row(item, path, label)
+            return
+        if isinstance(node, dict):
+            if "run" in node or "consent" in node:
+                emit_row(node, path, label)
+                return
+            for key, child in node.items():
+                walk(child, (*path, str(key)))
+            return
+        raise Refusal(f"{label}: expected a row or a mapping, got {type(node).__name__}")
+
+    def emit_row(row: dict, path: tuple[str, ...], label: str) -> None:
+        if not path:
+            raise Refusal(f"{label}: a row has no app")
+        app, *object_path = path
+        at = row.get("at")
+        points = [at] if isinstance(at, str) else at
+        if not isinstance(points, list) or not points:
+            raise Refusal(f"{label}: at must name a point")
+        consent = row.get("consent")
+        if app == "consent_gate":
+            if consent is False:
+                raise Refusal(
+                    f"{label}: consent: false is a subtraction, and this slice does not write one"
+                )
+            if len(object_path) != 1:
+                raise Refusal(f"{label}: a consent row needs exactly one operation")
+            operation = object_path[0]
+            for point in points:
+                stem = _point_stem(str(point))
+                rel = f"hooks/consent/{operation}/{stem}.yaml"
+                found.append(
+                    _hook(
+                        layer=comp.layer,
+                        rel=rel,
+                        term=f"{operation}::{stem}",
+                        owners=owners,
+                        text=_yaml_hook(
+                            "consent",
+                            [("operation", operation), ("at", _quote(str(point)))],
+                        ),
+                    )
+                )
+            return
+        run = row.get("run")
+        if not isinstance(run, str) or "/" not in run:
+            raise Refusal(f"{label}: run must be '<skill>/<path>'")
+        on_error = row.get("on_error", "refuse")
+        if on_error not in ("refuse", "warn"):
+            raise Refusal(f"{label}: on_error {on_error!r} is not refuse or warn")
+        skill = run.split("/", 1)[0]
+        for point in points:
+            # The script stem alone collides when one script is bound at two points.
+            stem = f"{Path(run).stem}-{_point_stem(str(point))}"
+            rel = f"hooks/{skill}/{stem}.yaml"
+            fields = [("app", app), ("at", _quote(str(point))), ("run", _run_from(rel, run))]
+            if object_path:
+                fields.insert(1, ("object", ".".join(object_path)))
+            fields.append(("on_error", str(on_error)))
+            found.append(
+                _hook(
+                    layer=comp.layer,
+                    rel=rel,
+                    term=stem,
+                    owners=owners,
+                    text=_yaml_hook("workflow", fields),
+                )
+            )
+
+    for app, block in apps.items():
+        walk(block, (str(app),))
+    return found
+
+
+def collect_hooks(root: Path, picked: Closure) -> list[HookFile]:
+    owners: dict[str, set[str]] = {}
+    for comp in picked.composites.values():
+        for skill in (comp.data.get("composition") or {}).get("skills") or []:
+            owners.setdefault(skill, set()).add(comp.name)
+    found: list[HookFile] = []
+    seen: dict[tuple[str, str], str] = {}
+    for name, (layer, folder) in picked.skills.items():
+        found.extend(_skill_hooks(layer, name, folder, frozenset(owners.get(name, ()))))
+    for comp in picked.composites.values():
+        found.extend(_apps_hooks(comp))
+    unique: list[HookFile] = []
+    for hook in found:
+        key = (hook.layer, hook.rel)
+        previous = seen.get(key)
+        if previous is not None and previous != hook.text:
+            raise Refusal(
+                f"{hook.layer}/{hook.rel}: two hook files want this path with different bodies"
+            )
+        if previous is None:
+            seen[key] = hook.text
+            unique.append(hook)
+        else:
+            # Same body from a second owner: the file is one, the term is named by both.
+            held = unique[[(item.layer, item.rel) for item in unique].index(key)]
+            unique[unique.index(held)] = HookFile(
+                held.layer,
+                held.rel,
+                held.full_name,
+                held.term,
+                held.text,
+                held.owners | hook.owners,
+            )
+    return unique
+
+
+_OPERATIONS = (
+    ("rack.transition", "surface: rack\nreader: rack_transition\nbinds_ticket: true\n"),
+    ("wt.merge", "surface: ai-hats\nreader: wt_merge\nbinds_ticket: false\n"),
+    ("wt.discard", "surface: ai-hats\nreader: wt_discard\nbinds_ticket: false\n"),
+    (
+        "fs.remove",
+        "surface: none\nreader: fs_remove\nbinds_ticket: false\n"
+        "hook_only_because: a shim under rm would sit under every script and the person's own shell\n",
+    ),
+)
+
+
+def write_operations(out: Path, report: Report) -> None:
+    for name, body in _OPERATIONS:
+        text = f"schema_version: {SCHEMA_VERSION}\ntype: operation\n{body}"
+        _write(out / "core" / "operations" / f"{name}.yaml", text, report)
+
+
+def copy_shared_hooks(root: Path, out: Path, report: Report) -> None:
+    src = root / "hooks"
+    if not src.is_dir():
+        return
+    dst = out / "hooks"
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst, symlinks=True, ignore=COPY_IGNORE)
+    report.written.append(dst)
 
 
 # ── the run ──────────────────────────────────────────────────────────────────
@@ -370,13 +685,29 @@ def migrate(root: Path, only: Iterable[str]) -> Report:
     report = Report()
     out = root / EXPERIMENTAL
     picked = closure(root, read_composites(root), only)
-    names = flat_names(picked)
     for comp in picked.composites.values():
-        write_composite(out, comp, names, report)
+        if comp.kind == "roles" and comp.name not in RUN_MODE:
+            raise Refusal(
+                f"{comp.path}: role {comp.name!r} has no run mode in RUN_MODE — a person "
+                "decides hitl/automate at migration (ADR-0034 D6)"
+            )
+    hooks = collect_hooks(root, picked)
+    names = flat_names(picked) | {hook.full_name for hook in hooks}
+    by_owner: dict[str, list[HookFile]] = {}
+    for hook in hooks:
+        for owner in hook.owners:
+            by_owner.setdefault(owner, []).append(hook)
+    for comp in picked.composites.values():
+        terms = [(hook.term, hook.full_name) for hook in by_owner.get(comp.name, ())]
+        write_composite(out, comp, names, report, terms)
     for name, (layer, rule_md) in picked.rules.items():
         write_rule(out, name, layer, rule_md, report)
     for name, (layer, folder) in picked.skills.items():
-        write_skill(out, name, layer, folder, report)
+        write_skill(out, name, layer, folder, report, root)
+    for hook in hooks:
+        _write(out / hook.layer / hook.rel, hook.text, report)
+    write_operations(out, report)
+    copy_shared_hooks(root, out, report)
     return report
 
 

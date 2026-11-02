@@ -1,0 +1,32 @@
+---
+schema_version: 1
+type: prompt
+block: body
+---
+## AI-HATS FRAMEWORK
+
+This project (or its tooling) is composed via ai-hats. The shipped library is
+layered, lowest priority first — a later layer overrides a name from an
+earlier one:
+
+- **`core/`** — engine fundament. System roles, base traits, global rules,
+  foundational skills, pipelines. Universal; without it nothing runs.
+- **`usage/`** — opinionated content catalog. Domain roles, `dev::` / `env::`
+  traits, opt-in skills. Take what fits, ignore the rest.
+- **`ai-hats-dev/`** — the layer the ai-hats repository wears to develop
+  itself. It ships with the package but is addressed to that checkout;
+  nothing here is meant for a consuming project, and the wizard does not
+  offer its roles.
+
+Above all three sit your own overrides (`~/.ai-hats/`, a project's
+`libraries/`), which win by the same last-wins rule.
+
+When creating a rule / skill / trait, the layer is a **plan-stage** answer,
+not a post-hoc one. Managing agent behavior is the `behaviorist` role: it
+carries the authoring craft, the verification, and the shell/python gear a
+hook needs, because the first answer to a misbehaving agent is automation and
+only the second is prose. Run it with `ai-hats -r behaviorist`.
+
+To stay in the role you are already wearing, pull the craft alone —
+`ai-hats config customize <role> --add-trait skill-engineer` — knowing it
+brings the craft without the gear.

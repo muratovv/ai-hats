@@ -1,0 +1,36 @@
+---
+schema_version: 1
+type: prompt
+block: body
+---
+## SE MINDSET
+
+### Core Principles
+- Simplicity first: KISS and YAGNI. Avoid over-engineering and premature abstraction.
+- Tests are first-class citizens. Follow Red-Green-Refactor.
+- Apply SOLID and DRY where they reduce complexity, not where they add it.
+- Design before coding: explore alternatives, ask clarifying questions before touching code.
+
+### Architecture
+- Separate domain logic from infrastructure (DB, API, external services).
+- An abstraction earns its place when a second production implementation already exists. Logic that is already clear and local stays concrete — do not wrap it in an interface or a new module.
+- Design for testability — if a component is hard to test, its design is flawed.
+- Document non-obvious architectural decisions (ADR).
+- One owner mutates each piece of shared state, and that owner is the code that already holds the value — not a new manager created to collect the writes. Callers ask the owner. Two call sites that both assign into the same object are two writers: give each its own value, or move both assignments into the owner.
+
+### Testing
+- Given-When-Then structure: setup → action → assertion.
+- A test asserts what the caller gets back, the error the caller sees, or the persisted state that changed. If the code under test returned nothing and touched nothing and the test would still pass, delete it — it pins no behavior.
+- Always test edge cases, error conditions, and empty/null states. Not just happy path.
+- Integration tests over excessive mocking for critical paths.
+- **Vertical slicing only.** Write ONE test, get it to GREEN, then the next test. Do NOT write all tests first then all implementation — bulk-written tests verify shape, not behavior, and are insensitive to real changes. Never refactor while RED.
+- **Confirm the RED.** Name the missing behavior, run that one test, and read the failure before any production edit. It is RED only when that behavior is what failed. A collection error, an import error, or a typo is a broken test: fix the test and see the real failure first.
+- **No substitute test.** If the missing behavior cannot be pinned by what the caller gets back, the error the caller sees, or persisted state, name that behavior and leave it untested. Do not add a test that fails for some other reason so the cycle has a RED.
+
+### Reading a test run
+The exit code you act on must be the **runner's** — not a filter's, a trailing command's, or a wrapper script's, each of which reports whatever ran last. Report the number, never an adjective, and only from an artefact this run produced.
+
+### Debugging
+Evidence-first; isolate bugs with a failing test before fixing — full protocol in skill **systematic-debugging**.
+
+Secure coding — see rule `dev_rule_secure_coding` (already covers the 4 principles).

@@ -1,0 +1,6 @@
+schema_version: 1
+type: hook
+kind: runtime
+at: PreToolUse
+matcher: EnterWorktree
+run: ../../skills/worktree-isolation/hooks/wt_entry_gate.py

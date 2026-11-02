@@ -1,0 +1,7 @@
+schema_version: 1
+type: composite
+expr: >-
+  ai-hats-dev::prompt + rule_composition_value_contract + quality-gate
+  + red-attribution + doc-protocol + worktree-venv + skill-lint-gate
+  + rule-delivery-gate + ticket-id-gate + pre-push-e2e-master + provision-venv
+  + pre-commit-skill-lint + pre-commit-rule-delivery + pre-commit-ticket-ids

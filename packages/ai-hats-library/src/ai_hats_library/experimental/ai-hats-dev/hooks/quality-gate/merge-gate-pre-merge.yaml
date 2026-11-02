@@ -1,0 +1,7 @@
+schema_version: 1
+type: hook
+kind: workflow
+app: wt
+at: pre-merge
+run: ../../skills/quality-gate/hooks/merge-gate.sh
+on_error: refuse

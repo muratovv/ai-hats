@@ -1,0 +1,8 @@
+schema_version: 1
+type: hook
+kind: workflow
+app: rack
+object: tasks
+at: '->done'
+run: ../../skills/quality-gate/hooks/done-gate.sh
+on_error: refuse

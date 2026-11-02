@@ -1,0 +1,6 @@
+schema_version: 1
+type: hook
+kind: runtime
+at: PostToolUse
+matcher: 'Edit|Write|MultiEdit'
+run: ../../skills/py-security-lint/hooks/py_security_lint.py

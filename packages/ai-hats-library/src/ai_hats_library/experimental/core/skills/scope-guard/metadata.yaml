@@ -1,0 +1,16 @@
+name: scope-guard
+description: "Enforce user-defined task boundaries to prevent scope creep and over-implementation. Use after receiving a task with explicit constraints (\"only X\", \"don't do Y\", \"focus on Z\"), before starting each new sub-step during execution, or when tempted to add helpful work not explicitly requested."
+author: ai-hats
+pattern: reference
+
+# === upstream provenance (preparation for future plugin system) ===
+upstream:
+  source: obra/superpowers
+  url: https://github.com/obra/superpowers
+  commit: d884ae04edebef577e82ff7c4e143debd0bbec99
+  commit_url: https://github.com/obra/superpowers/commit/d884ae04edebef577e82ff7c4e143debd0bbec99
+  path: "skills — rationalization-resistance discipline (not a single-file port)"
+  fetched_at: 2026-07-09
+  license: MIT
+  license_file: LICENSE
+  attribution: "Adapted from Jesse Vincent (obra) and contributors"

@@ -8,7 +8,8 @@ cmds:
     ai-hats config show-prompt --role worker
 expect: the record's composition names the canonical expression, the prompt members
         in term order with the worker's prose last, the skills with their trees and
-        digests, no hooks; the trait's prompt prints at exit 0 while the reference
+        digests, the safety-guard hooks and the fs.remove consent point; the trait's
+        prompt prints at exit 0 while the reference
         exits 2 on the same trait
 why:    the two projections are the only readers of the candidate plan until a
         session runs from it; the trait that could not be shown is the measured
@@ -41,7 +42,10 @@ def test_dry_run_json_projects_the_candidate_plan(tmp_project) -> None:
     assert [s["name"] for s in skills] == ["skills::safety-guard"]
     assert skills[0]["path"].endswith("/experimental/core/skills/safety-guard")
     assert len(skills[0]["content_digest"]) == 64
-    assert composition["hooks"] == {"runtime": [], "external": []}
+    runtime = composition["hooks"]["runtime"]
+    external = composition["hooks"]["external"]
+    assert runtime and {hook["at"] for hook in runtime} == {"PreToolUse"}
+    assert [(hook["object"], hook["at"]) for hook in external] == [("fs.remove", "critical-path")]
 
     brought = {t["term"]: t["brought_by"] for t in composition["trace"]}
     assert brought["trait-base"] == "hypothesis-intake"

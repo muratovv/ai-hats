@@ -1,0 +1,5 @@
+schema_version: 1
+type: hook
+kind: git
+at: pre-commit
+run: ../../skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh

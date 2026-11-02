@@ -69,6 +69,7 @@ def test_a_higher_layer_wins_by_full_name_and_a_kind_change_warns(tmp_path: Path
         tmp_path / "upper",
         {
             "alpha.yaml": "schema_version: 1\ntype: composite\nexpr: bare\ntags: [TEST]\n",
+            "rules/x.sh": "#!/bin/sh\nexit 0\n",
             "rules/rule-one.yaml": (
                 "schema_version: 1\ntype: hook\nkind: git\nat: pre-push\nrun: x.sh\n"
             ),

@@ -9,7 +9,8 @@ cmds:
     ai-hats -re "hypothesis-intake + worker"
 expect: the agent dry-run and the HITL dry-run carry one composition; show-prompt
         sits inside the framed prompt; list tokens prices that plan; a live
-        session writes that prompt, names the marker, arms no hooks, and says so
+        session writes that prompt and names the marker. The expression arms
+        safety-guard's runtime hooks through trait-base, and no rack gate.
 why:    the projections already printed the plan, and a session that composed
         the expression as a role would arm the wrong gates or refuse in silence
 """
@@ -53,7 +54,9 @@ def test_the_session_projections_agree(tmp_project) -> None:
     assert total in priced.stdout
 
 
-def test_a_live_session_writes_the_plan_and_arms_nothing(tmp_project, requires_claude_auth) -> None:
+def test_a_live_session_writes_the_plan_and_arms_its_hooks(
+    tmp_project, requires_claude_auth
+) -> None:
     # HATS-2010 — the session the projections were waiting for.
     driven = (
         drive_bare_hitl(
@@ -66,7 +69,7 @@ def test_a_live_session_writes_the_plan_and_arms_nothing(tmp_project, requires_c
         .expect_exit_in({0, 130})
         .expect_start_banner(role=EXPR, provider="claude")
     )
-    assert "candidate session: 0 hooks, 0 consent points" in driven.stdout_plain
+    assert "candidate session: 0 hooks, 0 consent points" not in driven.stdout_plain
 
     prompts = list(Path(tmp_project.path).glob(".agent/ai-hats/sessions/runs/*/meta_prompt.txt"))
     assert len(prompts) == 1, prompts
@@ -78,7 +81,8 @@ def test_a_live_session_writes_the_plan_and_arms_nothing(tmp_project, requires_c
     composition = record["composition"]
     assert composition["identity"] == EXPR
     assert composition["dsl"] == "re"
-    assert composition["hooks"] == {"runtime": [], "external": []}
+    assert composition["hooks"]["runtime"], "trait-base brings safety-guard's runtime hooks"
+    assert composition["hooks"]["external"]
     shown = tmp_project.run("-re", "show-prompt", EXPR).expect_ok().stdout
     assert shown.rstrip("\n") in prompts[0].read_text(encoding="utf-8")
 

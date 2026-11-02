@@ -10,6 +10,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+
+- **The library floor follows the maintainer candidate** (HATS-1969). `ai-hats-library` 0.11.3. This package requires `ai-hats-library>=0.11.3`.
+
 ## [0.19.4] - 2026-11-01
 
 ### Changed

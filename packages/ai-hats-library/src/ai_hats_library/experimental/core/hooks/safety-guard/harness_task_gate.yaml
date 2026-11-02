@@ -1,0 +1,6 @@
+schema_version: 1
+type: hook
+kind: runtime
+at: PreToolUse
+matcher: 'TaskCreate|TaskUpdate|TaskList|TaskGet|TaskStop|TaskOutput'
+run: ../../skills/safety-guard/hooks/harness_task_gate.py

@@ -519,6 +519,18 @@ def _labelled_overlays(assembler, role_name: str, runtime_overlay: OverlayConfig
     return [(layer, label) for layer, label in layers if layer is not None]
 
 
+def armed_plan(project_dir: Path, role: str | None):
+    """The candidate plan when it carries hooks, else ``None`` (nothing to arm).
+
+    Callers that still ask :func:`compose_for_checks` for a ``CompositionResult``
+    hit the tripwire below: there is no projection back into that value.
+    """
+    _asm, plan, _diagnostics = _candidate_plan(project_dir, role)
+    if plan.hooks.runtime or plan.hooks.external:
+        return plan
+    return None
+
+
 def compose_for_checks(
     project_dir: Path, role: str | None = None, *, dsl: str = ""
 ) -> CompositionResult | None:
@@ -576,16 +588,15 @@ def compose_for_carry(project_dir: Path, role: str | None = None, *, dsl: str = 
     above — ``wt_carry.collect_carry_for_role`` warns there and keeps whatever
     composed, because only it knows how many carry rows survived.
     """
+    if dsl == "re":
+        # Outside the fail-open try: swallowing this would drop the carry again.
+        _asm, plan, _diagnostics = _candidate_plan(project_dir, role)
+        if plan.hooks.runtime or plan.hooks.external:
+            raise RuntimeError(
+                f"candidate session {plan.identity!r} carries hooks this channel cannot arm"
+            )
+        return None
     try:
-        if dsl == "re":
-            _asm, plan, _diagnostics = _candidate_plan(project_dir, role)
-            if plan.hooks.runtime or plan.hooks.external:
-                logger.warning(
-                    "worktree carry: candidate session %r carries hooks this channel cannot arm"
-                    " — dropping carry",
-                    plan.identity,
-                )
-            return None
         asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
         if not effective:
             return None

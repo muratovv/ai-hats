@@ -1,0 +1,6 @@
+schema_version: 1
+type: hook
+kind: runtime
+at: PreToolUse
+matcher: 'Edit|Write|MultiEdit'
+run: ../../skills/silent-fallback-gate/hooks/silent_fallback_gate.py

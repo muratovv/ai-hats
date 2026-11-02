@@ -1,103 +1,55 @@
-"""The two shipped composites under both processings (HATS-1976 acceptance 2):
-the candidate's sets of skills and prompt members equal the reference's on the
-smallest role; a bare trait matches its own config; a planted extra shows."""
+"""The candidate maintainer arms the same hooks as the shipped role, overlays off."""
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
-import pytest
-import yaml
-
-from ai_hats.diagnostics import Diagnostic
-from ai_hats.processing import Root, candidate_roots, compose
-
-REPO = Path(__file__).resolve().parent.parent
-LIBRARY = REPO / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
-ROLE = "hypothesis-intake"
+from ai_hats.composition_seam import build_plan_preview, build_preview_payload
+from ai_hats.consent_wrapper import policy_of
+from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
-@pytest.fixture
-def project(tmp_path: Path):
-    """An empty project: no overlays of its own, the developer's home isolated
-    by the suite, so both processings see the shipped library alone."""
-    from ai_hats.assembler import Assembler
-
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    return Assembler(proj)
+def _run_key(path: Path) -> str:
+    parts = path.parts
+    if "skills" in parts:
+        index = max(i for i, part in enumerate(parts) if part == "skills")
+        return "/".join(parts[index + 1 :])
+    return path.name
 
 
-def _reference(asm, role: str):
-    from ai_hats.materialize import compose_to_run
-    from ai_hats.surfaces import adapt
-
-    return adapt(
-        compose_to_run(asm, role),
-        identity=role,
-        layout=asm.layout,
-        resolver=asm.resolver,
-        overlays=(),
-        diagnostics=[],
-    )
+def _ident(hook) -> tuple:
+    if hook.__class__.__name__ == "RuntimeHook":
+        return ("runtime", hook.at.value, hook.matcher, _run_key(hook.run.path))
+    run = None if hook.run is None else _run_key(hook.run.path)
+    return (hook.app, hook.object, hook.at, run)
 
 
-def _candidate(asm, expression: str, roots=None):
-    from ai_hats.paths import builtin_library_root
+def test_maintainer_hooks_match_the_shipped_role_without_a_global_overlay(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "home"))
+    project = tmp_path / "proj"
+    project.mkdir()
+    ProjectConfig(provider="claude", library_paths=[]).save(project / PROJECT_CONFIG)
 
-    diagnostics: list[Diagnostic] = []
-    roots = roots or candidate_roots(
-        asm.library_paths, builtin_root=builtin_library_root(asm.project_dir)
-    )
-    return compose(expression, roots, layout=asm.layout, diagnostics=diagnostics), diagnostics
+    reference = build_plan_preview(project, role="maintainer").plan
+    candidate = build_preview_payload(project, role="maintainer", experimental=True).plan
+    assert candidate is not None and reference is not None
+    ref = {_ident(hook) for hook in (*reference.hooks.runtime, *reference.hooks.external)}
+    got = {_ident(hook) for hook in (*candidate.hooks.runtime, *candidate.hooks.external)}
+    assert got == ref
+    assert got | {("git", None, "pre-push", "not-a-real-script")} != ref
+    assert any(item[0] == "rack" and item[2] == "->done" for item in got)
+    assert any(item[0] == "wt" and item[2] == "pre-merge" for item in got)
 
+    policy = policy_of(candidate.hooks.external)
+    assert "->done" in policy["rack.transition"]
+    assert "plan->execute" in policy["rack.transition"]
+    assert "critical-path" in policy["fs.remove"]
 
-def _members(plan) -> set[str]:
-    return {m.name for b in plan.prompt.blocks for m in b.members}
+    from ai_hats.githooks_resolve import resolve_git_gates_from_plan
 
-
-def test_the_smallest_role_composes_the_same_sets_under_both(project):
-    reference = _reference(project, ROLE)
-    candidate, diagnostics = _candidate(project, ROLE)
-    assert {s.name for s in candidate.skills} == {s.name for s in reference.skills}
-    assert _members(candidate) == _members(reference)
-    assert {s.name for s in reference.skills} == {"skills::safety-guard"}, "the sample's shape"
-    assert diagnostics == []
-    # Beyond the sets: the bytes of every member agree, so the plan comparison
-    # of stage 2 will differ on order alone (ADR-0036 D9's declared divergence).
-    assert {(m.name, m.text, m.heading) for b in candidate.prompt.blocks for m in b.members} == {
-        (m.name, m.text, m.heading) for b in reference.prompt.blocks for m in b.members
-    }
-    assert [b.name for b in candidate.prompt.blocks] == [None, "PRIORITIES", "RULES"]
-    assert [b.name for b in reference.prompt.blocks] == ["PRIORITIES", None, "RULES"]
-
-
-def test_a_bare_trait_matches_its_own_config(project):
-    config = yaml.safe_load((LIBRARY / "usage" / "traits" / "worker" / "config.yaml").read_text())
-    assert config["composition"] == {"traits": [], "rules": [], "skills": []}
-    candidate, _ = _candidate(project, "worker")
-    assert _members(candidate) == {"worker::prompt"}
-    assert candidate.skills == ()
-    assert candidate.prompt.text == config["injection"].strip(), "as the composer hands it over"
-
-
-def test_the_worker_comes_last_after_the_role(project):
-    candidate, _ = _candidate(project, f"{ROLE} + worker")
-    body = candidate.prompt.blocks[0]
-    assert body.name is None
-    assert [m.name for m in body.members][0] == f"{ROLE}::prompt"
-    assert [m.name for m in body.members][-1] == "worker::prompt"
-
-
-def test_a_planted_skill_in_the_copy_breaks_the_comparison(project, tmp_path: Path):
-    """Positive control: the equality above is sensitive to one extra term."""
-    planted = tmp_path / "planted"
-    shutil.copytree(LIBRARY / "experimental", planted, symlinks=True)
-    composite = planted / "core" / f"{ROLE}.yaml"
-    composite.write_text(composite.read_text().replace("+ trait-base", "+ trait-base + worker"))
-    roots = [Root(planted / "core"), Root(planted / "usage")]
-    candidate, _ = _candidate(project, ROLE, roots=roots)
-    reference = _reference(project, ROLE)
-    assert _members(candidate) != _members(reference)
-    assert _members(candidate) - _members(reference) == {"worker::prompt"}
+    gates = resolve_git_gates_from_plan(candidate, "pre-push")
+    assert any(gate.path.name == "pre-push-e2e-master.sh" for gate in gates.gates)
+    assert gates.refusals == ()

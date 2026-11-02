@@ -1,0 +1,7 @@
+schema_version: 1
+type: composite
+expr: >-
+  maintainer::prompt + maintainer::priorities + trait-base + trait-agent
+  + trait-se-mindset + trait-researcher-mindset + skill-engineer + ai-hats-dev
+  + ai-hats-framework + ai-hats-gates + dev::python + dev::shell + d2-diagrams
+tags: [role, hitl]

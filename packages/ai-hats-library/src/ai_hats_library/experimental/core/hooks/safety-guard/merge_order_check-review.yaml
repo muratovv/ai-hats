@@ -1,0 +1,8 @@
+schema_version: 1
+type: hook
+kind: workflow
+app: rack
+object: tasks
+at: '->review'
+run: ../../skills/safety-guard/hooks/merge_order_check.sh
+on_error: refuse

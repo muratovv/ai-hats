@@ -1,0 +1,6 @@
+schema_version: 1
+type: hook
+kind: runtime
+at: PreToolUse
+matcher: 'Bash|run_command|execute'
+run: ../../skills/safety-guard/hooks/safety_gate.py

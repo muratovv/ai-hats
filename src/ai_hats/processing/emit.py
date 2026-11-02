@@ -9,11 +9,12 @@ from __future__ import annotations
 from ai_hats_core.layout import ProjectLayout
 
 from ..diagnostics import Diagnostic
-from ..surfaces import CompositionPlan, Hooks, Skill
+from ..surfaces import CompositionPlan, Skill
 from .errors import ProcessingError
 from .fold import Folded
+from .hooks import project
 from .names import Tree
-from .parse import Declared, SkillEntity
+from .parse import Declared, Hook, SkillEntity
 from .prompt import assemble
 
 
@@ -46,15 +47,15 @@ def emit(
                     on_path=entity.on_path,
                 )
             )
+        elif isinstance(entity, Hook):
+            continue
         elif isinstance(entity, Declared):
-            raise ProcessingError(
-                f"{name} is a {entity.type}: hooks reach the plan in a later slice"
-            )
+            raise ProcessingError(f"{name} is a {entity.type}: this term does not reach the plan")
     return CompositionPlan(
         identity=identity,
         prompt=assemble(folded, tree, diagnostics, expand=member_text),
         skills=tuple(skills),
-        hooks=Hooks(runtime=(), external=()),
+        hooks=project(folded, tree, diagnostics),
         trace=folded.trace,
         dsl="re",
     )

@@ -1,0 +1,5 @@
+schema_version: 1
+type: composite
+expr: >-
+  quality-gate + pre-push-e2e-master + review-gate-review + done-gate-done
+  + merge-gate-pre-merge

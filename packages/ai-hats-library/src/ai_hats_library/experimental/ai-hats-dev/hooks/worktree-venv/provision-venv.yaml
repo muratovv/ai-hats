@@ -1,0 +1,5 @@
+schema_version: 1
+type: hook
+kind: worktree
+at: wt_in
+run: ../../skills/worktree-venv/hooks/provision-venv.sh

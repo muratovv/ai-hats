@@ -1,0 +1,19 @@
+schema_version: 1
+type: composite
+expr: >-
+  trait-agent::prompt + rule_backlog_discipline + rule_verify_authored_claims
+  + dev_rule_tool_call_hygiene + safety-guard + hatrack + rack-advanced
+  + request-supervisor + plan-discipline + plan-gate + task-slicing
+  + requirements-interview + devils-advocate + scope-guard + self-retrospective
+  + git-mastery + worktree-isolation + context-reset + context-handoff
+  + task-summary + tool-call-hygiene + command-lifetime + positive-control
+  + design-minimalism + safety_gate + pre_bash_shared_state_guard
+  + pre_bash_task_merge_guard + ack_prefix_guard + backlog_write_gate
+  + harness_task_gate + pre-commit-privacy + pre-commit-smoke
+  + pre-commit-docs-index + pre-commit-no-raw-destructive
+  + pre-push-shared-state + pre-push-bypass-report + post-commit-bypass-stamp
+  + wt_gate + wt_interpreter_gate + wt_git_gate + wt_entry_gate
+  + tool_call_hygiene_guard + pre_bash_lifetime_guard + fs.remove::critical-path
+  + merge_order_check-review + merge_order_check-pre-merge
+  + rack.transition::plan-execute + rack.transition::done + wt.merge::pre-merge
+  + wt.discard::pre-discard

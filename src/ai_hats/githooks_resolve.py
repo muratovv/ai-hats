@@ -52,6 +52,48 @@ def _contain(candidate: Path, skill_root: Path) -> bool:
     return candidate == skill_root or skill_root in candidate.parents
 
 
+def _script_refusal(label: str, script: str, candidate: Path, root: Path | None) -> str | None:
+    """Why ``candidate`` cannot run, or ``None`` when the dispatcher may exec it."""
+    if root is not None and not _contain(candidate, root):
+        return f"{label}: '{script}' escapes the skill directory"
+    if not candidate.is_file():
+        return f"{label}: '{script}' does not exist"
+    if "\n" in str(candidate):
+        # The dispatcher reads one path per line; a newline would split one gate in two.
+        return f"{label}: '{script}' resolves to a path with a newline"
+    if not os.access(candidate, os.X_OK):
+        return f"{label}: '{script}' is not executable — chmod +x it"
+    try:
+        with candidate.open("rb") as fh:
+            head = fh.read(2)
+    except OSError as exc:
+        return f"{label}: '{script}' cannot be read: {exc}"
+    if head != b"#!":
+        return f"{label}: '{script}' has no shebang ('#!') first line — it would fail to exec"
+    return None
+
+
+def _reject_worktree(candidate: Path, label: str, script: str) -> None:
+    """A linked worktree is not a git-gate root either (ADR-0019 D9 clause 4)."""
+    from ai_hats_core import ResolvedCheck
+
+    from .check_resolve import reject_worktree_root
+
+    reject_worktree_root(
+        candidate,
+        ResolvedCheck(
+            app="git",
+            path=(),
+            run=f"{label}/{script}",
+            at=(),
+            cargo={},
+            on_error="refuse",
+            script_path=candidate,
+            declared_by=label,
+        ),
+    )
+
+
 def resolve_git_gates(result: CompositionResult, event: str) -> Resolution:
     """Collect, resolve and order the gates the composed role declares for ``event``."""
     gates: list[ResolvedGate] = []
@@ -64,35 +106,35 @@ def resolve_git_gates(result: CompositionResult, event: str) -> Resolution:
         skill_root = skill.source_path.resolve()
         for script in declared:
             candidate = (skill.source_path / script).resolve()
-            if not _contain(candidate, skill_root):
-                refusals.append(f"{skill.name}: '{script}' escapes the skill directory")
-                continue
-            if not candidate.is_file():
-                refusals.append(f"{skill.name}: '{script}' does not exist")
-                continue
-            if "\n" in str(candidate):
-                # The dispatcher reads one path per line; a newline would split
-                # one gate into two unrunnable halves.
-                refusals.append(f"{skill.name}: '{script}' resolves to a path with a newline")
-                continue
-            # Only our own gates reached execve unchecked; the
-            # neighbours on this chain have always checked.
-            if not os.access(candidate, os.X_OK):
-                refusals.append(f"{skill.name}: '{script}' is not executable — chmod +x it")
-                continue
-            try:
-                with candidate.open("rb") as fh:
-                    head = fh.read(2)
-            except OSError as exc:
-                refusals.append(f"{skill.name}: '{script}' cannot be read: {exc}")
-                continue
-            if head != b"#!":
-                refusals.append(
-                    f"{skill.name}: '{script}' has no shebang ('#!') first line — "
-                    "it would fail to exec"
-                )
+            if refusal := _script_refusal(skill.name, script, candidate, skill_root):
+                refusals.append(refusal)
                 continue
             gates.append(ResolvedGate(skill=skill.name, script=script, path=candidate))
 
+    gates.sort(key=lambda g: g.sort_key)
+    return Resolution(gates=tuple(gates), refusals=tuple(refusals))
+
+
+def resolve_git_gates_from_plan(plan, event: str) -> Resolution:
+    """The same gate set, read off a candidate plan's ``git`` rows."""
+    from .surfaces import home_of, mirror_name
+
+    gates: list[ResolvedGate] = []
+    refusals: list[str] = []
+    for hook in plan.hooks.external:
+        if hook.app != "git" or hook.at != event or hook.run is None:
+            continue
+        home = home_of(hook.run, plan.skills)
+        if home is None:
+            label, script, root = hook.declared_by, hook.run.path.name, None
+        else:
+            skill, inside = home
+            label, script, root = mirror_name(skill), inside.as_posix(), skill.path.resolve()
+        candidate = hook.run.path.resolve()
+        if refusal := _script_refusal(label, script, candidate, root):
+            refusals.append(refusal)
+            continue
+        _reject_worktree(candidate, label, script)
+        gates.append(ResolvedGate(skill=label, script=script, path=candidate))
     gates.sort(key=lambda g: g.sort_key)
     return Resolution(gates=tuple(gates), refusals=tuple(refusals))

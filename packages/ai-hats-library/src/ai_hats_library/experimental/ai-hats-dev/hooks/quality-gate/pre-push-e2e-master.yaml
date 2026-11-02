@@ -1,0 +1,5 @@
+schema_version: 1
+type: hook
+kind: git
+at: pre-push
+run: ../../skills/quality-gate/git_hooks/pre-push-e2e-master.sh
