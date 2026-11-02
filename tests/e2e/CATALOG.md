@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**369 of 369 files catalogued — 378 flows.**
+**371 of 371 files catalogued — 380 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3160,6 +3160,21 @@ as a claim to check, not as evidence.
 - **expect** — STATE.md is refreshed on card creation and a git worktree is provisioned when transitioning to execute
 - **why** — module-level rack execution must bind the full kernel extensions rather than falling back to a bare un-wired state
 
+## `test_re_consent_flow.py`
+
+*pins HATS-1969*
+
+- **flow** — a person grants rack.transition in a candidate session that declares consent and no scripts
+- **cmds**
+
+  ```console
+  consent rack.transition 30
+  rack transition SBX-1 execute
+  ```
+
+- **expect** — without a grant the wrapper refuses and the card stays in plan; after the verb the same transition moves the card to execute
+- **why** — maintainer also arms script gates, and those refuse inside a linked worktree, so a passed approve never shows whether consent itself lets the command run
+
 ## `test_re_dry_run.py`
 
 *pins HATS-2009*
@@ -3213,6 +3228,20 @@ as a claim to check, not as evidence.
 
 - **expect** — show-prompt prints the prompt body dry-run --full dumps; the text and json renderings carry one record; a processing warning lands in the notes of dry-run and on the stderr of show-prompt
 - **why** — both projections read one plan value (ADR-0036 D5); this test grows with every slice so a later stage cannot make them disagree unnoticed
+
+## `test_re_session_gates.py`
+
+*pins HATS-1969*
+
+- **flow** — a person in a candidate maintainer session moves a card to done
+- **cmds**
+
+  ```console
+  rack transition SBX-1 done
+  ```
+
+- **expect** — the card stays in execute and the refusal names make done-gate; the library the gate runs from is not the linked worktree
+- **why** — a candidate session arms the same workflow gate as the shipped role, and a linked worktree is refused before that script can run
 
 ## `test_re_session_stripped.py`
 
