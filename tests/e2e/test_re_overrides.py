@@ -7,7 +7,7 @@ cmds:
     ai-hats -re dry-run maintainer --json
     ai-hats -re show-prompt maintainer
     ai-hats -re list overrides
-    ai-hats -re dry-run "- devils-advocate" --json
+    ai-hats -re dry-run --json -- "- devils-advocate"
 expect: the project override is brought_by in the trace and its text follows the
         role prose; list prints the override; over active the identity is the
         canonical sum and the subtracted skill is gone
@@ -16,6 +16,8 @@ why:    an override is the only way a project adds to a role it does not own,
 """
 
 from __future__ import annotations
+
+# HATS-2011 — the catalog reads the body; the header pin alone is not a basis.
 
 import json
 from pathlib import Path
