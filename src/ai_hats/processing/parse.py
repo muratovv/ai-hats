@@ -4,6 +4,7 @@ of the wrong shape refuses; a file without a ``type`` is payload."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -92,8 +93,18 @@ class Hook:
 
 
 @dataclass(frozen=True)
+class Override:
+    """``N = N <expr>`` for every composite whose name or tag fullmatches ``apply``."""
+
+    name: str
+    path: Path
+    apply: re.Pattern[str]
+    expr: Expr
+
+
+@dataclass(frozen=True)
 class Declared:
-    """An ``operation`` or ``override``: schema-checked, not yet consumed."""
+    """An ``operation``: schema-checked, not yet consumed."""
 
     name: str
     path: Path
@@ -101,7 +112,7 @@ class Declared:
     fields: Mapping[str, object]
 
 
-Entity = Composite | PromptEntity | SkillEntity | Hook | Declared
+Entity = Composite | PromptEntity | SkillEntity | Hook | Override | Declared
 
 
 def entity_type(entity: Entity) -> str:
@@ -113,6 +124,8 @@ def entity_type(entity: Entity) -> str:
         return "skill"
     if isinstance(entity, Hook):
         return "hook"
+    if isinstance(entity, Override):
+        return "override"
     return entity.type
 
 
@@ -172,6 +185,15 @@ def _string_list(path: Path, data: Mapping[str, object], key: str) -> tuple[str,
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
         raise ProcessingError(f"{path}: {key!r} must be a list of strings")
     return tuple(value)
+
+
+def _override(path: Path, name: str, data: Mapping[str, object]) -> Override:
+    text = _string(path, data, "apply")
+    try:
+        pattern = re.compile(text)
+    except re.error as exc:
+        raise ProcessingError(f"{path}: apply: {exc}") from exc
+    return Override(name=name, path=path, apply=pattern, expr=_expr(path, data))
 
 
 def _expr(path: Path, data: Mapping[str, object]) -> Expr:
@@ -274,6 +296,8 @@ def parse_yaml(path: Path, name: str) -> Entity | None:
         raise ProcessingError(f"{path}: type {type_!r} is written as a .md file, not .yaml")
     if type_ == "hook":
         return _hook(path, name, data)
+    if type_ == "override":
+        return _override(path, name, data)
     return Declared(name=name, path=path, type=type_, fields=dict(data))
 
 

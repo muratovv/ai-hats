@@ -2,8 +2,10 @@
 composite opens in place, its sign multiplying its terms' — then fold left to
 right: ``+X`` appends X if absent, ``-X`` removes it wherever it stands.
 
-What leaves and who brought what is the trace (D8); a member a composite's
-subtraction carries away while someone else also brings it is a warning.
+The topmost binding of a composite then opens each matching override, so
+those terms are brought by the override (ADR-0035 D3). What leaves and who
+brought what is the trace (D8); a member a composite's subtraction carries
+away while someone else also brings it is a warning.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from .errors import ProcessingError
 from .expr import Expr
 from .names import resolve_term
 from .order import Binding, Program
-from .parse import Composite
+from .parse import Composite, Override
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,16 @@ class Folded:
     trace: tuple[TraceEntry, ...]
     #: For each member, the top-level term its placing occurrence descends from.
     first_top_index: Mapping[str, int]
+
+
+def _matching(program: Program, composite: Composite) -> tuple[Override, ...]:
+    """Overrides whose ``apply`` fullmatches the composite's name or a tag."""
+    labels = (composite.name, *composite.tags)
+    return tuple(
+        override
+        for override in program.overrides
+        if any(override.apply.fullmatch(label) for label in labels)
+    )
 
 
 def expand(program: Program, identity: str) -> tuple[Signed, ...]:
@@ -83,6 +95,7 @@ def expand(program: Program, identity: str) -> tuple[Signed, ...]:
                 chain = " -> ".join(name for name, _ in (*stack, key))
                 raise ProcessingError(f"cycle through {entity.name!r}: {chain}")
             out.append(Signed(here_sign, entity.name, True, declared_in, here_carrier, index))
+            opened = (*stack, key)
             visit(
                 binding.composite.expr,
                 sign=here_sign,
@@ -90,8 +103,20 @@ def expand(program: Program, identity: str) -> tuple[Signed, ...]:
                 carrier=here_carrier if here_sign < 0 else entity.name,
                 defining=binding,
                 top_index=index,
-                stack=(*stack, key),
+                stack=opened,
             )
+            # The inner binding a self-reference looks down to is not re-armed.
+            if binding is program.bindings[entity.name][-1]:
+                for override in _matching(program, binding.composite):
+                    visit(
+                        override.expr,
+                        sign=here_sign,
+                        declared_in=override.name,
+                        carrier=here_carrier if here_sign < 0 else override.name,
+                        defining=binding,
+                        top_index=index,
+                        stack=opened,
+                    )
 
     visit(
         program.top,
@@ -166,9 +191,27 @@ def fold(
     )
 
 
+def _warn_unselected(program: Program, diagnostics: list[Diagnostic]) -> None:
+    """An override that fullmatches no composite in the merged tree is a warning, not silence."""
+    composites = [
+        entity for entity in program.tree.entities.values() if isinstance(entity, Composite)
+    ]
+    for override in program.overrides:
+        if any(
+            override.apply.fullmatch(label)
+            for composite in composites
+            for label in (composite.name, *composite.tags)
+        ):
+            continue
+        diagnostics.append(
+            Diagnostic(Level.WARN, f"{override.name} selects no composite", where=override.path)
+        )
+
+
 def expand_and_fold(program: Program, identity: str, diagnostics: list[Diagnostic]) -> Folded:
     from .parse import Hook
 
+    _warn_unselected(program, diagnostics)
     consent = frozenset(
         name
         for name, entity in program.tree.entities.items()
