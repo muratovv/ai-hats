@@ -96,4 +96,10 @@ def test_a_leading_sign_over_active_drops_the_skill(tmp_project):
     assert cut["composition"]["identity"] == "maintainer - devils-advocate"
     left = {skill["name"] for skill in cut["composition"]["skills"]}
     assert not any(name.endswith("devils-advocate") for name in left)
-    tmp_project.run("-re", "show-prompt", "--", "- devils-advocate").expect_ok()
+    phrase = "steelmans the value"  # the skill's own description; OpenCode's index quotes it
+    kept = tmp_project.run("-p", "opencode", "-re", "show-prompt", "maintainer").expect_ok()
+    assert phrase in kept.stdout
+    cut_prompt = tmp_project.run(
+        "-p", "opencode", "-re", "show-prompt", "--", "- devils-advocate"
+    ).expect_ok()
+    assert phrase not in cut_prompt.stdout
