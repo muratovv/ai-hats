@@ -29,6 +29,39 @@ def test_a_subtracted_composite_names_the_shared_member(tmp_path: Path):
     assert "carried away: f3" in result.stdout
 
 
+def _carried(stdout: str) -> set[str]:
+    return {
+        line.removeprefix("carried away: ")
+        for line in stdout.splitlines()
+        if line.startswith("carried away: ")
+    }
+
+
+def test_a_subtracted_composite_does_not_report_its_own_members(tmp_path: Path):
+    """``f1`` is brought only by the composite being subtracted."""
+    root = tmp_path / "flat"
+    root.mkdir()
+    (root / "A.yaml").write_text("schema_version: 1\ntype: composite\nexpr: f1 + f2 + f3\n")
+    (root / "B.yaml").write_text("schema_version: 1\ntype: composite\nexpr: f2 + f3 + f4\n")
+    (root / "use.yaml").write_text("schema_version: 1\ntype: composite\nexpr: A + B - A\n")
+    result = _run("--carried-away", str(root))
+    assert result.returncode == 0, result.stderr
+    assert _carried(result.stdout) == {"f2", "f3"}
+
+
+def test_a_nested_composite_counts_the_member_it_brings(tmp_path: Path):
+    """``A`` brings ``f2`` through ``C``; subtracting ``A`` still carries ``f2`` away."""
+    root = tmp_path / "flat"
+    root.mkdir()
+    (root / "C.yaml").write_text("schema_version: 1\ntype: composite\nexpr: f2\n")
+    (root / "A.yaml").write_text("schema_version: 1\ntype: composite\nexpr: C + f1\n")
+    (root / "B.yaml").write_text("schema_version: 1\ntype: composite\nexpr: f2\n")
+    (root / "use.yaml").write_text("schema_version: 1\ntype: composite\nexpr: A + B - A\n")
+    result = _run("--carried-away", str(root))
+    assert result.returncode == 0, result.stderr
+    assert _carried(result.stdout) == {"f2"}
+
+
 def test_customizations_become_overrides_and_an_unknown_role_is_named(tmp_path: Path):
     home = tmp_path / "home"
     (home / "user-rules").mkdir(parents=True)

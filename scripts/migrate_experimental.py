@@ -735,18 +735,43 @@ def carried_away(root: Path) -> list[str]:
             continue
         name = "::".join(path.relative_to(root).with_suffix("").parts)
         composites[name] = _terms(str(data.get("expr") or ""))
+
+    def brought(name: str) -> set[str]:
+        """Base terms that survive opening ``name``, signs multiplied as in the fold."""
+        present: list[str] = []
+
+        def visit(current: str, sign: int, stack: tuple[str, ...]) -> None:
+            if current in stack:
+                return
+            for term_sign, term in composites[current]:
+                here = sign * term_sign
+                if term in composites:
+                    visit(term, here, (*stack, current))
+                    continue
+                if here > 0:
+                    if term not in present:
+                        present.append(term)
+                elif term in present:
+                    present.remove(term)
+
+        visit(name, 1, ())
+        return set(present)
+
     found: list[str] = []
     for terms in composites.values():
-        added = {term for sign, term in terms if sign > 0 and term in composites}
+        added = [term for sign, term in terms if sign > 0 and term in composites]
         for sign, term in terms:
             if sign > 0 or term not in composites:
                 continue
-            brought = {member for member_sign, member in composites[term] if member_sign > 0}
+            mine = brought(term)
+            others: set[str] = set()
             for other in added:
-                others = {member for member_sign, member in composites[other] if member_sign > 0}
-                for member in brought & others:
-                    if member not in found:
-                        found.append(member)
+                if other == term:
+                    continue
+                others |= brought(other)
+            for member in sorted(mine & others):
+                if member not in found:
+                    found.append(member)
     return found
 
 
