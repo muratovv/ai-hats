@@ -142,17 +142,16 @@ def test_armed_gates_resolve_to_main_when_cwd_is_a_linked_worktree(tmp_path, mon
     (wt / ".git").write_text(f"gitdir: {main / '.git' / 'worktrees' / wt.name}\n")
     ProjectConfig(provider="claude", library_paths=[]).save(main / PROJECT_CONFIG)
     monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
-    monkeypatch.chdir(wt)
     from ai_hats.composition_seam import armed_plan, build_preview_payload
     from ai_hats.githooks_resolve import resolve_git_gates_from_plan
 
-    plan = armed_plan(main, "gated")
+    plan = armed_plan(main, "gated", cwd=wt)
     assert plan is not None
     resolution = resolve_git_gates_from_plan(plan, "pre-push")
 
     assert resolution.refusals == ()
     assert [gate.path for gate in resolution.gates] == [main_script]
-    preview = build_preview_payload(main, role="gated", experimental=True)
+    preview = build_preview_payload(main, role="gated", experimental=True, cwd=wt)
     assert preview.plan is not None
     assert [hook.run.path.resolve() for hook in preview.plan.hooks.external if hook.run] == [
         wt_script
