@@ -143,6 +143,36 @@ def test_an_empty_rule_directory_and_customization_are_printed(tmp_path: Path):
     assert "user-rules produced nothing" in result.stdout
 
 
+def test_dropins_keep_each_event_and_the_executable_bit(tmp_path: Path):
+    home = tmp_path / "home"
+    for event, body in (("pre-commit", "commit\n"), ("pre-push", "push\n")):
+        script = home / ".githooks" / f"{event}.d" / "check.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text(f"#!/bin/sh\n{body}")
+        script.chmod(0o755)
+    out = tmp_path / "out"
+    result = _run("--home", str(home), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    commit = out / "hooks" / "dropin" / "pre-commit-check.sh"
+    push = out / "hooks" / "dropin" / "pre-push-check.sh"
+    assert commit.read_text() == "#!/bin/sh\ncommit\n"
+    assert push.read_text() == "#!/bin/sh\npush\n"
+    assert commit.stat().st_mode & 0o111
+    assert push.stat().st_mode & 0o111
+    assert "at: pre-commit" in (out / "hooks" / "dropin" / "pre-commit-check.yaml").read_text()
+    assert (
+        "run: pre-commit-check.sh"
+        in (out / "hooks" / "dropin" / "pre-commit-check.yaml").read_text()
+    )
+    assert "at: pre-push" in (out / "hooks" / "dropin" / "pre-push-check.yaml").read_text()
+    assert (
+        "run: pre-push-check.sh" in (out / "hooks" / "dropin" / "pre-push-check.yaml").read_text()
+    )
+    expr = (out / "overrides" / "dropins.yaml").read_text()
+    assert "+ pre-commit-check" in expr
+    assert "+ pre-push-check" in expr
+
+
 def test_customizations_become_overrides_and_an_unknown_role_is_named(tmp_path: Path):
     home = tmp_path / "home"
     (home / "user-rules").mkdir(parents=True)
@@ -175,7 +205,7 @@ def test_customizations_become_overrides_and_an_unknown_role_is_named(tmp_path: 
     assert "~/dev/ai-hats-custom" in (out / "config.yaml").read_text()
     assert "default: assistant" in (out / "ai-hats.yaml").read_text()
     assert "active: maintainer" in (out / "local.yaml").read_text()
-    assert "at: pre-commit" in (out / "hooks" / "dropin" / "check.yaml").read_text()
+    assert "at: pre-commit" in (out / "hooks" / "dropin" / "pre-commit-check.yaml").read_text()
     first = {
         path.relative_to(out).as_posix(): path.read_bytes()
         for path in out.rglob("*")

@@ -897,22 +897,25 @@ def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
             _put(out / "ai-hats.yaml", f"library:\n  default: {project['default_role']}\n")
         if project.get("active_role"):
             _put(out / "local.yaml", f"active: {project['active_role']}\n")
-    dropins: list[tuple[str, str]] = []
+    dropins: list[str] = []
     hooks = home / ".githooks"
     if hooks.is_dir():
         for event_dir in sorted(hooks.glob("*.d")):
             event = event_dir.name[: -len(".d")]
             for script in sorted(path for path in event_dir.iterdir() if path.is_file()):
-                stem = script.stem
-                dropins.append((event, stem))
-                _put(out / "hooks" / "dropin" / script.name, script.read_text())
+                key = f"{event}-{script.stem}"
+                filename = f"{key}{script.suffix}"
+                dropins.append(key)
+                dest = out / "hooks" / "dropin" / filename
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(script, dest)
                 _put(
-                    out / "hooks" / "dropin" / f"{stem}.yaml",
+                    out / "hooks" / "dropin" / f"{key}.yaml",
                     f"schema_version: {SCHEMA_VERSION}\ntype: hook\nkind: git\n"
-                    f"at: {event}\nrun: {script.name}\n",
+                    f"at: {event}\nrun: {filename}\n",
                 )
     if dropins:
-        expr = " ".join(f"+ {stem}" for _, stem in dropins)
+        expr = " ".join(f"+ {key}" for key in dropins)
         _put(
             out / "overrides" / "dropins.yaml",
             f'schema_version: {SCHEMA_VERSION}\ntype: override\napply: ".*"\nexpr: "{expr}"\n',
