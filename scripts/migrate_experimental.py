@@ -796,7 +796,7 @@ def _known_names(root: Path | None) -> set[str] | None:
 
 def _stanza_expr(overlay: dict) -> str:
     parts: list[str] = []
-    for bucket, sign in (("add", "+"), ("remove", "-")):
+    for bucket, sign in (("remove", "-"), ("add", "+")):
         block = overlay.get(bucket) or {}
         if not isinstance(block, dict):
             continue
@@ -820,8 +820,19 @@ def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
         for role, overlay in data.items():
             if known is not None and role not in known:
                 notes.append(f"unknown role: {role}")
-            expr = _stanza_expr(overlay if isinstance(overlay, dict) else {})
+            overlay = overlay if isinstance(overlay, dict) else {}
+            expr = _stanza_expr(overlay)
+            prose = overlay.get("injection_append")
+            if isinstance(prose, str) and prose.strip():
+                term = f"customize-{role}-injection"
+                body = prose if prose.endswith("\n") else f"{prose}\n"
+                _put(
+                    out / f"{term}.md",
+                    f"---\nschema_version: {SCHEMA_VERSION}\ntype: prompt\nblock: body\n---\n{body}",
+                )
+                expr = f"{expr} + {term}".strip()
             if not expr:
+                notes.append(f"customization produced nothing: {role}")
                 continue
             _put(
                 out / "overrides" / f"customize-{role}.yaml",

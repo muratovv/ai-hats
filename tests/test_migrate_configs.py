@@ -62,6 +62,54 @@ def test_a_nested_composite_counts_the_member_it_brings(tmp_path: Path):
     assert _carried(result.stdout) == {"f2"}
 
 
+def test_a_customization_removes_before_it_adds(tmp_path: Path):
+    """Remove-then-add moves the name to the end; add-then-remove deletes it."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "customizations.yaml").write_text(
+        "customizations:\n"
+        "  maintainer:\n"
+        "    add:\n"
+        "      traits: [focus]\n"
+        "    remove:\n"
+        "      traits: [focus]\n"
+    )
+    out = tmp_path / "out"
+    result = _run("--home", str(home), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    text = (out / "overrides" / "customize-maintainer.yaml").read_text()
+    expr = text.split('expr: "', 1)[1].split('"', 1)[0]
+    assert expr.index("- focus") < expr.index("+ focus")
+
+
+def test_injection_append_becomes_a_prompt_on_the_override(tmp_path: Path):
+    """Prose that was only an append is a prompt the override adds."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "customizations.yaml").write_text(
+        "customizations:\n  maintainer:\n    injection_append: Remember the timer.\n"
+    )
+    out = tmp_path / "out"
+    result = _run("--home", str(home), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    prompts = list(out.rglob("*.md"))
+    assert prompts, result.stdout
+    assert "Remember the timer." in prompts[0].read_text()
+    text = (out / "overrides" / "customize-maintainer.yaml").read_text()
+    assert "+ " in text
+
+
+def test_an_empty_customization_is_printed(tmp_path: Path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "customizations.yaml").write_text("customizations:\n  maintainer: {}\n")
+    out = tmp_path / "out"
+    result = _run("--home", str(home), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    assert "customization produced nothing: maintainer" in result.stdout
+    assert not (out / "overrides").exists()
+
+
 def test_customizations_become_overrides_and_an_unknown_role_is_named(tmp_path: Path):
     home = tmp_path / "home"
     (home / "user-rules").mkdir(parents=True)
