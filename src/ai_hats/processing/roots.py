@@ -7,12 +7,13 @@ sorted order; a folder holding ``SKILL.md`` is one entity and is not entered.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..diagnostics import Diagnostic, Level
 from ..paths.constants import LIBRARY_LAYERS
+from ..provenance import ComponentLayer
 from .errors import ProcessingError
 from .parse import Entity, Hook, parse_md, parse_skill, parse_yaml, place_payload
 
@@ -23,6 +24,9 @@ _SKIPPED = frozenset({"__pycache__"})
 @dataclass(frozen=True)
 class Root:
     path: Path
+    #: Who may be named from files in this root (ADR-0035 D2). Tests set it;
+    #: the candidate chain sets it for a real library.
+    owner: ComponentLayer = ComponentLayer.BUILT_IN
 
 
 @dataclass(frozen=True)
@@ -37,19 +41,57 @@ class Library:
     layers: tuple[Layer, ...]
 
 
-def candidate_roots(library_paths: Sequence[Path], *, builtin_root: Path | None) -> list[Root]:
+def root_owner(
+    path: Path,
+    *,
+    project_dir: Path,
+    user_roots: Sequence[Path],
+    project_roots: Sequence[Path],
+) -> ComponentLayer:
+    """Owner of a non-builtin root. User roots win over project roots when a
+    directory is listed in both — the file is the user's."""
+    resolved = path.resolve()
+    if _within(resolved, user_roots):
+        return ComponentLayer.GLOBAL
+    if _within(resolved, project_roots) or _within(resolved, (project_dir,)):
+        return ComponentLayer.PROJECT
+    return ComponentLayer.BUILT_IN
+
+
+def _within(path: Path, roots: Sequence[Path]) -> bool:
+    for root in roots:
+        try:
+            resolved = root.resolve()
+        except OSError:
+            continue
+        if path == resolved or resolved in path.parents:
+            return True
+    return False
+
+
+def candidate_roots(
+    library_paths: Sequence[Path],
+    *,
+    builtin_root: Path | None,
+    owner_of: Callable[[Path], ComponentLayer] | None = None,
+) -> list[Root]:
     """Today's chain mapped onto its ``experimental/`` copies (ADR-0034 D6): a
     shipped layer under ``builtin_root`` reads ``<builtin_root>/experimental/<layer>``,
     any other root reads ``<root>/experimental``; a copy that does not exist is
-    not a root."""
+    not a root. A shipped layer is ``built-in``; ``owner_of`` classifies the rest."""
     roots: list[Root] = []
     for path in library_paths:
-        if builtin_root is not None and path.parent == builtin_root and path.name in LIBRARY_LAYERS:
+        builtin = (
+            builtin_root is not None and path.parent == builtin_root and path.name in LIBRARY_LAYERS
+        )
+        if builtin:
             candidate = builtin_root / EXPERIMENTAL_DIRNAME / path.name
+            owner = ComponentLayer.BUILT_IN
         else:
             candidate = path / EXPERIMENTAL_DIRNAME
+            owner = owner_of(path) if owner_of is not None else ComponentLayer.BUILT_IN
         if candidate.is_dir():
-            roots.append(Root(candidate))
+            roots.append(Root(candidate, owner=owner))
     return roots
 
 
@@ -100,7 +142,7 @@ def _walk(root: Root, diagnostics: list[Diagnostic]) -> tuple[Entity, ...]:
                             )
                         )
                     else:
-                        entities.append(skill)
+                        entities.append(replace(skill, owner=root.owner))
                     continue
                 visit(child, (*segments, child.name))
                 continue
@@ -125,7 +167,7 @@ def _walk(root: Root, diagnostics: list[Diagnostic]) -> tuple[Entity, ...]:
             else:
                 if isinstance(entity, Hook):
                     entity = place_payload(entity, root.path)
-                entities.append(entity)
+                entities.append(replace(entity, owner=root.owner))
 
     visit(root.path, ())
     return tuple(entities)

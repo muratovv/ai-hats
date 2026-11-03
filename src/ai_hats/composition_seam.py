@@ -437,6 +437,138 @@ def build_preview_payload(
     )
 
 
+def _fresh_roots(chain: list[Path], paths: list[Path]) -> list[Path]:
+    """Directories not already searched, in the order they were named."""
+    on_chain = {path.resolve() for path in chain}
+    fresh: list[Path] = []
+    for path in paths:
+        if not path.is_dir():
+            continue
+        resolved = path.resolve()
+        if resolved in on_chain:
+            continue
+        on_chain.add(resolved)
+        fresh.append(path)
+    return fresh
+
+
+def _insert_user_library_paths(
+    chain: list[Path],
+    user_paths: list[Path],
+    *,
+    project_dir: Path,
+    prefer_cwd: bool,
+    cwd: Path | None,
+    remap: tuple[Path, Path] | None,
+) -> list[Path]:
+    """User ``library.paths`` follow ``~/.ai-hats`` and precede every project root."""
+    from .library_paths import _repoint, user_global_library_paths
+    from .paths import builtin_library_layers
+    from .skill_sources import skill_source_roots
+
+    fresh = _fresh_roots(chain, user_paths)
+    if not fresh:
+        return chain
+    leading = {
+        path.resolve()
+        for path in builtin_library_layers(project_dir, prefer_cwd=prefer_cwd, cwd=cwd)
+    }
+    leading.update(path.resolve() for path in skill_source_roots())
+    leading.update(_repoint(path, remap).resolve() for path in user_global_library_paths())
+    insert_at = 0
+    for path in chain:
+        if path.resolve() not in leading:
+            break
+        insert_at += 1
+    return [*chain[:insert_at], *fresh, *chain[insert_at:]]
+
+
+def _insert_project_library_paths(
+    chain: list[Path],
+    project_paths: list[Path],
+    *,
+    project_dir: Path,
+    cwd: Path | None,
+) -> list[Path]:
+    """Project ``library.paths`` precede ``<project>/libraries``."""
+    from .library_paths import worktree_local_libraries
+
+    fresh = _fresh_roots(chain, project_paths)
+    if not fresh:
+        return chain
+    local = worktree_local_libraries(project_dir, cwd) or (project_dir / "libraries")
+    if local.is_dir():
+        resolved = local.resolve()
+        for index, path in enumerate(chain):
+            if path.resolve() == resolved:
+                return [*chain[:index], *fresh, *chain[index:]]
+    return [*chain, *fresh]
+
+
+def _candidate_roots(asm, project_dir: Path, diagnostics: list[Diagnostic]):
+    """The candidate chain, with user ``library.paths`` among the user roots."""
+    from pathlib import Path as FilePath
+
+    from .library_paths import (
+        _repoint,
+        _worktree_remap,
+        user_global_library_paths,
+        worktree_local_libraries,
+    )
+    from .paths import builtin_library_root
+    from .processing import candidate_roots
+    from .processing.roots import root_owner
+    from .processing.slots import read_slots
+    from .provenance import ComponentLayer
+
+    slots = read_slots(project_dir, asm.project_config, diagnostics)
+    here = asm.cwd if asm.cwd is not None else FilePath.cwd()
+    remap = _worktree_remap(project_dir, here)
+    user_configured = [_repoint(path, remap) for path in slots.user_paths]
+    user_roots = [
+        *(_repoint(path, remap) for path in user_global_library_paths()),
+        *user_configured,
+    ]
+    project_roots: list[FilePath] = []
+    for configured in asm.project_config.library_paths:
+        path = FilePath(configured).expanduser()
+        resolved = path.resolve() if path.is_absolute() else (project_dir / path).resolve()
+        project_roots.append(_repoint(resolved, remap))
+    project_roots.extend(_repoint(path, remap) for path in slots.project_paths)
+    local = worktree_local_libraries(project_dir, here) or (project_dir / "libraries")
+    if local.is_dir():
+        project_roots.append(local.resolve())
+
+    def owner_of(path: FilePath) -> ComponentLayer:
+        return root_owner(
+            path,
+            project_dir=project_dir,
+            user_roots=user_roots,
+            project_roots=project_roots,
+        )
+
+    chain = _insert_user_library_paths(
+        list(asm.library_paths),
+        user_configured,
+        project_dir=project_dir,
+        prefer_cwd=asm.prefer_cwd,
+        cwd=asm.cwd,
+        remap=remap,
+    )
+    chain = _insert_project_library_paths(
+        chain,
+        [_repoint(path, remap) for path in slots.project_paths],
+        project_dir=project_dir,
+        cwd=here,
+    )
+    roots = candidate_roots(
+        chain,
+        builtin_root=builtin_library_root(project_dir, prefer_cwd=True, cwd=here),
+        owner_of=owner_of,
+    )
+    return slots, roots
+
+
 def _candidate_plan(
     project_dir: Path,
     expression: str | None,
@@ -446,23 +578,26 @@ def _candidate_plan(
 ):
     """The plan only. A gate reads its hooks and does not need a provider."""
     from .assembler import Assembler
-    from .paths import builtin_library_root
-    from .processing import ProcessingError, candidate_roots, compose
+    from .processing import ProcessingError, compose
 
     if not expression:
         raise ProcessingError('-re needs an expression: ai-hats -re dry-run "<expr>"')
     asm = Assembler(project_dir, prefer_cwd=prefer_cwd, cwd=cwd)
-    roots = candidate_roots(
-        asm.library_paths,
-        builtin_root=builtin_library_root(project_dir, prefer_cwd=prefer_cwd, cwd=cwd),
-    )
+    diagnostics: list[Diagnostic] = []
+    slots, roots = _candidate_roots(asm, project_dir, diagnostics)
     if not roots:
         raise ProcessingError(
             "no experimental/ under any library root — the candidate library is produced by "
             "scripts/migrate_experimental.py"
         )
-    diagnostics: list[Diagnostic] = []
-    plan = compose(expression, roots, layout=asm.layout, diagnostics=diagnostics)
+    plan = compose(
+        expression or None,
+        roots,
+        layout=asm.layout,
+        diagnostics=diagnostics,
+        default=slots.default,
+        active=slots.active,
+    )
     return asm, plan, tuple(diagnostics)
 
 

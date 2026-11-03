@@ -193,7 +193,7 @@ class Assembler:
     def _worktree_local_libraries(self) -> Path | None:
         from ai_hats.library_paths import worktree_local_libraries
 
-        return worktree_local_libraries(self.project_dir)
+        return worktree_local_libraries(self.project_dir, self.cwd)
 
     def _cleanup_legacy_claude_publish(self) -> None:
         """Thin seam over the shared legacy sweeps: the generic

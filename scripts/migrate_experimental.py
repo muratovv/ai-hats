@@ -711,6 +711,244 @@ def migrate(root: Path, only: Iterable[str]) -> Report:
     return report
 
 
+def _terms(expr: str) -> list[tuple[int, str]]:
+    sign = 1
+    found: list[tuple[int, str]] = []
+    for word in expr.split():
+        if word == "+":
+            sign = 1
+            continue
+        if word == "-":
+            sign = -1
+            continue
+        found.append((sign, word))
+        sign = 1
+    return found
+
+
+def _scan_roots(root: Path) -> list[Path]:
+    """A library of layers is scanned per layer; a flat root is one layer."""
+    layers = [root / name for name in LAYERS if (root / name).is_dir()]
+    return layers or [root]
+
+
+def _resolve_composite(term: str, names: dict[str, object]) -> str | None:
+    """An exact composite name wins; a unique ``::`` suffix otherwise, else a leaf."""
+    if term in names:
+        return term
+    candidates = [name for name in names if name.endswith("::" + term)]
+    if len(candidates) > 1:
+        listed = ", ".join(sorted(candidates))
+        raise Refusal(f"{term!r} is ambiguous — it names {listed}; write a longer suffix")
+    return candidates[0] if candidates else None
+
+
+def carried_away(root: Path) -> list[str]:
+    """Members a ``- <composite>`` removes that another added composite also brings."""
+    composites: dict[str, list[tuple[int, str]]] = {}
+    for layer_root in _scan_roots(root):
+        for path in sorted(layer_root.rglob("*.yaml")):
+            data = yaml.safe_load(path.read_text()) or {}
+            if not isinstance(data, dict) or data.get("type") != "composite":
+                continue
+            name = "::".join(path.relative_to(layer_root).with_suffix("").parts)
+            composites[name] = _terms(str(data.get("expr") or ""))
+
+    def brought(name: str) -> set[str]:
+        """Base terms that survive opening ``name``, signs multiplied as in the fold."""
+        present: list[str] = []
+
+        def visit(current: str, sign: int, stack: tuple[str, ...]) -> None:
+            if current in stack:
+                return
+            for term_sign, term in composites[current]:
+                here = sign * term_sign
+                resolved = _resolve_composite(term, composites)
+                if resolved is not None:
+                    visit(resolved, here, (*stack, current))
+                    continue
+                if here > 0:
+                    if term not in present:
+                        present.append(term)
+                elif term in present:
+                    present.remove(term)
+
+        visit(name, 1, ())
+        return set(present)
+
+    found: list[str] = []
+    for terms in composites.values():
+        added = [
+            resolved
+            for sign, term in terms
+            if sign > 0 and (resolved := _resolve_composite(term, composites)) is not None
+        ]
+        for sign, term in terms:
+            if sign > 0:
+                continue
+            resolved = _resolve_composite(term, composites)
+            if resolved is None:
+                continue
+            mine = brought(resolved)
+            others: set[str] = set()
+            for other in added:
+                if other == resolved:
+                    continue
+                others |= brought(other)
+            for member in sorted(mine & others):
+                if member not in found:
+                    found.append(member)
+    return found
+
+
+def _put(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file() and path.read_text() == text:
+        return
+    path.write_text(text)
+
+
+def _known_names(root: Path | None) -> set[str] | None:
+    if root is None:
+        return None
+    names: set[str] = set()
+    for path in root.rglob("*.yaml"):
+        data = yaml.safe_load(path.read_text()) or {}
+        if isinstance(data, dict) and data.get("type") == "composite":
+            names.add(path.stem)
+            names.add("::".join(path.relative_to(root).with_suffix("").parts))
+    return names
+
+
+def _stanza_expr(overlay: dict) -> str:
+    parts: list[str] = []
+    for bucket, sign in (("remove", "-"), ("add", "+")):
+        block = overlay.get(bucket) or {}
+        if not isinstance(block, dict):
+            continue
+        for key in ("traits", "rules", "skills"):
+            for name in block.get(key) or []:
+                parts.append(f"{sign} {name}")
+    return " ".join(parts)
+
+
+def _write_customizations(
+    data: object, out: Path, notes: list[str], known: set[str] | None
+) -> None:
+    """The same override files for a user ``customizations.yaml`` and a project map."""
+    if not isinstance(data, dict) or not data:
+        notes.append("customization produced nothing")
+        return
+    for role, overlay in data.items():
+        if known is not None and role not in known:
+            notes.append(f"unknown role: {role}")
+        overlay = overlay if isinstance(overlay, dict) else {}
+        expr = _stanza_expr(overlay)
+        prose = overlay.get("injection_append")
+        if isinstance(prose, str) and prose.strip():
+            term = f"customize-{role}-injection"
+            body = prose if prose.endswith("\n") else f"{prose}\n"
+            _put(
+                out / f"{term}.md",
+                f"---\nschema_version: {SCHEMA_VERSION}\ntype: prompt\nblock: body\n---\n{body}",
+            )
+            expr = f"{expr} + {term}".strip()
+        if not expr:
+            notes.append(f"customization produced nothing: {role}")
+            continue
+        _put(
+            out / "overrides" / f"customize-{role}.yaml",
+            f"schema_version: {SCHEMA_VERSION}\ntype: override\n"
+            f'apply: "^{role}$"\nexpr: "{expr}"\n',
+        )
+
+
+def _rule_dirs(home: Path, project: dict | None) -> list[Path]:
+    """``home/user-rules`` for ``~/.ai-hats``, plus the project's ``ai_hats_dir`` copy."""
+    found: list[Path] = []
+    direct = home / "user-rules"
+    if direct.is_dir():
+        found.append(direct)
+    if project is None:
+        return found
+    ai_hats_dir = project.get("ai_hats_dir") or ".agent/ai-hats"
+    if not isinstance(ai_hats_dir, str):
+        ai_hats_dir = ".agent/ai-hats"
+    laid = home / ai_hats_dir / "user-rules"
+    if laid.is_dir() and all(laid.resolve() != path.resolve() for path in found):
+        found.append(laid)
+    return found
+
+
+def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
+    """Turn today's customizations, user rules, paths and dropins into flat files."""
+    notes: list[str] = []
+    customs = home / "customizations.yaml"
+    if customs.is_file():
+        _write_customizations(_load_yaml(customs).get("customizations") or {}, out, notes, known)
+    project_file = home / "ai-hats.yaml"
+    project = _load_yaml(project_file) if project_file.is_file() else None
+    if project is not None and "customizations" in project:
+        _write_customizations(project.get("customizations") or {}, out, notes, known)
+    rules: list[Path] = []
+    for directory in _rule_dirs(home, project):
+        found = sorted(directory.glob("*.md"))
+        if not found:
+            notes.append("user-rules produced nothing")
+        rules.extend(found)
+    rule_names: list[str] = []
+    for rule in rules:
+        rule_names.append(rule.stem)
+        body = rule.read_text()
+        if not body.endswith("\n"):
+            body += "\n"
+        _put(
+            out / "rules" / f"{rule.stem}.md",
+            f"---\nschema_version: {SCHEMA_VERSION}\ntype: prompt\nblock: RULES\n"
+            f"heading: {rule.stem}\n---\n{body}",
+        )
+    if rule_names:
+        expr = " ".join(f"+ rules::{name}" for name in rule_names)
+        _put(
+            out / "overrides" / "user-rules.yaml",
+            f'schema_version: {SCHEMA_VERSION}\ntype: override\napply: ".*"\nexpr: "{expr}"\n',
+        )
+    paths_file = home / "library_paths.yaml"
+    if paths_file.is_file():
+        paths = _load_yaml(paths_file).get("paths") or []
+        lines = "\n".join(f"    - {item}" for item in paths)
+        _put(out / "config.yaml", f"library:\n  paths:\n{lines}\n")
+    if project is not None:
+        if project.get("default_role"):
+            _put(out / "ai-hats.yaml", f"library:\n  default: {project['default_role']}\n")
+        if project.get("active_role"):
+            _put(out / "local.yaml", f"active: {project['active_role']}\n")
+    dropins: list[str] = []
+    hooks = home / ".githooks"
+    if hooks.is_dir():
+        for event_dir in sorted(hooks.glob("*.d")):
+            event = event_dir.name[: -len(".d")]
+            for script in sorted(path for path in event_dir.iterdir() if path.is_file()):
+                key = f"{event}-{script.stem}"
+                filename = f"{key}{script.suffix}"
+                dropins.append(key)
+                dest = out / "hooks" / "dropin" / filename
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(script, dest)
+                _put(
+                    out / "hooks" / "dropin" / f"{key}.yaml",
+                    f"schema_version: {SCHEMA_VERSION}\ntype: hook\nkind: git\n"
+                    f"at: {event}\nrun: {filename}\n",
+                )
+    if dropins:
+        expr = " ".join(f"+ hooks::dropin::{key}" for key in dropins)
+        _put(
+            out / "overrides" / "dropins.yaml",
+            f'schema_version: {SCHEMA_VERSION}\ntype: override\napply: ".*"\nexpr: "{expr}"\n',
+        )
+    return notes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -732,7 +970,27 @@ def main(argv: list[str] | None = None) -> int:
         metavar="COMPOSITE",
         help="roles/traits whose closure to translate",
     )
+    parser.add_argument("--home", type=Path, help="today's user/project dir to translate")
+    parser.add_argument("--out", type=Path, help="where --home writes the flat files")
+    parser.add_argument("--known", type=Path, help="flat root of composites that exist")
+    parser.add_argument("--carried-away", type=Path, help="flat root to scan for - <composite>")
     args = parser.parse_args(argv)
+    if args.carried_away is not None:
+        try:
+            names = carried_away(args.carried_away)
+        except Refusal as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 1
+        for name in names:
+            print(f"carried away: {name}")
+        return 0
+    if args.home is not None:
+        if args.out is None:
+            print("error: --home needs --out", file=sys.stderr)
+            return 2
+        for line in migrate_home(args.home, args.out, _known_names(args.known)):
+            print(line)
+        return 0
     if not all((args.root / layer).is_dir() for layer in LAYERS[:2]):
         print(f"error: {args.root} does not hold core/ and usage/", file=sys.stderr)
         return 2

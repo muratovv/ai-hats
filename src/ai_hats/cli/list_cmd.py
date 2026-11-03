@@ -135,6 +135,29 @@ def list_hooks(expr: str) -> None:
         click.echo(f"runtime\t{hook.at.value}\t{hook.matcher}")
 
 
+@list_cmd.command("overrides")
+def list_overrides() -> None:
+    """Print the override entities the candidate library declares."""
+    from ..assembler import Assembler
+    from ..composition_seam import _candidate_roots
+    from ..processing import read_roots
+    from ..processing.parse import entity_type
+
+    _require_re("overrides")
+    project = resolve_project().layout.root
+    asm = Assembler(project, prefer_cwd=True)
+    _, roots = _candidate_roots(asm, project, [])
+    library = read_roots(roots, [])
+    names = sorted(
+        entity.name
+        for layer in library.layers
+        for entity in layer.entities
+        if entity_type(entity) == "override"
+    )
+    for name in names:
+        click.echo(name)
+
+
 @list_cmd.command("operations")
 def list_operations() -> None:
     """Print the operation entities the candidate library declares."""

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**372 of 372 files catalogued — 381 flows.**
+**373 of 373 files catalogued — 382 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3230,6 +3230,23 @@ as a claim to check, not as evidence.
 
 - **expect** — the bare -re form matches the escaped form, a plus without spaces reaches the expression parser, a quoted sum stays an expression, a bare word without -re is still refused, and -r still dry-runs the role
 - **why** — -re is a flag, so the expression stayed in the leftover and the argv guard treated one word as a missing command
+
+## `test_re_overrides.py`
+
+*pins HATS-2011*
+
+- **flow** — a maintainer adds an override in the project's candidate library and reads it back from dry-run, show-prompt and list; a leading minus over active drops a skill the bare role still carries
+- **cmds**
+
+  ```console
+  ai-hats -re dry-run maintainer --json
+  ai-hats -re show-prompt maintainer
+  ai-hats -re list overrides
+  ai-hats -re dry-run --json -- "- devils-advocate"
+  ```
+
+- **expect** — the project override is brought_by in the trace and its text follows the role prose; list prints the override; over active the identity is the canonical sum and the subtracted skill is gone
+- **why** — an override is the only way a project adds to a role it does not own, and a leading sign is how one machine takes one skill off active
 
 ## `test_re_projections.py`
 

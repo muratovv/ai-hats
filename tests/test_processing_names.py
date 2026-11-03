@@ -1,6 +1,7 @@
 """Name resolution (ADR-0035 D2): a term is a suffix over the merged tree —
-exactly one match resolves, zero and several refuse, a type that is never a
-term refuses after resolving, last-wins by full name between layers."""
+exactly one match resolves, an exact name wins over a longer suffix, zero and
+several suffixes refuse, a type that is never a term refuses after resolving,
+last-wins by full name between layers."""
 
 from __future__ import annotations
 
@@ -52,6 +53,23 @@ def test_several_matches_refuse_naming_every_candidate(tree):
         resolve(tree, "prompt")
     message = str(caught.value)
     assert all(name in message for name in ("alpha::prompt", "bare::prompt", "shared::prompt"))
+
+
+def test_an_exact_name_beats_a_longer_suffix(tmp_path: Path):
+    """``worker`` is the composite. ``rules::worker`` is written in full."""
+    root = write_root(
+        tmp_path / "lib",
+        {
+            "worker.yaml": "schema_version: 1\ntype: composite\nexpr: base\n",
+            "base.md": "---\nschema_version: 1\ntype: prompt\nblock: body\n---\nBASE\n",
+            "rules/worker.md": (
+                "---\nschema_version: 1\ntype: prompt\nblock: RULES\nheading: worker\n---\nRULE\n"
+            ),
+        },
+    )
+    tree = merge(read_roots([Root(root)], []), [])
+    assert resolve(tree, "worker") == "worker"
+    assert resolve(tree, "rules::worker") == "rules::worker"
 
 
 def test_a_type_that_is_never_a_term_refuses_after_resolving(tree):
