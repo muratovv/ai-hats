@@ -183,6 +183,18 @@ def test_lone_unknown_word_is_refused_without_being_listed() -> None:
     assert "sesion" in _refusal("sesion")
 
 
+def test_a_lone_word_under_re_is_an_expression() -> None:
+    """`-re` already claimed the next word, the way `-r` consumes its value.
+
+    A single token is the candidate expression. The same token without the
+    flag stays a typo, and a reserved word stays reserved.
+    """
+    _allowed("maintainer", raw=("-re", "maintainer"))
+    _allowed("maintainer+worker", raw=("-re", "maintainer+worker"))
+    assert "maintainer" in _refusal("maintainer")
+    assert "githooks" in _refusal("githooks", raw=("-re", "githooks"))
+
+
 def test_prose_survives_the_default_refusal() -> None:
     """The two shapes prose actually takes: several tokens, or one with spaces."""
     _allowed("hello", "world")

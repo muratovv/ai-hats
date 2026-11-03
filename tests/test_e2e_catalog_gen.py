@@ -331,6 +331,14 @@ def test_check_cmds_sub_cases():
     )
 
 
+def test_a_lone_word_under_re_is_a_catalogued_command():
+    """`-re maintainer` is a launch. The same word without the flag is not."""
+    assert mod.validate_cmd_line("ai-hats -re --dry-run-json maintainer") is None
+    assert mod.validate_cmd_line("ai-hats -re --dry-run-json -- maintainer") is None
+    bare = mod.validate_cmd_line("ai-hats maintainer")
+    assert bare is not None and "unknown subcommand 'maintainer'" in bare
+
+
 def test_check_cmds_with_real_click_trees():
     ai_hats_cli, rack_cli = mod._get_cli_trees()
 

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**371 of 371 files catalogued — 380 flows.**
+**372 of 372 files catalogued — 381 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -3211,6 +3211,25 @@ as a claim to check, not as evidence.
 
 - **expect** — the done gate and the consent points are visible, a removal is a note, show-prompt stays the prompt, and list prints the same gate and the four operations
 - **why** — hooks are not in the prompt, so the preview is the only place they show
+
+## `test_re_expression_parity.py`
+
+*pins HATS-2134*
+
+- **flow** — a person starts a candidate expression with the same spelling as a role
+- **cmds**
+
+  ```console
+  ai-hats -re --dry-run-json maintainer
+  ai-hats -re --dry-run-json -- maintainer
+  ai-hats -re --dry-run-json maintainer+worker
+  ai-hats -re --dry-run-json "maintainer + worker"
+  ai-hats maintainer  # no-resolve: bare word, the refusal this flow pins
+  ai-hats -r maintainer --dry-run
+  ```
+
+- **expect** — the bare -re form matches the escaped form, a plus without spaces reaches the expression parser, a quoted sum stays an expression, a bare word without -re is still refused, and -r still dry-runs the role
+- **why** — -re is a flag, so the expression stayed in the leftover and the argv guard treated one word as a missing command
 
 ## `test_re_projections.py`
 

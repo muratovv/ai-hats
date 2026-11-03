@@ -446,7 +446,8 @@ def validate_cmd_line(cmd_str: str) -> str | None:
                 i += 1
                 continue
             if curr_cmd is main and getattr(curr_cmd, "allow_extra_args", False):
-                if " " in arg or (i > 0 and not arg.isalnum()):
+                # `-re` claims the leftover word as the candidate expression.
+                if " " in arg or (i > 0 and not arg.isalnum()) or "-re" in args[:i]:
                     i += 1
                     continue
             return f"unknown subcommand {arg!r} for command {ctx.info_name!r}"

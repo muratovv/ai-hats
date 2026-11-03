@@ -88,6 +88,32 @@ def test_the_projections_refuse_without_the_flag():
     assert "ai-hats config show-prompt --role <role>" in result.output
 
 
+def test_a_single_token_expression_matches_the_escaped_launch(project: Path):
+    """`ai-hats -re alpha` is the same candidate record as `ai-hats -re -- alpha`."""
+    runner = CliRunner()
+    direct = runner.invoke(main, ["-re", "--dry-run-json", "alpha"])
+    escaped = runner.invoke(main, ["-re", "--dry-run-json", "--", "alpha"])
+    assert direct.exit_code == 0, direct.output
+    assert escaped.exit_code == 0, escaped.output
+    assert "not an ai-hats command" not in direct.output
+    left = json.loads(direct.output)
+    right = json.loads(escaped.output)
+    assert left["role"] == right["role"] == "alpha"
+    assert left["composition"]["identity"] == right["composition"]["identity"]
+    assert left["composition"]["dsl"] == right["composition"]["dsl"] == "re"
+
+
+def test_a_plus_without_spaces_reaches_the_expression_parser(project: Path):
+    """One word with `+` is an expression. The parser asks for spaces around it."""
+    runner = CliRunner()
+    direct = runner.invoke(main, ["-re", "--dry-run-json", "alpha+bare"])
+    escaped = runner.invoke(main, ["-re", "--dry-run-json", "--", "alpha+bare"])
+    for result in (direct, escaped):
+        assert result.exit_code == 2, result.output
+        assert "not an ai-hats command" not in result.output
+        assert "separate token" in result.output
+
+
 def test_a_bare_flag_dry_run_is_the_candidate_record(project: Path):
     result = CliRunner().invoke(main, ["-re", "--dry-run-json", "alpha + bare"])
     assert result.exit_code == 0, result.output
