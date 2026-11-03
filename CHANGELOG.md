@@ -10,6 +10,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A grok question with `multiSelect` is an array property** (HATS-2135). `elicitation/create` sends `type: array`, `uniqueItems: true`, and the option labels on `items.enum`. A question without the flag stays a string enum.
+
 ### Changed
 
 - **The library floor follows the maintainer candidate** (HATS-1969). `ai-hats-library` 0.11.3. This package requires `ai-hats-library>=0.11.3`.

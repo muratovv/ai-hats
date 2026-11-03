@@ -124,18 +124,6 @@ class GrokAcpChild:
 
 
 def _elicitation(request: dict[str, Any], questions: list[dict[str, Any]]) -> dict[str, Any]:
-    properties: dict[str, Any] = {}
-    for question in questions:
-        name = _one_question(question)
-        labels = [
-            option.get("label")
-            for option in question.get("options") or []
-            if isinstance(option, dict) and isinstance(option.get("label"), str)
-        ]
-        schema: dict[str, Any] = {"type": "string", "description": name}
-        if labels:
-            schema["enum"] = labels
-        properties[name] = schema
     return {
         "jsonrpc": "2.0",
         "id": request.get("id"),
@@ -143,8 +131,34 @@ def _elicitation(request: dict[str, Any], questions: list[dict[str, Any]]) -> di
         "params": {
             "mode": "form",
             "message": _one_question(questions[0]),
-            "requestedSchema": {"type": "object", "properties": properties},
+            "requestedSchema": {
+                "type": "object",
+                "properties": {
+                    _one_question(question): _question_schema(question) for question in questions
+                },
+            },
         },
+    }
+
+
+def _question_schema(question: dict[str, Any]) -> dict[str, Any]:
+    name = _one_question(question)
+    labels = _option_labels(question)
+    if not _allows_several(question):
+        schema: dict[str, Any] = {"type": "string", "description": name}
+        if labels:
+            schema["enum"] = labels
+        return schema
+
+    items: dict[str, Any] = {"type": "string"}
+    if labels:
+        items["enum"] = labels
+    # A string enum is one pick. Several picks are an array, or the form draws radios.
+    return {
+        "type": "array",
+        "uniqueItems": True,
+        "description": name,
+        "items": items,
     }
 
 
@@ -201,3 +215,18 @@ def _question_text(params: dict[str, Any]) -> str:
 def _one_question(question: dict[str, Any]) -> str:
     text = question.get("question")
     return text if isinstance(text, str) else ""
+
+
+def _option_labels(question: dict[str, Any]) -> list[str]:
+    return [
+        option["label"]
+        for option in question.get("options") or []
+        if isinstance(option, dict) and isinstance(option.get("label"), str)
+    ]
+
+
+def _allows_several(question: dict[str, Any]) -> bool:
+    flag = question.get("multiSelect")
+    if flag is None:
+        flag = question.get("multi_select")
+    return flag is True
