@@ -3,11 +3,15 @@ lower layer's ``apply: ".*"`` still reaches a composite that exists only above."
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from ai_hats.composition_seam import build_preview_payload
 from ai_hats.diagnostics import Diagnostic
+from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.processing.errors import ProcessingError
 from ai_hats.processing.expr import canonical, parse_expr
 from ai_hats.processing.fold import expand_and_fold
@@ -131,6 +135,72 @@ def test_a_user_file_may_not_name_a_project_component(tmp_path: Path):
             [Root(user, owner=ComponentLayer.GLOBAL), Root(project, owner=ComponentLayer.PROJECT)],
             "mine",
         )
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True)
+
+
+def test_a_worktree_library_is_project_for_the_chain(tmp_path: Path, monkeypatch):
+    """``project_dir`` stays on main; the library the chain searches is outside it."""
+    proj = tmp_path / "repo"
+    proj.mkdir()
+    _git(proj, "init")
+    _git(proj, "config", "user.email", "t@t.co")
+    _git(proj, "config", "user.name", "t")
+    ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
+    _git(proj, "commit", "--allow-empty", "-m", "init", "--no-verify")
+    wt = tmp_path / "linked"
+    _git(proj, "worktree", "add", str(wt))
+    write_root(
+        wt / "libraries" / "experimental",
+        {
+            "holder.yaml": "schema_version: 1\ntype: composite\nexpr: proj-secret\n",
+            "proj-secret.md": "---\nschema_version: 1\ntype: prompt\nblock: body\n---\nSECRET\n",
+        },
+    )
+    home = tmp_path / "home"
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
+    write_root(
+        home / ".ai-hats" / "experimental",
+        {"user-mine.yaml": "schema_version: 1\ntype: composite\nexpr: proj-secret\n"},
+    )
+    monkeypatch.chdir(wt)
+
+    with pytest.raises(ProcessingError, match="owned by project"):
+        build_preview_payload(proj, role="user-mine", experimental=True)
+    held = build_preview_payload(proj, role="holder", experimental=True)
+    assert "SECRET" in held.plan.prompt.text
+
+
+def test_a_worktree_library_may_name_its_project_library_path(tmp_path: Path, monkeypatch):
+    """A project ``library_paths`` root stays project when it is not repointed."""
+    proj = tmp_path / "repo"
+    proj.mkdir()
+    _git(proj, "init")
+    _git(proj, "config", "user.email", "t@t.co")
+    _git(proj, "config", "user.name", "t")
+    external = tmp_path / "external"
+    write_root(
+        external / "experimental",
+        {"ext-secret.md": "---\nschema_version: 1\ntype: prompt\nblock: body\n---\nEXTERNAL\n"},
+    )
+    (proj / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "library_paths:\n"
+        f"  - {external}\n"
+    )
+    _git(proj, "commit", "--allow-empty", "-m", "init", "--no-verify")
+    wt = tmp_path / "linked"
+    _git(proj, "worktree", "add", str(wt))
+    write_root(
+        wt / "libraries" / "experimental",
+        {"holder.yaml": "schema_version: 1\ntype: composite\nexpr: ext-secret\n"},
+    )
+    monkeypatch.chdir(wt)
+
+    held = build_preview_payload(proj, role="holder", experimental=True)
+    assert "EXTERNAL" in held.plan.prompt.text
 
 
 def test_an_override_may_select_a_project_composite_without_naming_it(tmp_path: Path):

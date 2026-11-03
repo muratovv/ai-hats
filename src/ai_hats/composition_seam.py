@@ -505,7 +505,12 @@ def _candidate_roots(asm, project_dir: Path, diagnostics: list[Diagnostic]):
     """The candidate chain, with user ``library.paths`` among the user roots."""
     from pathlib import Path as FilePath
 
-    from .library_paths import _repoint, _worktree_remap, user_global_library_paths
+    from .library_paths import (
+        _repoint,
+        _worktree_remap,
+        user_global_library_paths,
+        worktree_local_libraries,
+    )
     from .paths import builtin_library_root
     from .processing import candidate_roots
     from .processing.roots import root_owner
@@ -516,17 +521,19 @@ def _candidate_roots(asm, project_dir: Path, diagnostics: list[Diagnostic]):
     here = asm.cwd if asm.cwd is not None else FilePath.cwd()
     remap = _worktree_remap(project_dir, here)
     user_configured = [_repoint(path, remap) for path in slots.user_paths]
+    user_roots = [
+        *(_repoint(path, remap) for path in user_global_library_paths()),
+        *user_configured,
+    ]
     project_roots: list[FilePath] = []
     for configured in asm.project_config.library_paths:
         path = FilePath(configured).expanduser()
-        project_roots.append(
-            path.resolve() if path.is_absolute() else (project_dir / path).resolve()
-        )
-    local = project_dir / "libraries"
+        resolved = path.resolve() if path.is_absolute() else (project_dir / path).resolve()
+        project_roots.append(_repoint(resolved, remap))
+    project_roots.extend(_repoint(path, remap) for path in slots.project_paths)
+    local = worktree_local_libraries(project_dir) or (project_dir / "libraries")
     if local.is_dir():
         project_roots.append(local.resolve())
-    project_roots.extend(slots.project_paths)
-    user_roots = [*user_global_library_paths(), *user_configured]
 
     def owner_of(path: FilePath) -> ComponentLayer:
         return root_owner(
