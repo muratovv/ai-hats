@@ -124,6 +124,23 @@ def test_a_schema_violation_refuses_naming_the_file(root: Path, rel: str, text: 
     assert rel in str(caught.value)
 
 
+def test_an_empty_apply_is_a_parse_refusal(root: Path):
+    (root / "arm.yaml").write_text(
+        'schema_version: 1\ntype: override\napply: ""\nexpr: "+ extra"\n'
+    )
+    with pytest.raises(ProcessingError, match="apply") as caught:
+        _read(root)
+    assert "arm.yaml" in str(caught.value)
+
+
+def test_a_narrow_apply_still_parses(root: Path):
+    (root / "arm.yaml").write_text(
+        'schema_version: 1\ntype: override\napply: "^nope$"\nexpr: "+ extra"\n'
+    )
+    entities = _read(root)
+    assert entities["arm"].apply.pattern == "^nope$"
+
+
 def test_a_skill_md_without_the_type_is_payload_with_a_warning(root: Path):
     (root / "skills" / "tool" / "SKILL.md").write_text(
         "---\nname: tool\ndescription: d\n---\n# Tool\n"

@@ -196,6 +196,8 @@ def _string_list(path: Path, data: Mapping[str, object], key: str) -> tuple[str,
 
 def _override(path: Path, name: str, data: Mapping[str, object]) -> Override:
     text = _string(path, data, "apply")
+    if text == "":
+        raise ProcessingError(f"{path}: apply is empty")
     try:
         pattern = re.compile(text)
     except re.error as exc:
