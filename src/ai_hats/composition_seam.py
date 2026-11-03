@@ -334,9 +334,11 @@ class PlanPreview:
     diagnostics: tuple[Diagnostic, ...]
 
 
-def _preview_context(project_dir: Path, role: str | None, *, prefer_cwd: bool = True):
+def _preview_context(
+    project_dir: Path, role: str | None, *, prefer_cwd: bool = True, cwd: Path | None = None
+):
     asm, cfg, eff_role, runtime_overlay, spec = _project_context(
-        project_dir, role, prefer_cwd=prefer_cwd
+        project_dir, role, prefer_cwd=prefer_cwd, cwd=cwd
     )
     if not eff_role:
         raise RuntimeError(
@@ -404,6 +406,7 @@ def build_preview_payload(
     role: str | None = None,
     provider: str | None = None,
     experimental: bool = False,
+    cwd: Path | None = None,
 ) -> CompositionPayload:
     """Read-only payload for the ``materialize_system_prompt`` preview surface.
 
@@ -419,8 +422,8 @@ def build_preview_payload(
     from .surface_registry import get_surface
 
     if experimental:
-        return _candidate_preview(project_dir, role, provider)
-    asm, cfg, eff_role, runtime_overlay, spec = _preview_context(project_dir, role)
+        return _candidate_preview(project_dir, role, provider, cwd=cwd)
+    asm, cfg, eff_role, runtime_overlay, spec = _preview_context(project_dir, role, cwd=cwd)
     eff_provider = _effective_provider(cfg, provider)
     preview = _compose_plan(asm, eff_role, runtime_overlay, spec)
     return CompositionPayload(
@@ -434,7 +437,13 @@ def build_preview_payload(
     )
 
 
-def _candidate_plan(project_dir: Path, expression: str | None):
+def _candidate_plan(
+    project_dir: Path,
+    expression: str | None,
+    *,
+    prefer_cwd: bool = True,
+    cwd: Path | None = None,
+):
     """The plan only. A gate reads its hooks and does not need a provider."""
     from .assembler import Assembler
     from .paths import builtin_library_root
@@ -442,9 +451,10 @@ def _candidate_plan(project_dir: Path, expression: str | None):
 
     if not expression:
         raise ProcessingError('-re needs an expression: ai-hats -re dry-run "<expr>"')
-    asm = Assembler(project_dir, prefer_cwd=True)
+    asm = Assembler(project_dir, prefer_cwd=prefer_cwd, cwd=cwd)
     roots = candidate_roots(
-        asm.library_paths, builtin_root=builtin_library_root(project_dir, prefer_cwd=True)
+        asm.library_paths,
+        builtin_root=builtin_library_root(project_dir, prefer_cwd=prefer_cwd, cwd=cwd),
     )
     if not roots:
         raise ProcessingError(
@@ -456,20 +466,32 @@ def _candidate_plan(project_dir: Path, expression: str | None):
     return asm, plan, tuple(diagnostics)
 
 
-def _candidate_composed(project_dir: Path, expression: str | None, provider: str | None):
+def _candidate_composed(
+    project_dir: Path,
+    expression: str | None,
+    provider: str | None,
+    *,
+    cwd: Path | None = None,
+):
     """The candidate plan plus the surface a launch or a preview renders with."""
     from .surface_registry import get_surface
 
-    asm, plan, diagnostics = _candidate_plan(project_dir, expression)
+    asm, plan, diagnostics = _candidate_plan(project_dir, expression, cwd=cwd)
     surface = get_surface(_effective_provider(asm.project_config, provider))
     return asm, plan, diagnostics, surface
 
 
 def _candidate_preview(
-    project_dir: Path, expression: str | None, provider: str | None
+    project_dir: Path,
+    expression: str | None,
+    provider: str | None,
+    *,
+    cwd: Path | None = None,
 ) -> CompositionPayload:
     """Read-only candidate payload. No session factories: nothing is launched."""
-    asm, plan, diagnostics, surface = _candidate_composed(project_dir, expression, provider)
+    asm, plan, diagnostics, surface = _candidate_composed(
+        project_dir, expression, provider, cwd=cwd
+    )
     return CompositionPayload(
         result=None,
         provider=surface,
@@ -525,7 +547,8 @@ def armed_plan(project_dir: Path, role: str | None):
     Callers that still ask :func:`compose_for_checks` for a ``CompositionResult``
     hit the tripwire below: there is no projection back into that value.
     """
-    _asm, plan, _diagnostics = _candidate_plan(project_dir, role)
+    # A caller-supplied checkout would aim the gate at the worktree's copy.
+    _asm, plan, _diagnostics = _candidate_plan(project_dir, role, prefer_cwd=False, cwd=project_dir)
     if plan.hooks.runtime or plan.hooks.external:
         return plan
     return None

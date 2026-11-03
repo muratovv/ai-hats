@@ -13,6 +13,7 @@ since the latest tag lives under **Unreleased** until the next release.
 ### Fixed
 
 - **A grok question with `multiSelect` is an array property** (HATS-2135). `elicitation/create` sends `type: array`, `uniqueItems: true`, and the option labels on `items.enum`. A question without the flag stays a string enum.
+- **A candidate gate resolves from the project checkout** (HATS-2137). `armed_plan` follows `project_dir`, so a commit or a tracker transition inside a linked worktree runs the gates from main. A candidate preview still follows the cwd.
 
 ### Changed
 
