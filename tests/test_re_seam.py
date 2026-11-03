@@ -145,7 +145,7 @@ def test_armed_gates_resolve_to_main_when_cwd_is_a_linked_worktree(tmp_path, mon
     from ai_hats.composition_seam import armed_plan, build_preview_payload
     from ai_hats.githooks_resolve import resolve_git_gates_from_plan
 
-    plan = armed_plan(main, "gated", cwd=wt)
+    plan = armed_plan(main, "gated")
     assert plan is not None
     resolution = resolve_git_gates_from_plan(plan, "pre-push")
 

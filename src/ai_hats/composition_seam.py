@@ -541,17 +541,14 @@ def _labelled_overlays(assembler, role_name: str, runtime_overlay: OverlayConfig
     return [(layer, label) for layer, label in layers if layer is not None]
 
 
-def armed_plan(project_dir: Path, role: str | None, *, cwd: Path | None = None):
+def armed_plan(project_dir: Path, role: str | None):
     """The candidate plan when it carries hooks, else ``None`` (nothing to arm).
 
     Callers that still ask :func:`compose_for_checks` for a ``CompositionResult``
     hit the tripwire below: there is no projection back into that value.
-
-    Gates execute, so the plan follows ``project_dir``. ``prefer_cwd`` would
-    resolve them inside the worktree being committed, and D9 then refuses.
-    ``cwd`` names that worktree; it does not choose the library.
     """
-    _asm, plan, _diagnostics = _candidate_plan(project_dir, role, prefer_cwd=False, cwd=cwd)
+    # A caller-supplied checkout would aim the gate at the worktree's copy.
+    _asm, plan, _diagnostics = _candidate_plan(project_dir, role, prefer_cwd=False, cwd=project_dir)
     if plan.hooks.runtime or plan.hooks.external:
         return plan
     return None
