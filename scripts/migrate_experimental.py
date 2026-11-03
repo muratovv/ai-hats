@@ -726,15 +726,31 @@ def _terms(expr: str) -> list[tuple[int, str]]:
     return found
 
 
+def _scan_roots(root: Path) -> list[Path]:
+    """A library of layers is scanned per layer; a flat root is one layer."""
+    layers = [root / name for name in LAYERS if (root / name).is_dir()]
+    return layers or [root]
+
+
+def _resolve_composite(term: str, names: dict[str, object]) -> str | None:
+    """The one composite ``term`` is a suffix of, or ``None`` when it is a leaf."""
+    candidates = [name for name in names if name == term or name.endswith("::" + term)]
+    if len(candidates) > 1:
+        listed = ", ".join(sorted(candidates))
+        raise Refusal(f"{term!r} is ambiguous — it names {listed}; write a longer suffix")
+    return candidates[0] if candidates else None
+
+
 def carried_away(root: Path) -> list[str]:
     """Members a ``- <composite>`` removes that another added composite also brings."""
     composites: dict[str, list[tuple[int, str]]] = {}
-    for path in sorted(root.rglob("*.yaml")):
-        data = yaml.safe_load(path.read_text()) or {}
-        if not isinstance(data, dict) or data.get("type") != "composite":
-            continue
-        name = "::".join(path.relative_to(root).with_suffix("").parts)
-        composites[name] = _terms(str(data.get("expr") or ""))
+    for layer_root in _scan_roots(root):
+        for path in sorted(layer_root.rglob("*.yaml")):
+            data = yaml.safe_load(path.read_text()) or {}
+            if not isinstance(data, dict) or data.get("type") != "composite":
+                continue
+            name = "::".join(path.relative_to(layer_root).with_suffix("").parts)
+            composites[name] = _terms(str(data.get("expr") or ""))
 
     def brought(name: str) -> set[str]:
         """Base terms that survive opening ``name``, signs multiplied as in the fold."""
@@ -745,8 +761,9 @@ def carried_away(root: Path) -> list[str]:
                 return
             for term_sign, term in composites[current]:
                 here = sign * term_sign
-                if term in composites:
-                    visit(term, here, (*stack, current))
+                resolved = _resolve_composite(term, composites)
+                if resolved is not None:
+                    visit(resolved, here, (*stack, current))
                     continue
                 if here > 0:
                     if term not in present:
@@ -759,14 +776,21 @@ def carried_away(root: Path) -> list[str]:
 
     found: list[str] = []
     for terms in composites.values():
-        added = [term for sign, term in terms if sign > 0 and term in composites]
+        added = [
+            resolved
+            for sign, term in terms
+            if sign > 0 and (resolved := _resolve_composite(term, composites)) is not None
+        ]
         for sign, term in terms:
-            if sign > 0 or term not in composites:
+            if sign > 0:
                 continue
-            mine = brought(term)
+            resolved = _resolve_composite(term, composites)
+            if resolved is None:
+                continue
+            mine = brought(resolved)
             others: set[str] = set()
             for other in added:
-                if other == term:
+                if other == resolved:
                     continue
                 others |= brought(other)
             for member in sorted(mine & others):
@@ -882,7 +906,7 @@ def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
             f"heading: {rule.stem}\n---\n{body}",
         )
     if rule_names:
-        expr = " ".join(f"+ {name}" for name in rule_names)
+        expr = " ".join(f"+ rules::{name}" for name in rule_names)
         _put(
             out / "overrides" / "user-rules.yaml",
             f'schema_version: {SCHEMA_VERSION}\ntype: override\napply: ".*"\nexpr: "{expr}"\n',
@@ -915,7 +939,7 @@ def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
                     f"at: {event}\nrun: {filename}\n",
                 )
     if dropins:
-        expr = " ".join(f"+ {key}" for key in dropins)
+        expr = " ".join(f"+ hooks::dropin::{key}" for key in dropins)
         _put(
             out / "overrides" / "dropins.yaml",
             f'schema_version: {SCHEMA_VERSION}\ntype: override\napply: ".*"\nexpr: "{expr}"\n',
@@ -950,7 +974,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--carried-away", type=Path, help="flat root to scan for - <composite>")
     args = parser.parse_args(argv)
     if args.carried_away is not None:
-        for name in carried_away(args.carried_away):
+        try:
+            names = carried_away(args.carried_away)
+        except Refusal as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 1
+        for name in names:
             print(f"carried away: {name}")
         return 0
     if args.home is not None:

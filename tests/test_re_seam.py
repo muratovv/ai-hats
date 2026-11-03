@@ -428,3 +428,24 @@ def test_a_user_library_path_searches_the_worktree_it_was_repointed_to(tmp_path:
     document = payload.plan.skills[0].document
     assert "WORKTREE SKILL" in document
     assert "MAIN SKILL" not in document
+
+
+def test_a_named_checkout_reads_its_own_shipped_experimental(tmp_path: Path, monkeypatch):
+    """Builtin layers follow the named checkout, not the process cwd."""
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    checkout = tmp_path / "checkout"
+    lib = checkout / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    (lib / "core" / "pipelines").mkdir(parents=True)
+    (lib / "usage").mkdir()
+    experimental = lib / "experimental" / "core"
+    experimental.mkdir(parents=True)
+    (experimental / "role.yaml").write_text("schema_version: 1\ntype: composite\nexpr: marker\n")
+    (experimental / "marker.md").write_text(
+        "---\nschema_version: 1\ntype: prompt\nblock: body\n---\nWORKTREE MARKER\n"
+    )
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
+    payload = build_preview_payload(proj, role="role", experimental=True, cwd=checkout)
+    assert payload.plan is not None
+    assert "WORKTREE MARKER" in payload.plan.prompt.text

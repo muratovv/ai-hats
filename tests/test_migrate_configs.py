@@ -7,6 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ai_hats_core.layout import ProjectLayout
+
+from ai_hats.processing import Root, compose
+
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "migrate_experimental.py"
 
@@ -60,6 +64,44 @@ def test_a_nested_composite_counts_the_member_it_brings(tmp_path: Path):
     result = _run("--carried-away", str(root))
     assert result.returncode == 0, result.stderr
     assert _carried(result.stdout) == {"f2"}
+
+
+def test_a_subtraction_across_layers_names_the_shared_member(tmp_path: Path):
+    """Each layer is its own root, so ``trait-agent`` is not ``core::trait-agent``."""
+    root = tmp_path / "experimental"
+    core = root / "core"
+    dev = root / "ai-hats-dev"
+    core.mkdir(parents=True)
+    dev.mkdir(parents=True)
+    (core / "trait-agent.yaml").write_text(
+        "schema_version: 1\ntype: composite\nexpr: safety-guard + agent-only\n"
+    )
+    (core / "holder.yaml").write_text("schema_version: 1\ntype: composite\nexpr: safety-guard\n")
+    (dev / "maintainer.yaml").write_text(
+        "schema_version: 1\ntype: composite\nexpr: trait-agent + holder - trait-agent\n"
+    )
+    result = _run("--carried-away", str(root))
+    assert result.returncode == 0, result.stderr
+    assert _carried(result.stdout) == {"safety-guard"}
+
+
+def test_a_short_suffix_reaches_a_composite_nested_in_its_layer(tmp_path: Path):
+    """``trait-agent`` names ``nested::trait-agent`` when that suffix is unique."""
+    root = tmp_path / "experimental"
+    (root / "core" / "nested").mkdir(parents=True)
+    (root / "usage").mkdir()
+    (root / "core" / "nested" / "trait-agent.yaml").write_text(
+        "schema_version: 1\ntype: composite\nexpr: safety-guard\n"
+    )
+    (root / "usage" / "holder.yaml").write_text(
+        "schema_version: 1\ntype: composite\nexpr: safety-guard\n"
+    )
+    (root / "usage" / "use.yaml").write_text(
+        "schema_version: 1\ntype: composite\nexpr: trait-agent + holder - trait-agent\n"
+    )
+    result = _run("--carried-away", str(root))
+    assert result.returncode == 0, result.stderr
+    assert _carried(result.stdout) == {"safety-guard"}
 
 
 def test_a_customization_removes_before_it_adds(tmp_path: Path):
@@ -169,8 +211,35 @@ def test_dropins_keep_each_event_and_the_executable_bit(tmp_path: Path):
         "run: pre-push-check.sh" in (out / "hooks" / "dropin" / "pre-push-check.yaml").read_text()
     )
     expr = (out / "overrides" / "dropins.yaml").read_text()
-    assert "+ pre-commit-check" in expr
-    assert "+ pre-push-check" in expr
+    assert "+ hooks::dropin::pre-commit-check" in expr
+    assert "+ hooks::dropin::pre-push-check" in expr
+
+
+def test_a_rule_whose_stem_is_a_composite_does_not_make_re_ambiguous(tmp_path: Path):
+    """The override names ``rules::worker``, so a composite ``worker`` stays one name."""
+    home = tmp_path / "home"
+    (home / "user-rules").mkdir(parents=True)
+    (home / "user-rules" / "worker.md").write_text("Do not skip the review.\n")
+    script = home / ".githooks" / "pre-commit.d" / "check.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\nexit 0\n")
+    out = tmp_path / "lib"
+    result = _run("--home", str(home), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    assert 'expr: "+ rules::worker"' in (out / "overrides" / "user-rules.yaml").read_text()
+    assert (
+        'expr: "+ hooks::dropin::pre-commit-check"'
+        in (out / "overrides" / "dropins.yaml").read_text()
+    )
+    (out / "role.yaml").write_text("schema_version: 1\ntype: composite\nexpr: base\n")
+    (out / "worker.yaml").write_text("schema_version: 1\ntype: composite\nexpr: base\n")
+    (out / "base.md").write_text("---\nschema_version: 1\ntype: prompt\nblock: body\n---\nBASE\n")
+    project = tmp_path / "proj"
+    (project / ".agent" / "ai-hats").mkdir(parents=True)
+    layout = ProjectLayout(root=project, base=project / ".agent" / "ai-hats")
+    plan = compose("role", [Root(out)], layout=layout, diagnostics=[])
+    assert "BASE" in plan.prompt.text
+    assert "Do not skip the review." in plan.prompt.text
 
 
 def test_customizations_become_overrides_and_an_unknown_role_is_named(tmp_path: Path):

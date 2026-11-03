@@ -563,7 +563,7 @@ def _candidate_roots(asm, project_dir: Path, diagnostics: list[Diagnostic]):
     )
     roots = candidate_roots(
         chain,
-        builtin_root=builtin_library_root(project_dir, prefer_cwd=True),
+        builtin_root=builtin_library_root(project_dir, prefer_cwd=True, cwd=here),
         owner_of=owner_of,
     )
     return slots, roots

@@ -40,6 +40,21 @@ def test_library_default_stays_out_of_the_reference_role(tmp_path: Path, monkeyp
     assert again.user_paths == (Path("~/custom").expanduser(),)
 
 
+def test_library_is_kept_and_not_announced_as_dropped(tmp_path: Path, capsys):
+    """This version reads ``library``; the unknown-field warning is for a key it does not."""
+    project = _project(
+        tmp_path,
+        "library:\n  default: maintainer\n  paths:\n    - libs/extra\nfuture_field: 1\n",
+    )
+    cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    err = capsys.readouterr().err
+    assert "dropping unknown field 'library'" not in err
+    assert "dropping unknown field 'future_field'" in err
+    assert cfg.default_role == "assistant"
+    assert cfg.to_dict()["library"] == {"default": "maintainer", "paths": ["libs/extra"]}
+    assert read_slots(project, cfg, []).default == "maintainer"
+
+
 def test_an_unknown_key_inside_library_refuses(tmp_path: Path):
     project = _project(tmp_path, "library:\n  default: maintainer\n  apply: everywhere\n")
     cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")

@@ -38,6 +38,8 @@ _DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset(
         "imports_order",  # Planned but reverted; ghost in some v0.6 yamls.
     }
 )
+# Read from _extra by the candidate. A model field would let -r see it.
+_CANDIDATE_CONFIG_FIELDS: frozenset[str] = frozenset({"library"})
 
 
 class ProjectConfig(_YamlModel):
@@ -212,6 +214,8 @@ class ProjectConfig(_YamlModel):
         extra: dict[str, Any] = {}
         for field in sorted(set(data) - set(cls.model_fields)):
             extra[field] = data.pop(field)
+            if field in _CANDIDATE_CONFIG_FIELDS:
+                continue
             print(
                 f"WARN: {path}: dropping unknown field {field!r} "
                 "(not in this ai-hats version's schema — written by a newer "
