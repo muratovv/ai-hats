@@ -4,6 +4,7 @@ value; everything right of the plan is the path the reference takes."""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -281,3 +282,153 @@ def test_the_prompt_step_prices_a_payload_without_a_composer_value(project: Path
     stats = out["composition_stats"]
     assert stats["role"] == "alpha" and stats["skill_count"] == 1
     assert stats["prompt_members"][0] == "alpha::prompt"
+
+
+def _marker_skill(body: str) -> str:
+    return (
+        "---\nname: order-marker\ndescription: d\n"
+        "ai_hats:\n  schema_version: 1\n  type: skill\n---\n" + body + "\n"
+    )
+
+
+def test_a_project_library_keeps_a_skill_a_user_root_also_defines(tmp_path: Path, monkeypatch):
+    """``library.paths`` in the user config is a user root: it must not replace
+    the same skill in ``<project>/libraries``."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
+    user_lib = tmp_path / "user-lib"
+    write_root(
+        user_lib / "experimental",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: order-marker\n",
+            "skills/order-marker/SKILL.md": _marker_skill("USER SKILL"),
+        },
+    )
+    (home / ".ai-hats").mkdir(parents=True)
+    (home / ".ai-hats" / "config.yaml").write_text(f"library:\n  paths:\n    - {user_lib}\n")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
+    write_root(
+        proj / "libraries" / "experimental",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: order-marker\n",
+            "skills/order-marker/SKILL.md": _marker_skill("PROJECT SKILL"),
+        },
+    )
+
+    payload = build_preview_payload(proj, role="role", experimental=True)
+    document = payload.plan.skills[0].document
+    assert "PROJECT SKILL" in document
+    assert "USER SKILL" not in document
+
+
+def test_project_library_paths_do_not_replace_the_project_library(tmp_path: Path):
+    """A root named in project ``library.paths`` ranks below ``<project>/libraries``."""
+    configured = tmp_path / "configured"
+    write_root(
+        configured / "experimental",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: order-marker\n",
+            "skills/order-marker/SKILL.md": _marker_skill("CONFIGURED SKILL"),
+        },
+    )
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "library_paths: []\n"
+        "library:\n"
+        f"  paths:\n    - {configured}\n"
+    )
+    write_root(
+        proj / "libraries" / "experimental",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: order-marker\n",
+            "skills/order-marker/SKILL.md": _marker_skill("PROJECT SKILL"),
+        },
+    )
+
+    payload = build_preview_payload(proj, role="role", experimental=True)
+    document = payload.plan.skills[0].document
+    assert "PROJECT SKILL" in document
+    assert "CONFIGURED SKILL" not in document
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True)
+
+
+def test_a_repointed_library_is_not_added_again_as_its_main_checkout(tmp_path: Path, monkeypatch):
+    """The new key names main; the chain already searched the worktree copy."""
+    lib = tmp_path / "custom"
+    lib.mkdir()
+    _git(lib, "init")
+    _git(lib, "config", "user.email", "t@t.co")
+    _git(lib, "config", "user.name", "t")
+    write_root(
+        lib / "experimental",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: order-marker\n",
+            "skills/order-marker/SKILL.md": _marker_skill("MAIN SKILL"),
+        },
+    )
+    _git(lib, "add", "experimental")
+    _git(lib, "commit", "-m", "init", "--no-verify")
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    (wt / "experimental" / "skills" / "order-marker" / "SKILL.md").write_text(
+        _marker_skill("WORKTREE SKILL")
+    )
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "library_paths:\n"
+        f"  - {lib}\n"
+        "library:\n"
+        "  paths:\n"
+        f"    - {lib}\n"
+    )
+    monkeypatch.chdir(wt)
+
+    payload = build_preview_payload(proj, role="role", experimental=True)
+    document = payload.plan.skills[0].document
+    assert "WORKTREE SKILL" in document
+    assert "MAIN SKILL" not in document
+
+
+def test_a_user_library_path_searches_the_worktree_it_was_repointed_to(tmp_path: Path, monkeypatch):
+    """The new user key names main; composition reads the worktree copy."""
+    lib = tmp_path / "custom"
+    lib.mkdir()
+    _git(lib, "init")
+    _git(lib, "config", "user.email", "t@t.co")
+    _git(lib, "config", "user.name", "t")
+    write_root(
+        lib / "experimental",
+        {
+            "role.yaml": "schema_version: 1\ntype: composite\nexpr: order-marker\n",
+            "skills/order-marker/SKILL.md": _marker_skill("MAIN SKILL"),
+        },
+    )
+    _git(lib, "add", "experimental")
+    _git(lib, "commit", "-m", "init", "--no-verify")
+    wt = tmp_path / "custom-wt"
+    _git(lib, "worktree", "add", str(wt))
+    (wt / "experimental" / "skills" / "order-marker" / "SKILL.md").write_text(
+        _marker_skill("WORKTREE SKILL")
+    )
+    home = tmp_path / "home"
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
+    (home / ".ai-hats").mkdir(parents=True)
+    (home / ".ai-hats" / "config.yaml").write_text(f"library:\n  paths:\n    - {lib}\n")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
+    monkeypatch.chdir(wt)
+
+    payload = build_preview_payload(proj, role="role", experimental=True)
+    document = payload.plan.skills[0].document
+    assert "WORKTREE SKILL" in document
+    assert "MAIN SKILL" not in document
